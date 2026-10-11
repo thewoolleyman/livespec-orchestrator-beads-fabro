@@ -54,6 +54,7 @@ __all__: list[str] = [
     "calendar_days_between",
     "fabro_currency_verdict",
     "newest_observed_release",
+    "releases_by_publication",
 ]
 
 # The upstream repository whose GitHub Releases surface is the ONLY admissible
@@ -176,16 +177,45 @@ def calendar_days_between(*, earlier: datetime, later: datetime) -> int:
     return (later.astimezone(timezone.utc).date() - earlier.astimezone(timezone.utc).date()).days
 
 
-def newest_observed_release(*, observation: FabroReleaseObservation) -> FabroRelease | None:
-    """The newest release in one observation, or `None` when it holds none.
+def releases_by_publication(*, releases: tuple[FabroRelease, ...]) -> tuple[FabroRelease, ...]:
+    """`releases` newest-PUBLISHED first, with the tag as a deterministic tiebreak.
 
-    "Newest" is the forge's own enumeration order at this point: the releases
-    endpoint returns most-recent-first, so the head of the list is the newest
-    release the reading saw.
+    THE ONE ORDERING ANYTHING HERE MAY USE. `constraints.md` says release
+    publication time is the only ordering evidence and that semantic-version
+    ordering and commit timestamps must not substitute for it — so this function
+    exists to be the single place that is true, rather than a convention each
+    caller re-applies.
+
+    IT IS NOT THE FORGE'S ENUMERATION ORDER, which is what this replaced. The
+    releases endpoint enumerates by CREATION, and a release drafted early and
+    published late therefore arrives ahead of releases published after it.
+    Measured on the three-release fixture of
+    `tests/integration/test_fabro_currency_admission_scenario130.py`: reading the
+    list head as newest ADMITTED a base 35 calendar days out of window, because
+    the head was a stable release published five weeks before the nightly that
+    was actually newest.
+
+    The tag tiebreak is for determinism alone, not for precedence: two releases
+    published in the same instant are equally newest, and an unstable sort would
+    make the resolved base depend on the forge's enumeration — reintroducing by
+    the back door exactly the ordering this function exists to remove.
     """
-    if not observation.releases:
+    return tuple(
+        sorted(releases, key=lambda release: (release.published_at, release.tag), reverse=True)
+    )
+
+
+def newest_observed_release(*, observation: FabroReleaseObservation) -> FabroRelease | None:
+    """The newest-PUBLISHED release in one observation, or `None` when it holds none.
+
+    Stable and prerelease tags participate identically: nothing here reads a
+    release class, so an official nightly is eligible to be the newest release on
+    exactly the same terms as a stable one.
+    """
+    ordered = releases_by_publication(releases=observation.releases)
+    if not ordered:
         return None
-    return observation.releases[0]
+    return ordered[0]
 
 
 def fabro_currency_verdict(*, subject: FabroCurrencySubject, now: datetime) -> FabroCurrencyVerdict:

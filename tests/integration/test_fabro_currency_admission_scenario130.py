@@ -88,6 +88,19 @@ _DEADLINE = datetime(2026, 11, 14, 0, 0, tzinfo=timezone.utc)
 # read ITS records out of a journal the rest of the wall also writes to.
 _CURRENCY_STAGE_PREFIX = "dispatcher-fabro-currency-"
 
+# THE RELEASE-CLASS FIXTURE, built so that publication order, enumeration order
+# and semantic-version order all DISAGREE. The stable `v0.400.0` is highest by
+# semver and FIRST in the forge's own enumeration, yet it was published five
+# weeks before the `v0.378.0-nightly.0` prerelease — so a reading that took
+# either the list head or the highest version would pick it as the newest
+# release, and the only thing that picks the nightly is publication time.
+_SEMVER_HIGHEST_TAG = "v0.400.0"
+_SEMVER_HIGHEST_PUBLISHED = "2026-09-01T00:00:00Z"
+_PUBLISHED_NEWEST_TAG = "v0.378.0-nightly.0"
+_PUBLISHED_NEWEST_PUBLISHED = "2026-10-10T00:00:00Z"
+_RELEASE_CLASS_BASE_TAG = "v0.390.0"
+_RELEASE_CLASS_BASE_PUBLISHED = "2026-09-05T00:00:00Z"
+
 
 @pytest.fixture(autouse=True)
 def _hermetic_fake_backend(monkeypatch: pytest.MonkeyPatch) -> object:
@@ -189,6 +202,15 @@ def _refresh_failure_runner() -> _Runner:
         ),
     }
     return _Runner(results=results)
+
+
+def _release_class_releases() -> list[tuple[str, str]]:
+    """The three-release fixture, in the forge's own enumeration order."""
+    return [
+        (_SEMVER_HIGHEST_TAG, _SEMVER_HIGHEST_PUBLISHED),
+        (_PUBLISHED_NEWEST_TAG, _PUBLISHED_NEWEST_PUBLISHED),
+        (_RELEASE_CLASS_BASE_TAG, _RELEASE_CLASS_BASE_PUBLISHED),
+    ]
 
 
 def _carrier_releases() -> list[tuple[str, str]]:
@@ -509,3 +531,53 @@ def test_scenario130_the_one_transition_admits_the_carrier_until_its_deadline_an
     assert "bd-ib-6tcjfx" not in refusal
     expired_records = _records(journal_path=expired_journal)
     assert [record["condition"] for record in expired_records] == [CONDITION_OUT_OF_WINDOW]
+
+
+def test_scenario130_the_window_is_ordered_by_publication_time_not_version_or_enumeration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A prerelease published last IS the newest release, whatever its version says.
+
+    The fixture is built so the three candidate orderings disagree and each
+    produces a DIFFERENT VERDICT, which is the only shape that can fail for the
+    right reason:
+
+    - By publication time the newest release is the `v0.378.0-nightly.0`
+      prerelease of 2026-10-10, the base is `v0.390.0` of 2026-09-05, and the gap
+      is 35 calendar days — out of window, so the dispatch is REFUSED.
+    - By the forge's own enumeration order, or by semantic version, the newest
+      release is the stable `v0.400.0` of 2026-09-01, which the base POSTDATES —
+      so the gap is negative, the window passes and the dispatch is ADMITTED.
+
+    An admitted dispatch here is therefore not a near miss: it is a build reading
+    a semantic version or a list position where `constraints.md` says publication
+    time is the only ordering evidence. The refusal naming the nightly as the
+    newest release is what says the right release class was compared.
+    """
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = _repo(tmp_path=tmp_path)
+    _install(
+        monkeypatch=monkeypatch,
+        runner=_runner(
+            releases=_release_class_releases(),
+            ancestors=frozenset({_RELEASE_CLASS_BASE_TAG}),
+        ),
+        now=_NOW,
+    )
+    journal_path = tmp_path / "journal.jsonl"
+
+    exit_code = _wall_exit(repo=repo, journal_path=journal_path)
+
+    assert exit_code == EXIT_PRECONDITION_ERROR
+    refusal = capsys.readouterr().err
+    assert CONDITION_OUT_OF_WINDOW in refusal
+    assert "35 calendar days" in refusal
+    # The PRERELEASE is named as the newest observed release, and the
+    # higher-versioned stable release is not.
+    assert (
+        "  newest observed upstream release: v0.378.0-nightly.0"
+        " published 2026-10-10T00:00:00+00:00"
+    ) in refusal
+    assert "  upstream base: v0.390.0 published 2026-09-05T00:00:00+00:00" in refusal
+    records = _records(journal_path=journal_path)
+    assert [record["condition"] for record in records] == [CONDITION_OUT_OF_WINDOW]
