@@ -97,6 +97,7 @@ def test_append_run_turn_checks_accepts_foreign_host_global_marker_since_start(
         outcomes=(_outcome(work_item_id="bd-ib-demo"),),
         journal=journal,
         journal_path=journal_path,
+        repo=journal_path.parent,
         sink=RunTurnSink(
             path=run_turn_sink_path(args=_args(journal=journal_path), repo=local_repo)
         ),
@@ -124,6 +125,7 @@ def test_append_run_turn_checks_journals_green_outcome_presence(tmp_path: Path) 
         outcomes=(_outcome(work_item_id="bd-ib-demo"),),
         journal=journal,
         journal_path=journal_path,
+        repo=journal_path.parent,
         sink=sink,
     )
 
@@ -156,6 +158,7 @@ def test_append_run_turn_checks_ignores_stale_global_run_turn_exports(tmp_path: 
         outcomes=(_outcome(work_item_id="bd-ib-old"),),
         journal=journal,
         journal_path=journal_path,
+        repo=journal_path.parent,
         sink=sink,
     )
 
@@ -194,6 +197,7 @@ def test_append_run_turn_checks_accepts_receiver_observed_run_turn_export(
         outcomes=(_outcome(work_item_id="bd-ib-demo"),),
         journal=journal,
         journal_path=journal_path,
+        repo=journal_path.parent,
         sink=sink,
     )
 
@@ -231,6 +235,7 @@ def test_append_run_turn_checks_rejects_receiver_export_without_run_turn(
         outcomes=(_outcome(work_item_id="bd-ib-demo"),),
         journal=journal,
         journal_path=journal_path,
+        repo=journal_path.parent,
         sink=sink,
     )
 
@@ -252,6 +257,7 @@ def test_append_run_turn_checks_journals_absence_and_skips_failed(tmp_path: Path
         ),
         journal=journal,
         journal_path=journal_path,
+        repo=journal_path.parent,
         sink=RunTurnSink(path=tmp_path / "run-turn.json"),
     )
 
@@ -273,10 +279,29 @@ def test_append_run_turn_checks_journals_absence_and_skips_failed(tmp_path: Path
     ]
 
 
-def test_append_run_turn_checks_marks_hp_factory_unobservable_not_absent(
+def _repo_declaring_factory(*, repo: Path, entry: str) -> Path:
+    """A dispatch target whose `dispatcher.factories.hp` entry is `entry`.
+
+    The entry is written as JSON text rather than built from the resolver's own
+    constants so a rename of the declaration key fails these assertions instead
+    of silently agreeing with them.
+    """
+    _ = repo.mkdir(parents=True, exist_ok=True)
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"dispatcher": {"factories": '
+        f'{{"hp": {entry}}}}}}}}}',
+        encoding="utf-8",
+    )
+    return repo
+
+
+def test_append_run_turn_checks_marks_an_unexporting_factory_unobservable_not_absent(
     tmp_path: Path,
 ) -> None:
-    journal_path = tmp_path / "journal.jsonl"
+    journal_path = tmp_path / "repo" / "journal.jsonl"
+    repo = _repo_declaring_factory(
+        repo=journal_path.parent, entry='{"server": "https://hp.example:32276"}'
+    )
     journal = JournalFile(path=journal_path)
     journal.append(
         record={
@@ -292,6 +317,7 @@ def test_append_run_turn_checks_marks_hp_factory_unobservable_not_absent(
         outcomes=(_outcome(work_item_id="bd-ib-demo"),),
         journal=journal,
         journal_path=journal_path,
+        repo=repo,
         sink=RunTurnSink(path=tmp_path / "run-turn.json"),
     )
 
@@ -301,6 +327,53 @@ def test_append_run_turn_checks_marks_hp_factory_unobservable_not_absent(
     assert check["run_turn_observation"] == "unobservable-remote-factory"
     assert check["run_turn_exported"] is False
     assert items_with_run_turn_absence(records=records) == ()
+
+
+def test_append_run_turn_checks_observes_a_factory_declaring_the_dispatcher_receiver(
+    tmp_path: Path,
+) -> None:
+    """A factory OTHER than the one the name test knew is read from its own entry.
+
+    The sibling case above is this one's control: both dispatch to a factory
+    named `hp` with a server, and only the declaration differs, so a guard that
+    still keyed on the name — or one that read every factory as observable —
+    fails exactly one of the pair.
+    """
+    journal_path = tmp_path / "repo" / "journal.jsonl"
+    repo = _repo_declaring_factory(
+        repo=journal_path.parent,
+        entry='{"server": "https://hp.example:32276", '
+        '"run_turn_telemetry_export": "dispatcher_receiver"}',
+    )
+    journal = JournalFile(path=journal_path)
+    journal.append(
+        record={
+            "stage": "dispatch-id",
+            "work_item_id": "bd-ib-demo",
+            "dispatch_id": "disp-1",
+            "dispatch_factory": "hp",
+            "started_at_epoch": 20.0,
+        }
+    )
+    sink = RunTurnSink(path=tmp_path / "run-turn.json")
+    _ = sink.record_export(
+        span={"name": "run_turn"},
+        resource_attrs={"work.item.id": "bd-ib-demo", "livespec.dispatch.id": "disp-1"},
+        dataset="fabro",
+        at=30.0,
+    )
+
+    append_run_turn_checks(
+        outcomes=(_outcome(work_item_id="bd-ib-demo"),),
+        journal=journal,
+        journal_path=journal_path,
+        repo=repo,
+        sink=sink,
+    )
+
+    check = _records(path=journal_path)[-1]
+    assert check["run_turn_observable"] is True
+    assert check["run_turn_exported"] is True
 
 
 def test_append_run_turn_checks_ignores_malformed_dispatch_id_records(tmp_path: Path) -> None:
@@ -313,6 +386,7 @@ def test_append_run_turn_checks_ignores_malformed_dispatch_id_records(tmp_path: 
         outcomes=(_outcome(work_item_id="bd-ib-demo"),),
         journal=journal,
         journal_path=journal_path,
+        repo=journal_path.parent,
         sink=RunTurnSink(path=tmp_path / "run-turn.json"),
     )
 

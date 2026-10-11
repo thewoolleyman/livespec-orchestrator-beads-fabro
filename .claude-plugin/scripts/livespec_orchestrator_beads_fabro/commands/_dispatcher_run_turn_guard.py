@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -13,6 +14,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_turn_sink import (
     RunTurnSink,
     run_turn_check_record,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_turn_telemetry_export import (
+    factory_run_turn_observable,
+    run_turn_telemetry_block,
 )
 
 __all__: list[str] = [
@@ -38,10 +43,14 @@ def append_run_turn_checks(
     outcomes: tuple[DispatchOutcome, ...],
     journal: JournalWriter,
     journal_path: Path,
+    repo: Path,
     sink: RunTurnSink,
 ) -> None:
     """Append one non-blocking `run_turn` export assertion per green dispatch."""
-    dispatches = _dispatches_by_item(records=read_journal_records(journal_path=journal_path))
+    dispatches = _dispatches_by_item(
+        records=read_journal_records(journal_path=journal_path),
+        block=run_turn_telemetry_block(repo=repo),
+    )
     for outcome in outcomes:
         if outcome.status != "green":
             continue
@@ -65,7 +74,7 @@ def append_run_turn_checks(
 
 
 def _dispatches_by_item(
-    *, records: tuple[dict[str, object], ...]
+    *, records: tuple[dict[str, object], ...], block: Mapping[str, object] | None
 ) -> dict[str, _DispatchRunTurnObservation]:
     dispatches: dict[str, _DispatchRunTurnObservation] = {}
     for record in records:
@@ -77,7 +86,7 @@ def _dispatches_by_item(
             dispatches[work_item_id] = _DispatchRunTurnObservation(
                 dispatch_id=dispatch_id,
                 started_at_epoch=_epoch(record=record),
-                observable=_observable_from_dispatch_record(record=record),
+                observable=_observable_from_dispatch_record(record=record, block=block),
             )
     return dispatches
 
@@ -89,8 +98,16 @@ def _epoch(*, record: dict[str, object]) -> float | None:
     return float(value)
 
 
-def _observable_from_dispatch_record(*, record: dict[str, object]) -> bool:
+def _observable_from_dispatch_record(
+    *, record: dict[str, object], block: Mapping[str, object] | None
+) -> bool:
+    """Whether this dispatch's factory exports `run_turn` telemetry readable here.
+
+    A record naming NO factory is answered without consulting the configuration
+    at all: there is no factory to ask about, and the dispatch therefore ran
+    against whatever ambient engine this host resolves — which is this host's.
+    """
     factory = record.get("dispatch_factory")
-    if not isinstance(factory, str):
+    if not isinstance(factory, str) or factory == "":
         return True
-    return factory != "hp"
+    return factory_run_turn_observable(block=block, factory=factory)
