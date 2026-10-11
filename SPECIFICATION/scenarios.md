@@ -5280,23 +5280,3 @@ Feature: a plan session drives to the archive under a recorded authorization
     Then it reports the ruling
     And an attended resume presents the picker instead of acting under it
 ```
-
-## Scenario 169 — A dispatch naming a catalog environment runs the catalog's image, and the journal names the image source
-
-```gherkin
-Feature: Sandbox image source
-
-  Scenario: the catalog environment's image is the image the container runs
-    Given a factory declaring catalog environment livespec-ci whose image is image A
-    And dispatcher.fabro_sandbox_image set to image B
-    When the Dispatcher launches a dispatch to that factory
-    Then the launch carries image A
-    And the dispatch journal records the image source catalog_environment livespec-ci
-
-  Scenario: a factory with no catalog environment uses the committed image
-    Given a factory declaring no catalog environment
-    And dispatcher.fabro_sandbox_image set to image B
-    When the Dispatcher launches a dispatch to that factory
-    Then the launch carries image B
-    And the dispatch journal records the image source dispatcher.fabro_sandbox_image
-```
