@@ -57,3 +57,27 @@ def test_dispatch_span_ids_are_domain_separated_sha256_truncations() -> None:
     assert module.non_zero_hex(digits="0" * module.SPAN_ID_HEX_DIGITS) == "0" * 15 + "1"
     assert module.non_zero_hex(digits="0" * module.TRACE_ID_HEX_DIGITS) == "0" * 31 + "1"
     assert module.non_zero_hex(digits=ids.span_id) == ids.span_id
+
+
+def test_dispatch_span_ids_and_traceparent_re_derive_identically() -> None:
+    """Re-deriving for one dispatch id reproduces the same trace and span id."""
+    module = _correlation_module()
+    dispatch_id = "01M4M5AAW9WVT71KNYMSHPWS3E"
+    other_dispatch_id = "01M4MRW0XYDR82M1WHNJYTCNN3"
+
+    # Both derivation surfaces have to agree, because the launch projects a
+    # traceparent while the emitter renders a span and the two must name one
+    # identity; a surface missing here is a surface nothing holds in lockstep.
+    assert "dispatch_traceparent" in module.__all__
+    first = module.dispatch_span_ids(dispatch_id=dispatch_id)
+    second = module.dispatch_span_ids(dispatch_id=dispatch_id)
+
+    assert (first.trace_id, first.span_id) == (second.trace_id, second.span_id)
+    assert module.dispatch_traceparent(dispatch_id=dispatch_id) == module.dispatch_traceparent(
+        dispatch_id=dispatch_id
+    )
+    assert (
+        module.dispatch_traceparent(dispatch_id=dispatch_id)
+        == f"00-{first.trace_id}-{first.span_id}-01"
+    )
+    assert module.dispatch_span_ids(dispatch_id=other_dispatch_id) != first
