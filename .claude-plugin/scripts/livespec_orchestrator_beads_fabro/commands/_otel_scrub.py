@@ -218,6 +218,17 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "run_turn.command.digest",
         "run_turn.env.keys",
         "run_turn.status",
+        # The ACP turn / usage / context scalars. `acp.stop_reason` is the
+        # rename of the 0.254 bare `stop_reason` protocol enum; the other five
+        # are per-turn measurements the Petri emitter added, so without them a
+        # `run_turn` span records how a turn ended but nothing about what it
+        # cost. All bounded enums, counts and token numbers.
+        "acp.stop_reason",
+        "acp.turns",
+        "acp.usage",
+        "acp.usage.tokens.input",
+        "acp.context",
+        "acp.context.size",
         # Factory build-phase telemetry (livespec-console-beads-fabro plan
         # optimize-console-builds; console item -elt9). The fabro-sandbox
         # `cargo` shim (livespec-dev-tooling otel_cargo_phase.py) POSTs one

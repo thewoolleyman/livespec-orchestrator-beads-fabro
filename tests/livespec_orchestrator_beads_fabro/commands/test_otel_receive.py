@@ -1219,3 +1219,34 @@ def test_receiver_forwards_petri_run_turn_command_group_intact(
     assert _attrs_of(span=forwarded[0]) == {
         key: {"stringValue": value} for key, value in expected.items()
     }
+
+
+def test_receiver_forwards_petri_acp_turn_attributes_intact(
+    receiver_factory: tuple[OtelReceiver, _FakeExporter, HeartbeatSink, str],
+) -> None:
+    """The six `acp.*` turn / usage / context scalars all reach the exporter.
+
+    `acp.stop_reason` is the rename of the 0.254 `stop_reason` enum; the other
+    five are new per-turn measurements the Petri emitter added, and without
+    them a `run_turn` span says how a turn ended but nothing about what it
+    cost.
+    """
+    _receiver, exporter, _heartbeat, base = receiver_factory
+    expected = {
+        "acp.stop_reason": "end_turn",
+        "acp.turns": "3",
+        "acp.usage": "input=1200 output=340",
+        "acp.usage.tokens.input": "1200",
+        "acp.context": "compacted",
+        "acp.context.size": "98304",
+    }
+
+    forwarded = _post_span_attrs(
+        base=base,
+        exporter=exporter,
+        attrs=[_attr_entry(key=key, string_value=value) for key, value in expected.items()],
+    )
+
+    assert _attrs_of(span=forwarded[0]) == {
+        key: {"stringValue": value} for key, value in expected.items()
+    }
