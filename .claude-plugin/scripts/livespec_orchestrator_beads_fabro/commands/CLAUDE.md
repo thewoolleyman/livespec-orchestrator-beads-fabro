@@ -649,9 +649,21 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `constraints.md` forbids. The serving commit is asked of the
   TARGET'S OWN SERVER through `FABRO_SERVER`, never of the local client, which
   on this fleet is routinely a different build (the hosts are re-pinned one at
-  a time). The ancestry walk is BOUNDED and its refusal STATES THE SCOPE IT
-  SEARCHED, because an absence asserted over an unstated population is what
-  turns a bounded search into a false impossibility. A stale cached observation
+  a time). The ancestry walk is BOUNDED BY THE OBSERVATION — one round trip per
+  release it was handed, no narrower candidate cap — and its refusal STATES THE
+  SCOPE IT SEARCHED, because an absence asserted over an unstated population is
+  what turns a bounded search into a false impossibility. The bound being the
+  observation is a CORRECTNESS requirement and not a preference: a smaller cap
+  does not merely miss a base, it MISDIAGNOSES one, because the 30-day rule
+  exists to refuse an OLD base and a base must be found before it can be judged.
+  Measured 2026-10-11 against the live forge, `v0.254.0` is `identical` to the
+  carrier commit `497aaba6` and sits at publication index 80 of 147 published
+  releases, so a 40-candidate cap refused the very carrier the ratified
+  transition must ADMIT, reporting `no-release-tag-ancestor` — a different
+  condition, with a different corrective route. The cost scales with staleness in
+  the right direction: the walk stops at the first ancestor in publication order,
+  so a current build costs one or two round trips and only a build with no
+  release-tag ancestor at all pays the full observation. A stale cached observation
   whose refresh failed is carried FORWARD rather than discarded, because the
   clause requires the refusal to name it — and it is still never SERVED, since
   an expired reading proves nothing about currency. And a target that declares

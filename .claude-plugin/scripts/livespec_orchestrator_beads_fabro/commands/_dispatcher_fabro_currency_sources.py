@@ -22,12 +22,29 @@ holds no clone of the upstream engine at all, so there is no local object to run
 that plainly exists, and the refusal would have been manufactured by the
 instrument rather than earned by the build.
 
-THE ANCESTRY WALK IS BOUNDED, AND SAYS SO. Each candidate costs one forge round
-trip, so the walk stops after `ANCESTRY_CANDIDATE_LIMIT` candidates and the
-refusal it then produces STATES THE SCOPE IT SEARCHED. A bound that reported "no
-release-tag ancestor" without saying how many tags it examined would be an absence
-asserted over an unstated population, which is the shape that turns a bounded
-search into a false impossibility.
+THE ANCESTRY WALK IS BOUNDED BY THE OBSERVATION, AND SAYS SO. Each candidate
+costs one forge round trip, so the walk examines each release the observation
+carries exactly once and the refusal it may then produce STATES THE SCOPE IT
+SEARCHED. An absence asserted over an unstated population is the shape that turns
+a bounded search into a false impossibility.
+
+THE BOUND IS THE OBSERVATION AND NOT A SMALLER NUMBER, and that is a correctness
+requirement rather than a preference. A candidate cap below the observation size
+does not merely miss a base — it MISDIAGNOSES one. The 30-day rule exists to
+refuse a base that is OLD, so the base has to be found before it can be judged;
+a cap that hides it reports `no-release-tag-ancestor`, which is a different
+condition with a different corrective route, asserted over a population that
+excluded the answer. Measured against the live forge on 2026-10-11: `v0.254.0` is
+`identical` to the carrier commit `497aaba6` and sits at publication-order index
+80 of the 147 releases `fabro-sh/fabro` has published, so a 40-candidate cap
+refused the very carrier the ratified transition must ADMIT, and refused it for a
+reason that reads like an unidentifiable build.
+
+THE COST SCALES WITH STALENESS, which is the right direction. The walk stops at
+the first ancestor in publication order, so a current build — the case this gate
+exists to wave through — costs one or two round trips. Only a build with no
+published release-tag ancestor at all pays the full observation, and that build is
+being refused regardless.
 
 AN UNREADABLE COMPARISON DOES NOT PROMOTE A TAG TO BASE. `_is_ancestor` answers
 `False` for a failed command and for a status it does not recognise, so a blinded
@@ -59,7 +76,6 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, Fa
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
-    "ANCESTRY_CANDIDATE_LIMIT",
     "ObservationReading",
     "compare_argv",
     "fabro_currency_subject",
@@ -68,12 +84,6 @@ __all__: list[str] = [
     "resolved_base",
     "serving_integration_commit",
 ]
-
-# How many candidate tags the ancestry walk may examine. A healthy build hits on
-# the first or second candidate — a serving commit is normally the carrier tip
-# descended from a recent nightly — so this bound is only ever reached by a build
-# that is already going to be refused.
-ANCESTRY_CANDIDATE_LIMIT = 40
 
 _COMPARE_TIMEOUT_SECONDS = 30.0
 _VERSION_TIMEOUT_SECONDS = 30.0
@@ -229,15 +239,18 @@ def resolved_base(
     is the answer, because the first ancestor in that order is by construction
     the latest-published one.
 
-    THE SORT RUNS BEFORE THE BOUND, and that order is load-bearing. Slicing the
-    forge's own enumeration first and sorting the slice would let the candidate
-    cap truncate by creation order — so a genuinely-ancestral tag published
-    recently but drafted long ago could fall outside the window this walk ever
-    looks at, and the refusal would then report "no release-tag ancestor" about a
-    population that excluded the answer.
+    THE WALK RANGES OVER THE WHOLE OBSERVATION. The clause selects the base from
+    the published release tags, full stop, so any narrower candidate set reports a
+    base-less build where a base exists — see this module's docstring for the
+    measured carrier case a 40-candidate cap mis-refused.
+
+    THE SORT STILL RUNS BEFORE THE WALK, and that order remains load-bearing even
+    with nothing truncated: publication order is what makes the FIRST ancestor
+    found the LATEST-PUBLISHED one, which is the base the clause names. Walking
+    the forge's own enumeration instead would return whichever ancestor happened
+    to be created first.
     """
-    ordered = releases_by_publication(releases=observation.releases)
-    for release in ordered[:ANCESTRY_CANDIDATE_LIMIT]:
+    for release in releases_by_publication(releases=observation.releases):
         if _is_ancestor(tag=release.tag, head=serving_commit, runner=runner, cwd=cwd):
             return release
     return None
@@ -284,7 +297,11 @@ def fabro_currency_subject(
         serving_commit=commit,
         base=base,
         observation=reading.observation,
-        unobservable_detail=None if base is not None else _no_ancestor_detail(),
+        unobservable_detail=(
+            None
+            if base is not None
+            else _no_ancestor_detail(examined=len(reading.observation.releases))
+        ),
         observation_failure=None,
     )
 
@@ -310,10 +327,16 @@ def _unidentified_detail(*, factory: FactoryTarget) -> str:
     )
 
 
-def _no_ancestor_detail() -> str:
+def _no_ancestor_detail(*, examined: int) -> str:
+    """The absence, stated over the population that was actually searched.
+
+    `examined` is the observation's own size rather than a constant, because the
+    scope sentence has to move with what the walk looked at — a fixed number here
+    would keep reading correct after a narrower candidate set made it false.
+    """
     return (
         "the serving integration commit has no published release-tag ancestor among the"
-        f" {ANCESTRY_CANDIDATE_LIMIT} most recently published {FABRO_UPSTREAM_REPO} releases"
+        f" {examined} {FABRO_UPSTREAM_REPO} releases in the current observation"
     )
 
 

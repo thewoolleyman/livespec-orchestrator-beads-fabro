@@ -88,9 +88,17 @@ Tests for the thin-transport command modules under
   return value, because no return value can carry them: that the serving commit
   is parsed from the SERVER's section and not the client's (the two sections
   differ only in their label, and a whole-text scan matches the client line
-  first), and that the ancestry walk is BOUNDED (a claim about how many forge
-  calls were spent, which a correct-but-unbounded walk satisfies at every other
-  assertion). The observation module reads the forge CALL COUNT in every case,
+  first), and that the ancestry walk is BOUNDED BY THE OBSERVATION (a claim about
+  how many forge calls were spent, which a walk that re-asked or paged beyond
+  what it was handed satisfies at every other assertion). That bound is asserted
+  in BOTH directions, and the second direction is the one a cap defeats: a
+  sibling case puts a genuine ancestor at index 44 of 60 and asserts the BASE
+  rather than the call count, because a walk that spent the calls and still
+  returned `None` is the failure being closed — the measured 40-candidate cap
+  that refused the ratified 0.254 carrier for having "no release-tag ancestor".
+  For the same reason the no-ancestor case reads its scope sentence off the
+  observation's own SIZE rather than off a constant, which kept reading correct
+  after the cap had made it false. The observation module reads the forge CALL COUNT in every case,
   since "served from the cache" is a claim about a read that did NOT happen and
   a reading that refreshed every time returns the same value. And the gate
   module asserts target-awareness with one CURRENT target beside one STALE one,
