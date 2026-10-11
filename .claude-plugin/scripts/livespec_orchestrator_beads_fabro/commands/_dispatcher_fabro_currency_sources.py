@@ -120,10 +120,35 @@ def releases_argv() -> list[str]:
     single document parse succeeds on a one-page answer and fails on every
     multi-page one — a reader that works until upstream grows. With it, each
     release arrives as one compact object on its own line.
+
+    THE METHOD IS DECLARED BECAUSE THE PAGE SIZE IS A PARAMETER, and leaving it
+    inferred inverted this read into a write. `gh api`'s own help states the
+    rule: "The default HTTP request method is `GET` normally and `POST` if any
+    parameters were added." So `-F per_page=100` with no `--method` is sent to
+    `POST repos/fabro-sh/fabro/releases` — the CREATE-A-RELEASE endpoint of a
+    third party's repository — carrying `{"per_page":100}` as a request body.
+    That cannot return releases, so the gather reports the upstream surface as
+    unobservable, and because this gate is first in the pre-dispatch wall and
+    fails closed, EVERY dispatch in this repository is refused before claim
+    while each attempt issues an unauthorized write against upstream. Measured
+    2026-10-11 off `gh`'s own transport error, which names the verb it chose:
+    the unqualified form reported `Post "…/repos/fabro-sh/fabro/releases"` and
+    this form reports `Get "…/repos/fabro-sh/fabro/releases?per_page=100"`.
+    Declaring the method also moves the page size into the QUERY STRING, which
+    is where this endpoint reads it from.
+
+    `compare_argv` next door needs no such declaration because it carries no
+    parameters, and a deliberate WRITE declares its verb the same way this read
+    does — see `_dispatcher_publish_branch_preserve._create_ref_argv`. The rule
+    to preserve is the relationship, not this spelling: a `gh api` argv carrying
+    body parameters MUST declare its method, because inference resolves them to
+    a POST.
     """
     return [
         "gh",
         "api",
+        "--method",
+        "GET",
         f"repos/{FABRO_UPSTREAM_REPO}/releases",
         "--paginate",
         "-F",

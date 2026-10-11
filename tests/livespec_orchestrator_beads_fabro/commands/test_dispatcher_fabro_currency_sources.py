@@ -44,6 +44,14 @@ _SERVER_COMMIT = "8869e88"
 _CLIENT_COMMIT = "4b8cc85"
 _NOW = datetime(2026, 10, 11, 9, 0, tzinfo=timezone.utc)
 
+# Every `gh api` flag that adds a parameter to the REQUEST BODY, and so flips
+# the inferred method from GET to POST. Both spellings of each are listed
+# because a one-character short form is exactly what an argv review skims past.
+_GH_BODY_PARAMETER_FLAGS = ("-F", "--field", "-f", "--raw-field", "--input")
+
+# Both spellings of the method flag, for the same reason.
+_GH_METHOD_FLAGS = ("--method", "-X")
+
 
 @dataclass(kw_only=True)
 class _Runner:
@@ -77,6 +85,21 @@ def _version_runner(*, stdout: str, exit_code: int = 0) -> _Runner:
     )
 
 
+def _declared_method(*, argv: list[str]) -> str | None:
+    """The method `argv` declares explicitly, or `None` when it leaves it inferred."""
+    for index, token in enumerate(argv[:-1]):
+        if token in _GH_METHOD_FLAGS:
+            return argv[index + 1]
+    return None
+
+
+def _resolves_as_a_get(*, argv: list[str]) -> bool:
+    """Whether `gh` sends `argv` as a GET: declared so, or carrying no body."""
+    if _declared_method(argv=argv) is not None:
+        return _declared_method(argv=argv) == "GET"
+    return not any(flag in argv for flag in _GH_BODY_PARAMETER_FLAGS)
+
+
 def _release(*, tag: str, days_ago: int) -> FabroRelease:
     return FabroRelease(tag=tag, published_at=_NOW.replace(hour=0) - _days(days=days_ago))
 
@@ -96,9 +119,60 @@ def test_the_releases_argv_names_the_upstream_repository_and_projects_one_object
     """
     argv = releases_argv()
 
-    assert argv[:3] == ["gh", "api", f"repos/{FABRO_UPSTREAM_REPO}/releases"]
+    assert argv[:2] == ["gh", "api"]
+    assert f"repos/{FABRO_UPSTREAM_REPO}/releases" in argv
     assert "--paginate" in argv
     assert argv[-1] == ".[] | {tag: .tag_name, published_at: .published_at}"
+
+
+def test_every_forge_read_resolves_as_a_get_rather_than_as_a_write() -> None:
+    """A read carrying a body parameter is dispatched by `gh` as a POST.
+
+    `gh api`'s own help states the rule: "The default HTTP request method is
+    `GET` normally and `POST` if any parameters were added." So an argv that
+    MEANS a read while carrying `-F per_page=100` and declaring no method is
+    sent to `POST /repos/fabro-sh/fabro/releases` -- the CREATE-A-RELEASE
+    endpoint of a third-party repository -- with `{"per_page":100}` as its body.
+    It cannot return releases, so the gather reports the surface as unobservable
+    and the gate fails closed on every dispatch, while each attempt issues an
+    unauthorized write against upstream.
+
+    `gh` resolves a GET two ways and both are admissible: declare `--method GET`
+    explicitly, or carry no body parameter at all. What is NOT admissible is
+    body parameters with the method left to inference -- which is why this reads
+    the relationship between the two rather than pinning one spelling.
+
+    THE FIRST ASSERTION IS A CONTROL ON THE PREDICATE ITSELF, and it is the
+    load-bearing one. `_resolves_as_a_get` over an argv set that happens to hold
+    no body parameters passes whether or not the flag table is populated, so a
+    gutted `_GH_BODY_PARAMETER_FLAGS` -- or a `_declared_method` that returns
+    `None` for everything -- would report both reads conforming while seeing
+    nothing. A deliberate WRITE is therefore classified first: that case can
+    only pass while the predicate can still return the refusing verdict, which
+    is the question a pair of passing reads cannot answer. The argv is the
+    repository's own conforming write form, spelled as
+    `_dispatcher_publish_branch_preserve._create_ref_argv` builds it.
+    """
+    deliberate_write = [
+        "gh",
+        "api",
+        "--method",
+        "POST",
+        f"repos/{FABRO_UPSTREAM_REPO}/git/refs",
+        "--raw-field",
+        "ref=refs/heads/x",
+    ]
+    assert not _resolves_as_a_get(argv=deliberate_write)
+
+    for name, argv in (
+        ("releases", releases_argv()),
+        ("compare", compare_argv(base="v0.254.0", head=_SERVER_COMMIT)),
+    ):
+        assert _resolves_as_a_get(argv=argv), (
+            f"the {name} read carries body parameter flag(s)"
+            f" {[flag for flag in _GH_BODY_PARAMETER_FLAGS if flag in argv]} and declares"
+            f" method {_declared_method(argv=argv)!r}, so `gh` sends it as a POST"
+        )
 
 
 def test_the_compare_argv_names_the_upstream_repository_rather_than_gh_placeholders() -> None:
