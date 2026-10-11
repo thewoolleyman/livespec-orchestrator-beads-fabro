@@ -111,9 +111,12 @@ class UrllibFabroHttpTransport:
     """Production transport: one stdlib urllib exchange, never raising.
 
     A non-2xx status arrives here as an `HTTPError`, which is a `URLError`
-    subclass, so it lands on the same failure track as a network fault. That
-    is the right collapse for this consumer: both mean "this route did not
-    work", and the caller's remedy for either is the next route.
+    subclass, so it reaches the same `except` clause as a network fault. It is
+    NOT the same observation, and `_raised_exchange` keeps the two apart: an
+    `HTTPError` is the server's own response and is reported with its status
+    and body, while a genuine transport fault is the one thing status 0 names.
+    Collapsing both onto 0 made a server that considered the request and
+    refused it indistinguishable from a wrong host.
     """
 
     def send(
@@ -136,13 +139,7 @@ class UrllibFabroHttpTransport:
             exceptions=(urllib.error.URLError, OSError, ValueError),
         )
         if isinstance(sent, AttemptFailure):
-            return FabroHttpResult(
-                status=0,
-                body="",
-                error=f"{type(sent.error).__name__}: {sent.error}",
-                payload=None,
-                succeeded=False,
-            )
+            return _raised_exchange(error=sent.error)
         return sent
 
 
@@ -276,6 +273,32 @@ def _headers(*, target: FabroTarget, carries_body: bool) -> dict[str, str]:
     if token is not None:
         headers["Authorization"] = f"Bearer {token}"
     return headers
+
+
+def _raised_exchange(*, error: Exception) -> FabroHttpResult:
+    """The exchange a raised urllib error describes.
+
+    An `HTTPError` IS the server's response — it carries the status code and
+    the body of a request the server considered and refused — so it is
+    reported as the refusal it is. Every OTHER error on this track means no
+    response arrived, which is the one condition status 0 names.
+    """
+    described = f"{type(error).__name__}: {error}"
+    if not isinstance(error, urllib.error.HTTPError):
+        return FabroHttpResult(
+            status=0,
+            body="",
+            error=described,
+            payload=None,
+            succeeded=False,
+        )
+    return FabroHttpResult(
+        status=int(error.code),
+        body=error.read().decode("utf-8", errors="replace"),
+        error=described,
+        payload=None,
+        succeeded=False,
+    )
 
 
 def _exchange(*, request: urllib.request.Request, timeout_seconds: float) -> FabroHttpResult:
