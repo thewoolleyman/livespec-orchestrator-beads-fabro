@@ -122,6 +122,14 @@ class DispatchPlan:
     fabro_factory_name: str
     fabro_factory_server: str | None
     fabro_factory_dev_token: str | None
+    # The server-catalog sandbox environment this dispatch's factory declares,
+    # projected ONCE from the resolved target. It rides the plan for the reason
+    # the factory's server and client binary do: the launch is the only seam
+    # that needs it, and it is a property of the FACTORY the dispatch was
+    # routed to rather than of the item. None is not a default environment: it
+    # is a factory that names none, so the run intent carries no environment
+    # and the server selects whatever it selects today.
+    fabro_factory_environment: str | None = None
     janitor: tuple[str, ...]
     janitor_checkout: Path
     janitor_core_checkout: Path
@@ -193,6 +201,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
     fabro_factory_name: str = "default",
     fabro_factory_server: str | None = None,
     fabro_factory_dev_token: str | None = None,
+    fabro_factory_environment: str | None = None,
     janitor: tuple[str, ...] | None,
     janitor_checkout: Path,
     # The two declaration sources the contract resolves from. `config_text` is
@@ -229,6 +238,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
         fabro_factory_name=fabro_factory_name,
         fabro_factory_server=fabro_factory_server,
         fabro_factory_dev_token=fabro_factory_dev_token,
+        fabro_factory_environment=fabro_factory_environment,
         janitor=janitor_argv(
             check_suite=janitor_check_suite_from_contract(resolved=integration, janitor=janitor)
         ),

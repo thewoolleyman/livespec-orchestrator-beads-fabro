@@ -50,6 +50,7 @@ def launch_fabro_run(  # noqa: PLR0913 — kw-only launch assembly; each argumen
     cwd: Path,
     fabro_version: str | None,
     server_url: str | None,
+    environment: str | None,
     workflow_toml: Path,
     goal_file: Path,
     inputs: tuple[str, ...],
@@ -63,6 +64,7 @@ def launch_fabro_run(  # noqa: PLR0913 — kw-only launch assembly; each argumen
         goal_file=goal_file,
         inputs=inputs,
         correlation=correlation,
+        environment=environment,
         server_url=server_url,
     )
     env = fabro_run_env(server_url=server_url, correlation=correlation)
@@ -77,19 +79,26 @@ def launch_fabro_run(  # noqa: PLR0913 — kw-only launch assembly; each argumen
     )
 
 
-def fabro_run_argv(
+def fabro_run_argv(  # noqa: PLR0913 — kw-only argv assembly, same reasoning as `launch_fabro_run` above: each argument is one INDEPENDENT operand of the one invocation, and grouping any pair into a carrier would invent a relationship the argv does not have.
     *,
     fabro_bin: str,
     workflow: Path,
     goal_file: Path,
     inputs: tuple[str, ...],
     correlation: DispatchCorrelation | None,
+    environment: str | None,
     server_url: str | None,
 ) -> list[str]:
     """The `fabro run` argv, with one `--label` pair per passable value.
 
-    The labels sit BEFORE the per-subcommand `--server`, which pinned
-    0.254 requires to stay last on the subcommand.
+    The labels and the environment sit BEFORE the per-subcommand `--server`,
+    which pinned 0.254 requires to stay last on the subcommand.
+
+    An `environment` of None emits NO flag rather than the `default` id the
+    server would have selected anyway. The two are equivalent only on an
+    engine that HAS the flag: pinned 0.254 has none and selects from
+    `workflow.toml`, so an unconditional pair kills every dispatch to that
+    engine at argument parsing, before any run exists to diagnose.
     """
     return [
         fabro_bin,
@@ -99,6 +108,7 @@ def fabro_run_argv(
         str(goal_file),
         *client.fabro_input_args(inputs=inputs),
         "--no-upgrade-check",
+        *([] if environment is None else ["--environment", environment]),
         *correlation_label_args(correlation=correlation),
         *([] if server_url is None else ["--server", server_url]),
     ]
