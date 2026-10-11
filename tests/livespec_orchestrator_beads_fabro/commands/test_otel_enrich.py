@@ -266,6 +266,81 @@ def test_join_keeps_existing_work_item_keyed_value_precedence() -> None:
     assert backfilled["fabro.run_id"] == "r-new"
 
 
+def test_join_learns_run_identity_from_a_petri_era_fabro_run_id_attribute() -> None:
+    """A Petri-era span anchors the join on `fabro.run_id` alone.
+
+    The 0.254 engine put the run id inside a `Workflow run started` /
+    `Sandbox initialized` EVENT and the orchestrator's own span was the only
+    thing carrying `work.item.id` beside it, so anchoring the map on
+    `work.item.id` was sufficient. Petri-era spans carry `fabro.run_id` as a
+    plain attribute on every span and the engine's spans reach the receiver
+    WITHOUT any orchestrator span in the same process, so a map that only
+    learns from `work.item.id` learns nothing from them and a sibling span of
+    the same run is forwarded with no dispatch identity at all.
+    """
+    join = CorrelationJoin()
+    join.observe(keys={"fabro.run_id": "r-9", "livespec.dispatch.id": "d-1"})
+
+    assert join.backfill(keys={"fabro.run_id": "r-9"}) == {
+        "fabro.run_id": "r-9",
+        "livespec.dispatch.id": "d-1",
+    }
+
+
+def test_join_reaches_one_identity_whichever_key_anchored_it_first() -> None:
+    """A run-anchored triple and a later work-item span are ONE identity.
+
+    Petri-era and Claude-Code spans arrive in no guaranteed order, so the
+    run-keyed and work-item-keyed indexes must reach the same record however
+    they were seeded; two records for one run would answer each lookup with
+    half the triple.
+    """
+    join = CorrelationJoin()
+    join.observe(keys={"fabro.run_id": "r-9", "livespec.dispatch.id": "d-1"})
+    join.observe(keys={"work.item.id": "li-1", "fabro.run_id": "r-9"})
+
+    expected = {"work.item.id": "li-1", "livespec.dispatch.id": "d-1", "fabro.run_id": "r-9"}
+    assert join.backfill(keys={"fabro.run_id": "r-9"}) == expected
+    assert join.backfill(keys={"work.item.id": "li-1"}) == expected
+
+
+def test_join_still_learns_run_identity_from_the_0254_event_names() -> None:
+    """The 0.254 event-name join is unchanged — both engines are in flight.
+
+    The control for the two cases above: a fabro span whose run id is only in
+    a `Workflow run started` event still backfills from the orchestrator span
+    that taught the triple, exactly as it did before Petri-era attributes
+    existed.
+    """
+    join = CorrelationJoin()
+    dispatcher_span = _span(
+        name="dispatch",
+        attrs=[
+            _attr_entry(key="work.item.id", string_value="li-1"),
+            _attr_entry(key="livespec.dispatch.id", string_value="d-1"),
+            _attr_entry(key="fabro.run_id", string_value="01RUNWORKFLOW"),
+        ],
+    )
+    join.observe(keys=correlation_keys_from_attrs(span=dispatcher_span))
+    legacy_fabro_span = _span(name="run", attrs=[])
+    legacy_fabro_span["events"] = [
+        _event(
+            name="Workflow run started",
+            attrs=[_attr_entry(key="run_id", string_value="01RUNWORKFLOW")],
+        ),
+        _event(
+            name="Sandbox initialized",
+            attrs=[_attr_entry(key="id", string_value="01RUNSANDBOX")],
+        ),
+    ]
+
+    assert join.backfill(keys=correlation_keys_from_attrs(span=legacy_fabro_span)) == {
+        "work.item.id": "li-1",
+        "livespec.dispatch.id": "d-1",
+        "fabro.run_id": "01RUNWORKFLOW",
+    }
+
+
 def test_join_leaves_unknown_fabro_run_id_unchanged() -> None:
     join = CorrelationJoin()
     join.observe(keys={"fabro.run_id": "r-9"})  # no anchor key — not learned

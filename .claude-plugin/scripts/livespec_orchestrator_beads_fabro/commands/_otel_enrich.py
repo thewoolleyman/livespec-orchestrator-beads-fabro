@@ -135,16 +135,19 @@ class CorrelationJoin:
     def observe(self, *, keys: dict[str, str]) -> None:
         """Record the triple values a span carries.
 
-        Only learns from a span that carries `work.item.id` (the primary
-        join key); a span lacking it cannot anchor the map. When the same
-        span also carries `fabro.run_id`, the same learned triple is indexed
-        there too. Each newly-seen triple key is merged in (later spans
-        backfill earlier gaps without clobbering a known value).
+        Learns from a span carrying EITHER anchor — `work.item.id`, the
+        primary join key, or `fabro.run_id`. The second anchor is what makes
+        a Petri-era span teachable: that engine stamps `fabro.run_id` as a
+        plain attribute on every span and emits none of the 0.254 run-id
+        events, and its spans reach the receiver with no orchestrator span
+        beside them, so a map anchored on `work.item.id` alone learned
+        nothing from a whole run. A span carrying neither anchor cannot be
+        placed and is ignored. Each newly-seen triple key is merged in (later
+        spans backfill earlier gaps without clobbering a known value).
         """
-        work_item = keys.get(_WORK_ITEM_ID)
-        if work_item is None:
+        known = self._anchor(keys=keys)
+        if known is None:
             return
-        known = self._by_work_item.setdefault(work_item, {})
         for triple_key in _DISPATCH_CONTEXT_KEYS:
             value = keys.get(triple_key)
             if value is not None and triple_key not in known:
@@ -152,6 +155,28 @@ class CorrelationJoin:
         fabro_run = known.get(_FABRO_RUN_ID)
         if fabro_run is not None:
             _ = self._by_fabro_run.setdefault(fabro_run, known)
+
+    def _anchor(self, *, keys: dict[str, str]) -> dict[str, str] | None:
+        """The ONE triple record both indexes reach for this span's anchors.
+
+        Spans arrive in no guaranteed order, so a run first seen by
+        `fabro.run_id` and later by `work.item.id` must land on the SAME
+        record: a fresh dict per index would leave two half-triples for one
+        run, each answering its own lookup and neither answering the other.
+        """
+        work_item = keys.get(_WORK_ITEM_ID)
+        fabro_run = keys.get(_FABRO_RUN_ID)
+        if work_item is not None:
+            known = self._by_work_item.get(work_item)
+            if known is None and fabro_run is not None:
+                known = self._by_fabro_run.get(fabro_run)
+            if known is None:
+                known = {}
+            self._by_work_item[work_item] = known
+            return known
+        if fabro_run is not None:
+            return self._by_fabro_run.setdefault(fabro_run, {})
+        return None
 
     def backfill(self, *, keys: dict[str, str]) -> dict[str, str]:
         """Return the triple values to stamp on a span, backfilling from the map.
