@@ -65,6 +65,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones impor
     fetch_fleet_manifest_text,
     resolve_sibling_clones,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_client import overlay_graph_reference
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -159,6 +160,11 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     proof_rendering: str = "",
     adapter_inputs: frozenset[str] = frozenset(),
     resume_checkout: ResumeCheckout | None = None,
+    # The CLIENT build this dispatch resolved for its factory, which decides how
+    # the written config may NAME its graph. None is the pinned-engine posture —
+    # the absolute path every overlay has always carried — so a caller that
+    # wires nothing renders exactly the config it did before.
+    fabro_version: str | None = None,
     # WHICH factory this dispatch launches at, and where a routed credential is
     # stored so the worker can resolve it. Both default to the pinned-engine
     # posture — the implicit single-factory name, and no vault — so a caller that
@@ -215,7 +221,22 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     position from which an unrenewable credential can be reported without
     leaving an `active` row nobody is working.
     """
-    # Resolved FIRST, before any credential is read or minted. It is a pure read
+    # WHAT the written config NAMES its graph, as distinct from WHICH graph this
+    # dispatch runs. `graph_override` itself stays absolute — the route check
+    # below READS that file — so only the rendered TEXT moves. Projected here,
+    # above everything that reads or mints, because it is a pure projection of
+    # the arguments and a geometry bug in it must raise where nothing is yet
+    # owed back; the package directory is the overlay's own, which for a Petri
+    # dispatch IS the package `materialized_workflow_config` placed it in.
+    graph_reference = (
+        None
+        if graph_override is None
+        else overlay_graph_reference(
+            version=fabro_version, graph=graph_override, package_dir=overlay.parent
+        )
+    )
+    # Resolved FIRST among the steps that read anything, before any credential
+    # is read or minted. It is a pure read
     # of committed configuration, so it can only refuse on a declaration the
     # operator can fix, and refusing here leaves nothing behind to clean up.
     channel = resolve_secret_channel(block=dispatcher_block(cwd=repo), factory=factory_name)
@@ -300,8 +321,9 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # is required: `IOResult.value_or` returns `IO[value]`, not the value.
         fabro_sandbox_image=unsafe_perform_io(resolve_fabro_sandbox_image(cwd=repo).value_or(None)),
         # The per-dispatch payload's rendered graph, carrying this dispatch's
-        # resolved node timeouts as literal durations.
-        graph_override=graph_override,
+        # resolved node timeouts as literal durations, NAMED as the client that
+        # collects it can resolve it.
+        graph_override=graph_reference,
         # The publish branch and head a RESUME places the sandbox clone on.
         # None for every other dispatch, which renders no step at all.
         resume_checkout=resume_checkout,
