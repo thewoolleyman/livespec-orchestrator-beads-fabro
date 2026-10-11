@@ -61,6 +61,7 @@ from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     ensure_receiver_started,
     resolve_receiver_config,
 )
+from livespec_orchestrator_beads_fabro.commands._otel_scrub import ATTR_MAX_LEN
 
 _HTTP_OK = 200
 _HTTP_BAD_REQUEST = 400
@@ -1122,3 +1123,71 @@ def test_ensure_receiver_started_degrades_on_bind_error() -> None:
     assert result is None
     # The holder is left clean so a later call can retry.
     assert "server" not in holder
+
+
+# --------------------------------------------------------------------------
+# Petri-era `run_turn` span attributes (bd-ib-dtk7qh)
+#
+# The Petri-era emitter (fork branch carrier-petri-v0.382, commit 231f9c7de,
+# `lib/components/fabro-petri/src/run_turn.rs`) renamed every `run_turn` span
+# attribute the 0.254 emitter carried and added the ACP turn / usage / context
+# scalars beside them. Only `fabro.run_id` of that set was allowlisted, so the
+# receiver DROPPED the rest — silently, because an unnamed attribute is rebuilt
+# out of the span rather than refused. These assertions post real Petri-era
+# attribute sets through the LIVE receiver and read back what it forwarded.
+# --------------------------------------------------------------------------
+
+
+def _post_span_attrs(
+    *,
+    base: str,
+    exporter: _FakeExporter,
+    attrs: list[dict[str, object]],
+) -> tuple[dict[str, object], ...]:
+    """POST one span through the live receiver; return the spans it forwarded.
+
+    An empty tuple means the receiver REJECTED the span (the fail-closed
+    credential arm), which is a different observation from a span forwarded
+    with the attribute dropped — the two are what tell a scrub apart from an
+    allowlist miss, so the caller needs to see both.
+    """
+    before = len(exporter.calls)
+    assert _post_json(url=f"{base}/v1/traces", body=_trace_request(attrs=attrs)) == _HTTP_OK
+    return tuple(span for spans, _dataset in exporter.calls[before:] for span in spans)
+
+
+def _attrs_of(*, span: dict[str, object]) -> dict[str, object]:
+    """The forwarded span's attributes as a name -> OTLP value block mapping."""
+    entries = cast("list[dict[str, object]]", span["attributes"])
+    return {cast("str", entry["key"]): entry["value"] for entry in entries}
+
+
+def test_receiver_scrubs_petri_run_turn_command_exactly_as_0254_command(
+    receiver_factory: tuple[OtelReceiver, _FakeExporter, HeartbeatSink, str],
+) -> None:
+    """`run_turn.command` rides the SAME scrub + truncation as 0.254 `command`.
+
+    The 0.254 `command` attribute is argv-only (ACP credentials are
+    env-injected, never argv) and is nonetheless covered by the fail-closed
+    credential-URL scrub and the `ATTR_MAX_LEN` truncation. Its Petri-era
+    rename must inherit both, so each arm runs the 0.254 name as its own
+    control in the same receiver: a credential-shaped value REJECTS the whole
+    span, and an over-long value is truncated to `ATTR_MAX_LEN`.
+    """
+    _receiver, exporter, _heartbeat, base = receiver_factory
+    credential = "https://x-access-token:ghp_SECRET@github.com/o/r"
+    long_command = "codex exec " + ("x" * (ATTR_MAX_LEN + 50))
+
+    for key in ("command", "run_turn.command"):
+        rejected = _post_span_attrs(
+            base=base,
+            exporter=exporter,
+            attrs=[_attr_entry(key=key, string_value=credential)],
+        )
+        assert rejected == ()
+        forwarded = _post_span_attrs(
+            base=base,
+            exporter=exporter,
+            attrs=[_attr_entry(key=key, string_value=long_command)],
+        )
+        assert _attrs_of(span=forwarded[0]) == {key: {"stringValue": long_command[:ATTR_MAX_LEN]}}
