@@ -282,6 +282,13 @@ def _raised_exchange(*, error: Exception) -> FabroHttpResult:
     the body of a request the server considered and refused — so it is
     reported as the refusal it is. Every OTHER error on this track means no
     response arrived, which is the one condition status 0 names.
+
+    The body read FAILS SOFT onto an empty body rather than onto status 0,
+    because the status is the load-bearing value here and the two answers are
+    not interchangeable: a refusal whose body died on the wire still proves
+    the server considered the request, which is exactly what a 0 would deny.
+    `send` is declared never to raise, so letting that read escape is not an
+    option either — the caller would get no result at all.
     """
     described = f"{type(error).__name__}: {error}"
     if not isinstance(error, urllib.error.HTTPError):
@@ -292,9 +299,13 @@ def _raised_exchange(*, error: Exception) -> FabroHttpResult:
             payload=None,
             succeeded=False,
         )
+    read = attempt(
+        action=lambda: error.read().decode("utf-8", errors="replace"),
+        exceptions=(urllib.error.URLError, OSError, ValueError),
+    )
     return FabroHttpResult(
         status=int(error.code),
-        body=error.read().decode("utf-8", errors="replace"),
+        body="" if isinstance(read, AttemptFailure) else read,
         error=described,
         payload=None,
         succeeded=False,
