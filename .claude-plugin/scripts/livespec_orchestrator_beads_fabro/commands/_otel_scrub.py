@@ -198,6 +198,21 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "visit",
         "stop_reason",
         "node_id",
+        # The PETRI-ERA `run_turn` emitter's own names (`bd-ib-dtk7qh`), from
+        # fork branch `carrier-petri-v0.382` commit 231f9c7de,
+        # `lib/components/fabro-petri/src/run_turn.rs`. The Petri re-platform
+        # RENAMED every attribute the 0.254 emitter above carried, so of its
+        # whole set only `fabro.run_id` was already named here and the receiver
+        # dropped the rest — silently, because an unnamed attribute is rebuilt
+        # out of the span rather than refused. The 0.254 names are KEPT beside
+        # these: an older engine is still a reachable pin, and nothing in a
+        # span says which emitter wrote it.
+        #
+        # `run_turn.command` is the rename of `command` and inherits its
+        # discipline unchanged — argv-only (ACP credentials are env-injected,
+        # never argv), and still covered by the fail-closed credential-URL
+        # scrub plus the `ATTR_MAX_LEN` truncation below.
+        "run_turn.command",
         # Factory build-phase telemetry (livespec-console-beads-fabro plan
         # optimize-console-builds; console item -elt9). The fabro-sandbox
         # `cargo` shim (livespec-dev-tooling otel_cargo_phase.py) POSTs one
