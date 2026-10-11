@@ -51,6 +51,55 @@ _GH_BODY_PARAMETER_FLAGS = ("-F", "--field", "-f", "--raw-field", "--input")
 # Both spellings of the method flag, for the same reason.
 _GH_METHOD_FLAGS = ("--method", "-X")
 
+# `fabro version --json` exactly as the two hp servers printed it on 2026-10-11:
+# the pinned 0.254 engine on :32276 and the Petri-era candidate on :32278, each
+# read through a client of its own era. Captured, not composed, because the
+# previous fixtures were composed: they invented a one-line `Server: (<sha> x)`
+# form that no build prints, the parser was written to that form, and the gate
+# refused every real dispatch while every test passed.
+_CAPTURED_LEGACY_VERSION_JSON = """{
+  "client": {
+    "version": "0.254.0",
+    "git_sha": "8869e88",
+    "build_date": "2026-10-01",
+    "profile": "release",
+    "os": "linux",
+    "arch": "x86_64"
+  },
+  "server": {
+    "address": "https://hp-xubuntu.perch-rudd.ts.net:32276",
+    "version": "0.254.0",
+    "git_sha": "8869e88",
+    "build_date": "2026-10-01",
+    "profile": "release",
+    "os": "linux",
+    "arch": "x86_64",
+    "uptime_secs": 811718
+  }
+}
+"""
+_CAPTURED_CANDIDATE_VERSION_JSON = """{
+  "client": {
+    "version": "0.382.0-nightly.0",
+    "git_sha": "adeefec",
+    "build_date": "2026-10-11",
+    "profile": "release",
+    "os": "linux",
+    "arch": "x86_64"
+  },
+  "server": {
+    "address": "https://hp-xubuntu.perch-rudd.ts.net:32278",
+    "version": "0.378.0-nightly.0",
+    "git_sha": "64b9d88",
+    "build_date": "2026-10-06",
+    "profile": "release",
+    "os": "linux",
+    "arch": "x86_64",
+    "uptime_secs": 256741
+  }
+}
+"""
+
 
 @dataclass(kw_only=True)
 class _Runner:
@@ -79,9 +128,19 @@ def _factory(*, server: str | None = _SERVER) -> FactoryTarget:
 def _version_runner(*, stdout: str, exit_code: int = 0) -> _Runner:
     return _Runner(
         results={
-            (_FABRO_BIN, "version"): CommandResult(exit_code=exit_code, stdout=stdout, stderr="")
+            (_FABRO_BIN, "version", "--json"): CommandResult(
+                exit_code=exit_code, stdout=stdout, stderr=""
+            )
         }
     )
+
+
+def _version_json(*, server_commit: str | None, client_commit: str = _CLIENT_COMMIT) -> str:
+    """`fabro version --json`'s shape, with the server section optional."""
+    payload: dict[str, object] = {"client": {"version": "0.254.0", "git_sha": client_commit}}
+    if server_commit is not None:
+        payload["server"] = {"address": _SERVER, "version": "0.254.0", "git_sha": server_commit}
+    return json.dumps(payload)
 
 
 def _declared_method(*, argv: list[str]) -> str | None:
@@ -185,17 +244,11 @@ def test_the_compare_argv_names_the_upstream_repository_rather_than_gh_placehold
 def test_the_serving_commit_comes_from_the_server_section_and_not_the_client_section() -> None:
     """The discriminating case: the two sections report DIFFERENT commits.
 
-    A whole-text scan matches the client line first, because `fabro version`
-    prints the client above the server — and would report the local client build
-    as the engine a dispatch lands on, which is the fleet-global surrogate the
-    clause forbids.
+    `fabro version` reports the client beside the server, and reading the client's
+    commit would report the local client build as the engine a dispatch lands on,
+    which is the fleet-global surrogate the clause forbids.
     """
-    runner = _version_runner(
-        stdout=(
-            f"Client: fabro 0.254.0 ({_CLIENT_COMMIT} 2026-09-12)\n"
-            f"Server: fabro 0.254.0 ({_SERVER_COMMIT} 2026-10-01) at {_SERVER}\n"
-        )
-    )
+    runner = _version_runner(stdout=_version_json(server_commit=_SERVER_COMMIT))
 
     commit = serving_integration_commit(
         factory=_factory(), fabro_bin=_FABRO_BIN, runner=runner, cwd=_REPO
@@ -226,7 +279,9 @@ def test_the_version_read_addresses_the_targets_own_server_through_the_environme
         ) -> CommandResult:
             del argv, cwd, timeout_seconds, stdin
             captured.append(env)
-            return CommandResult(exit_code=0, stdout=f"Server: ({_SERVER_COMMIT} x)\n", stderr="")
+            return CommandResult(
+                exit_code=0, stdout=_version_json(server_commit=_SERVER_COMMIT), stderr=""
+            )
 
     _ = serving_integration_commit(
         factory=_factory(), fabro_bin=_FABRO_BIN, runner=_EnvRunner(), cwd=_REPO
@@ -248,7 +303,7 @@ def test_a_client_that_exits_non_zero_reports_no_serving_commit() -> None:
 
 
 def test_output_with_no_server_section_reports_no_serving_commit() -> None:
-    runner = _version_runner(stdout=f"Client: fabro 0.254.0 ({_CLIENT_COMMIT} 2026-09-12)\n")
+    runner = _version_runner(stdout=_version_json(server_commit=None))
 
     assert (
         serving_integration_commit(
@@ -258,13 +313,51 @@ def test_output_with_no_server_section_reports_no_serving_commit() -> None:
     )
 
 
-def test_a_server_section_carrying_no_parenthesized_commit_reports_none() -> None:
-    """A bare date is eight HEX digits, so an unanchored scan would report one.
+def test_the_serving_commit_is_read_from_both_captured_server_builds() -> None:
+    """The pinned engine and the Petri-era candidate, as each actually prints it.
 
-    `2026-10-01` alone cannot be a commit, and the parser must say so rather than
-    pick the first hex-looking run it finds.
+    Each capture's client and server differ on the candidate, so this also
+    discriminates the server section from the client one on real output.
     """
-    runner = _version_runner(stdout="Server: fabro 0.254.0 built 20261001\n")
+    for stdout, expected in (
+        (_CAPTURED_LEGACY_VERSION_JSON, "8869e88"),
+        (_CAPTURED_CANDIDATE_VERSION_JSON, "64b9d88"),
+    ):
+        commit = serving_integration_commit(
+            factory=_factory(),
+            fabro_bin=_FABRO_BIN,
+            runner=_version_runner(stdout=stdout),
+            cwd=_REPO,
+        )
+
+        assert commit == expected
+
+
+def test_the_version_read_asks_for_the_json_form() -> None:
+    """The human form spreads the server's build over several labelled lines."""
+    runner = _version_runner(stdout=_CAPTURED_LEGACY_VERSION_JSON)
+
+    _ = serving_integration_commit(
+        factory=_factory(), fabro_bin=_FABRO_BIN, runner=runner, cwd=_REPO
+    )
+
+    assert runner.calls == [(_FABRO_BIN, "version", "--json")]
+
+
+def test_output_that_is_not_json_reports_no_serving_commit() -> None:
+    runner = _version_runner(stdout="Server: https://hp\n Git SHA: 8869e88\n")
+
+    assert (
+        serving_integration_commit(
+            factory=_factory(), fabro_bin=_FABRO_BIN, runner=runner, cwd=_REPO
+        )
+        is None
+    )
+
+
+def test_a_server_git_sha_that_is_not_a_commit_reports_none() -> None:
+    """A build-date string in the commit field must not be reported as a commit."""
+    runner = _version_runner(stdout=_version_json(server_commit="2026-10-01"))
 
     assert (
         serving_integration_commit(
@@ -490,8 +583,8 @@ def test_a_commit_with_no_release_tag_ancestor_states_the_scope_that_was_searche
     """
     runner = _Runner(
         results={
-            (_FABRO_BIN, "version"): CommandResult(
-                exit_code=0, stdout=f"Server: ({_SERVER_COMMIT} x)\n", stderr=""
+            (_FABRO_BIN, "version", "--json"): CommandResult(
+                exit_code=0, stdout=_version_json(server_commit=_SERVER_COMMIT), stderr=""
             )
         }
     )
@@ -546,8 +639,8 @@ def test_a_resolved_base_leaves_the_subject_with_no_unobservable_detail() -> Non
     newest = _release(tag="v0.378.0-nightly.0", days_ago=1)
     runner = _Runner(
         results={
-            (_FABRO_BIN, "version"): CommandResult(
-                exit_code=0, stdout=f"Server: ({_SERVER_COMMIT} x)\n", stderr=""
+            (_FABRO_BIN, "version", "--json"): CommandResult(
+                exit_code=0, stdout=_version_json(server_commit=_SERVER_COMMIT), stderr=""
             ),
             tuple(compare_argv(base=newest.tag, head=_SERVER_COMMIT)): CommandResult(
                 exit_code=0, stdout="ahead\n", stderr=""
@@ -581,8 +674,8 @@ def test_a_populated_but_failed_reading_resolves_no_base_and_spends_no_compariso
     newest = _release(tag="v0.378.0-nightly.0", days_ago=10)
     runner = _Runner(
         results={
-            (_FABRO_BIN, "version"): CommandResult(
-                exit_code=0, stdout=f"Server: ({_SERVER_COMMIT} x)\n", stderr=""
+            (_FABRO_BIN, "version", "--json"): CommandResult(
+                exit_code=0, stdout=_version_json(server_commit=_SERVER_COMMIT), stderr=""
             ),
             tuple(compare_argv(base=newest.tag, head=_SERVER_COMMIT)): CommandResult(
                 exit_code=0, stdout="ahead\n", stderr=""

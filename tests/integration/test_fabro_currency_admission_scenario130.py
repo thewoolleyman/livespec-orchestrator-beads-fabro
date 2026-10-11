@@ -133,10 +133,16 @@ class _Runner:
 
 
 def _version_text() -> str:
-    """`fabro version`'s own two-section form, as the pinned engine prints it."""
-    return (
-        f"Client: fabro 0.254.0 ({_SERVING_COMMIT} 2026-07-30)\n"
-        f"Server: fabro 0.254.0 ({_SERVING_COMMIT} 2026-08-02) at {_TARGET_SERVER}\n"
+    """`fabro version --json`'s client and server sections, as the engine prints them."""
+    return json.dumps(
+        {
+            "client": {"version": "0.254.0", "git_sha": _SERVING_COMMIT},
+            "server": {
+                "address": _TARGET_SERVER,
+                "version": "0.254.0",
+                "git_sha": _SERVING_COMMIT,
+            },
+        }
     )
 
 
@@ -167,7 +173,9 @@ def _runner(*, releases: list[tuple[str, str]], ancestors: frozenset[str]) -> _R
         tuple(sources.releases_argv()): CommandResult(
             exit_code=0, stdout=_releases_payload(releases=releases), stderr=""
         ),
-        (_FABRO_BIN, "version"): CommandResult(exit_code=0, stdout=_version_text(), stderr=""),
+        (_FABRO_BIN, "version", "--json"): CommandResult(
+            exit_code=0, stdout=_version_text(), stderr=""
+        ),
     }
     for tag, _published in releases:
         status = "ahead" if tag in ancestors else "diverged"
@@ -193,7 +201,9 @@ def _refresh_failure_runner() -> _Runner:
     """
     results: dict[tuple[str, ...], CommandResult] = {
         tuple(sources.releases_argv()): CommandResult(exit_code=1, stdout="", stderr="HTTP 503"),
-        (_FABRO_BIN, "version"): CommandResult(exit_code=0, stdout=_version_text(), stderr=""),
+        (_FABRO_BIN, "version", "--json"): CommandResult(
+            exit_code=0, stdout=_version_text(), stderr=""
+        ),
         tuple(sources.compare_argv(base=_BASE_TAG, head=_SERVING_COMMIT)): CommandResult(
             exit_code=0, stdout="ahead\n", stderr=""
         ),

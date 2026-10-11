@@ -251,7 +251,11 @@ class FabroPort:
         return FabroJsonResult(command=command, payload=fabro_json_payload(command=command))
 
     def version(self, *, timeout_seconds: float) -> FabroVersionResult:
-        """`fabro version` — the client AND the server the port is bound to.
+        """`fabro version --json` — the client AND the server the port is bound to.
+
+        The JSON form, because the human form spreads each build over several
+        labelled lines, and every build from the pinned 0.254 engine to the
+        Petri-era candidate carries `server.git_sha` under `--json`.
 
         Addressed through `FABRO_SERVER`, the same env mechanism `run` relies on,
         rather than through a per-subcommand `--server`: a port constructed on one
@@ -261,7 +265,7 @@ class FabroPort:
         and the currency predicate is required to be target-aware.
         """
         command = self._run(
-            argv=[self.fabro_bin, "version"],
+            argv=[self.fabro_bin, "version", "--json"],
             timeout_seconds=timeout_seconds,
             env=self._server_env(),
         )

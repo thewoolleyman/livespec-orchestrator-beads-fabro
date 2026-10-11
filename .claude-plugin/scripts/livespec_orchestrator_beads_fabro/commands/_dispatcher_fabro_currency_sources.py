@@ -92,16 +92,15 @@ _VERSION_TIMEOUT_SECONDS = 30.0
 # itself, or `head` has commits beyond it.
 _CONTAINING_STATUSES = frozenset({"ahead", "identical"})
 
-# The parenthesized build commit `fabro version` prints beside each version, as
-# in `fabro 0.254.0 (8869e88 2026-10-01)`. Anchored on the opening parenthesis
-# deliberately: an unanchored hex scan also matches a bare date like `20261001`,
-# which is eight hex digits, and would report a date as a commit.
-_COMMIT_PATTERN = re.compile(r"\(([0-9a-f]{7,40})\b")
+# A build commit as `fabro version --json` reports it under `git_sha`: an
+# abbreviated or full hex object name. Anchored at both ends so a build date or
+# any other non-commit text in that field reads as unobserved, not as a commit.
+_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{7,40}$")
 
-# The server's own section of that output. `fabro version` prints the client
-# first, so a scan of the whole text would report the LOCAL client's commit as
-# the serving one — the exact fleet-global surrogate the clause forbids.
-_SERVER_LABEL = "server"
+# The server's own section of that output. The client section sits beside it,
+# and reading the client's commit would report the LOCAL client build as the
+# serving one — the exact fleet-global surrogate the clause forbids.
+_SERVER_KEY = "server"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -352,13 +351,16 @@ def _is_ancestor(*, tag: str, head: str, runner: CommandRunner, cwd: Path) -> bo
 
 
 def _server_commit(*, text: str) -> str | None:
-    for line in text.splitlines():
-        if _SERVER_LABEL not in line.lower():
-            continue
-        match = _COMMIT_PATTERN.search(line)
-        if match is not None:
-            return match.group(1)
-    return None
+    decoded = _decoded(text=text)
+    if not isinstance(decoded, dict):
+        return None
+    server = cast("dict[str, object]", decoded).get(_SERVER_KEY)
+    if not isinstance(server, dict):
+        return None
+    commit = cast("dict[str, object]", server).get("git_sha")
+    if not isinstance(commit, str) or _COMMIT_PATTERN.match(commit) is None:
+        return None
+    return commit
 
 
 def _decoded(*, text: str) -> object:
