@@ -579,9 +579,16 @@ def test_receiver_records_run_turn_only_after_successful_honeycomb_export(tmp_pa
     assert sink.has_export(keys=("bd-ib-demo",)) is True
 
 
-def test_receiver_records_real_fabro_run_turn_shape_after_honeycomb_export(
+def test_receiver_attributes_no_dispatch_to_the_uncorrelated_0254_run_turn_shape(
     tmp_path: Path,
 ) -> None:
+    """The 0.254 `run_turn` shape carries no correlation id, so it answers nobody.
+
+    These five attributes are the real shape that engine emits, and the receiver
+    still exports and counts the span — what it must NOT do is let that span
+    satisfy a dispatch whose ids it never carried, which is what the retired
+    host-global key did for every concurrent dispatch at once.
+    """
     module_path = (
         Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
         / "_dispatcher_run_turn_sink.py"
@@ -614,7 +621,9 @@ def test_receiver_records_real_fabro_run_turn_shape_after_honeycomb_export(
         assert _post_json(url=url, body=body) == _HTTP_OK
     finally:
         receiver.stop()
-    assert sink.has_export(keys=("bd-ib-demo", "dispatch-1")) is True
+    assert sink.has_export(keys=("bd-ib-demo", "dispatch-1")) is False
+    diagnostic = json.loads((tmp_path / "run-turn-diagnostics.json").read_text(encoding="utf-8"))
+    assert diagnostic["receiver"]["successful_run_turn_exports"] == 1
 
 
 def test_receiver_records_handle_traces_request_diagnostics(tmp_path: Path) -> None:

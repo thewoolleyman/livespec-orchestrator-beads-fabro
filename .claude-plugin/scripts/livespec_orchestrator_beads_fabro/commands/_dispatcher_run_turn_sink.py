@@ -3,10 +3,33 @@
 The live OTLP receiver exports sandbox spans synchronously through the
 Honeycomb exporter seam. This sink records only the cheap, non-secret fact
 that a span named `run_turn` from the `fabro` dataset was accepted by that
-exporter. Fabro-side `run_turn` spans do not carry per-dispatch
-correlation ids, so the sink records a global last-seen signal for the
-post-dispatch guard and also indexes any correlation ids present on future
-compatible span shapes.
+exporter, indexed by the CORRELATION IDS that span carried —
+`work.item.id` and `livespec.dispatch.id`.
+
+ATTRIBUTION IS PER DISPATCH AND BY NOTHING ELSE. The sink file is
+HOST-GLOBAL (`run_turn_sink_path` resolves one path per host, not one per
+repository), so every host-wide signal in it is a signal about SOME run and
+about no run in particular. Two such signals used to answer a dispatch's
+question: a `fabro.run_turn` key written on every accepted export whatever
+it carried, and a fallback onto the receiver's own per-request counters.
+Either one made an export from any concurrent run — in this repository or
+another one on the same host — report as THIS dispatch's telemetry, which
+is precisely the claim the guard exists to make and the one it could not
+support.
+
+So a dispatch's check reads ONLY the keys that dispatch owns. An export
+carrying neither correlation id is still ACCEPTED, and the diagnostics
+beside this map still count it, because "the receiver observed a Fabro
+`run_turn` export" remains a true and useful fact — it is simply not a fact
+about any dispatch, and the per-dispatch map is where facts about dispatches
+live.
+
+THAT MAKES AN UNATTRIBUTABLE EXPORT READ AS AN ABSENCE, which is the right
+direction for a gauge: the 0.254 engine emits `run_turn` spans carrying no
+correlation ids at all, so a dispatch to a factory running it has nothing
+here to find — and the OBSERVABILITY question
+(`_dispatcher_run_turn_telemetry_export`) is what keeps that absence from
+being reported as a finding.
 """
 
 from __future__ import annotations
@@ -21,7 +44,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_turn_diagnostics
     RunTurnTraceRequest,
     record_run_turn_export_diagnostic,
     record_run_turn_trace_request,
-    run_turn_diagnostic_has_export,
     run_turn_diagnostic_path,
 )
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import scrub
@@ -40,7 +62,6 @@ __all__: list[str] = [
 _FABRO_DATASET = "fabro"
 _RUN_TURN_SPAN = "run_turn"
 _CORRELATION_KEYS = ("work.item.id", "livespec.dispatch.id")
-_GLOBAL_EXPORT_KEY = "fabro.run_turn"
 _REASON_ACCEPTED = "accepted"
 _REASON_DATASET = "dataset"
 _REASON_SPAN_NAME = "span-name"
@@ -79,7 +100,7 @@ class RunTurnSink:
                 at=at,
             )
             return False
-        ids = (_GLOBAL_EXPORT_KEY, *_correlation_ids(span=span, resource_attrs=resource_attrs))
+        ids = _correlation_ids(span=span, resource_attrs=resource_attrs)
         with self._lock:
             exported = self._read()
             for key in ids:
@@ -97,23 +118,20 @@ class RunTurnSink:
     def has_export(
         self, *, keys: tuple[str, ...], exported_at_or_after: float | None = None
     ) -> bool:
-        """True when any candidate key has recorded a `run_turn` export."""
+        """True when one of THESE correlation ids recorded a `run_turn` export.
+
+        The candidate list is exactly what the caller owns — no host-global key
+        is consulted, per the module docstring. An EMPTY key is skipped rather
+        than looked up, because a dispatch whose id the journal never recorded
+        arrives here as `""` and must not match a stored empty key.
+        """
         with self._lock:
             exported = self._read()
-        candidates = (_GLOBAL_EXPORT_KEY, *keys)
         return any(
             _is_fresh_export(at=exported.get(key), exported_at_or_after=exported_at_or_after)
-            for key in candidates
+            for key in keys
             if key != ""
         )
-
-    def has_receiver_export(self, *, exported_at_or_after: float | None = None) -> bool:
-        """True when `_handle_traces` observed a successful Fabro `run_turn` export."""
-        with self._lock:
-            return run_turn_diagnostic_has_export(
-                path=run_turn_diagnostic_path(path=self.path),
-                exported_at_or_after=exported_at_or_after,
-            )
 
     def record_trace_request(self, *, request: RunTurnTraceRequest) -> None:
         """Persist one `_handle_traces` request diagnostic."""
@@ -189,13 +207,11 @@ def run_turn_check_record(
             "run_turn_observation": "unobservable-remote-factory",
         }
     keys = (work_item_id, dispatch_id)
-    exported = sink.has_export(keys=keys, exported_at_or_after=started_at_epoch)
     return {
         "stage": "run-turn-telemetry-check",
         "work_item_id": work_item_id,
         "dispatch_id": dispatch_id,
-        "run_turn_exported": exported
-        or sink.has_receiver_export(exported_at_or_after=started_at_epoch),
+        "run_turn_exported": sink.has_export(keys=keys, exported_at_or_after=started_at_epoch),
         "run_turn_observable": True,
     }
 

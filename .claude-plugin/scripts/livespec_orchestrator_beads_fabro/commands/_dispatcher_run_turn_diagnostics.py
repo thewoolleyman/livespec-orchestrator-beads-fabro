@@ -23,7 +23,6 @@ __all__: list[str] = [
     "record_run_turn_export_diagnostic",
     "record_run_turn_receiver_diagnostic",
     "record_run_turn_trace_request",
-    "run_turn_diagnostic_has_export",
     "run_turn_diagnostic_path",
     "successful_run_turn_export_count",
 ]
@@ -166,22 +165,6 @@ def record_run_turn_trace_request(*, path: Path, request: RunTurnTraceRequest) -
         receiver["last_successful_run_turn_export_at"] = request.at
     diagnostic["receiver"] = receiver
     _write_run_turn_diagnostic(path=path, diagnostic=diagnostic)
-
-
-def run_turn_diagnostic_has_export(
-    *, path: Path, exported_at_or_after: float | None = None
-) -> bool:
-    diagnostic = read_run_turn_diagnostic(path=path)
-    receiver = diagnostic.get("receiver")
-    if not isinstance(receiver, dict):
-        return False
-    parsed = cast("dict[str, object]", receiver)
-    at = parsed.get("last_successful_run_turn_export_at")
-    if isinstance(at, bool) or not isinstance(at, int | float):
-        return False
-    if exported_at_or_after is None:
-        return True
-    return float(at) >= exported_at_or_after
 
 
 def _empty_diagnostic() -> dict[str, object]:
