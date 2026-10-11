@@ -6075,6 +6075,21 @@ side (the console), reading the orchestrator's declared API-configurable-key
 surface; the orchestrator MUST NOT read into the console.
 
 
+
+### Sandbox image source
+
+A dispatch whose resolved factory declares a catalog environment (that
+factory's `environment` value under `dispatcher.factories`) MUST launch its
+sandbox from the image the catalog environment declares on the factory
+server, and the Dispatcher launch overlay MUST NOT substitute
+`dispatcher.fabro_sandbox_image` for that image. A dispatch whose resolved
+factory declares no catalog environment MUST launch from
+`dispatcher.fabro_sandbox_image` when that key is set. The dispatch journal
+MUST record, for each launch, which source supplied the sandbox image:
+`catalog_environment` with the environment id, or
+`dispatcher.fabro_sandbox_image`. Scenario 169 in `scenarios.md` exercises
+this subsection.
+
 ## Built-in ACP node defaults
 
 The factory's ACP nodes run a model the Dispatcher CHOOSES from configuration,

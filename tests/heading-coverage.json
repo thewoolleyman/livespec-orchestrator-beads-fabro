@@ -1715,5 +1715,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for the attended no-picker path under a continuation ruling, the four new kinds, and pointer reconciliation through resume_directive; epic bd-ib-7sjdzv owns it until the implementing child is filed.",
     "work_item": "bd-ib-7sjdzv"
+  },
+  {
+    "heading": "## Scenario 169 \u2014 A dispatch naming a catalog environment runs the catalog's image, and the journal names the image source",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for catalog-image precedence over dispatcher.fabro_sandbox_image and the journaled image source; bd-ib-jy7fuh implements the behaviour and owns the binding.",
+    "work_item": "bd-ib-jy7fuh"
   }
 ]
