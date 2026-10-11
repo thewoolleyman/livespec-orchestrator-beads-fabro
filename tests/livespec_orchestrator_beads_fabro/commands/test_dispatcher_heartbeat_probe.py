@@ -350,8 +350,15 @@ class _ScriptedFabroRunner:
     rm_calls: list[str] = field(default_factory=list)
     _poll: int = 0
 
-    def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
-        _ = (cwd, timeout_seconds)
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult:
+        _ = (cwd, timeout_seconds, env)
         verb = argv[1] if len(argv) > 1 else ""
         if verb == "run":
             _ = self.run_done.wait(timeout=10.0)

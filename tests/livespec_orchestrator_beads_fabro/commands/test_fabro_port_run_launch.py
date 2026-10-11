@@ -11,12 +11,16 @@ labels to a default.
 from __future__ import annotations
 
 import importlib
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import (
     DispatchCorrelation,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_span import (
+    dispatch_request_line,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_fabro_launcher import (
@@ -65,6 +69,19 @@ def _launch_module() -> Any:
 
 def _run_argv(*, runner: _Runner) -> list[str]:
     return next(argv for argv in runner.argvs if argv[1] == "run")
+
+
+def _run_env(*, runner: _Runner) -> dict[str, str] | None:
+    return next(
+        env for argv, env in zip(runner.argvs, runner.envs, strict=True) if argv[1] == "run"
+    )
+
+
+def _emitted_span(*, correlation: DispatchCorrelation) -> dict[str, Any]:
+    """The dispatch span the Dispatcher emits for the SAME dispatch."""
+    payload = json.loads(dispatch_request_line(correlation=correlation, now_ns=0))
+    spans = payload["resourceSpans"][0]["scopeSpans"][0]["spans"]
+    return cast("dict[str, Any]", spans[0])
 
 
 def _label_values(*, argv: list[str]) -> dict[str, str]:
@@ -156,3 +173,75 @@ def test_the_watched_launcher_passes_its_own_dispatch_correlation(tmp_path: Path
         "livespec.dispatch.id": _DISPATCH_ID,
         "livespec.dispatch.factory": _FACTORY,
     }
+
+
+def test_the_fabro_run_environment_carries_this_dispatchs_own_traceparent(
+    tmp_path: Path,
+) -> None:
+    """`TRACEPARENT` names the dispatch span, read off the span itself."""
+    _ = _launch_module()
+    runner = _Runner()
+    correlation = DispatchCorrelation(
+        work_item_id=_WORK_ITEM_ID,
+        dispatch_id=_DISPATCH_ID,
+        factory=_FACTORY,
+    )
+    port = FabroPort(
+        fabro_bin="/opt/fabro",
+        target=FabroTarget(server_url="http://127.0.0.1:32276"),
+        runner=runner,
+        cwd=tmp_path,
+    )
+
+    _ = port.run(
+        workflow_toml=tmp_path / "workflow.toml",
+        goal_file=tmp_path / "goal.md",
+        inputs=(),
+        timeout_seconds=42.0,
+        correlation=correlation,
+    )
+
+    # The ids are read off the EMITTED SPAN rather than re-derived here: the
+    # claim is that the environment and the span name one identity, and a
+    # test that derived both from the same helper would hold even if the
+    # emitter had rendered some other pair into the span it wrote.
+    span = _emitted_span(correlation=correlation)
+    env = _run_env(runner=runner)
+    assert env is not None
+    assert env.get("TRACEPARENT") == f"00-{span['traceId']}-{span['spanId']}-01"
+    # The factory binding the launch already relied on is untouched.
+    assert env["FABRO_SERVER"] == "http://127.0.0.1:32276"
+
+
+def test_a_targetless_launch_still_carries_the_traceparent(tmp_path: Path) -> None:
+    """With no factory to bind, the environment is the traceparent alone.
+
+    The arms are independent: a launch with no server URL used to pass NO
+    environment at all, so the traceparent had to stop riding on there
+    being a `FABRO_SERVER` to ride beside.
+    """
+    _ = _launch_module()
+    runner = _Runner()
+    correlation = DispatchCorrelation(
+        work_item_id=_WORK_ITEM_ID,
+        dispatch_id=_DISPATCH_ID,
+        factory=_FACTORY,
+    )
+    port = FabroPort(
+        fabro_bin="fabro",
+        target=FabroTarget(),
+        runner=runner,
+        cwd=tmp_path,
+    )
+
+    _ = port.run(
+        workflow_toml=tmp_path / "workflow.toml",
+        goal_file=tmp_path / "goal.md",
+        inputs=(),
+        timeout_seconds=1.0,
+        correlation=correlation,
+    )
+
+    span = _emitted_span(correlation=correlation)
+    assert _run_env(runner=runner) == {"TRACEPARENT": f"00-{span['traceId']}-{span['spanId']}-01"}
+    assert "--server" not in _run_argv(runner=runner)
