@@ -70,6 +70,11 @@ from livespec_orchestrator_beads_fabro.commands._fabro_bin import (
     configured_fabro_bin,
     default_fabro_bin,
 )
+from livespec_orchestrator_beads_fabro.commands._factory_environment import (
+    NO_FACTORY_ENVIRONMENT,
+    FactoryEnvironment,
+    factory_environment_from_entry,
+)
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     NodeTimeouts,
     node_timeouts_from_block,
@@ -133,6 +138,12 @@ class FactoryTarget:
     # factory runs whatever the host's global resolution supplies.
     # `_dispatcher_factory_bin` owns what the two layers mean together.
     fabro_bin: str | None = None
+    # The server-catalog sandbox environment this factory declares, from its
+    # optional `environment` key, as READ. Unlike every other optional key here
+    # it is NOT an `_optional_str` projection: `_factory_environment` owns why
+    # an absent key and an unusable value must stay distinguishable, and
+    # `_dispatcher_factory_environment` owns the grade of the reading.
+    environment: FactoryEnvironment = NO_FACTORY_ENVIRONMENT
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -464,6 +475,7 @@ def _factory_target_for(*, name: str, block: dict[str, Any]) -> FactoryTarget:
         name=name,
         server=_optional_str(value=entry.get("server")),
         fabro_bin=_optional_str(value=entry.get(_FACTORY_BIN_KEY)),
+        environment=factory_environment_from_entry(entry=entry),
         dev_token=_optional_str(value=os.environ.get(f"{_FABRO_DEV_AUTH_ENV_PREFIX}{name}")),
     )
 
