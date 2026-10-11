@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.187.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.186.1...v0.187.0) (2026-10-11)
+
+
+### Features
+
+* **dispatcher:** route sandbox git pushes through the refreshing gh wrapper ([32fe260](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/32fe2607c88e4565dbfdc84a852d445aadb180fe))
+
 ## [0.186.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.186.0...v0.186.1) (2026-10-11)
 
 
