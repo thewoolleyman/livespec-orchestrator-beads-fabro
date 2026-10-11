@@ -43,7 +43,10 @@ _VPS_BIN = "/home/ubuntu/.fabro/bin/fabro-vps"
 _HP_COMMIT = "8869e88"
 _VPS_COMMIT = "977cb67"
 _CURRENT_TAG = "v0.378.0-nightly.0"
-_STALE_TAG = "v0.254.0"
+# Deliberately NOT the 0.254 carrier: the one ratified transition admits that
+# series, so a stale-target fixture built on it would stop being stale the moment
+# the exception landed and this module's target-awareness claim would evaporate.
+_STALE_TAG = "v0.300.0"
 _NOW = datetime(2026, 10, 11, 9, 0, tzinfo=timezone.utc)
 
 

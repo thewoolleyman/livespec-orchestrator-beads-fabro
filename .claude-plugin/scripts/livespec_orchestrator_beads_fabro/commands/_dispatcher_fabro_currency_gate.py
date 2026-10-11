@@ -50,6 +50,7 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency import (
+    CONDITION_TRANSITION_ADMITTED,
     FabroCurrencyVerdict,
     fabro_currency_verdict,
 )
@@ -70,10 +71,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
 )
+from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "FABRO_CURRENCY_REFUSED_STAGE",
+    "FABRO_CURRENCY_TRANSITION_STAGE",
     "FABRO_CURRENCY_UNEVALUATED_STAGE",
     "currency_instant",
     "fabro_currency_refusal",
@@ -88,6 +91,12 @@ FABRO_CURRENCY_REFUSED_STAGE = "dispatcher-fabro-currency-refused"
 # and deliberately NOT the refused stage, so a reader counting refusals is not
 # handed a dispatch that was admitted.
 FABRO_CURRENCY_UNEVALUATED_STAGE = "dispatcher-fabro-currency-unevaluated"
+
+# The stage the one admitted transition is recorded under: non-blocking, and its
+# own stage rather than a refusal, because the dispatch proceeds. It is written
+# AND printed, because a notice only in the journal is a notice nobody reads at
+# the moment it matters.
+FABRO_CURRENCY_TRANSITION_STAGE = "dispatcher-fabro-currency-transition"
 
 
 def currency_instant() -> datetime:
@@ -193,6 +202,23 @@ def _reported(*, verdicts: Sequence[FabroCurrencyVerdict], journal: JournalFile)
     can be printed; a loop that returned on the first would leave the other
     target's state unrecorded until the first was fixed.
     """
+    for verdict in verdicts:
+        if verdict.condition != CONDITION_TRANSITION_ADMITTED:
+            continue
+        # SURFACED ON BOTH CHANNELS. The clause forbids describing this base as
+        # in-window, and a dispatch that merely proceeded would do exactly that
+        # by saying nothing: the operator's own record of the run would be
+        # identical to a current engine's.
+        journal.append(
+            record={
+                "stage": FABRO_CURRENCY_TRANSITION_STAGE,
+                "target": verdict.target,
+                "condition": verdict.condition,
+                "detail": verdict.detail,
+                "blocking": False,
+            }
+        )
+        _ = write_stderr(text=f"{verdict.detail}\n")
     refusals = [verdict for verdict in verdicts if not verdict.admitted]
     for verdict in refusals:
         journal.append(

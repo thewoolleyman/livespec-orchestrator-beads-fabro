@@ -45,6 +45,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency import (
     CONDITION_OUT_OF_WINDOW,
+    CURRENCY_WINDOW_DAYS,
     FABRO_UPSTREAM_REPO,
     OBSERVATION_MAX_AGE_DAYS,
     FabroRelease,
@@ -67,11 +68,25 @@ _TARGET = "hp"
 _TARGET_SERVER = "https://hp-xubuntu.perch-rudd.ts.net:32276"
 _FABRO_BIN = "/home/ubuntu/.fabro/bin/fabro"
 _SERVING_COMMIT = "8869e88"
-_BASE_TAG = "v0.254.0"
+# The ordinary out-of-window base is deliberately NOT the 0.254 carrier. The one
+# ratified exception covers that series specifically, so an out-of-window case
+# built on it would pass only for as long as the exception went unimplemented —
+# and would then start reporting an admitted transition as a refusal.
+_BASE_TAG = "v0.300.0"
 _BASE_PUBLISHED = "2026-07-30T12:00:00Z"
+# The carrier the one non-renewable transition admits, and its own publication
+# time: far enough behind the newest release to be out of window on the ordinary
+# rule, which is what makes the exception the only thing that can admit it.
+_CARRIER_TAG = "v0.254.0"
+_CARRIER_PUBLISHED = "2026-07-30T12:00:00Z"
 _NEWEST_TAG = "v0.378.0-nightly.0"
 _NEWEST_PUBLISHED = "2026-10-10T01:00:00Z"
 _NOW = datetime(2026, 10, 11, 9, 0, tzinfo=timezone.utc)
+# The ratified instant the transition expires at, to the second.
+_DEADLINE = datetime(2026, 11, 14, 0, 0, tzinfo=timezone.utc)
+# Every stage this gate writes shares this prefix, which is what lets a case
+# read ITS records out of a journal the rest of the wall also writes to.
+_CURRENCY_STAGE_PREFIX = "dispatcher-fabro-currency-"
 
 
 @pytest.fixture(autouse=True)
@@ -174,6 +189,11 @@ def _refresh_failure_runner() -> _Runner:
         ),
     }
     return _Runner(results=results)
+
+
+def _carrier_releases() -> list[tuple[str, str]]:
+    """The newest release and the 0.254 carrier, in the forge's own order."""
+    return [(_NEWEST_TAG, _NEWEST_PUBLISHED), (_CARRIER_TAG, _CARRIER_PUBLISHED)]
 
 
 def _seed_stale_cache(*, age_days: int) -> FabroReleaseObservation:
@@ -290,14 +310,20 @@ def _wall_exit(*, repo: Path, journal_path: Path) -> int | None:
 
 
 def _records(*, journal_path: Path) -> list[dict[str, object]]:
-    """Every refusal here journals, so an absent file is a real failure.
+    """This gate's own journal records, in order.
 
-    Deliberately NOT guarded into an empty list: a missing journal would read
-    identically to a journal carrying no refusal record, which is half of what
-    each of these cases asserts.
+    Deliberately NOT guarded into an empty list on a missing file: a missing
+    journal would read identically to a journal carrying no currency record,
+    which is half of what each of these cases asserts.
+
+    FILTERED BY STAGE, because an ADMITTED dispatch goes on to run the rest of
+    the wall and those gates journal too — so an unfiltered read is a list whose
+    later entries carry no `condition` at all, and the obvious assertion raises
+    `KeyError` on a sibling gate's perfectly correct record.
     """
     text = journal_path.read_text(encoding="utf-8")
-    return [json.loads(line) for line in text.splitlines() if line]
+    records = [json.loads(line) for line in text.splitlines() if line]
+    return [record for record in records if str(record["stage"]).startswith(_CURRENCY_STAGE_PREFIX)]
 
 
 def test_scenario130_an_out_of_window_base_refuses_before_claim_with_complete_evidence(
@@ -418,3 +444,68 @@ def test_scenario130_a_stale_observation_whose_refresh_fails_refuses_before_clai
     assert f"  release observation taken at: {stale.observed_at.isoformat()}" in refusal
     records = _records(journal_path=journal_path)
     assert [record["condition"] for record in records] == ["release-observation-stale"]
+
+
+def test_scenario130_the_one_transition_admits_the_carrier_until_its_deadline_and_no_longer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The exception and its expiry, over ONE fixture, because the PAIR is the claim.
+
+    Split apart, each half passes against a build that gets the other wrong: an
+    admitted-before case alone is satisfied by an exception that never expires,
+    and a refused-after case alone by one that was never granted. Only the pair
+    shows a transition that is genuinely non-renewable.
+
+    The admitted leg is asserted on the NOTICE as well as on the admission. The
+    clause requires an out-of-window carrier to be surfaced as an admitted
+    transition and never silently described as in-window, so a build that simply
+    returned `current` here would satisfy "the dispatch proceeded" while erasing
+    the one fact an operator needs: that this engine is running on borrowed time
+    and until when.
+    """
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = _repo(tmp_path=tmp_path)
+    _install(
+        monkeypatch=monkeypatch,
+        runner=_runner(releases=_carrier_releases(), ancestors=frozenset({_CARRIER_TAG})),
+        now=_NOW,
+    )
+    journal_path = tmp_path / "journal.jsonl"
+
+    admitted = _wall_exit(repo=repo, journal_path=journal_path)
+
+    assert admitted is None
+    notice = capsys.readouterr().err
+    assert "bd-ib-6tcjfx" in notice
+    assert _CARRIER_TAG in notice
+    assert "2026-11-14T00:00:00+00:00" in notice
+    assert "transition" in notice
+    # DESCRIBED AS NOT IN-WINDOW, asserted POSITIVELY. The obvious probe —
+    # `"in-window" not in notice` — is the wrong instrument: the notice's own
+    # disclaimer contains that phrase, so the absence check fails on a notice
+    # that says exactly the right thing. Presence of a phrase is not assertion
+    # of it, and only reading the surrounding sentence tells the two apart.
+    assert "NOT as an in-window base" in notice
+    assert f"{CURRENCY_WINDOW_DAYS}-calendar-day window" in notice
+    records = _records(journal_path=journal_path)
+    assert [record["condition"] for record in records] == ["transition-admitted"]
+    assert records[0]["blocking"] is False
+
+    # The same carrier, the same observation, evaluated AT the deadline instant.
+    _install(
+        monkeypatch=monkeypatch,
+        runner=_runner(releases=_carrier_releases(), ancestors=frozenset({_CARRIER_TAG})),
+        now=_DEADLINE,
+    )
+    expired_journal = tmp_path / "expired-journal.jsonl"
+
+    refused = _wall_exit(repo=repo, journal_path=expired_journal)
+
+    assert refused == EXIT_PRECONDITION_ERROR
+    refusal = capsys.readouterr().err
+    assert CONDITION_OUT_OF_WINDOW in refusal
+    # No compatibility hold and no notice can renew it: the expired leg says
+    # nothing about a transition at all.
+    assert "bd-ib-6tcjfx" not in refusal
+    expired_records = _records(journal_path=expired_journal)
+    assert [record["condition"] for record in expired_records] == [CONDITION_OUT_OF_WINDOW]
