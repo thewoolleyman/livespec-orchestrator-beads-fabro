@@ -53,6 +53,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency impor
     FabroCurrencySubject,
     FabroRelease,
     FabroReleaseObservation,
+    releases_by_publication,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -199,11 +200,19 @@ def resolved_base(
 ) -> FabroRelease | None:
     """The latest-published release tag that is an ancestor of `serving_commit`.
 
-    Candidates are consumed in the observation's own order — newest first — and
-    the FIRST ancestor found is the answer, because the first ancestor in that
-    order is by construction the latest-published one.
+    Candidates are consumed newest-PUBLISHED first and the FIRST ancestor found
+    is the answer, because the first ancestor in that order is by construction
+    the latest-published one.
+
+    THE SORT RUNS BEFORE THE BOUND, and that order is load-bearing. Slicing the
+    forge's own enumeration first and sorting the slice would let the candidate
+    cap truncate by creation order — so a genuinely-ancestral tag published
+    recently but drafted long ago could fall outside the window this walk ever
+    looks at, and the refusal would then report "no release-tag ancestor" about a
+    population that excluded the answer.
     """
-    for release in observation.releases[:ANCESTRY_CANDIDATE_LIMIT]:
+    ordered = releases_by_publication(releases=observation.releases)
+    for release in ordered[:ANCESTRY_CANDIDATE_LIMIT]:
         if _is_ancestor(tag=release.tag, head=serving_commit, runner=runner, cwd=cwd):
             return release
     return None
