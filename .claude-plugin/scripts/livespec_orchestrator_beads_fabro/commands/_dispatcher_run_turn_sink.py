@@ -194,7 +194,18 @@ def run_turn_check_record(
     started_at_epoch: float | None = None,
     observable: bool = True,
 ) -> dict[str, object]:
-    """Build the post-dispatch telemetry assertion journal record."""
+    """Build the post-dispatch telemetry assertion journal record.
+
+    `run_turn_exported` is THIS dispatch's verdict and is earned on this
+    dispatch's own correlation ids alone. `run_turn_receiver_observed` is the
+    receiver's separate, unattributed fact — "some `run_turn` export
+    succeeded since you started" — and the two are kept apart because that
+    fact is true for every concurrent dispatch at once. It used to be OR-ed
+    into the verdict, which discharged a second dispatch's check from the
+    first dispatch's export; it rides beside the verdict now so an operator
+    reading an absence can still tell "the receiver saw nothing at all"
+    apart from "the receiver saw someone else's".
+    """
     if not observable:
         return {
             "stage": "run-turn-telemetry-check",
@@ -205,13 +216,14 @@ def run_turn_check_record(
             "run_turn_observation": "unobservable-remote-factory",
         }
     keys = (work_item_id, dispatch_id)
-    exported = sink.has_export(keys=keys, exported_at_or_after=started_at_epoch)
     return {
         "stage": "run-turn-telemetry-check",
         "work_item_id": work_item_id,
         "dispatch_id": dispatch_id,
-        "run_turn_exported": exported
-        or sink.has_receiver_export(exported_at_or_after=started_at_epoch),
+        "run_turn_exported": sink.has_export(keys=keys, exported_at_or_after=started_at_epoch),
+        "run_turn_receiver_observed": sink.has_receiver_export(
+            exported_at_or_after=started_at_epoch
+        ),
         "run_turn_observable": True,
     }
 

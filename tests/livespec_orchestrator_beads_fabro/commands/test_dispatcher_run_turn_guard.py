@@ -177,9 +177,82 @@ def test_append_run_turn_checks_dates_a_correlated_export_against_the_start(
     assert check["run_turn_exported"] is expected
 
 
-def test_append_run_turn_checks_accepts_receiver_observed_run_turn_export(
+def test_append_run_turn_checks_attributes_an_export_to_one_of_two_dispatches(
     tmp_path: Path,
 ) -> None:
+    """One dispatch's export discharges that dispatch's check and no other's.
+
+    Both dispatches are in flight, both are green, and the single export
+    carries only `disp-1`'s ids. The receiver-level observation — "some
+    `run_turn` export succeeded since you started" — is true for BOTH, which
+    is exactly why it cannot stand in for attribution; it is journaled beside
+    the verdict instead of folded into it.
+    """
+    journal_path = tmp_path / "journal.jsonl"
+    journal = JournalFile(path=journal_path)
+    for work_item_id, dispatch_id, started in (
+        ("bd-ib-one", "disp-1", 10.0),
+        ("bd-ib-two", "disp-2", 20.0),
+    ):
+        journal.append(
+            record={
+                "stage": "dispatch-id",
+                "work_item_id": work_item_id,
+                "dispatch_id": dispatch_id,
+                "started_at_epoch": started,
+            }
+        )
+    sink = RunTurnSink(path=tmp_path / "run-turn.json")
+    _ = sink.record_export(
+        span={"name": "run_turn"},
+        resource_attrs={"work.item.id": "bd-ib-one", "livespec.dispatch.id": "disp-1"},
+        dataset="fabro",
+        at=30.0,
+    )
+    # The receiver records BOTH per export request, so the realistic fixture
+    # carries both: the attributable key and the unattributable count.
+    sink.record_trace_request(
+        request=RunTurnTraceRequest(
+            ingested_spans=1,
+            enriched_spans=1,
+            dataset_batch_sizes={"fabro": 1},
+            export_results={"fabro": True},
+            run_turn_sink_missing=False,
+            successful_run_turn_exports=1,
+            at=30.0,
+        )
+    )
+
+    append_run_turn_checks(
+        outcomes=(
+            _outcome(work_item_id="bd-ib-one"),
+            _outcome(work_item_id="bd-ib-two"),
+        ),
+        journal=journal,
+        journal_path=journal_path,
+        sink=sink,
+    )
+
+    checks = {
+        record["work_item_id"]: record
+        for record in _records(path=journal_path)
+        if record.get("stage") == "run-turn-telemetry-check"
+    }
+    assert checks["bd-ib-one"]["run_turn_exported"] is True
+    assert checks["bd-ib-two"]["run_turn_exported"] is False
+    assert checks["bd-ib-two"]["run_turn_receiver_observed"] is True
+
+
+def test_append_run_turn_checks_journals_the_receiver_observation_separately(
+    tmp_path: Path,
+) -> None:
+    """A receiver-level `run_turn` export is recorded, never counted as this one's.
+
+    `successful_run_turn_exports` is a per-REQUEST count the receiver keeps;
+    it says an export happened, not whose. Both fields are written so an
+    operator reading an absence can tell "the receiver saw nothing at all"
+    apart from "the receiver saw someone else's".
+    """
     journal_path = tmp_path / "journal.jsonl"
     journal = JournalFile(path=journal_path)
     journal.append(
@@ -211,7 +284,8 @@ def test_append_run_turn_checks_accepts_receiver_observed_run_turn_export(
     )
 
     check = _records(path=journal_path)[-1]
-    assert check["run_turn_exported"] is True
+    assert check["run_turn_exported"] is False
+    assert check["run_turn_receiver_observed"] is True
 
 
 def test_append_run_turn_checks_rejects_receiver_export_without_run_turn(
@@ -249,6 +323,7 @@ def test_append_run_turn_checks_rejects_receiver_export_without_run_turn(
 
     check = _records(path=journal_path)[-1]
     assert check["run_turn_exported"] is False
+    assert check["run_turn_receiver_observed"] is False
 
 
 def test_append_run_turn_checks_journals_absence_and_skips_failed(tmp_path: Path) -> None:
