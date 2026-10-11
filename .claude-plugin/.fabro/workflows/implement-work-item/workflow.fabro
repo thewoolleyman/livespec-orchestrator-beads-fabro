@@ -173,6 +173,10 @@ digraph ImplementWorkItem {
     // suite, rendered from `inputs.sandbox_check_suite` — the resolved
     // `dispatcher.janitor.check_suite` field at its in-sandbox-gate venue
     // (SPECIFICATION/contracts.md §"Repository integration contract").
+    // `eval` is the compatibility seam between engines: the pinned engine
+    // substitutes the suite as raw text, while Petri shell-quotes the whole
+    // interpolated value as one word. In both forms, eval executes that value
+    // as the declared command line and returns the suite's exit status.
     // This fleet's default suite refuses workflow-file drift before the
     // rest of its checks, and a non-zero suite MUST prevent the PR stage
     // (livespec non-functional-requirements.md §"Orchestrator-internal
@@ -185,7 +189,7 @@ digraph ImplementWorkItem {
         label="Janitor: declared check suite"
         shape=parallelogram
         timeout="1800s"
-        script="{{ inputs.sandbox_check_suite }}"
+        script="eval {{ inputs.sandbox_check_suite }}"
     ]
 
     // max_visits=6 IS THE BOUND for every loop that enters this node, and since
