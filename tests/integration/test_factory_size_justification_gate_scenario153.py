@@ -1268,17 +1268,28 @@ def _size_telemetry_attributes(
     terminal is therefore manufactured; the admission decision, the journal, the
     signal gather and the span emission are not.
 
-    AND THIS CASE DOES NOT SATISFY THE ASSERTION-5 CAPTURE REQUIREMENT.  A REAL
-    span emitter over a SYNTHETIC `_EngineRunner` success is still a synthetic
-    success: making the emission unsubstituted narrowed the substitution to the
-    run and the forge, which is the half that decides whether a dispatch
-    happened at all.  So the Definition-of-Done clause "a successful dispatch
-    exposes `tdd.size_justified=true` on its calibration span" still owes, at
-    capture time, EITHER an observation on a real named surface OR the ordinary
-    `not_captured` / capability outcome stating the limit.  Citing this helper
-    as that observation would re-label scripted `CommandResult`s as a factory
-    execution -- the exact mislabeling the accepted finding is about.  What it
-    IS good for is the wiring question: that the attribute survives the real
+    AND THIS CASE IS NOT EVIDENCE FOR THE SUCCESSFUL-DISPATCH ASSERTION.  A
+    REAL span emitter over a SYNTHETIC `_EngineRunner` success is still a
+    synthetic success: making the emission unsubstituted narrowed the
+    substitution to the run and the forge, which is the half that decides
+    whether a dispatch happened at all.  Citing this helper as that
+    observation would re-label scripted `CommandResult`s as a factory
+    execution -- the exact mislabeling the accepted review finding is about.
+
+    THAT ASSERTION IS NO LONGER A FACTORY ONE, which is why this paragraph no
+    longer says capture "owes a real observation or a `not_captured`
+    outcome".  The Definition of Done this run was dispatched with carries
+    "a successful dispatch ... exposes `tdd.size_justified=true` on its
+    calibration span" under its own `### Host-captured` heading, whose
+    `Reason:` names the operator-host surface -- the live ledger tenant, the
+    configured factory server and forge merge access -- that the published
+    sandbox capabilities do not provide.  So the disposition is already made:
+    that clause is satisfied by a host capture plus an independent replay, not
+    by anything reachable from here, and factory capture must not cite this
+    helper for it.
+
+    What this case IS good for is the wiring question, which is a different
+    claim and a factory-answerable one: that the attribute survives the real
     emission path rather than only a hand-called chain.
     """
     probe_runner = _EngineRunner(

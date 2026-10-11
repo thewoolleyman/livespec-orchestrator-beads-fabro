@@ -9,8 +9,19 @@ conclude the red never happened.
 
 Nothing below claims the gate is sound, and nothing below classifies the red
 as spurious. The claim is narrower and exact: on this tree the target passed
-every time it was measured, and the one failing observation's own diagnostic
-output no longer exists.
+every time it was measured, while the one failing observation names a single
+timing-dependent test that no later run reproduced.
+
+**This note's first version asserted that the failing observation's own
+diagnostic output no longer existed, and that assertion was FALSE.** The log
+is recoverable through a normal `fabro dump` of the run's janitor stage, and
+the recovered detail is now in "The failing observation" below. The false
+absence is preserved here rather than silently overwritten because it is the
+instructive part: an absence asserted after searching only the local
+filesystem foreclosed the one question the note was written to leave open,
+and nothing downstream would have re-tested it. The scope actually searched
+was `/tmp` on the sandbox host; the population that held the answer was the
+factory run's own exported artifacts.
 
 ## Notation used in this note
 
@@ -34,15 +45,38 @@ The janitor ran on this exact tree, not an earlier one. Its own
 is 17 commits at `e07dfff62ced308233793dd69cbb2acd00d60206`, the head this
 stage inherited and published unchanged.
 
-The janitor's per-target detail is UNRECOVERABLE. The stage preamble truncates
-the log with "(3599 lines omitted)", and the omitted region is exactly where
-the pytest run and the per-file verifier reported. A filesystem search for a
-surviving copy found none: the only `just check` log on disk is
-`/tmp/justcheck.log`, written 2026-10-11T08:05:33Z by the preceding
-`review_fix` stage, which is a different and GREEN run. So it is not known
-whether the target failed on `pytest_rc` (a failing test) or on
-`coverage_rc` (a per-file coverage shortfall). Those two have different causes
-and different remedies, and the gate reports neither distinctly.
+The janitor's per-target detail IS recoverable, and it has been recovered.
+The stage preamble truncates the log with "(3599 lines omitted)", and the
+omitted region is exactly where the pytest run and the per-file verifier
+reported — but that truncation is a property of the PREAMBLE, not of the
+artifact. A normal `fabro dump` of the run against its explicit factory
+server exports the full `stages/005-janitor@1/output.log`:
+
+```
+/home/ubuntu/.fabro/bin/fabro dump 01M4MV5S7P87BKAWA58JNWQ433 \
+  --server https://hp-xubuntu.perch-rudd.ts.net:32276 -o <export-dir>
+```
+
+The recovered log settles the `pytest_rc` versus `coverage_rc` question in
+favour of `pytest_rc`, and names the case:
+
+| Field | Recovered value |
+| --- | --- |
+| Failing case | `tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_credential_use_guard.py::test_a_fractional_start_still_stops_by_the_absolute_epoch[0.95]` |
+| Failure | `subprocess.TimeoutExpired` after 18 seconds, raised inside `_run` → `subprocess.run` → `communicate` |
+| Captured output | stdout and stderr both empty |
+| Subject | the credential guard wrapping a Python heartbeat child that ignores `SIGTERM` |
+| Suite totals | 7165 passed, 1 failed, 1 skipped |
+| Coverage | 100% reached |
+
+So the target failed on a FAILING TEST, not on a per-file coverage
+shortfall, and the coverage leg of this note's original uncertainty is
+closed: coverage was complete in the failing run. The OTel `boom` thread
+exception visible in the same log is a separate warning and is not this
+failed case.
+
+What remains open is the CAUSE of that 18-second timeout. The later green
+runs below are valid NON-REPRODUCTION and are not evidence of a cause.
 
 ## Measurements taken on the identical tree
 
@@ -77,15 +111,24 @@ hypothesis is recorded as excluded only where a positive result was reachable.
   either ceiling during that run would still be counted now. Observed headroom
   was wide: `memory.peak` 3,905,781,760 bytes against a `memory.max` of
   8,000,000,000, and `pids.current` 45 against a `pids.max` of 34,482.
-- **Load sensitivity of the suite's wall-clock tests (not reproduced).** The
-  suite contains genuinely timing-dependent tests that spawn real processes and
-  assert against a `_HARD_TOLERANCE_SECONDS` of 0.5, chiefly in
+- **Load sensitivity of the suite's wall-clock tests (not reproduced, and now
+  the hypothesis the recovered log points AT).** The suite contains genuinely
+  timing-dependent tests that spawn real processes and assert against a
+  `_HARD_TOLERANCE_SECONDS` of 0.5, chiefly in
   `tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_credential_use_guard.py`.
   Those files plus the other real-sleep modules were run three times under 24
   induced busy loops on a 16-core host, reaching a one-minute load average of
   31.96. All three runs reported 37 passed. The load processes were started and
   reaped inside a single foreground command and none survived it, confirmed by
   an exact-cmdline scan of `/proc` excluding the scanning shell.
+  **The recovered log names a case in exactly this module**, so the failure
+  is in the population this probe was aimed at — the probe simply did not
+  reproduce it at that load. That makes this the live hypothesis rather than
+  an excluded one, and it is NOT established: a non-reproduction under
+  induced load does not establish load as the cause, and the recovered
+  failure mode is an 18-second `communicate` timeout rather than a
+  tolerance-band overshoot, which is a different shape from what the induced
+  load was designed to provoke.
 - **Nondeterminism in the tests this branch adds (none found).** The branch's
   own test delta is `tests/integration/test_factory_size_justification_gate_scenario153.py`,
   `tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_admission_eligibility.py`
@@ -110,19 +153,46 @@ hypothesis is recorded as excluded only where a positive result was reachable.
   `LIVESPEC_CI_LANE`, `LIVESPEC_TEST_PARALLELISM`, `COVERAGE_FILE`,
   `PYTEST_ADDOPTS` and `CI` are unset, which yields four workers. The janitor's
   environment was not observable after the fact, so whether it resolved the
-  same worker count is unknown. This is the one hypothesis left standing, and
-  it is recorded as unresolved rather than dismissed.
+  same worker count is unknown. It is recorded as unresolved rather than
+  dismissed. (This note's first version called it "the one hypothesis left
+  standing"; that followed from the then-believed unrecoverability of the
+  failure mode. With the failing case recovered, the load-sensitivity
+  hypothesis above is also standing, and is the more directly implicated of
+  the two.)
+
+- **The upstream hermetic-env test patch is NOT an explanation for this
+  timeout.** Upstream `543a2147` is now integrated, and a later reader seeing
+  both it and this note in the same tree is the reader most likely to treat
+  the first as closing the second. It does not: it repaired a different
+  fresh-one-hour/start condition, not an 18-second `communicate` timeout
+  against a `SIGTERM`-ignoring heartbeat child. Recorded here as an excluded
+  explanation rather than omitted, because omitting it leaves the inference
+  available and unchallenged.
 
 ## What was not done, and why
 
 No fix was made and no product or test file was changed in response to this
-red. A change would have had to be a guess at which of two different failure
-modes occurred, and a speculative edit presented as a repair is worse than an
-open question: it reads as a discharged finding, so nothing re-examines it.
+red. The failing case is now known, but its CAUSE is not, and the remedies
+for the live hypotheses differ. A speculative edit presented as a repair is
+worse than an open question: it reads as a discharged finding, so nothing
+re-examines it.
+
+In particular, the timing bounds this test asserts against were NOT
+weakened. Widening a tolerance is the one change that would make this red
+stop appearing without establishing anything about why it appeared, and the
+bound is the thing the test exists to hold.
 
 ## If this recurs
 
-Capture the target's two exit codes separately before anything else, because
+**First, export the run's own janitor log** — that is where the answer was,
+and a local filesystem search cannot see it:
+
+```
+/home/ubuntu/.fabro/bin/fabro dump <run-id> --server <factory-server> -o <export-dir>
+grep -n 'FAILED\|passed\|failed' <export-dir>/stages/*-janitor@*/output.log
+```
+
+Then capture the target's two exit codes separately, because
 `dev-tooling/just-check-per-file-coverage.sh` records `pytest_rc` and
 `coverage_rc` independently and then returns only one of them, and inside the
 92-target aggregate the distinguishing output is buried in a log that the

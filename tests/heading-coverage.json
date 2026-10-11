@@ -1577,7 +1577,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_factory_size_justification_gate_scenario153",
-    "reason": "Integration-tier acceptance for Scenario 153 through the real in-memory ledger seam: sibling journeys in the bound module cover absent and invalid adoption, parser-count boundary routing, every public capture/groom/approval/dispatch entry, exact malformed and valid justification shapes, preservation of ordinary gates, successful-dispatch telemetry, and the exception-free consensus first-cut ceiling. No numeric ceiling is adopted by this implementation.",
+    "reason": "Integration-tier acceptance for Scenario 153 through the real in-memory ledger seam: sibling journeys in the bound module cover absent and invalid adoption, parser-count boundary routing, every public capture/groom/approval/dispatch entry, exact malformed and valid justification shapes, preservation of ordinary gates, the calibration-telemetry WIRING over a synthetic engine success, and the exception-free consensus first-cut ceiling. The clause about a real successful dispatch exposing tdd.size_justified=true is host-captured per the work-item's Definition of Done and is deliberately NOT claimed by this module. No numeric ceiling is adopted by this implementation.",
     "work_item": "bd-ib-pwqxso"
   },
   {
