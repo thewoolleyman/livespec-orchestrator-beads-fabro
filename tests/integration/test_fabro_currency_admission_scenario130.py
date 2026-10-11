@@ -30,7 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -46,6 +46,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Comman
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency import (
     CONDITION_OUT_OF_WINDOW,
     FABRO_UPSTREAM_REPO,
+    OBSERVATION_MAX_AGE_DAYS,
+    FabroRelease,
+    FabroReleaseObservation,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_release_cache import (
+    release_observation_path,
+    write_release_observation,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -145,6 +152,45 @@ def _runner(*, releases: list[tuple[str, str]], ancestors: frozenset[str]) -> _R
 def _observed_releases() -> list[tuple[str, str]]:
     """The newest release and the 0.254 carrier, in the forge's own order."""
     return [(_NEWEST_TAG, _NEWEST_PUBLISHED), (_BASE_TAG, _BASE_PUBLISHED)]
+
+
+def _refresh_failure_runner() -> _Runner:
+    """The releases read FAILS; the engine and the ancestry comparison succeed.
+
+    Shaped so the only thing wrong is the refresh: if the gate were to fall back
+    on a cached observation it would find an identifiable serving build, a
+    resolvable base and a base comfortably inside the window — i.e. it would
+    ADMIT. That is what makes the refusal evidence of the staleness rule rather
+    than of some unrelated fault.
+    """
+    results: dict[tuple[str, ...], CommandResult] = {
+        tuple(sources.releases_argv()): CommandResult(exit_code=1, stdout="", stderr="HTTP 503"),
+        (_FABRO_BIN, "version"): CommandResult(exit_code=0, stdout=_version_text(), stderr=""),
+        tuple(sources.compare_argv(base=_BASE_TAG, head=_SERVING_COMMIT)): CommandResult(
+            exit_code=0, stdout="ahead\n", stderr=""
+        ),
+        tuple(sources.compare_argv(base=_NEWEST_TAG, head=_SERVING_COMMIT)): CommandResult(
+            exit_code=0, stdout="diverged\n", stderr=""
+        ),
+    }
+    return _Runner(results=results)
+
+
+def _seed_stale_cache(*, age_days: int) -> FabroReleaseObservation:
+    """A cached observation `age_days` old that would otherwise admit the build.
+
+    Written through the PRODUCTION writer rather than hand-authored JSON, so the
+    record the gate reads back is the record the gate itself writes.
+    """
+    observation = FabroReleaseObservation(
+        releases=(
+            FabroRelease(tag=_NEWEST_TAG, published_at=_NOW - timedelta(days=age_days + 1)),
+            FabroRelease(tag=_BASE_TAG, published_at=_NOW - timedelta(days=age_days + 6)),
+        ),
+        observed_at=_NOW - timedelta(days=age_days),
+    )
+    write_release_observation(path=release_observation_path(), observation=observation)
+    return observation
 
 
 def _install(*, monkeypatch: pytest.MonkeyPatch, runner: _Runner, now: datetime) -> None:
@@ -336,3 +382,39 @@ def test_scenario130_a_serving_commit_with_no_release_tag_ancestor_refuses_befor
     assert "  upstream base: unknown" in refusal
     records = _records(journal_path=journal_path)
     assert [record["condition"] for record in records] == ["no-release-tag-ancestor"]
+
+
+def test_scenario130_a_stale_observation_whose_refresh_fails_refuses_before_claim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An expired reading is not evidence, however admissible it looks.
+
+    The seeded cache is deliberately one that WOULD admit: its base sits six
+    calendar days behind its newest release, well inside the thirty-day window,
+    and the serving commit descends from it. So "the dispatch was refused" can
+    only be the age rule firing — a build that served the stale record instead
+    would have reported `current` and gone on to claim the item.
+
+    The refusal NAMES the stale observation: its age, the bound it exceeded, and
+    the instant it was taken. Without those an operator cannot tell a broken
+    refresh path from a host that has never taken a reading, and the two have
+    different remedies.
+    """
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    stale = _seed_stale_cache(age_days=OBSERVATION_MAX_AGE_DAYS + 2)
+    repo = _repo(tmp_path=tmp_path)
+    _install(monkeypatch=monkeypatch, runner=_refresh_failure_runner(), now=_NOW)
+    journal_path = tmp_path / "journal.jsonl"
+
+    exit_code = _wall_exit(repo=repo, journal_path=journal_path)
+
+    assert exit_code == EXIT_PRECONDITION_ERROR
+    refusal = capsys.readouterr().err
+    assert "release-observation-stale" in refusal
+    assert f"{OBSERVATION_MAX_AGE_DAYS + 2} calendar days old" in refusal
+    assert f"the bound is {OBSERVATION_MAX_AGE_DAYS}" in refusal
+    assert "refreshing it failed" in refusal
+    # The stale record is NAMED rather than merely declined.
+    assert f"  release observation taken at: {stale.observed_at.isoformat()}" in refusal
+    records = _records(journal_path=journal_path)
+    assert [record["condition"] for record in records] == ["release-observation-stale"]
