@@ -226,7 +226,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-10-11T13:35:09.212210619Z",
-  "last_event_at": "2026-10-11T13:35:12.871164380Z",
+  "last_event_at": "2026-10-11T13:35:17.526550512Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -266,9 +266,9 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 32,
       "checkpoint": {
-        "timestamp": "2026-10-11T13:35:12.922803926Z",
+        "timestamp": "2026-10-11T13:35:17.526403587Z",
         "current_node": "agent",
         "completed_nodes": [
           "start",
@@ -276,24 +276,24 @@
         ],
         "node_retries": {},
         "context_values": {
-          "internal.thread_id": "start",
-          "last_stage": "agent",
+          "internal.run_id": "01M4NJS5QX2AYMTDRY2XM5SR1E",
           "failure_class": "",
-          "internal.retry_count.start": 0,
-          "graph.goal": "# Fabro Enemy Unit Test: acp-command-launch\n",
+          "internal.fidelity": "compact",
+          "response.agent": "fixture success",
+          "thread.start.current_node": "agent",
           "last_response": "fixture success",
+          "internal.acp_attempt.start": 0,
+          "graph.goal": "# Fabro Enemy Unit Test: acp-command-launch\n",
           "current_node": "agent",
           "internal.acp_attempt.agent": 0,
-          "internal.fidelity": "compact",
-          "outcome": "succeeded",
-          "internal.acp_attempt.start": 0,
-          "thread.start.current_node": "agent",
           "internal.retry_count.agent": 0,
           "failure_signature": "",
-          "internal.run_id": "01M4NJS5QX2AYMTDRY2XM5SR1E",
-          "response.agent": "fixture success",
+          "internal.node_visit_count": 1,
+          "internal.thread_id": "start",
           "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
-          "internal.node_visit_count": 1
+          "last_stage": "agent",
+          "outcome": "succeeded",
+          "internal.retry_count.start": 0
         },
         "node_outcomes": {
           "start": {
@@ -318,15 +318,52 @@
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "0faa54e5b8dd12a85c0acf8a9006a18f333970a0",
         "node_visits": {
-          "start": 1,
-          "agent": 1
+          "agent": 1,
+          "start": 1
         }
       },
       "diff": {}
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-10-11T13:35:17.559321614Z",
+    "status": "succeeded",
+    "timing": {
+      "wall_time_ms": 8315,
+      "inference_time_ms": 351,
+      "tool_time_ms": 0,
+      "active_time_ms": 351
+    },
+    "final_git_commit_sha": "0faa54e5b8dd12a85c0acf8a9006a18f333970a0",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "agent",
+        "stage_label": "agent",
+        "timing": {
+          "wall_time_ms": 1223,
+          "inference_time_ms": 351,
+          "tool_time_ms": 0,
+          "active_time_ms": 351
+        },
+        "retries": 0
+      }
+    ],
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -391,7 +428,12 @@
       "first_event_seq": 20,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Stage completed: agent",
+        "failure_reason": null,
+        "timestamp": "2026-10-11T13:35:12.922719739Z"
+      },
       "provider_used": {
         "mode": "acp",
         "provider": "acp"
@@ -409,6 +451,12 @@
       "termination": "exited",
       "started_at": "2026-10-11T13:35:11.699332487Z",
       "handler": "agent",
+      "timing": {
+        "wall_time_ms": 1223,
+        "inference_time_ms": 351,
+        "tool_time_ms": 0,
+        "active_time_ms": 351
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -417,7 +465,41 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "succeeded"
+    },
+    "exit@1": {
+      "first_event_seq": 34,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-10-11T13:35:17.526550512Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-11T13:35:17.526508454Z",
+      "handler": "exit",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
     }
   }
 }
