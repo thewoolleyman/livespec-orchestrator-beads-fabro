@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.182.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.181.5...v0.182.0) (2026-10-11)
+
+
+### Features
+
+* admit the 0.254 carrier visibly until its deadline and no longer ([bf10a95](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bf10a958573fd4cfec13d6473f8240bcd0805628))
+* fail closed on a stale Fabro release observation ([e88f2ad](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e88f2adca64b1a75fe5ad5c38a51e3b2fda7056b))
+* name the no-release-tag-ancestor currency condition in its own right ([a4c4fe6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a4c4fe6d560bf6813c7037af961d3627ccb59bc5))
+* order the Fabro currency window by release publication time ([f0da214](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f0da214d69275d52c22d61f776afdb5930a4fa87))
+* refuse a dispatch whose Fabro base is out of the currency window ([aa93b6a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/aa93b6aa43cf4123cbdeb956cb2b8258aa1f049e))
+
+
+### Bug Fixes
+
+* let the Fabro base resolve beyond the forty newest published releases ([4f85ccf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4f85ccf57fe329de54ddeb5d412d09408d3eb473))
+* send the Fabro releases read as a GET rather than a create-release POST ([ddb1467](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ddb1467f880ca31d9462e5da3f7cb31714e1298a))
+
 ## [0.181.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.181.4...v0.181.5) (2026-10-11)
 
 
