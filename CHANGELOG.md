@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.184.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.183.0...v0.184.0) (2026-10-11)
+
+
+### Features
+
+* derive a dispatch span identity from the dispatch id ([3041360](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3041360a3c6e1bda07489d9ee40458592409fd73))
+* emit one dispatch span per dispatch into the enrich egress path ([64b3307](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/64b3307404ac7ee28997c6cd555c0f8119a82467))
+* label every `fabro run` with its dispatch's correlation triple ([d0ac458](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d0ac458beaf5b9713da8b3e1079ad416c92cef78))
+* leave an unpassable correlation value out of the run argv ([d71eac7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d71eac772b3f2e21d666c7fcafae4a5100f0caba))
+* parent the factory run on the dispatch span via TRACEPARENT ([6ec2743](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6ec274384d73c1791bdbdfac16e65eb7be8d04a8))
+* project the dispatch span identity as a W3C traceparent ([b7cf15a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b7cf15afb297310fc2883f59a51bc9508e53d666))
+* render the dispatch's own OTLP span ([a872a5f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a872a5f1f47bc3414bcc13f30dfe7e78f069de9e))
+
 ## [0.183.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.182.1...v0.183.0) (2026-10-11)
 
 
