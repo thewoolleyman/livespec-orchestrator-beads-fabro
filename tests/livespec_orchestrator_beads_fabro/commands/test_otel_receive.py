@@ -579,9 +579,19 @@ def test_receiver_records_run_turn_only_after_successful_honeycomb_export(tmp_pa
     assert sink.has_export(keys=("bd-ib-demo",)) is True
 
 
-def test_receiver_records_real_fabro_run_turn_shape_after_honeycomb_export(
+def test_receiver_attributes_no_dispatch_from_the_0254_fabro_run_turn_shape(
     tmp_path: Path,
 ) -> None:
+    """The 0.254 `run_turn` shape carries no correlation id, so it names nobody.
+
+    This is the real span body that engine emits — node, command, config,
+    visit and stop reason, and not one correlation key. It used to satisfy
+    ANY dispatch's check, because the sink recorded a global last-export key
+    beside the per-dispatch ones and `has_export` counted it. The two
+    assertions below are the pair that makes the claim: the POST is accepted
+    (the receiver and the exporter both did their work), and no dispatch's
+    keys match it.
+    """
     module_path = (
         Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
         / "_dispatcher_run_turn_sink.py"
@@ -614,7 +624,7 @@ def test_receiver_records_real_fabro_run_turn_shape_after_honeycomb_export(
         assert _post_json(url=url, body=body) == _HTTP_OK
     finally:
         receiver.stop()
-    assert sink.has_export(keys=("bd-ib-demo", "dispatch-1")) is True
+    assert sink.has_export(keys=("bd-ib-demo", "dispatch-1")) is False
 
 
 def test_receiver_records_handle_traces_request_diagnostics(tmp_path: Path) -> None:

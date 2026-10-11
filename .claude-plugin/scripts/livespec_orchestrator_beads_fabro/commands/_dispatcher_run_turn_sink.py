@@ -3,10 +3,23 @@
 The live OTLP receiver exports sandbox spans synchronously through the
 Honeycomb exporter seam. This sink records only the cheap, non-secret fact
 that a span named `run_turn` from the `fabro` dataset was accepted by that
-exporter. Fabro-side `run_turn` spans do not carry per-dispatch
-correlation ids, so the sink records a global last-seen signal for the
-post-dispatch guard and also indexes any correlation ids present on future
-compatible span shapes.
+exporter, indexed by the CORRELATION IDS that span carries.
+
+THE INDEX IS PER-DISPATCH AND NOTHING ELSE. The sink used to also record a
+global `fabro.run_turn` last-export key, because the 0.254 engine's
+`run_turn` spans carried no correlation id at all and that key was the only
+signal available. But the sink file is HOST-GLOBAL (one path per host, not
+per repository), so that key is the last-export timestamp of whichever
+dispatch exported most recently — and counting it as a hit satisfied the
+check of every concurrent dispatch from one unrelated export, across
+repositories. A Petri-era `run_turn` span carries the correlation pair, so
+the attributable signal now exists and the unattributable one is gone: an
+export reaching the sink with no correlation id is still ACCEPTED and still
+recorded in the diagnostics, but it leaves no key any dispatch can match.
+A factory whose engine emits nothing attributable is handled where it
+belongs — by its `exports_run_turn_telemetry` declaration, which marks its
+dispatches UNOBSERVABLE rather than letting a global key stand in for
+evidence.
 """
 
 from __future__ import annotations
@@ -40,7 +53,6 @@ __all__: list[str] = [
 _FABRO_DATASET = "fabro"
 _RUN_TURN_SPAN = "run_turn"
 _CORRELATION_KEYS = ("work.item.id", "livespec.dispatch.id")
-_GLOBAL_EXPORT_KEY = "fabro.run_turn"
 _REASON_ACCEPTED = "accepted"
 _REASON_DATASET = "dataset"
 _REASON_SPAN_NAME = "span-name"
@@ -79,7 +91,7 @@ class RunTurnSink:
                 at=at,
             )
             return False
-        ids = (_GLOBAL_EXPORT_KEY, *_correlation_ids(span=span, resource_attrs=resource_attrs))
+        ids = _correlation_ids(span=span, resource_attrs=resource_attrs)
         with self._lock:
             exported = self._read()
             for key in ids:
@@ -97,13 +109,17 @@ class RunTurnSink:
     def has_export(
         self, *, keys: tuple[str, ...], exported_at_or_after: float | None = None
     ) -> bool:
-        """True when any candidate key has recorded a `run_turn` export."""
+        """True when one of THIS dispatch's correlation ids recorded an export.
+
+        An empty candidate is skipped rather than looked up: a dispatch whose
+        id could not be read from the journal carries `""`, and a lookup of it
+        would match whatever an empty-string key happened to hold.
+        """
         with self._lock:
             exported = self._read()
-        candidates = (_GLOBAL_EXPORT_KEY, *keys)
         return any(
             _is_fresh_export(at=exported.get(key), exported_at_or_after=exported_at_or_after)
-            for key in candidates
+            for key in keys
             if key != ""
         )
 

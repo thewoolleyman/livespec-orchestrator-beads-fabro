@@ -67,13 +67,15 @@ def test_run_turn_sink_path_is_host_global_for_the_fabro_dataset(
     assert second == expected
 
 
-def test_append_run_turn_checks_accepts_foreign_host_global_marker_since_start(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    local_repo = tmp_path / "local-repo"
-    foreign_repo = tmp_path / "foreign-repo"
-    journal_path = local_repo / "tmp" / "journal.jsonl"
+def test_append_run_turn_checks_rejects_a_global_only_run_turn_marker(tmp_path: Path) -> None:
+    """A global `fabro.run_turn` marker attributes an export to NO dispatch.
+
+    The sink is host-global (see the path test above), so this key is the
+    last-export timestamp of whichever dispatch exported most recently —
+    possibly another repository's. Counting it satisfied every concurrent
+    dispatch's check from one unrelated export.
+    """
+    journal_path = tmp_path / "journal.jsonl"
     journal = JournalFile(path=journal_path)
     journal.append(
         record={
@@ -83,27 +85,18 @@ def test_append_run_turn_checks_accepts_foreign_host_global_marker_since_start(
             "started_at_epoch": 20.0,
         }
     )
-    foreign_sink = RunTurnSink(
-        path=run_turn_sink_path(
-            args=_args(journal=foreign_repo / "tmp" / "journal.jsonl"),
-            repo=foreign_repo,
-        )
-    )
-    _ = foreign_sink.record_export(
-        span={"name": "run_turn"}, resource_attrs={}, dataset="fabro", at=30.0
-    )
+    sink_path = tmp_path / "run-turn.json"
+    _ = sink_path.write_text(json.dumps({"fabro.run_turn": 30.0}), encoding="utf-8")
 
     append_run_turn_checks(
         outcomes=(_outcome(work_item_id="bd-ib-demo"),),
         journal=journal,
         journal_path=journal_path,
-        sink=RunTurnSink(
-            path=run_turn_sink_path(args=_args(journal=journal_path), repo=local_repo)
-        ),
+        sink=RunTurnSink(path=sink_path),
     )
 
     check = _records(path=journal_path)[-1]
-    assert check["run_turn_exported"] is True
+    assert check["run_turn_exported"] is False
 
 
 def test_append_run_turn_checks_journals_green_outcome_presence(tmp_path: Path) -> None:
@@ -138,7 +131,22 @@ def test_append_run_turn_checks_journals_green_outcome_presence(tmp_path: Path) 
     }
 
 
-def test_append_run_turn_checks_ignores_stale_global_run_turn_exports(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("exported_at", "expected"),
+    [
+        pytest.param(10.0, False, id="before-this-dispatch-started"),
+        pytest.param(30.0, True, id="after-this-dispatch-started"),
+    ],
+)
+def test_append_run_turn_checks_dates_a_correlated_export_against_the_start(
+    *, tmp_path: Path, exported_at: float, expected: bool
+) -> None:
+    """A dispatch's own ids recur across its re-dispatches, so the instant decides.
+
+    `disp-old` is this item's PREVIOUS dispatch id, and the work-item id is
+    the same every time, so a key matching on identity alone would let a
+    months-old export discharge today's check.
+    """
     journal_path = tmp_path / "journal.jsonl"
     journal = JournalFile(path=journal_path)
     journal.append(
@@ -150,7 +158,12 @@ def test_append_run_turn_checks_ignores_stale_global_run_turn_exports(tmp_path: 
         }
     )
     sink = RunTurnSink(path=tmp_path / "run-turn.json")
-    _ = sink.record_export(span={"name": "run_turn"}, resource_attrs={}, dataset="fabro", at=10.0)
+    _ = sink.record_export(
+        span={"name": "run_turn"},
+        resource_attrs={"work.item.id": "bd-ib-old", "livespec.dispatch.id": "disp-old"},
+        dataset="fabro",
+        at=exported_at,
+    )
 
     append_run_turn_checks(
         outcomes=(_outcome(work_item_id="bd-ib-old"),),
@@ -161,7 +174,7 @@ def test_append_run_turn_checks_ignores_stale_global_run_turn_exports(tmp_path: 
 
     check = _records(path=journal_path)[-1]
     assert check["work_item_id"] == "bd-ib-old"
-    assert check["run_turn_exported"] is False
+    assert check["run_turn_exported"] is expected
 
 
 def test_append_run_turn_checks_accepts_receiver_observed_run_turn_export(
@@ -380,8 +393,17 @@ def test_append_run_turn_checks_ignores_malformed_dispatch_id_records(tmp_path: 
     assert check["run_turn_exported"] is False
 
 
-def test_run_turn_sink_records_fabro_run_turn_without_correlation_ids(tmp_path: Path) -> None:
-    sink = RunTurnSink(path=tmp_path / "run-turn.json")
+def test_run_turn_sink_stores_no_key_for_an_uncorrelated_run_turn_export(
+    tmp_path: Path,
+) -> None:
+    """An export carrying no correlation id is ACCEPTED and attributed to nothing.
+
+    Acceptance is the receiver's own fact and stays visible in the
+    diagnostics; what it must not do is leave a key behind that some
+    dispatch's check can match.
+    """
+    path = tmp_path / "run-turn.json"
+    sink = RunTurnSink(path=path)
     assert (
         sink.record_export(
             span={"name": "run_turn"},
@@ -391,7 +413,8 @@ def test_run_turn_sink_records_fabro_run_turn_without_correlation_ids(tmp_path: 
         )
         is True
     )
-    assert sink.has_export(keys=("",)) is True
+    assert sink.has_export(keys=("",)) is False
+    assert json.loads(path.read_text(encoding="utf-8")) == {}
 
 
 def test_run_turn_sink_writes_non_secret_diagnostics_for_record_attempts(tmp_path: Path) -> None:
