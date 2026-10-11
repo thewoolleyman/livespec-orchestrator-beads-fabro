@@ -423,7 +423,10 @@ def test_scenario130_a_serving_commit_with_no_release_tag_ancestor_refuses_befor
     refusal = capsys.readouterr().err
     assert "no-release-tag-ancestor" in refusal
     assert "no published release-tag ancestor" in refusal
-    assert str(sources.ANCESTRY_CANDIDATE_LIMIT) in refusal
+    # The scope is the OBSERVATION's own size, so the sentence moves with what
+    # the walk examined. A constant here kept reading correct after a candidate
+    # cap had narrowed the search below the observation and made it false.
+    assert f"among the {len(_observed_releases())} " in refusal
     # The serving build IS identified here, which is what makes the missing base
     # the finding rather than an unreadable engine.
     assert _SERVING_COMMIT in refusal

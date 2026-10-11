@@ -27,7 +27,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency impor
     FabroReleaseObservation,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency_sources import (
-    ANCESTRY_CANDIDATE_LIMIT,
     ObservationReading,
     compare_argv,
     fabro_currency_subject,
@@ -377,16 +376,15 @@ def test_a_failed_or_unrecognised_comparison_does_not_promote_a_tag_to_base() ->
     assert len(runner.calls) == 2
 
 
-def test_the_ancestry_walk_spends_no_more_than_the_declared_candidate_bound() -> None:
+def test_the_ancestry_walk_is_bounded_by_the_observation_and_spends_no_more() -> None:
     """Read off the CALL COUNT, which is the only instrument that can see a bound.
 
-    A correct-but-unbounded walk returns the same `None` here, so every other
-    assertion in this module would pass against one.
+    A walk that re-asked, looped, or paged beyond what it was given returns the
+    same `None` here, so every other assertion in this module would pass against
+    one. The bound is the OBSERVATION: one call per release it was handed, and
+    not one more.
     """
-    releases = tuple(
-        _release(tag=f"v0.{index}.0", days_ago=index)
-        for index in range(ANCESTRY_CANDIDATE_LIMIT + 10)
-    )
+    releases = tuple(_release(tag=f"v0.{index}.0", days_ago=index) for index in range(50))
     runner = _Runner(results={})
 
     base = resolved_base(
@@ -397,7 +395,49 @@ def test_the_ancestry_walk_spends_no_more_than_the_declared_candidate_bound() ->
     )
 
     assert base is None
-    assert len(runner.calls) == ANCESTRY_CANDIDATE_LIMIT
+    assert len(runner.calls) == len(releases)
+
+
+def test_the_ancestry_walk_reaches_an_ancestor_published_long_before_the_newest() -> None:
+    """A base can be FAR down the publication order, and must still be found.
+
+    This is the shape the ratified 0.254 carrier exception requires, and the one
+    a candidate cap silently converts into the WRONG refusal. Measured against
+    the live forge on 2026-10-11: `v0.254.0` is `identical` to the carrier commit
+    `497aaba6`, and sits at publication-order index 80 of the 147 releases
+    `fabro-sh/fabro` has published -- so a walk that stops at the 40 newest
+    cannot reach it.
+
+    What makes that mis-cut expensive is not the miss but the DIAGNOSIS. The
+    30-day rule exists to refuse a base that is OLD, which means the base has to
+    be found before it can be judged; a cap that hides it reports
+    `no-release-tag-ancestor` instead -- a different condition, with a different
+    corrective route, about a population that excluded the answer. So the
+    carrier the exception must ADMIT is refused, and refused for a reason that
+    reads like an unidentifiable build.
+
+    The ancestor here sits at index 44 of 60, past any cap below the observation
+    size, and the assertion is the BASE rather than the call count: a walk that
+    spent the calls but returned `None` is the failure being closed.
+    """
+    releases = tuple(_release(tag=f"v0.{index}.0", days_ago=index) for index in range(60))
+    ancestor = releases[44]
+    runner = _Runner(
+        results={
+            tuple(compare_argv(base=ancestor.tag, head=_SERVER_COMMIT)): CommandResult(
+                exit_code=0, stdout="identical\n", stderr=""
+            )
+        }
+    )
+
+    base = resolved_base(
+        observation=FabroReleaseObservation(releases=releases, observed_at=_NOW),
+        serving_commit=_SERVER_COMMIT,
+        runner=runner,
+        cwd=_REPO,
+    )
+
+    assert base == ancestor
 
 
 def test_the_subject_names_the_observation_fault_ahead_of_the_serving_build_one() -> None:
@@ -456,15 +496,15 @@ def test_a_commit_with_no_release_tag_ancestor_states_the_scope_that_was_searche
         }
     )
 
+    releases = tuple(_release(tag=f"v0.{index}.0", days_ago=index + 1) for index in range(7))
+
     subject = fabro_currency_subject(
         factory=_factory(),
         fabro_bin=_FABRO_BIN,
         runner=runner,
         cwd=_REPO,
         reading=ObservationReading(
-            observation=FabroReleaseObservation(
-                releases=(_release(tag="v0.378.0-nightly.0", days_ago=1),), observed_at=_NOW
-            ),
+            observation=FabroReleaseObservation(releases=releases, observed_at=_NOW),
             failure=None,
         ),
     )
@@ -472,7 +512,11 @@ def test_a_commit_with_no_release_tag_ancestor_states_the_scope_that_was_searche
     assert subject.serving_commit == _SERVER_COMMIT
     assert subject.base is None
     assert subject.unobservable_detail is not None
-    assert str(ANCESTRY_CANDIDATE_LIMIT) in subject.unobservable_detail
+    # The scope is the POPULATION ACTUALLY SEARCHED, so it is read off the
+    # observation's own size rather than off a constant. A fixed number here
+    # would keep passing after a cap silently narrowed what the walk examined --
+    # which is the mis-cut that made this absence false in the first place.
+    assert f"among the {len(releases)} " in subject.unobservable_detail
     assert "no published release-tag ancestor" in subject.unobservable_detail
 
 
