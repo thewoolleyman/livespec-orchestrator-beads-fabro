@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
-from returns.io import IOFailure, IOResult, IOSuccess
+from returns.io import IOResult
 from returns.pipeline import is_successful
 from returns.result import Failure, Result, Success
 from returns.unsafe import unsafe_perform_io
@@ -56,6 +56,7 @@ __all__: list[str] = [
     "record_factory_size_admission_decision",
     "resolve_adopted_assertion_count_ceiling",
     "resolved_stored_factory_size_decision",
+    "route_factory_size_dispatch_entry",
     "size_justified_at_admission",
     "stored_factory_size_decision",
 ]
@@ -188,11 +189,40 @@ def apply_factory_size_dispatch_entry(
     retain the decision even if committed configuration or ledger metadata
     changes while the factory run is in flight.
     """
-    resolved = resolve_adopted_assertion_count_ceiling(cwd=cwd)
-    if not is_successful(resolved):
-        return IOFailure(unsafe_perform_io(resolved.failure()))
-    ceiling = unsafe_perform_io(resolved.unwrap())
-    path = path_factory() if ceiling is not None else None
+    return resolve_adopted_assertion_count_ceiling(cwd=cwd).map(
+        lambda ceiling: route_factory_size_dispatch_entry(
+            adopted_ceiling=ceiling,
+            path_factory=path_factory,
+            items=items,
+            journal=journal,
+        )
+    )
+
+
+def route_factory_size_dispatch_entry(
+    *,
+    adopted_ceiling: int | None,
+    path_factory: Callable[[], StoreConfig],
+    items: Sequence[WorkItem],
+    journal: JournalFile,
+) -> tuple[DispatchOutcome, ...]:
+    """Apply an ALREADY-RESOLVED ceiling to each candidate row.
+
+    Split out of `apply_factory_size_dispatch_entry` for ONE caller whose
+    refusal ladder has to interleave: `_dispatcher_admission_eligibility`
+    resolves committed configuration once per PASS -- an unreadable ceiling is
+    a fact about the repository that refuses every row identically -- then
+    runs its two factory-wide refusals, and only then reaches this
+    item-specific, MUTATING half.  It cannot get there through the entry
+    point above without reading `.livespec.jsonc` a second time, and a second
+    read cannot be proven to agree with the first: both reads produce a
+    well-formed answer, so the disagreement would be silent.
+
+    Everything item-specific lives here rather than beside the resolution,
+    which is what makes "the configuration refusal is early and the ledger
+    round-trip is late" expressible at a call site at all.
+    """
+    path = path_factory() if adopted_ceiling is not None else None
     refused: list[DispatchOutcome] = []
     audit_started = _factory_size_audit_started(journal=journal)
     for item in items:
@@ -202,11 +232,11 @@ def apply_factory_size_dispatch_entry(
                 adopted_ceiling=None,
                 raw_justification=None,
             )
-            if ceiling is None
+            if adopted_ceiling is None
             else stored_factory_size_decision(
                 path=cast("StoreConfig", path),
                 item=item,
-                adopted_ceiling=ceiling,
+                adopted_ceiling=adopted_ceiling,
             )
         )
         if decision.disposition == "proceed" and (decision.size_justified or audit_started):
@@ -231,7 +261,7 @@ def apply_factory_size_dispatch_entry(
                     detail=reason,
                 )
             )
-    return IOSuccess(tuple(refused))
+    return tuple(refused)
 
 
 def _factory_size_audit_started(*, journal: JournalWriter) -> bool:
