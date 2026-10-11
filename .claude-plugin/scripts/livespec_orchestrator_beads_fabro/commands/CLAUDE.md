@@ -143,6 +143,24 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   onto "not declared" rather than raising, because every consumer is building a
   DIAGNOSTIC naming the wrapper to fix and an exception there would replace an
   actionable refusal with a traceback about the file it was about to name.
+- `_dispatcher_git_credential_helper.py` — the git credential helper every
+  dispatch configures in the sandbox clone, so an in-sandbox push to
+  github.com obtains an App installation token minted AT PUSH TIME from the
+  refreshing `gh` wrapper `_dispatcher_gh_refresh` materializes
+  (`bd-ib-52zt3o`, Scenario 29). Three properties an editor must not invert.
+  It configures a COMMAND and never a token value: an installation token
+  outlives neither the run nor the `pr` stage, so a stored one would be both
+  a durable copy of a credential and expired by the time it was read. It is
+  rendered UNCONDITIONALLY — with the App inputs present `gh` on PATH is the
+  refreshing wrapper, and without them gh answers from the ambient
+  `GITHUB_TOKEN` the credential projection always carries — because rendering
+  it inside the App condition would leave the other arm with no credential at
+  all on an engine that supplies none. And it is scoped to the
+  `https://github.com` URL rather than installed as a blanket helper, which is
+  what leaves the PINNED engine's path untouched: git consults no helper for a
+  URL already carrying a username and a password, so the token Fabro embeds in
+  the origin URL still wins there. That precedence is git's own, not something
+  arranged here, which is why both cases are asserted as a pair.
 - The OPT-IN host Codex credential identity observation — the passive
   measurement behind `codex-cred-status --observe-identity-state <path>` —
   lives in FOUR cohesive modules, and the dependency direction reads bottom-up:
