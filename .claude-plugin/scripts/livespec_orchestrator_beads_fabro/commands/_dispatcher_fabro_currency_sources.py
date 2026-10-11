@@ -227,13 +227,20 @@ def fabro_currency_subject(
     commit = serving_integration_commit(
         factory=factory, fabro_bin=fabro_bin, runner=runner, cwd=cwd
     )
-    if reading.observation is None or commit is None:
+    # A READING THAT FAILED RESOLVES NO BASE, even when it carries releases.
+    # That is the whole point of checking `failure` here rather than only
+    # `observation`: a STALE record is handed back populated, so an ancestry
+    # walk over it finds a perfectly plausible base and the window comparison
+    # then passes on expired evidence. Refusing to resolve a base from it is
+    # what keeps the staleness decisive instead of advisory.
+    if reading.observation is None or reading.failure is not None or commit is None:
         return FabroCurrencySubject(
             target=factory.name,
             serving_commit=commit,
             base=None,
             observation=reading.observation,
             unobservable_detail=_gather_detail(factory=factory, reading=reading),
+            observation_failure=reading.failure,
         )
     base = resolved_base(
         observation=reading.observation, serving_commit=commit, runner=runner, cwd=cwd
@@ -244,6 +251,7 @@ def fabro_currency_subject(
         base=base,
         observation=reading.observation,
         unobservable_detail=None if base is not None else _no_ancestor_detail(),
+        observation_failure=None,
     )
 
 

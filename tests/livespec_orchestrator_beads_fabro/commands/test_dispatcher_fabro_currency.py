@@ -20,6 +20,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency impor
     CONDITION_NO_ANCESTOR,
     CONDITION_OBSERVATION_UNOBSERVABLE,
     CONDITION_OUT_OF_WINDOW,
+    CONDITION_STALE_OBSERVATION,
     CONDITION_UNIDENTIFIED_BUILD,
     CURRENCY_WINDOW_DAYS,
     FabroCurrencySubject,
@@ -46,6 +47,7 @@ def _subject(
     base: FabroRelease | None = _IN_WINDOW,
     observation: FabroReleaseObservation | None = None,
     unobservable_detail: str | None = None,
+    observation_failure: str | None = None,
 ) -> FabroCurrencySubject:
     return FabroCurrencySubject(
         target="hp",
@@ -57,6 +59,7 @@ def _subject(
             else _observation(releases=(_NEWEST, _IN_WINDOW, _OUT_OF_WINDOW))
         ),
         unobservable_detail=unobservable_detail,
+        observation_failure=observation_failure,
     )
 
 
@@ -157,6 +160,7 @@ def test_an_unmeasured_subject_refuses_and_renders_every_absent_field_as_unknown
             base=None,
             observation=None,
             unobservable_detail=None,
+            observation_failure=None,
         ),
         now=_NOW,
     )
@@ -225,3 +229,49 @@ def test_an_observation_with_no_releases_refuses_even_with_a_commit_and_a_base()
     assert verdict.admitted is False
     assert verdict.condition == CONDITION_OBSERVATION_UNOBSERVABLE
     assert verdict.detail.splitlines()[4] == "  newest observed upstream release: unknown"
+
+
+def test_a_populated_but_unusable_reading_refuses_as_stale_rather_than_as_current() -> None:
+    """The fail-open this arm closed, asserted on the shape that produced it.
+
+    The observation carries a newest release and an in-window base, so EVERY
+    later arm succeeds on it and the verdict was `current` — an admitted dispatch
+    on expired evidence. The failure field is therefore graded BEFORE the
+    arithmetic, not alongside it.
+    """
+    verdict = fabro_currency_verdict(
+        subject=_subject(observation_failure="the cached observation is 9 calendar days old"),
+        now=_NOW,
+    )
+
+    assert verdict.admitted is False
+    assert verdict.condition == CONDITION_STALE_OBSERVATION
+    assert verdict.detail.splitlines()[0].endswith("the cached observation is 9 calendar days old")
+    # The record is NAMED, which is what the clause asks of this refusal.
+    assert (
+        verdict.detail.splitlines()[5]
+        == "  release observation taken at: 2026-10-11T09:00:00+00:00"
+    )
+
+
+def test_a_failed_reading_with_no_record_at_all_refuses_as_unobservable() -> None:
+    """Told apart from the stale arm by whether a record EXISTS to be named.
+
+    Same refusal, different remedy: this one says no reading has ever been taken
+    on this host, where the stale one says the refresh path is broken while
+    evidence exists.
+    """
+    verdict = fabro_currency_verdict(
+        subject=FabroCurrencySubject(
+            target="hp",
+            serving_commit="8869e88",
+            base=None,
+            observation=None,
+            unobservable_detail=None,
+            observation_failure="the forge read failed and this host holds no cached observation",
+        ),
+        now=_NOW,
+    )
+
+    assert verdict.condition == CONDITION_OBSERVATION_UNOBSERVABLE
+    assert verdict.detail.splitlines()[5] == "  release observation taken at: unknown"
