@@ -26,6 +26,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     calibration_spans_path,
     cost_report_spans_path,
     cost_sink_path,
+    dispatch_spans_path,
     heartbeat_path,
     reflector_oob_spans_path,
     run_turn_sink_path,
@@ -223,9 +224,10 @@ def _driver_span_paths(*, args: argparse.Namespace, repo: Path) -> tuple[Path, .
 
     Each is a journal sibling written by a distinct host emitter: the
     mechanical-reflection stage (`-reflection-spans.jsonl`), the out-of-band
-    reflector (`-reflector-oob-spans.jsonl`), and report mode
-    (`-cost-report-spans.jsonl`), and calibration
-    (`-calibration-spans.jsonl`). All four ride the SAME file-tail -> enrich
+    reflector (`-reflector-oob-spans.jsonl`), report mode
+    (`-cost-report-spans.jsonl`), calibration
+    (`-calibration-spans.jsonl`), and the per-dispatch correlation span
+    (`-dispatch-spans.jsonl`). All five ride the SAME file-tail -> enrich
     egress path, so the driver covers every host span-file kind.
 
     The 2026-06-14 dispatch-outcome span stop is a SEPARATE gap, not this one.
@@ -243,12 +245,19 @@ def _driver_span_paths(*, args: argparse.Namespace, repo: Path) -> tuple[Path, .
     fixture INPUT. So the enrich leg is ready to carry that span and no producer
     hands it one. Promoting calibration therefore cannot restore those columns;
     the dispatch-outcome gap sits upstream of egress and needs its own emitter.
+
+    The fifth path is the FIRST producer of a `dispatcher.dispatch` span, and
+    it closes only the correlation half of that gap: the span exists so a
+    factory run has a parent to join to, and it carries the correlation
+    triple. The four outcome columns above are still emitted by nothing, so
+    this entry must not be read as having restored them.
     """
     return (
         spans_path(args=args, repo=repo),
         reflector_oob_spans_path(args=args, repo=repo),
         cost_report_spans_path(args=args, repo=repo),
         calibration_spans_path(args=args, repo=repo),
+        dispatch_spans_path(args=args, repo=repo),
     )
 
 

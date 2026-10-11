@@ -120,3 +120,25 @@ def test_dispatch_span_carries_the_three_correlation_attributes() -> None:
     assert span["spanId"] == ids.span_id
     assert span["name"] == span_module.DISPATCH_SPAN_NAME
     assert span["startTimeUnixNano"] == "7"
+
+
+def test_an_invocation_that_minted_no_dispatch_id_correlates_by_nothing(
+    tmp_path: Path,
+) -> None:
+    """No dispatch id means no correlation and no span, not a partial one."""
+    span_module = _span_module()
+    correlation_module = _correlation_module()
+    spans_path = tmp_path / "nested" / "dispatch-spans.jsonl"
+
+    correlation = correlation_module.dispatch_correlation(
+        work_item_id="bd-ib-5jvgfr",
+        dispatch_id=None,
+        factory="hp",
+    )
+
+    assert correlation is None
+    span_module.emit_dispatch_span(correlation=correlation, spans_path=spans_path, now_ns=3)
+    # Not merely empty: the file is never created, so a reader cannot mistake
+    # "this invocation emitted nothing" for "this invocation emitted zero spans".
+    assert not spans_path.exists()
+    assert not spans_path.parent.exists()

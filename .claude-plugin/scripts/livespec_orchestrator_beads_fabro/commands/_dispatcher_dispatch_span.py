@@ -20,6 +20,7 @@ triple that allowlist already carries.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import (
     DispatchCorrelation,
@@ -31,6 +32,7 @@ from livespec_orchestrator_beads_fabro.commands._otel_scrub import attr as _attr
 __all__: list[str] = [
     "DISPATCH_SPAN_NAME",
     "dispatch_request_line",
+    "emit_dispatch_span",
 ]
 
 _OTLP_SERVICE_NAME = "livespec-dispatcher"
@@ -43,6 +45,28 @@ _SPAN_KIND_INTERNAL = 1
 # against, so promoting this span feeds the queries rather than adding a
 # second vocabulary beside them.
 DISPATCH_SPAN_NAME = "dispatcher.dispatch"
+
+
+def emit_dispatch_span(
+    *,
+    correlation: DispatchCorrelation | None,
+    spans_path: Path,
+    now_ns: int,
+) -> None:
+    """Append one OTLP/HTTP JSON span naming this dispatch.
+
+    A None correlation writes nothing and touches no file. The decision
+    lives HERE rather than at each call site so there is one answer to
+    "an invocation that minted no dispatch id emits no span" — an
+    invocation-shaped `if` at every caller is how the span file comes to
+    be created-but-empty on one path and absent on another.
+    """
+    if correlation is None:
+        return
+    line = dispatch_request_line(correlation=correlation, now_ns=now_ns)
+    spans_path.parent.mkdir(parents=True, exist_ok=True)
+    with spans_path.open("a", encoding="utf-8") as handle:
+        _ = handle.write(line + "\n")
 
 
 def dispatch_request_line(*, correlation: DispatchCorrelation, now_ns: int) -> str:

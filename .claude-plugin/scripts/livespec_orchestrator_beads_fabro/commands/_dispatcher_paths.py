@@ -18,6 +18,7 @@ __all__: list[str] = [
     "calibration_spans_path",
     "cost_report_spans_path",
     "cost_sink_path",
+    "dispatch_spans_path",
     "executing_payload_root",
     "heartbeat_path",
     "journal_path",
@@ -217,6 +218,12 @@ def calibration_spans_path(*, args: argparse.Namespace, repo: Path) -> Path:
     """Where calibration emission appends its `dispatcher.calibration` OTLP spans."""
     journal = journal_path(args=args, repo=repo)
     return journal.with_name(f"{journal.stem}-calibration-spans.jsonl")
+
+
+def dispatch_spans_path(*, args: argparse.Namespace, repo: Path) -> Path:
+    """Where each dispatch appends its own `dispatcher.dispatch` OTLP span."""
+    journal = journal_path(args=args, repo=repo)
+    return journal.with_name(f"{journal.stem}-dispatch-spans.jsonl")
 
 
 def tdd_order_sink_path(*, args: argparse.Namespace, repo: Path) -> Path:
