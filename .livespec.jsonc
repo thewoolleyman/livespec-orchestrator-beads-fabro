@@ -526,6 +526,22 @@
       // existed. A `bin` naming no file, or a file with no execute bit, is
       // refused before the item is claimed.
       //
+      // Each entry may ALSO carry an optional `environment` key: the id of an
+      // environment in THAT factory's server-managed catalog, which the
+      // dispatch passes as `fabro run --environment`. On a Petri-era server
+      // the environment is selected from the run intent's id ALONE, and that
+      // selection overrides the `[run.environment]` id the workflow declares
+      // (the workflow's env and resources overlays still apply to whichever
+      // environment was selected). A run intent naming none sends `default`,
+      // so a dispatch to such a server landed in `buildpack-deps:noble` with
+      // no `mise` on PATH and died in a prepare step -- a failure that names
+      // nothing about the placement. Omit it, as `hp` does, and NO flag is
+      // emitted at all: the pinned 0.254 engine has no such flag and keeps
+      // selecting from the workflow, so an unconditional one would kill every
+      // dispatch to that engine at argument parsing. A declared `environment`
+      // that is not a non-empty string is refused before the item is claimed,
+      // naming the factory.
+      //
       // Each entry may ALSO carry an optional `secret_channel` key: the
       // transport that factory's engine resolves a projected credential
       // through. The two values are self-describing, never numbered:
