@@ -20,7 +20,10 @@ both assert a NON-ZERO HTTP STATUS rather than merely `succeeded is False`: a
 status of 0 is this port's own "no response was received", so it is exactly
 what a wrong host, a dead proxy or an unresolvable name produces. Requiring a
 real status code is what separates "the server considered the request and
-declined" from "the request never arrived".
+declined" from "the request never arrived". That id must itself be a VALID
+ULID, for the reason recorded beside `_ABSENT_RUN_ID` below: a malformed one is
+refused before the credential is read, so the case passes its stated bar while
+measuring nothing it claims to.
 
 `auth_login` IS DRIVEN UNDER A SCRATCH HOME, deliberately. `fabro auth login`
 writes `~/.fabro/auth.json`, which on an operator host is the live factory
@@ -55,8 +58,13 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_http import SYSTEM_I
 __all__: list[str] = []
 
 _DUMP_TIMEOUT_SECONDS = 300.0
-# A run id the factory cannot hold: the ULID alphabet with a shape no run uses.
-_ABSENT_RUN_ID = "01ENEMYUNITTESTABSENTRUN0"
+# A run id the factory cannot hold. It must be a VALID ULID — 26 Crockford
+# base32 characters, leading character bounded by the 48-bit timestamp — or the
+# server refuses it as malformed at the edge, before reaching the credential
+# and the run lookup the two refusal cases below exist to discriminate.
+# `tests/test_fabro_enemy_absent_run_id.py` is the hermetic binding for that,
+# and carries the measurement that retired `01ENEMYUNITTESTABSENTRUN0`.
+_ABSENT_RUN_ID = "01ENEMYTESTABSENTZZZZZZZZZ"
 _ABSENT_QUESTION_ID = "00000000-0000-0000-0000-000000000000"
 _BOGUS_DEV_TOKEN = "fabro-enemy-unit-test-not-a-credential"
 _HTTP_UNAUTHORIZED = 401
