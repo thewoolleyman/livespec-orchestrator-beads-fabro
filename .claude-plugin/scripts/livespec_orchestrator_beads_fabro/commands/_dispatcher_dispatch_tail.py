@@ -99,6 +99,7 @@ def dispatch_tail_exit(
         outcomes=(outcome,),
         journal=journal,
         journal_path=dispatch_journal_path,
+        repo=repo,
         sink=RunTurnSink(path=run_turn_sink_path(args=args, repo=repo)),
     )
     reflect(
