@@ -1497,6 +1497,14 @@ references passes with its guidance orphaned.
 
 ## Decision authority — when to ask, proceed, or self-resolve
 
+**Current repository configuration governs factory routing** (maintainer
+clarification 2026-10-12). Respect its adapter, provider and model selections.
+Do not override them, or change shared configuration to enforce a stale
+coordination message or a session's provider preference. The only exception is
+temporary testing of a specific model, isolated so it cannot change shared
+configuration or affect overall factory operation. A provider named in an old
+handoff is historical context, not authority to reroute a current dispatch.
+
 Fleet-standard guidance, ported from
 `livespec/AGENTS.md` §"When to ask, proceed, or self-resolve". The default is
 to decide and report, not to escalate.
