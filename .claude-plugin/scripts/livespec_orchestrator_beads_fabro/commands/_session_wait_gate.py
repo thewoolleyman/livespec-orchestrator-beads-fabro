@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import re
+import signal
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults import (
@@ -99,17 +103,47 @@ class _CommandTask:
     observed_at: float
     timeout_seconds: float
     result: GateObservation | None = field(default=None, init=False)
+    thread: threading.Thread | None = field(default=None, init=False)
+    ready: threading.Event = field(default_factory=threading.Event, init=False)
+    cancel_requested: bool = field(default=False, init=False)
+    native_thread_id: int | None = field(default=None, init=False)
 
     def start(self) -> None:
-        threading.Thread(target=self._run, daemon=True).start()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
 
     def _run(self) -> None:
-        self.result = observe_gate_target(
+        self.native_thread_id = threading.get_native_id()
+        self.ready.set()
+        observation = observe_gate_target(
             target=self.target,
             observed_at=self.observed_at,
             command_prefix=self.command_prefix,
             timeout_seconds=self.timeout_seconds,
+            start_new_session=True,
         )
+        if not self.cancel_requested:
+            self.result = observation
+
+    def poll(self) -> GateObservation | None:
+        return self.result
+
+    def cancel(self, *, timeout_seconds: float) -> None:
+        started = time.monotonic()
+        self.cancel_requested = True
+        _ = self.ready.wait(timeout=timeout_seconds)
+        native_thread_id = cast("int", self.native_thread_id)
+        for pid in _thread_child_pids(native_thread_id=native_thread_id):
+            os.killpg(pid, signal.SIGKILL)
+        thread = cast("threading.Thread", self.thread)
+        thread.join(timeout=max(0.0, timeout_seconds - (time.monotonic() - started)))
+
+
+def _thread_child_pids(*, native_thread_id: int) -> tuple[int, ...]:
+    children = Path(f"/proc/{os.getpid()}/task/{native_thread_id}/children").read_text(
+        encoding="utf-8"
+    )
+    return tuple(int(pid) for pid in children.split())
 
 
 @dataclass(kw_only=True)
@@ -122,7 +156,7 @@ class GateStatusProbe:
 
     @property
     def active(self) -> bool:
-        return self.task is not None and self.task.result is None
+        return self.task is not None
 
     def poll(self, *, now: float) -> GateObservation | None:
         generation_observation = _generation_observation(target=self.target, observed_at=now)
@@ -141,14 +175,15 @@ class GateStatusProbe:
                 timeout_seconds=self.timeout_seconds,
             )
             self.task.start()
-        if self.task.result is None:
+        observation = self.task.poll()
+        if observation is None:
             return None
-        observation = self.task.result
         self.task = None
         return observation
 
     def cancel(self, *, timeout_seconds: float) -> None:
-        del timeout_seconds
+        if self.task is not None:
+            self.task.cancel(timeout_seconds=timeout_seconds)
         self.task = None
 
 
@@ -172,6 +207,7 @@ def observe_gate_target(
     observed_at: float,
     command_prefix: tuple[str, ...] = _DEFAULT_COMMAND,
     timeout_seconds: float = 1.0,
+    start_new_session: bool = False,
 ) -> GateObservation:
     generation_observation = _generation_observation(target=target, observed_at=observed_at)
     if generation_observation is not None:
@@ -180,6 +216,7 @@ def observe_gate_target(
         argv=[*command_prefix, target.run_id],
         cwd=target.gate_store_root / target.run_id,
         timeout_seconds=timeout_seconds,
+        start_new_session=start_new_session,
     )
     return _parse_status(
         target=target,

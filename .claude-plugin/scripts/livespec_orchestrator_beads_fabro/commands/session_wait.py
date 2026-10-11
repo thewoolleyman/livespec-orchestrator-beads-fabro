@@ -9,6 +9,7 @@ from math import isfinite
 from pathlib import Path
 from typing import Protocol
 
+from livespec_orchestrator_beads_fabro.commands._session_wait_ack import AckResult, ack_wait
 from livespec_orchestrator_beads_fabro.commands._session_wait_cli import (
     SessionWaitCliSeams,
     main,
@@ -17,10 +18,9 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_gate import (
     GateStatusLauncher,
     resolve_primary_repository,
 )
+from livespec_orchestrator_beads_fabro.commands._session_wait_lock import LockBudget
 from livespec_orchestrator_beads_fabro.commands._session_wait_records import (
-    AckResult,
     WaiterIdentity,
-    ack_wait,
     current_waiter_identity,
     record_observations,
     record_return_ready,
@@ -111,13 +111,17 @@ def run_wait(
             trigger_exit_code=None,
             observations={},
         )
-    _ = register_wait(
+    deadline = monotonic() + request.deadline_seconds
+    lock_budget = LockBudget(deadline=deadline, monotonic=monotonic, sleeper=sleeper)
+    registration = register_wait(
         request=request,
         wait_store_root=wait_store_root,
         waiter=current_waiter_identity(),
         armed_at=wall_clock(),
+        lock_budget=lock_budget,
     )
-    deadline = monotonic() + request.deadline_seconds
+    if registration == "unavailable":
+        return _deadline_result(request=request, observations={}, deadline=deadline)
     handles = [
         launcher.launch(
             target=target,
@@ -153,15 +157,17 @@ def run_wait(
                     if target.identity != terminal.target.identity
                 ),
             )
-            record_observations(
+            _ = record_observations(
                 wait_store_root=wait_store_root,
                 wait_id=request.wait_id,
                 observations=tuple(result.observations.values()),
+                lock_budget=lock_budget,
             )
-            record_return_ready(
+            _ = record_return_ready(
                 wait_store_root=wait_store_root,
                 wait_id=request.wait_id,
                 return_reason=result.command_outcome,
+                lock_budget=lock_budget,
             )
             return result
         remaining = deadline - monotonic()
@@ -176,14 +182,16 @@ def run_wait(
         observations=observations,
         deadline=deadline,
     )
-    record_observations(
+    _ = record_observations(
         wait_store_root=wait_store_root,
         wait_id=request.wait_id,
         observations=tuple(result.observations.values()),
+        lock_budget=lock_budget,
     )
-    record_return_ready(
+    _ = record_return_ready(
         wait_store_root=wait_store_root,
         wait_id=request.wait_id,
         return_reason=result.command_outcome,
+        lock_budget=lock_budget,
     )
     return result
