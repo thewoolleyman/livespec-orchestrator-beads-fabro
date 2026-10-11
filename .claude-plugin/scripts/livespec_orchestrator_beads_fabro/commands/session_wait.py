@@ -4,114 +4,65 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from math import isfinite
 from pathlib import Path
 from typing import Protocol
 
+from livespec_orchestrator_beads_fabro.commands._session_wait_cli import (
+    SessionWaitCliSeams,
+    main,
+)
+from livespec_orchestrator_beads_fabro.commands._session_wait_gate import (
+    GateStatusLauncher,
+    resolve_primary_repository,
+)
+from livespec_orchestrator_beads_fabro.commands._session_wait_records import (
+    AckResult,
+    WaiterIdentity,
+    ack_wait,
+    current_waiter_identity,
+    record_observations,
+    record_return_ready,
+    register_wait,
+)
+from livespec_orchestrator_beads_fabro.commands._session_wait_types import (
+    GateObservation,
+    GateTarget,
+    ProbeLauncher,
+    WaitRequest,
+    WaitResult,
+    freeze_gate_pointer,
+)
+from livespec_orchestrator_beads_fabro.commands.session_wait_inventory import (
+    InventoryRecord,
+    InventorySnapshot,
+    inventory_waits,
+)
+
 __all__: list[str] = [
+    "AckResult",
     "GateObservation",
+    "GateStatusLauncher",
     "GateTarget",
+    "InventoryRecord",
+    "InventorySnapshot",
+    "SessionWaitCliSeams",
     "WaitRequest",
     "WaitResult",
+    "WaiterIdentity",
+    "ack_wait",
     "freeze_gate_pointer",
+    "inventory_waits",
+    "main",
+    "register_wait",
+    "resolve_primary_repository",
     "run_wait",
 ]
 
 
-@dataclass(frozen=True, kw_only=True)
-class GateTarget:
-    gate_store_root: Path
-    run_id: str
-    generation: str
-
-    @property
-    def identity(self) -> str:
-        return f"gate:{self.gate_store_root}:{self.run_id}"
-
-    @classmethod
-    def freeze(cls, *, gate_store_root: Path, run_id: str) -> GateTarget:
-        started_at = (gate_store_root / run_id / "started_at").read_text(encoding="utf-8")
-        return cls(
-            gate_store_root=gate_store_root,
-            run_id=run_id,
-            generation=started_at.strip(),
-        )
-
-
-@dataclass(frozen=True, kw_only=True)
-class GateObservation:
-    target: GateTarget
-    state: str
-    exit_code: int | None
-    observed_at: float
-    fresh: bool
-
-    @classmethod
-    def running(cls, *, target: GateTarget, observed_at: float) -> GateObservation:
-        return cls(
-            target=target,
-            state="RUNNING",
-            exit_code=None,
-            observed_at=observed_at,
-            fresh=True,
-        )
-
-    @classmethod
-    def finished(
-        cls,
-        *,
-        target: GateTarget,
-        state: str,
-        exit_code: int,
-        observed_at: float,
-    ) -> GateObservation:
-        return cls(
-            target=target,
-            state=state,
-            exit_code=exit_code,
-            observed_at=observed_at,
-            fresh=True,
-        )
-
-
-@dataclass(frozen=True, kw_only=True)
-class WaitRequest:
-    wait_id: str
-    session_id: str
-    repository: Path
-    deadline_seconds: float
-    targets: tuple[GateTarget, ...]
-
-
-@dataclass(frozen=True, kw_only=True)
-class WaitResult:
-    command_outcome: str
-    trigger_target: str | None
-    trigger_exit_code: int | None
-    observations: dict[str, GateObservation]
-    unfinished_targets: tuple[str, ...] = ()
-
-
-class _Probe(Protocol):
-    def poll(self, *, now: float) -> GateObservation | None: ...
-
-    def cancel(self, *, timeout_seconds: float) -> None: ...
-
-
-class _Launcher(Protocol):
-    def launch(self, *, target: GateTarget, timeout_seconds: float) -> _Probe: ...
-
-
 class _Sleeper(Protocol):
     def __call__(self, *, seconds: float) -> None: ...
-
-
-def freeze_gate_pointer(*, gate_store_root: Path, pointer: Path) -> GateTarget:
-    return GateTarget.freeze(
-        gate_store_root=gate_store_root,
-        run_id=pointer.read_text(encoding="utf-8").strip(),
-    )
 
 
 def _deadline_result(
@@ -146,12 +97,13 @@ def _deadline_result(
 def run_wait(
     *,
     request: WaitRequest,
-    launcher: _Launcher,
+    launcher: ProbeLauncher,
     wait_store_root: Path,
     monotonic: Callable[[], float] = time.monotonic,
     sleeper: _Sleeper = lambda *, seconds=0.0: time.sleep(seconds),
+    wall_clock: Callable[[], float] = time.time,
 ) -> WaitResult:
-    del wait_store_root
+    """Observe every frozen target independently and return the first ending."""
     if not isfinite(request.deadline_seconds) or request.deadline_seconds <= 0:
         return WaitResult(
             command_outcome="invalid-deadline",
@@ -159,9 +111,18 @@ def run_wait(
             trigger_exit_code=None,
             observations={},
         )
+    _ = register_wait(
+        request=request,
+        wait_store_root=wait_store_root,
+        waiter=current_waiter_identity(),
+        armed_at=wall_clock(),
+    )
     deadline = monotonic() + request.deadline_seconds
     handles = [
-        launcher.launch(target=target, timeout_seconds=max(0.0, deadline - monotonic()))
+        launcher.launch(
+            target=target,
+            timeout_seconds=max(0.0, deadline - monotonic()),
+        )
         for target in request.targets
     ]
     observations: dict[str, GateObservation] = {}
@@ -181,7 +142,7 @@ def run_wait(
             )
             for handle in handles:
                 handle.cancel(timeout_seconds=max(0.0, deadline - monotonic()))
-            return WaitResult(
+            result = WaitResult(
                 command_outcome="target-ended",
                 trigger_target=terminal.target.identity,
                 trigger_exit_code=terminal.exit_code,
@@ -192,6 +153,17 @@ def run_wait(
                     if target.identity != terminal.target.identity
                 ),
             )
+            record_observations(
+                wait_store_root=wait_store_root,
+                wait_id=request.wait_id,
+                observations=tuple(result.observations.values()),
+            )
+            record_return_ready(
+                wait_store_root=wait_store_root,
+                wait_id=request.wait_id,
+                return_reason=result.command_outcome,
+            )
+            return result
         remaining = deadline - monotonic()
         if remaining <= 0:
             break
@@ -199,8 +171,19 @@ def run_wait(
 
     for handle in handles:
         handle.cancel(timeout_seconds=max(0.0, deadline - monotonic()))
-    return _deadline_result(
+    result = _deadline_result(
         request=request,
         observations=observations,
         deadline=deadline,
     )
+    record_observations(
+        wait_store_root=wait_store_root,
+        wait_id=request.wait_id,
+        observations=tuple(result.observations.values()),
+    )
+    record_return_ready(
+        wait_store_root=wait_store_root,
+        wait_id=request.wait_id,
+        return_reason=result.command_outcome,
+    )
+    return result
