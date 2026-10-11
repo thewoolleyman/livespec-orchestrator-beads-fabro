@@ -302,6 +302,7 @@ def test_default_otel_enrich_driver_factory_builds_without_starting(
         tmp_path / "j-reflector-oob-spans.jsonl",
         tmp_path / "j-cost-report-spans.jsonl",
         tmp_path / "j-calibration-spans.jsonl",
+        tmp_path / "j-dispatch-spans.jsonl",
     }
     exporter = driver.stages[0].exporter
     assert isinstance(exporter, HoneycombHttpExporter)

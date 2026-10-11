@@ -39,7 +39,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from coverage import Coverage
@@ -49,6 +49,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_admission,
     _dispatcher_admission_eligibility,
     _dispatcher_completion,
+    _dispatcher_correlation,
     _dispatcher_dispatch_lock,
     _dispatcher_dispatch_tail,
     _dispatcher_goal,
@@ -57,6 +58,8 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_loop_command,
     _dispatcher_loop_record,
     _dispatcher_loop_selection,
+    _dispatcher_otel_wiring,
+    _dispatcher_paths,
     _dispatcher_provider_exhaustion,
     _dispatcher_reflection,
     _dispatcher_run_commands,
@@ -174,8 +177,10 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
 )
 from livespec_orchestrator_beads_fabro.commands._otel_enrich import (
     CorrelationJoin,
+    EnrichStage,
     correlation_keys_from_attrs,
 )
+from livespec_orchestrator_beads_fabro.commands._otel_enrich_driver import OtelEnrichDriver
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import (
     ATTRIBUTE_ALLOWLIST,
     is_allowed_attr,
@@ -6866,3 +6871,101 @@ def test_ready_items_resolves_configured_sibling_terminal_states(
     assert [candidate.id for candidate in ready_items(items=[item], repo=livespec)] == [
         "livespec-zsn2xh.5"
     ]
+
+
+# --------------------------------------------------------------------------
+# Per-dispatch correlation span (plan fabro-currency, bd-ib-5jvgfr). The
+# Dispatcher emitted NO span of its own, so a factory run had nothing to
+# parent to; the span rides the SAME journal-sibling span-file -> enrich
+# egress path the reflection, reflector and calibration spans already use.
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, kw_only=True)
+class _RecordingExporter:
+    """Captures the per-dataset batches the enrich stage hands an exporter."""
+
+    batches: list[tuple[dict[str, object], ...]]
+
+    def export(self, *, spans: tuple[dict[str, object], ...], dataset: str) -> bool:
+        _ = dataset
+        self.batches.append(spans)
+        return True
+
+
+def _loop_once_for_dispatch_span(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Path, Path]:
+    """Drive one green dispatch through `loop`; return (repo, dispatch-spans path)."""
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(id="a-1", rank="a1")
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={"a-1": _green_outcome(item_id="a-1")})
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
+    assert (
+        main(
+            argv=[
+                "loop",
+                "--repo",
+                str(repo),
+                "--budget",
+                "1",
+                "--workflow",
+                str(workflow),
+                "--no-close-on-merge",
+            ]
+        )
+        == 0
+    )
+    return repo, repo / "tmp" / "fabro-dispatch-journal-dispatch-spans.jsonl"
+
+
+def test_loop_emits_one_dispatch_span_carrying_its_correlation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One span per dispatch, identified by the derived pair, on the sibling file."""
+    _repo, spans_path = _loop_once_for_dispatch_span(tmp_path=tmp_path, monkeypatch=monkeypatch)
+
+    assert spans_path.is_file()
+    lines = spans_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    span = json.loads(lines[0])["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    attributes = {entry["key"]: entry["value"]["stringValue"] for entry in span["attributes"]}
+    assert attributes["work.item.id"] == "a-1"
+    assert attributes["livespec.dispatch.factory"] == "default"
+    ids = _dispatcher_correlation.dispatch_span_ids(dispatch_id=attributes["livespec.dispatch.id"])
+    assert (span["traceId"], span["spanId"]) == (ids.trace_id, ids.span_id)
+
+
+def test_the_dispatch_span_file_is_tailed_and_forwarded_by_the_enrich_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The egress leg: the real driver tails the file, and the stage forwards it.
+
+    The driver is read rather than assumed, because a span file the
+    Dispatcher writes and nothing tails has no egress at all — which is
+    exactly how 245 calibration records stayed dark.
+    """
+    repo, spans_path = _loop_once_for_dispatch_span(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    args = argparse.Namespace(journal=None)
+
+    driver = _dispatcher_otel_wiring.ensure_otel_enrich_driver(args=args, repo=repo, holder={})
+    assert driver is not None
+    tailed = {stage.spans_path for stage in cast("OtelEnrichDriver", driver).stages}
+    driver.stop()
+    assert _dispatcher_paths.dispatch_spans_path(args=args, repo=repo) in tailed
+
+    exporter = _RecordingExporter(batches=[])
+    result = EnrichStage(spans_path=spans_path, exporter=exporter).forward_once()
+
+    assert (result.ingested, result.forwarded, result.rejected) == (1, 1, 0)
+    forwarded = {
+        entry["key"]: entry["value"]["stringValue"]
+        for entry in cast("list[dict[str, Any]]", exporter.batches[0][0]["attributes"])
+    }
+    assert forwarded["work.item.id"] == "a-1"
+    assert forwarded["livespec.dispatch.factory"] == "default"

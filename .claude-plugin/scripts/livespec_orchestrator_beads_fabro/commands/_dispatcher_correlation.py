@@ -25,6 +25,7 @@ __all__: list[str] = [
     "DispatchCorrelation",
     "DispatchSpanIds",
     "correlation_attributes",
+    "dispatch_correlation",
     "dispatch_span_ids",
     "dispatch_traceparent",
     "non_zero_hex",
@@ -75,6 +76,29 @@ class DispatchSpanIds:
 
     trace_id: str
     span_id: str
+
+
+def dispatch_correlation(
+    *,
+    work_item_id: str,
+    dispatch_id: str | None,
+    factory: str,
+) -> DispatchCorrelation | None:
+    """Build the correlation for a dispatch, or None when it minted no id.
+
+    ONE construction rule, shared by the span emitter and the launchers: a
+    dispatch with no id has no traceparent to project and no span for a run
+    to parent to, so it correlates by nothing rather than by two of three
+    values. An invocation that minted no id is the legacy no-watchdog path
+    and the hermetic test tier, never a host dispatch.
+    """
+    if dispatch_id is None:
+        return None
+    return DispatchCorrelation(
+        work_item_id=work_item_id,
+        dispatch_id=dispatch_id,
+        factory=factory,
+    )
 
 
 def correlation_attributes(*, correlation: DispatchCorrelation) -> dict[str, str]:
