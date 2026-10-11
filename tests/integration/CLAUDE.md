@@ -671,6 +671,28 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   and a different one for every corruption of it, so the case discriminates in
   both directions instead of merely failing.
 
+- `test_fabro_currency_admission_scenario130.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 130 — Dispatch admits only a current,
+  identifiable Fabro base" and the Fabro-currency-admission clause of
+  `SPECIFICATION/contracts.md` through the REAL pre-dispatch wall,
+  `pre_dispatch_wall_exit`: the real committed factory block, the real
+  `JournalFile` on disk, the real release-observation cache under a tmp
+  `XDG_STATE_HOME`, and the real forge and engine argvs. Only the
+  `CommandRunner` that shells out to `gh` and `fabro`, and the clock the
+  observation is aged against, are stood in. Driving the WALL rather than the
+  gate is what makes "refused BEFORE claim" observable: a refusal returning
+  from the wall is one that reached no `admit_and_select`, so nothing moved
+  `ready -> active`, no assignee was set and no Fabro run was created — a
+  gate-level assertion that a verdict carries a refusal cannot show that. The
+  currency gate is FIRST in the wall, which is why these cases need no fixture
+  for the criteria wall, the proof-assets prerelease, the proof-credential
+  declaration or the host Codex credential; that ordering is itself
+  load-bearing, since the proof-assets gate CREATES a repository prerelease and
+  the Codex gate SPENDS a bounded provider renewal. Every fixture parameter is
+  REQUIRED rather than defaulted, because a default is an arm no case takes and
+  this tier's per-file coverage gate reads a never-taken branch in a fixture
+  exactly as it reads one in the product.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

@@ -4225,6 +4225,13 @@ def test_dispatch_green_closes_item_and_journals(
         "source-checkout-origin-reachability",
         "master-ci-preflight",
         "reconcile-runs-pass",
+        # The Fabro currency gate heads the pre-dispatch wall (bd-ib-j9x), ahead
+        # of every other refusal in it. This fixture declares no factory server,
+        # so the gate has no serving integration commit to resolve and records
+        # that it did not evaluate currency rather than passing the target over in
+        # silence -- the record is non-blocking and the dispatch runs to `green`
+        # with it present.
+        "dispatcher-fabro-currency-unevaluated",
         # The pre-dispatch proof-assets gate (S5 / bd-ib-b4u6b7), between the
         # reconcile pass and admission: it runs BEFORE the claim so a refused item
         # is never claimed. This fixture has no forge, so the record it writes is

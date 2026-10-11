@@ -251,9 +251,19 @@ class FabroPort:
         return FabroJsonResult(command=command, payload=fabro_json_payload(command=command))
 
     def version(self, *, timeout_seconds: float) -> FabroVersionResult:
+        """`fabro version` — the client AND the server the port is bound to.
+
+        Addressed through `FABRO_SERVER`, the same env mechanism `run` relies on,
+        rather than through a per-subcommand `--server`: a port constructed on one
+        factory must not report another factory's engine. Without it the verb
+        reads whichever server the host's ambient configuration names, which on a
+        two-factory host is a fleet-global surrogate for a per-target question —
+        and the currency predicate is required to be target-aware.
+        """
         command = self._run(
             argv=[self.fabro_bin, "version"],
             timeout_seconds=timeout_seconds,
+            env=self._server_env(),
         )
         return FabroVersionResult(command=command, text=command.stdout)
 

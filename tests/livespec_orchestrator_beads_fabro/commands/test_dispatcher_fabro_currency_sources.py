@@ -1,0 +1,452 @@
+"""Tests for the gathering half of the Fabro currency predicate.
+
+`test_dispatcher_fabro_currency.py` covers the RULE. This module covers what that
+rule is handed: the two argvs, the serving-commit read off the target's own
+server, the paginated releases parse and the bounded ancestry walk.
+
+TWO CLAIMS HERE ARE READ OFF THE SEAM RATHER THAN OFF A RETURN VALUE, because no
+return value can carry them. That the serving commit comes from the SERVER's
+section and not the client's is a claim about which line was parsed, and the two
+sections differ only in their label; and that the ancestry walk is BOUNDED is a
+claim about how many forge calls were spent, which a correct-but-unbounded walk
+would satisfy at every other assertion.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+
+from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency import (
+    FABRO_UPSTREAM_REPO,
+    FabroRelease,
+    FabroReleaseObservation,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency_sources import (
+    ANCESTRY_CANDIDATE_LIMIT,
+    ObservationReading,
+    compare_argv,
+    fabro_currency_subject,
+    parse_releases,
+    releases_argv,
+    resolved_base,
+    serving_integration_commit,
+)
+
+_REPO = Path("/repo")
+_SERVER = "https://hp-xubuntu.perch-rudd.ts.net:32276"
+_FABRO_BIN = "/home/ubuntu/.fabro/bin/fabro"
+_SERVER_COMMIT = "8869e88"
+_CLIENT_COMMIT = "4b8cc85"
+_NOW = datetime(2026, 10, 11, 9, 0, tzinfo=timezone.utc)
+
+
+@dataclass(kw_only=True)
+class _Runner:
+    results: dict[tuple[str, ...], CommandResult]
+    calls: list[tuple[str, ...]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        del cwd, timeout_seconds, env, stdin
+        key = tuple(argv)
+        self.calls.append(key)
+        return self.results.get(key, CommandResult(exit_code=1, stdout="", stderr="unstubbed"))
+
+
+def _factory(*, server: str | None = _SERVER) -> FactoryTarget:
+    return FactoryTarget(name="hp", server=server, dev_token=None, fabro_bin=_FABRO_BIN)
+
+
+def _version_runner(*, stdout: str, exit_code: int = 0) -> _Runner:
+    return _Runner(
+        results={
+            (_FABRO_BIN, "version"): CommandResult(exit_code=exit_code, stdout=stdout, stderr="")
+        }
+    )
+
+
+def _release(*, tag: str, days_ago: int) -> FabroRelease:
+    return FabroRelease(tag=tag, published_at=_NOW.replace(hour=0) - _days(days=days_ago))
+
+
+def _days(*, days: int) -> object:
+    from datetime import timedelta
+
+    return timedelta(days=days)
+
+
+def test_the_releases_argv_names_the_upstream_repository_and_projects_one_object_per_line() -> None:
+    """The projection is what makes a PAGINATED answer parseable.
+
+    Without `--jq`, `gh api --paginate` concatenates one array per page, so a
+    single-document parse succeeds on a one-page answer and fails on every
+    multi-page one — a reader that works until upstream grows.
+    """
+    argv = releases_argv()
+
+    assert argv[:3] == ["gh", "api", f"repos/{FABRO_UPSTREAM_REPO}/releases"]
+    assert "--paginate" in argv
+    assert argv[-1] == ".[] | {tag: .tag_name, published_at: .published_at}"
+
+
+def test_the_compare_argv_names_the_upstream_repository_rather_than_gh_placeholders() -> None:
+    """`{owner}`/`{repo}` would resolve against the GOVERNED tenant, not upstream."""
+    argv = compare_argv(base="v0.254.0", head=_SERVER_COMMIT)
+
+    assert argv[2] == f"repos/{FABRO_UPSTREAM_REPO}/compare/v0.254.0...{_SERVER_COMMIT}"
+    assert "{owner}" not in argv[2]
+
+
+def test_the_serving_commit_comes_from_the_server_section_and_not_the_client_section() -> None:
+    """The discriminating case: the two sections report DIFFERENT commits.
+
+    A whole-text scan matches the client line first, because `fabro version`
+    prints the client above the server — and would report the local client build
+    as the engine a dispatch lands on, which is the fleet-global surrogate the
+    clause forbids.
+    """
+    runner = _version_runner(
+        stdout=(
+            f"Client: fabro 0.254.0 ({_CLIENT_COMMIT} 2026-09-12)\n"
+            f"Server: fabro 0.254.0 ({_SERVER_COMMIT} 2026-10-01) at {_SERVER}\n"
+        )
+    )
+
+    commit = serving_integration_commit(
+        factory=_factory(), fabro_bin=_FABRO_BIN, runner=runner, cwd=_REPO
+    )
+
+    assert commit == _SERVER_COMMIT
+
+
+def test_the_version_read_addresses_the_targets_own_server_through_the_environment() -> None:
+    """Read off the seam, because the argv cannot carry it.
+
+    `fabro version` takes no per-subcommand `--server` on the pinned engine, so
+    the port addresses the target through `FABRO_SERVER`; an unaddressed read
+    returns whichever server the host's ambient configuration names.
+    """
+    captured: list[dict[str, str] | None] = []
+
+    @dataclass(kw_only=True)
+    class _EnvRunner:
+        def run(
+            self,
+            *,
+            argv: list[str],
+            cwd: Path,
+            timeout_seconds: float,
+            env: dict[str, str] | None = None,
+            stdin: int | None = None,
+        ) -> CommandResult:
+            del argv, cwd, timeout_seconds, stdin
+            captured.append(env)
+            return CommandResult(exit_code=0, stdout=f"Server: ({_SERVER_COMMIT} x)\n", stderr="")
+
+    _ = serving_integration_commit(
+        factory=_factory(), fabro_bin=_FABRO_BIN, runner=_EnvRunner(), cwd=_REPO
+    )
+
+    assert captured == [{"FABRO_SERVER": _SERVER}]
+
+
+def test_a_client_that_exits_non_zero_reports_no_serving_commit() -> None:
+    """Unobserved, not absent: the two have the same remedy and both fail closed."""
+    runner = _version_runner(stdout="", exit_code=127)
+
+    assert (
+        serving_integration_commit(
+            factory=_factory(), fabro_bin=_FABRO_BIN, runner=runner, cwd=_REPO
+        )
+        is None
+    )
+
+
+def test_output_with_no_server_section_reports_no_serving_commit() -> None:
+    runner = _version_runner(stdout=f"Client: fabro 0.254.0 ({_CLIENT_COMMIT} 2026-09-12)\n")
+
+    assert (
+        serving_integration_commit(
+            factory=_factory(), fabro_bin=_FABRO_BIN, runner=runner, cwd=_REPO
+        )
+        is None
+    )
+
+
+def test_a_server_section_carrying_no_parenthesized_commit_reports_none() -> None:
+    """A bare date is eight HEX digits, so an unanchored scan would report one.
+
+    `2026-10-01` alone cannot be a commit, and the parser must say so rather than
+    pick the first hex-looking run it finds.
+    """
+    runner = _version_runner(stdout="Server: fabro 0.254.0 built 20261001\n")
+
+    assert (
+        serving_integration_commit(
+            factory=_factory(), fabro_bin=_FABRO_BIN, runner=runner, cwd=_REPO
+        )
+        is None
+    )
+
+
+def test_releases_parse_reads_every_projected_line_in_arrival_order() -> None:
+    stdout = (
+        json.dumps({"tag": "v0.378.0-nightly.0", "published_at": "2026-10-10T01:00:00Z"})
+        + "\n\n"
+        + json.dumps({"tag": "v0.254.0", "published_at": "2026-07-30T12:00:00+00:00"})
+        + "\n"
+    )
+
+    releases = parse_releases(stdout=stdout)
+
+    assert releases is not None
+    assert [release.tag for release in releases] == ["v0.378.0-nightly.0", "v0.254.0"]
+    assert releases[0].published_at == datetime(2026, 10, 10, 1, 0, tzinfo=timezone.utc)
+
+
+def test_a_line_that_is_not_a_projected_release_object_fails_the_whole_parse() -> None:
+    """Fail the parse rather than return a SHORT list.
+
+    A short list is how a genuinely-ancestral tag disappears and a current build
+    gets refused for having no base — a refusal manufactured by the parser.
+    """
+    assert parse_releases(
+        stdout='{"tag": "v1", "published_at": "2026-10-10T01:00:00Z"}\nnope\n'
+    ) is (None)
+
+
+def test_a_release_object_missing_either_field_fails_the_parse() -> None:
+    assert parse_releases(stdout=json.dumps({"tag": "v1"}) + "\n") is None
+    assert parse_releases(stdout=json.dumps({"published_at": "2026-10-10T01:00:00Z"}) + "\n") is (
+        None
+    )
+    assert parse_releases(stdout=json.dumps(["v1"]) + "\n") is None
+    assert parse_releases(stdout=json.dumps({"tag": 7, "published_at": "x"}) + "\n") is None
+
+
+def test_a_naive_publication_instant_fails_the_parse() -> None:
+    """An offset-less instant cannot be compared against anything here.
+
+    Treating it as UTC would silently invent the one fact the window rests on.
+    """
+    assert parse_releases(
+        stdout=json.dumps({"tag": "v1", "published_at": "2026-10-10"}) + "\n"
+    ) is (None)
+
+
+def test_the_resolved_base_is_the_first_ancestor_in_observation_order() -> None:
+    """Newest-first order means the first ancestor IS the latest-published one."""
+    newest = _release(tag="v0.378.0-nightly.0", days_ago=1)
+    middle = _release(tag="v0.370.0", days_ago=20)
+    oldest = _release(tag="v0.254.0", days_ago=90)
+    runner = _Runner(
+        results={
+            tuple(compare_argv(base="v0.378.0-nightly.0", head=_SERVER_COMMIT)): CommandResult(
+                exit_code=0, stdout="diverged\n", stderr=""
+            ),
+            tuple(compare_argv(base="v0.370.0", head=_SERVER_COMMIT)): CommandResult(
+                exit_code=0, stdout="identical\n", stderr=""
+            ),
+        }
+    )
+
+    base = resolved_base(
+        observation=FabroReleaseObservation(releases=(newest, middle, oldest), observed_at=_NOW),
+        serving_commit=_SERVER_COMMIT,
+        runner=runner,
+        cwd=_REPO,
+    )
+
+    assert base == middle
+    # The walk STOPPED at the hit: the third candidate was never compared.
+    assert tuple(compare_argv(base="v0.254.0", head=_SERVER_COMMIT)) not in runner.calls
+
+
+def test_a_failed_or_unrecognised_comparison_does_not_promote_a_tag_to_base() -> None:
+    """The fail-open this excludes: an unreachable forge accepting any tag.
+
+    Both arms answer "not an ancestor", so the walk runs on and ends in a refusal
+    rather than in a base nothing verified.
+    """
+    unreadable = _release(tag="v0.378.0-nightly.0", days_ago=1)
+    unknown_status = _release(tag="v0.370.0", days_ago=20)
+    runner = _Runner(
+        results={
+            tuple(compare_argv(base="v0.370.0", head=_SERVER_COMMIT)): CommandResult(
+                exit_code=0, stdout="sideways\n", stderr=""
+            )
+        }
+    )
+
+    base = resolved_base(
+        observation=FabroReleaseObservation(
+            releases=(unreadable, unknown_status), observed_at=_NOW
+        ),
+        serving_commit=_SERVER_COMMIT,
+        runner=runner,
+        cwd=_REPO,
+    )
+
+    assert base is None
+    assert len(runner.calls) == 2
+
+
+def test_the_ancestry_walk_spends_no_more_than_the_declared_candidate_bound() -> None:
+    """Read off the CALL COUNT, which is the only instrument that can see a bound.
+
+    A correct-but-unbounded walk returns the same `None` here, so every other
+    assertion in this module would pass against one.
+    """
+    releases = tuple(
+        _release(tag=f"v0.{index}.0", days_ago=index)
+        for index in range(ANCESTRY_CANDIDATE_LIMIT + 10)
+    )
+    runner = _Runner(results={})
+
+    base = resolved_base(
+        observation=FabroReleaseObservation(releases=releases, observed_at=_NOW),
+        serving_commit=_SERVER_COMMIT,
+        runner=runner,
+        cwd=_REPO,
+    )
+
+    assert base is None
+    assert len(runner.calls) == ANCESTRY_CANDIDATE_LIMIT
+
+
+def test_the_subject_names_the_observation_fault_ahead_of_the_serving_build_one() -> None:
+    """An absent observation is a SHARED fault; an unidentified build is a local one.
+
+    Reporting the per-target fault while the shared one stands sends the operator
+    to the wrong host.
+    """
+    runner = _version_runner(stdout="", exit_code=127)
+
+    subject = fabro_currency_subject(
+        factory=_factory(),
+        fabro_bin=_FABRO_BIN,
+        runner=runner,
+        cwd=_REPO,
+        reading=ObservationReading(observation=None, failure="the forge read failed"),
+    )
+
+    assert subject.serving_commit is None
+    assert subject.base is None
+    assert subject.unobservable_detail == "the forge read failed"
+
+
+def test_an_unidentified_serving_build_names_the_server_it_asked() -> None:
+    runner = _version_runner(stdout="", exit_code=127)
+
+    subject = fabro_currency_subject(
+        factory=_factory(),
+        fabro_bin=_FABRO_BIN,
+        runner=runner,
+        cwd=_REPO,
+        reading=ObservationReading(
+            observation=FabroReleaseObservation(
+                releases=(_release(tag="v0.378.0-nightly.0", days_ago=1),), observed_at=_NOW
+            ),
+            failure=None,
+        ),
+    )
+
+    assert subject.unobservable_detail is not None
+    assert _SERVER in subject.unobservable_detail
+    assert "could not be identified" in subject.unobservable_detail
+
+
+def test_a_commit_with_no_release_tag_ancestor_states_the_scope_that_was_searched() -> None:
+    """The bound is NAMED in the refusal, not left implicit.
+
+    An absence asserted over an unstated population is what turns a bounded search
+    into a false impossibility.
+    """
+    runner = _Runner(
+        results={
+            (_FABRO_BIN, "version"): CommandResult(
+                exit_code=0, stdout=f"Server: ({_SERVER_COMMIT} x)\n", stderr=""
+            )
+        }
+    )
+
+    subject = fabro_currency_subject(
+        factory=_factory(),
+        fabro_bin=_FABRO_BIN,
+        runner=runner,
+        cwd=_REPO,
+        reading=ObservationReading(
+            observation=FabroReleaseObservation(
+                releases=(_release(tag="v0.378.0-nightly.0", days_ago=1),), observed_at=_NOW
+            ),
+            failure=None,
+        ),
+    )
+
+    assert subject.serving_commit == _SERVER_COMMIT
+    assert subject.base is None
+    assert subject.unobservable_detail is not None
+    assert str(ANCESTRY_CANDIDATE_LIMIT) in subject.unobservable_detail
+    assert "no published release-tag ancestor" in subject.unobservable_detail
+
+
+def test_a_target_declaring_no_server_is_asked_without_a_server_environment() -> None:
+    """The implicit `default` target: the port falls back to the ambient reading.
+
+    The gate never evaluates such a target, but the read must still be total — and
+    the unidentified detail has to name something rather than `None`.
+    """
+    runner = _version_runner(stdout="")
+
+    subject = fabro_currency_subject(
+        factory=_factory(server=None),
+        fabro_bin=_FABRO_BIN,
+        runner=runner,
+        cwd=_REPO,
+        reading=ObservationReading(
+            observation=FabroReleaseObservation(releases=(), observed_at=_NOW), failure=None
+        ),
+    )
+
+    assert subject.unobservable_detail is not None
+    assert "the ambient server" in subject.unobservable_detail
+
+
+def test_a_resolved_base_leaves_the_subject_with_no_unobservable_detail() -> None:
+    newest = _release(tag="v0.378.0-nightly.0", days_ago=1)
+    runner = _Runner(
+        results={
+            (_FABRO_BIN, "version"): CommandResult(
+                exit_code=0, stdout=f"Server: ({_SERVER_COMMIT} x)\n", stderr=""
+            ),
+            tuple(compare_argv(base=newest.tag, head=_SERVER_COMMIT)): CommandResult(
+                exit_code=0, stdout="ahead\n", stderr=""
+            ),
+        }
+    )
+
+    subject = fabro_currency_subject(
+        factory=_factory(),
+        fabro_bin=_FABRO_BIN,
+        runner=runner,
+        cwd=_REPO,
+        reading=ObservationReading(
+            observation=FabroReleaseObservation(releases=(newest,), observed_at=_NOW),
+            failure=None,
+        ),
+    )
+
+    assert subject.base == newest
+    assert subject.unobservable_detail is None

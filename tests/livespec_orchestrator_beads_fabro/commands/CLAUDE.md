@@ -75,6 +75,29 @@ Tests for the thin-transport command modules under
   defect these cases were added to close, where a merge nobody could read graded
   as a merge nobody recorded and the containment relation then did not run.
 
+- `test_dispatcher_fabro_currency.py`,
+  `test_dispatcher_fabro_currency_sources.py`,
+  `test_dispatcher_fabro_release_cache.py`,
+  `test_dispatcher_fabro_release_observation.py` and
+  `test_dispatcher_fabro_currency_gate.py` — the five modules of the
+  dispatch-time Fabro currency admission. The scenario itself is bound at the
+  integration tier by
+  `tests/integration/test_fabro_currency_admission_scenario130.py`; these cover
+  what that tier cannot observe. Three of them are worth knowing about before
+  editing. The sources module asserts TWO claims off the SEAM rather than off a
+  return value, because no return value can carry them: that the serving commit
+  is parsed from the SERVER's section and not the client's (the two sections
+  differ only in their label, and a whole-text scan matches the client line
+  first), and that the ancestry walk is BOUNDED (a claim about how many forge
+  calls were spent, which a correct-but-unbounded walk satisfies at every other
+  assertion). The observation module reads the forge CALL COUNT in every case,
+  since "served from the cache" is a claim about a read that did NOT happen and
+  a reading that refreshed every time returns the same value. And the gate
+  module asserts target-awareness with one CURRENT target beside one STALE one,
+  which is the only shape that can fail for the right reason — a gate reading a
+  single fleet-global surrogate returns one verdict for both, and both a
+  both-current and a both-stale fixture would agree with it.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr
