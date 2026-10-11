@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 __all__: list[str] = [
     "CORRELATION_LABEL_KEYS",
+    "IDENTIFIER_MAX_BYTES",
     "SPAN_ID_DOMAIN",
     "SPAN_ID_HEX_DIGITS",
     "TRACE_ID_DOMAIN",
@@ -29,8 +30,18 @@ __all__: list[str] = [
     "dispatch_correlation",
     "dispatch_span_ids",
     "dispatch_traceparent",
+    "is_identifier_shaped",
     "non_zero_hex",
 ]
+
+# The engine's own label-value admission rule, restated: one to 128 bytes,
+# each an ASCII letter, an ASCII digit, a period, an underscore, a colon or
+# a hyphen. Restated rather than probed because the dispatch has to decide
+# BEFORE it launches — the engine refuses the whole `run` over a value it
+# does not admit, so a value asked and refused costs the dispatch while a
+# value left out costs one label.
+IDENTIFIER_MAX_BYTES = 128
+_EXTRA_IDENTIFIER_BYTES = frozenset(b"._:-")
 
 # W3C widths for a trace id and a span id, in lowercase hexadecimal digits.
 TRACE_ID_HEX_DIGITS = 32
@@ -103,23 +114,46 @@ def dispatch_correlation(
 
 
 def correlation_attributes(*, correlation: DispatchCorrelation) -> dict[str, str]:
-    """The correlation values, keyed by their span-attribute name."""
+    """The correlation values, keyed by their span-attribute name.
+
+    UNFILTERED, deliberately. The identifier-shape rule is the ENGINE's
+    admission rule for an argv label, and an OTLP attribute is not subject
+    to it — dropping a value here would lose the one record of what the
+    factory was actually called while telling a reader nothing about why.
+    """
     values = (correlation.work_item_id, correlation.dispatch_id, correlation.factory)
     return dict(zip(CORRELATION_LABEL_KEYS, values, strict=True))
 
 
-def correlation_label_args(*, correlation: DispatchCorrelation | None) -> tuple[str, ...]:
-    """The `--label KEY=VALUE` argv pairs this correlation carries.
+def is_identifier_shaped(*, value: str) -> bool:
+    """Whether the engine will admit `value` as a run-label value.
 
-    One pair per value, in the fixed key order above. A None correlation
-    carries none: an invocation that minted no dispatch id has nothing to
-    correlate by, and two labels out of three would read downstream as a
-    dispatch whose factory was unknown rather than as no dispatch at all.
+    Measured in BYTES rather than characters, because the engine's limit
+    is a byte length: a 128-character value of multi-byte characters is
+    over the limit while its character count says it is not. Surrogates
+    are passed through to the encoder rather than raising, so a lone
+    surrogate is refused on its bytes like any other unpassable value.
+    """
+    raw = value.encode("utf-8", "surrogatepass")
+    if len(raw) < 1 or len(raw) > IDENTIFIER_MAX_BYTES:
+        return False
+    return all(_is_identifier_byte(byte=byte) for byte in raw)
+
+
+def correlation_label_args(*, correlation: DispatchCorrelation | None) -> tuple[str, ...]:
+    """The `--label KEY=VALUE` argv pairs this correlation can carry.
+
+    One pair per PASSABLE value, in the fixed key order above. A value the
+    engine would refuse contributes no pair, so it costs a label rather
+    than the launch. A None correlation carries none: an invocation that
+    minted no dispatch id has nothing to correlate by at all.
     """
     if correlation is None:
         return ()
     args: list[str] = []
     for key, value in correlation_attributes(correlation=correlation).items():
+        if not is_identifier_shaped(value=value):
+            continue
         args.extend(("--label", f"{key}={value}"))
     return tuple(args)
 
@@ -162,3 +196,8 @@ def non_zero_hex(*, digits: str) -> str:
 def _derived_hex(*, domain: str, dispatch_id: str, digits: int) -> str:
     digest = hashlib.sha256(f"{domain}:{dispatch_id}".encode()).hexdigest()
     return non_zero_hex(digits=digest[:digits])
+
+
+def _is_identifier_byte(*, byte: int) -> bool:
+    char = chr(byte)
+    return char.isascii() and (char.isalnum() or byte in _EXTRA_IDENTIFIER_BYTES)
