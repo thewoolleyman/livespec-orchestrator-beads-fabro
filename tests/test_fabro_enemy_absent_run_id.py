@@ -28,6 +28,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -50,19 +52,32 @@ _RETIRED_FIXTURE = "01ENEMYUNITTESTABSENTRUN0"
 _FIXTURE_MARKER = "ENEMY"
 
 
-def _fixture_literal() -> str:
-    """The absent-run id as the tier 0 surface actually declares it."""
-    module = ast.parse(_TIER0_SURFACE.read_text(encoding="utf-8"), filename=_TIER0_SURFACE.name)
+def _fixture_literal(*, source: Path = _TIER0_SURFACE) -> str:
+    """The absent-run id as the tier 0 surface actually declares it.
+
+    REFUSES a surface declaring no such literal rather than returning a
+    fallback. A tolerant parse would hand every measurement below a
+    well-formed value the suite does not drive — the wrong-population
+    failure, arrived at through a default rather than through a typo.
+    """
+    module = ast.parse(source.read_text(encoding="utf-8"), filename=source.name)
     for node in module.body:
         match node:
+            # The name is compared in a GUARD, not written into the pattern. A
+            # bare `_FIXTURE_NAME` there is a CAPTURE pattern rather than a
+            # value pattern, so it binds whatever name it finds and matches
+            # every string assignment in the file. That is how this parse
+            # first shipped, and the barren-surface case below is what caught
+            # it: it happened to return the right literal only because no
+            # other module-level string assignment precedes it.
             case ast.Assign(
-                targets=[ast.Name(id=_FIXTURE_NAME)],
+                targets=[ast.Name(id=name)],
                 value=ast.Constant(value=str() as literal),
-            ):
+            ) if name == _FIXTURE_NAME:
                 return literal
             case _:
                 pass
-    raise AssertionError(f"{_TIER0_SURFACE.name} declares no {_FIXTURE_NAME} string literal")
+    raise AssertionError(f"{source.name} declares no {_FIXTURE_NAME} string literal")
 
 
 def test_the_fixture_is_read_off_the_tier0_surfaces_own_declaration() -> None:
@@ -74,6 +89,20 @@ def test_the_fixture_is_read_off_the_tier0_surfaces_own_declaration() -> None:
     assert _TIER0_SURFACE.is_file()
     assert literal
     assert literal != _RETIRED_FIXTURE
+
+
+def test_a_surface_declaring_no_fixture_is_refused_rather_than_defaulted(
+    tmp_path: Path,
+) -> None:
+    # The other half of that instrument control. Every test here reads one
+    # literal, so a parse that answered SOMETHING for a surface carrying no
+    # such declaration would make all of them report on a value the suite
+    # never drives, and report it as a pass.
+    barren = tmp_path / "test_tier0_barren.py"
+    _ = barren.write_text("_SOME_OTHER_FIXTURE = 'not the one'\n", encoding="utf-8")
+
+    with pytest.raises(AssertionError, match=_FIXTURE_NAME):
+        _ = _fixture_literal(source=barren)
 
 
 def test_the_absent_run_fixture_is_a_syntactically_valid_ulid() -> None:

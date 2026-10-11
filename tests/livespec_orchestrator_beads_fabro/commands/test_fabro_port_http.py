@@ -27,6 +27,10 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroTa
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 _DEV_TOKEN_VALUE = "fixture-dev-token"
+# The two conditions the module docstring must state, because `status` carries
+# both under one integer and a call site cannot tell them apart.
+_STATUS_ZERO_CONDITION = "status 0 means no HTTP response arrived at all"
+_SERVER_STATUS_CONDITION = "a non-2xx answer carries the server's own status"
 # Captured before any fixture runs, so the auth-file test can exercise the real
 # HOME-relative seam that `tests/conftest.py` autouse-replaces everywhere else.
 _REAL_AUTH_FILE = _fabro_port_auth.fabro_auth_file
@@ -352,6 +356,30 @@ def _send() -> FabroHttpResult:
         body=None,
         timeout_seconds=1.0,
     )
+
+
+def test_the_module_docstring_states_which_failures_yield_status_zero() -> None:
+    """`status` is the port's own vocabulary, so the module must define it.
+
+    `FabroHttpResult.status` carries two completely different facts under one
+    integer, and nothing at a call site distinguishes them: 0 says no response
+    arrived, and any other value is the server's own verdict. A reader who has
+    to infer that split from the `except` clause infers the collapse that was
+    there before — which is what two independent sessions did, filing a
+    refusing server as an unreachable one.
+
+    Asserted against the MODULE docstring specifically rather than the file
+    text, because that is the surface `help()` and an editor hover render; a
+    needle satisfied by a comment further down would not be read by anyone.
+    Each needle sits within one physical line, since the prose is hard-wrapped
+    and a needle straddling a break can only fail while the text says exactly
+    the right thing.
+    """
+    docstring = _fabro_port_http.__doc__
+
+    assert docstring is not None
+    assert _STATUS_ZERO_CONDITION in docstring
+    assert _SERVER_STATUS_CONDITION in docstring
 
 
 def test_the_cli_port_builds_its_server_api_face_from_its_own_target(tmp_path: Path) -> None:
