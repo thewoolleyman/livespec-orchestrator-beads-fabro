@@ -130,16 +130,20 @@ FORMS: tuple[str, ...] = (FORM_BINARY_ARGV, FORM_TRANSPORT_CALL, FORM_SERVER_API
 # being widened into an amnesty.
 FAMILY_PREFIX = "_fabro_port"
 
-# Package-relative POSIX paths the walk MUST reach: the two modules that own
+# Package-relative POSIX paths the walk MUST reach: the three modules that own
 # the seam, plus the three that reached past it before the conversion. A walk
 # that misses one is mis-scoped, and those three are exactly where a
-# regression would land first.
+# regression would land first. The list is ALSO the SEAM control's upper bound
+# — a family member holding an engine invocation must be named here, or that
+# control fails rather than certifying an exemption over a module the walk
+# does not account for.
 DISCOVERY_ANCHORS: tuple[str, ...] = (
     "commands/_acp_factory_capabilities.py",
     "commands/_dispatcher_preserve_reference.py",
     "commands/_dispatcher_preserve_reference_check.py",
     "commands/_fabro_port.py",
     "commands/_fabro_port_http.py",
+    "commands/_fabro_port_run_launch.py",
 )
 
 # A module that is unambiguously the Dispatcher rather than the facade. If the

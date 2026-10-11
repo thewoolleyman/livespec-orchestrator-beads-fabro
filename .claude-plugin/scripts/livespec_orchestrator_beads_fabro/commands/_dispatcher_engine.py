@@ -56,6 +56,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol, cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import (
+    dispatch_correlation,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_current_merge_hold import (
     MERGE_HELD_STAGE,
     merge_hold_terminal,
@@ -220,7 +223,16 @@ class SynchronousFabroLauncher:
     the exit code. `run_dispatch` defaults to this launcher so callers
     that do not wire the watchdog (and the existing engine tests) are
     unaffected.
+
+    `dispatch_id` rides here for the same reason it rides the watched
+    launcher: both paths label their run with the dispatch's correlation,
+    and the two launchers deliberately read the SAME inputs so a
+    repository cannot have one path correlated and the other anonymous.
+    None is an invocation that minted no id — the legacy default and the
+    engine tests — which carries no labels rather than partial ones.
     """
+
+    dispatch_id: str | None = None
 
     def launch(
         self,
@@ -236,6 +248,11 @@ class SynchronousFabroLauncher:
             goal_file=plan.goal_file,
             inputs=dispatch_fabro_run_inputs(plan=plan),
             timeout_seconds=plan.fabro_timeout_seconds,
+            correlation=dispatch_correlation(
+                work_item_id=plan.work_item_id,
+                dispatch_id=self.dispatch_id,
+                factory=plan.fabro_factory_name,
+            ),
         )
         return FabroRunResult(command=cast("CommandResult", result.command), run_id=result.run_id)
 
