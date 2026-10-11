@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -20,11 +21,21 @@ _CORRELATION_PATH = Path(
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_correlation.py"
 )
 _CORRELATION_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_correlation"
+_SPAN_PATH = Path(
+    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands"
+    "/_dispatcher_dispatch_span.py"
+)
+_SPAN_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_span"
 
 
 def _correlation_module() -> Any:
     assert _CORRELATION_PATH.is_file()
     return importlib.import_module(_CORRELATION_MODULE)
+
+
+def _span_module() -> Any:
+    assert _SPAN_PATH.is_file()
+    return importlib.import_module(_SPAN_MODULE)
 
 
 def test_dispatch_span_ids_are_domain_separated_sha256_truncations() -> None:
@@ -81,3 +92,31 @@ def test_dispatch_span_ids_and_traceparent_re_derive_identically() -> None:
         == f"00-{first.trace_id}-{first.span_id}-01"
     )
     assert module.dispatch_span_ids(dispatch_id=other_dispatch_id) != first
+
+
+def test_dispatch_span_carries_the_three_correlation_attributes() -> None:
+    """The emitted span names the dispatch by all three correlation values."""
+    span_module = _span_module()
+    correlation_module = _correlation_module()
+    correlation = correlation_module.DispatchCorrelation(
+        work_item_id="bd-ib-5jvgfr",
+        dispatch_id="01M4N4V6SEEKVVP88ST0CASGCP",
+        factory="hp",
+    )
+
+    payload = json.loads(span_module.dispatch_request_line(correlation=correlation, now_ns=7))
+    span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    attributes = {entry["key"]: entry["value"]["stringValue"] for entry in span["attributes"]}
+
+    assert attributes == {
+        "work.item.id": "bd-ib-5jvgfr",
+        "livespec.dispatch.id": "01M4N4V6SEEKVVP88ST0CASGCP",
+        "livespec.dispatch.factory": "hp",
+    }
+    # The span the traceparent will name, so its identity has to BE the
+    # derived pair rather than a second identity that merely looks like one.
+    ids = correlation_module.dispatch_span_ids(dispatch_id=correlation.dispatch_id)
+    assert span["traceId"] == ids.trace_id
+    assert span["spanId"] == ids.span_id
+    assert span["name"] == span_module.DISPATCH_SPAN_NAME
+    assert span["startTimeUnixNano"] == "7"

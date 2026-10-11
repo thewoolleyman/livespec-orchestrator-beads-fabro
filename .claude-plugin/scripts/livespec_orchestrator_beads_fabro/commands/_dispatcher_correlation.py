@@ -17,11 +17,14 @@ import hashlib
 from dataclasses import dataclass
 
 __all__: list[str] = [
+    "CORRELATION_LABEL_KEYS",
     "SPAN_ID_DOMAIN",
     "SPAN_ID_HEX_DIGITS",
     "TRACE_ID_DOMAIN",
     "TRACE_ID_HEX_DIGITS",
+    "DispatchCorrelation",
     "DispatchSpanIds",
+    "correlation_attributes",
     "dispatch_span_ids",
     "dispatch_traceparent",
     "non_zero_hex",
@@ -46,12 +49,38 @@ _TRACEPARENT_VERSION = "00"
 _TRACEPARENT_FLAGS = "01"
 
 
+# The span-attribute names the three values carry, in the order every
+# surface emits them. The SAME three names `_otel_scrub`'s forwarding
+# allowlist and `_otel_enrich`'s correlation join already key on, so a
+# dispatch span and a Fabro span describe one dispatch in one vocabulary.
+CORRELATION_LABEL_KEYS: tuple[str, ...] = (
+    "work.item.id",
+    "livespec.dispatch.id",
+    "livespec.dispatch.factory",
+)
+
+
+@dataclass(frozen=True, kw_only=True)
+class DispatchCorrelation:
+    """The three values one dispatch correlates every span of its run by."""
+
+    work_item_id: str
+    dispatch_id: str
+    factory: str
+
+
 @dataclass(frozen=True, kw_only=True)
 class DispatchSpanIds:
     """One dispatch span's W3C identity, derived from its dispatch id."""
 
     trace_id: str
     span_id: str
+
+
+def correlation_attributes(*, correlation: DispatchCorrelation) -> dict[str, str]:
+    """The correlation values, keyed by their span-attribute name."""
+    values = (correlation.work_item_id, correlation.dispatch_id, correlation.factory)
+    return dict(zip(CORRELATION_LABEL_KEYS, values, strict=True))
 
 
 def dispatch_span_ids(*, dispatch_id: str) -> DispatchSpanIds:
