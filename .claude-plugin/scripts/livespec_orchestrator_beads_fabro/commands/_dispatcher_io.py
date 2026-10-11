@@ -104,6 +104,7 @@ class ShellCommandRunner:
         timeout_seconds: float,
         env: dict[str, str] | None = None,
         stdin: int | None = None,
+        start_new_session: bool = False,
     ) -> CommandResult:
         completed = attempt(
             action=lambda: subprocess.run(  # noqa: S603 - argvs are Dispatcher-built, never shell
@@ -115,6 +116,7 @@ class ShellCommandRunner:
                 check=False,
                 env=None if env is None else {**os.environ, **env},
                 stdin=stdin,
+                start_new_session=start_new_session,
             ),
             exceptions=(subprocess.TimeoutExpired, FileNotFoundError),
         )

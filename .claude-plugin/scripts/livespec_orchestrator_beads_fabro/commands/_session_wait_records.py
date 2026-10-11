@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -15,16 +12,19 @@ from uuid import uuid4
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pid_liveness import (
     process_started_at_epoch,
 )
+from livespec_orchestrator_beads_fabro.commands._session_wait_lock import (
+    LockBudget,
+    run_with_wait_store_lock,
+    wait_store_lock,
+)
 from livespec_orchestrator_beads_fabro.commands._session_wait_types import (
     GateObservation,
     WaitRequest,
 )
 
 __all__: list[str] = [
-    "AckResult",
     "WaitRecordRead",
     "WaiterIdentity",
-    "ack_wait",
     "current_waiter_identity",
     "process_generation_token",
     "read_wait_record",
@@ -51,12 +51,6 @@ class WaitRecordRead:
     diagnostic: str | None
 
 
-@dataclass(frozen=True, kw_only=True)
-class AckResult:
-    wait_id: str
-    status: str
-
-
 def current_waiter_identity() -> WaiterIdentity:
     pid = os.getpid()
     return WaiterIdentity(pid=pid, generation=str(process_generation_token(pid=pid)))
@@ -69,15 +63,6 @@ def process_generation_token(*, pid: int) -> str | None:
 
 def wait_record_path(*, wait_store_root: Path, wait_id: str) -> Path:
     return wait_store_root / f"{wait_id}.json"
-
-
-@contextmanager
-def wait_store_lock(*, wait_store_root: Path) -> Iterator[None]:
-    wait_store_root.mkdir(parents=True, exist_ok=True)
-    with (wait_store_root / ".inventory.lock").open("a", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        yield
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def write_wait_record(*, path: Path, payload: dict[str, object]) -> None:
@@ -102,43 +87,59 @@ def register_wait(
     wait_store_root: Path,
     waiter: WaiterIdentity,
     armed_at: float,
+    lock_budget: LockBudget | None = None,
 ) -> str:
     path = wait_record_path(wait_store_root=wait_store_root, wait_id=request.wait_id)
-    with wait_store_lock(wait_store_root=wait_store_root):
-        if path.exists():
-            return "conflict"
-        targets: list[dict[str, object]] = [
-            {
-                "generation": target.generation,
-                "gate_store_root": str(target.gate_store_root),
-                "identity": target.identity,
-                "kind": "gate",
-                "run_id": target.run_id,
-            }
-            for target in request.targets
-        ]
-        payload: dict[str, object] = {
-            "acknowledgement": {
-                "acknowledged": False,
-                "acknowledged_at": None,
-                "kind": None,
-                "session_id": None,
-            },
-            "armed_at": armed_at,
-            "deadline_at": armed_at + request.deadline_seconds,
-            "deadline_seconds": request.deadline_seconds,
-            "observation_sequence": 0,
-            "observations": [],
-            "repository": str(request.repository),
-            "return_ready": False,
-            "return_reason": None,
-            "schema_version": SCHEMA_VERSION,
-            "session_id": request.session_id,
-            "targets": targets,
-            "wait_id": request.wait_id,
-            "waiter": {"generation": waiter.generation, "pid": waiter.pid},
+    result = run_with_wait_store_lock(
+        wait_store_root=wait_store_root,
+        budget=lock_budget,
+        action=lambda: _register_wait(
+            path=path,
+            request=request,
+            waiter=waiter,
+            armed_at=armed_at,
+        ),
+    )
+    return "unavailable" if result is None else result
+
+
+def _register_wait(
+    *, path: Path, request: WaitRequest, waiter: WaiterIdentity, armed_at: float
+) -> str:
+    if path.exists():
+        return "conflict"
+    targets: list[dict[str, object]] = [
+        {
+            "generation": target.generation,
+            "gate_store_root": str(target.gate_store_root),
+            "identity": target.identity,
+            "kind": "gate",
+            "run_id": target.run_id,
         }
-        write_wait_record(path=path, payload=payload)
+        for target in request.targets
+    ]
+    payload: dict[str, object] = {
+        "acknowledgement": {
+            "acknowledged": False,
+            "acknowledged_at": None,
+            "kind": None,
+            "session_id": None,
+        },
+        "armed_at": armed_at,
+        "deadline_at": armed_at + request.deadline_seconds,
+        "deadline_seconds": request.deadline_seconds,
+        "observation_sequence": 0,
+        "observations": [],
+        "repository": str(request.repository),
+        "return_ready": False,
+        "return_reason": None,
+        "schema_version": SCHEMA_VERSION,
+        "session_id": request.session_id,
+        "targets": targets,
+        "wait_id": request.wait_id,
+        "waiter": {"generation": waiter.generation, "pid": waiter.pid},
+    }
+    write_wait_record(path=path, payload=payload)
     return "registered"
 
 
@@ -161,61 +162,49 @@ def record_observations(
     wait_store_root: Path,
     wait_id: str,
     observations: tuple[GateObservation, ...],
-) -> None:
+    lock_budget: LockBudget | None = None,
+) -> bool:
     path = wait_record_path(wait_store_root=wait_store_root, wait_id=wait_id)
-    with wait_store_lock(wait_store_root=wait_store_root):
-        payload = _load_known_record(path=path)
-        payload["observation_sequence"] = int(str(payload["observation_sequence"])) + 1
-        payload["observations"] = [
-            _observation_payload(observation=observation) for observation in observations
-        ]
-        write_wait_record(path=path, payload=payload)
+    result = run_with_wait_store_lock(
+        wait_store_root=wait_store_root,
+        budget=lock_budget,
+        action=lambda: _record_observations(path=path, observations=observations),
+    )
+    return result is not None
 
 
-def record_return_ready(*, wait_store_root: Path, wait_id: str, return_reason: str) -> None:
-    path = wait_record_path(wait_store_root=wait_store_root, wait_id=wait_id)
-    with wait_store_lock(wait_store_root=wait_store_root):
-        payload = _load_known_record(path=path)
-        payload["return_ready"] = True
-        payload["return_reason"] = return_reason
-        write_wait_record(path=path, payload=payload)
+def _record_observations(*, path: Path, observations: tuple[GateObservation, ...]) -> bool:
+    payload = _load_known_record(path=path)
+    payload["observation_sequence"] = int(str(payload["observation_sequence"])) + 1
+    payload["observations"] = [
+        _observation_payload(observation=observation) for observation in observations
+    ]
+    write_wait_record(path=path, payload=payload)
+    return True
 
 
-def _acknowledged_records(*, wait_store_root: Path) -> list[tuple[float, Path]]:
-    acknowledged: list[tuple[float, Path]] = []
-    for path in wait_store_root.glob("*.json"):
-        loaded = read_wait_record(path=path)
-        if loaded.payload is None:
-            continue
-        acknowledgement = cast("dict[str, object]", loaded.payload["acknowledgement"])
-        if bool(acknowledgement["acknowledged"]):
-            acknowledged.append((float(str(acknowledgement["acknowledged_at"])), path))
-    return sorted(acknowledged)
-
-
-def ack_wait(
+def record_return_ready(
     *,
     wait_store_root: Path,
     wait_id: str,
-    session_id: str,
-    acknowledged_at: float,
-    retention_limit: int,
-) -> AckResult:
+    return_reason: str,
+    lock_budget: LockBudget | None = None,
+) -> bool:
     path = wait_record_path(wait_store_root=wait_store_root, wait_id=wait_id)
-    with wait_store_lock(wait_store_root=wait_store_root):
-        if not path.exists():
-            return AckResult(wait_id=wait_id, status="not-found")
-        payload = _load_known_record(path=path)
-        if payload["session_id"] != session_id:
-            return AckResult(wait_id=wait_id, status="owner-mismatch")
-        payload["acknowledgement"] = {
-            "acknowledged": True,
-            "acknowledged_at": acknowledged_at,
-            "kind": "receipt-only",
-            "session_id": session_id,
-        }
-        write_wait_record(path=path, payload=payload)
-        acknowledged = _acknowledged_records(wait_store_root=wait_store_root)
-        for _, expired in acknowledged[:-retention_limit]:
-            expired.unlink()
-    return AckResult(wait_id=wait_id, status="receipt-acknowledged")
+    result = run_with_wait_store_lock(
+        wait_store_root=wait_store_root,
+        budget=lock_budget,
+        action=lambda: _record_return_ready(
+            path=path,
+            return_reason=return_reason,
+        ),
+    )
+    return result is not None
+
+
+def _record_return_ready(*, path: Path, return_reason: str) -> bool:
+    payload = _load_known_record(path=path)
+    payload["return_ready"] = True
+    payload["return_reason"] = return_reason
+    write_wait_record(path=path, payload=payload)
+    return True

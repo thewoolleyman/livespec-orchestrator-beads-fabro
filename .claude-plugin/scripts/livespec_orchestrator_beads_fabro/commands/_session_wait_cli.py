@@ -10,13 +10,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
+from livespec_orchestrator_beads_fabro.commands._session_wait_ack import ack_wait
 from livespec_orchestrator_beads_fabro.commands._session_wait_gate import (
     GateStatusLauncher,
     observe_gate_target,
     resolve_primary_repository,
 )
 from livespec_orchestrator_beads_fabro.commands._session_wait_records import (
-    ack_wait,
     process_generation_token,
 )
 from livespec_orchestrator_beads_fabro.commands._session_wait_types import (
