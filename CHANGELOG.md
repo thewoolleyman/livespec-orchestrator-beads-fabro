@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.182.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.182.0...v0.182.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* read the serving Fabro build from `fabro version --json` ([6a8e35c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6a8e35c1649e6d50b932d24c7ef5f23bd385608f))
+
 ## [0.182.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.181.5...v0.182.0) (2026-10-11)
 
 
