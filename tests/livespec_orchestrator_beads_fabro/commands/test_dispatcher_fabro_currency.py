@@ -21,8 +21,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency impor
     CONDITION_OBSERVATION_UNOBSERVABLE,
     CONDITION_OUT_OF_WINDOW,
     CONDITION_STALE_OBSERVATION,
+    CONDITION_TRANSITION_ADMITTED,
     CONDITION_UNIDENTIFIED_BUILD,
     CURRENCY_WINDOW_DAYS,
+    TRANSITION_DEADLINE,
+    TRANSITION_WORK_ITEM,
     FabroCurrencySubject,
     FabroRelease,
     FabroReleaseObservation,
@@ -34,7 +37,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency impor
 _NOW = datetime(2026, 10, 11, 9, 0, tzinfo=timezone.utc)
 _NEWEST = FabroRelease(tag="v0.378.0-nightly.0", published_at=_NOW - timedelta(days=1))
 _IN_WINDOW = FabroRelease(tag="v0.370.0", published_at=_NOW - timedelta(days=20))
-_OUT_OF_WINDOW = FabroRelease(tag="v0.254.0", published_at=_NOW - timedelta(days=90))
+_OUT_OF_WINDOW = FabroRelease(tag="v0.300.0", published_at=_NOW - timedelta(days=90))
+# The 0.254 carrier the one non-renewable transition covers, out of window by the
+# same margin as `_OUT_OF_WINDOW` — so the two differ in NOTHING but the tag, and
+# any difference in verdict is the exception rather than the arithmetic.
+_CARRIER = FabroRelease(tag="v0.254.0", published_at=_NOW - timedelta(days=90))
 
 
 def _observation(*, releases: tuple[FabroRelease, ...]) -> FabroReleaseObservation:
@@ -131,7 +138,7 @@ def test_an_out_of_window_base_refuses_and_its_evidence_block_names_every_field(
     assert lines[0].startswith("ERROR: Fabro currency admission refused for factory target 'hp'")
     assert lines[1] == "  factory target: hp"
     assert lines[2] == "  serving integration commit: 8869e88"
-    assert lines[3] == "  upstream base: v0.254.0 published 2026-07-13T09:00:00+00:00"
+    assert lines[3] == "  upstream base: v0.300.0 published 2026-07-13T09:00:00+00:00"
     assert lines[4] == (
         "  newest observed upstream release: v0.378.0-nightly.0"
         " published 2026-10-10T09:00:00+00:00"
@@ -275,3 +282,80 @@ def test_a_failed_reading_with_no_record_at_all_refuses_as_unobservable() -> Non
 
     assert verdict.condition == CONDITION_OBSERVATION_UNOBSERVABLE
     assert verdict.detail.splitlines()[5] == "  release observation taken at: unknown"
+
+
+def test_the_transition_admits_an_out_of_window_carrier_before_its_deadline() -> None:
+    verdict = fabro_currency_verdict(subject=_subject(base=_CARRIER), now=_NOW)
+
+    assert verdict.admitted is True
+    assert verdict.condition == CONDITION_TRANSITION_ADMITTED
+    assert TRANSITION_WORK_ITEM in verdict.detail
+    assert TRANSITION_DEADLINE.isoformat() in verdict.detail
+    # It STATES the gap it is excusing, so the record cannot be mistaken for an
+    # in-window base — which is the one description the clause forbids it.
+    assert "NOT as an in-window base" in verdict.detail
+    assert "89 calendar days" in verdict.detail
+
+
+def test_the_transition_refuses_at_the_deadline_instant_itself() -> None:
+    """Strictly BEFORE, so the ratified instant already refuses.
+
+    An inclusive comparison hands the exception one extra day, and the clause
+    says the carrier may remain in service "before" that instant.
+    """
+    verdict = fabro_currency_verdict(subject=_subject(base=_CARRIER), now=TRANSITION_DEADLINE)
+
+    assert verdict.admitted is False
+    assert verdict.condition == CONDITION_OUT_OF_WINDOW
+    assert TRANSITION_WORK_ITEM not in verdict.detail
+
+
+def test_a_carrier_patch_release_is_covered_by_the_same_transition() -> None:
+    """The match is on the SERIES, not on one exact tag.
+
+    The carrier has had patch releases; an exact-tag test would quietly drop the
+    exception the first time one of them became the resolved base.
+    """
+    patched = FabroRelease(tag="0.254.3", published_at=_NOW - timedelta(days=90))
+
+    verdict = fabro_currency_verdict(
+        subject=_subject(base=patched, observation=_observation(releases=(_NEWEST, patched))),
+        now=_NOW,
+    )
+
+    assert verdict.condition == CONDITION_TRANSITION_ADMITTED
+
+
+def test_a_release_whose_version_merely_starts_with_the_series_digits_is_not_the_carrier() -> None:
+    """`v0.2540.0` shares the carrier's leading digits and is a different series.
+
+    A prefix test without the dot separator would admit it, which is the shape
+    that quietly widens a non-renewable exception into an open one.
+    """
+    impostor = FabroRelease(tag="v0.2540.0", published_at=_NOW - timedelta(days=90))
+
+    verdict = fabro_currency_verdict(
+        subject=_subject(base=impostor, observation=_observation(releases=(_NEWEST, impostor))),
+        now=_NOW,
+    )
+
+    assert verdict.condition == CONDITION_OUT_OF_WINDOW
+
+
+def test_a_carrier_inside_the_window_is_admitted_as_current_and_carries_no_notice() -> None:
+    """The exception is asked ONLY of a base that already failed the ordinary rule.
+
+    A carrier inside the window needs no exception, and a notice there would tell
+    an operator their engine is on borrowed time when it is not.
+    """
+    recent_carrier = FabroRelease(tag="v0.254.0", published_at=_NOW - timedelta(days=5))
+
+    verdict = fabro_currency_verdict(
+        subject=_subject(
+            base=recent_carrier, observation=_observation(releases=(_NEWEST, recent_carrier))
+        ),
+        now=_NOW,
+    )
+
+    assert verdict.condition == CONDITION_CURRENT
+    assert TRANSITION_WORK_ITEM not in verdict.detail
