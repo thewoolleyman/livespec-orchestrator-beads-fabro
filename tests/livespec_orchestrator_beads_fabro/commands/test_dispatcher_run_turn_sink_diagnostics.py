@@ -9,7 +9,6 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_turn_diagnostics import (
     RunTurnTraceRequest,
     record_run_turn_receiver_diagnostic,
-    run_turn_diagnostic_has_export,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_turn_sink import RunTurnSink
 
@@ -80,26 +79,37 @@ def test_run_turn_sink_diagnostics_normalizes_bad_counter_shapes(tmp_path: Path)
     assert diagnostic["write_failures"] == 0
 
 
-def test_run_turn_receiver_diagnostics_write_without_sink(tmp_path: Path) -> None:
+def test_run_turn_receiver_diagnostics_write_without_sink_and_accumulate(
+    tmp_path: Path,
+) -> None:
+    """Two requests against one diagnostics file ACCUMULATE rather than replace.
+
+    The second call is what reads a stored `receiver` block back, so recording
+    one request proves only that a first write lands — a diagnostic that reset
+    its counters on every request would satisfy that and lose every count but
+    the newest.
+    """
     diagnostic_path = tmp_path / "run-turn-diagnostics.json"
-    record_run_turn_receiver_diagnostic(
-        sink=None,
-        diagnostics_path=diagnostic_path,
-        request=RunTurnTraceRequest(
-            ingested_spans=1,
-            enriched_spans=1,
-            dataset_batch_sizes={"fabro": 1},
-            export_results={"fabro": True},
-            run_turn_sink_missing=False,
-            successful_run_turn_exports=1,
-            at=6.0,
-        ),
-    )
+    for at in (6.0, 7.0):
+        record_run_turn_receiver_diagnostic(
+            sink=None,
+            diagnostics_path=diagnostic_path,
+            request=RunTurnTraceRequest(
+                ingested_spans=1,
+                enriched_spans=1,
+                dataset_batch_sizes={"fabro": 1},
+                export_results={"fabro": True},
+                run_turn_sink_missing=False,
+                successful_run_turn_exports=1,
+                at=at,
+            ),
+        )
 
     diagnostic = json.loads(diagnostic_path.read_text(encoding="utf-8"))
-    assert diagnostic["receiver"]["run_turn_sink_missing"] == 1
+    assert diagnostic["receiver"]["requests"] == 2
+    assert diagnostic["receiver"]["run_turn_sink_missing"] == 2
     assert diagnostic["receiver"]["last"]["run_turn_sink_missing"] is True
-    assert run_turn_diagnostic_has_export(path=diagnostic_path) is True
+    assert diagnostic["receiver"]["last_successful_run_turn_export_at"] == 7.0
 
 
 def test_run_turn_sink_diagnostics_read_failure_starts_empty(

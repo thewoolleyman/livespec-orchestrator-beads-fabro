@@ -67,9 +67,17 @@ def test_run_turn_sink_path_is_host_global_for_the_fabro_dataset(
     assert second == expected
 
 
-def test_append_run_turn_checks_accepts_foreign_host_global_marker_since_start(
+def test_append_run_turn_checks_rejects_a_foreign_run_global_marker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """An export attributed to NO dispatch satisfies no dispatch's check.
+
+    The sink is host-global, so the marker a span carrying no correlation ids
+    wrote is the marker EVERY concurrent dispatch on this host would read. It
+    was accepted as a hit until the sink attributed by correlation id alone,
+    which made one repository's unattributable export answer another
+    repository's question.
+    """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     local_repo = tmp_path / "local-repo"
     foreign_repo = tmp_path / "foreign-repo"
@@ -104,7 +112,56 @@ def test_append_run_turn_checks_accepts_foreign_host_global_marker_since_start(
     )
 
     check = _records(path=journal_path)[-1]
-    assert check["run_turn_exported"] is True
+    assert check["run_turn_exported"] is False
+
+
+def test_append_run_turn_checks_attribute_one_dispatchs_export_to_that_dispatch_alone(
+    tmp_path: Path,
+) -> None:
+    """One export's correlation ids answer its own dispatch and no other.
+
+    Both dispatches below are green, both started before the export, and the
+    export carries exactly one of their id pairs — so a sink that attributed by
+    any host-global signal would report BOTH as exported, and a sink that
+    attributed by nothing would report NEITHER. Only per-dispatch attribution
+    splits the pair, which is why the two assertions are each other's control.
+    """
+    journal_path = tmp_path / "journal.jsonl"
+    journal = JournalFile(path=journal_path)
+    for work_item_id, dispatch_id in (("bd-ib-mine", "disp-mine"), ("bd-ib-other", "disp-other")):
+        journal.append(
+            record={
+                "stage": "dispatch-id",
+                "work_item_id": work_item_id,
+                "dispatch_id": dispatch_id,
+                "started_at_epoch": 20.0,
+            }
+        )
+    sink = RunTurnSink(path=tmp_path / "run-turn.json")
+    _ = sink.record_export(
+        span={"name": "run_turn"},
+        resource_attrs={"work.item.id": "bd-ib-mine", "livespec.dispatch.id": "disp-mine"},
+        dataset="fabro",
+        at=30.0,
+    )
+
+    append_run_turn_checks(
+        outcomes=(
+            _outcome(work_item_id="bd-ib-mine"),
+            _outcome(work_item_id="bd-ib-other"),
+        ),
+        journal=journal,
+        journal_path=journal_path,
+        repo=journal_path.parent,
+        sink=sink,
+    )
+
+    checks = {
+        record["work_item_id"]: record["run_turn_exported"]
+        for record in _records(path=journal_path)
+        if record.get("stage") == "run-turn-telemetry-check"
+    }
+    assert checks == {"bd-ib-mine": True, "bd-ib-other": False}
 
 
 def test_append_run_turn_checks_journals_green_outcome_presence(tmp_path: Path) -> None:
@@ -167,9 +224,19 @@ def test_append_run_turn_checks_ignores_stale_global_run_turn_exports(tmp_path: 
     assert check["run_turn_exported"] is False
 
 
-def test_append_run_turn_checks_accepts_receiver_observed_run_turn_export(
-    tmp_path: Path,
+@pytest.mark.parametrize("successful_run_turn_exports", [1, 0], ids=["observed", "none"])
+def test_append_run_turn_checks_rejects_the_receivers_aggregate_observation(
+    tmp_path: Path, successful_run_turn_exports: int
 ) -> None:
+    """The receiver's own request counters answer no dispatch's question.
+
+    `record_trace_request` counts `run_turn` exports PER OTLP REQUEST, with no
+    dispatch in the record at all, so a dispatch satisfied from it is satisfied
+    by whatever run happened to export inside its window — including another
+    repository's. Parametrized over both counter values because an aggregate
+    read of ONE of them is what used to decide this record, and the point is
+    that neither decides it now.
+    """
     journal_path = tmp_path / "journal.jsonl"
     journal = JournalFile(path=journal_path)
     journal.append(
@@ -188,45 +255,7 @@ def test_append_run_turn_checks_accepts_receiver_observed_run_turn_export(
             dataset_batch_sizes={"fabro": 1},
             export_results={"fabro": True},
             run_turn_sink_missing=False,
-            successful_run_turn_exports=1,
-            at=30.0,
-        )
-    )
-
-    append_run_turn_checks(
-        outcomes=(_outcome(work_item_id="bd-ib-demo"),),
-        journal=journal,
-        journal_path=journal_path,
-        repo=journal_path.parent,
-        sink=sink,
-    )
-
-    check = _records(path=journal_path)[-1]
-    assert check["run_turn_exported"] is True
-
-
-def test_append_run_turn_checks_rejects_receiver_export_without_run_turn(
-    tmp_path: Path,
-) -> None:
-    journal_path = tmp_path / "journal.jsonl"
-    journal = JournalFile(path=journal_path)
-    journal.append(
-        record={
-            "stage": "dispatch-id",
-            "work_item_id": "bd-ib-demo",
-            "dispatch_id": "disp-1",
-            "started_at_epoch": 20.0,
-        }
-    )
-    sink = RunTurnSink(path=tmp_path / "run-turn.json")
-    sink.record_trace_request(
-        request=RunTurnTraceRequest(
-            ingested_spans=1,
-            enriched_spans=1,
-            dataset_batch_sizes={"fabro": 1},
-            export_results={"fabro": True},
-            run_turn_sink_missing=False,
-            successful_run_turn_exports=0,
+            successful_run_turn_exports=successful_run_turn_exports,
             at=30.0,
         )
     )
@@ -395,7 +424,17 @@ def test_append_run_turn_checks_ignores_malformed_dispatch_id_records(tmp_path: 
     assert check["run_turn_exported"] is False
 
 
-def test_run_turn_sink_records_fabro_run_turn_without_correlation_ids(tmp_path: Path) -> None:
+def test_run_turn_sink_accepts_an_uncorrelated_export_without_attributing_it(
+    tmp_path: Path,
+) -> None:
+    """An uncorrelated export is still ACCEPTED; it is simply attributed to nobody.
+
+    The two halves are separate claims and the pairing is the point: the return
+    value says the receiver observed a Fabro `run_turn` export, which the
+    diagnostics beside it then count, while `has_export` says no dispatch can
+    claim it. Collapsing either into the other would lose the signal or
+    manufacture a hit.
+    """
     sink = RunTurnSink(path=tmp_path / "run-turn.json")
     assert (
         sink.record_export(
@@ -406,7 +445,8 @@ def test_run_turn_sink_records_fabro_run_turn_without_correlation_ids(tmp_path: 
         )
         is True
     )
-    assert sink.has_export(keys=("",)) is True
+    assert sink.has_export(keys=("",)) is False
+    assert sink.has_export(keys=("bd-ib-demo", "disp-1")) is False
 
 
 def test_run_turn_sink_writes_non_secret_diagnostics_for_record_attempts(tmp_path: Path) -> None:
