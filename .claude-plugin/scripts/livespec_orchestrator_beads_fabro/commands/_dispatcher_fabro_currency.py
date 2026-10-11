@@ -39,10 +39,14 @@ __all__: list[str] = [
     "CONDITION_OBSERVATION_UNOBSERVABLE",
     "CONDITION_OUT_OF_WINDOW",
     "CONDITION_STALE_OBSERVATION",
+    "CONDITION_TRANSITION_ADMITTED",
     "CONDITION_UNIDENTIFIED_BUILD",
     "CURRENCY_WINDOW_DAYS",
     "FABRO_UPSTREAM_REPO",
     "OBSERVATION_MAX_AGE_DAYS",
+    "TRANSITION_BASE_SERIES",
+    "TRANSITION_DEADLINE",
+    "TRANSITION_WORK_ITEM",
     "FabroCurrencySubject",
     "FabroCurrencyVerdict",
     "FabroRelease",
@@ -79,6 +83,21 @@ CONDITION_NO_ANCESTOR = "no-release-tag-ancestor"
 # the refresh path is broken while evidence exists, and an absent one says no
 # evidence has ever been taken on this host.
 CONDITION_STALE_OBSERVATION = "release-observation-stale"
+
+# The ONE window exception, and it is ADMITTED rather than `current`: the clause
+# requires an out-of-window carrier to be surfaced as a transition and never
+# silently described as in-window, so it cannot share the ordinary admitted
+# condition.
+CONDITION_TRANSITION_ADMITTED = "transition-admitted"
+
+# THE EXCEPTION'S THREE LITERALS, AND THEY ARE RATIFIED RATHER THAN CONFIGURED.
+# A deadline an operator could move is a deadline that would be moved, which is
+# exactly the indefinite 0.254 freeze `constraints.md` forbids in as many words —
+# so there is deliberately no key, no environment variable and no override for
+# any of these. Changing them is a specification change.
+TRANSITION_BASE_SERIES = "0.254"
+TRANSITION_DEADLINE = datetime(2026, 11, 14, 0, 0, tzinfo=timezone.utc)
+TRANSITION_WORK_ITEM = "bd-ib-6tcjfx"
 
 _UNKNOWN = "unknown"
 
@@ -176,6 +195,12 @@ def fabro_currency_verdict(*, subject: FabroCurrencySubject, now: datetime) -> F
     blinded would turn this refusal into a pass and leave a journal record that
     reads exactly like a healthy one, which is the one direction a dispatch
     admission gate must never fail in.
+
+    THE FOUR COULD-NOT-MEASURE ARMS ARE SPELT OUT HERE rather than computed by a
+    helper, because each of them also NARROWS a value `_window_verdict` needs. A
+    condition-returning helper leaves this function holding optionals it has to
+    re-assert, and an `assert` in product code is both banned here and a worse
+    record of the invariant than the branch that established it.
     """
     newest = _newest(observation=subject.observation)
     # THE UNUSABLE-READING ARM RUNS FIRST, AND IT IS THE FAIL-CLOSED ONE. A
@@ -196,11 +221,13 @@ def fabro_currency_verdict(*, subject: FabroCurrencySubject, now: datetime) -> F
             ),
             clause=subject.observation_failure,
         )
-    # THREE FURTHER ARMS SPELT OUT rather than one computed condition, because
-    # each of the three also NARROWS a value the arithmetic below needs. A
-    # single condition-returning helper leaves the caller holding optionals it
-    # has to re-assert, and an `assert` in product code is both banned here and
-    # a worse record of the invariant than the branch that established it.
+    # THE REMAINING ORDER IS LOAD-BEARING and matches the gathering layer's own:
+    # the release observation is graded before the serving build because an
+    # absent one makes the base question unanswerable for EVERY target, while an
+    # unidentified serving build is a fault on one host — so reporting the
+    # per-target fault while the shared one stands sends the operator to the
+    # wrong place. The missing base is last because it is the only one of the
+    # three that presupposes the other two were measured.
     if newest is None:
         return _unmeasured(
             subject=subject, newest=None, now=now, condition=CONDITION_OBSERVATION_UNOBSERVABLE
@@ -211,8 +238,32 @@ def fabro_currency_verdict(*, subject: FabroCurrencySubject, now: datetime) -> F
         )
     if subject.base is None:
         return _unmeasured(subject=subject, newest=newest, now=now, condition=CONDITION_NO_ANCESTOR)
-    gap = calendar_days_between(earlier=subject.base.published_at, later=newest.published_at)
+    return _window_verdict(subject=subject, base=subject.base, newest=newest, now=now)
+
+
+def _window_verdict(
+    *,
+    subject: FabroCurrencySubject,
+    base: FabroRelease,
+    newest: FabroRelease,
+    now: datetime,
+) -> FabroCurrencyVerdict:
+    """The publication-window comparison, once every input has been measured.
+
+    Split from the ladder above by COHESION rather than by line count: that
+    function decides whether the three measurements exist, and this one is the
+    only arithmetic in the module. It takes `base` and `newest` as NON-optional
+    parameters, which is what lets the split happen without re-asserting
+    anything the caller already established.
+    """
+    gap = calendar_days_between(earlier=base.published_at, later=newest.published_at)
     if gap > CURRENCY_WINDOW_DAYS:
+        # The exception is asked ONLY of a base that has already failed the
+        # ordinary rule, which is what keeps it an exception: a carrier inside
+        # the window is admitted as `current` and carries no transition notice,
+        # because there is nothing to transition away from yet.
+        if _within_transition(base=base, now=now):
+            return _transition(subject=subject, base=base, newest=newest, gap=gap)
         return _refusal(
             subject=subject,
             newest=newest,
@@ -229,7 +280,60 @@ def fabro_currency_verdict(*, subject: FabroCurrencySubject, now: datetime) -> F
         admitted=True,
         detail=(
             f"Fabro currency admitted for factory target {subject.target!r}: base"
-            f" {subject.base.tag} is {gap} calendar days behind {newest.tag}"
+            f" {base.tag} is {gap} calendar days behind {newest.tag}"
+        ),
+    )
+
+
+def _within_transition(*, base: FabroRelease, now: datetime) -> bool:
+    """Whether `base` is the carrier AND the deadline has not yet arrived.
+
+    The comparison is STRICTLY LESS THAN the deadline, so the ratified instant
+    itself already refuses: the clause says the carrier may remain in service
+    "before" that instant and that at or after it the ordinary rule applies, and
+    an inclusive comparison would hand the exception one extra day.
+    """
+    return _is_transition_carrier(tag=base.tag) and now < TRANSITION_DEADLINE
+
+
+def _is_transition_carrier(*, tag: str) -> bool:
+    """Whether a release tag names the 0.254 series.
+
+    The leading `v` is optional because upstream has published both spellings,
+    and the match is on the SERIES rather than on one exact tag: the carrier has
+    had patch releases, and an exact-tag test would quietly drop the exception
+    the first time one landed.
+    """
+    numeric = tag.removeprefix("v")
+    return numeric == TRANSITION_BASE_SERIES or numeric.startswith(f"{TRANSITION_BASE_SERIES}.")
+
+
+def _transition(
+    *,
+    subject: FabroCurrencySubject,
+    base: FabroRelease,
+    newest: FabroRelease,
+    gap: int,
+) -> FabroCurrencyVerdict:
+    """The admitted transition, which STATES the gap it is excusing.
+
+    The gap is in the text deliberately. An admitted transition that reported
+    only "admitted" would be indistinguishable at every surface from an
+    in-window base, which is the one description the clause forbids it.
+    """
+    return FabroCurrencyVerdict(
+        target=subject.target,
+        condition=CONDITION_TRANSITION_ADMITTED,
+        admitted=True,
+        detail=(
+            f"NOTICE: Fabro currency admitted factory target {subject.target!r} as the"
+            f" {TRANSITION_WORK_ITEM} transition, NOT as an in-window base: the"
+            f" {TRANSITION_BASE_SERIES} carrier {base.tag} was published {gap} calendar days"
+            f" before {newest.tag}, against a {CURRENCY_WINDOW_DAYS}-calendar-day window."
+            f" This one non-renewable exception expires at"
+            f" {TRANSITION_DEADLINE.isoformat()}, after which this dispatch is refused on"
+            f" the ordinary rule; re-pin the factory onto a current"
+            f" {FABRO_UPSTREAM_REPO} release before then."
         ),
     )
 
