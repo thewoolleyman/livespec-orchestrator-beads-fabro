@@ -229,6 +229,14 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "acp.usage.tokens.input",
         "acp.context",
         "acp.context.size",
+        # The graph-position scalars. `fabro.node` is the rename of the 0.254
+        # `node_id`; `fabro.firing` and `fabro.attempt` are the Petri engine's
+        # own position counters, which is what lets a query tell one node's
+        # retries apart. The group's fourth member, `fabro.run_id`, is already
+        # named above as part of the correlation triple.
+        "fabro.node",
+        "fabro.firing",
+        "fabro.attempt",
         # Factory build-phase telemetry (livespec-console-beads-fabro plan
         # optimize-console-builds; console item -elt9). The fabro-sandbox
         # `cargo` shim (livespec-dev-tooling otel_cargo_phase.py) POSTs one

@@ -1221,6 +1221,38 @@ def test_receiver_forwards_petri_run_turn_command_group_intact(
     }
 
 
+def test_receiver_forwards_petri_fabro_graph_position_attributes_intact(
+    receiver_factory: tuple[OtelReceiver, _FakeExporter, HeartbeatSink, str],
+) -> None:
+    """The three `fabro.*` graph-position attributes all reach the exporter.
+
+    `fabro.node` is the rename of the 0.254 `node_id`; `fabro.firing` and
+    `fabro.attempt` are the Petri engine's own position-in-the-graph scalars,
+    and they are what lets a Honeycomb query tell one node's retries apart
+    from one another. `fabro.run_id`, the fourth member of the emitter's
+    `fabro.*` group, was already allowlisted as part of the correlation
+    triple — it is asserted here as the control that proves the group is read
+    as a group.
+    """
+    _receiver, exporter, _heartbeat, base = receiver_factory
+    expected = {
+        "fabro.node": "implement",
+        "fabro.firing": "2",
+        "fabro.attempt": "1",
+        "fabro.run_id": "01M4M59Z9449GRSETTGTHSSN8M",
+    }
+
+    forwarded = _post_span_attrs(
+        base=base,
+        exporter=exporter,
+        attrs=[_attr_entry(key=key, string_value=value) for key, value in expected.items()],
+    )
+
+    assert _attrs_of(span=forwarded[0]) == {
+        key: {"stringValue": value} for key, value in expected.items()
+    }
+
+
 def test_receiver_forwards_petri_acp_turn_attributes_intact(
     receiver_factory: tuple[OtelReceiver, _FakeExporter, HeartbeatSink, str],
 ) -> None:
