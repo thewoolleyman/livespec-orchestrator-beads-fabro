@@ -1267,6 +1267,19 @@ def _size_telemetry_attributes(
     `gh pr view` probes this stage issues are answered as failures.  The green
     terminal is therefore manufactured; the admission decision, the journal, the
     signal gather and the span emission are not.
+
+    AND THIS CASE DOES NOT SATISFY THE ASSERTION-5 CAPTURE REQUIREMENT.  A REAL
+    span emitter over a SYNTHETIC `_EngineRunner` success is still a synthetic
+    success: making the emission unsubstituted narrowed the substitution to the
+    run and the forge, which is the half that decides whether a dispatch
+    happened at all.  So the Definition-of-Done clause "a successful dispatch
+    exposes `tdd.size_justified=true` on its calibration span" still owes, at
+    capture time, EITHER an observation on a real named surface OR the ordinary
+    `not_captured` / capability outcome stating the limit.  Citing this helper
+    as that observation would re-label scripted `CommandResult`s as a factory
+    execution -- the exact mislabeling the accepted finding is about.  What it
+    IS good for is the wiring question: that the attribute survives the real
+    emission path rather than only a hand-called chain.
     """
     probe_runner = _EngineRunner(
         queue=[
