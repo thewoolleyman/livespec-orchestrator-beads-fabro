@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import email.message
+import io
 import json
 import urllib.error
 import urllib.request
@@ -227,6 +229,47 @@ def test_a_non_2xx_status_is_reported_as_not_succeeded(
     )
 
     assert (result.status, result.succeeded) == (404, False)
+
+
+def test_a_server_refusal_carries_the_servers_own_status_and_body(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-2xx answer reaches the caller as the refusal it is.
+
+    Real urllib raises `HTTPError` for EVERY non-2xx, so this — not a
+    `_FakeResponse` carrying a 404 — is the shape a declining server actually
+    produces, and it is why the collapse to status 0 was invisible to the
+    sibling case above. The Enemy Unit Tests that drive an absent run against
+    a live factory assert on `status`, so a considered refusal reported as 0
+    reads there as a wrong host.
+    """
+    body = b'{"error": "unknown run"}'
+
+    def _decline(request: object, timeout: float) -> _FakeResponse:
+        _ = (request, timeout)
+        raise urllib.error.HTTPError(
+            "https://hp.example:32276/api/v1/runs/01RUN/questions",
+            400,
+            "Bad Request",
+            email.message.Message(),
+            io.BytesIO(body),
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", _decline)
+
+    result = UrllibFabroHttpTransport().send(
+        method="GET",
+        url="https://hp.example:32276/api/v1/runs/01RUN/questions",
+        headers={},
+        body=None,
+        timeout_seconds=1.0,
+    )
+
+    assert (result.status, result.body) == (400, body.decode("utf-8"))
+    assert result.succeeded is False
+    assert result.error is not None
+    assert "HTTP Error 400" in result.error
 
 
 def test_the_cli_port_builds_its_server_api_face_from_its_own_target(tmp_path: Path) -> None:
