@@ -275,7 +275,7 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 135 \u2014 A plan cannot archive until its own Definition of Done is proved against the released build",
+    "heading": "## Scenario 135 — A plan cannot archive until its own Definition of Done is proved against the released build",
     "work_item": "bd-ib-wbdgil",
     "first_seen": "2026-10-03"
   },
@@ -487,6 +487,13 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario 167 — A failed janitor names the aggregate runner's failed targets",
     "work_item": "bd-ib-ma3fvj",
+    "first_seen": "2026-10-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 168 — An authorized plan resume continues to the archive without a picker, and the typed next action names every remaining step",
+    "work_item": "bd-ib-7sjdzv",
     "first_seen": "2026-10-09"
   },
   {
@@ -810,194 +817,5 @@
     "heading": "## What this spec is not",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 142 \u2014 A run that terminated after publishing is resumed at its first unfinished stage from its pull request, and nothing it completed runs again",
-    "work_item": "bd-ib-7sjdzv",
-    "first_seen": "2026-10-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 143 \u2014 A resume refuses, naming the mismatch, when the head moved, the earlier run is live, or the pull request is closed or merged",
-    "work_item": "bd-ib-7sjdzv",
-    "first_seen": "2026-10-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 144 \u2014 A plain re-dispatch of an item whose run died after publishing reclaims the stale publish branch and holds when it cannot measure",
-    "work_item": "bd-ib-7sjdzv",
-    "first_seen": "2026-10-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 145 \u2014 A failed post-merge janitor retains its complete output and exit code as a private artifact the journal names",
-    "work_item": "bd-ib-7sjdzv",
-    "first_seen": "2026-10-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 147 \u2014 A plan deadline survives pointer rewrites and permits causal recovery",
-    "work_item": "bd-ib-zi5ygh",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 148 \u2014 Unattended resume observes expired, legacy and unobservable progress",
-    "work_item": "bd-ib-zi5ygh",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 149 \u2014 Acknowledgment cannot discharge a target-effect relay",
-    "work_item": "bd-ib-t3znvw",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 150 \u2014 Plan attention names missing results despite busy repair work",
-    "work_item": "bd-ib-u4gqpp",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 151 \u2014 Repeated item failures require a causal dispatch attempt",
-    "work_item": "bd-ib-s5idxj",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 152 \u2014 Independent recovery executes after Codex turn completion without wait registration",
-    "work_item": "bd-ib-ezuj43",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
-    "heading": "## Bounded session waits and observable inventory",
-    "work_item": "bd-ib-jy23vh",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 154 \u2014 The first completed gate wakes a bounded multi-target wait",
-    "work_item": "bd-ib-z46mth",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 155 \u2014 A pane wait ends on non-working, missing and uncertain states",
-    "work_item": "bd-ib-s3rj6d",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 156 \u2014 The shared deadline bounds stalled probes and telemetry",
-    "work_item": "bd-ib-z46mth",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 157 \u2014 Inventory distinguishes produced and acknowledged wake-ups",
-    "work_item": "bd-ib-z46mth",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 158 \u2014 The host turn-end check exposes outstanding wait mismatches",
-    "work_item": "bd-ib-itwchy",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 159 \u2014 Wait inventory and measurements arrive in Honeycomb without controlling liveness",
-    "work_item": "bd-ib-4mcuty",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 160 \u2014 Dispatch obligations survive coordinator FINAL without wait registration",
-    "work_item": "bd-ib-jy23vh",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 161 \u2014 Independent recovery survives notification and owner loss",
-    "work_item": "bd-ib-jy23vh",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 162 \u2014 Receipt is distinct from consumed recovery and fulfilled work",
-    "work_item": "bd-ib-dle6l3",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 163 \u2014 Duplicate and stale recovery reconcile safely",
-    "work_item": "bd-ib-dle6l3",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 164 \u2014 Human HOLD and commit safety barriers retain recovery obligations",
-    "work_item": "bd-ib-jy23vh",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 165 \u2014 Completed-cycle measurements explain runtime non-convergence",
-    "work_item": "bd-ib-z2y4ca",
-    "first_seen": "2026-10-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
-    "heading": "## Dispatcher successful terminal evidence",
-    "work_item": "bd-ib-l55d7e",
-    "first_seen": "2026-10-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 166 \u2014 Successful terminal evidence survives an engine terminal-event persistence failure",
-    "work_item": "bd-ib-l55d7e",
-    "first_seen": "2026-10-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 167 \u2014 A failed janitor names the aggregate runner's failed targets",
-    "work_item": "bd-ib-ma3fvj",
-    "first_seen": "2026-10-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 168 \u2014 An authorized plan resume continues to the archive without a picker, and the typed next action names every remaining step",
-    "work_item": "bd-ib-7sjdzv",
-    "first_seen": "2026-10-09"
   }
 ]
