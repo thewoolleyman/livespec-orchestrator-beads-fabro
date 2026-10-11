@@ -226,7 +226,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-10-11T13:29:48.393031196Z",
-  "last_event_at": "2026-10-11T13:29:51.552047464Z",
+  "last_event_at": "2026-10-11T13:29:56.063711341Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -266,9 +266,9 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 32,
       "checkpoint": {
-        "timestamp": "2026-10-11T13:29:51.658734549Z",
+        "timestamp": "2026-10-11T13:29:56.063540171Z",
         "current_node": "agent",
         "completed_nodes": [
           "start",
@@ -276,30 +276,26 @@
         ],
         "node_retries": {},
         "context_values": {
-          "internal.acp_attempt.start": 0,
-          "graph.goal": "# Fabro Enemy Unit Test: acp-command-launch\n",
-          "internal.retry_count.start": 0,
-          "failure_class": "",
-          "internal.run_id": "01M4NJFBZF3D9EXGE696SF7J7G",
-          "last_stage": "agent",
-          "response.agent": "fixture success",
-          "internal.acp_attempt.agent": 0,
-          "internal.retry_count.agent": 0,
-          "current_node": "agent",
-          "outcome": "succeeded",
+          "internal.thread_id": "start",
           "last_response": "fixture success",
-          "failure_signature": "",
+          "failure_class": "",
           "thread.start.current_node": "agent",
           "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "internal.acp_attempt.agent": 0,
+          "current_node": "agent",
+          "internal.acp_attempt.start": 0,
+          "internal.run_id": "01M4NJFBZF3D9EXGE696SF7J7G",
+          "internal.retry_count.start": 0,
+          "internal.retry_count.agent": 0,
+          "failure_signature": "",
+          "last_stage": "agent",
+          "response.agent": "fixture success",
+          "graph.goal": "# Fabro Enemy Unit Test: acp-command-launch\n",
+          "internal.node_visit_count": 1,
           "internal.fidelity": "compact",
-          "internal.thread_id": "start",
-          "internal.node_visit_count": 1
+          "outcome": "succeeded"
         },
         "node_outcomes": {
-          "start": {
-            "status": "succeeded",
-            "usage": null
-          },
           "agent": {
             "status": "succeeded",
             "context_updates": {
@@ -315,18 +311,59 @@
               "tool_time_ms": 0,
               "active_time_ms": 346
             }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "0faa54e5b8dd12a85c0acf8a9006a18f333970a0",
         "node_visits": {
-          "agent": 1,
-          "start": 1
+          "start": 1,
+          "agent": 1
         }
       },
       "diff": {}
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-10-11T13:29:56.122838588Z",
+    "status": "succeeded",
+    "timing": {
+      "wall_time_ms": 7672,
+      "inference_time_ms": 346,
+      "tool_time_ms": 0,
+      "active_time_ms": 346
+    },
+    "final_git_commit_sha": "0faa54e5b8dd12a85c0acf8a9006a18f333970a0",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "agent",
+        "stage_label": "agent",
+        "timing": {
+          "wall_time_ms": 1067,
+          "inference_time_ms": 346,
+          "tool_time_ms": 0,
+          "active_time_ms": 346
+        },
+        "retries": 0
+      }
+    ],
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -353,11 +390,50 @@
   "superseded_by": null,
   "pending_interviews": {},
   "stages": {
+    "exit@1": {
+      "first_event_seq": 34,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-10-11T13:29:56.063711341Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-11T13:29:56.063658222Z",
+      "handler": "exit",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
     "agent@1": {
       "first_event_seq": 20,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Stage completed: agent",
+        "failure_reason": null,
+        "timestamp": "2026-10-11T13:29:51.658643528Z"
+      },
       "provider_used": {
         "mode": "acp",
         "provider": "acp"
@@ -375,6 +451,12 @@
       "termination": "exited",
       "started_at": "2026-10-11T13:29:50.591165965Z",
       "handler": "agent",
+      "timing": {
+        "wall_time_ms": 1067,
+        "inference_time_ms": 346,
+        "tool_time_ms": 0,
+        "active_time_ms": 346
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -383,7 +465,7 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "succeeded"
     },
     "start@1": {
       "first_event_seq": 16,
