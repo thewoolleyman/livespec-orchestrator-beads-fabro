@@ -29,6 +29,24 @@ typed `SubmitAnswerRequest` — `{"kind": "selected", "option_key": "A"}`. The
 legacy `{"answer": ...}` / `{"value": ...}` bodies are rejected with 422.
 Any non-2xx or unparsable answer is still treated as "this route did not
 work" so the caller falls through to the next one.
+
+WHICH FAILURES YIELD WHICH STATUS, because `FabroHttpResult.status` carries
+two completely different facts under one integer and no call site can tell
+them apart.
+
+Here, status 0 means no HTTP response arrived at all, and that is the ONLY
+thing it means. Exactly two conditions produce it: a transport fault — a
+refused connection, an unresolvable name, a timeout, a dead proxy — and a
+target carrying no server url, which sends nothing at all.
+
+Everything else is the server's own verdict, a refusal included. Stdlib
+urllib raises `HTTPError` for every non-2xx, and `_raised_exchange` unpacks
+that rather than letting it ride the transport-fault track it shares, so
+a non-2xx answer carries the server's own status and body. `succeeded` stays
+False either way, so the fallback discipline above is unchanged; what changes
+is that a server which CONSIDERED the request is no longer indistinguishable
+from a wrong host. Collapsing both onto 0 had a refusing factory filed twice
+as an unreachable one (`bd-ib-2oq4jp`).
 """
 
 from __future__ import annotations
