@@ -335,7 +335,7 @@ def test_fabro_port_rm_and_version_stay_on_the_declared_surface(tmp_path: Path) 
     assert version.text == "fabro 0.254.0 (8de6611)\n"
     assert [call.argv for call in runner.calls] == [
         ["fabro", "rm", "-f", "01RUN"],
-        ["fabro", "version"],
+        ["fabro", "version", "--json"],
     ]
 
 

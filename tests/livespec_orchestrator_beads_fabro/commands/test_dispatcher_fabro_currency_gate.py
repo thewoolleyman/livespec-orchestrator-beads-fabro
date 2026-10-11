@@ -92,11 +92,11 @@ def _two_target_runner() -> _Runner:
     """hp serves a commit descended from the CURRENT tag; vps from the stale one."""
     results: dict[tuple[str, ...], CommandResult] = {
         tuple(releases_argv()): CommandResult(exit_code=0, stdout=_releases_stdout(), stderr=""),
-        (_HP_BIN, "version"): CommandResult(
-            exit_code=0, stdout=f"Server: fabro ({_HP_COMMIT} x)\n", stderr=""
+        (_HP_BIN, "version", "--json"): CommandResult(
+            exit_code=0, stdout=json.dumps({"server": {"git_sha": _HP_COMMIT}}), stderr=""
         ),
-        (_VPS_BIN, "version"): CommandResult(
-            exit_code=0, stdout=f"Server: fabro ({_VPS_COMMIT} x)\n", stderr=""
+        (_VPS_BIN, "version", "--json"): CommandResult(
+            exit_code=0, stdout=json.dumps({"server": {"git_sha": _VPS_COMMIT}}), stderr=""
         ),
         tuple(compare_argv(base=_CURRENT_TAG, head=_HP_COMMIT)): CommandResult(
             exit_code=0, stdout="identical\n", stderr=""
