@@ -7,9 +7,11 @@ import io
 import json
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import TracebackType
+from typing import IO, cast
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import _fabro_port_auth, _fabro_port_http
@@ -22,6 +24,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
     fabro_http_request,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroTarget
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 _DEV_TOKEN_VALUE = "fixture-dev-token"
 # Captured before any fixture runs, so the auth-file test can exercise the real
@@ -270,6 +273,85 @@ def test_a_server_refusal_carries_the_servers_own_status_and_body(
     assert result.succeeded is False
     assert result.error is not None
     assert "HTTP Error 400" in result.error
+
+
+def test_status_zero_is_reported_only_when_no_response_arrived(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Status 0 means "nothing arrived", so no ANSWERED request may report it.
+
+    A universal rather than a case, so all three shapes that reach the single
+    `except` clause are driven together: a transport fault, an `HTTPError`
+    whose body reads, and an `HTTPError` whose body dies on the wire after the
+    status arrived. The first two are the controls — without them "only when"
+    is not established — and the third is the remaining way an answered
+    request could still report 0. `send` is declared never to raise, so an
+    unreadable body must come back as the status-bearing refusal it is,
+    neither as an escaping exception nor as a wrong-host 0.
+    """
+    monkeypatch.setattr(
+        urllib.request, "urlopen", _always_raising(error=urllib.error.URLError("no route"))
+    )
+    nothing_arrived = _send()
+
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        _always_raising(error=_http_error(status=401, fp=io.BytesIO(b'{"error": "no token"}'))),
+    )
+    answered = _send()
+
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        _always_raising(error=_http_error(status=503, fp=_DyingBody())),
+    )
+    unreadable = attempt(action=_send, exceptions=(OSError,))
+
+    assert (nothing_arrived.status, nothing_arrived.body) == (0, "")
+    assert (answered.status, answered.body) == (401, '{"error": "no token"}')
+    assert not isinstance(unreadable, AttemptFailure)
+    assert (unreadable.status, unreadable.body) == (503, "")
+
+
+class _DyingBody:
+    """A response body whose read fails after its status line arrived."""
+
+    def read(self, amt: int | None = None) -> bytes:
+        _ = amt
+        raise OSError("connection reset while reading the error body")
+
+    def close(self) -> None:
+        return None
+
+
+def _http_error(*, status: int, fp: object) -> urllib.error.HTTPError:
+    return urllib.error.HTTPError(
+        "https://hp.example:32276/api/v1/runs/01RUN/questions",
+        status,
+        "declined",
+        email.message.Message(),
+        cast("IO[bytes]", fp),
+    )
+
+
+def _always_raising(*, error: Exception) -> Callable[[object, float], _FakeResponse]:
+    def _raise(request: object, timeout: float) -> _FakeResponse:
+        _ = (request, timeout)
+        raise error
+
+    return _raise
+
+
+def _send() -> FabroHttpResult:
+    return UrllibFabroHttpTransport().send(
+        method="GET",
+        url="https://hp.example:32276/api/v1/runs/01RUN/questions",
+        headers={},
+        body=None,
+        timeout_seconds=1.0,
+    )
 
 
 def test_the_cli_port_builds_its_server_api_face_from_its_own_target(tmp_path: Path) -> None:
