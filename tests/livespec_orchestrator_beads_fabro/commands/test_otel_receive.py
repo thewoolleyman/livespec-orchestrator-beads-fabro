@@ -1191,3 +1191,31 @@ def test_receiver_scrubs_petri_run_turn_command_exactly_as_0254_command(
             attrs=[_attr_entry(key=key, string_value=long_command)],
         )
         assert _attrs_of(span=forwarded[0]) == {key: {"stringValue": long_command[:ATTR_MAX_LEN]}}
+
+
+def test_receiver_forwards_petri_run_turn_command_group_intact(
+    receiver_factory: tuple[OtelReceiver, _FakeExporter, HeartbeatSink, str],
+) -> None:
+    """The four `run_turn.*` command/env/status attributes all reach the exporter.
+
+    `run_turn.env.keys` carries environment variable NAMES only, never their
+    values, which is why a credential-NAMED variable rides it safely — the
+    assertion uses one deliberately so the distinction is on the record.
+    """
+    _receiver, exporter, _heartbeat, base = receiver_factory
+    expected = {
+        "run_turn.command": "codex acp",
+        "run_turn.command.digest": "sha256:" + ("a" * 64),
+        "run_turn.env.keys": "CLAUDE_CODE_OAUTH_TOKEN,CODEX_HOME,PATH",
+        "run_turn.status": "completed",
+    }
+
+    forwarded = _post_span_attrs(
+        base=base,
+        exporter=exporter,
+        attrs=[_attr_entry(key=key, string_value=value) for key, value in expected.items()],
+    )
+
+    assert _attrs_of(span=forwarded[0]) == {
+        key: {"stringValue": value} for key, value in expected.items()
+    }

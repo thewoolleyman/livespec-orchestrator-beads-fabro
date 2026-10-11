@@ -211,8 +211,13 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         # `run_turn.command` is the rename of `command` and inherits its
         # discipline unchanged — argv-only (ACP credentials are env-injected,
         # never argv), and still covered by the fail-closed credential-URL
-        # scrub plus the `ATTR_MAX_LEN` truncation below.
+        # scrub plus the `ATTR_MAX_LEN` truncation below. `run_turn.env.keys`
+        # carries environment variable NAMES only and never their values, so a
+        # credential-NAMED variable is safe to forward while its value is not.
         "run_turn.command",
+        "run_turn.command.digest",
+        "run_turn.env.keys",
+        "run_turn.status",
         # Factory build-phase telemetry (livespec-console-beads-fabro plan
         # optimize-console-builds; console item -elt9). The fabro-sandbox
         # `cargo` shim (livespec-dev-tooling otel_cargo_phase.py) POSTs one
