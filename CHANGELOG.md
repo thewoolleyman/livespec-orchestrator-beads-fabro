@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.181.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.181.3...v0.181.4) (2026-10-11)
+
+
+### Bug Fixes
+
+* name a Petri package graph relative to its package ([2eec1b2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2eec1b2bdfd83fdf52e890608cbc3b9a28848425))
+* tell the overlay which client build a dispatch resolved ([496a760](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/496a76048b972a773ba211e938878cd285212bac))
+
 ## [0.181.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.181.2...v0.181.3) (2026-10-10)
 
 
