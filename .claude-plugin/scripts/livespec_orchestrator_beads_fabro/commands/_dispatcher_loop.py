@@ -225,6 +225,15 @@ def _dispatch_one_locked(
         # rather than from the committed default a bare `fabro run` would see.
         review_fix_visit_cap=plan.review_fix_visit_cap,
         graph_override=recorded.payload.graph,
+        # The client build the record MEASURED for this plan's factory binary,
+        # which decides how the written config may name that graph: a Petri-era
+        # client collects the package the config sits in, and refuses an
+        # absolute inline reference in it. Read off the plan rather than
+        # re-measured, for the resolve-once reason the integration contract
+        # gives — a second `--version` read cannot be proven to agree with the
+        # one the dispatch record journaled, and the launch shape is chosen from
+        # that same reading.
+        fabro_version=plan.fabro_version,
         # The publish branch and head a RESUME puts the sandbox clone on, built
         # from the head the anchoring record names rather than from the branch
         # tip: a tip read at prepare time may have moved since the record was

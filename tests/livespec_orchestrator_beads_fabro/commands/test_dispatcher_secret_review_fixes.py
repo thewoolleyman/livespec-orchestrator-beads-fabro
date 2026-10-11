@@ -184,6 +184,12 @@ def test_factory_authentication_precedes_vault_materialization(
         integration=object(),
         acp_nodes=None,
         fabro_factory_name="candidate",
+        # The resolved client build the dispatch hands the materializer, which
+        # decides how the written config names its graph. None is the pinned
+        # posture and the neutral one for this case: it is about the ORDER of
+        # the factory login against the first vault store, and a double missing
+        # the field would fail on its absence rather than on that order.
+        fabro_version=None,
     )
     recorded = SimpleNamespace(
         plan=plan,

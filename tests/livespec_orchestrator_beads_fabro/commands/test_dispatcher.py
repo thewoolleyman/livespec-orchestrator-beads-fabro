@@ -4600,6 +4600,68 @@ def test_dispatch_hands_the_journaled_proof_rendering_to_the_overlay(
     assert captured["proof_rendering"] == "inline"
 
 
+def test_dispatch_tells_the_overlay_which_client_build_it_resolved(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dispatch hands the materializer the engine build it measured.
+
+    The behaviour this binds is the WIRING, which the naming projection's own
+    tests cannot see: `materialize_overlay` defaults the version to None — the
+    pinned posture, an absolute `[workflow] graph` — so an UNWIRED dispatch
+    names a Petri package's graph absolutely, and that engine refuses the
+    package it names outright, before any run exists. Passing the version by
+    hand proves the naming and not the dispatch, which is why this case drives
+    `dispatch_one` and reads back what it actually passed.
+
+    The interception returns a refusal so the dispatch stops at its own
+    `run-config-overlay` stage: this case is about the argument, and letting the
+    run proceed would drag in the whole launch path to assert one value.
+    """
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    # A client that REPORTS a Petri-era build. The suite's shared stub prints
+    # nothing, which records as no version at all — the one reading that cannot
+    # distinguish a wired dispatch from an unwired one.
+    reported = "fabro 0.378.0-nightly.0 (candidate)"
+    engine = tmp_path / "fabro-petri"
+    _ = engine.write_text(
+        f'#!/bin/sh\nif [ "$1" = "--version" ]; then echo "{reported}"; fi\nexit 0\n',
+        encoding="utf-8",
+    )
+    engine.chmod(0o755)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    journal = JournalFile(path=repo / "tmp" / "fabro-dispatch-journal.jsonl")
+    captured: dict[str, object] = {}
+
+    def capturing_materialize_overlay(**kwargs: object) -> str:
+        captured.update(kwargs)
+        return "overlay intercepted"
+
+    monkeypatch.setattr(_dispatcher_loop, "materialize_overlay", capturing_materialize_overlay)
+
+    outcome = _dispatcher_loop.dispatch_one(
+        args=argparse.Namespace(
+            fabro_bin=str(engine),
+            workflow=workflow,
+            repo=repo,
+            journal=None,
+            poll_attempts=1,
+            poll_interval_seconds=0.1,
+        ),
+        repo=repo,
+        item=item,
+        journal=journal,
+        janitor=None,
+    )
+
+    assert (outcome.status, outcome.stage) == ("failed", "run-config-overlay")
+    # `.get`, not a subscript: an unwired dispatch passes the argument at all,
+    # so the honest reading is the value it carried — None — against the build
+    # the engine reported, rather than a lookup error about a missing key.
+    assert captured.get("fabro_version") == reported
+
+
 def test_dispatch_fabro_run_failure_without_run_id_releases_admitted_claim(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
