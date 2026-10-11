@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.186.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.186.0...v0.186.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* **fabro-port:** define the two facts status carries in the module docstring ([847b99e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/847b99e93830d1cc01f948000b75fa004f92e1ed))
+* **fabro-port:** report a server refusal's own HTTP status ([a8c596c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a8c596c99ecd672fddd45cb81b2b0166cb6aa98a))
+* **fabro-port:** reserve status 0 for an exchange no response arrived for ([2131fb1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2131fb13912d3e53e6b14e70fd4e24fc0b0c45f8))
+
 ## [0.186.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.185.0...v0.186.0) (2026-10-11)
 
 
