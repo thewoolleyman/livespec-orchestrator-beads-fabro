@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.186.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.185.0...v0.186.0) (2026-10-11)
+
+
+### Features
+
+* **dispatcher:** pass a factory's declared environment to fabro run ([f696153](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f6961530c3d2818b3e2579f0165c1dd55b5e0bc9))
+* **dispatcher:** read a factory's declared sandbox environment id ([39a5c0a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/39a5c0ae2b7eeb00aa8bc34a7c2e189fa8e0b98a))
+* **dispatcher:** refuse an unusable factory environment before claim ([b401133](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b4011331a3d0f21f4e03ece6c43de8af2895bec1))
+
 ## [0.185.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.184.0...v0.185.0) (2026-10-11)
 
 
