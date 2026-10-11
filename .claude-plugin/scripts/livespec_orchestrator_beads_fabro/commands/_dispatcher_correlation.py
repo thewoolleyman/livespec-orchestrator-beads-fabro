@@ -23,6 +23,7 @@ __all__: list[str] = [
     "TRACE_ID_HEX_DIGITS",
     "DispatchSpanIds",
     "dispatch_span_ids",
+    "dispatch_traceparent",
     "non_zero_hex",
 ]
 
@@ -36,6 +37,13 @@ SPAN_ID_HEX_DIGITS = 16
 # coincidence to anyone debugging a join.
 TRACE_ID_DOMAIN = "livespec.dispatch.trace"
 SPAN_ID_DOMAIN = "livespec.dispatch.span"
+
+# Traceparent version `00` with the sampled flag set, so the engine's
+# extract keeps this span as the PARENT instead of starting the server run
+# span as its own root. An unsampled flag would leave the join declared and
+# the parent silently dropped.
+_TRACEPARENT_VERSION = "00"
+_TRACEPARENT_FLAGS = "01"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -60,6 +68,12 @@ def dispatch_span_ids(*, dispatch_id: str) -> DispatchSpanIds:
             digits=SPAN_ID_HEX_DIGITS,
         ),
     )
+
+
+def dispatch_traceparent(*, dispatch_id: str) -> str:
+    """The W3C `traceparent` naming this dispatch's own span as the parent."""
+    ids = dispatch_span_ids(dispatch_id=dispatch_id)
+    return f"{_TRACEPARENT_VERSION}-{ids.trace_id}-{ids.span_id}-{_TRACEPARENT_FLAGS}"
 
 
 def non_zero_hex(*, digits: str) -> str:
