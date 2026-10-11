@@ -9,6 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import (
+    dispatch_correlation,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     CommandRunner,
@@ -101,6 +104,17 @@ class WatchedFabroLauncher:
                 goal_file=plan.goal_file,
                 inputs=dispatch_fabro_run_inputs(plan=plan),
                 timeout_seconds=plan.fabro_timeout_seconds,
+                # The dispatch id this launch was minted under, so the
+                # engine's run spans carry the SAME triple the dispatch
+                # span does. Read off the launcher rather than re-derived:
+                # the heartbeat sink already keys every beat by this field,
+                # and a second id here would correlate the trace to a
+                # dispatch the journal never recorded.
+                correlation=dispatch_correlation(
+                    work_item_id=plan.work_item_id,
+                    dispatch_id=self.dispatch_id,
+                    factory=plan.fabro_factory_name,
+                ),
             )
             holder["result"] = cast("CommandResult", result.command)
             run_id_holder["run_id"] = result.run_id

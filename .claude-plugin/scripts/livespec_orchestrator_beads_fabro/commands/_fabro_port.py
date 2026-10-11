@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands import _fabro_client as client
+from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import DispatchCorrelation
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
     FabroHttpPort,
     FabroHttpTransport,
@@ -20,10 +21,13 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     FabroFailureDetail,
     FabroRunSummary,
     fabro_failure_detail_from_payload,
-    fabro_run_id_from_output,
     fabro_run_summaries_from_payload,
     fabro_run_summaries_from_stdout,
     fabro_status_kind_from_payload,
+)
+from livespec_orchestrator_beads_fabro.commands._fabro_port_run_launch import (
+    launch_fabro_run,
+    server_env,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import (
     FabroCommand,
@@ -86,25 +90,20 @@ class FabroPort:
         goal_file: Path,
         inputs: tuple[str, ...],
         timeout_seconds: float,
+        correlation: DispatchCorrelation | None = None,
     ) -> FabroRunResult:
-        workflow = client.run_workflow(version=self.fabro_version, workflow_toml=workflow_toml)
-        command = self._run(
-            argv=[
-                self.fabro_bin,
-                "run",
-                str(workflow),
-                "--goal-file",
-                str(goal_file),
-                *client.fabro_input_args(inputs=inputs),
-                "--no-upgrade-check",
-                *self._server_suffix(),
-            ],
+        """Launch one `fabro run`, carrying this dispatch's correlation."""
+        return launch_fabro_run(
+            fabro_bin=self.fabro_bin,
+            runner=self.runner,
+            cwd=self.cwd,
+            fabro_version=self.fabro_version,
+            server_url=self.target.server_url,
+            workflow_toml=workflow_toml,
+            goal_file=goal_file,
+            inputs=inputs,
             timeout_seconds=timeout_seconds,
-            env=self._server_env(),
-        )
-        return FabroRunResult(
-            command=command,
-            run_id=fabro_run_id_from_output(output=f"{command.stdout}\n{command.stderr}"),
+            correlation=correlation,
         )
 
     def auth_login(self, *, timeout_seconds: float) -> FabroCommandResult | None:
@@ -308,9 +307,7 @@ class FabroPort:
         return ["--server", self.target.server_url]
 
     def _server_env(self) -> dict[str, str] | None:
-        if self.target.server_url is None:
-            return None
-        return {"FABRO_SERVER": self.target.server_url}
+        return server_env(server_url=self.target.server_url)
 
 
 def fabro_port_for_plan(*, plan: Any, runner: FabroRunner) -> FabroPort:

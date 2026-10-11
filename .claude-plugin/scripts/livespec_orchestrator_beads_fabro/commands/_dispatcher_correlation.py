@@ -25,6 +25,7 @@ __all__: list[str] = [
     "DispatchCorrelation",
     "DispatchSpanIds",
     "correlation_attributes",
+    "correlation_label_args",
     "dispatch_correlation",
     "dispatch_span_ids",
     "dispatch_traceparent",
@@ -105,6 +106,22 @@ def correlation_attributes(*, correlation: DispatchCorrelation) -> dict[str, str
     """The correlation values, keyed by their span-attribute name."""
     values = (correlation.work_item_id, correlation.dispatch_id, correlation.factory)
     return dict(zip(CORRELATION_LABEL_KEYS, values, strict=True))
+
+
+def correlation_label_args(*, correlation: DispatchCorrelation | None) -> tuple[str, ...]:
+    """The `--label KEY=VALUE` argv pairs this correlation carries.
+
+    One pair per value, in the fixed key order above. A None correlation
+    carries none: an invocation that minted no dispatch id has nothing to
+    correlate by, and two labels out of three would read downstream as a
+    dispatch whose factory was unknown rather than as no dispatch at all.
+    """
+    if correlation is None:
+        return ()
+    args: list[str] = []
+    for key, value in correlation_attributes(correlation=correlation).items():
+        args.extend(("--label", f"{key}={value}"))
+    return tuple(args)
 
 
 def dispatch_span_ids(*, dispatch_id: str) -> DispatchSpanIds:
