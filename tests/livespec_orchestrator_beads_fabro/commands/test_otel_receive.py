@@ -37,6 +37,8 @@ Load-bearing invariants under test:
   (returns without raising; never blocks a dispatch).
 - Env-lever addr/port resolution with committed defaults (unset env never
   means unbound).
+- The Petri-era `run_turn` attribute set egresses INTACT, beside the 0.254
+  names it renamed rather than in place of them (`bd-ib-dtk7qh`).
 """
 
 from __future__ import annotations
@@ -1209,6 +1211,54 @@ def test_receiver_forwards_petri_run_turn_command_group_intact(
         "run_turn.env.keys": "CLAUDE_CODE_OAUTH_TOKEN,CODEX_HOME,PATH",
         "run_turn.status": "completed",
     }
+
+    forwarded = _post_span_attrs(
+        base=base,
+        exporter=exporter,
+        attrs=[_attr_entry(key=key, string_value=value) for key, value in expected.items()],
+    )
+
+    assert _attrs_of(span=forwarded[0]) == {
+        key: {"stringValue": value} for key, value in expected.items()
+    }
+
+
+def test_receiver_still_forwards_0254_run_turn_attributes_beside_petri_names(
+    receiver_factory: tuple[OtelReceiver, _FakeExporter, HeartbeatSink, str],
+) -> None:
+    """The 0.254 `run_turn` names survive the Petri-era widening, ON ONE SPAN.
+
+    The five 0.254 names are KEPT rather than replaced, because an older
+    engine is still a reachable pin and nothing in a span says which emitter
+    wrote it. Asserting them beside the thirteen Petri names on a single span
+    is what makes this a coexistence test rather than a restatement of the
+    allowlist: a widening that displaced an older name would pass each group's
+    own assertion and fail only here.
+    """
+    _receiver, exporter, _heartbeat, base = receiver_factory
+    expected_0254 = {
+        "command": "codex",
+        "config_name": "default",
+        "visit": "1",
+        "stop_reason": "end_turn",
+        "node_id": "node-1",
+    }
+    expected_petri = {
+        "run_turn.command": "codex acp",
+        "run_turn.command.digest": "sha256:" + ("b" * 64),
+        "run_turn.env.keys": "CODEX_HOME,PATH",
+        "run_turn.status": "completed",
+        "acp.stop_reason": "end_turn",
+        "acp.turns": "3",
+        "acp.usage": "input=1200 output=340",
+        "acp.usage.tokens.input": "1200",
+        "acp.context": "compacted",
+        "acp.context.size": "98304",
+        "fabro.node": "implement",
+        "fabro.firing": "2",
+        "fabro.attempt": "1",
+    }
+    expected = {**expected_0254, **expected_petri}
 
     forwarded = _post_span_attrs(
         base=base,
