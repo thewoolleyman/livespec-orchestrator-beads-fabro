@@ -7,16 +7,30 @@ at all?", and answers it identically for a marked rework row and a new `ready`
 item. Keeping the two apart is what makes "both legs pass through the SAME
 filter" a fact about the code rather than a convention two call sites keep.
 
-THE ORDER OF THE FOUR REFUSALS IS DELIBERATE, cheapest and least
-item-specific first:
+THE ORDER OF THE REFUSALS IS DELIBERATE, cheapest and least item-specific
+first. The least item-specific of all is COMMITTED CONFIGURATION, and it is
+resolved ONCE PER PASS in `filter_eligible_candidates` rather than inside the
+per-row ladder: an unreadable `dispatcher.adopted_assertion_count_ceiling` is
+a fact about the repository that refuses every candidate identically, so
+resolving it per row would re-read one file once per candidate to reach the
+same answer. The FIVE per-row refusals then run in this order:
 
 1. An unexpired LEGACY provider-exhaustion record. A vendor ceiling this
    dispatch would run into is a fact about the factory, not the item.
 2. An exhausted success-critical ACP candidate chain. Also a fact about the
    factory, and it reads a verdict already computed for the whole pass.
-3. The item's own ledger labels, which is the first read that can fail for a
-   reason belonging to THIS row.
-4. The host-only routing refusal, which needs those labels.
+3. The adopted assertion-count ceiling, which is the first condition that
+   reads THIS row's ledger metadata -- a `bd show` per candidate once a
+   ceiling is adopted -- and the only MUTATING one: an above-ceiling row
+   carrying no valid `size_justification` is routed to `backlog` for
+   decomposition with a ledger comment. It sits BELOW both factory-wide
+   conditions for exactly that reason. Over a candidate wave arriving during
+   a provider outage, grading it first spends N ledger round-trips and
+   performs N lifecycle mutations on rows the next condition was about to
+   refuse anyway -- and the mutation is the expensive half, because a refused
+   dispatch is retried while a row moved to `backlog` has to be regroomed.
+4. The item's own ledger labels.
+5. The host-only routing refusal, which needs those labels.
 
 Putting either factory-wide condition after the label read would report a
 provider outage as "this item's labels could not be read" whenever both were
@@ -39,7 +53,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import ho
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import read_dispatch_labels
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
-    apply_factory_size_dispatch_entry,
+    resolve_adopted_assertion_count_ceiling,
+    route_factory_size_dispatch_entry,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
@@ -68,11 +83,37 @@ def filter_eligible_candidates(
     Every refusal is journaled by the helper that produced it, so the returned
     outcomes are a projection of what was already recorded rather than a second
     account of it.
+
+    The adopted assertion-count ceiling is resolved HERE, before the per-row
+    ladder, for the reason the module docstring gives: it is the one condition
+    whose answer belongs to the repository rather than to any candidate. An
+    unreadable one refuses the WHOLE wave -- one refusal per row, so the
+    returned outcomes still describe the candidates the caller handed in,
+    which is what the drain's accounting reads.
     """
+    resolved_ceiling = resolve_adopted_assertion_count_ceiling(cwd=repo)
+    if not is_successful(resolved_ceiling):
+        detail = unsafe_perform_io(resolved_ceiling.failure()).detail
+        return [], [
+            failed_dispatch_outcome(
+                journal=journal,
+                work_item_id=item.id,
+                stage="configuration",
+                detail=detail,
+            )
+            for item in candidates
+        ]
+    adopted_ceiling = unsafe_perform_io(resolved_ceiling.unwrap())
     admittable: list[WorkItem] = []
     refused: list[DispatchOutcome] = []
     for item in candidates:
-        refusal = _refusal_for(repo=repo, preflight=preflight, item=item, journal=journal)
+        refusal = _refusal_for(
+            repo=repo,
+            preflight=preflight,
+            item=item,
+            journal=journal,
+            adopted_ceiling=adopted_ceiling,
+        )
         if refusal is None:
             admittable.append(item)
         else:
@@ -86,25 +127,9 @@ def _refusal_for(
     preflight: AcpPreflightVerdict,
     item: WorkItem,
     journal: JournalFile,
+    adopted_ceiling: int | None,
 ) -> DispatchOutcome | None:
-    """The first condition this row fails, or `None` when it passes all four."""
-    size_result = apply_factory_size_dispatch_entry(
-        cwd=repo,
-        path_factory=lambda: store_config(repo=repo),
-        items=(item,),
-        journal=journal,
-    )
-    if not is_successful(size_result):
-        failure = unsafe_perform_io(size_result.failure())
-        return failed_dispatch_outcome(
-            journal=journal,
-            work_item_id=item.id,
-            stage="configuration",
-            detail=failure.detail,
-        )
-    size_refusals = unsafe_perform_io(size_result.unwrap())
-    if size_refusals:
-        return size_refusals[0]
+    """The first condition this row fails, or `None` when it passes all five."""
     exhaustion_refusal = provider_exhaustion_refusal(
         work_item_id=item.id,
         journal=journal,
@@ -116,6 +141,14 @@ def _refusal_for(
     chain_refusal = acp_preflight_refusal(work_item_id=item.id, verdict=preflight, journal=journal)
     if chain_refusal is not None:
         return chain_refusal
+    size_refusals = route_factory_size_dispatch_entry(
+        adopted_ceiling=adopted_ceiling,
+        path_factory=lambda: store_config(repo=repo),
+        items=(item,),
+        journal=journal,
+    )
+    if size_refusals:
+        return size_refusals[0]
     raw_labels = read_dispatch_labels(repo=repo, item=item)
     if isinstance(raw_labels, str):
         return failed_dispatch_outcome(
