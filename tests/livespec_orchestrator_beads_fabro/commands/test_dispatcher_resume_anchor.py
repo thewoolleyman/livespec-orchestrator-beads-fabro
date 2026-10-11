@@ -5,7 +5,7 @@
 LATEST proof record on the item's open pull request carries, the *published head*
 is the full commit sha that record names, and the *resumed-at stage* is the node
 the earlier run was executing when it terminated — or, when the factory no longer
-holds the run, the stage the latest record's VERDICT implies: `verified` -> `pr`,
+holds the run, the stage the latest record's VERDICT implies: `verified` -> `pr_refresh`,
 `captured` -> `review`, `not_captured` or `not_reproduced` -> `fix`, no such
 record -> `proof_capture`. Scenario 142 exercises all four.
 
@@ -150,6 +150,21 @@ def test_the_executing_node_outranks_the_verdict_fallback() -> None:
     assert anchor is not None
     assert anchor.resumed_at == "review_fix"
     assert anchor.source == module.SOURCE_FACTORY_RUN
+
+
+def test_a_legacy_pr_execution_anchor_is_normalized_to_the_refresh_stage() -> None:
+    """A resumed run cannot skip the ownership, default-head and gate refresh."""
+    module = _anchor_module()
+    anchor = module.resume_anchor(
+        records=[
+            _record(verdict=VERDICT_VERIFIED, body=_body(verdict=VERDICT_VERIFIED, head=_HEAD))
+        ],
+        executing_node="pr",
+    )
+
+    assert anchor is not None
+    assert anchor.resumed_at == "pr_refresh"
+    assert module.resumed_at_for_verdict(verdict=VERDICT_VERIFIED) == "pr_refresh"
 
 
 def test_a_non_factory_record_is_not_an_anchor() -> None:

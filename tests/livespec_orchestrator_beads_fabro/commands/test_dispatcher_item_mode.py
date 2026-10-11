@@ -255,6 +255,42 @@ def test_loop_without_candidates_emits_nothing_dispatched(
     assert recording.calls == []
 
 
+def test_implementation_pr_override_refuses_before_the_item_is_claimed(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dispatch adapter for the scripted publisher is a pre-admission error."""
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(id="implementation-pr-override")
+    append_work_item(path=_config(), item=item)
+    recording = _RecordingRunDispatch()
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", recording)
+
+    exit_code = main(
+        argv=[
+            "dispatch",
+            "--repo",
+            str(repo),
+            "--item",
+            item.id,
+            "--workflow",
+            str(workflow),
+            "--acp-node",
+            "pr=uvx forbidden-pr-acp",
+        ]
+    )
+
+    assert exit_code == 3
+    assert "command stage" in capsys.readouterr().err
+    assert recording.calls == []
+    assert _read_items()[item.id].status == "ready"
+    journal = repo / "tmp" / "fabro-dispatch-journal.jsonl"
+    records = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
+    assert any(record["stage"] == "acp-publication-policy" for record in records)
+    assert not any(record["stage"] == "ledger-admit" for record in records)
+
+
 def test_loop_with_item_dispatches_requested_not_top_ranked(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

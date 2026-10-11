@@ -8,7 +8,7 @@ what required every new refusal to be wired twice. It moved out when the Codex
 credential gate became the fourth refusal in each and pushed the single-dispatch
 command module past its file LLOC ceiling — the seam was already there.
 
-WHAT THE WALL IS. Four refusals plus one mutation, sharing one POSITION and one
+WHAT THE WALL IS. Five refusals plus one mutation, sharing one POSITION and one
 guarantee: each runs after selection and BEFORE admission, so a refused item is
 never claimed, no `active` row is left behind, and no factory run exists to reap.
 Reading them as one decision is also what keeps each command entry point's return
@@ -31,6 +31,9 @@ from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     pre_dispatch_criteria_refusal,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
+    implementation_pr_override_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_credential_gate import (
     codex_credential_refusal_for_items,
@@ -101,7 +104,12 @@ def pre_dispatch_wall_exit(
     below branches on which caller it is, which is the point: a refusal that
     fired for one path and not the other was a defect waiting to happen.
 
-    The criteria wall is first and is variant-aware: it is handed this dispatch's
+    The publication-adapter wall is first: an explicit implementation `pr`
+    override cannot apply now that publication is scripted, and refusing it here
+    keeps the item unclaimed. A groom selection remains eligible because its `pr`
+    node still publishes a filing plan through ACP.
+
+    The criteria wall follows and is variant-aware: it is handed this dispatch's
     explicit `--workflow-name`, resolves which graph the selection would run, and
     exempts a groom-kind dispatch, whose acceptance is the human approval of the
     draft.
@@ -143,6 +151,15 @@ def pre_dispatch_wall_exit(
     item, and it runs last because it MUTATES a remote ref: a selection this wall
     is about to refuse must leave the remote exactly as it found it.
     """
+    publication_refusal = implementation_pr_override_refusal(
+        args=args,
+        repo=repo,
+        items=items,
+        journal=journal,
+    )
+    if publication_refusal is not None:
+        _ = write_stderr(text=f"{publication_refusal}\n")
+        return EXIT_PRECONDITION_ERROR
     ungradeable = pre_dispatch_criteria_refusal(
         items=items, cwd=repo, workflow_name=args.workflow_name
     )

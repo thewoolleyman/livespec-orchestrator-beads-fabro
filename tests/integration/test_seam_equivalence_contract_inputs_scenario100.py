@@ -124,10 +124,14 @@ def test_the_seam_check_reports_each_way_the_integration_input_surfaces_disagree
         encoding="utf-8",
     )
 
+    # The merge-method token lives in the `pr` command stage's own script since
+    # v121, where the retired publication PROMPT used to carry it. Editing the
+    # graph is therefore editing the one position that still reads it, and the
+    # read-back below is what proves the edit landed rather than matching nothing.
     unread = _seed(root=tmp_path / "input", check=check, governed=governed)
-    prompt = unread / "prompts" / "pr.md"
-    _ = prompt.write_text(
-        prompt.read_text(encoding="utf-8").replace(_MERGE_METHOD_TOKEN, "--rebase", 1),
+    publication = unread / "workflow.fabro"
+    _ = publication.write_text(
+        publication.read_text(encoding="utf-8").replace(_MERGE_METHOD_TOKEN, "--rebase", 1),
         encoding="utf-8",
     )
 
@@ -141,7 +145,7 @@ def test_the_seam_check_reports_each_way_the_integration_input_surfaces_disagree
     # Read the persisted bytes back first: an edit that matched nothing would
     # leave a conformant payload and the gate would rightly report clean.
     assert _MERGE_MODE_DECLARATION not in run_config.read_text(encoding="utf-8")
-    assert "inputs.merge_mode" not in prompt.read_text(encoding="utf-8")
+    assert "inputs.merge_mode" not in publication.read_text(encoding="utf-8")
     assert _TEMPLATED_TIMEOUT in graph.read_text(encoding="utf-8")
 
     assert _reported(check=check, root=tmp_path / "token") == [

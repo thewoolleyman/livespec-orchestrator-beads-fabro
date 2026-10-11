@@ -56,19 +56,21 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_layers import (
     AcpNodeResolution,
     resolve_acp_nodes,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_node_repository import repository_acp_chains
+from livespec_orchestrator_beads_fabro.commands._acp_node_repository import (
+    repository_acp_chains,
+    repository_acp_overlays,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import (
     AcpPreflightVerdict,
     build_acp_preflight_verdict,
     no_fallback_verdict,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_workflow_defaults import (
-    rendered_workflow_defaults,
-)
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
-from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
-    workflow_adapter_inputs,
+    workflow_layer,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
+    scoped_repository_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import workflow_graph_path
@@ -83,7 +85,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_variant imp
     WorkflowVariantRefusal,
     prepare_workflow_variant,
 )
-from livespec_orchestrator_beads_fabro.commands._workflow_variants import RESERVED_WORKFLOW_NAME
+from livespec_orchestrator_beads_fabro.commands._workflow_variant_kind import variant_kind
+from livespec_orchestrator_beads_fabro.commands._workflow_variants import (
+    RESERVED_WORKFLOW_NAME,
+    workflow_variant_from_block,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
@@ -125,15 +131,21 @@ def resolve_acp_preflight(
     free of any external call.
     """
     block = dispatcher_block(cwd=repo)
-    catalogs = resolve_acp_catalogs(block=block)
+    scoped_block = _workflow_scoped_block(repo=repo, block=block)
+    catalogs = resolve_acp_catalogs(block=scoped_block)
     if isinstance(catalogs, str):
         return AcpPreflightVerdict(fallback_enabled=True, refusal=catalogs)
-    declared = repository_acp_chains(block=block, catalogs=catalogs)
+    declared = repository_acp_chains(block=scoped_block, catalogs=catalogs)
     if isinstance(declared, str):
         return AcpPreflightVerdict(fallback_enabled=True, refusal=declared)
     if not any(chain.enabled for chain in declared.values()):
         return no_fallback_verdict()
-    resolved = _resolve_chains(repo=repo, declared=declared, catalogs=catalogs)
+    resolved = _resolve_chains(
+        repo=repo,
+        block=scoped_block,
+        declared=declared,
+        catalogs=catalogs,
+    )
     if isinstance(resolved, str):
         return AcpPreflightVerdict(fallback_enabled=True, refusal=resolved)
     chains, graph_text, builtin_pairs = resolved
@@ -175,13 +187,19 @@ def resolve_acp_primary_generations(*, repo: Path) -> Mapping[str, str]:
     no warning and reports no fact, which is the conservative answer.
     """
     block = dispatcher_block(cwd=repo)
-    catalogs = resolve_acp_catalogs(block=block)
+    scoped_block = _workflow_scoped_block(repo=repo, block=block)
+    catalogs = resolve_acp_catalogs(block=scoped_block)
     if isinstance(catalogs, str):
         return {}
-    declared = repository_acp_chains(block=block, catalogs=catalogs)
+    declared = repository_acp_chains(block=scoped_block, catalogs=catalogs)
     if isinstance(declared, str) or not any(chain.enabled for chain in declared.values()):
         return {}
-    resolved = _resolve_chains(repo=repo, declared=declared, catalogs=catalogs)
+    resolved = _resolve_chains(
+        repo=repo,
+        block=scoped_block,
+        declared=declared,
+        catalogs=catalogs,
+    )
     if isinstance(resolved, str):
         return {}
     chains, _graph_text, _builtin_pairs = resolved
@@ -248,9 +266,20 @@ def _legacy_providers(*, journal_path: Path | None, now_iso: str) -> frozenset[s
     )
 
 
+def _workflow_scoped_block(*, repo: Path, block: dict[str, object]) -> dict[str, object]:
+    """Repository settings that apply to the default workflow kind."""
+    variant = workflow_variant_from_block(block=block)
+    scoped, _not_applied = scoped_repository_block(
+        block=block,
+        workflow_kind=variant_kind(repo=repo, variant=variant),
+    )
+    return scoped
+
+
 def _resolve_chains(
     *,
     repo: Path,
+    block: dict[str, object],
     declared: Mapping[str, AcpNodeChain],
     catalogs: AcpCatalogs,
 ) -> tuple[Mapping[str, ResolvedAcpChain], str | None, frozenset[tuple[str, str]]] | str:
@@ -262,12 +291,10 @@ def _resolve_chains(
     manifest_text = _read(path=manifest)
     if manifest_text is None:
         return f"acp preflight cannot read the workflow config {manifest}"
-    workflow_inputs = rendered_workflow_defaults(
-        declared=workflow_adapter_inputs(committed_text=manifest_text), catalogs=catalogs
-    )
+    workflow_inputs = workflow_layer(committed=manifest, catalogs=catalogs)
     if isinstance(workflow_inputs, str):
         return workflow_inputs
-    overlays = resolve_acp_node_overlays(cwd=repo)
+    overlays = repository_acp_overlays(block=block, catalogs=catalogs)
     if isinstance(overlays, str):
         return overlays
     resolution = resolve_acp_nodes(

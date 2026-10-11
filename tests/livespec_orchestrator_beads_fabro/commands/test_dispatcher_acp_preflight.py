@@ -228,7 +228,6 @@ def test_the_committed_graph_resolves_exactly_the_nodes_dominating_every_green_p
         "proof_capture",
         "review",
         "proof_verify",
-        "pr",
     }
     assert critical.start == "start"
     assert critical.green_terminal == "exit"
@@ -239,7 +238,6 @@ def test_the_committed_graph_resolves_exactly_the_nodes_dominating_every_green_p
         "review_fix",
         "proof_capture",
         "proof_verify",
-        "pr",
         "review",
         "disposition",
     }
@@ -1055,6 +1053,50 @@ def test_an_enabled_repository_resolves_a_viable_two_candidate_chain(tmp_path: P
     assert _keys(preflight=verdict.node_preflight(node="implement")) == ["primary", "fallback"]
 
 
+def test_catalog_refusal_is_fail_closed_before_claim_and_fail_soft_after_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same catalog fault refuses admission but cannot strand run evidence."""
+    composer = _modules()["_dispatcher_acp_preflight"]
+    monkeypatch.setattr(composer, "resolve_acp_catalogs", lambda **_: "catalog refusal")
+
+    verdict = composer.resolve_acp_preflight(repo=tmp_path, journal_path=None, now_iso=_NOW)
+
+    assert verdict.viable is False
+    assert verdict.detail == "catalog refusal"
+    assert composer.resolve_acp_primary_generations(repo=tmp_path) == {}
+
+
+def test_primary_generation_projection_covers_each_resolution_outcome(tmp_path: Path) -> None:
+    """Projection returns enabled generations or an empty fail-soft result."""
+    composer = _modules()["_dispatcher_acp_preflight"]
+    enabled = _enabled_repo(tmp_path=tmp_path / "enabled")
+    assert composer.resolve_acp_primary_generations(repo=enabled).keys() == {"implement"}
+
+    no_fallback = tmp_path / "no-fallback"
+    no_fallback.mkdir()
+    (no_fallback / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"dispatcher": {}}}',
+        encoding="utf-8",
+    )
+    assert composer.resolve_acp_primary_generations(repo=no_fallback) == {}
+
+    malformed = _enabled_repo(tmp_path=tmp_path / "malformed")
+    malformed_config = json.loads(_ENABLED_CONFIG)
+    malformed_config["livespec-orchestrator-beads-fabro"]["dispatcher"]["acp_nodes"]["implement"][
+        "unknown_key"
+    ] = "boom"
+    (malformed / ".livespec.jsonc").write_text(json.dumps(malformed_config), encoding="utf-8")
+    assert composer.resolve_acp_primary_generations(repo=malformed) == {}
+
+    unresolvable = _enabled_repo(tmp_path=tmp_path / "unresolvable")
+    unresolvable_config = json.loads(_ENABLED_CONFIG)
+    nodes = unresolvable_config["livespec-orchestrator-beads-fabro"]["dispatcher"]["acp_nodes"]
+    nodes["unknown"] = nodes.pop("implement")
+    (unresolvable / ".livespec.jsonc").write_text(json.dumps(unresolvable_config), encoding="utf-8")
+    assert composer.resolve_acp_primary_generations(repo=unresolvable) == {}
+
+
 def test_a_malformed_structured_workflow_default_refuses_the_preflight(
     tmp_path: Path,
 ) -> None:
@@ -1229,7 +1271,6 @@ def test_a_repository_with_no_committed_workflow_is_graded_against_the_bundled_o
         "proof_capture",
         "review",
         "proof_verify",
-        "pr",
     }
     assert verdict.viable is True
 
@@ -1281,7 +1322,7 @@ def test_an_overlay_refusal_is_surfaced_rather_than_swallowed(
     composer = modules["_dispatcher_acp_preflight"]
     repo = _enabled_repo(tmp_path=tmp_path)
     monkeypatch.setattr(
-        composer, "resolve_acp_node_overlays", lambda **_: "overlay layer is unreadable"
+        composer, "repository_acp_overlays", lambda **_: "overlay layer is unreadable"
     )
 
     verdict = composer.resolve_acp_preflight(repo=repo, journal_path=None, now_iso=_NOW)

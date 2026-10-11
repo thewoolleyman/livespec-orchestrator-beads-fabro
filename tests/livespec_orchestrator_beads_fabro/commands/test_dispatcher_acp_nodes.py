@@ -20,7 +20,15 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from livespec_orchestrator_beads_fabro.commands import dispatcher, drive
+import pytest
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_acp_nodes as acp_nodes,
+)
+from livespec_orchestrator_beads_fabro.commands import (
+    dispatcher,
+    drive,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_catalogs import builtin_catalogs
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import (
     DISPATCH_LAYER,
     REPOSITORY_LAYER,
@@ -28,8 +36,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_layers import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
     ACP_NODES_STAGE,
+    dispatch_acp_overlays,
     prepare_acp_nodes,
     workflow_adapter_inputs,
+    workflow_layer,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_materialize import (
     MaterializationRefusal,
@@ -48,7 +58,6 @@ _ACP_NODES = (
     "review_fix",
     "proof_capture",
     "proof_verify",
-    "pr",
     "review",
     "disposition",
 )
@@ -225,6 +234,73 @@ def test_prepare_resolves_journals_and_names_the_layer_per_node(tmp_path: Path) 
     assert set(nodes) == set(_ACP_NODES)
 
 
+def test_implementation_ignores_repository_pr_and_journals_not_applied(
+    tmp_path: Path,
+) -> None:
+    """Compatibility config cannot restore an ACP publisher to implementation."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_dispatcher_config(
+        repo=repo,
+        dispatcher_block={
+            "acp_nodes": {
+                "pr": {
+                    "command": "uvx legacy-pr-acp",
+                    "env": {"LEGACY_TOKEN": "must-not-resolve"},
+                    "fallbacks": "malformed-but-retired",
+                }
+            }
+        },
+    )
+    journal = _RecordingJournal()
+
+    resolution = prepare_acp_nodes(
+        repo=repo,
+        committed=_COMMITTED_WORKFLOW,
+        overrides=(),
+        journal=journal,
+        work_item_id="bd-ib-c3txja",
+    )
+
+    assert not isinstance(resolution, str), resolution
+    assert "pr" not in resolution.nodes
+    [record] = [entry for entry in journal.records if entry["stage"] == ACP_NODES_STAGE]
+    assert record["not_applied"] == [
+        {
+            "layer": "repository",
+            "node": "pr",
+            "reason": "implementation-publication-is-scripted",
+        }
+    ]
+
+
+def test_groom_still_honors_the_repository_pr_adapter(tmp_path: Path) -> None:
+    """The filing-plan publisher remains an ACP node on the groom workflow."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_dispatcher_config(
+        repo=repo,
+        dispatcher_block={"acp_nodes": {"pr": {"command": "uvx groom-pr-acp"}}},
+    )
+    journal = _RecordingJournal()
+    groom = _REPO_ROOT / ".fabro" / "workflows" / "groom-work-item" / "workflow.toml"
+
+    resolution = prepare_acp_nodes(
+        repo=repo,
+        committed=groom,
+        overrides=(),
+        journal=journal,
+        work_item_id="bd-ib-groom",
+    )
+
+    assert not isinstance(resolution, str), resolution
+    assert resolution.nodes["pr"].adapter.command == "uvx groom-pr-acp"
+    assert resolution.nodes["pr"].adapter.args == ()
+    assert resolution.nodes["pr"].command_layer == REPOSITORY_LAYER
+    [record] = [entry for entry in journal.records if entry["stage"] == ACP_NODES_STAGE]
+    assert "not_applied" not in record
+
+
 def test_prepare_refuses_an_unreadable_workflow_config(tmp_path: Path) -> None:
     """A missing committed config refuses naming the path rather than raising."""
     journal = _RecordingJournal()
@@ -275,6 +351,86 @@ def test_prepare_refuses_a_malformed_per_dispatch_argument(tmp_path: Path) -> No
     assert isinstance(refusal, str)
     assert "<node>=<adapter command>" in refusal
     assert journal.records == []
+
+
+def test_dispatch_overlays_cover_duplicate_and_structured_forms() -> None:
+    catalogs = builtin_catalogs()
+    duplicate = dispatch_acp_overlays(
+        overrides=("review=uvx one", "review=uvx two"),
+        catalogs=catalogs,
+    )
+    assert isinstance(duplicate, str)
+    assert "more than once" in duplicate
+    malformed = dispatch_acp_overlays(
+        overrides=('review={"agent":"absent","model":"none"}',),
+        catalogs=catalogs,
+    )
+    assert isinstance(malformed, str)
+    structured = dispatch_acp_overlays(
+        overrides=('review={"agent":"codex-acp","model":"gpt-5.6-sol","effort":"high"}',),
+        catalogs=catalogs,
+    )
+    assert not isinstance(structured, str), structured
+    assert structured["review"].env_replaces is True
+
+
+def test_workflow_layer_returns_rendered_defaults_or_an_unreadable_refusal(
+    tmp_path: Path,
+) -> None:
+    catalogs = builtin_catalogs()
+    rendered = workflow_layer(committed=_COMMITTED_WORKFLOW, catalogs=catalogs)
+    assert not isinstance(rendered, str), rendered
+    assert "implement_adapter" in rendered
+    refusal = workflow_layer(committed=tmp_path / "absent.toml", catalogs=catalogs)
+    assert isinstance(refusal, str)
+    assert "unreadable" in refusal
+
+
+def test_prepare_routes_catalog_and_chain_refusals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    committed = _write_workflow(tmp_path=tmp_path)
+    journal = _RecordingJournal()
+    monkeypatch.setattr(acp_nodes, "resolve_acp_catalogs", lambda **_: "catalog refusal")
+    assert (
+        prepare_acp_nodes(
+            repo=tmp_path,
+            committed=committed,
+            overrides=(),
+            journal=journal,
+            work_item_id="bd-ib-catalog",
+        )
+        == "catalog refusal"
+    )
+    monkeypatch.setattr(acp_nodes, "resolve_acp_catalogs", lambda **_: builtin_catalogs())
+    monkeypatch.setattr(acp_nodes, "repository_acp_chains", lambda **_: "chain refusal")
+    assert (
+        prepare_acp_nodes(
+            repo=tmp_path,
+            committed=committed,
+            overrides=(),
+            journal=journal,
+            work_item_id="bd-ib-chain",
+        )
+        == "chain refusal"
+    )
+
+
+def test_prepare_routes_chain_attachment_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    committed = _write_workflow(tmp_path=tmp_path)
+    journal = _RecordingJournal()
+    monkeypatch.setattr(acp_nodes, "repository_acp_chains", lambda **_: {})
+    monkeypatch.setattr(acp_nodes, "attach_acp_chains", lambda **_: "attachment refusal")
+    refusal = prepare_acp_nodes(
+        repo=tmp_path,
+        committed=committed,
+        overrides=(),
+        journal=journal,
+        work_item_id="bd-ib-attach",
+    )
+    assert refusal == "attachment refusal"
 
 
 def test_dispatch_and_loop_accept_a_repeatable_acp_node_argument() -> None:

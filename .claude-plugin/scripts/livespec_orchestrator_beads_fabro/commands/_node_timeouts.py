@@ -56,20 +56,35 @@ REPOSITORY_LAYER = "repository"
 WORKFLOW_DEFAULT_LAYER = "default"
 
 # The graph's worst-case path, expressed as the visit budget each node can
-# actually consume in one run -- read off `workflow.fabro`: `dod_gate`,
-# `implement` and
-# `pr` carry `max_retries=1` (two attempts each), the janitor fix loop is
+# actually consume in one run -- read off `workflow.fabro`: `dod_gate` and
+# `implement` carry `max_retries=1` (two attempts each), the janitor fix loop is
 # bounded by the `< 3` visit guard on the janitor's own visit count (three
 # janitor visits, two fix attempts), and the review loop is bounded by the
 # default `review_fix_visit_cap` of four review visits with three
 # disposition / review_fix rounds under it.
 #
-# The two SCRIPT breakers on the main path -- `implementation_diff` after
-# `implement` and `verify_pr` after `pr` -- each carry the budget of the
-# retryable node they guard, because either can be reached once per attempt
-# of it. They are cheap in practice (one `git` call apiece) and budgeting
-# them at the guarded node's count is what keeps the ceiling ABOVE the
-# graph rather than level with an optimistic reading of it.
+# A NODE ABSENT FROM THIS TABLE IS BUDGETED AT ZERO, which is why every node the
+# graph can reach has to appear here even when it is cheap: the derivation below
+# is what the `fabro run` subprocess ceiling comes from, so an omitted node is a
+# node the Dispatcher can kill the CLI out from under.
+#
+# `implementation_diff` after `implement` carries the budget of the retryable
+# node it guards, because it can be reached once per attempt of it. It is cheap
+# in practice (one `git` call) and budgeting it at the guarded node's count is
+# what keeps the ceiling ABOVE the graph rather than level with an optimistic
+# reading of it.
+#
+# THE PUBLICATION STAGES (v121: command stages, not agent turns). `pr_refresh`
+# and its postcondition breaker `pr_refresh_head` are budgeted at FOUR -- one
+# entry plus the three refreshes the contract bounds a run to -- because every
+# refresh that changes the head routes back through capture, review and replay
+# and returns here. The refresh is the one publication stage that can genuinely
+# spend its whole timeout: it runs the repository's declared check suite as a
+# foreground command against the rebased head, which is the work that moving
+# publication out of an agent turn exists to budget honestly. `pr` and
+# `verify_pr` are budgeted at ONE each: neither carries a retry any more (the
+# retired ACP `pr` node's `max_retries=1` is what the old `2` was for), and
+# nothing in the graph re-enters them.
 #
 # The three TERMINAL sentinel nodes (`dead_implementer`, `abandon`,
 # `non_converged`) are deliberately absent: each ENDS the run, so they are
@@ -102,8 +117,10 @@ _WORST_CASE_VISITS: Mapping[str, int] = {
     "proof_verify": 3,
     "disposition": 3,
     "review_fix": 3,
-    "pr": 2,
-    "verify_pr": 2,
+    "pr_refresh": 4,
+    "pr_refresh_head": 4,
+    "pr": 1,
+    "verify_pr": 1,
 }
 
 # Sandbox-provisioning slack on top of the derived worst case. Carried over

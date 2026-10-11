@@ -778,7 +778,7 @@ def test_render_run_config_overlay_image_override_is_scope_fenced(tmp_path: Path
     assert f'graph = "{tmp_path / "workflow.fabro"}"' in pre_env_table
     assert "[environments.livespec-ci.env]" in rendered
     assert "[environments.other-env.env]" not in rendered
-    assert rendered.count("[[run.prepare.steps]]") == 3
+    assert rendered.count("[[run.prepare.steps]]") == 5
     assert 'script = "just bootstrap"' in rendered
     assert 'script = "curl example.test"' not in rendered
     assert "other.fabro" in pre_env_table

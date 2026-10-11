@@ -48,20 +48,30 @@ The pre-push hook then failed on a plugin root the run never resolved, twice per
 run, after a green janitor and an approved review. Recording a pin cannot prevent
 that on its own: nothing re-reads the record. So the gate is RE-ENTRANT. The
 prepare pass materializes the gate program at
-`<plugins root>/livespec-run-plugin-gate.py` and records the pin; the pr stage
+`<plugins root>/livespec-run-plugin-gate.py` and records the pin; the refresh stage
 re-runs that program before it pushes (`plugin_pin_gate_command`), which drops
 every record naming a build the run did not resolve at start and refuses, by
 name, on an unmaterialized cache it cannot repair.
 
-WHY THE PR PROMPT AND NOT A GRAPH NODE. The registry advances INSIDE a later
-session, after that session's plugin update and before the push. A script node on
-the edges into `pr` runs before that session exists, so it cannot observe the
-mutation it would exist to catch — and interposing one would also rewrite the
-ratified `review -> pr` routing. The pr recipe's first step is the earliest point
-in the run that is downstream of the update and upstream of the pre-push hook.
+WHY THE REFRESH COMMAND RE-ENTERS IT. The registry advances inside later ACP
+sessions. Implementation publication no longer runs in an ACP prompt, so
+`pr_refresh` is now the earliest stage downstream of the final proof replay and
+upstream of the active pre-push hook. Its scripted re-entry observes every
+session-time mutation without trusting another agent turn to run the guard.
 """
 
 from __future__ import annotations
+
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head import (
+    proof_head_program_prepare_steps_block,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
+    publication_push_program_prepare_steps_block,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
+    SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
+    sandbox_plugins_root_expansion,
+)
 
 __all__: list[str] = [
     "PLUGIN_BUILD_ADVANCED_MARKER",
@@ -82,8 +92,6 @@ __all__: list[str] = [
 # arrangement `_dispatcher_gh_refresh` uses for its bundle root, and for the
 # same reason: a gate whose only test asserts the text it renders has never been
 # shown to repair anything.
-SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR = "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT"
-
 # Written below the plugins root by the gate, recording the build every ACP
 # session of this run resolves. Named for the run rather than for a plugin: it
 # covers every marketplace the sandbox carries, not just this orchestrator.
@@ -92,13 +100,13 @@ PLUGIN_BUILD_PIN_FILENAME = "livespec-run-plugin-pin.json"
 # The gate program itself, written below the plugins root by the prepare step so
 # a later stage can RE-ENTER it. A heredoc piped into `python3 -` is a one-shot:
 # it cannot be re-run by anything that did not already carry the whole program,
-# and the pr stage carries a prompt, not a program. Landing it on disk also makes
+# and the refresh stage must execute a program. Landing it on disk also makes
 # the verification an operator can read and re-run inside a live sandbox.
 PLUGIN_GATE_PROGRAM_FILENAME = "livespec-run-plugin-gate.py"
 
 # The two named conditions the gate prints to stderr. They are constants rather
 # than prose because three consumers must agree on one string: the sandbox that
-# emits it, the pr prompt that tells the agent what to report, and the test that
+# emits it, the refresh script that reports it, and the test that
 # proves the emission. A signature nobody can grep for is not a signature.
 PLUGIN_CACHE_UNMATERIALIZED_MARKER = "LIVESPEC_PLUGIN_CACHE_UNMATERIALIZED"
 PLUGIN_BUILD_ADVANCED_MARKER = "LIVESPEC_PLUGIN_BUILD_ADVANCED"
@@ -334,16 +342,6 @@ raise SystemExit(status)
 '''
 
 
-def _plugins_root_expansion() -> str:
-    """The shell expansion both entry points resolve the plugins root through.
-
-    Written once because a re-entry that resolved a DIFFERENT root than the
-    prepare pass would find no pin, silently take the prepare arm, and record a
-    second pin over the first -- an advance reported as a fresh resolution.
-    """
-    return f"${{{SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR}:-$HOME/.claude/plugins}}"
-
-
 def _gate_program() -> str:
     """The gate program with its three deployment-time tokens substituted in."""
     program = _GATE_SOURCE
@@ -365,12 +363,12 @@ def plugin_cache_gate_script() -> str:
     failure spent before surfacing the same fact.
 
     The program is WRITTEN before it is run, rather than piped into `python3 -`,
-    because the pr stage has to re-enter the same verification and a pipe leaves
+    because the refresh stage has to re-enter the same verification and a pipe leaves
     nothing behind to re-enter.
     """
     return (
         "set -eu\n"
-        f'root="{_plugins_root_expansion()}"\n'
+        f'root="{sandbox_plugins_root_expansion()}"\n'
         'mkdir -p "$root"\n'
         f"cat > \"$root/{PLUGIN_GATE_PROGRAM_FILENAME}\" <<'PY'\n"
         f"{_gate_program()}\n"
@@ -382,12 +380,12 @@ def plugin_cache_gate_script() -> str:
 def plugin_pin_gate_command() -> str:
     """The one command a later stage runs to re-enter the gate before pushing.
 
-    A single argv rather than a script body: its consumer is the pr prompt, and
-    an agent asked to run a multi-line recipe transcribes it. Its exit code is
-    the whole contract — zero means the registry now names only builds this run
-    resolved at start, non-zero means it does not and could not be repaired.
+    A single argv rather than a script body: its consumer is the `pr_refresh`
+    command recipe. Its exit code is the whole contract — zero means the
+    registry now names only builds this run resolved at start, non-zero means it
+    does not and could not be repaired.
     """
-    return f'python3 "{_plugins_root_expansion()}/{PLUGIN_GATE_PROGRAM_FILENAME}"'
+    return f'python3 "{sandbox_plugins_root_expansion()}/{PLUGIN_GATE_PROGRAM_FILENAME}"'
 
 
 def plugin_cache_gate_prepare_steps_block() -> str:
@@ -407,4 +405,9 @@ def plugin_cache_gate_prepare_steps_block() -> str:
         "[[run.prepare.steps]]",
         f"script = '''\n{plugin_cache_gate_script()}\n'''",
     ]
-    return "\n".join(lines) + "\n"
+    return (
+        "\n".join(lines)
+        + "\n"
+        + proof_head_program_prepare_steps_block()
+        + publication_push_program_prepare_steps_block()
+    )

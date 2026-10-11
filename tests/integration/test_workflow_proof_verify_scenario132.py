@@ -44,6 +44,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_success_critical import (
     derive_success_critical,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_workflow_graph import parse_workflow_graph
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
+    GROOM_ONLY_ACP_NODES,
+)
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     DEFAULT_FABRO_TIMEOUT_SECONDS,
     default_node_timeouts,
@@ -252,8 +255,17 @@ def test_the_registered_variant_declares_the_verify_node_and_leaves_it_unreached
     is not refused for naming a node the variant's own payload lacks. REACHING it
     would try to replay a proof of a Definition of Done the groom run has only
     just written, against an implementation that does not exist yet.
+
+    THE ONE ASYMMETRY RUNS THE OTHER WAY. Since v121 the bundle publishes through
+    COMMAND stages, so it declares no ACP `pr` node at all while the groom
+    variant keeps one -- what that node publishes is a filing plan for the host
+    rather than a Git branch, so publication-adapter retirement does not reach
+    it. `GROOM_ONLY_ACP_NODES` is read off the module that owns that scoping
+    rather than respelled here, so the two cannot drift apart.
     """
-    assert _acp_node_names(payload=_VARIANT) == _acp_node_names(payload=_BUNDLE)
+    assert (
+        _acp_node_names(payload=_VARIANT) == _acp_node_names(payload=_BUNDLE) | GROOM_ONLY_ACP_NODES
+    )
     assert _input_value(toml=_toml(payload=_VARIANT), name=_VERIFY_ADAPTER_INPUT) is not None
     assert not any(_VERIFY in edge for edge in _edges(text=_dot(payload=_VARIANT)))
 
@@ -328,20 +340,39 @@ def test_the_verify_node_dominates_every_green_path_so_it_is_success_critical() 
     assert "non_converged" not in critical.nodes
 
 
-def test_a_verified_verdict_is_the_only_thing_that_reaches_pr() -> None:
-    """One `pr` edge, and it is CONDITIONAL on the approve label.
+def test_a_verified_verdict_is_the_only_thing_that_reaches_publication() -> None:
+    """One publication edge, and it is CONDITIONAL on the approve label.
 
-    Both halves are the assertion. "There is an edge to `pr`" would be satisfied
-    just as well by an unconditional fallthrough — which is precisely the shape
-    the contract forbids, because every verdict other than `verified` would then
-    publish. So the `pr` edge is asserted to carry a condition, and to be the
-    only one of its kind.
+    Both halves are the assertion. "There is an edge into publication" would be
+    satisfied just as well by an unconditional fallthrough — which is precisely
+    the shape the contract forbids, because every verdict other than `verified`
+    would then publish. So the edge is asserted to carry a condition, and to be
+    the only one of its kind.
+
+    SINCE v121 THE TARGET IS `pr_refresh`, not `pr`: publication is scripted and
+    the refresh is its first stage, so that is where the ratified clause points
+    ("`proof_verify`, entered from `review` and exiting to `pr_refresh` on
+    success"). The sibling case below asserts `pr` is unreachable from here by
+    any direct edge, which is what keeps the refusal from being satisfied by a
+    second route that skips the refresh.
     """
-    published = _verify_edges_to(target="pr")
+    published = _verify_edges_to(target="pr_refresh")
 
-    assert len(published) == 1, f"expected exactly one proof_verify -> pr edge, got {published}"
+    assert (
+        len(published) == 1
+    ), f"expected exactly one proof_verify -> pr_refresh edge, got {published}"
     assert "condition=" in published[0]
     assert "preferred_label=approve" in published[0]
+
+
+def test_no_edge_reaches_the_publication_stage_without_the_refresh() -> None:
+    """The replay cannot reach `pr` directly, on any verdict.
+
+    The control for the case above: an edge straight to `pr` would publish on a
+    head the refresh never reconciled with the default branch, and the verified
+    record would then name a tree the pull request does not carry.
+    """
+    assert _verify_edges_to(target="pr") == []
 
 
 def test_a_non_reproduction_routes_to_fix_bounded_by_the_shared_fix_budget() -> None:

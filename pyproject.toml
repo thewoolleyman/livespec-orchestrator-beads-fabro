@@ -457,6 +457,7 @@ neutral_hook_body_path = { not_applicable = "no neutral hook body is installed i
 # not the parent.
 destructive_cli_allowlist = [
     ".claude-plugin/.fabro/workflows/implement-work-item/prompts/",
+    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_publication_push.py",
     "orchestrator-image/acceptance-live-golden-master.sh",
     "orchestrator-image/reap-e2e-repos.sh",
     "archive/research/w7-orchestrator-convergence/e2e-repo-reaper.md",
@@ -490,6 +491,7 @@ destructive_cli_allowlist = [
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables
 # below (same TOML attachment reason as `destructive_cli_allowlist`).
 subprocess_spawn_allowlist = [
+    "tests/integration/test_scripted_publication_execution.py",
     "tests/bin/test_host_side_self_contained_import.py",
     "tests/bin/test_bootstrap_unattended_marker_forwarding.py",
     "tests/bin/test_payload_retention_after_eviction.py",
@@ -508,6 +510,7 @@ subprocess_spawn_allowlist = [
     "tests/bin/test_payload_candidate_root_without_claude_env.py",
     "tests/bin/test_payload_parent_reads_asset_after_helper_exit.py",
     "tests/bin/test_payload_canary_subject_is_the_candidate.py",
+    "tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_publication_head.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]

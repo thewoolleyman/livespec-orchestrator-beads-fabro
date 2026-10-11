@@ -75,7 +75,10 @@ __all__: list[str] = [
 # reader and the writer cannot drift into naming different lines.
 PUBLISH_HEAD_LABEL = "Publish-branch head"
 
-RESUMED_AT_PR = "pr"
+# Publication now begins at the scripted refresh. The public name survives so
+# callers that imported it keep following the policy rather than retaining the
+# legacy node value.
+RESUMED_AT_PR = "pr_refresh"
 RESUMED_AT_REVIEW = "review"
 RESUMED_AT_FIX = "fix"
 RESUMED_AT_PROOF_CAPTURE = "proof_capture"
@@ -186,7 +189,10 @@ def resume_anchor(
         return None
     if executing_node is not None:
         return ResumeAnchor(
-            record=latest, head=head, resumed_at=executing_node, source=SOURCE_FACTORY_RUN
+            record=latest,
+            head=head,
+            resumed_at=_normalized_stage(stage=executing_node),
+            source=SOURCE_FACTORY_RUN,
         )
     return ResumeAnchor(
         record=latest,
@@ -194,6 +200,11 @@ def resume_anchor(
         resumed_at=resumed_at_for_verdict(verdict=latest.verdict),
         source=SOURCE_LATEST_RECORD,
     )
+
+
+def _normalized_stage(*, stage: str) -> str:
+    """Map the retired publication entry onto its scripted refresh predecessor."""
+    return RESUMED_AT_PR if stage == "pr" else stage
 
 
 def _declared_sha(*, line: str) -> str | None:

@@ -249,11 +249,11 @@ def test_a_blank_next_node_id_names_no_executing_node() -> None:
 
 
 def test_the_factory_record_wins_over_the_verdict(repo: Path) -> None:
-    """Same records, factory holding the run: resumed_at is the factory's own node."""
+    """A factory-held legacy `pr` entry is normalized through `pr_refresh`."""
     assert _GATHER_PATH.is_file()
     gather = _gather(repo=repo, item=_item(), runner=_runner())
     assert gather.anchor is not None
-    assert gather.anchor.resumed_at == "pr"
+    assert gather.anchor.resumed_at == "pr_refresh"
     assert gather.anchor.source == SOURCE_FACTORY_RUN
     assert gather.anchor.head == _HEAD
 

@@ -5,8 +5,7 @@ workflow's own declared inputs ... MUST express the built-in defaults as
 structured entries in the grammar of §'ACP node adapter configuration', never as
 class-shaped tiers", with `implement` / `fix` / `review_fix` / `proof_capture`
 taking `{"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"}` and
-`pr` taking `{"agent": "claude-acp", "model": "claude-haiku-4-5", "effort":
-"high"}`; and those entries "MUST render, literally" the v107 adapter strings --
+those entries "MUST render, literally" the v107 adapter strings --
 "the v107 bytes, byte for byte".
 
 THE BYTE TARGETS ARE THE RATIFIED LITERALS, WRITTEN OUT. A test importing the
@@ -18,8 +17,8 @@ render has to meet them.
 THE COMMITTED WORKFLOW IS GRADED, NOT JUST THE RENDERER. A renderer that turns a
 structured entry into the right bytes proves nothing about what this
 repository's `workflow.toml` actually declares -- the criterion is that the
-DEFAULT ENTRIES are structured, so the committed file is read and its four
-named inputs are parsed as structured entries. A unit test on the renderer alone
+implementation DEFAULT ENTRIES are structured, so the committed file is read
+and its three named inputs are parsed as structured entries. A unit test on the renderer alone
 would pass unchanged against a workflow that still declared raw strings.
 
 AND THE RENDER IS ASSERTED THROUGH THE SEAM THE DISPATCH USES. `prepare_acp_nodes`
@@ -46,7 +45,6 @@ _WORKFLOW_TOML = (
 
 _CLAUDE = "npx -y @agentclientprotocol/claude-agent-acp"
 _V107_IMPLEMENTER = f"ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high {_CLAUDE}"
-_V107_PUBLISH = f"ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high {_CLAUDE}"
 
 # The ratified built-in entry per input, from the contract's own table.
 _STRUCTURED_DEFAULTS: dict[str, tuple[dict[str, str], str]] = {
@@ -61,10 +59,6 @@ _STRUCTURED_DEFAULTS: dict[str, tuple[dict[str, str], str]] = {
     "review_fix_adapter": (
         {"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"},
         _V107_IMPLEMENTER,
-    ),
-    "pr_adapter": (
-        {"agent": "claude-acp", "model": "claude-haiku-4-5", "effort": "high"},
-        _V107_PUBLISH,
     ),
 }
 
@@ -88,7 +82,7 @@ def _committed_adapter_inputs() -> dict[str, str]:
     )
 
 
-def test_the_committed_workflow_declares_the_four_defaults_structurally() -> None:
+def test_the_committed_workflow_declares_the_implementation_defaults_structurally() -> None:
     """The criterion's subject: what `workflow.toml` actually declares.
 
     Each value must PARSE as the ratified structured entry, not merely contain

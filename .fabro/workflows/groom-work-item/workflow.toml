@@ -91,10 +91,10 @@ review_fix_adapter = "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=hig
 
 # The `pr` node here FILES the approved slices into the ledger; it is the apply
 # phase's publication point, and the ledger is this run's publication surface.
-# That is real judgement work -- a mis-filed slice is a mis-cut backlog -- so
-# unlike the bundle's fixed publish recipe this default carries the implementer
-# tier rather than the cheap one.
-pr_adapter = "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+# It retains the groom publisher's inexpensive Haiku default: the preceding
+# propose/review phases own the judgement, while this ACP turn encodes their
+# approved filing plan and never pushes a Git branch or calls `gh pr`.
+pr_adapter = "ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
 
 # The review tier is the bundle's: a second, differently-modelled reader whose
 # lens on a cut is the same senior-engineer lens it brings to a diff. The model
