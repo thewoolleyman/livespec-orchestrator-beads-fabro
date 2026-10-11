@@ -23,6 +23,14 @@ fallback would let a value this build cannot interpret stand as proof that the
 receiver saw the factory's spans. `_dispatcher_secret_channel` refuses its own
 unrecognised declaration for the mirror-image reason, and that asymmetry is
 deliberate: there the wrong guess persists a credential.
+
+THE RESOLUTION IS AN OBSERVATION RATHER THAN A BOOLEAN, so the unreadable-
+configuration case asserts ITS OWN CAUSE by name. That assertion is the whole
+point of naming it: a resolver that reported the remote-factory cause there —
+which is what the boolean collapse produced — satisfies every OTHER unobservable
+case below, and the journal row it writes sends an operator to the factory rather
+than to the stray comma that darkened the gauge for every factory in the
+repository.
 """
 
 from __future__ import annotations
@@ -70,6 +78,22 @@ def test_run_turn_telemetry_export_names_its_key_and_both_self_describing_values
     assert export.RUN_TURN_TELEMETRY_EXPORTS == ("dispatcher_receiver", "none")
 
 
+def test_run_turn_telemetry_export_names_each_unobservable_cause_distinctly() -> None:
+    """The two causes are separate literals, which is what makes a row readable.
+
+    Asserted as literal text rather than through the constants alone because the
+    journal row is what an operator reads, and a rename that agreed with itself
+    would pass while changing the record's vocabulary.
+    """
+    export = _export()
+
+    assert export.RUN_TURN_UNOBSERVABLE_REMOTE_FACTORY == "unobservable-remote-factory"
+    assert (
+        export.RUN_TURN_UNOBSERVABLE_UNREADABLE_CONFIGURATION
+        == "unobservable-unreadable-configuration"
+    )
+
+
 def test_factory_declaring_the_dispatcher_receiver_is_observable() -> None:
     export = _export()
     entry = dict(_REMOTE_ENTRY)
@@ -77,7 +101,7 @@ def test_factory_declaring_the_dispatcher_receiver_is_observable() -> None:
         export.RUN_TURN_TELEMETRY_EXPORT_DISPATCHER_RECEIVER
     )
 
-    assert export.factory_run_turn_observable(block=_block(entry=entry), factory="hp") is True
+    assert export.factory_run_turn_observation(block=_block(entry=entry), factory="hp") is None
 
 
 @pytest.mark.parametrize(
@@ -90,15 +114,18 @@ def test_factory_declaring_anything_but_the_receiver_is_unobservable(declared: o
     entry = dict(_REMOTE_ENTRY)
     entry[export.RUN_TURN_TELEMETRY_EXPORT_KEY] = declared
 
-    assert export.factory_run_turn_observable(block=_block(entry=entry), factory="hp") is False
+    assert (
+        export.factory_run_turn_observation(block=_block(entry=entry), factory="hp")
+        == export.RUN_TURN_UNOBSERVABLE_REMOTE_FACTORY
+    )
 
 
 def test_undeclared_factory_naming_a_server_is_unobservable_as_hp_reads_today() -> None:
     export = _export()
 
     assert (
-        export.factory_run_turn_observable(block=_block(entry=dict(_REMOTE_ENTRY)), factory="hp")
-        is False
+        export.factory_run_turn_observation(block=_block(entry=dict(_REMOTE_ENTRY)), factory="hp")
+        == export.RUN_TURN_UNOBSERVABLE_REMOTE_FACTORY
     )
 
 
@@ -127,24 +154,27 @@ def test_undeclared_factory_naming_no_server_is_observable_as_the_local_target_r
     export = _export()
     block: dict[str, Any] = {} if entry is None else {"factories": {"hp": entry}}
 
-    assert export.factory_run_turn_observable(block=block, factory="hp") is True
+    assert export.factory_run_turn_observation(block=block, factory="hp") is None
 
 
 def test_factory_absent_from_a_declared_factories_block_is_observable() -> None:
     export = _export()
 
     assert (
-        export.factory_run_turn_observable(
+        export.factory_run_turn_observation(
             block=_block(entry=dict(_REMOTE_ENTRY), factory="other"), factory="hp"
         )
-        is True
+        is None
     )
 
 
-def test_unreadable_configuration_is_unobservable_rather_than_observable() -> None:
+def test_unreadable_configuration_names_itself_rather_than_a_remote_factory() -> None:
     export = _export()
 
-    assert export.factory_run_turn_observable(block=None, factory="hp") is False
+    assert (
+        export.factory_run_turn_observation(block=None, factory="hp")
+        == export.RUN_TURN_UNOBSERVABLE_UNREADABLE_CONFIGURATION
+    )
 
 
 def test_run_turn_telemetry_block_reads_the_dispatch_targets_factories(tmp_path: Path) -> None:
@@ -157,7 +187,10 @@ def test_run_turn_telemetry_block_reads_the_dispatch_targets_factories(tmp_path:
 
     block = export.run_turn_telemetry_block(repo=tmp_path)
 
-    assert export.factory_run_turn_observable(block=block, factory="hp") is False
+    assert (
+        export.factory_run_turn_observation(block=block, factory="hp")
+        == export.RUN_TURN_UNOBSERVABLE_REMOTE_FACTORY
+    )
 
 
 def test_run_turn_telemetry_block_reads_an_unparseable_configuration_as_absent(

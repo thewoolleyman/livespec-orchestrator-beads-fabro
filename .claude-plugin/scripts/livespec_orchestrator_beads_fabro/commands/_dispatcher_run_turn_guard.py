@@ -16,7 +16,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_turn_sink import
     run_turn_check_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_turn_telemetry_export import (
-    factory_run_turn_observable,
+    factory_run_turn_observation,
     run_turn_telemetry_block,
 )
 
@@ -35,7 +35,7 @@ class JournalWriter(Protocol):
 class _DispatchRunTurnObservation:
     dispatch_id: str
     started_at_epoch: float | None
-    observable: bool
+    observation: str | None
 
 
 def append_run_turn_checks(
@@ -59,7 +59,7 @@ def append_run_turn_checks(
             _DispatchRunTurnObservation(
                 dispatch_id="",
                 started_at_epoch=None,
-                observable=True,
+                observation=None,
             ),
         )
         journal.append(
@@ -68,7 +68,7 @@ def append_run_turn_checks(
                 work_item_id=outcome.work_item_id,
                 dispatch_id=observation.dispatch_id,
                 started_at_epoch=observation.started_at_epoch,
-                observable=observation.observable,
+                observation=observation.observation,
             )
         )
 
@@ -86,7 +86,7 @@ def _dispatches_by_item(
             dispatches[work_item_id] = _DispatchRunTurnObservation(
                 dispatch_id=dispatch_id,
                 started_at_epoch=_epoch(record=record),
-                observable=_observable_from_dispatch_record(record=record, block=block),
+                observation=_observation_from_dispatch_record(record=record, block=block),
             )
     return dispatches
 
@@ -98,16 +98,18 @@ def _epoch(*, record: dict[str, object]) -> float | None:
     return float(value)
 
 
-def _observable_from_dispatch_record(
+def _observation_from_dispatch_record(
     *, record: dict[str, object], block: Mapping[str, object] | None
-) -> bool:
-    """Whether this dispatch's factory exports `run_turn` telemetry readable here.
+) -> str | None:
+    """Why this dispatch's `run_turn` telemetry is unreadable here, or `None`.
 
     A record naming NO factory is answered without consulting the configuration
     at all: there is no factory to ask about, and the dispatch therefore ran
     against whatever ambient engine this host resolves — which is this host's.
+    So this arm reports OBSERVABLE even where the configuration is unreadable,
+    because nothing it could have read bears on the answer.
     """
     factory = record.get("dispatch_factory")
     if not isinstance(factory, str) or factory == "":
-        return True
-    return factory_run_turn_observable(block=block, factory=factory)
+        return None
+    return factory_run_turn_observation(block=block, factory=factory)

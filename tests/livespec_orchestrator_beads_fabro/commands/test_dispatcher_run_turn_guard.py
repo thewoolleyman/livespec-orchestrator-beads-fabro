@@ -358,6 +358,49 @@ def test_append_run_turn_checks_marks_an_unexporting_factory_unobservable_not_ab
     assert items_with_run_turn_absence(records=records) == ()
 
 
+def test_append_run_turn_checks_names_an_unreadable_configuration_as_its_own_cause(
+    tmp_path: Path,
+) -> None:
+    """An unreadable configuration is not a remote factory, and the row must not say so.
+
+    The sibling case above is this one's control: both journal
+    `run_turn_observable` False for a dispatch to a factory named `hp`, and only
+    the repository's `.livespec.jsonc` differs — parseable there, a stray comma
+    here. A record that collapses the two asserts a factory remoteness nobody
+    measured, and sends the operator to the factory rather than to the config
+    that actually darkened the gauge for every factory in the repository.
+    """
+    journal_path = tmp_path / "repo" / "journal.jsonl"
+    repo = journal_path.parent
+    repo.mkdir(parents=True, exist_ok=True)
+    _ = (repo / ".livespec.jsonc").write_text("{ not json", encoding="utf-8")
+    journal = JournalFile(path=journal_path)
+    journal.append(
+        record={
+            "stage": "dispatch-id",
+            "work_item_id": "bd-ib-demo",
+            "dispatch_id": "disp-1",
+            "dispatch_factory": "hp",
+            "started_at_epoch": 20.0,
+        }
+    )
+
+    append_run_turn_checks(
+        outcomes=(_outcome(work_item_id="bd-ib-demo"),),
+        journal=journal,
+        journal_path=journal_path,
+        repo=repo,
+        sink=RunTurnSink(path=tmp_path / "run-turn.json"),
+    )
+
+    records = read_journal_records(journal_path=journal_path)
+    check = records[-1]
+    assert check["run_turn_observable"] is False
+    assert check["run_turn_observation"] == "unobservable-unreadable-configuration"
+    assert check["run_turn_exported"] is False
+    assert items_with_run_turn_absence(records=records) == ()
+
+
 def test_append_run_turn_checks_observes_a_factory_declaring_the_dispatcher_receiver(
     tmp_path: Path,
 ) -> None:
