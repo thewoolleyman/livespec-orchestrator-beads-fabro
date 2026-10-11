@@ -217,14 +217,115 @@
     }
   },
   "web_url": "https://hp-xubuntu.perch-rudd.ts.net:32276/runs/01M4NJS5QX2AYMTDRY2XM5SR1E",
-  "start": null,
-  "status": {
-    "kind": "starting"
+  "start": {
+    "start_time": "2026-10-11T13:35:09.212188758Z",
+    "run_branch": "fabro/run/01M4NJS5QX2AYMTDRY2XM5SR1E",
+    "base_sha": "0faa54e5b8dd12a85c0acf8a9006a18f333970a0"
   },
-  "status_updated_at": "2026-10-11T13:35:05.658497109Z",
-  "last_event_at": "2026-10-11T13:35:08.768639357Z",
+  "status": {
+    "kind": "running"
+  },
+  "status_updated_at": "2026-10-11T13:35:09.212210619Z",
+  "last_event_at": "2026-10-11T13:35:12.871164380Z",
   "pending_control": null,
-  "checkpoints": [],
+  "checkpoints": [
+    {
+      "seq": 19,
+      "checkpoint": {
+        "timestamp": "2026-10-11T13:35:11.699207683Z",
+        "current_node": "start",
+        "completed_nodes": [
+          "start"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "graph.goal": "# Fabro Enemy Unit Test: acp-command-launch\n",
+          "internal.fidelity": "compact",
+          "internal.thread_id": null,
+          "internal.acp_attempt.start": 0,
+          "failure_signature": "",
+          "outcome": "succeeded",
+          "failure_class": "",
+          "internal.node_visit_count": 1,
+          "internal.retry_count.start": 0,
+          "current_node": "start",
+          "internal.run_id": "01M4NJS5QX2AYMTDRY2XM5SR1E"
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "agent",
+        "node_visits": {
+          "start": 1
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-10-11T13:35:12.922803926Z",
+        "current_node": "agent",
+        "completed_nodes": [
+          "start",
+          "agent"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.thread_id": "start",
+          "last_stage": "agent",
+          "failure_class": "",
+          "internal.retry_count.start": 0,
+          "graph.goal": "# Fabro Enemy Unit Test: acp-command-launch\n",
+          "last_response": "fixture success",
+          "current_node": "agent",
+          "internal.acp_attempt.agent": 0,
+          "internal.fidelity": "compact",
+          "outcome": "succeeded",
+          "internal.acp_attempt.start": 0,
+          "thread.start.current_node": "agent",
+          "internal.retry_count.agent": 0,
+          "failure_signature": "",
+          "internal.run_id": "01M4NJS5QX2AYMTDRY2XM5SR1E",
+          "response.agent": "fixture success",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "internal.node_visit_count": 1
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "agent": {
+            "status": "succeeded",
+            "context_updates": {
+              "response.agent": "fixture success",
+              "last_response": "fixture success",
+              "last_stage": "agent"
+            },
+            "notes": "Stage completed: agent",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 351,
+              "tool_time_ms": 0,
+              "active_time_ms": 351
+            }
+          }
+        },
+        "next_node_id": "exit",
+        "node_visits": {
+          "start": 1,
+          "agent": 1
+        }
+      },
+      "diff": {}
+    }
+  ],
   "conclusion": null,
   "sandbox": {
     "kind": "ready",
@@ -251,5 +352,72 @@
   "pull_request": null,
   "superseded_by": null,
   "pending_interviews": {},
-  "stages": {}
+  "stages": {
+    "start@1": {
+      "first_event_seq": 16,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-10-11T13:35:11.699086166Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-11T13:35:11.698976671Z",
+      "handler": "start",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "agent@1": {
+      "first_event_seq": 20,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": {
+        "mode": "acp",
+        "provider": "acp"
+      },
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": {
+        "stdout": "fixture success",
+        "stderr": "",
+        "stop_reason": "end_turn",
+        "duration_ms": 351
+      },
+      "parallel_results": null,
+      "output": null,
+      "termination": "exited",
+      "started_at": "2026-10-11T13:35:11.699332487Z",
+      "handler": "agent",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "running"
+    }
+  }
 }
