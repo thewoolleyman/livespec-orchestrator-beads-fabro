@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.185.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.184.0...v0.185.0) (2026-10-11)
+
+
+### Features
+
+* decide run_turn observability from factory configuration ([a6998ba](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a6998ba1060ca65c5cafdcf6dc9b6ac3dcb61597))
+
+
+### Bug Fixes
+
+* attribute run_turn exports per dispatch ([6c54eb4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6c54eb4184d397cedf86233184d86f1483d51065))
+* separate an unreadable configuration from a remote factory in the run_turn guard ([d2f4ef9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d2f4ef96cacccc56de782bc0f334990abdadf0e6))
+
 ## [0.184.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.183.0...v0.184.0) (2026-10-11)
 
 
