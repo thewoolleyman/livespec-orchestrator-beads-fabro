@@ -614,6 +614,42 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
     retired built-in tier values because they no longer exist anywhere else,
     and a migration that omitted them would silently re-point a node that had
     relied on a partial tier table.
+- The DISPATCH-TIME FABRO CURRENCY ADMISSION of `contracts.md`'s
+  Fabro-currency-admission clause and `constraints.md`'s
+  exact-upstream-base-and-bounded-currency clause (`bd-ib-j9x`, Scenario 130)
+  lives in FIVE cohesive modules, and the dependency direction reads bottom-up:
+  `_dispatcher_fabro_currency` (PURE: the release and observation values, the
+  calendar-day arithmetic, the decision ladder and the evidence block every
+  refusal carries) → `_dispatcher_fabro_currency_sources` (the engine and forge
+  reads: the target's own serving integration commit, the paginated releases
+  parse and the bounded ancestry walk) and `_dispatcher_fabro_release_cache`
+  (the mode-ordinary JSON record under the per-user state root) →
+  `_dispatcher_fabro_release_observation` (the cache-versus-refresh decision,
+  which is where the seven-calendar-day age test lives) →
+  `_dispatcher_fabro_currency_gate` (the selection-level gate the pre-dispatch
+  wall calls).
+  SIX PROPERTIES AN EDITOR MUST NOT INVERT. Every arm that could not MEASURE
+  fails CLOSED, because a gauge that admitted when blinded turns the refusal
+  into a pass and leaves a journal record that reads exactly like a healthy one.
+  Publication time is the ONLY ordering evidence — `constraints.md` says so in
+  as many words — so nothing here may read a semantic version or a commit
+  timestamp; upstream publishes nightly prereleases whose semver order and
+  publication order routinely disagree. The serving commit is asked of the
+  TARGET'S OWN SERVER through `FABRO_SERVER`, never of the local client, which
+  on this fleet is routinely a different build (the hosts are re-pinned one at
+  a time). The ancestry walk is BOUNDED and its refusal STATES THE SCOPE IT
+  SEARCHED, because an absence asserted over an unstated population is what
+  turns a bounded search into a false impossibility. A stale cached observation
+  whose refresh failed is carried FORWARD rather than discarded, because the
+  clause requires the refusal to name it — and it is still never SERVED, since
+  an expired reading proves nothing about currency. And a target that declares
+  NO SERVER is recorded under the gate's own unevaluated stage rather than
+  refused or passed over in silence: every condition the clause enumerates is a
+  fact about a build some server is SERVING, so refusing there would impose an
+  admission condition on every repository that has not declared a factory,
+  while silence would read as a reading that was taken and succeeded. Do NOT
+  turn that last one into a configurable exemption — the discriminator is the
+  structural absence of a server to ask.
 - `_plan_completeness_identity.py` — the identity each party to the plan
   archive's completeness leg is computed under, through the SAME primitive the
   proof-record surfaces publish under (`_dispatcher_proof_identity`). ONE

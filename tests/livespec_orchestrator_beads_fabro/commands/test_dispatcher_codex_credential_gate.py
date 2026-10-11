@@ -586,10 +586,18 @@ def test_the_drain_rereads_and_regrades_a_renewal_before_anything_is_claimed(
     ]
     assert "claim-and-launch" not in log
     # The shortfall is measured against the LATER instant, which is the only
-    # reading at which this credential is short.
-    refusal = journal.records[0]["refusal"]
+    # reading at which this credential is short. Selected by STAGE rather than by
+    # position: the Fabro currency gate runs ahead of this one and records that
+    # this fixture's serverless target was not evaluated, so index 0 is no longer
+    # this gate's own record.
+    gate_record = next(
+        record
+        for record in journal.records
+        if record["stage"] == _dispatcher_codex_credential_gate.CODEX_CREDENTIAL_GATE_STAGE
+    )
+    refusal = gate_record["refusal"]
     assert str(_REQUIRED_REMAINING + 60 - _RENEWAL_ELAPSED) in refusal
-    assert journal.records[0]["unclaimed_work_item_ids"] == ["bd-ib-tyqklx"]
+    assert gate_record["unclaimed_work_item_ids"] == ["bd-ib-tyqklx"]
     # The drain reports it to the operator rather than refusing silently.
     assert "C-mode dispatch refused" in capsys.readouterr().err
 
@@ -714,11 +722,17 @@ def test_both_dispatch_paths_refuse_an_unrenewable_credential_before_claiming(
     assert "claim" not in log
     assert "launch" not in log
     assert "claim-and-launch" not in log
-    # One refusal record per path, each naming the item it declined to claim.
-    assert [record["stage"] for record in journal.records] == [
-        _dispatcher_codex_credential_gate.CODEX_CREDENTIAL_GATE_STAGE,
-        _dispatcher_codex_credential_gate.CODEX_CREDENTIAL_GATE_STAGE,
+    # One refusal record per path, each naming the item it declined to claim. The
+    # stages are filtered to this gate's own rather than compared as the whole
+    # journal: the Fabro currency gate runs ahead of this one and records that
+    # this fixture's serverless target was not evaluated, which is a fact about
+    # the FACTORY and says nothing about the credential this case grades.
+    gate_records = [
+        record
+        for record in journal.records
+        if record["stage"] == _dispatcher_codex_credential_gate.CODEX_CREDENTIAL_GATE_STAGE
     ]
-    assert all(record["unclaimed_work_item_ids"] == ["bd-ib-tyqklx"] for record in journal.records)
+    assert len(gate_records) == 2
+    assert all(record["unclaimed_work_item_ids"] == ["bd-ib-tyqklx"] for record in gate_records)
     errors = capsys.readouterr().err
     assert errors.count("C-mode dispatch refused") == 2
