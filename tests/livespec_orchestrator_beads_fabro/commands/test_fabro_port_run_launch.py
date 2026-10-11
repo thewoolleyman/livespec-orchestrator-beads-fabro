@@ -245,3 +245,56 @@ def test_a_targetless_launch_still_carries_the_traceparent(tmp_path: Path) -> No
     span = _emitted_span(correlation=correlation)
     assert _run_env(runner=runner) == {"TRACEPARENT": f"00-{span['traceId']}-{span['spanId']}-01"}
     assert "--server" not in _run_argv(runner=runner)
+
+
+def test_a_value_the_engine_would_refuse_is_left_out_and_the_run_still_launches(
+    tmp_path: Path,
+) -> None:
+    """An unpassable value costs its label, never the dispatch.
+
+    The engine admits only identifier-shaped label values, and it refuses
+    the whole `run` when handed one it does not. Deciding here means a
+    malformed factory name arrives as a run with two labels instead of a
+    dead dispatch — the span still records all three, because the OTLP
+    attribute is not subject to the engine's argv rule.
+    """
+    _ = _launch_module()
+    runner = _Runner()
+    correlation = DispatchCorrelation(
+        work_item_id=_WORK_ITEM_ID,
+        dispatch_id=_DISPATCH_ID,
+        factory="not a factory name",
+    )
+    port = FabroPort(
+        fabro_bin="/opt/fabro",
+        target=FabroTarget(server_url="http://127.0.0.1:32276"),
+        runner=runner,
+        cwd=tmp_path,
+    )
+
+    result = port.run(
+        workflow_toml=tmp_path / "workflow.toml",
+        goal_file=tmp_path / "goal.md",
+        inputs=(),
+        timeout_seconds=42.0,
+        correlation=correlation,
+    )
+
+    assert result.run_id == "01LAUNCHED"
+    argv = _run_argv(runner=runner)
+    assert _label_values(argv=argv) == {
+        "work.item.id": _WORK_ITEM_ID,
+        "livespec.dispatch.id": _DISPATCH_ID,
+    }
+    assert "livespec.dispatch.factory" not in " ".join(argv)
+    # The traceparent is untouched: it derives from the dispatch id, which
+    # is passable, so an unpassable sibling value cannot break the join.
+    span = _emitted_span(correlation=correlation)
+    env = _run_env(runner=runner)
+    assert env is not None
+    assert env["TRACEPARENT"] == f"00-{span['traceId']}-{span['spanId']}-01"
+    attributes = {
+        entry["key"]: entry["value"]["stringValue"]
+        for entry in cast("list[dict[str, Any]]", span["attributes"])
+    }
+    assert attributes["livespec.dispatch.factory"] == "not a factory name"

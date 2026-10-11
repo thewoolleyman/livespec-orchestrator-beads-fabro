@@ -142,3 +142,24 @@ def test_an_invocation_that_minted_no_dispatch_id_correlates_by_nothing(
     # "this invocation emitted nothing" for "this invocation emitted zero spans".
     assert not spans_path.exists()
     assert not spans_path.parent.exists()
+
+
+def test_identifier_shaped_admits_exactly_the_engines_byte_set() -> None:
+    """The restated admission rule, one case per way a value can fail it."""
+    module = _correlation_module()
+    limit = module.IDENTIFIER_MAX_BYTES
+
+    assert limit == 128
+    # Passable: ASCII letters, ASCII digits, and the four extra bytes.
+    for passable in ("bd-ib-5jvgfr", "01M4N4V6SEEKVVP88ST0CASGCP", "hp", "a.b_c:d-9", "x" * limit):
+        assert module.is_identifier_shaped(value=passable) is True, passable
+    # Refused: empty, over the byte limit, an ASCII byte outside the set,
+    # and a non-ASCII character. Each is a DIFFERENT arm of the rule, so a
+    # single bad-value case could pass while the others silently did not.
+    for refused in ("", "x" * (limit + 1), "not a factory name", "bang!", "café"):
+        assert module.is_identifier_shaped(value=refused) is False, refused
+    # The limit is BYTES, not characters: this is 64 two-byte characters,
+    # under the character limit and over the byte limit. A character-counting
+    # rule would admit it and the engine would refuse the whole run.
+    assert len("é" * 64) <= limit
+    assert module.is_identifier_shaped(value="é" * 64) is False
