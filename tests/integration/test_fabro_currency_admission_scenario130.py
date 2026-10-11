@@ -294,3 +294,45 @@ def test_scenario130_an_out_of_window_base_refuses_before_claim_with_complete_ev
     assert [record["stage"] for record in records] == [gate.FABRO_CURRENCY_REFUSED_STAGE]
     assert records[0]["condition"] == CONDITION_OUT_OF_WINDOW
     assert records[0]["target"] == _TARGET
+
+
+def test_scenario130_a_serving_commit_with_no_release_tag_ancestor_refuses_before_claim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A build whose ancestry matches NO published release tag has no valid base.
+
+    The condition is asserted as the LITERAL journal string rather than through
+    the imported constant, because that string is a durable record interface: a
+    reader triaging the journal keys on it, and a rename that only moved a Python
+    constant would leave every recorded row meaning something else.
+
+    It has to be its OWN condition rather than a generic unobservable one. "No
+    release-tag ancestor" and "the forge could not be read" refuse the same
+    dispatch and have opposite remedies — one re-pins the engine onto a published
+    tag, the other waits for the forge — so a single condition sends the operator
+    to guess which they have. And the refusal states the SCOPE the ancestry walk
+    searched, because an absence asserted over an unstated population is what
+    turns a bounded search into a false impossibility.
+    """
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = _repo(tmp_path=tmp_path)
+    _install(
+        monkeypatch=monkeypatch,
+        runner=_runner(releases=_observed_releases(), ancestors=frozenset()),
+        now=_NOW,
+    )
+    journal_path = tmp_path / "journal.jsonl"
+
+    exit_code = _wall_exit(repo=repo, journal_path=journal_path)
+
+    assert exit_code == EXIT_PRECONDITION_ERROR
+    refusal = capsys.readouterr().err
+    assert "no-release-tag-ancestor" in refusal
+    assert "no published release-tag ancestor" in refusal
+    assert str(sources.ANCESTRY_CANDIDATE_LIMIT) in refusal
+    # The serving build IS identified here, which is what makes the missing base
+    # the finding rather than an unreadable engine.
+    assert _SERVING_COMMIT in refusal
+    assert "  upstream base: unknown" in refusal
+    records = _records(journal_path=journal_path)
+    assert [record["condition"] for record in records] == ["no-release-tag-ancestor"]
