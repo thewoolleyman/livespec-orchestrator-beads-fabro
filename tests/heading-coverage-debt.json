@@ -499,6 +499,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 169 — A dispatch naming a catalog environment runs the catalog's image, and the journal names the image source",
+    "work_item": "bd-ib-jy7fuh",
+    "first_seen": "2026-10-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 17 — drive operator-surface defaults",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-06"
