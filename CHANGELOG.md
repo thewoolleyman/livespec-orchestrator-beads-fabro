@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.181.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.181.4...v0.181.5) (2026-10-11)
+
+
+### Bug Fixes
+
+* **otel:** admit the Petri acp turn, usage and context attributes ([e7c6373](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e7c6373c3dfc371c357711b5310594ba6c3f2263))
+* **otel:** admit the Petri fabro node, firing and attempt attributes ([adedabc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/adedabc6652ed21403a9a924bd112fb8ba9a28e5))
+* **otel:** admit the Petri run_turn command/env/status attributes ([8aefe0c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8aefe0c97d652401dae1da450e3f7332a1a16aa4))
+* **otel:** scrub Petri run_turn.command as the 0.254 command attr ([1f8a277](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1f8a277b07626a29b79eb43f4f896f0821edb6d2))
+
 ## [0.181.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.181.3...v0.181.4) (2026-10-11)
 
 
