@@ -43,8 +43,38 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import pytest
+from hypothesis import settings
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
 from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
+
+# Hypothesis's per-example WALL-CLOCK deadline, turned off suite-wide.
+#
+# The deadline is a PERFORMANCE assertion about the host, not a correctness
+# assertion about the property under test — and it is the LAST ambient host
+# dependency this module had left standing, which is why it is disarmed here
+# beside the fixtures rather than per decorator. `just check` drives 7000+
+# tests across four xdist workers with branch coverage tracing every statement,
+# on a shared factory host that is routinely at load, so one example stalling
+# past the 200ms default is a scheduler hiccup. Hypothesis reports it as
+# `FlakyFailure: Unreliable test timings!`, whose remedy is to run the suite
+# again — a red gate that says nothing about the code.
+#
+# Measured 2026-10-11 on `test_dispatcher_proof_attachment.py`'s round-trip
+# property, which a janitor run failed while two standalone runs of the same
+# commit passed: no input can falsify that assertion (its name and url are
+# constants, every digest is `sha256:` + hex, and `str(int)` is always digits)
+# and the example database held no counterexample, so the timing was the only
+# reachable failure. Under oversubscribed load its per-example runtimes reached
+# 185ms against the 200ms ceiling — 15ms of headroom, i.e. the gate turned on
+# scheduler noise. Eight test modules draw on hypothesis and every one of them
+# ran that exposure.
+#
+# Turning the deadline off removes a timing assertion and NOTHING else: every
+# example still runs and every assert still holds. `tests/test_hypothesis_
+# profile.py` binds both halves of that — the profile, and a property that
+# genuinely outruns the old ceiling.
+settings.register_profile("livespec", deadline=None)
+settings.load_profile("livespec")
 
 
 @pytest.fixture(autouse=True)
