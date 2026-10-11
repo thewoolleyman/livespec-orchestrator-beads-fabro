@@ -59,6 +59,18 @@ AN UNREADABLE CONFIGURATION READS AS UNOBSERVABLE for the same direction. A
 gauge that reported observability when it could not read its own input would
 turn "I could not tell" into an absence finding against a dispatch whose
 telemetry may have been perfectly healthy.
+
+BUT IT NAMES ITS OWN CAUSE, AND THAT IS WHY THIS RESOLVES TO AN OBSERVATION
+RATHER THAN TO A BOOLEAN. Every unobservable arm reads as the same bare `False`
+once it is one, so the journal row the sink then writes asserts whichever cause
+that literal happens to name — and an unreadable `.livespec.jsonc` was recorded
+as `unobservable-remote-factory`, a factory remoteness that was never involved.
+That reading is not merely imprecise: a stray comma darkens this gauge for
+EVERY factory in the repository, and the one record an operator would use to
+find out why points at the factory instead of at the config. This is the defect
+`dispatcher_block` raises to stop (its own docstring says so, and says it
+REGREW), so the reason is carried through to the record rather than collapsed
+here.
 """
 
 from __future__ import annotations
@@ -76,7 +88,9 @@ __all__: list[str] = [
     "RUN_TURN_TELEMETRY_EXPORT_DISPATCHER_RECEIVER",
     "RUN_TURN_TELEMETRY_EXPORT_KEY",
     "RUN_TURN_TELEMETRY_EXPORT_NONE",
-    "factory_run_turn_observable",
+    "RUN_TURN_UNOBSERVABLE_REMOTE_FACTORY",
+    "RUN_TURN_UNOBSERVABLE_UNREADABLE_CONFIGURATION",
+    "factory_run_turn_observation",
     "run_turn_telemetry_block",
 ]
 
@@ -88,6 +102,12 @@ RUN_TURN_TELEMETRY_EXPORTS: tuple[str, ...] = (
     RUN_TURN_TELEMETRY_EXPORT_DISPATCHER_RECEIVER,
     RUN_TURN_TELEMETRY_EXPORT_NONE,
 )
+
+# The unobservable CAUSES a resolution can report, as the journal records them.
+# Self-describing and never numbered, for the same reason the two declaration
+# values are: an operator reads the cause off the record without a lookup table.
+RUN_TURN_UNOBSERVABLE_REMOTE_FACTORY = "unobservable-remote-factory"
+RUN_TURN_UNOBSERVABLE_UNREADABLE_CONFIGURATION = "unobservable-unreadable-configuration"
 
 _FACTORIES_KEY = "factories"
 _SERVER_KEY = "server"
@@ -117,14 +137,24 @@ def run_turn_telemetry_block(*, repo: Path) -> Mapping[str, object] | None:
     return block
 
 
-def factory_run_turn_observable(*, block: Mapping[str, object] | None, factory: str) -> bool:
-    """Whether one named factory's `run_turn` export is observable on this host."""
+def factory_run_turn_observation(*, block: Mapping[str, object] | None, factory: str) -> str | None:
+    """Why one named factory's `run_turn` export is unobservable here, or `None`.
+
+    `None` is the OBSERVABLE answer, and every other return value is the cause
+    the journal row reports — so a caller cannot record an unobservable reading
+    without carrying the measurement that produced it, which is the collapse
+    this module's docstring describes.
+    """
     if block is None:
-        return False
+        return RUN_TURN_UNOBSERVABLE_UNREADABLE_CONFIGURATION
     declared = _declared_export(block=block, factory=factory)
     if declared is _DECLARATION_ABSENT:
-        return not _names_a_server(block=block, factory=factory)
-    return declared == RUN_TURN_TELEMETRY_EXPORT_DISPATCHER_RECEIVER
+        if _names_a_server(block=block, factory=factory):
+            return RUN_TURN_UNOBSERVABLE_REMOTE_FACTORY
+        return None
+    if declared == RUN_TURN_TELEMETRY_EXPORT_DISPATCHER_RECEIVER:
+        return None
+    return RUN_TURN_UNOBSERVABLE_REMOTE_FACTORY
 
 
 def _factory_entry(*, block: Mapping[str, object], factory: str) -> Mapping[str, object]:

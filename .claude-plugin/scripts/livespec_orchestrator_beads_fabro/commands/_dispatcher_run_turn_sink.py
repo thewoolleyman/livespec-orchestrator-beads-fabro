@@ -194,17 +194,25 @@ def run_turn_check_record(
     work_item_id: str,
     dispatch_id: str,
     started_at_epoch: float | None = None,
-    observable: bool = True,
+    observation: str | None = None,
 ) -> dict[str, object]:
-    """Build the post-dispatch telemetry assertion journal record."""
-    if not observable:
+    """Build the post-dispatch telemetry assertion journal record.
+
+    `observation` is the unobservable CAUSE the resolution measured, or `None`
+    when this dispatch's telemetry is observable here. It is written through
+    VERBATIM and never re-derived: this record used to name one hardcoded cause
+    for a boolean that could not tell them apart, so an unreadable
+    `.livespec.jsonc` was journalled as a remote factory
+    (`_dispatcher_run_turn_telemetry_export` carries the whole account).
+    """
+    if observation is not None:
         return {
             "stage": "run-turn-telemetry-check",
             "work_item_id": work_item_id,
             "dispatch_id": dispatch_id,
             "run_turn_exported": False,
             "run_turn_observable": False,
-            "run_turn_observation": "unobservable-remote-factory",
+            "run_turn_observation": observation,
         }
     keys = (work_item_id, dispatch_id)
     return {
