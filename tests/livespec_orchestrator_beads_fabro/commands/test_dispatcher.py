@@ -2249,7 +2249,9 @@ def test_render_run_config_overlay_appends_sibling_clone_steps_and_env_root(
         siblings=_SIBLINGS,
     )
     assert rendered is not None
-    assert rendered.count("[[run.prepare.steps]]") == 4
+    # Two clones, the tmux socket root, the plugin-cache gate, and the git
+    # credential helper (bd-ib-52zt3o).
+    assert rendered.count("[[run.prepare.steps]]") == 5
     assert _LIVESPEC_CLONE_STEP_LINE in rendered
     assert _DEV_TOOLING_CLONE_STEP_LINE in rendered
     assert _TMUX_TMPDIR_PREPARE_STEP_LINE in rendered
@@ -2374,7 +2376,9 @@ def test_render_run_config_overlay_without_siblings_appends_no_clone_steps(
         siblings=None,
     )
     assert rendered is not None
-    assert rendered.count("[[run.prepare.steps]]") == 2
+    # The tmux socket root, the plugin-cache gate, and the git credential
+    # helper (bd-ib-52zt3o) — no clone step among them.
+    assert rendered.count("[[run.prepare.steps]]") == 3
     assert _TMUX_TMPDIR_PREPARE_STEP_LINE in rendered
     assert "LIVESPEC_SIBLING_CLONES_ROOT" not in rendered
 

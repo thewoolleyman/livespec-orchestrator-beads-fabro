@@ -37,6 +37,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import (
     git_author_env_lines,
     resolve_workflow_git_author,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_git_credential_helper import (
+    git_credential_helper_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_siblings import (
     SIBLING_CLONES_ROOT_ENV_VAR,
     SiblingClones,
@@ -275,6 +278,10 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     harness_shell_env = harness_shell_env_lines()
     gh_refresh_steps = refreshing_gh_prepare_steps_block()
     gh_refresh_env_lines = refreshing_gh_env_lines()
+    # Rendered immediately after the wrapper it routes to, and unconditionally:
+    # the Petri-era runner performs no Git operations of its own, so without this
+    # every in-sandbox push reaches origin with no credential (bd-ib-52zt3o).
+    git_credential_helper_steps = git_credential_helper_prepare_steps_block()
     codex_steps = codex_auth_prepare_steps_block(codex_auth_snapshot=codex_auth_snapshot)
     codex_env_lines = codex_auth_env_lines(codex_auth_snapshot=codex_auth_snapshot)
     codex_otel_steps = codex_otel_prepare_steps_block(codex_otel_config=codex_otel_config)
@@ -304,6 +311,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + sibling_steps
         + tmux_steps
         + gh_refresh_steps
+        + git_credential_helper_steps
         + codex_steps
         + codex_otel_steps
         + plugin_cache_steps
