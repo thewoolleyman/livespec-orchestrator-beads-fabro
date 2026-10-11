@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.183.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.182.1...v0.183.0) (2026-10-11)
+
+
+### Features
+
+* admit attributed size exceptions ([12dcd96](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/12dcd96217cada75066a1d1c24e54899fa7cf8d4))
+* enforce the consensus first-cut ceiling ([3c956e9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3c956e93a809a72401041d1d551bc6099d20a940))
+* preserve admission within the size ceiling ([ec7af5b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ec7af5bb8480e9ca9e747f262d4843c8de033ae4))
+* preserve admission without a size ceiling ([3ab0111](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3ab01110312bcee83f558ba7eee562cda648b4d4))
+* refuse invalid adopted assertion ceilings ([6c29142](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6c291428903832d263b8b70b3258ba2e60f9d769))
+* reject malformed size exceptions ([47d4fe9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/47d4fe983af715c5f3796c1d35c0fdfca5572fb0))
+* route unjustified oversized work to backlog ([1d8c1b1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1d8c1b1f790fa4257a908d599e4dbd9fac74b0bd))
+
+
+### Bug Fixes
+
+* guard public factory-size entry paths ([d7d1bba](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d7d1bbab8f0d00ec13858360d25c59ce9874a411))
+* isolate factory-size admission telemetry ([a56d3c0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a56d3c015d0548f5bf84733a6f5f445537be066f))
+* refuse factory-wide conditions before the size gate ([e4b5c21](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e4b5c21116d25f239c00c6f219a79cf8a2e84330))
+* refuse invalid ceilings at every entry ([6145b17](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6145b1785bc909466b79c0f9516569fbb7d8c1fd))
+
 ## [0.182.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.182.0...v0.182.1) (2026-10-11)
 
 
