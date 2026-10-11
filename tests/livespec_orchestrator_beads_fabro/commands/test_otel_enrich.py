@@ -578,3 +578,69 @@ def test_forward_once_event_derived_credential_run_id_is_redacted(tmp_path: Path
     exported = exporter.calls[0][0][0]
     attrs = _attrs_by_key(span=exported)
     assert attrs["fabro.run_id"] == {"stringValue": REDACTION_MARKER}
+
+
+# --------------------------------------------------------------------------
+# Petri-era run-identity join (the `fabro.run_id` span ATTRIBUTE)
+# --------------------------------------------------------------------------
+
+
+def test_forward_once_joins_run_identity_from_the_attribute_and_from_legacy_events(
+    tmp_path: Path,
+) -> None:
+    """Both engine eras' `run_turn` spans reach the reflector under one key set.
+
+    A PETRI-era span carries `fabro.run_id` as a span ATTRIBUTE and emits
+    NEITHER `Workflow run started` NOR `Sandbox initialized`; a 0.254-era span
+    carries no such attribute and emits only the legacy event. Both are in one
+    pass here deliberately — the two halves are each other's control, because a
+    join that read only the events would strand the Petri span with no
+    work-item id and a join that read only the attribute would strand the 0.254
+    one, and each failure looks exactly like a correlation miss at the
+    reflector rather than like a missing span.
+    """
+    path = tmp_path / "spans.jsonl"
+    dispatcher_span = _span(
+        name="dispatcher.dispatch",
+        attrs=[
+            _attr_entry(key="work.item.id", string_value="bd-ib-demo"),
+            _attr_entry(key="livespec.dispatch.id", string_value="disp-1"),
+            _attr_entry(key="fabro.run_id", string_value="01RUNPETRI"),
+        ],
+    )
+    petri_span = _span(
+        name="run_turn",
+        attrs=[_attr_entry(key="fabro.run_id", string_value="01RUNPETRI")],
+    )
+    legacy_span = _span(name="run", attrs=[])
+    legacy_span["events"] = [
+        _event(
+            name="Workflow run started",
+            attrs=[_attr_entry(key="run_id", string_value="01RUNPETRI")],
+        )
+    ]
+    assert "events" not in petri_span
+    _write_lines(
+        path=path,
+        lines=[
+            _request_line(service_name="livespec-dispatcher", spans=[dispatcher_span]),
+            _request_line(service_name="fabro", spans=[petri_span, legacy_span]),
+        ],
+    )
+    exporter = _FakeExporter()
+
+    result = EnrichStage(spans_path=path, exporter=exporter).forward_once()
+
+    assert result.forwarded == 3
+    exported = {
+        str(span["name"]): _attrs_by_key(span=span)
+        for spans, _dataset in exporter.calls
+        for span in spans
+    }
+    expected = {
+        "fabro.run_id": {"stringValue": "01RUNPETRI"},
+        "work.item.id": {"stringValue": "bd-ib-demo"},
+        "livespec.dispatch.id": {"stringValue": "disp-1"},
+    }
+    assert {key: exported["run_turn"][key] for key in expected} == expected
+    assert {key: exported["run"][key] for key in expected} == expected
