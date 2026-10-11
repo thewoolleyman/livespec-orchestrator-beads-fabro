@@ -37,6 +37,12 @@ __all__: list[str] = [
 class DispatchJournalIdentity:
     dispatch_id: str
     dispatch_factory: str | None
+    # The resolved factory's `exports_run_turn_telemetry` declaration, as it
+    # stood when this dispatch was planned. It rides the record for the same
+    # reason the integration contract does: the post-dispatch `run_turn` guard
+    # asks whether THIS dispatch's factory exports that telemetry, and a later
+    # re-read of `.livespec.jsonc` answers what the file says now.
+    exports_run_turn_telemetry: bool = True
 
 
 def append_dispatch_id_record(  # noqa: PLR0913 — kw-only record writer; each argument is one INDEPENDENT field of the dispatch record, and folding any pair into a carrier would invent a grouping the record does not have.
@@ -84,4 +90,8 @@ def append_dispatch_id_record(  # noqa: PLR0913 — kw-only record writer; each 
     }
     if identity.dispatch_factory is not None:
         record["dispatch_factory"] = identity.dispatch_factory
+        # Written WITH the name and never without it: the declaration is a
+        # property of the named factory, so a flag standing alone would say
+        # nothing a reader could attribute.
+        record["dispatch_factory_exports_run_turn_telemetry"] = identity.exports_run_turn_telemetry
     journal.append(record=record)

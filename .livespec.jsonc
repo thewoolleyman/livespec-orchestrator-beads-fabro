@@ -561,9 +561,21 @@
       // per-instance binary override the same item owns. A canary against the
       // candidate therefore declares its entry host-side, where the client
       // path is known, which is also where that canary's proof is captured.
+      //
+      // `exports_run_turn_telemetry` is each entry's answer to "does this
+      // factory's engine export a `run_turn` span to the host receiver?". It
+      // is what the post-dispatch `run_turn` guard reads, through the
+      // dispatch record's own snapshot of it, to tell a genuine telemetry
+      // ABSENCE apart from a factory that was never going to emit. The
+      // pinned 0.254 engine on `hp` emits no `run_turn` span the host
+      // receiver can attribute, so `hp` declares `false` and its dispatches
+      // are recorded as unobservable rather than as a missing export. An
+      // absent key reads as `true`, so a factory whose engine DOES emit
+      // needs no declaration and its missing exports stay visible.
       "factories": {
         "hp": {
-          "server": "https://hp-xubuntu.perch-rudd.ts.net:32276"
+          "server": "https://hp-xubuntu.perch-rudd.ts.net:32276",
+          "exports_run_turn_telemetry": false
         }
       }
     }

@@ -115,10 +115,14 @@ def dispatch_one(
     janitor: tuple[str, ...] | None,
 ) -> DispatchOutcome:
     raw_factory_target = getattr(args, "fabro_factory_target", None)
-    dispatch_factory = (
-        raw_factory_target.name if isinstance(raw_factory_target, FactoryTarget) else None
+    factory_target = raw_factory_target if isinstance(raw_factory_target, FactoryTarget) else None
+    dispatch_factory = factory_target.name if factory_target is not None else None
+    # An unresolved target names no factory, so it also declares nothing about
+    # that factory's telemetry; the record's own default answers that case.
+    exports_run_turn_telemetry = (
+        factory_target.exports_run_turn_telemetry if factory_target is not None else True
     )
-    if not isinstance(raw_factory_target, FactoryTarget):
+    if factory_target is None:
         args.fabro_factory_target = FactoryTarget(name="default", server=None, dev_token=None)
     lock = live_dispatch_lock(repo=repo, work_item_id=item.id)
     if lock is None or lock.dispatch_id is None:
@@ -139,6 +143,7 @@ def dispatch_one(
                 identity=DispatchJournalIdentity(
                     dispatch_id=dispatch_id,
                     dispatch_factory=dispatch_factory,
+                    exports_run_turn_telemetry=exports_run_turn_telemetry,
                 ),
                 cleanup=stack,
             ),

@@ -284,6 +284,7 @@ def test_append_run_turn_checks_marks_hp_factory_unobservable_not_absent(
             "work_item_id": "bd-ib-demo",
             "dispatch_id": "disp-1",
             "dispatch_factory": "hp",
+            "dispatch_factory_exports_run_turn_telemetry": False,
             "started_at_epoch": 20.0,
         }
     )
@@ -301,6 +302,64 @@ def test_append_run_turn_checks_marks_hp_factory_unobservable_not_absent(
     assert check["run_turn_observation"] == "unobservable-remote-factory"
     assert check["run_turn_exported"] is False
     assert items_with_run_turn_absence(records=records) == ()
+
+
+def test_append_run_turn_checks_marks_any_non_exporting_factory_unobservable(
+    tmp_path: Path,
+) -> None:
+    journal_path = tmp_path / "journal.jsonl"
+    journal = JournalFile(path=journal_path)
+    journal.append(
+        record={
+            "stage": "dispatch-id",
+            "work_item_id": "bd-ib-demo",
+            "dispatch_id": "disp-1",
+            "dispatch_factory": "hp-candidate",
+            "dispatch_factory_exports_run_turn_telemetry": False,
+            "started_at_epoch": 20.0,
+        }
+    )
+
+    append_run_turn_checks(
+        outcomes=(_outcome(work_item_id="bd-ib-demo"),),
+        journal=journal,
+        journal_path=journal_path,
+        sink=RunTurnSink(path=tmp_path / "run-turn.json"),
+    )
+
+    records = read_journal_records(journal_path=journal_path)
+    check = records[-1]
+    assert check["run_turn_observable"] is False
+    assert check["run_turn_observation"] == "unobservable-remote-factory"
+    assert items_with_run_turn_absence(records=records) == ()
+
+
+def test_append_run_turn_checks_observes_a_factory_declaring_run_turn_export(
+    tmp_path: Path,
+) -> None:
+    journal_path = tmp_path / "journal.jsonl"
+    journal = JournalFile(path=journal_path)
+    journal.append(
+        record={
+            "stage": "dispatch-id",
+            "work_item_id": "bd-ib-demo",
+            "dispatch_id": "disp-1",
+            "dispatch_factory": "hp",
+            "dispatch_factory_exports_run_turn_telemetry": True,
+            "started_at_epoch": 20.0,
+        }
+    )
+
+    append_run_turn_checks(
+        outcomes=(_outcome(work_item_id="bd-ib-demo"),),
+        journal=journal,
+        journal_path=journal_path,
+        sink=RunTurnSink(path=tmp_path / "run-turn.json"),
+    )
+
+    check = _records(path=journal_path)[-1]
+    assert check["run_turn_observable"] is True
+    assert "run_turn_observation" not in check
 
 
 def test_append_run_turn_checks_ignores_malformed_dispatch_id_records(tmp_path: Path) -> None:

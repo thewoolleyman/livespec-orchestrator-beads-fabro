@@ -90,7 +90,22 @@ def _epoch(*, record: dict[str, object]) -> float | None:
 
 
 def _observable_from_dispatch_record(*, record: dict[str, object]) -> bool:
-    factory = record.get("dispatch_factory")
-    if not isinstance(factory, str):
-        return True
-    return factory != "hp"
+    """Whether this dispatch's factory exports `run_turn` telemetry to us.
+
+    Read from the dispatch record's OWN snapshot of the resolved factory
+    configuration, never from the factory NAME. A name-keyed test could only
+    ever answer for the one factory it names: `hp` was hard-coded here, so a
+    second factory -- `hp-candidate`, whose Petri-era engine DOES export
+    `run_turn` -- was reported as observable or unobservable by whether its
+    name happened to differ from `hp`, which is not a fact about telemetry.
+
+    An ABSENT declaration reads as "exports", which is today's answer for
+    every factory but `hp` and is the fail-LOUD direction: an unobservable
+    marking SUPPRESSES the absence finding `items_with_run_turn_absence`
+    surfaces, so defaulting to unobservable would silence the guard for every
+    factory nobody had declared yet.
+    """
+    exports = record.get("dispatch_factory_exports_run_turn_telemetry")
+    if isinstance(exports, bool):
+        return exports
+    return True

@@ -115,6 +115,7 @@ _ENV_FAKE = "LIVESPEC_BEADS_FAKE"
 _ENV_FABRO_BIN = "LIVESPEC_FABRO_BIN"
 _ENV_FABRO_FACTORY = "LIVESPEC_FABRO_FACTORY"
 _FACTORY_BIN_KEY = "bin"
+_FACTORY_RUN_TURN_TELEMETRY_KEY = "exports_run_turn_telemetry"
 _FABRO_DEV_AUTH_ENV_PREFIX = "FABRO_DEV_TOKEN__"
 _ENV_FABRO_SANDBOX_IMAGE = "LIVESPEC_FABRO_SANDBOX_IMAGE"
 
@@ -133,6 +134,13 @@ class FactoryTarget:
     # factory runs whatever the host's global resolution supplies.
     # `_dispatcher_factory_bin` owns what the two layers mean together.
     fabro_bin: str | None = None
+    # Whether this factory's engine exports `run_turn` telemetry to the host
+    # receiver, from its optional `exports_run_turn_telemetry` key. The default
+    # is True because an absent declaration must leave the post-dispatch guard
+    # REPORTING a missing export rather than silently suppressing it; a factory
+    # whose engine does not emit `run_turn` declares `false` and is read as
+    # unobservable instead of as a telemetry absence.
+    exports_run_turn_telemetry: bool = True
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -465,6 +473,9 @@ def _factory_target_for(*, name: str, block: dict[str, Any]) -> FactoryTarget:
         server=_optional_str(value=entry.get("server")),
         fabro_bin=_optional_str(value=entry.get(_FACTORY_BIN_KEY)),
         dev_token=_optional_str(value=os.environ.get(f"{_FABRO_DEV_AUTH_ENV_PREFIX}{name}")),
+        exports_run_turn_telemetry=_bool_or(
+            value=entry.get(_FACTORY_RUN_TURN_TELEMETRY_KEY), default=True
+        ),
     )
 
 
@@ -497,6 +508,12 @@ def _resolve_fake(*, block: dict[str, Any]) -> bool:
 
 def _str_or(*, value: object, default: str) -> str:
     if isinstance(value, str) and value != "":
+        return value
+    return default
+
+
+def _bool_or(*, value: object, default: bool) -> bool:
+    if isinstance(value, bool):
         return value
     return default
 

@@ -611,6 +611,51 @@ def test_committed_config_sets_hp_default_factory(
     assert target.name == "hp"
     assert target.server == "https://hp-xubuntu.perch-rudd.ts.net:32276"
     assert target.dev_token is None
+    # The pinned 0.254 engine on hp emits no attributable `run_turn` span, so
+    # the committed entry declares that absence rather than leaving the
+    # post-dispatch guard to report every hp dispatch as a telemetry absence.
+    assert target.exports_run_turn_telemetry is False
+
+
+@pytest.mark.parametrize(
+    ("declared", "expected"),
+    [
+        pytest.param({"exports_run_turn_telemetry": False}, False, id="declared-false"),
+        pytest.param({"exports_run_turn_telemetry": True}, True, id="declared-true"),
+        pytest.param({}, True, id="undeclared-reads-as-exporting"),
+        pytest.param({"exports_run_turn_telemetry": "yes"}, True, id="non-bool-reads-as-default"),
+    ],
+)
+def test_resolve_fabro_factory_reads_run_turn_telemetry_declaration(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    declared: dict[str, object],
+    expected: bool,
+) -> None:
+    """A factory entry's `exports_run_turn_telemetry` key resolves onto the target."""
+    monkeypatch.delenv("LIVESPEC_FABRO_FACTORY", raising=False)
+    _write_config(
+        cwd=tmp_path,
+        body=json.dumps(
+            {
+                "livespec-orchestrator-beads-fabro": {
+                    "dispatcher": {
+                        "default_factory": "candidate",
+                        "factories": {
+                            "candidate": {
+                                "server": "https://candidate.example.test",
+                                **declared,
+                            },
+                        },
+                    }
+                }
+            }
+        ),
+    )
+    target = _config.resolve_fabro_factory(cwd=tmp_path)
+    assert target.name == "candidate"
+    assert target.exports_run_turn_telemetry is expected
 
 
 def test_resolve_fabro_factory_implicit_default_preserves_loopback_behavior(
