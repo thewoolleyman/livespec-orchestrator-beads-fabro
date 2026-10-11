@@ -8,7 +8,7 @@ what required every new refusal to be wired twice. It moved out when the Codex
 credential gate became the fourth refusal in each and pushed the single-dispatch
 command module past its file LLOC ceiling — the seam was already there.
 
-WHAT THE WALL IS. Four refusals plus one mutation, sharing one POSITION and one
+WHAT THE WALL IS. Five refusals plus one mutation, sharing one POSITION and one
 guarantee: each runs after selection and BEFORE admission, so a refused item is
 never claimed, no `active` row is left behind, and no factory run exists to reap.
 Reading them as one decision is also what keeps each command entry point's return
@@ -52,6 +52,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     read_dispatch_labels,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency_gate import (
+    fabro_currency_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
@@ -101,7 +104,16 @@ def pre_dispatch_wall_exit(
     below branches on which caller it is, which is the point: a refusal that
     fired for one path and not the other was a defect waiting to happen.
 
-    The criteria wall is first and is variant-aware: it is handed this dispatch's
+    The FABRO CURRENCY gate is first, and its position is load-bearing rather
+    than tidy. It is the only refusal here whose answer is a property of the
+    FACTORY rather than of the items, so nothing about the selection has to be
+    read before it can be settled; and the two refusals that would otherwise
+    precede it both SPEND something — the proof-assets gate creates a repository
+    prerelease, the Codex credential gate spends a bounded provider renewal — so
+    refusing an unadmissible ENGINE after either would pay for a dispatch that
+    could never run on it.
+
+    The criteria wall is next and is variant-aware: it is handed this dispatch's
     explicit `--workflow-name`, resolves which graph the selection would run, and
     exempts a groom-kind dispatch, whose acceptance is the human approval of the
     draft.
@@ -143,6 +155,10 @@ def pre_dispatch_wall_exit(
     item, and it runs last because it MUTATES a remote ref: a selection this wall
     is about to refuse must leave the remote exactly as it found it.
     """
+    currency_refusal = fabro_currency_refusal(args=args, repo=repo, items=items, journal=journal)
+    if currency_refusal is not None:
+        _ = write_stderr(text=currency_refusal)
+        return EXIT_PRECONDITION_ERROR
     ungradeable = pre_dispatch_criteria_refusal(
         items=items, cwd=repo, workflow_name=args.workflow_name
     )
