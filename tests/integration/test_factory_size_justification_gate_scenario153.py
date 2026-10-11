@@ -4,6 +4,12 @@ This integration journey binds the size gate through the same shared decision
 that capture, groom, approval, and factory dispatch consume.  Store-facing
 cases use the real in-memory beads seam; only processes outside the repository
 are stood in.
+
+The telemetry leg's own substitutions are stated on `_size_telemetry_attributes`
+rather than left to be inferred: the span is emitted by the real
+`emit_calibration`, while the Fabro run and the forge are stood in, so the green
+terminal it is emitted for is manufactured and must not be reported as an
+observed factory execution.
 """
 
 from __future__ import annotations
@@ -25,11 +31,8 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
-    build_calibration_record,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_span import (
-    calibration_request_line,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit import (
+    emit_calibration,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
     live_dispatch_lock,
@@ -45,13 +48,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_groom_door import (
     groom_dispatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
+    calibration_spans_path,
+    journal_path,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_plan
-from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_order_sink import (
-    TddOrderSink,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_probe import (
-    gather_tdd_signals,
-)
 from livespec_orchestrator_beads_fabro.commands._drive_config_schema import (
     api_configurable_key_manifest,
 )
@@ -1160,12 +1161,34 @@ def _assert_valid_size_decision(*, valid: dict[str, str]) -> None:
     assert decision.size_justified is True
 
 
+def _dispatch_args(*, repo: Path, item_id: str) -> argparse.Namespace:
+    """The dispatch argv namespace, carrying the journal every seam resolves from.
+
+    `journal` is named here rather than defaulted so the production path helpers
+    -- `journal_path`, `calibration_spans_path`, `tdd_order_sink_path` -- and the
+    journal the engine writes resolve to the SAME file by construction.  The
+    telemetry read below re-reads that journal through production code, so two
+    paths that merely looked alike would make the read observe a different
+    dispatch than the one it is grading.
+    """
+    return argparse.Namespace(
+        repo=str(repo),
+        skip_ledger_check=True,
+        item=item_id,
+        factory=None,
+        fabro_bin=None,
+        workflow_name=None,
+        journal=str(repo / "journal.jsonl"),
+    )
+
+
 def _run_successful_public_dispatch(
     *, repo: Path, item: WorkItem, monkeypatch: pytest.MonkeyPatch
-) -> tuple[DispatchOutcome, tuple[dict[str, object], ...]]:
+) -> tuple[argparse.Namespace, DispatchOutcome, JournalFile]:
     """Drive the command entry while standing in only the external factory."""
     command = import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands")
-    journal = JournalFile(path=repo / "journal.jsonl")
+    args = _dispatch_args(repo=repo, item_id=item.id)
+    journal = JournalFile(path=journal_path(args=args, repo=repo))
     monkeypatch.setattr(command, "dispatch_preamble", lambda **_kwargs: (None, None))
     monkeypatch.setattr(command, "arm_otel_egress", lambda **_kwargs: None)
     monkeypatch.setattr(command, "prepare", lambda **_kwargs: ([item], journal))
@@ -1197,57 +1220,77 @@ def _run_successful_public_dispatch(
 
     monkeypatch.setattr(command, "dispatch_tail_exit", _terminal_tail)
     monkeypatch.setattr(command, "dispatch_one", _factory_dispatch)
-    rc = command.run_dispatch_command(
-        args=argparse.Namespace(
-            repo=str(repo),
-            skip_ledger_check=True,
-            item=item.id,
-            factory=None,
-            fabro_bin=None,
-            workflow_name=None,
-        )
-    )
+    rc = command.run_dispatch_command(args=args)
     assert rc == 0
     assert len(terminal) == 1
     assert (terminal[0].status, terminal[0].stage) == ("green", "done")
-    records = tuple(
-        cast("dict[str, object]", json.loads(line))
+    return args, terminal[0], journal
+
+
+def _journal_stages(*, journal: JournalFile) -> list[str]:
+    return [
+        str(cast("dict[str, object]", json.loads(line)).get("stage"))
         for line in journal.path.read_text(encoding="utf-8").splitlines()
-    )
-    return terminal[0], records
+    ]
 
 
 def _size_telemetry_attributes(
     *,
+    args: argparse.Namespace,
     repo: Path,
     item: WorkItem,
     outcome: DispatchOutcome,
-    records: tuple[dict[str, object], ...],
+    journal: JournalFile,
 ) -> dict[str, object]:
+    """The attribute map off the span PRODUCTION emitted for this dispatch.
+
+    `emit_calibration` is the one production entry point that emits the
+    `dispatcher.calibration` span, and it is driven here unsubstituted: it
+    re-reads this dispatch's journal through `read_journal_records_for`, gathers
+    the TDD signals from those records, builds the record and appends the OTLP
+    line itself.  Hand-calling `gather_tdd_signals` -> `build_calibration_record`
+    -> `calibration_request_line` reaches the same three functions while
+    SUBSTITUTING the wiring between them, which is the only place
+    `tdd.size_justified` can be dropped without any of the three changing
+    behaviour -- so the span is read back off the file at
+    `calibration_spans_path` rather than off a line this module rendered.
+
+    The stage is FAIL-OPEN, so a broken wiring raises nothing: it appends no
+    span and journals `calibration-error` instead.  The absent error record is
+    therefore asserted beside the attribute, because the attribute assertion
+    alone cannot tell a correct span from a stage that never emitted one.
+
+    WHAT IS STILL STOOD IN, stated so this cannot read as a real factory run:
+    the Fabro run and the forge.  `dispatch_one` is replaced by a stand-in that
+    drives the REAL `run_dispatch` engine against scripted `CommandResult`s
+    (synthetic run `01SCENARIO153`, pull request 7, merge `cafe153`), and the two
+    `gh pr view` probes this stage issues are answered as failures.  The green
+    terminal is therefore manufactured; the admission decision, the journal, the
+    signal gather and the span emission are not.
+    """
     probe_runner = _EngineRunner(
-        queue=[CommandResult(exit_code=1, stdout="", stderr="forge unavailable")]
+        queue=[
+            CommandResult(exit_code=1, stdout="", stderr="forge unavailable"),
+            CommandResult(exit_code=1, stdout="", stderr="forge unavailable"),
+        ]
     )
-    signals = gather_tdd_signals(
+    emit_calibration(
+        args=args,
         repo=repo,
         item=item,
         outcome=outcome,
-        records=records,
-        sink=TddOrderSink(path=repo / "tdd-order.json"),
+        journal=journal,
+        wall_clock_seconds=1.0,
+        dispatch_context_size=1,
         runner=probe_runner,
     )
     assert probe_runner.queue == []
-    record = build_calibration_record(
-        item=item,
-        outcome=outcome,
-        repo_name=repo.name,
-        journal_records=records,
-        wall_clock_seconds=1.0,
-        token_cost_micros=None,
-        dispatch_context_size=1,
-        merged_pr_diff_size=None,
-        tdd=signals,
-    )
-    payload = json.loads(calibration_request_line(record=record, now_ns=1))
+    stages = _journal_stages(journal=journal)
+    assert "calibration-error" not in stages
+    assert stages.count("calibration") == 1
+    lines = calibration_spans_path(args=args, repo=repo).read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    payload = cast("dict[str, Any]", json.loads(lines[0]))
     span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
     return {entry["key"]: entry["value"] for entry in span["attributes"]}
 
@@ -1269,7 +1312,7 @@ def _exercise_valid_capture_dispatch_and_telemetry(
     assert unsafe_perform_io(captured.unwrap()) == "ready"
 
     captured_item = _stored(config=config)["bd-capture-valid"]
-    green, records = _run_successful_public_dispatch(
+    args, green, journal = _run_successful_public_dispatch(
         repo=repo,
         item=captured_item,
         monkeypatch=monkeypatch,
@@ -1283,10 +1326,11 @@ def _exercise_valid_capture_dispatch_and_telemetry(
         justification={"rationale": "changed after admission"},
     )
     attributes = _size_telemetry_attributes(
+        args=args,
         repo=repo,
         item=captured_item,
         outcome=green,
-        records=records,
+        journal=journal,
     )
     assert attributes["tdd.size_justified"] == {"boolValue": True}
     _write_repo_config(repo=repo, ceiling=2, groom_variant="groom-cut")
