@@ -466,18 +466,18 @@ def test_the_journal_substitutes_the_structural_record_for_enabled_nodes(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
         acp_nodes={
-            "pr": {"fallbacks": [_FALLBACK]},
-            "review": {"command": "uvx review-acp"},
+            "review": {"fallbacks": [_FALLBACK]},
+            "disposition": {"command": "uvx disposition-acp"},
         },
     )
     assert not isinstance(resolution, str), resolution
     [record] = [entry for entry in journal.records if entry["stage"] == seam.ACP_NODES_STAGE]
     nodes: Any = record["acp_nodes"]
-    assert "adapter" not in nodes["pr"]
-    assert nodes["pr"]["command"] == _CLAUDE
-    assert nodes["pr"]["fallback_count"] == 1
-    assert nodes["pr"]["input"] == "pr_adapter"
-    assert nodes["review"]["adapter"] == "uvx review-acp"
+    assert "adapter" not in nodes["review"]
+    assert nodes["review"]["command"] == _CLAUDE
+    assert nodes["review"]["fallback_count"] == 1
+    assert nodes["review"]["input"] == "review_adapter"
+    assert nodes["disposition"]["adapter"] == "uvx disposition-acp"
 
 
 def test_the_dispatch_seam_reports_a_chain_refusal_before_journalling(
@@ -485,7 +485,9 @@ def test_the_dispatch_seam_reports_a_chain_refusal_before_journalling(
 ) -> None:
     """A malformed chain refuses the dispatch and writes no adapter record."""
     refusal, journal = _prepare(
-        tmp_path=tmp_path, monkeypatch=monkeypatch, acp_nodes={"pr": {**_IDENTITY, "bogus": 1}}
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        acp_nodes={"review": {**_IDENTITY, "bogus": 1}},
     )
     assert isinstance(refusal, str)
     assert "bogus" in refusal
@@ -505,8 +507,8 @@ def test_the_dispatch_seam_reports_an_attachment_refusal_before_journalling(
     refusal, journal = _prepare(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
-        acp_nodes={"pr": {"fallbacks": [_FALLBACK]}},
-        overrides=("pr=uvx other-acp",),
+        acp_nodes={"review": {"fallbacks": [_FALLBACK]}},
+        overrides=("review=uvx other-acp",),
     )
     assert isinstance(refusal, str)
     assert "--acp-node" in refusal

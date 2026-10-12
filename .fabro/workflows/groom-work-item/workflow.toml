@@ -91,10 +91,22 @@ review_fix_adapter = "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=hig
 
 # The `pr` node here FILES the approved slices into the ledger; it is the apply
 # phase's publication point, and the ledger is this run's publication surface.
-# That is real judgement work -- a mis-filed slice is a mis-cut backlog -- so
-# unlike the bundle's fixed publish recipe this default carries the implementer
-# tier rather than the cheap one.
-pr_adapter = "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+# It is also now the ONLY ACP `pr` node in the fleet: contracts.md section
+# "Definition-of-Done and Proof-of-Done stages" ->
+# "Scripted publication and proof-head integrity" (ratified v121) retires the
+# implementation workflow's publication adapter entirely, and names this
+# variant's node "the sole exception to publication adapter retirement".
+#
+# THE DEFAULT IS HAIKU 4.5 BY RATIFICATION, and the literal rendering below is
+# the one contracts.md section "Built-in ACP node defaults" requires of it in as
+# many words. That SUPERSEDES the implementer-tier default this input carried
+# through v120, whose rationale was that filing a cut is real judgement work --
+# a reading the ratified text answers directly: the preceding propose and review
+# phases own the judgement, and this turn ENCODES their already-approved filing
+# plan. A repository that wants the implementer tier back says so in its own
+# `dispatcher.acp_nodes.pr`, which applies normally here and is ignored for an
+# implementation dispatch.
+pr_adapter = "ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
 
 # The review tier is the bundle's: a second, differently-modelled reader whose
 # lens on a cut is the same senior-engineer lens it brings to a diff. The model
