@@ -435,10 +435,26 @@ enabled = true
 push = false
 
 [run.checkpoint]
-# Hooks stay ON for checkpoint commits: the corrected content-trigger
-# red-green-replay gate (livespec-dev-tooling v0.11.0, bumped
-# family-wide) passes machine/empty checkpoint commits naturally, so
-# the interim skip_git_hooks=true escape from the probe is retired.
+# HOOKS ARE SKIPPED for checkpoint commits, which REVERSES the choice this
+# block used to argue for. The run-branch checkpoint is a MACHINE commit of
+# whatever a node left on disk, and with hooks on it ran this repository's
+# pre-commit aggregate as the THIRD run of that suite in one node cycle: the
+# janitor node runs the declared check suite after implement, and
+# `publish_draft`'s pre-push runs the aggregate again. Those two route a
+# failure into a fix loop; this one ended the run at `workflow_error`.
+# Measured on hp from the dispatch journals and per-run `fabro events` of
+# every repo dispatching there, 2026-10-09..12: 27 runs died on a failed
+# checkpoint commit, the `checkpoint.failed` stderr tail naming per-file
+# coverage or coverage in 15 (a node that ended mid-Red-Green -- a REPAIRABLE
+# tree), the master-CI-green gate in 5, the red-green-replay commit-msg gate
+# in 2, and a 900s timeout in 4. Ledger bd-ib-jb53pu; measurement in
+# plan/checkpoint-commit-hook-failures/research/
+# 001-measured-checkpoint-failures-2026-10-12.md. The deployed engine
+# (fabro 0.254.0 8869e88, `sandbox_git.rs`) passes `--no-verify` only when
+# `skip_git_hooks` is true, so this one key is the whole control. What the
+# retired rationale got RIGHT is that the red-green-replay gate passes a
+# machine/empty checkpoint commit naturally; what it missed is that the gate
+# is not the only thing a pre-commit aggregate runs.
 # Gate-heavy repositories can legitimately spend minutes in those hooks.
 # Fabro's stock 30-second checkpoint budget destroyed completed work when
 # `git add` or `git commit` crossed that ceiling (ledger bd-ib-6ka).
@@ -452,7 +468,7 @@ push = false
 # floor at ~9.0 days, 20m would push it to ~10.6 days and refuse every Codex
 # dispatch. Raising it further needs that derivation revisited first.
 commit_timeout = "15m"
-skip_git_hooks = false
+skip_git_hooks = true
 exclude_globs = ["**/.venv/**", "**/node_modules/**", "**/.cache/**"]
 
 # Our pr graph node owns the family `gh pr` flow (body conventions,
