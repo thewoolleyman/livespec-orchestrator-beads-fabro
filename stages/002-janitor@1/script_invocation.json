@@ -1,0 +1,5 @@
+{
+  "script": "eval touch /tmp/eut-check-suite-ran && false",
+  "command": "exec 2>&1\neval touch /tmp/eut-check-suite-ran && false",
+  "language": "shell"
+}
