@@ -3911,7 +3911,7 @@ def test_provider_usage_limit_refuses_matching_provider_before_admission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo, _workflow = _repo_with_workflow(tmp_path=tmp_path)
-    blocked = _item(id="bd-ready-codex", status="ready", rank="a1")
+    blocked = _item(id="bd-ready-held", status="ready", rank="a1")
     append_work_item(path=_config(), item=blocked)
     _ = (repo / ".livespec.jsonc").write_text(
         '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"},'
@@ -3919,10 +3919,15 @@ def test_provider_usage_limit_refuses_matching_provider_before_admission(
         encoding="utf-8",
     )
     journal = JournalFile(path=repo / "journal.jsonl")
+    # MATCHING is a fact about this dispatch's own resolved adapters, not about
+    # a vendor list: this fixture's nodes resolve to the build's Anthropic
+    # built-ins, so an Anthropic record is the one that covers them. A codex
+    # record here covers nothing and is asserted to admit by
+    # `test_dispatcher_admission_provider_scope`.
     journal.append(
         record={
             "stage": "provider-exhaustion-observed",
-            "provider": "codex",
+            "provider": "anthropic",
             "governing_condition": "provider_usage_limit",
             "record_expires_at": "2026-08-23T10:15:00Z",
             "work_item_id": "bd-earlier",
@@ -3954,7 +3959,7 @@ def test_provider_usage_limit_refuses_matching_provider_before_admission(
         >= {
             "stage": "provider-exhaustion-refusal",
             "work_item_id": blocked.id,
-            "provider": "codex",
+            "provider": "anthropic",
             "governing_condition": "provider_usage_limit",
             "record_expires_at": "2026-08-23T10:15:00Z",
         }.items()

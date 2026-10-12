@@ -13,10 +13,15 @@ resolved ONCE PER PASS in `filter_eligible_candidates` rather than inside the
 per-row ladder: an unreadable `dispatcher.adopted_assertion_count_ceiling` is
 a fact about the repository that refuses every candidate identically, so
 resolving it per row would re-read one file once per candidate to reach the
-same answer. The FIVE per-row refusals then run in this order:
+same answer. The dispatch's RENDERED ACP CANDIDATES are resolved there for
+the same reason. The FIVE per-row refusals then run in this order:
 
-1. An unexpired LEGACY provider-exhaustion record. A vendor ceiling this
-   dispatch would run into is a fact about the factory, not the item.
+1. An unexpired LEGACY provider-exhaustion record COVERING a candidate this
+   dispatch's resolved ACP nodes render. A vendor ceiling this dispatch would
+   run into is a fact about the factory, not the item -- but only about the
+   part of the factory the item's nodes reach, which is why the record is
+   scoped to those candidates rather than to a vendor list: a record covering
+   none of them refuses nothing.
 2. An exhausted success-critical ACP candidate chain. Also a fact about the
    factory, and it reads a verdict already computed for the whole pass.
 3. The adopted assertion-count ceiling, which is the first condition that
@@ -45,9 +50,11 @@ from pathlib import Path
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import RenderedCandidate
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     acp_preflight_refusal,
+    resolve_dispatch_candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import host_only_refusal
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import read_dispatch_labels
@@ -104,6 +111,13 @@ def filter_eligible_candidates(
             for item in candidates
         ]
     adopted_ceiling = unsafe_perform_io(resolved_ceiling.unwrap())
+    # The candidates this repository's ACP nodes render are committed
+    # configuration too, and the legacy provider gate is scoped to them. They
+    # are resolved ONCE here for the same reason the ceiling above is: the
+    # answer belongs to the repository rather than to any candidate, so a
+    # per-row resolution would re-read one manifest and one overlay table per
+    # candidate to reach the identical set.
+    rendered = resolve_dispatch_candidates(repo=repo)
     admittable: list[WorkItem] = []
     refused: list[DispatchOutcome] = []
     for item in candidates:
@@ -113,6 +127,7 @@ def filter_eligible_candidates(
             item=item,
             journal=journal,
             adopted_ceiling=adopted_ceiling,
+            rendered=rendered,
         )
         if refusal is None:
             admittable.append(item)
@@ -128,6 +143,7 @@ def _refusal_for(
     item: WorkItem,
     journal: JournalFile,
     adopted_ceiling: int | None,
+    rendered: tuple[RenderedCandidate, ...] | None,
 ) -> DispatchOutcome | None:
     """The first condition this row fails, or `None` when it passes all five."""
     exhaustion_refusal = provider_exhaustion_refusal(
@@ -135,7 +151,7 @@ def _refusal_for(
         journal=journal,
         journal_path=getattr(journal, "path", None),
         now_iso=utc_now_iso(),
-        candidates=None,
+        candidates=rendered,
     )
     if exhaustion_refusal is not None:
         return exhaustion_refusal

@@ -30,6 +30,14 @@ claim or run." A malformed chain table is refused here rather than waved
 through to the dispatch path, because before-claim is strictly earlier than
 before-run and a claim taken on configuration that cannot resolve has to be
 released again.
+
+ONE MORE CONSUMER READS THE SAME RESOLUTION: the LEGACY provider gate, through
+`resolve_dispatch_candidates`. It needs no verdict and no graph -- only the
+candidates this repository's resolved node adapters render, so it can tell a
+vendor record that covers one of them from a record that covers none. It is
+answered here rather than beside that gate because the resolution is this
+module's, and a second one would be a second reading of the same files that
+could not be proven to agree with the first.
 """
 
 from __future__ import annotations
@@ -49,6 +57,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_catalogs import (
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import (
     ResolvedAcpChain,
     attach_acp_chains,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import (
+    RenderedCandidate,
+    rendered_dispatch_candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import read_acp_hold_ledger
 from livespec_orchestrator_beads_fabro.commands._acp_node_chains import AcpNodeChain
@@ -91,6 +103,7 @@ __all__: list[str] = [
     "credential_reprobe_wait_applies",
     "resolve_acp_preflight",
     "resolve_acp_primary_generations",
+    "resolve_dispatch_candidates",
 ]
 
 # The journal stage a before-claim preflight refusal is recorded under.
@@ -185,6 +198,47 @@ def resolve_acp_primary_generations(*, repo: Path) -> Mapping[str, str]:
         return {}
     chains, _graph_text, _builtin_pairs = resolved
     return {node: chain.primary_generation for node, chain in chains.items() if chain.enabled}
+
+
+def resolve_dispatch_candidates(*, repo: Path) -> tuple[RenderedCandidate, ...] | None:
+    """Every candidate this repository's resolved ACP nodes render, or `None`.
+
+    `None` says the resolution could not be READ, and the legacy gate treats
+    it as the absence of a measurement rather than as an answer about
+    candidates, because those two owe opposite treatments. So this returns a
+    NON-EMPTY set or says it has none, and never a plausible empty one.
+
+    AN EMPTY RESOLUTION IS UNREADABLE, NOT EMPTY, and that arm is the one most
+    easily mistaken for a result. A workflow that declares no adapter input
+    for any node yields no chains at all -- `resolve_acp_nodes` carries one
+    entry per declared input -- which means this dispatch OVERRIDES no adapter
+    and the run executes whatever the graph itself bakes in. The domains it
+    spends are then real but invisible from here, so reporting the empty set
+    would say "this dispatch renders nothing a record covers" about a dispatch
+    whose adapters were never observed.
+
+    It is NOT lazy on the fallback metadata the way its two siblings above
+    are, and that difference is load-bearing. Their question only exists for
+    a fallback-enabled repository; this one's question -- which domains does
+    this dispatch spend -- exists for EVERY repository, including the v107
+    path where each node resolves to exactly one built-in candidate. Short-
+    circuiting here would hand the gate `None` for the common case and refuse
+    every dispatch any live record happened to find, which is the behaviour
+    being retired.
+    """
+    block = dispatcher_block(cwd=repo)
+    catalogs = resolve_acp_catalogs(block=block)
+    if isinstance(catalogs, str):
+        return None
+    declared = repository_acp_chains(block=block, catalogs=catalogs)
+    if isinstance(declared, str):
+        return None
+    resolved = _resolve_chains(repo=repo, declared=declared, catalogs=catalogs)
+    if isinstance(resolved, str):
+        return None
+    chains, _graph_text, builtin_pairs = resolved
+    rendered = rendered_dispatch_candidates(chains=chains, builtin_pairs=builtin_pairs)
+    return rendered or None
 
 
 def acp_preflight_refusal(
