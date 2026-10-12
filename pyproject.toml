@@ -455,8 +455,20 @@ neutral_hook_body_path = { not_applicable = "no neutral hook body is installed i
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables below:
 # in TOML a bare key after an array-of-tables header attaches to that sub-table,
 # not the parent.
+#
+# `_dispatcher_publication_push.py` IS the project-local wrapper this check's
+# own remedy names, which is why it is listed rather than rewritten. It exists
+# for exactly one purpose: to be the single place a publication rewrite can
+# happen, behind validation that REFUSES anything but a full lowercase sha, so
+# the lease is always `--force-with-lease=<ref>:<object>` and never the bare
+# `--force` or the empty-expected-object form git silently accepts as "the ref
+# does not exist". Its own paired test EXECUTES it against a real bare remote
+# and asserts that a stale expected object moves nothing. The wrapper has to
+# spell the flag somewhere; the alternative to this entry is a second indirection
+# whose innermost layer spells it anyway and is no longer the one place to read.
 destructive_cli_allowlist = [
     ".claude-plugin/.fabro/workflows/implement-work-item/prompts/",
+    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_publication_push.py",
     "orchestrator-image/acceptance-live-golden-master.sh",
     "orchestrator-image/reap-e2e-repos.sh",
     "archive/research/w7-orchestrator-convergence/e2e-repo-reaper.md",
@@ -486,6 +498,15 @@ destructive_cli_allowlist = [
 #   work starting, in a process whose source tree is the one being removed,
 #   so no in-process `main()` can stand in. It scrubs the child env exactly
 #   as an allowlisted spawn must.
+# - test_dispatcher_publication_head.py runs the MATERIALIZED publication-head
+#   program the Dispatcher lands in the sandbox. That program is deliberately
+#   stdlib-only because a governed clone has no copy of this package, and the
+#   thing under test is that it runs under a bare `python3` with the forge
+#   reached through `subprocess`. Importing it in-process would run it in an
+#   interpreter where the package IS importable and would leave the `gh` argv
+#   it issues — the half a reader cannot check by eye — unexercised. It scrubs
+#   the child env exactly as an allowlisted spawn must, by passing an explicit
+#   `env` holding only `PATH` and `HOME`.
 #
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables
 # below (same TOML attachment reason as `destructive_cli_allowlist`).
@@ -508,6 +529,7 @@ subprocess_spawn_allowlist = [
     "tests/bin/test_payload_candidate_root_without_claude_env.py",
     "tests/bin/test_payload_parent_reads_asset_after_helper_exit.py",
     "tests/bin/test_payload_canary_subject_is_the_candidate.py",
+    "tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_publication_head.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]

@@ -166,25 +166,25 @@ implement_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effort":
 fix_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"}'
 review_fix_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"}'
 
-# ACP adapter for the PR node. This is the SINGLE SOURCE of the publish
-# node's fleet default (contracts.md section "Codex ACP node model pins",
-# v107): a Claude adapter pinned to Claude Haiku 4.5 at high effort. Haiku is
-# the cheap model this scripted `git`/`gh` node warrants, it is model-agnostic
-# (no OpenAI/Codex catalog exposure), and pinning it — rather than leaving the
-# model un-set — avoids the silent-smaller-model trap older claude-agent-acp
-# builds had. Its PACKAGE version is pinned by the sandbox image; see the
-# version-less rationale in the adapter-defaults block above. That bare-`fabro
-# run` property is also why these defaults do NOT use `npx --no-install`:
-# outside the family sandbox image there is no baked global, and the download
-# is the intended fallback rather than a failure.
+# NO PUBLICATION ADAPTER INPUT, AND ITS ABSENCE IS THE DECLARATION
+# (contracts.md section "Definition-of-Done and Proof-of-Done stages" ->
+# "Scripted publication and proof-head integrity", ratified v121). Publication
+# for an IMPLEMENTATION workflow is three COMMAND stages — `pr_refresh`,
+# `pr_refresh_head` and `pr` — so there is no adapter to configure and no
+# credential to acquire for them. Declaring the input anyway would make the
+# Dispatcher render an adapter nothing reads, and an operator reading the
+# dispatch record would see a publish tier that decides nothing.
 #
-# The Dispatcher overrides this input via `fabro run --input pr_adapter=...`
-# ONLY when the target repo explicitly configures `dispatcher.codex_models.pr`
-# (routing the publish node to a Codex model) or `dispatcher.acp_nodes.pr`
-# (any adapter); absent that, this default stands. It exists as a SEPARATE
-# input from the implementer adapters so the publish node's model moves
-# independently of theirs.
-pr_adapter = '{"agent": "claude-acp", "model": "claude-haiku-4-5", "effort": "high"}'
+# The retired input SURVIVES on the groom-kind variant alone
+# (`.fabro/workflows/groom-work-item/workflow.toml`, which declares it under
+# its own name), because what that variant's `pr` node publishes is a FILING
+# PLAN for the host rather than a Git branch or a pull request, and encoding an
+# approved cut IS a judgement. A repository-level `dispatcher.acp_nodes.pr`
+# entry is therefore honoured for that variant and IGNORED-and-journaled for
+# this one, while a per-dispatch `--acp-node pr=...` override on this workflow
+# refuses before the item is claimed: it asks for an adapter for a command
+# stage, and silently discarding it would leave the operator reading a journal
+# that said their override was honoured.
 
 # ACP adapter for the REVIEW node (Slice A / bd-ib-egms32) — the Claude
 # subscription, pinned to Opus 4.8 + high thinking. The model CANNOT be set
@@ -219,8 +219,8 @@ pr_adapter = '{"agent": "claude-acp", "model": "claude-haiku-4-5", "effort": "hi
 # run does not substitute; CI never runs the review node.
 review_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
 
-# ACP adapter for the DISPOSITION node. Defaults to the same MODEL-un-pinned
-# Claude adapter as `pr_adapter` — the same PACKAGE as `implement_adapter`, but
+# ACP adapter for the DISPOSITION node. Defaults to a MODEL-un-pinned
+# Claude adapter — the same PACKAGE as `implement_adapter`, but
 # with no ANTHROPIC_MODEL / CLAUDE_CODE_EFFORT_LEVEL prefix, so it does not
 # inherit the implementer tier. Maintainers can pin the disposition model
 # independently by prefixing adapter-owned env assignments here, using the same
