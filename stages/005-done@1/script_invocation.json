@@ -1,0 +1,5 @@
+{
+  "script": "test $(cat /tmp/eut-j) = 2",
+  "command": "exec 2>&1\ntest $(cat /tmp/eut-j) = 2",
+  "language": "shell"
+}
