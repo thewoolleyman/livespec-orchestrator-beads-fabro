@@ -12,18 +12,22 @@ from typing import Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._session_wait_ack import ack_wait
 from livespec_orchestrator_beads_fabro.commands._session_wait_gate import (
-    GateStatusLauncher,
-    observe_gate_target,
     resolve_primary_repository,
 )
+from livespec_orchestrator_beads_fabro.commands._session_wait_pane import freeze_pane_target
 from livespec_orchestrator_beads_fabro.commands._session_wait_records import (
     process_generation_token,
+)
+from livespec_orchestrator_beads_fabro.commands._session_wait_routing import (
+    default_wait_launcher,
+    observe_wait_target,
 )
 from livespec_orchestrator_beads_fabro.commands._session_wait_types import (
     GateObservation,
     GateTarget,
     ProbeLauncher,
     WaitRequest,
+    WaitTarget,
 )
 from livespec_orchestrator_beads_fabro.commands.session_wait_inventory import (
     InventorySnapshot,
@@ -59,8 +63,8 @@ class SessionWaitCliSeams:
 
 _DEFAULT_SEAMS = SessionWaitCliSeams(
     primary_repository=resolve_primary_repository,
-    launcher=GateStatusLauncher,
-    observe_target=observe_gate_target,
+    launcher=default_wait_launcher,
+    observe_target=observe_wait_target,
     process_generation=process_generation_token,
     wall_clock=time.time,
     use_tmp_directory=True,
@@ -78,7 +82,12 @@ def _build_parser() -> argparse.ArgumentParser:
     _ = wait.add_argument("--session-id", required=True)
     _ = wait.add_argument("--wait-id", required=True)
     _ = wait.add_argument("--deadline-seconds", required=True, type=float)
-    _ = wait.add_argument("--gate", action="append", required=True)
+    _ = wait.add_argument("--gate", action="append")
+    # Two values rather than one delimited string: a Herdr pane id carries a
+    # colon by construction (`w1:p1`) and a socket path may carry a colon or
+    # a space, so any delimiter this surface chose would be ambiguous for its
+    # own arguments.
+    _ = wait.add_argument("--pane", action="append", nargs=2, metavar=("SOCKET", "PANE_ID"))
     ack = subparsers.add_parser("ack")
     _ = ack.add_argument("--repo", required=True)
     _ = ack.add_argument("--session-id", required=True)
@@ -122,6 +131,20 @@ def _snapshot_payload(*, snapshot: InventorySnapshot) -> dict[str, object]:
     }
 
 
+def _frozen_targets(*, args: argparse.Namespace, gate_store_root: Path) -> tuple[WaitTarget, ...]:
+    """Every target this invocation named, frozen as it stands right now."""
+    gate_ids = cast("list[str] | None", args.gate) or []
+    panes = cast("list[list[str]] | None", args.pane) or []
+    gates: tuple[WaitTarget, ...] = tuple(
+        GateTarget.freeze(gate_store_root=gate_store_root, run_id=run_id) for run_id in gate_ids
+    )
+    frozen_panes: tuple[WaitTarget, ...] = tuple(
+        freeze_pane_target(socket_path=Path(socket_path), pane_id=pane_id)
+        for socket_path, pane_id in panes
+    )
+    return gates + frozen_panes
+
+
 def _wait_command(
     *,
     args: argparse.Namespace,
@@ -132,10 +155,7 @@ def _wait_command(
 ) -> int:
     from livespec_orchestrator_beads_fabro.commands.session_wait import run_wait
 
-    gate_ids = cast("list[str]", args.gate)
-    targets = tuple(
-        GateTarget.freeze(gate_store_root=gate_store_root, run_id=run_id) for run_id in gate_ids
-    )
+    targets = _frozen_targets(args=args, gate_store_root=gate_store_root)
     result = run_wait(
         request=WaitRequest(
             wait_id=str(args.wait_id),
@@ -196,7 +216,8 @@ def _ack_command(
 
 
 def main(*, argv: list[str] | None = None, seams: SessionWaitCliSeams = _DEFAULT_SEAMS) -> int:
-    args = _build_parser().parse_args(argv)
+    parser = _build_parser()
+    args = parser.parse_args(argv)
     primary = seams.primary_repository(repository=Path(str(args.repo)))
     gate_store_root, wait_store_root = _roots(
         primary=primary,
@@ -204,6 +225,13 @@ def main(*, argv: list[str] | None = None, seams: SessionWaitCliSeams = _DEFAULT
     )
     command = str(args.command)
     if command == "wait":
+        # Neither target option is individually required — a wait may watch
+        # gates, panes or both — so the at-least-one rule is enforced here.
+        # Arming with no target at all would block for the whole deadline and
+        # then report a clean expiry, which reads as a wait that observed
+        # something and saw nothing end.
+        if not (args.gate or args.pane):
+            parser.error("wait requires at least one --gate or --pane target")
         return _wait_command(
             args=args,
             primary=primary,

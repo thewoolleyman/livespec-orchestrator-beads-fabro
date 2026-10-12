@@ -13,9 +13,13 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_records import (
     wait_store_lock,
     write_wait_record,
 )
+from livespec_orchestrator_beads_fabro.commands._session_wait_routing import (
+    wait_target_from_payload,
+)
 from livespec_orchestrator_beads_fabro.commands._session_wait_types import (
     GateObservation,
-    GateTarget,
+    WaitTarget,
+    observation_is_running,
 )
 
 __all__: list[str] = [
@@ -43,7 +47,7 @@ class InventorySnapshot:
 
 
 class TargetObserver(Protocol):
-    def __call__(self, *, target: GateTarget, observed_at: float) -> GateObservation: ...
+    def __call__(self, *, target: WaitTarget, observed_at: float) -> GateObservation: ...
 
 
 class ProcessGeneration(Protocol):
@@ -66,14 +70,6 @@ def _unavailable_record(
     )
 
 
-def _target_from_payload(*, payload: dict[str, object]) -> GateTarget:
-    return GateTarget(
-        gate_store_root=Path(str(payload["gate_store_root"])),
-        run_id=str(payload["run_id"]),
-        generation=str(payload["generation"]),
-    )
-
-
 def _inventory_record(
     *,
     payload: dict[str, object],
@@ -84,7 +80,7 @@ def _inventory_record(
     targets = cast("list[dict[str, object]]", payload["targets"])
     observations = tuple(
         observe_target(
-            target=_target_from_payload(payload=target_payload),
+            target=wait_target_from_payload(payload=target_payload),
             observed_at=observed_at,
         )
         for target_payload in targets
@@ -97,11 +93,18 @@ def _inventory_record(
     elif actual_generation != str(waiter["generation"]):
         findings.add("waiter-replaced")
     waiter_unavailable = actual_generation != str(waiter["generation"])
-    if waiter_unavailable and any(observation.state == "RUNNING" for observation in observations):
+    # Running-ness is per target KIND, so these two tests go through the
+    # shared predicate: a `working` pane measured against the gate state name
+    # alone would read as a target that had already ended, which is both a
+    # missing `running-without-waiter` finding and a fabricated
+    # `ended-unacknowledged` one.
+    if waiter_unavailable and any(
+        observation_is_running(observation=observation) for observation in observations
+    ):
         findings.add("running-without-waiter")
     acknowledgement = cast("dict[str, object]", payload["acknowledgement"])
     if not bool(acknowledgement["acknowledged"]) and any(
-        observation.state != "RUNNING" for observation in observations
+        not observation_is_running(observation=observation) for observation in observations
     ):
         findings.add("ended-unacknowledged")
     if observed_at > float(str(payload["deadline_at"])) and not bool(payload["return_ready"]):

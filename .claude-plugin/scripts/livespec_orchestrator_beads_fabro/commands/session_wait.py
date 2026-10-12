@@ -19,6 +19,11 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_gate import (
     resolve_primary_repository,
 )
 from livespec_orchestrator_beads_fabro.commands._session_wait_lock import LockBudget
+from livespec_orchestrator_beads_fabro.commands._session_wait_pane import (
+    HerdrPaneLauncher,
+    freeze_pane_target,
+    observe_pane_target,
+)
 from livespec_orchestrator_beads_fabro.commands._session_wait_records import (
     REGISTRATION_CONFLICT,
     REGISTRATION_UNAVAILABLE,
@@ -28,14 +33,20 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_records import (
     record_return_ready,
     register_wait,
 )
+from livespec_orchestrator_beads_fabro.commands._session_wait_routing import (
+    RoutingLauncher,
+    observe_wait_target,
+)
 from livespec_orchestrator_beads_fabro.commands._session_wait_types import (
     GateObservation,
     GateTarget,
+    PaneTarget,
     Probe,
     ProbeLauncher,
     WaitRequest,
     WaitResult,
     freeze_gate_pointer,
+    observation_is_running,
 )
 from livespec_orchestrator_beads_fabro.commands.session_wait_inventory import (
     InventoryRecord,
@@ -48,16 +59,22 @@ __all__: list[str] = [
     "GateObservation",
     "GateStatusLauncher",
     "GateTarget",
+    "HerdrPaneLauncher",
     "InventoryRecord",
     "InventorySnapshot",
+    "PaneTarget",
+    "RoutingLauncher",
     "SessionWaitCliSeams",
     "WaitRequest",
     "WaitResult",
     "WaiterIdentity",
     "ack_wait",
     "freeze_gate_pointer",
+    "freeze_pane_target",
     "inventory_waits",
     "main",
+    "observe_pane_target",
+    "observe_wait_target",
     "register_wait",
     "resolve_primary_repository",
     "run_wait",
@@ -212,9 +229,17 @@ def _observe_until(
 
 
 def _first_terminal(*, observations: dict[str, GateObservation]) -> GateObservation | None:
-    """The earliest-observed target that has left the running state."""
+    """The earliest-observed target that has left ITS OWN running state.
+
+    The predicate is per target kind rather than one shared state name: a
+    detached gate continues on `RUNNING` and a Herdr pane on `working`, so a
+    single-name test would read every working pane as a finished target and
+    return a verdict about a pane that is still mid-turn.
+    """
     terminal = [
-        observation for observation in observations.values() if observation.state != "RUNNING"
+        observation
+        for observation in observations.values()
+        if not observation_is_running(observation=observation)
     ]
     if not terminal:
         return None
