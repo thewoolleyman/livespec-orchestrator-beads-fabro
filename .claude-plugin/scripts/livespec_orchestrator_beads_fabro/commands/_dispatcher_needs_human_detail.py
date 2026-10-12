@@ -38,9 +38,10 @@ __all__: list[str] = [
 ]
 
 _UNKNOWN_RUN = "unknown-run"
-_PRESERVED_POINTER = "see the preserve-by-reference pointer on the item for the dump digest"
+_POINTER_PHRASE = "the preserve-by-reference pointer on the item for the dump digest"
+_PRESERVED_POINTER = f"see {_POINTER_PHRASE}"
 _FALL_BACK_TO_POINTER = (
-    "so rely on the preserve-by-reference pointer on the item for the dump digest"
+    f"rework from the preserve-by-reference dump pointer instead — see {_POINTER_PHRASE}"
 )
 
 # The two NEGATIVE sentinels the terminal node writes when it preserved
@@ -50,34 +51,81 @@ _FALL_BACK_TO_POINTER = (
 _PUSH_FAILED_SENTINEL = f"{NEEDS_HUMAN_MARKER}_PUSH_FAILED"
 _NO_RUN_ID_SENTINEL = f"{NEEDS_HUMAN_MARKER}_NO_RUN_ID"
 
+# The terminal's own reason line, and the routing suffix it always carries.
+# The reason is the ONLY account of why the loop gave up that a node whose
+# failure the engine never classified can leave, so it is rendered for every
+# ending rather than only the attributed ones.
+_REASON_PREFIX = f"{NEEDS_HUMAN_MARKER}: "
+_REASON_SUFFIX = "; run terminated, work preserved by reference, decision routed to the ledger"
+_REASON_UNRECORDED = "not recorded"
+
+# The label every outlived loop signature is reported under. It says in as many
+# words that the signature is NOT this ending's cause, because the signature
+# text alone is identical to a causal one and a reader cannot tell them apart.
+_HISTORY_LABEL = " ".join(
+    (
+        "earlier loop failure signatures the run outlived,",
+        "recorded as history and NOT as this ending's cause",
+    )
+)
+
 
 def needs_human_terminal_detail(
     *,
     work_item_id: str,
     run_id: str | None,
     text: str,
-    causal: CausalStageFailure | None,
+    causal: CausalStageFailure,
     failure: FabroFailureDetail | None,
 ) -> str:
     """Render one needs-human terminal for the operator who has to triage it.
 
     `text` is the run's own output — the same channel the sentinel was matched
-    on — and it is read for ONE question: whether the terminal preserved
-    anything. Nothing else in the render depends on it.
+    on — and it is read for exactly two questions: whether the terminal
+    preserved anything, and what reason it printed. Nothing else in the render
+    depends on it.
     """
     run_label = _UNKNOWN_RUN if run_id is None else run_id
     clauses = (
         _head(run_label=run_label, causal=causal),
         *_attribution(causal=causal, failure=failure),
+        _reason(text=text),
         _preservation(run_id=run_id, text=text),
         _decision(work_item_id=work_item_id),
     )
     return "; ".join(clauses)
 
 
-def _head(*, run_label: str, causal: CausalStageFailure | None) -> str:
-    """The opening clause, which is where the two endings part company."""
-    if causal is None:
+def _reason(*, text: str) -> str:
+    """The terminal node's own emitted reason, stripped of its routing suffix.
+
+    Rendered for every ending because it is the only channel some failures have
+    at all: a `publish_draft` refusal writes its whole diagnosis — the file it
+    refused and the permission it lacked — into this line, and the engine
+    classifies no cause for it. Dropping the clause lost that diagnosis from the
+    one surface an operator reads.
+    """
+    with_fallback = f"{text}\n{_REASON_PREFIX}{_REASON_UNRECORDED}"
+    recorded = (
+        with_fallback.partition(_REASON_PREFIX)[2]
+        .partition(_REASON_SUFFIX)[0]
+        .splitlines()[0]
+        .strip()
+    )
+    return f"terminal reason: {recorded or _REASON_UNRECORDED}"
+
+
+def _head(*, run_label: str, causal: CausalStageFailure) -> str:
+    """The opening clause, which is where the three endings part company.
+
+    The `UNESTABLISHED` arm keeps the wording the generic ending always had,
+    because that wording asserts only what every needs-human terminal has in
+    common: the run terminated there. It is the one arm that must claim nothing
+    about WHY, so it says nothing about why — and in particular it does not say
+    no agent asked anything, which the fault arm says and which no unreadable
+    record can support.
+    """
+    if not causal.is_stage_failure:
         return f"run {run_label} terminated at the {ESCALATION_NODE_ID} node (needs-human)"
     return (
         f"run {run_label} failed at {_stage_phrase(stages=causal.stages)} after a "
@@ -95,31 +143,41 @@ def _stage_phrase(*, stages: tuple[str, ...]) -> str:
 
 def _attribution(
     *,
-    causal: CausalStageFailure | None,
+    causal: CausalStageFailure,
     failure: FabroFailureDetail | None,
 ) -> tuple[str, ...]:
     """What the engine recorded about the failure, innermost cause first.
 
-    Empty for an agent-reported ending, which has no engine-recorded failure to
-    attribute. The cause is the INNERMOST element of the chain, already selected
-    by `_fabro_port_records`: the outer element is the fixed `ACP protocol
-    error` wrapper, which identifies the transport and names no fault.
+    Carries no cause for an ending no stage failure caused. The cause is the
+    INNERMOST element of the chain, already selected by `_fabro_port_records`:
+    the outer element is the fixed `ACP protocol error` wrapper, which
+    identifies the transport and names no fault.
 
     The CLASSIFICATION rides beside the cause rather than replacing it. Quoting
     the cause alone already happens to contain the backgrounded command, inside
     the engine's own prose — so a reader could find the command and still have
     no idea it was a transport fault, which is the whole misreading this clause
     exists to prevent.
+
+    HISTORY IS REPORTED UNDER EVERY KIND, and labelled as history. A loop
+    signature whose stage is not currently failed survives from a failure the
+    run outlived; the engine never clears it. Dropping it loses the run's own
+    account, and reporting it as the cause invents one — so it is named as what
+    it is, which is also what tells the reader why this ending's attribution
+    does not mention it.
     """
-    if causal is None:
-        return ()
     clauses: list[str] = []
-    if failure is not None and failure.cause is not None:
-        clauses.append(f"innermost cause: {failure.cause}")
-        fault = transport_fault_from_cause(cause=failure.cause)
-        if fault is not None:
-            clauses.append(transport_fault_clause(fault=fault))
-    clauses.append(f"recorded loop failure signature: {', '.join(causal.signatures)}")
+    if causal.is_stage_failure:
+        if failure is not None and failure.cause is not None:
+            clauses.append(f"innermost cause: {failure.cause}")
+            fault = transport_fault_from_cause(cause=failure.cause)
+            if fault is not None:
+                clauses.append(transport_fault_clause(fault=fault))
+        if causal.signatures:
+            clauses.append(f"recorded loop failure signature: {', '.join(causal.signatures)}")
+    if causal.history:
+        outlived = ", ".join(causal.history)
+        clauses.append(f"{_HISTORY_LABEL}: {outlived}")
     return tuple(clauses)
 
 
@@ -138,22 +196,27 @@ def _preservation(*, run_id: str | None, text: str) -> str:
     really there, which is the mirror-image lie.
     """
     if run_id is None:
-        return (
-            "the tree was NOT preserved on a run-scoped ref (no run id was parsed from "
-            f"the launch output, so no such ref can be named), {_FALL_BACK_TO_POINTER}"
-        )
+        return _not_pushed(because="no run id was parsed from the launch output")
     if _NO_RUN_ID_SENTINEL in text:
-        return (
-            "the tree was NOT preserved on a run-scoped ref (the terminal reported that "
-            f"no run id reached it, so there was no ref to push), {_FALL_BACK_TO_POINTER}"
-        )
+        return _not_pushed(because="the terminal reported that no run id reached it")
     if _PUSH_FAILED_SENTINEL in text:
-        return (
-            "the tree was NOT preserved on a run-scoped ref (the terminal reported that "
-            f"its preservation push failed), {_FALL_BACK_TO_POINTER}"
-        )
+        return _not_pushed(because="the terminal reported that its preservation push failed")
     ref = f"refs/heads/needs-human/{run_id}"
     return f"the tree was preserved on {ref} ({_PRESERVED_POINTER})"
+
+
+def _not_pushed(*, because: str) -> str:
+    """The negative preservation clause, naming the measurement that retracted the ref.
+
+    Says both that the tree was not PUSHED and that it is therefore not
+    PRESERVED there, because those are two different facts an operator acts on
+    separately: the first is what happened, the second is why the ref named
+    elsewhere in this detail is not worth fetching.
+    """
+    return (
+        f"the tree was not pushed to a run-scoped ref, so it is NOT preserved there "
+        f"({because}); {_FALL_BACK_TO_POINTER}"
+    )
 
 
 def _decision(*, work_item_id: str) -> str:
