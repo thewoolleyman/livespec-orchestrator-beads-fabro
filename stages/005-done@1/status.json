@@ -1,0 +1,6 @@
+{
+  "outcome": "succeeded",
+  "notes": "Script completed: test $(cat /tmp/eut-j) = 2",
+  "failure_reason": null,
+  "timestamp": "2026-10-12T04:33:20.396466590Z"
+}
