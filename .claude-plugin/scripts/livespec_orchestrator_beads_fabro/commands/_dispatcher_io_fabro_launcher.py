@@ -209,7 +209,6 @@ class WatchedFabroLauncher:
                     port=port,
                     journal=journal,
                     run_id=known_run_id,
-                    stall_seconds=stall_seconds,
                     quiet_seconds=quiet_window_seconds(samples=window),
                 )
                 return _WatchResult(stalled_run_id=known_run_id)
@@ -250,17 +249,26 @@ class WatchedFabroLauncher:
         port: FabroPort,
         journal: JournalWriter,
         run_id: str,
-        stall_seconds: float,
         quiet_seconds: float | None,
     ) -> None:
         """`fabro rm -f` the stalled run and journal what governed the decision.
 
-        `stall_seconds` is the resolved stall interval and `quiet_seconds`
-        is the window actually confirmed against it. Both ride the record
-        because the interval alone cannot be checked — it says what the
-        threshold was, never that anything reached it — and the 2026-10-09
-        incident (bd-ib-n44n4e) had to be reconstructed from the run's own
-        event stream because the record carried neither figure.
+        THREE figures ride the record, and each answers a question the other
+        two cannot. `plan.stall_window.seconds` is the resolved interval and
+        `quiet_seconds` is the window actually confirmed against it: the
+        interval alone cannot be checked — it says what the threshold was,
+        never that anything reached it — and the 2026-10-09 incident
+        (bd-ib-n44n4e) had to be reconstructed from the run's own event stream
+        because the record carried neither figure.
+
+        `plan.stall_window.layer` is the third, and it is the FIRST question
+        asked of a cancellation: an interval of 7200 seconds is the fleet
+        default on one target and a deliberate repository override on another,
+        and only the layer separates them — so only the layer says whether
+        raising `dispatcher.stall_timeout_seconds` would have saved this run
+        or whether it had already been raised. The interval is read off the
+        plan here rather than taken as an argument so the record cannot name
+        one window while the decision above graded against another.
         """
         rm = port.rm(
             run_id=run_id,
@@ -272,7 +280,8 @@ class WatchedFabroLauncher:
                 "stage": "watchdog-stall-cancel",
                 "run_id": run_id,
                 "rm_exit_code": rm.command.exit_code,
-                "stall_seconds": stall_seconds,
+                "stall_seconds": plan.stall_window.seconds,
+                "stall_layer": plan.stall_window.layer,
                 "quiet_seconds": quiet_seconds,
             }
         )
