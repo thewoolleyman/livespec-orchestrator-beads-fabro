@@ -1,0 +1,5 @@
+{
+  "script": "touch /tmp/eut-fix-applied",
+  "command": "exec 2>&1\ntouch /tmp/eut-fix-applied",
+  "language": "shell"
+}
