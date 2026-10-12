@@ -249,11 +249,46 @@ def test_a_blank_next_node_id_names_no_executing_node() -> None:
 
 
 def test_the_factory_record_wins_over_the_verdict(repo: Path) -> None:
-    """Same records, factory holding the run: resumed_at is the factory's own node."""
+    """Same records, factory holding the run: resumed_at is the factory's own node.
+
+    The factory names `review_fix`, which is a node the records' `verified`
+    verdict does NOT imply. That choice is what makes this case DISCRIMINATE
+    after the scripted publication: the fallback answers `pr_refresh` for
+    `verified`, so a factory naming the retired `pr` normalizes to the very
+    value the fallback produces, and the assertion would then pass just as well
+    for a gather that had ignored the factory. The normalization itself is
+    asserted in the sibling case below, where the SOURCE separates the two
+    readings.
+    """
+    assert _GATHER_PATH.is_file()
+    gather = _gather(
+        repo=repo, item=_item(), runner=_runner(inspect=_ok(stdout=_inspect(node="review_fix")))
+    )
+    assert gather.anchor is not None
+    assert gather.anchor.resumed_at == "review_fix"
+    assert gather.anchor.source == SOURCE_FACTORY_RUN
+    assert gather.anchor.head == _HEAD
+
+
+def test_a_factory_naming_the_retired_pr_node_resumes_at_pr_refresh(repo: Path) -> None:
+    """The scripted publication's entry correction, through the real gather.
+
+    A run terminated under a build older than the scripted publication reports
+    `pr` as the node it was executing, and the clause requires that entry to
+    normalize to `pr_refresh`. Entering `pr` directly would read the published
+    head out of refresh provenance `pr_refresh` never established, and would
+    ready a pull request whose base nothing had rebased onto the authoritative
+    default.
+
+    The SOURCE is asserted to remain the factory's: the correction fixes the
+    STAGE without demoting the reading to the inferred one, and an anchor
+    reporting `pull-request-latest-record` here would tell an operator the
+    factory had lost a run it still holds.
+    """
     assert _GATHER_PATH.is_file()
     gather = _gather(repo=repo, item=_item(), runner=_runner())
     assert gather.anchor is not None
-    assert gather.anchor.resumed_at == "pr"
+    assert gather.anchor.resumed_at == "pr_refresh"
     assert gather.anchor.source == SOURCE_FACTORY_RUN
     assert gather.anchor.head == _HEAD
 
