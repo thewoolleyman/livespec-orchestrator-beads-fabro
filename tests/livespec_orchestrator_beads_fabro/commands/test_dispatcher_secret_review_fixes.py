@@ -42,6 +42,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel impor
     route_secrets_through_vault,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_vault import FabroVaultSink
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import (
+    DEFAULT_STALL_WINDOW,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import LivenessSample
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroRunSummary
 
@@ -338,7 +341,11 @@ def test_launch_guard_releases_only_after_the_worker_reports_running(
         lambda **_: LivenessSample(last_event_epoch=None, observed_at=0.0),
     )
     _ = launcher._watch(  # noqa: SLF001 - exercises the exact snapshot-release boundary.
-        plan=SimpleNamespace(repo=Path("/workspace/repo"), work_item_id="bd-ib-review"),
+        plan=SimpleNamespace(
+            repo=Path("/workspace/repo"),
+            work_item_id="bd-ib-review",
+            stall_window=DEFAULT_STALL_WINDOW,
+        ),
         runner=cast("CommandRunner", object()),
         journal=cast("JournalWriter", object()),
         thread=cast("threading.Thread", _AliveSequence(alive=[True, True, True, True, False])),

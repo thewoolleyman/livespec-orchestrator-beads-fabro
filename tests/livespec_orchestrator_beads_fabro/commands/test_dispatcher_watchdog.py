@@ -46,6 +46,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     build_plan,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import (
+    DEFAULT_STALL_WINDOW,
+    StallWindow,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
     DEFAULT_STALL_SECONDS,
     STALL_SECONDS_ENV_VAR,
@@ -59,13 +63,27 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroRunSummary,
     fabro_run_summaries_from_stdout,
 )
+from livespec_orchestrator_beads_fabro.commands._node_timeouts import REPOSITORY_LAYER
 
 # ---------------------------------------------------------------------------
 # Shared fakes
 # ---------------------------------------------------------------------------
 
 
-def _plan(*, repo: Path) -> DispatchPlan:
+def _plan(*, repo: Path, stall_seconds: float | None = None) -> DispatchPlan:
+    """A dispatch plan, optionally carrying a tight stall window.
+
+    `stall_seconds` stands in for a dispatch target that configured
+    `dispatcher.stall_timeout_seconds`: the window the watch loop grades
+    against rides the plan (bd-ib-3ugnfr), so a test that needs a window
+    tighter than the 7200-second default declares it here rather than
+    through the environment.
+    """
+    window = (
+        DEFAULT_STALL_WINDOW
+        if stall_seconds is None
+        else StallWindow(seconds=stall_seconds, layer=REPOSITORY_LAYER)
+    )
     return build_plan(
         repo=repo,
         work_item_id="livespec-impl-beads-oyg",
@@ -74,6 +92,7 @@ def _plan(*, repo: Path) -> DispatchPlan:
         fabro_bin="fabro",
         janitor=None,
         janitor_checkout=repo / "janitor-co",
+        stall_window=window,
     )
 
 
@@ -661,7 +680,7 @@ def test_watched_launcher_cancels_a_confirmed_stall(
 
 
 def test_watched_launcher_cancels_after_progress_then_a_confirmed_quiet_window(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    tmp_path: Path,
 ) -> None:
     """The production shape of bd-ib-n44n4e, driven through the real watch loop.
 
@@ -673,7 +692,6 @@ def test_watched_launcher_cancels_after_progress_then_a_confirmed_quiet_window(
     incident had to be reconstructed by hand from a run's event stream
     because the journal recorded a cancel with neither figure in it.
     """
-    monkeypatch.setenv(STALL_SECONDS_ENV_VAR, "1000")
     # Two advancing readings, then the scripted runner clamps to the last
     # one: progress, then silence. The injected clock advances 600s per
     # sample, so the quiet window reaches 1200s at the fourth poll.
@@ -684,7 +702,9 @@ def test_watched_launcher_cancels_after_progress_then_a_confirmed_quiet_window(
     runner = _ScriptedFabroRunner(events_jsons=progress_then_silence)
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
-    result = launcher.launch(plan=_plan(repo=tmp_path), runner=runner, journal=journal)
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
+    )
 
     assert result.stalled_run_id == "01RUN"
     assert runner.rm_calls == ["01RUN"]

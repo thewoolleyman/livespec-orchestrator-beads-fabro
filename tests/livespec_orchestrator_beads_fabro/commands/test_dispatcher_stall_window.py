@@ -1,0 +1,214 @@
+"""Tests for the host-side stall watchdog's configured window (bd-ib-3ugnfr).
+
+`SPECIFICATION/contracts.md` section "ACP node timeouts" governs the run's
+stall watchdog through the SAME layers as the per-node timeouts, and the
+host-side watchdog used to ignore that key entirely: it read the environment
+variable `LIVESPEC_DISPATCH_STALL_SECONDS` with a private 1500-second default,
+so a configured `dispatcher.stall_timeout_seconds` governed the phase graph
+while the host backstop cancelled against an unrelated number. Measured on
+legacy hp run 01M4QGDETRJ3 (2026-10-12) that cost a run roughly four hours of
+unpublished work.
+
+The module import sits INSIDE each test body (the new-module pattern this
+repo's decomposition slices use) so the Red commit fails on a genuine
+assertion -- the module file's absence -- rather than at collection.
+"""
+
+from __future__ import annotations
+
+import importlib
+import threading
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import pytest
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_io_fabro_launcher
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import WatchedFabroLauncher
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan, build_plan
+from livespec_orchestrator_beads_fabro.commands._node_timeouts import REPOSITORY_LAYER
+
+_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window"
+
+_WORK_ITEM_ID = "bd-ib-3ugnfr"
+_RUN_ID = "01RUN"
+_PS_RUNNING = (
+    f'[{{"run_id": "{_RUN_ID}", "goal": "Work-item: {_WORK_ITEM_ID}",'
+    ' "status": {"kind": "running"}}]'
+)
+# One timestamp, repeated on every poll: the event stream has flatlined, which
+# is the only condition `decide_stall` confirms a stall on.
+_FROZEN_EVENTS = '[{"timestamp": "2026-10-12T11:28:00Z"}]'
+
+
+def _module_path() -> Path:
+    """Where the stall-window module lives, beside the launcher that reads it."""
+    return Path(str(_dispatcher_io_fabro_launcher.__file__)).with_name(
+        "_dispatcher_stall_window.py"
+    )
+
+
+def _stall_window_module() -> object:
+    """The stall-window module, imported inside a test body rather than at top.
+
+    The existence assertion LEADS the import so that every test here fails on
+    a genuine assertion while the module is absent, rather than on a
+    `ModuleNotFoundError` that would prove only unimportability.
+    """
+    assert _module_path().is_file()
+    return importlib.import_module(_MODULE)
+
+
+def _write_config(*, repo: Path, dispatcher_keys: str) -> None:
+    """Write a `.livespec.jsonc` carrying a connection block and `dispatcher_keys`.
+
+    The connection block is required rather than decorative: once the file
+    exists the launcher's stale-item check resolves a store config from it.
+    """
+    _ = (repo / ".livespec.jsonc").write_text(
+        "{\n"
+        '  "livespec-orchestrator-beads-fabro": {\n'
+        '    "connection": {"prefix": "bd-ib", "tenant": "t", "fake": true},\n'
+        f'    "dispatcher": {{{dispatcher_keys}}}\n'
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+
+@dataclass(kw_only=True)
+class _RecordingJournal:
+    records: list[dict[str, object]] = field(default_factory=list)
+
+    def append(self, *, record: dict[str, object]) -> None:
+        self.records.append(record)
+
+
+@dataclass(kw_only=True)
+class _ScriptedFabroRunner:
+    """A CommandRunner scripting fabro's run/ps/events/rm subprocesses.
+
+    `fabro run` BLOCKS on `run_done` so the background thread stays alive
+    while the foreground watch loop runs; `fabro rm` sets it, modelling fabro
+    killing the run. Never launches a real process.
+    """
+
+    events_jsons: list[str]
+    run_done: threading.Event = field(default_factory=threading.Event)
+    rm_calls: list[str] = field(default_factory=list)
+    _poll: int = 0
+
+    def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
+        _ = (cwd, timeout_seconds)
+        verb = argv[1] if len(argv) > 1 else ""
+        if verb == "run":
+            _ = self.run_done.wait(timeout=10.0)
+            return CommandResult(exit_code=0, stdout=f"    Run: {_RUN_ID}\n", stderr="")
+        if verb == "ps":
+            return CommandResult(exit_code=0, stdout=_PS_RUNNING, stderr="")
+        if verb == "events":
+            index = min(self._poll, len(self.events_jsons) - 1)
+            self._poll += 1
+            return CommandResult(exit_code=0, stdout=self.events_jsons[index], stderr="")
+        if verb == "rm":
+            self.rm_calls.append(argv[-1])
+            self.run_done.set()
+            return CommandResult(exit_code=0, stdout="", stderr="")
+        return CommandResult(exit_code=1, stdout="", stderr=f"unexpected argv {argv}")
+
+
+def _advancing_clock() -> object:
+    """A monotonic clock that jumps 600s per reading (one reading per poll)."""
+    ticks = iter(float(tick) for tick in range(0, 6_000_000, 600))
+    return lambda: next(ticks)
+
+
+def _plan(*, repo: Path, stall_window: object) -> DispatchPlan:
+    return build_plan(
+        repo=repo,
+        work_item_id=_WORK_ITEM_ID,
+        workflow_toml=repo / "wf.toml",
+        goal_file=repo / "goal.md",
+        fabro_bin="fabro",
+        janitor=None,
+        janitor_checkout=repo / "janitor-co",
+        stall_window=stall_window,
+    )
+
+
+def test_host_stall_watchdog_window_resolves_from_the_repository_stall_timeout_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The configured key governs the window the watchdog cancels against.
+
+    End to end through the layers the node timeouts already use: the dispatch
+    target's `.livespec.jsonc` declares 3000 seconds, the resolution reports
+    that value and names the repository layer that supplied it, and the watch
+    loop grades its confirmed quiet window against THAT number rather than
+    against a literal of its own.
+    """
+    stall_window = _stall_window_module()
+    _write_config(repo=tmp_path, dispatcher_keys='"stall_timeout_seconds": 3000')
+
+    window = stall_window.resolve_stall_window(cwd=tmp_path)  # pyright: ignore[reportAttributeAccessIssue]
+
+    assert (window.seconds, window.layer) == (3000.0, REPOSITORY_LAYER)
+
+    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", lambda **_: [])
+    runner = _ScriptedFabroRunner(events_jsons=[_FROZEN_EVENTS])
+    journal = _RecordingJournal()
+    launcher = WatchedFabroLauncher(sleep=lambda _seconds: None, clock=_advancing_clock())
+
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_window=window), runner=runner, journal=journal
+    )
+
+    assert result.stalled_run_id == _RUN_ID
+    assert runner.rm_calls == [_RUN_ID]
+    cancels = [r for r in journal.records if r.get("stage") == "watchdog-stall-cancel"]
+    assert [record.get("stall_seconds") for record in cancels] == [3000.0]
+
+
+def test_a_refused_stall_timeout_value_falls_soft_onto_the_default_window(
+    tmp_path: Path,
+) -> None:
+    """A value the node-timeout validator refuses reports the default, not a crash.
+
+    Zero seconds is refused — a window that fires instantly would disable the
+    backstop by cancelling every run — and the refusal belongs to the
+    dispatch-time validation that names the key before any run exists. The
+    post-run reporting surfaces this resolution serves run after the verdict is
+    already final, so a refusal raised here would crash an escalation write.
+    """
+    stall_window = _stall_window_module()
+    _write_config(repo=tmp_path, dispatcher_keys='"stall_timeout_seconds": 0')
+
+    assert stall_window.resolve_stall_window(cwd=tmp_path) == stall_window.DEFAULT_STALL_WINDOW  # pyright: ignore[reportAttributeAccessIssue]
+
+
+def test_an_unreadable_config_falls_soft_onto_the_default_window(tmp_path: Path) -> None:
+    """An unreadable `.livespec.jsonc` reports the default rather than raising.
+
+    The second of the two fail-soft arms, and a distinct one: the refused value
+    above comes back as a message on the success track, while an unparseable
+    file raises out of the config reader.
+    """
+    stall_window = _stall_window_module()
+    _ = (tmp_path / ".livespec.jsonc").write_text("{ not json at all", encoding="utf-8")
+
+    assert stall_window.resolve_stall_window(cwd=tmp_path) == stall_window.DEFAULT_STALL_WINDOW  # pyright: ignore[reportAttributeAccessIssue]
+
+
+def test_the_scripted_runner_rejects_a_verb_the_launcher_never_issues(tmp_path: Path) -> None:
+    """Exercise the fake's defensive fallback directly.
+
+    The launcher issues exactly four verbs; anything else means the fake is
+    standing in for a call it was never written to model, so it reports a
+    failure rather than a plausible success.
+    """
+    runner = _ScriptedFabroRunner(events_jsons=["[]"])
+
+    bogus = runner.run(argv=["fabro", "bogus"], cwd=tmp_path, timeout_seconds=1.0)
+    verbless = runner.run(argv=["fabro"], cwd=tmp_path, timeout_seconds=1.0)
+
+    assert (bogus.exit_code, verbless.exit_code) == (1, 1)

@@ -34,7 +34,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
     StallVerdict,
     decide_stall,
     quiet_window_seconds,
-    resolve_stall_seconds,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_discovery import (
     journaled_discovery,
@@ -154,7 +153,13 @@ class WatchedFabroLauncher:
         thread: threading.Thread,
         port: FabroPort,
     ) -> _WatchResult:
-        stall_seconds = resolve_stall_seconds()
+        # The window this run is graded against comes from the plan, which
+        # resolved `dispatcher.stall_timeout_seconds` through the node timeouts'
+        # own layers once per dispatch. Reading it here rather than resolving a
+        # second time is what keeps it in step with the `stall_timeout` written
+        # into the rendered graph and with the subprocess ceiling derived from
+        # the same number.
+        stall_seconds = plan.stall_window.seconds
         samples: list[LivenessSample] = []
         known_run_id: str | None = None
         worker_running_notified = False
