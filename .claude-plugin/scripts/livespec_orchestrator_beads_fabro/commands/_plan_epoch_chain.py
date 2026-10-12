@@ -28,9 +28,14 @@ missing cache is reconciled by walking the chain forward, while a missing
 progress event is the one record a retry of that operation recovers its
 original transition from. So the harder loss is written first.
 
-EVERY TRANSITION CARRIES ITS OWN RECEIPT into the authority's bounded ring,
-which is what later lets a retried operation be recognised as one the chain
-already holds rather than committed a second time.
+A COMMITTED OPERATION IS NEVER COMMITTED TWICE. A retry carrying an operation
+id the chain already holds recovers the ORIGINAL event, from the epic's
+progress events, and creates no transition — so no handoff is duplicated and
+no deadline moves. The bounded receipt ring in the observed authority is the
+second half of that check and it is the FAIL-CLOSED half: when the ring names
+an operation whose event cannot be read, the retry is REPORTED rather than
+committed afresh, because the ring is proof the transition happened and a
+fresh commit would duplicate the handoff it accounts for.
 """
 
 from __future__ import annotations
@@ -43,7 +48,10 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain_head import (
     ChainHead,
     read_chain_head,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import ChainFinding
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import (
+    ChainFinding,
+    receipt_without_event_finding,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_payload import (
     OperationReceipt,
     TransitionPayload,
@@ -52,6 +60,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_payload import (
     with_receipt,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
+    read_progress_events,
     write_chain_cache,
     write_progress_event,
 )
@@ -69,6 +78,8 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "COMMITTED",
+    "RECOVERED_FROM_PROGRESS_EVENT",
+    "RECOVERED_FROM_RECEIPT_RING",
     "ChainHead",
     "CommittedTransition",
     "StaleEpochRefusal",
@@ -77,10 +88,15 @@ __all__: list[str] = [
     "read_chain_head",
 ]
 
-# How a returned transition came to be. A caller that cannot tell a fresh
-# commit from something the chain already held cannot tell whether its own
-# write happened, which is the question a retried operation exists to ask.
+# How a returned transition came to be. The three are kept apart because a
+# caller that cannot tell a fresh commit from a recovery cannot tell whether
+# its own write happened, which is the question a retry exists to ask — and
+# the two recoveries say different things about how far behind that caller is:
+# the ring was in the authority it already held, while an event had to be
+# found by scanning the epic's history.
 COMMITTED = "committed"
+RECOVERED_FROM_RECEIPT_RING = "recovered-from-receipt-ring"
+RECOVERED_FROM_PROGRESS_EVENT = "recovered-from-progress-event"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -133,8 +149,11 @@ def commit_transition(
     epic_id: str,
     request: TransitionRequest,
 ) -> CommittedTransition | StaleEpochRefusal | ChainFinding:
-    """Commit one authority transition, or refuse the writer as stale."""
+    """Commit one authority transition, recover a retry, or refuse as stale."""
     client = make_beads_client(config=config)
+    already = _already_committed(client=client, epic_id=epic_id, request=request)
+    if already is not None:
+        return already
     observed = request.observed_head.current_token_id
     before = token_reading(client=client, token_id=observed)
     if not before.present:
@@ -204,6 +223,39 @@ def _close_and_project(
         current=candidate,
     )
     return CommittedTransition(payload=payload, source=COMMITTED)
+
+
+def _already_committed(
+    *,
+    client: BeadsClient,
+    epic_id: str,
+    request: TransitionRequest,
+) -> CommittedTransition | ChainFinding | None:
+    """Return what the chain already holds for this operation id, else None.
+
+    The EVENTS are read on every call, not only when the ring names the
+    operation, because the ring is bounded: an operation older than
+    `RECEIPT_RING_SIZE` transitions is absent from it while its event is still
+    on the timeline, and keying on the ring alone would read that retry as new
+    work. The cost is one comment read per transition, which is the price of
+    the only record that carries the transition itself.
+    """
+    operation_id = request.operation_id
+    named_by_ring = any(
+        receipt.operation_id == operation_id for receipt in request.observed_head.authority.receipts
+    )
+    for event in read_progress_events(client=client, epic_id=epic_id):
+        if event.operation_id != operation_id:
+            continue
+        if event.payload is None:
+            return receipt_without_event_finding(epic_id=epic_id, operation_id=operation_id)
+        return CommittedTransition(
+            payload=event.payload,
+            source=RECOVERED_FROM_RECEIPT_RING if named_by_ring else RECOVERED_FROM_PROGRESS_EVENT,
+        )
+    if named_by_ring:
+        return receipt_without_event_finding(epic_id=epic_id, operation_id=operation_id)
+    return None
 
 
 def _refusal_from_reason(
