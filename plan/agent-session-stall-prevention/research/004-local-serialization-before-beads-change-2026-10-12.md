@@ -1,5 +1,33 @@
 # Local serialization alternatives before changing Beads
 
+## Maintainer correction: the required topology includes independent hosts
+
+This correction supersedes this note's host-domain recommendation, not its
+measurements. The maintainer's ruling, relayed on 2026-10-12, is:
+
+> The assumption that writes only occur from a single host is invalid. Beads is
+> a server, and it's exposed as a DOLT server. There may be writes in the future
+> from multiple hosts or multiple containers or cloud instances. There may not
+> even be a shared state where places are writing to beads.
+
+A host/kernel/filesystem fence therefore does not cover the required canonical
+per-epic ownership topology. The passing finite controls below establish their
+stated single-domain behavior only; the independent-domain negative already
+shows the missing guarantee. Routing all writers through a presumed shared host
+is not the accepted requirement. No universal or released recovery proof is
+claimed from this experiment.
+
+The local-first-plan-serialization proposal was generated in an unpublished
+worktree and has been withdrawn without ratification or publication. The
+worktree and local branch were removed; original proposal/journal bytes remain
+private evidence. Beads PR 1 remains closed. Whether an existing server-side bd
+primitive provides a satisfactory local integration, or a Beads change is
+necessary, remains undecided. The relay owner owns that reassessment; this plan
+will consume its result when it affects the recovery ownership fence and will
+not launch parallel backend design. Pane-adapter work and all unrelated work
+continue through their existing owners.
+
+
 ## Maintainer direction and finding
 
 On 2026-10-12 the maintainer required modification or a fork of Beads only when a
