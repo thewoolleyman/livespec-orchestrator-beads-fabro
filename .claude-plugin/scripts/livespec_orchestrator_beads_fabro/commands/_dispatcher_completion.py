@@ -63,12 +63,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer_write import (
     write_proof_pointer,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import (
+    resolve_stall_window,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_ACCEPTANCE_POLICY,
     acceptance_decision,
     effective_acceptance_policy,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import resolve_stall_seconds
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -323,7 +325,7 @@ def bounce_non_convergence_to_backlog(
     # that could not land is the one most worth naming, and an error record that
     # said only "the write failed" leaves nobody able to tell a hung sandbox from
     # a slice that genuinely would not converge.
-    cap = non_convergence_cap(outcome=outcome, stall_seconds=resolve_stall_seconds())
+    cap = non_convergence_cap(outcome=outcome, stall_seconds=resolve_stall_window(cwd=repo).seconds)
     updated = attempt(
         action=lambda: update_work_item_status(
             path=store_config(repo=repo),

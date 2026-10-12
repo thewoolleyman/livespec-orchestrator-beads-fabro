@@ -38,7 +38,9 @@ from livespec_orchestrator_beads_fabro.commands import _dispatcher_completion
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import bounced_to_regroom
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import NON_CONVERGED_MARKER
-from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import resolve_stall_seconds
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import (
+    resolve_stall_window,
+)
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -128,6 +130,20 @@ def _cap_exhausted() -> DispatchOutcome:
     )
 
 
+def _write_stall_timeout(*, repo: Path, seconds: int) -> None:
+    """Declare `dispatcher.stall_timeout_seconds` in `repo`'s committed config.
+
+    The bounce resolves the window the watchdog graded against from the
+    dispatch target's own configuration, so a test that wants a particular
+    observed figure writes the key the resolver reads.
+    """
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"dispatcher": '
+        f'{{"stall_timeout_seconds": {seconds}}}}}}}\n',
+        encoding="utf-8",
+    )
+
+
 def _bounce(
     *, monkeypatch: pytest.MonkeyPatch, outcome: DispatchOutcome, tmp_path: Path
 ) -> tuple[_RecordingJournal, list[dict[str, object]]]:
@@ -205,13 +221,15 @@ def test_the_cap_flattens_to_two_sibling_journal_keys() -> None:
     }
 
 
-def test_the_stall_window_cap_names_the_setting_an_operator_would_tune() -> None:
-    """The cap identity is the env var the stall-window resolver reads."""
+def test_the_stall_window_cap_names_the_setting_an_operator_would_tune(tmp_path: Path) -> None:
+    """The cap identity is the committed key the stall-window resolver reads."""
     module = _module()
 
-    assert module.STALL_WINDOW_CAP == "LIVESPEC_DISPATCH_STALL_SECONDS"
-    # And the resolver the Dispatcher passes it is the one that owns that name.
-    assert resolve_stall_seconds(environ={"LIVESPEC_DISPATCH_STALL_SECONDS": "60"}) == 60.0
+    assert module.STALL_WINDOW_CAP == "dispatcher.stall_timeout_seconds"
+    # And the resolver the Dispatcher passes it is the one that reads that key:
+    # a record naming a knob that moves nothing is worse than no name at all.
+    _write_stall_timeout(repo=tmp_path, seconds=60)
+    assert resolve_stall_window(cwd=tmp_path).seconds == 60.0
 
 
 # --- the flag reads the same predicate the bounce reads ---------------------
@@ -261,7 +279,7 @@ def test_a_stalled_bounce_records_the_window_it_measured(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     module = _module()
-    monkeypatch.setenv("LIVESPEC_DISPATCH_STALL_SECONDS", "1200")
+    _write_stall_timeout(repo=tmp_path, seconds=1200)
 
     journal, writes = _bounce(monkeypatch=monkeypatch, outcome=_stalled(), tmp_path=tmp_path)
 

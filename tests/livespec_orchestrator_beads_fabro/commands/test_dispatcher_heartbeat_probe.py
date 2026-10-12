@@ -49,11 +49,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_heartbeat_probe impo
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import WatchedFabroLauncher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan, build_plan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import StallWindow
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
     LivenessSample,
     StallVerdict,
     decide_stall,
 )
+from livespec_orchestrator_beads_fabro.commands._node_timeouts import REPOSITORY_LAYER
 from livespec_orchestrator_beads_fabro.commands._otel_heartbeat import read_beats
 from livespec_orchestrator_beads_fabro.commands._otel_receive import HeartbeatSink
 
@@ -316,6 +318,11 @@ _HEARTBEAT_DISPATCH_ID = "ba06d4268df24488a01beb352a6d0e7f"
 
 
 def _watchdog_plan(*, repo: Path) -> DispatchPlan:
+    """A dispatch plan carrying a window tight enough for the injected clock.
+
+    The window the watch loop grades against rides the plan (bd-ib-3ugnfr), so
+    these tests declare the 1000 seconds they used to set in the environment.
+    """
     return build_plan(
         repo=repo,
         work_item_id=_HEARTBEAT_WORK_ITEM_ID,
@@ -324,6 +331,7 @@ def _watchdog_plan(*, repo: Path) -> DispatchPlan:
         fabro_bin="fabro",
         janitor=None,
         janitor_checkout=repo / "janitor-co",
+        stall_window=StallWindow(seconds=1000.0, layer=REPOSITORY_LAYER),
     )
 
 
@@ -390,9 +398,7 @@ def test_scripted_runner_rejects_unknown_verb(tmp_path: Path) -> None:
     assert out.exit_code == 1
 
 
-def test_launcher_cancels_on_a_frozen_heartbeat_even_when_events_advance(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_launcher_cancels_on_a_frozen_heartbeat_even_when_events_advance(tmp_path: Path) -> None:
     # The heartbeat is the PRIMARY signal: even though the coarse
     # `fabro events` stream ADVANCES every poll (which the wall-clock
     # backstop alone would read as healthy), a FROZEN heartbeat for this
@@ -404,7 +410,6 @@ def test_launcher_cancels_on_a_frozen_heartbeat_even_when_events_advance(
     # launcher threads it through to `heartbeat_lookup_keys`. Keyed this
     # way before the fix, the probe found nothing and the advancing events
     # would have carried the run past the stall window uncancelled.
-    monkeypatch.setenv("LIVESPEC_DISPATCH_STALL_SECONDS", "1000")
     heartbeat_path = tmp_path / "j-otel-heartbeat.json"
     _ = _sink_with(path=heartbeat_path, beats={_HEARTBEAT_DISPATCH_ID: 1_750_000_000.0})
     advancing = [
@@ -425,14 +430,11 @@ def test_launcher_cancels_on_a_frozen_heartbeat_even_when_events_advance(
     assert runner.rm_calls == ["01RUN"]
 
 
-def test_launcher_falls_through_to_wall_clock_when_heartbeat_absent(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_launcher_falls_through_to_wall_clock_when_heartbeat_absent(tmp_path: Path) -> None:
     # No heartbeat for this run (pipeline outage / not-yet-started) but the
     # coarse `fabro events` stream is FROZEN: the layered probe degrades to
     # the wall-clock backstop, which still confirms the stall and cancels.
     # Degrade to coarse detection — never to NO detection.
-    monkeypatch.setenv("LIVESPEC_DISPATCH_STALL_SECONDS", "1000")
     heartbeat_path = tmp_path / "j-otel-heartbeat.json"
     _ = _sink_with(path=heartbeat_path, beats={"some-other-run": 1_750_000_000.0})
     frozen = ['[{"timestamp": "2026-06-13T08:00:00Z"}]']
@@ -448,13 +450,10 @@ def test_launcher_falls_through_to_wall_clock_when_heartbeat_absent(
     assert runner.rm_calls == ["01RUN"]
 
 
-def test_launcher_with_fresh_advancing_heartbeat_never_cancels(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_launcher_with_fresh_advancing_heartbeat_never_cancels(tmp_path: Path) -> None:
     # A live run whose heartbeat ADVANCES each poll -> the PRIMARY layer
     # reports progress -> the watchdog never stalls even though the same
     # frozen wall-clock events would (the heartbeat is the finer truth).
-    monkeypatch.setenv("LIVESPEC_DISPATCH_STALL_SECONDS", "1000")
     heartbeat_path = tmp_path / "j-otel-heartbeat.json"
     sink = HeartbeatSink(path=heartbeat_path)
     sink.beat(key=_HEARTBEAT_WORK_ITEM_ID, at=1_750_000_000.0)
