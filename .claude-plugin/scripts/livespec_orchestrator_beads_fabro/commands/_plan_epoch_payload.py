@@ -52,6 +52,7 @@ _PRIOR_EPOCH = "prior_epoch"
 _NEW_EPOCH = "new_epoch"
 _PRIOR_TOKEN_ID = "prior_token_id"  # noqa: S105 - a payload field NAME, not a secret
 _NEXT_TOKEN_ID = "next_token_id"  # noqa: S105 - a payload field NAME, not a secret
+_EVENT_KIND = "event_kind"
 _AUTHORITY = "authority"
 _RECEIPTS = "receipts"
 _EPOCH = "epoch"
@@ -93,13 +94,20 @@ class AuthorityState:
 
 @dataclass(frozen=True, kw_only=True)
 class TransitionPayload:
-    """One transition, as the closed token's `close_reason` carries it."""
+    """One transition, as the closed token's `close_reason` carries it.
+
+    `event_kind` is here rather than only in the progress comment it renders.
+    The comment is a PROJECTION and can be lost; this payload is the lossless
+    record, so a reconciler rebuilding the comment from the chain restores the
+    kind that was committed instead of choosing one.
+    """
 
     operation_id: str
     prior_epoch: int
     new_epoch: int
     prior_token_id: str
     next_token_id: str
+    event_kind: str
     authority: AuthorityState
 
 
@@ -139,12 +147,14 @@ def parse_payload(*, text: str) -> TransitionPayload | None:
     operation_id = fields.get(_OPERATION_ID)
     prior_token_id = fields.get(_PRIOR_TOKEN_ID)
     next_token_id = fields.get(_NEXT_TOKEN_ID)
+    event_kind = fields.get(_EVENT_KIND)
     epochs = _parse_epochs(fields=fields)
     authority = _parse_authority(value=fields.get(_AUTHORITY))
     if (
         not isinstance(operation_id, str)
         or not isinstance(prior_token_id, str)
         or not isinstance(next_token_id, str)
+        or not isinstance(event_kind, str)
         or epochs is None
         or authority is None
     ):
@@ -156,6 +166,7 @@ def parse_payload(*, text: str) -> TransitionPayload | None:
         new_epoch=new_epoch,
         prior_token_id=prior_token_id,
         next_token_id=next_token_id,
+        event_kind=event_kind,
         authority=authority,
     )
 
@@ -168,6 +179,7 @@ def _payload_object(*, payload: TransitionPayload) -> dict[str, Any]:
         _NEW_EPOCH: payload.new_epoch,
         _PRIOR_TOKEN_ID: payload.prior_token_id,
         _NEXT_TOKEN_ID: payload.next_token_id,
+        _EVENT_KIND: payload.event_kind,
         _AUTHORITY: {
             _REQUIRED_RESULT: state.required_result,
             _ORIGINAL_DEADLINE: state.original_deadline,

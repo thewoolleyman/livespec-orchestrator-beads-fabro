@@ -188,6 +188,7 @@ def _close_and_project(
         new_epoch=head.epoch + 1,
         prior_token_id=head.current_token_id,
         next_token_id=candidate,
+        event_kind=request.event_kind,
         authority=with_receipt(
             state=request.authority,
             receipt=OperationReceipt(
@@ -212,7 +213,6 @@ def _close_and_project(
         client=client,
         epic_id=epic_id,
         payload=payload,
-        event_kind=request.event_kind,
         author=request.author,
         now=request.now,
     )

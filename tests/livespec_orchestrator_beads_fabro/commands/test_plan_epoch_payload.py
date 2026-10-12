@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import fields
 
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_payload import (
     RECEIPT_RING_SIZE,
@@ -22,6 +23,7 @@ def _payload(**overrides: object) -> TransitionPayload:
         "new_epoch": 4,
         "prior_token_id": "wisp-3",
         "next_token_id": "wisp-4",
+        "event_kind": "handoff",
         "authority": AuthorityState(
             required_result={"repo": "r", "file": "f.md"},
             original_deadline="2026-10-19T09:00:00Z",
@@ -139,3 +141,34 @@ def test_every_unreadable_payload_parses_to_none() -> None:
     ]
 
     assert [parse_payload(text=case) for case in cases] == [None] * len(cases)
+
+
+def test_the_payload_carries_the_event_kind_so_a_reconciler_can_restore_it() -> None:
+    """The event kind belongs to the CHAIN, not only to the comment it renders.
+
+    `contracts.md` requires the progress comment to hold the event kind, and
+    that comment is the projection that can be lost. If the kind lived only
+    there, a reconciler rebuilding the event from the closed token's payload
+    could not restore it, and would publish an event whose kind it had chosen.
+    """
+    field_names = {field.name for field in fields(TransitionPayload)}
+    assert (
+        "event_kind" in field_names
+    ), "the transition payload must carry the event kind the progress comment renders"
+    payload = _payload(event_kind="supervisor-handoff")
+
+    recovered = parse_payload(text=render_payload(payload=payload))
+
+    assert recovered == payload
+    assert recovered is not None
+    assert recovered.event_kind == "supervisor-handoff"
+
+
+def test_a_payload_whose_event_kind_is_not_text_fails_closed() -> None:
+    whole = json.loads(render_payload(payload=_payload()))
+
+    assert parse_payload(text=json.dumps({**whole, "event_kind": 7})) is None
+    assert (
+        parse_payload(text=json.dumps({key: whole[key] for key in whole if key != "event_kind"}))
+        is None
+    )
