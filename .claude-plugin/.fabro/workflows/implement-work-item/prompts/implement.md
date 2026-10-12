@@ -211,6 +211,33 @@ Every commit message body MUST end with the trailer line:
 
     Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 
+## Coverage before Green — run the per-file coverage check FIRST
+
+Before you attempt ANY Green commit or amend, run this repository's
+per-file coverage check over the FULL test suite and close every gap it
+reports. Run it BEFORE the commit, never after a hook has refused one.
+
+- The installed commit hook runs the repository's whole declared check
+  suite and the per-file coverage gate fails at its END, so one
+  uncovered line found there costs a full suite run, a test, and a
+  second full suite run. Measured on a production implement stage: four
+  Green amends each drove the ~11.5-minute aggregate to completion and
+  were then refused at that gate — about 46 minutes of a 2h10m stage
+  spent discovering gaps one up-front run would have named.
+- Invoke the check the way THIS repository exposes it: its own per-file
+  coverage target if it declares one, otherwise the declared check
+  suite `{{ inputs.sandbox_check_suite }}`, which contains that gate.
+  Read the repository's binding rules and its task-runner targets to
+  find the name; never carry a target name or a path over from another
+  repository.
+- Measure coverage over the WHOLE suite. Do NOT narrow it to the files
+  this change touched: a logic change drops coverage in files it never
+  edits, so a reading scoped to the touched files reports green for a
+  tree the hook then refuses.
+- This relaxes NOTHING. The hook, the gate and every check keep running
+  exactly as they are; running the check yourself only moves a failure
+  you would hit anyway to where it is cheap to fix.
+
 ## The Definition of Done is the brief — amend it, never work around it
 
 The work-item's `## Definition of Done` section, exactly as it reached

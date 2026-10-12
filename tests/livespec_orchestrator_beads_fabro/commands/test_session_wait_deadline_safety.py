@@ -5,13 +5,13 @@ from __future__ import annotations
 import fcntl
 import os
 import signal
-import sys
 import threading
 import time
 from contextlib import suppress
 from pathlib import Path
 from typing import cast
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._session_wait_types import ProbeLauncher
 from livespec_orchestrator_beads_fabro.commands.session_wait import (
     GateStatusLauncher,
@@ -26,6 +26,25 @@ def _wait_for_file(*, path: Path, timeout_seconds: float) -> None:
     while not path.exists() and time.monotonic() < deadline:
         time.sleep(0.005)
     assert path.is_file()
+
+
+def test_waiting_for_a_file_that_never_appears_refuses_at_the_deadline(*, tmp_path: Path) -> None:
+    """The wait POLLS to a bounded deadline and then refuses, rather than hanging.
+
+    This is the other arm of `_wait_for_file`, and only this test can reach it.
+    The probe below publishes its pid through a POSIX shell that starts in
+    milliseconds, so the file is already there on the first condition check and
+    the polling body is never entered — the arm that matters when a probe dies
+    before publishing anything is the one that must still terminate. Elapsed
+    time is asserted rather than left to a coverage report, so a loop that
+    stopped waiting (or never waited) fails here instead of passing silently.
+    """
+    started = time.monotonic()
+
+    with pytest.raises(AssertionError):
+        _wait_for_file(path=tmp_path / "never-written", timeout_seconds=0.05)
+
+    assert time.monotonic() - started >= 0.05
 
 
 def test_registration_lock_is_inside_the_original_deadline(*, tmp_path: Path) -> None:
@@ -70,22 +89,28 @@ def test_cancelling_probe_terminates_probe_child_only(*, tmp_path: Path) -> None
     _ = (gate_dir / "started_at").write_text("generation-one\n", encoding="utf-8")
     target = GateTarget.freeze(gate_store_root=gate_store_root, run_id=gate_dir.name)
     pid_file = tmp_path / "probe.pid"
-    helper = tmp_path / "sleeping-probe.py"
+    # A POSIX-SHELL probe rather than a Python one, because `launch` clamps its
+    # budget to `min(1.0, ...)` and a cold CPython cannot reach its first
+    # statement inside one second while the suite runs under coverage tracing
+    # on a loaded host — the probe was reaped before it ever published its pid,
+    # so this test failed on `_wait_for_file` for a reason that was never about
+    # the code under test. The semantics it asserts are preserved exactly: the
+    # trap is armed BEFORE the pid is published, so SIGTERM is already ignored
+    # by the time the test can read the pid; `exec` then replaces the shell in
+    # place, so the published pid stays the live process's own pid and process
+    # group, and an ignored disposition survives `exec` per POSIX. Cancellation
+    # must therefore still escalate past SIGTERM to kill it.
+    helper = tmp_path / "sleeping-probe.sh"
     _ = helper.write_text(
-        """import os
-import signal
-import time
-from pathlib import Path
-
-Path(__import__('sys').argv[1]).write_text(str(os.getpid()), encoding='utf-8')
-signal.signal(signal.SIGTERM, lambda *_: None)
-time.sleep(30)
+        """trap '' TERM
+echo $$ > "$1"
+exec sleep 30
 """,
         encoding="utf-8",
     )
     probe = GateStatusLauncher(
         repository=tmp_path,
-        command_prefix=(sys.executable, str(helper), str(pid_file)),
+        command_prefix=("/bin/sh", str(helper), str(pid_file)),
     ).launch(target=target, timeout_seconds=1.0)
     assert probe.poll(now=time.monotonic()) is None
     _wait_for_file(path=pid_file, timeout_seconds=1.0)

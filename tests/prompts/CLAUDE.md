@@ -31,6 +31,22 @@ instead.
   prompt carrying both the record title and the post call), with a control
   asserting it reached the two publishers known today.
 
+- `test_implement_coverage_before_green.py` — bd-ib-z6fmp: the implement-stage
+  prompt requires the repository's per-file coverage check to be run over the
+  FULL suite, with every gap closed, BEFORE any Green commit or amend — the hook
+  runs the whole declared check suite and fails at that gate LAST, so a gap
+  found there costs two full suite runs. The prompt is DERIVED from the graph's
+  `implement` node rather than named, with a control asserting the derivation
+  found exactly one such node whose prompt is on disk. The changed-files-only
+  prohibition is pinned POSITIVELY (both physical lines of the sentence are
+  required) because a probe for the absence of a narrowing phrase could never
+  return a hit and would read clean over a prompt that said nothing. This tier
+  reads the COMMITTED prompt; its DISPATCHED counterpart — the same instruction
+  in the per-dispatch payload, with the check-suite input bound from the target
+  repository's own declaration — is
+  `tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_payload_implement_prompt.py`,
+  per the rendering-seam convention below.
+
 Conventions:
 
 - Read the prompt as COMMITTED BYTES. Never render it through a template engine

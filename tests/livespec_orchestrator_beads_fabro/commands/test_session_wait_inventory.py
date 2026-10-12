@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -388,23 +387,36 @@ def _poll_until_observed(*, probe: _Pollable) -> GateObservation:
 def _assert_gate_status_adapter(*, context: _InventoryContext) -> None:
     from livespec_orchestrator_beads_fabro.commands.session_wait import GateStatusLauncher
 
-    helper = context.repository / "fake-gate-status.py"
+    # A POSIX-SHELL adapter rather than a Python one. `launch` clamps its budget
+    # to `min(1.0, ...)` regardless of the 2.0 passed below, and a cold CPython
+    # cannot print its first line within one second while the suite runs under
+    # coverage tracing on a loaded host — the RUNNING probe was reaped before it
+    # emitted anything, which the parser correctly reads as UNAVAILABLE. That is
+    # what made this test fail, and it was never about the code under test.
+    # Every observable behavior is preserved: `read` strips the trailing newline
+    # exactly as `.strip()` did, `$(dirname "$1")` mirrors `Path(argv[1]).parent`
+    # (the launcher passes the bare run id and runs the child in the gate dir, so
+    # both resolve to `./mode`), the two status lines are emitted byte-identically,
+    # and the hang arm still ignores SIGTERM in a process whose pid survives
+    # `exec`, so cancelling it must still escalate past SIGTERM.
+    helper = context.repository / "fake-gate-status.sh"
     _ = helper.write_text(
-        """import signal
-import sys
-import time
-from pathlib import Path
-
-mode = (Path(sys.argv[1]).parent / 'mode').read_text(encoding='utf-8').strip()
-if mode == 'hang':
-    signal.signal(signal.SIGTERM, lambda *_: None)
-    time.sleep(60)
-elif mode == 'malformed':
-    print('not gate status output')
-else:
-    print(f'  state             : {mode}')
-    if mode == 'FAILED':
-        print('  exit_code         : 23')
+        """read mode < "$(dirname "$1")/mode"
+case "$mode" in
+hang)
+    trap '' TERM
+    exec sleep 60
+    ;;
+malformed)
+    echo 'not gate status output'
+    ;;
+*)
+    echo "  state             : $mode"
+    if [ "$mode" = FAILED ]; then
+        echo "  exit_code         : 23"
+    fi
+    ;;
+esac
 """,
         encoding="utf-8",
     )
@@ -412,7 +424,7 @@ else:
     mode_file = target.gate_store_root / target.run_id / "mode"
     adapter = GateStatusLauncher(
         repository=context.repository,
-        command_prefix=(sys.executable, str(helper)),
+        command_prefix=("/bin/sh", str(helper)),
     )
     _ = mode_file.write_text("FAILED\n", encoding="utf-8")
     finished = adapter.launch(target=target, timeout_seconds=2.0)
