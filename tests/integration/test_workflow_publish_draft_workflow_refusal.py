@@ -1,4 +1,9 @@
-"""A run-owned workflow edit is preserved and reported, never published."""
+"""A run-owned workflow edit is preserved and reported, never published.
+
+The preserved ref takes `.github/workflows` from the default branch at its tip so
+the GitHub App can push it (work-item bd-ib-cvge); the run's own workflow edit
+survives in the tip's parent commit.
+"""
 
 from __future__ import annotations
 
@@ -174,12 +179,14 @@ def test_run_owned_workflow_edit_is_preserved_and_blocks_with_its_permission_rea
     assert terminal.returncode != 0
     assert _WORKFLOW_PATH in terminal.stderr
     assert "workflows permission" in terminal.stderr
-    assert "LIVESPEC_NEEDS_HUMAN_PUSH_FAILED" in terminal.stderr
-    assert "preserve-by-reference dump pointer" in terminal.stderr
-    preserved = _git(
-        origin, "for-each-ref", "--format=%(refname)", f"refs/heads/needs-human/{_RUN_ID}"
-    ).stdout.strip()
-    assert preserved == ""
+    assert "LIVESPEC_NEEDS_HUMAN_WORKFLOWS_RESET" in terminal.stderr
+    assert "LIVESPEC_NEEDS_HUMAN_PUSH_FAILED" not in terminal.stderr
+    ref = f"refs/heads/needs-human/{_RUN_ID}"
+    assert f"LIVESPEC_NEEDS_HUMAN_PRESERVED: {ref}" in terminal.stderr
+    preserved = _git(origin, "rev-parse", ref).stdout.strip()
+    tip_files = _git(origin, "ls-tree", "-r", "--name-only", preserved).stdout.split()
+    assert _WORKFLOW_PATH not in tip_files
+    assert _git(origin, "show", f"{preserved}~1:{_WORKFLOW_PATH}").stdout == "name: run-owned\n"
 
     outcome = fabro_run_terminal_outcome(
         outcome_type=DispatchOutcome,
@@ -193,6 +200,5 @@ def test_run_owned_workflow_edit_is_preserved_and_blocks_with_its_permission_rea
     assert outcome.status == "blocked"
     assert _WORKFLOW_PATH in outcome.detail
     assert "workflows permission" in outcome.detail
-    assert f"refs/heads/needs-human/{_RUN_ID}" not in outcome.detail
-    assert "tree was not pushed" in outcome.detail
-    assert "preserve-by-reference dump pointer" in outcome.detail
+    assert f"tree was preserved on refs/heads/needs-human/{_RUN_ID}" in outcome.detail
+    assert "tree was not pushed" not in outcome.detail

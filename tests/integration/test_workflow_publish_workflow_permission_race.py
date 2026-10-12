@@ -22,6 +22,14 @@ import stat
 import subprocess
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    DispatchOutcome,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal import (
+    fabro_run_terminal_outcome,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+
 _WORKFLOW = Path(".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro")
 _PUBLISH_BRANCH = "feat/bd-ib-cvge"
 _RUN_ID = "01WORKFLOWRACE"
@@ -196,6 +204,27 @@ def _node(
     )
 
 
+def _plan(*, repo: Path) -> DispatchPlan:
+    return DispatchPlan(
+        repo=repo,
+        work_item_id="bd-ib-cvge",
+        branch=_PUBLISH_BRANCH,
+        workflow_toml=repo / "workflow.toml",
+        goal_file=repo / "goal.txt",
+        fabro_bin="fabro",
+        fabro_factory_name="hp",
+        fabro_factory_server=None,
+        fabro_factory_dev_token=None,
+        janitor=("just", "check"),
+        janitor_checkout=repo / ".janitor",
+        janitor_core_checkout=repo / ".janitor" / ".livespec-core",
+        janitor_core_repo_url="https://github.com/thewoolleyman/livespec.git",
+        janitor_core_ref="master",
+        review_fix_visit_cap=3,
+        merge_on_review_cap_outcome="succeeded",
+    )
+
+
 def _remote_tip(*, repo: Path, ref: str) -> str:
     line = _git(repo, "ls-remote", "origin", ref).stdout
     return line.split()[0] if line else ""
@@ -244,6 +273,24 @@ def test_publish_draft_names_the_workflow_race_when_master_never_settles(
     ).read_text(encoding="utf-8")
     assert "workflows permission" in reason
     assert "did not change" in reason
+
+    terminal = _node(node="needs_human", run=run, env=env, stdin=f"{_RUN_ID}\n")
+
+    assert "LIVESPEC_NEEDS_HUMAN_WORKFLOWS_RESET" in terminal.stderr
+    assert "LIVESPEC_NEEDS_HUMAN_PUSH_FAILED" in terminal.stderr
+    assert _remote_tip(repo=run, ref=f"refs/heads/needs-human/{_RUN_ID}") == ""
+    outcome = fabro_run_terminal_outcome(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=run),
+        run_id=_RUN_ID,
+        inspect=None,
+        exit_code=1,
+        stderr=f"{published.stderr}\n{terminal.stderr}",
+    )
+    assert outcome is not None
+    assert outcome.status == "blocked"
+    assert "did not change" in outcome.detail
+    assert "tree was not pushed" in outcome.detail
 
 
 def test_needs_human_preserves_a_tree_whose_base_master_has_since_bumped(
