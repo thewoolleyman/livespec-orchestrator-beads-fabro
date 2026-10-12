@@ -46,6 +46,31 @@ mise exec -- just gate-wait "$run_id"
 
 Prefix the gate command with whatever the invocation ordinarily needs (the governed project's `with-<project>-env.sh` credential wrapper, for instance) — `gate-start` runs the argv it is given, unchanged. `gate-wait` exits with the gate's own exit code (75 for `DIED_WITHOUT_VERDICT`, which is neither a pass nor a fail); killing the waiter does not touch the gate, so it is safe to background and safe to re-issue.
 
+When one session owns several detached gates, arm one bounded first-event wait
+instead of waiting on them serially. Supply a unique wait id, the owning session
+id, an explicit positive finite deadline, and every concrete run id:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bin/session_wait.py" wait --repo <repo> --session-id <session-id> --wait-id <wait-id> --deadline-seconds <seconds> --gate <run-id> [--gate <run-id> ...]
+```
+
+The command freezes the primary gate store and the concrete run ids at arming,
+so rewriting a gate-id pointer cannot retarget an armed wait. Its JSON carries
+the first terminal gate's own state and exit code beside the wait's own
+outcome, and reports every sibling's last observation with its freshness.
+Ending or cancelling this waiter never stops a gate. A missing, non-positive or
+non-finite deadline is refused before anything is registered.
+
+Before parking, run `inventory` or the exit-status-oriented `check` subcommand
+with `--repo <repo>`: either reports ended-but-unacknowledged targets, overdue
+waits and missing or replaced waiter processes, and reports a corrupt or
+unreadable record as an explicit unavailable finding rather than omitting it.
+After the owning session has actually RECEIVED the result, run `ack --repo
+<repo> --session-id <session-id> --wait-id <wait-id>`. That acknowledgement
+records receipt ONLY: it is not recovery-command execution, it does not consume
+an outstanding obligation, and it is not authoritative evidence that the
+target's own result was fulfilled.
+
 The `gate-*` recipes come from the livespec-dev-tooling worktree-discipline pack, imported optionally and installed by `just install-worktree-pack` (which `just bootstrap` runs). `Justfile does not contain recipe gate-start` therefore means the pack is not installed in that checkout — install it rather than falling back to a harness background task.
 
 ## Recovering a merged item left `active`
