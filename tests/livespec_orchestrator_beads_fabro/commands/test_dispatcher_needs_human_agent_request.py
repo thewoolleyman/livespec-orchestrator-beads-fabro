@@ -11,8 +11,9 @@ happened — `LIVESPEC_NEEDS_HUMAN_PRESERVED: <ref>` when the push landed,
 `LIVESPEC_NEEDS_HUMAN_NO_RUN_ID` when no run id reached it so there was no ref
 to push at all. Measured on run `01M4C9GDZ7RYB477YXSMNMJWKH`, whose
 preservation push FAILED after 256 seconds
-(`plan/pr-stage-backgrounded-push-fault/research/001-failure-analysis-and-mechanism-candidates-2026-10-08.md`
-section 2.2), and on `bd-ib-cvge`, where it failed a different way.
+(epic `bd-ib-ctagnf`, opening research note "Failure analysis and mechanism
+candidates", section "The preservation push can fail"), and on `bd-ib-cvge`,
+where it failed a different way.
 
 THE DETAIL NAMED A REF THAT DID NOT EXIST. It derived the ref from the run id
 alone and asserted preservation unconditionally, so the two measured failures
@@ -24,10 +25,17 @@ reason; the terminal's own detail did not.
 WHY THE SUCCESSFUL CASE IS ASSERTED BESIDE THE FAILED ONE. Alone, the failed
 case is satisfied by a build that stopped naming the ref at all, which would
 lose the pointer this ending is supposed to retain. And alone, the successful
-case is satisfied by the unconditional claim this module exists to retire. An
-ABSENT sentinel is deliberately the successful arm: a record that reports
-neither outcome is the ordinary one, and treating silence as failure would
-retract a ref that is really there.
+case is satisfied by the unconditional claim this module exists to retire.
+
+THE ABSENT-SENTINEL ARM IS UNKNOWN, AND THIS PARAGRAPH USED TO SAY THE
+OPPOSITE. It read: "an ABSENT sentinel is deliberately the successful arm … and
+treating silence as failure would retract a ref that is really there." Half of
+that is still true — inventing a failed push IS the mirror lie — but the
+conclusion drawn from it was not, because a missing failure marker is not
+positive evidence of a successful push either. Both claims need their own
+evidence, so the invariant is three-way: positive sentinel means preserved,
+explicit negative sentinel means failed, neither means UNKNOWN. The case below
+asserts all three of those, including that the unknown arm alleges no failure.
 
 A transport fault is NOT one of these endings. An agent that ended through the
 needs-human protocol asked a question, so this arm must keep saying a decision

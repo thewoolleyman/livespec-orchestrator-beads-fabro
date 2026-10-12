@@ -1,7 +1,8 @@
 """The `needs_human` terminal names the stage and the cause that routed it there.
 
-`plan/pr-stage-backgrounded-push-fault/research/001-failure-analysis-and-mechanism-candidates-2026-10-08.md`
-section 3.5 measured the gap this module binds: since contract v093 the
+Epic `bd-ib-ctagnf`'s opening research note "Failure analysis and mechanism
+candidates", section "The needs-human terminal renders one wording for two
+endings", measured the gap this module binds: since contract v093 the
 `needs_human` node is a TERMINAL script that exits 1, so every needs-human
 ending arrives through `_needs_human_terminal_outcome` — which named neither
 the stage that failed nor why, and passed none of the structured failure
