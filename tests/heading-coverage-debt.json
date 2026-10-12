@@ -513,6 +513,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 170 — A failed engine checkpoint commit names its node and cause and rests the item at needs-human",
+    "work_item": "bd-ib-6jkjzm",
+    "first_seen": "2026-10-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 26 — list-work-items emits lane and lane_reason",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-29"

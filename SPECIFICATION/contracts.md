@@ -4764,6 +4764,43 @@ These reporting obligations apply equally to member and adopter repositories;
 an aggregate with no recognized summary uses the labelled-excerpt fallback.
 Scenario 167 in `scenarios.md` exercises this section.
 
+### Failed engine checkpoint commit attribution
+
+A Fabro run ENDS ON A FAILED ENGINE CHECKPOINT when its terminal failure is the engine's own checkpoint of a node: the `git add` and `git commit` the engine performs on the run branch after a node finishes, outside every workflow node. Such a checkpoint either fails or exceeds its checkpoint operation budget. The failure is an engine error rather than a node outcome, so the workflow graph cannot route it and the `needs_human` terminal never fires.
+
+The Dispatcher MUST recognize such a run from the run's event stream: a `checkpoint.failed` event for the node at which the run ended. Only when that stream cannot be read MAY it recognize the run from the engine's terminal failure message, which names a checkpoint commit failure or a checkpoint operation budget expiry. Recognition MUST NOT pre-empt an outcome that the Dispatcher already classifies otherwise. A run parked at a human gate, a run carrying the `needs_human` terminal's sentinel, and a run classified as provider-limit keep their existing routes.
+
+The Dispatcher MUST read the run's events from the dispatch's resolved factory target before it renders the dispatch outcome. It MUST do so whether or not any node of the workflow is fallback-enabled, and it MUST NOT read them from a local default target. It MUST name the node from the `checkpoint.failed` event's node identifier. When the events cannot be read, it MUST take the node from the engine's failure message. When neither names a node, it MUST say that the node was not reported rather than infer one. The Dispatcher MUST also carry the engine's checkpoint error exactly as the engine reported it, for example `git commit failed (exit 1)`, `git add failed` or `git commit timed out after 900004ms`.
+
+When the `checkpoint.failed` event carries an output tail, the Dispatcher MUST apply the structured-summary rule of the preceding subsection to the whole tail exactly as the engine recorded it, before applying any bound of its own. It MUST name every target in a structured `Failed targets` summary. It MUST NOT present a passing target or recipe printed outside that summary as the cause. A summary whose lines end in carriage-return line-feed pairs is the same summary. When the tail also carries the hook runner's own per-command run summary and that summary marks individual hook commands as failed, the Dispatcher MUST name each failed hook command beside the targets.
+
+When the tail carries neither summary, the Dispatcher MUST label a bounded excerpt of the tail as an observation. It MUST NOT assert that any hook, target or recipe in that excerpt caused the failure. The tail is the engine's bounded suffix of the hook output, so a summary whose header the engine's bound cut away is absent rather than partial, and the Dispatcher MUST NOT reconstruct it. When the event carries no output tail at all, as with `git add failed`, the engine's checkpoint error is the whole attribution.
+
+When the engine reports that the checkpoint operation budget was exceeded, the Dispatcher MUST name three things: the node, the git operation that timed out as the engine names it, and the checkpoint commit budget configured for that dispatch. The configured budget, in seconds, is the `[run.checkpoint] commit_timeout` of the run configuration that the Dispatcher submitted, or the engine's stock budget when that key is absent. The elapsed time that the engine reports MUST be carried beside the budget, labelled as the engine's measurement, and MUST NOT be presented as the configured budget. When the configured budget cannot be read, the Dispatcher MUST say so and name the reason, and it MUST NOT substitute the stock budget.
+
+The dispatch outcome MUST be `blocked` at stage `fabro-run`. The Dispatcher MUST rest the item at `blocked` with `blocked_reason: needs-human`, through the same transition and `needs-human-blocked` journal row that a `needs_human` terminal produces. The item MUST NOT be left `active`, and the claim MUST NOT be released to `ready`. This failure leaves a decision that only the ledger's valves express (retry, re-implement from the preserved work, or abandon), and nothing outside the factory clears it on its own. It therefore rests at `needs-human` and never at `infra-external`, and `blocked_reason` gains no member. The dispatch reports exit code 4 under §"Dispatcher exit codes". No exit code is added or redefined.
+
+The outcome detail MUST name the run, the node, the engine's checkpoint error and the attribution. The attribution is one of: the failed targets and/or failed hook commands; the labelled observation; the configured budget with the engine's measurement, or an explicit configured-budget-unavailable reason; or the engine's checkpoint error alone when no output tail is available. The detail MUST state that the decision lives in the ledger and MUST name the `resolve-blocked:<work-item-id>:ready` valve. The Dispatcher's own detail bound MUST NOT drop a named target or hook command.
+
+The Dispatcher MUST journal exactly one `checkpoint-failure` row for each such dispatch. The row carries these keys:
+
+- `work_item_id`, `fabro_run_id` and `node`.
+- `checkpoint_error`.
+- `attribution`, which is one of `failed-targets`, `observation`, `budget-expiry` or `engine-error`.
+- `failed_targets` and `failed_hook_commands`, as lists that are empty when none were named.
+- `observation_excerpt`, which is non-null only for `observation`.
+- `configured_budget_seconds` and `engine_reported_elapsed`, both non-null only for `budget-expiry`.
+- `events_read`, which is `read` or the reason the events could not be read.
+- `terminal_patch_bytes` and `terminal_patch_sha256`.
+
+Before the item's blocked transition, the Dispatcher MUST add one ledger comment to the item. The comment opens with the marker line `livespec-checkpoint-failure` and carries the run id, the factory name, the node, the engine's checkpoint error, the failed targets and failed hook commands, and, for a budget expiry, the configured budget and the engine's measurement. The comment MUST carry names and figures only, and never an excerpt of captured output. Every target and hook-command name in it MUST be identifier-shaped as §"Dispatch trace correlation" defines that term. A name that is not identifier-shaped MUST be left out, and the comment MUST state how many names were left out. The comment MUST pass the shared template-opener detector before it is written. A comment that fails the detector, or that cannot be written, MUST be journaled with its reason and MUST NOT prevent the blocked transition.
+
+The run's work is preserved by reference through the existing preserve-by-reference pointer. A failed checkpoint leaves the node's uncommitted work outside every stage diff artifact, because the run's terminal `run.failed` event carries that work as its terminal patch. When that event carries a terminal patch, the journal row and the ledger comment MUST record the patch's byte size and sha256 digest, so that a pointer reporting no checkpointed diff artifact is not read as no work. When the event carries no terminal patch, both records MUST say so. When the run's events cannot be read, the terminal patch is unobserved rather than absent: `terminal_patch_bytes` and `terminal_patch_sha256` MUST be null, both records MUST state that the terminal patch is unavailable and name the reason, and the records MUST NOT state that the run carried no work.
+
+When the events cannot be read, the Dispatcher MUST still apply the disposition above. It MUST take the node and the error from the engine's failure message, record the reason in `events_read`, and MUST NOT invent a target, a hook command or a cause.
+
+These obligations apply equally to member and adopter repositories. A hook runner or aggregate whose summary is not recognized falls back to the labelled observation. A workflow that skips git hooks at checkpoint produces no hook output, so its attribution is the engine error or the budget. This subsection changes no run reconciliation rule, no artifact retention rule and no other terminal outcome. Scenario 170 in `scenarios.md` exercises this section.
+
 ### Repository integration contract
 
 The set of integration points the orchestrator requires of a governed
