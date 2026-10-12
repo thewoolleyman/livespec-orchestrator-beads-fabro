@@ -133,11 +133,26 @@ _REVIEW = "review"
 _DISPOSITION = "disposition"
 _PROOF_VERIFY = "proof_verify"
 _PR = "pr"
+# The two command stages publication runs through since v121. `pr_refresh`
+# reconciles the publish branch with the authoritative default; its
+# postcondition breaker reports whether that changed the published head, and
+# a CHANGED head routes back to `proof_capture` so only proof for the new head
+# can reach `pr`. In this journey the default branch does not move, so the
+# refresh leaves the head alone and the breaker falls through to `pr`.
+_PR_REFRESH = "pr_refresh"
+_PR_REFRESH_HEAD = "pr_refresh_head"
 # The five positions the Definition of Done names, in the order it names them.
 # Asserted as a SUBSEQUENCE of the route actually walked rather than as the route
 # itself, so the claim stays about these nodes while the exact route (which the
 # case also pins) is free to carry the loop the reviewer asked for.
-_REQUIRED_POSITIONS = (_PUBLISH_DRAFT, _PROOF_CAPTURE, _REVIEW, _PROOF_VERIFY, _PR)
+_REQUIRED_POSITIONS = (
+    _PUBLISH_DRAFT,
+    _PROOF_CAPTURE,
+    _REVIEW,
+    _PROOF_VERIFY,
+    _PR_REFRESH,
+    _PR,
+)
 
 _SUCCEEDED = "succeeded"
 _FAILED = "failed"
@@ -554,6 +569,15 @@ def _sandbox(*, forge: _Forge, branch: str) -> Callable[..., tuple[str, str | No
     the append-only rule load-bearing, since both are claims about a SECOND
     entry, and it drives the reviewer's own disposition loop out of the
     committed graph rather than around it.
+
+    THE TWO PUBLICATION COMMAND STAGES REPORT SUCCESS AND TOUCH NOTHING, which is
+    what this journey's premise makes them do: the default branch does not move
+    while the run is alive, so `pr_refresh` finds the published head already
+    containing it and exits zero with no rebase and no push, and the breaker
+    then reports an UNCHANGED head -- also zero -- which is the edge into `pr`.
+    A moving default branch is the HOST-CAPTURED assertion of `bd-ib-c3txja`,
+    taken against the released build on a real factory run, because a sandboxed
+    journey cannot advance the branch it is publishing onto.
     """
 
     def _act(*, node: str, visit: int) -> tuple[str, str | None]:
@@ -862,12 +886,18 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
         _PROOF_CAPTURE,
         _REVIEW,
         _PROOF_VERIFY,
+        _PR_REFRESH,
+        _PR_REFRESH_HEAD,
         _PR,
         "verify_pr",
         "exit",
     ]
     assert _subsequence(route=run.visited, wanted=_REQUIRED_POSITIONS)
     assert not _subsequence(route=run.visited, wanted=(_PR, _PUBLISH_DRAFT))
+    # And the replay never reaches `pr` without the refresh between them, which is
+    # what the ratified clause means by "only proof for the new head can reach
+    # final publication".
+    assert not _subsequence(route=run.visited, wanted=(_PROOF_VERIFY, _PR, _PR_REFRESH))
     assert run.terminal in graph.with_shape(shape=GREEN_TERMINAL_SHAPE)
 
 
