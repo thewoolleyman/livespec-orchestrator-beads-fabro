@@ -1016,7 +1016,7 @@ snapshot MUST report that item as age-unknown and MUST NOT omit it. IN
 FLIGHT means a live dispatch lock or a watchable run for this repository
 — not a journal record, and not an ad-hoc process query.
 
-**Idle-factory (`hygiene:idle-factory:<repo>`).** When, and only when, ALL THREE of the following hold for a repository, the snapshot MUST carry exactly one idle-factory fact: (a) the ready set is non-empty and at least one ready item is admission-eligible under the admission valve's non-capacity conditions -- the same eligibility the drain and `next` honor, capacity excepted; (b) the single-authority capacity verdict (this section's "Capacity single authority") reports ZERO counted claims for this repository, read through the SIDE-EFFECT-FREE capacity projection that clause requires and NEVER from a mutating accounting path; and (c) the per-node fallback preflight of §"Factory-configurable ACP fallback priority" leaves at least one candidate for every success-critical ACP node. The fact's `urgency` MUST be `high`. Its `summary` MUST be a deterministic one-line statement naming the count of admission-eligible ready items and the first ranked such id. Its single `handoff` MUST be a `drive`-kind handoff carrying `impl:<first-ranked-id>` for that first ranked item -- executable as advertised (§"The needs-attention machine envelope" → "Executable as advertised"): the `action_id` MUST be one `drive` would accept for that item's state. The fact rides the existing `hygiene` kind with the stable id `hygiene:idle-factory:<repo>`; it introduces NO new wire kind, grammar form, or field (§"The needs-attention machine envelope" → ownership cut). It is derived ONLY from this repository's own ledger, journal, and capacity verdict (this section's "The ownership boundary") -- it performs NO live credential probe and NO other external call, and two invocations against an unchanged store emit a byte-identical row. The fact CLEARS the instant any of (a), (b), or (c) fails: it does not appear when counted claims are non-zero (the factory is busy), when no admission-eligible ready item exists (there is nothing to dispatch), or when an observed availability hold exhausts a success-critical chain (that wait composes under §"Provider spend containment"). Like every fact in this section it composes existing reads, executes nothing, and creates no work-items.
+**Idle-factory (`hygiene:idle-factory:<repo>`).** When, and only when, ALL THREE of the following hold for a repository, the snapshot MUST carry exactly one idle-factory fact: (a) the ready set is non-empty and at least one ready item is admission-eligible under the admission valve's non-capacity conditions -- the same eligibility the drain and `next` honor, capacity excepted; (b) the single-authority capacity verdict (this section's "Capacity single authority") reports ZERO counted claims for this repository, read through the SIDE-EFFECT-FREE capacity projection that clause requires and NEVER from a mutating accounting path; and (c) the per-node fallback preflight of §"Factory-configurable ACP fallback priority" leaves at least one eligible candidate for every admission-required ACP node (every ACP node potentially reachable in the submitted graph). The fact's `urgency` MUST be `high`. Its `summary` MUST be a deterministic one-line statement naming the count of admission-eligible ready items and the first ranked such id. Its single `handoff` MUST be a `drive`-kind handoff carrying `impl:<first-ranked-id>` for that first ranked item -- executable as advertised (§"The needs-attention machine envelope" → "Executable as advertised"): the `action_id` MUST be one `drive` would accept for that item's state. The fact rides the existing `hygiene` kind with the stable id `hygiene:idle-factory:<repo>`; it introduces NO new wire kind, grammar form, or field (§"The needs-attention machine envelope" → ownership cut). The fact MUST consume the shared admission-eligibility verdict, including a read-only observation of the factory-native availability evidence required by §"Factory-configurable ACP fallback priority". Capacity remains derived solely from this repository's own accounting. Snapshot composition MUST NOT execute credential probes, availability confirmation turns, or mutations. Unavailable availability evidence MUST NOT be treated as an empty hold set or as proof of eligibility. Identical ledger, capacity, configuration, availability evidence, and evaluation time MUST produce a byte-identical row. The fact CLEARS the instant any of (a), (b), or (c) fails: it does not appear when counted claims are non-zero (the factory is busy), when no admission-eligible ready item exists (there is nothing to dispatch), or when observed availability holds exhaust an admission-required chain (that wait composes under §"Provider spend containment"). Like every fact in this section it composes existing reads, executes nothing, and creates no work-items.
 
 For the idle-factory fact, `admission-eligible` is evaluated AFTER the shared
 variant-aware acceptance refusal filter. Its ready count, first-ranked id, and
@@ -1031,10 +1031,19 @@ NEEDS_ATTENTION-parked acceptance (§"The NEEDS_ATTENTION verdict"); a
 item under an effective `manual` admission policy (`approve`); a
 factory-unsafe item surfaced for host routing, which stays `ready` and is
 not `blocked` (§"Dispatcher admission, WIP cap, and post-merge
-acceptance"); and an item for which unexpired observed availability holds
-exhaust at least one success-critical ACP fallback chain, which likewise stays
-`ready` (§"Provider spend containment" and §"Factory-configurable ACP fallback
-priority"). An enumerated wait absent from the
+acceptance"); and an item waiting because an admission-required ACP chain
+has no eligible candidate under §"Factory-configurable ACP fallback priority",
+including because of live holds, outstanding post-expiry confirmation,
+unavailable evidence, or admission-time credential-probe skips, which likewise
+stays `ready` (§"Provider spend containment"). The wait item MUST name the
+governing condition and scheduled reevaluation instant. It MUST offer an
+applicable attributed clearance valve when a live hold is the target: exact
+scope/key clearance for current records, or the legacy provider valve for
+legacy records. Otherwise its handoff MUST inspect the recorded wait and
+unavailable or failed observation; it MUST NOT advertise clearance of a
+nonexistent live hold. No availability wait uses `resolve-blocked` or requires
+human action before automatic reevaluation. A parked rework item retains its
+existing parked state. An enumerated wait absent from the
 snapshot is a composition defect, not a policy choice. FORWARD
 REGISTRATION: any future contract that leaves work parked on a person or
 a resource MUST register, in that contract, its attention derivation and
@@ -2866,7 +2875,9 @@ artifact §"Dispatch-brief lessons injection" calls the goal brief); the
 rendered. A *structured needs-human ending* is the existing failed outcome
 of an ACP node that the reserved workflow routes to its `needs_human`
 terminal (§"A factory run never awaits a human"), carrying a failure reason
-the Dispatcher records as the needs-human question. A *Definition-of-Done
+the Dispatcher records as the needs-human question; a failed outcome the
+Dispatcher classifies as provider-limit is not a structured needs-human ending.
+A *Definition-of-Done
 finding* is one line naming the item, the offending element of its
 Definition of Done section, and the remedy; it is surfaced on whichever
 of three surfaces first detects it — the host-side wall's refusal text,
@@ -3745,7 +3756,10 @@ reconciliation could not or did not terminate.
   which branch the NEXT run publishes, never which dispatch a record
   belongs to. An operator who wants to KEEP that work drives the resume
   below instead of a plain dispatch; the two routes are exclusive per
-  dispatch and the journal shows which one ran.
+  dispatch and the journal shows which one ran. For an item released under
+  §"Factory-configurable ACP fallback priority" → "Provider-limit release
+  and re-dispatch", the Dispatcher makes that choice itself as that
+  section's "Recovery from the failed run's preserved work" specifies.
 
 Scenario 144 in `scenarios.md` exercises this section. The resume surface
 below is the route that KEEPS the dead run's work; this reclaim is the
@@ -3762,7 +3776,13 @@ full sandbox rebuilding, re-capturing and re-verifying work that already
 exists on the pull request; the resume FINISHES the earlier run instead.
 It is a published state-changing entry point and inherits `--invoker`
 (§"Journal invoker attribution"). `drive` gains no new action for it;
-the `impl:<id>` action remains a plain dispatch.
+the `impl:<id>` action remains a plain dispatch. The one exception to both
+statements is an item released under §"Factory-configurable ACP fallback
+priority" → "Provider-limit release and re-dispatch": for it the Dispatcher
+itself invokes this resume, under its own invoker identity, when every
+precondition below passes, and otherwise dispatches a plain run seeded from
+the failed run's preserved work rather than from the default branch, as that
+section's "Recovery from the failed run's preserved work" specifies.
 
 **What it resumes.** The *earlier run* is the dispatch whose identifier
 the latest proof record on the item's open pull request carries, resolved
@@ -3895,14 +3915,18 @@ Scenario 142 and Scenario 143 in `scenarios.md` exercise this section.
 
 ### Fail-closed cost gate (keyed on `--item` presence)
 
-- **Gate coverage — which runs are gated at all.** The Dispatcher observes a
-  per-run cost signal ONLY for a dispatched run that BOTH reached a
-  successful terminal outcome AND carries a confirmed run record (a run id
-  resolvable against the cost source). Two classes of run are therefore NOT
+- **Gate coverage — which runs are gated at all.** The cost gate applies
+  only to a dispatched run that reached a successful terminal outcome and
+  carries a confirmed run record (a run id resolvable against the cost
+  source). Observation of failed-run and availability-probe cost is
+  independent of gate applicability. Two classes of run are therefore NOT
   gated:
-  - A run that did NOT reach a successful terminal outcome yields no cost
-    observation and no gate verdict — even though such a run MAY have
-    consumed spend.
+  - A run that did NOT reach a successful terminal outcome yields no gate
+    verdict — even though such a run MAY have consumed spend. A run
+    released for a provider-limit failure additionally yields the
+    attempt-cost record of §"Factory-configurable ACP fallback priority" →
+    "Cost follows every attempt", which is an observation and never a gate
+    verdict.
   - A run whose id CANNOT be resolved against the cost source MUST be
     journaled as a **skipped** gate record naming the work-item and the
     unresolvable-run-id reason, and MUST NOT refuse. This disposition is
@@ -3999,12 +4023,15 @@ mechanical — capacity, dependencies, a resolvable assignee, and factory-safety
   MUST NOT be surfaced in a form that presents hand-editing as the intended
   resolution. The Dispatcher MUST NOT retry it into a sandbox.
 - **Required ACP chains not observed exhausted:** resolve each node's ordered
-  candidates against versioned observed availability holds as §"Factory-configurable
-  ACP fallback priority" requires. An item is not admitted only when at least
-  one success-critical node has no remaining candidate. A hold covering one
-  primary MUST NOT refuse admission while its chain has an eligible fallback.
-  The item is NOT marked `blocked` on these grounds and MUST NOT be
-  auto-disposed; it remains `ready` for a subsequent pass.
+  candidates against the host-wide availability evidence of
+  §"Factory-configurable ACP fallback priority". An item is not admitted only
+  when at least one ACP node potentially reachable in the submitted graph has
+  no eligible candidate. A hold covering one primary MUST NOT refuse admission
+  while its chain has an eligible fallback, and a hold on one provider MUST NOT
+  refuse an item whose resolved candidates are all on other providers. The item
+  is NOT marked `blocked` on these grounds and MUST NOT be auto-disposed; it
+  remains `ready` without a claim, and its next admission evaluation is
+  scheduled as that section specifies.
 
 The Dispatcher MUST, when a WIP slot frees — AFTER any rework-pending
 re-dispatch has consumed the freed capacity (§"Rework-pending
@@ -4013,7 +4040,7 @@ admit the **top-ranked**
 (lexicographically earliest `rank`, per §"Work-item beads-issue
 mapping") admission-eligible `ready` item (eligible = dependencies clear
 AND an assignee is resolvable AND `factory_safety` is null AND every
-success-critical ACP node retains a candidate after observed-hold filtering —
+admission-required ACP node retains an eligible candidate after observed-hold filtering —
 `admission_policy` plays no part at this valve), set its `assignee` (the reused field, not a new `owner`), and
 transition it to `active`. The Dispatcher MUST NOT auto-approve
 (`pending-approval → ready`) an item whose effective `admission_policy`
@@ -4024,7 +4051,7 @@ explicit `approve` on every pass (independent of capacity).
 
 Before claiming a work-item, drive/Dispatcher admission MUST compare each comparable completed attempt with the progress high-water mark established BEFORE that attempt. The first observed terminal establishes the baseline. Advancing beyond the prior high-water mark resets the consecutive non-progress count; an item-attributable terminal at or below it increments that count. A positive committed `dispatcher.redispatch_no_progress_limit` MUST select how many such attempts refuse the NEXT dispatch. Missing or invalid policy MUST yield a configuration diagnostic/refusal, not an implicit count. Refusal MUST precede claim, name the relevant run ids, causes and high-water milestone, and require a fresh typed changed-approach record before another epoch.
 
-Progress MUST use the actual workflow dependency ordering of successful milestones, not lexical stage names or retry numbers. Histories from incomparable workflow variants MUST require an explicit diagnosed baseline/changed approach. Duplicate observations and active runs MUST NOT count as completed attempts. Known host-attributable failures neither increment nor reset the item count; unknown terminal causes MUST require diagnosis rather than silently count as host failures. Run evidence MUST be read from the factory recorded for that run; local default server observations MUST NOT replace remote history. A fresh typed causal recovery attempt names the prior history/epoch, measured diagnosis, executable operation and execution evidence, authorizes one attempt, and MUST NOT be replayable to reset subsequent dispatches or postpone the original obligation deadline. Existing within-run fix/review caps and ordinary lifecycle admission still apply.
+Progress MUST use the actual workflow dependency ordering of successful milestones, not lexical stage names or retry numbers. Histories from incomparable workflow variants MUST require an explicit diagnosed baseline/changed approach. Duplicate observations and active runs MUST NOT count as completed attempts. Known host-attributable failures, and runs released under §"Factory-configurable ACP fallback priority" → "Provider-limit release and re-dispatch", neither increment nor reset the item count; unknown terminal causes MUST require diagnosis rather than silently count as host failures. Run evidence MUST be read from the factory recorded for that run; local default server observations MUST NOT replace remote history. A fresh typed causal recovery attempt names the prior history/epoch, measured diagnosis, executable operation and execution evidence, authorizes one attempt, and MUST NOT be replayable to reset subsequent dispatches or postpone the original obligation deadline. Existing within-run fix/review caps and ordinary lifecycle admission still apply.
 
 ### Rework-pending re-dispatch
 
@@ -4058,8 +4085,8 @@ machinery may.
   item whose status is not `active` MUST NOT carry it.
 - **Mechanical preconditions.** A rework re-dispatch MUST satisfy the
   same mechanical eligibility conditions as the admission valve — a
-  resolvable assignee, `factory_safety` null, at least one unheld candidate for
-  every success-critical ACP node, and every other ratified admission
+  resolvable assignee, `factory_safety` null, at least one eligible candidate for
+  every admission-required ACP node, and every other ratified admission
   precondition — EXCEPT `ready` membership and the status transition:
   the item is already `active` and already approved. Rework is a
   machine-path CONTINUATION of the admitted work; it MUST NOT re-enter
@@ -4903,7 +4930,10 @@ dispatch locks, and its dispatch journal, across every checkout of the
 tenant. It MUST NOT be read as licensing any observation of the Fabro host
 or of any OTHER repository's state. Tenant-scoped bookkeeping across this
 repository's own checkouts is NOT host observation and is NOT barred by this
-section; the two are independent, and a future change making the count
+section. Reading the availability evidence that other repositories' runs left in
+the factory-native run records of §"Factory-configurable ACP fallback priority"
+is availability evidence, not counted-claim bookkeeping, and this tenant-scope
+clause does not govern it. The two are independent, and a future change making the count
 genuinely tenant-wide does not require retiring this clause. Separately, the
 fact that a claim can stop being counted while its remote Fabro run
 continues to execute is a KNOWN and ACCEPTED consequence of counting
@@ -4923,11 +4953,15 @@ spent producing nothing is not recoverable. Containment is therefore a stated
 obligation of the Dispatcher, not a tuning preference.
 
 **No dispatch into a known-exhausted candidate chain.** Before claim, the
-Dispatcher MUST filter every success-critical node's ordered candidates by the
-versioned observed availability holds of §"Factory-configurable ACP fallback
-priority". It MUST refuse only when at least one such chain is empty. A known
-dead primary with an eligible fallback therefore does not refuse the run; a
-known-exhausted complete chain does.
+Dispatcher MUST filter the ordered candidates of every ACP node potentially
+reachable in the submitted graph by the versioned observed availability holds
+of §"Factory-configurable ACP fallback priority", read from the host-wide
+factory-native evidence that section requires. It MUST refuse only when at
+least one such chain has no eligible candidate, and that refusal is a wait
+whose next evaluation that section schedules. A known dead primary with an
+eligible fallback therefore does not refuse the run; a known-exhausted chain
+does; and a hold on one provider never refuses an item whose resolved
+candidates are all on other providers.
 
 **No cross-vendor burn on a dead implementer.** Once a run's implementer node
 has terminated without producing any change to the worktree relative to the
@@ -4937,12 +4971,11 @@ rounds against a tree byte-identical to the dispatch base MUST NOT be executed.
 The run is finalized with the implementer's own failure as its surfaced cause.
 
 **Observed, not predicted.** A hold MUST derive from a real candidate attempt:
-either the typed condition on a terminal failed run or an idempotently projected
-`agent.acp.failover` event from a run of any eventual outcome. The latter is
-load-bearing: a primary may report an eligible failure before its fallback
-succeeds, and the successful run still records that observation. A hold MUST NOT
-derive from credential material, catalogs, a host-side probe, or provider reset
-claims. Host and sandbox credential state diverge by construction under
+either the typed condition classified from a failed node of a terminal run,
+whichever terminal the run reached, or a refused availability confirmation turn
+of §"Factory-configurable ACP fallback priority", which runs the candidate's own
+adapter. A hold MUST NOT derive from credential material, catalogs, the
+admission-time credential-usability probe, or provider reset claims. Host and sandbox credential state diverge by construction under
 §"Worker credential projection".
 
 **Every observed availability record is scoped, versioned, and expires.** A
@@ -4957,7 +4990,8 @@ alias names that provider, plus identity-less legacy candidates under
 §"Factory-configurable ACP fallback priority", which every live legacy record
 covers; they MUST NOT be ignored or broadened to unrelated explicitly identified
 candidates. Typed candidate evidence wins over legacy cause-text attribution when
-a chain executed.
+a chain executed. No record, current or legacy, MAY refuse a dispatch whose
+resolved candidates all lie outside its coverage.
 
 **A record is falsifiable only by later matching execution.** A node attempt
 that starts after a domain observation and completes successfully against that
@@ -4972,29 +5006,36 @@ clearance are the two other retirement routes.
 scope/key clearance for current records and retain the existing provider valve
 for legacy records only. Both require asserted identity and a non-blank reason,
 refuse a target with no matching live record before writing, and APPEND an audit
-record containing the exact identity, actor, time, and reason. They MUST NOT
-rewrite or delete the original observation. Automated callers may clear only
+record containing the exact identity, actor, time, and reason. For a current
+record the authoritative clearance is the factory-native record that
+§"Factory-configurable ACP fallback priority" requires, and the journal record
+is its audit reference. They MUST NOT rewrite or delete the original
+observation. Automated callers may clear only
 when they assert identity; unattributed invocation is refused unconditionally.
 
-**The admission-time credential-probe refusal re-probes rather than exiting.** A `loop` invocation (§"Dispatcher loop invocation surface") whose admission is refused by the admission-time credential-usability probe -- the projected worker credential returning a provider-limit or rate-limit condition BEFORE any sandbox is launched -- MUST NOT exit on that refusal while its `--budget` is unspent. It MUST re-run the probe on a bounded cadence and resume normal admission on the first usable probe result, subject to every other admission-valve condition (§"Admission valve (`ready → active`)"). The cadence is a committed-only `dispatcher.credential_reprobe_interval_seconds` (positive integer, default **300**); it is NOT declared API-configurable and is therefore committed-only per §"Orchestrator-owned attention facts" → "The declared-API-configurable class". Each refused probe MUST be journaled as one record under §"Control surface and audit" -- the re-probe wait is not silent. This clause governs ONLY the loop's response to a probe refusal; it creates NO new availability-record retirement route. A usable probe result MUST NOT retire an unexpired observed record: the three ratified retirement routes -- bounded expiry, matching execution (this section's "A record is falsifiable only by later matching execution"), and operator clearance -- stand unchanged, because a live credential probe is a non-dispatch-outcome host signal. Where observed holds exhaust a success-critical chain, admission remains refused until at least one candidate becomes eligible; a hold covering only the primary does not defeat an eligible fallback. The re-probe keeps the loop alive rather than substituting for record retirement.
+**The admission-time credential-probe refusal re-probes rather than exiting.** A `loop` invocation (§"Dispatcher loop invocation surface") whose admission is refused by the admission-time credential-usability probe -- the projected worker credential returning a provider-limit or rate-limit condition BEFORE any sandbox is launched -- MUST NOT exit on that refusal while its `--budget` is unspent. It MUST re-run the probe on a bounded cadence and resume normal admission on the first usable probe result, subject to every other admission-valve condition (§"Admission valve (`ready → active`)"). The cadence is a committed-only `dispatcher.credential_reprobe_interval_seconds` (positive integer, default **300**); it is NOT declared API-configurable and is therefore committed-only per §"Orchestrator-owned attention facts" → "The declared-API-configurable class". Each refused probe MUST be journaled as one record under §"Control surface and audit" -- the re-probe wait is not silent. This clause governs ONLY the loop's response to a probe refusal; it creates NO new availability-record retirement route. A usable probe result MUST NOT retire an unexpired observed record: the three ratified retirement routes -- bounded expiry, matching execution (this section's "A record is falsifiable only by later matching execution"), and operator clearance -- stand unchanged, because a live credential probe is a non-dispatch-outcome host signal. Where observed holds exhaust an admission-required chain, admission remains refused until at least one candidate becomes eligible; a hold covering only the primary does not defeat an eligible fallback. The re-probe keeps the loop alive rather than substituting for record retirement.
 
 For a new-grammar-enabled chain, a provider-limit/rate-limit probe refusal is an
 ephemeral candidate-local skip for that admission evaluation only. It creates no
 durable hold and MUST NOT enter the re-probe wait while an eligible fallback
-keeps every success-critical chain viable. The re-probe posture above applies to
+keeps every admission-required chain viable. The re-probe posture above applies to
 the legacy single-candidate route and to a genuinely empty required chain.
 
 **The probe refusal's remedy carries no timing claim as an instruction.** The credential-probe refusal surfaced to the operator MUST NOT present a provider-stated reset instant as an instruction to wait until a clock time. The same principle (this section's "Every observed availability record is scoped, versioned, and expires") already applies to the observed record, and it now applies to the probe refusal: a provider's timing claim MUST NOT be adopted as an instruction and MUST NOT gate the re-probe cadence; if the provider's refusal carried such a claim it MAY be recorded as provenance, clearly marked as an unverified provider claim rather than as an observation. The probe's OWN next result is the retirement signal for the loop's wait, not a clock.
 
-**No silent containment.** A refusal to admit on containment grounds, and a
-truncation of a run under the dead-implementer rule, are each auto-dispositions
-and MUST be journaled under §"Control surface and audit". Neither MAY be silent.
-The two carry DIFFERENT fields, because they are not governed by the same
-observation:
+**No silent containment.** A refusal to admit on containment grounds, a
+truncation of a run under the dead-implementer rule, and a provider-limit
+release are each auto-dispositions and MUST be journaled under §"Control surface
+and audit". None MAY be silent. The three carry DIFFERENT fields, because they
+are not governed by the same observation:
 
 - A containment refusal MUST carry at minimum the work-item id, governing
-  condition, exhausted success-critical node, scoped hold identities, and their
-  expiries. At least one observed record governs it by construction.
+  condition, admission-required node lacking an eligible candidate, and
+  scheduled reevaluation instant. It MUST name applicable hold observations and
+  their expiries when present. When no hold governs the refusal, it MUST name
+  the outstanding confirmation, unavailable evidence source, or admission-time
+  credential-probe skip instead; it MUST NOT invent a hold identity or
+  expiry.
 - A dead-implementer truncation MUST carry at minimum the work-item id and the
   governing condition. It fires on ANY implementer termination that produced no
   change to the worktree, whatever the cause — a provider ceiling, a crash, a
@@ -5002,12 +5043,20 @@ observation:
   scoped hold identity or expiry fields MUST NOT be required of it. Where an
   observed availability record did govern the run, naming it is permitted and
   useful.
+- A provider-limit release MUST carry at minimum the fields
+  §"Factory-configurable ACP fallback priority" → "Provider-limit release and
+  re-dispatch" names: the work-item id, run id, factory, failing node attempt,
+  matched cause, scope and hold key, the failed candidate identity, and the
+  recovery source or its confirmed absence.
 
 **Relationship to the human-gate floor.** This section does NOT relax §"Every
 needs-human escalation still reaches a human". Refusing to dispatch is not
 auto-resolving an item: the item stays open, stays `ready`, and stays surfaced
 through the needs-attention awareness surface. No containment refusal MAY
-dispose of a `blocked_reason: needs-human` item.
+dispose of a `blocked_reason: needs-human` item. A provider-limit release is not
+an auto-resolution of a needs-human decision: a classified provider-limit
+failure never enters `blocked / needs-human`, because it is not a decision a
+human holds.
 
 **Relationship to host concurrency.** A provider allowance is not a host
 resource, so this section does NOT reintroduce the host-level dispatch
@@ -5907,7 +5956,11 @@ place a human decision waits. A factory run is never that place.
   carry an interactive human-decision node whose answer resumes the run.
   The human's answer — retry, re-implement, or abandon — is expressed
   through ledger valves (`resolve-blocked`, the rework path, or leaving
-  the item blocked), never by attaching to a run.
+  the item blocked), never by attaching to a run. A failure the Dispatcher
+  classifies as provider-limit is NOT a needs-human outcome even when the
+  workflow routed it through the `needs_human` terminal: the item takes
+  §"Factory-configurable ACP fallback priority" → "Provider-limit release
+  and re-dispatch" and does not rest at `blocked / needs-human`.
 - The Dispatcher MUST reconcile every configured factory's non-terminal
   run inventory against the ledger. The invariant: on every factory
   declared under `dispatcher.factories`, the set of non-terminal runs
@@ -6041,9 +6094,9 @@ per-decision audit surface: the console reads each auto-disposition and each
 escalation from it (through this plane's published read surface) and surfaces
 the escalations as in-console needs-attention rather than re-deriving them.
 
-The two spend-containment dispositions of §"Provider spend containment" — a
-provider-exhaustion admission refusal and a dead-implementer run truncation —
-are journaled on that same journal under the same no-silent-disposition rule,
+The three spend-containment dispositions of §"Provider spend containment" — a
+provider-exhaustion admission refusal, a dead-implementer run truncation, and a
+provider-limit release — are journaled on that same journal under the same no-silent-disposition rule,
 with the per-disposition fields that section names. They are NOT setting-enabled:
 each is an unconditional obligation rather than something a setting turns on, so
 each records the GOVERNING CONDITION in place of a governing setting.
@@ -6250,10 +6303,13 @@ successor from the predecessor is FORBIDDEN.
 adapter can actually reach is a property OF THE BAKED ADAPTER VERSION, not of
 this specification: the adapter vendors a Codex generation, and a model the
 vendored generation does not know is refused by the backend rather than silently
-substituted. A pin naming an unreachable model terminates that candidate; only
-an exact eligible diagnostic may advance an explicitly configured chain under
-§"Factory-configurable ACP fallback priority". Without such a chain it still
-fails every dispatch that uses it.
+substituted. A pin naming an unreachable model fails that candidate. When the
+failure carries an exact eligible diagnostic, the Dispatcher records a
+candidate-scoped hold and re-dispatches the item to the next eligible candidate
+of an explicitly configured chain under §"Factory-configurable ACP fallback
+priority"; without a further candidate the item waits under that section rather
+than failing every dispatch, and without an eligible diagnostic the failure
+keeps its existing route.
 
 Therefore the reachable model set MUST be RE-MEASURED from the sandbox against the
 real projected credential whenever the baked `codex-acp` version changes, and any
@@ -6425,10 +6481,11 @@ byte those sections ratify is preserved.
 **The model catalog.** Entries are keyed by `provider/model` and carry the
 canonical model id, aliases, the four USD-per-million prices in the `pricing`
 shape of §"Factory-configurable ACP fallback priority", and measured
-availability signatures in that section's signature grammar. It MUST be seeded
-from upstream Fabro's model catalog where that catalog carries the model and
-extended for models it does not, including the ratified Codex ChatGPT-account
-diagnostic. A repository MAY add or override entries under
+availability signatures in that section's signature grammar, including a
+`protocol.message` form for every provider-limit diagnostic it carries. It MUST
+be seeded from upstream Fabro's model catalog where that catalog carries the
+model and extended for models it does not, including the ratified Codex
+ChatGPT-account diagnostic. A repository MAY add or override entries under
 `dispatcher.model_catalog`. A per-candidate `pricing` or
 `availability_signatures` override on a structured entry wins over the catalog
 value, and the all-or-none pricing rule applies to catalog entry and override
@@ -6456,7 +6513,13 @@ stripped, no broader prefix match) applies to the catalog key.
 
 An ACP node MAY carry an ordered, provider-generic candidate chain so an
 observed allowance outage or exact model removal does not make one configured
-adapter a single point of failure. This is an additive configuration feature:
+adapter a single point of failure. The Dispatcher, not the Fabro engine,
+consumes the chain: at every dispatch and every re-dispatch it MUST render, for
+each ACP node, exactly ONE candidate as that node's literal adapter — the
+candidate "Per-node selection" below chooses — and the engine runs that one
+adapter with no knowledge of the other candidates. Ordered fallback therefore
+happens BETWEEN runs, through "Provider-limit release and re-dispatch" below,
+never inside one node visit. This is an additive configuration feature:
 when no fallback metadata is present, or `fallbacks` is an empty array, adapter
 resolution and rendered command bytes MUST remain byte-identical to §"ACP node
 adapter configuration". In particular, an unconfigured `review_fix` node retains its workflow
@@ -6464,8 +6527,7 @@ default, and an explicit structured `review_fix` entry remains candidate zero.
 For implementation workflows the command stages `pr_refresh` and `pr` have
 no candidate chains. The groom-kind ACP `pr` keeps ordinary candidate-chain
 semantics and its admission-required membership remains graph-derived; its
-filing-plan-only work issues no remote Git effect, so the remote Git onset
-predicate does not apply to it.
+filing-plan-only work issues no remote Git effect.
 
 **Resolve the primary before attaching the chain.** The Dispatcher MUST first
 resolve candidate zero through the existing workflow-default, explicit
@@ -6518,19 +6580,24 @@ The legacy string-valued `--acp-node NODE=ADAPTER` remains valid for a node with
 no new-grammar metadata. It MUST refuse before claim on a new-grammar-enabled node,
 because it carries no stable candidate/domain identity; it MUST NOT become hold-
 exempt, retain stale metadata, or infer identity from command text. A future
-structured chain override requires separate ratification. A new-grammar-enabled
-dispatch MUST also refuse before claim when the Dispatcher or pinned Fabro build
-does not advertise this capability. Unknown, duplicate-key, incomplete,
+structured chain override requires separate ratification. Because the
+Dispatcher renders exactly one literal adapter per node, a new-grammar-enabled
+dispatch requires NO Fabro engine capability for fallback. The Dispatcher MUST
+NOT refuse a dispatch because the resolved factory server does not advertise a
+fallback-chain capability; the only engine capability gate that remains is the
+`config_options` gate of "In-protocol model and effort selection" below, which
+applies only to a dispatch whose selected candidates use it. Unknown, duplicate-key, incomplete,
 wrong-typed, or conflicting fallback configuration refuses before claim or run.
 
 "New-grammar-enabled" means identity, signature, pricing, the structured form
 (`agent`), or a non-empty fallback
 field is present; `fallbacks: []` alone remains the byte-identical no-op. The
 enabling repository MUST commit `dispatcher.minimum_release` at or above the
-first fallback-capable plugin release; this existing operator floor makes older
+first plugin release that implements Dispatcher-level fallback; this existing operator floor makes older
 Dispatchers refuse rather than silently ignore the feature. From that release
-onward every unknown `acp_nodes` key refuses before claim. Fabro capability is
-read from the dispatch's resolved factory server, never a local binary. The
+onward every unknown `acp_nodes` key refuses before claim. Any remaining engine
+capability (the `config_options` gate) is read from the dispatch's resolved
+factory server, never a local binary. The
 existing `acp_nodes`-wins rule applies only to the primary fields actually set
 (`command`/`env`/`args` in the manual form, `agent`/`model`/`effort` in the
 structured form); identity-only and fallback-only fields attach after the
@@ -6544,9 +6611,10 @@ override keys `display_name`, `candidate_key`, `availability_key`,
 `env`, `display_name`, `candidate_key`, `availability_key`,
 `availability_signatures` and `pricing`. Any other key, and any object that
 carries `agent` together with `command`, `args` or `env`, MUST refuse before
-claim. `config_options` is NOT a configuration key: it is a field of the rendered
-chain the Dispatcher emits to Fabro (see "In-protocol model and effort
-selection" below) and MUST refuse if it appears in committed configuration. A
+claim. `config_options` is NOT a configuration key: it is a field of the node
+adapter the Dispatcher renders for a selected candidate (see "In-protocol model
+and effort selection" below) and MUST refuse if it appears in committed
+configuration. A
 structured candidate with overrides, and a manual candidate, look like this:
 
 ```jsonc
@@ -6613,25 +6681,63 @@ non-eligible and surfaced as ambiguous, and it creates no hold; runtime first-
 match choice is forbidden.
 
 Text matching is a conjunction after Unicode case-folding and whitespace
-normalization, never a regular expression. It reads only the named ACP protocol
-field or separately captured terminal adapter startup/termination diagnostic,
-never an arbitrary exec-output tail, agent response, prompt, tool/test/review
-output, or run log. Structured machine codes take precedence. Authentication,
+normalization, never a regular expression. The Dispatcher applies signatures to
+the failing node's recorded failure as read from the run's resolved factory:
+a `protocol.machine_code` signature matches only where the engine preserved the
+provider's structured payload; a `protocol.message` signature matches the
+provider's message text, including the engine form that preserves ONLY the
+failure message text and no structured payload; a `process.terminal_diagnostic`
+signature matches the separately captured adapter startup/termination
+diagnostic. Structured fields MUST be parsed as fields, independent of JSON
+whitespace and key order, never matched as a byte substring. When the run ended
+at the workflow's `needs_human` terminal and the terminal message no longer
+carries the provider's sentence, the Dispatcher MUST read the failing node's own
+recorded attempt outcome before classifying, and MUST NOT classify from the
+needs-human script's own output. Matching never reads an arbitrary exec-output
+tail, agent response, prompt, tool/test/review output, or run log. Structured
+machine codes take precedence. Authentication,
 command-not-found, cancellation, node deadline or stall expiry, generic HTTP
 400/404, remote-compaction 404, malformed command/configuration, signal exit,
 unattributed sandbox/DNS/transport failure, code/test/review/tool failure, and
-non-convergence are non-eligible before configured matching and MUST terminate
-with their original identity. A mere pre-turn failure is not provider evidence.
+non-convergence are non-eligible before configured matching: they mint no hold,
+are not released for re-dispatch, and keep their original identity and their
+existing route. A mere pre-turn failure is not provider evidence.
+
+Provider and entitlement attribution MUST come from the recorded executed
+candidate identity of the failing node attempt. A shared message literal MUST
+NOT infer a different provider or account: a sentence that more than one
+provider emits is attributed to the candidate that actually ran.
 
 Built-in Claude and Codex candidates MUST carry exact, measured mappings for
 stable diagnostics exposed by the pinned adapters, including the recorded
 ChatGPT-account diagnostic that names the requested model as unsupported. The
 generic HTTP 400 remains non-eligible; the exact model-naming discriminator is
-candidate-scoped. Every Codex primary or fallback continues to obey the v107
-pin, posture, baked-path, and empty-model opt-out rules. Consequently the v107
-reachability statement is narrowed: an unreachable pin terminates that
-candidate and advances only when its exact typed cause is eligible; otherwise it
-still fails the node. Verification-run guidance applies to every new or changed
+candidate-scoped. Every provider-limit mapping MUST exist as a
+`protocol.message` signature, and additionally as a `protocol.machine_code`
+signature where the adapter emits a structured token, so that detection survives
+an engine that keeps only message text. The measured minimum set at this
+ratification, each `cause: quota` and `scope: availability-domain`, is: for
+`claude-acp`, the session-limit form (literals `hit your session limit`), the
+generic limit form (literals `hit your limit` and `resets`), the usage-limit form
+(literals `hit your usage limit`), and the organisation spend-limit form
+(literals `org` and `spend limit`); for `codex-acp`, the structured usage-limit
+field in BOTH its camelCase spelling (`codexErrorInfo` carrying
+`usageLimitExceeded`) and its snake_case spelling (`codex_error_info` carrying
+`usage_limit_exceeded`), and the message forms (literals `hit your usage limit`;
+literals `usage limit exceeded`). Both measured Codex spellings MUST be
+recognized. A Claude `rate_limit` kind alone does not establish quota
+exhaustion; its measured message discriminator is required. A non-dispositive
+structured kind MUST NOT suppress that discriminator. Every listed measured
+form MUST be exercised against its recorded executed candidate, including
+message-only payloads and both structured Codex spellings. A newly measured
+provider-limit form is added to this set by a committed change to the built-in
+signatures or the model catalog, never by loosening a literal into a broader
+match. Every Codex primary or fallback continues to obey the v107 pin, posture,
+baked-path, and empty-model opt-out rules. Consequently the v107 reachability
+statement is narrowed: an unreachable pin is a failure of that candidate; when
+its exact typed cause is eligible it mints a candidate hold and the item is
+released for re-dispatch to the next eligible candidate, and otherwise it keeps
+its existing route. Verification-run guidance applies to every new or changed
 candidate.
 
 **Preflight consumes versioned observed holds.** A current record carries at
@@ -6647,81 +6753,220 @@ legacy candidates, which every live legacy record covers. Explicitly identified
 candidates MUST NOT be broadened to unrelated identities. Typed candidate evidence takes
 precedence over legacy cause-text attribution when a chain executed.
 
-A hold MUST come from an actual candidate attempt: a typed terminal failure or
-an idempotently projected `agent.acp.failover` event from a run of any eventual
-outcome. Expiry is computed from occurrence time and never from ingestion. No
-hold may come from credentials, catalogs, host probes, predicted health, price,
-model strength, or provider reset claims. The Dispatcher MUST retain configured
-order after filtering.
+A hold MUST come from an actual candidate attempt: a typed eligible failure
+classified from a failed node of a terminal run, whichever terminal the run
+reached, or a refused availability confirmation turn (see "Availability is
+re-confirmed after expiry" below), which runs the candidate's own adapter and
+is therefore an actual attempt. Expiry is computed from occurrence time and
+never from ingestion. No hold may come from credentials, catalogs, the
+admission-time credential-usability probe, predicted health, price, model
+strength, or provider reset claims. The Dispatcher MUST retain configured order
+after filtering.
+
+**Holds are per provider domain and discoverable host-wide from factory-native
+run records.** A domain hold keyed on a provider allowance's `availability_key`
+is the per-provider hold; a candidate hold keys on the exact identity pair.
+Availability evidence MUST be discoverable host-wide from the factory's native
+run records, without an optional per-repository peer list. Each recorded attempt
+MUST identify its resolved factory, repository, run, node attempt, candidate
+entitlement, occurrence time, and typed availability outcome. Hold observations
+and their retirement evidence MUST remain reconstructible after any
+repository-local dispatch journal is removed. Dispatch journals MAY record audit
+references but MUST NOT be the sole authority for holds. The participating
+factory instances are every factory declared under `dispatcher.factories`; each
+Dispatcher MUST read availability evidence from every declared factory, so an
+observation made by any repository's run on a participating factory is visible
+to every repository that dispatches to it. Observations, successful availability
+confirmations, and operator clearances MUST each be recorded as a factory-native
+record on the participating factory whose evidence they create or retire — a
+confirmation by the factory run that confirmed it, and an operator clearance by
+a minimal factory-native record whose recorded outcome carries the clearance's
+exact identity, actor, time, and reason — so retirement is reconstructible from
+the same source as observation. Reading other repositories' recorded attempts
+for this purpose is availability evidence, not counted-claim bookkeeping, and
+the tenant-scope clause of §"Host concurrency belongs to the Fabro scheduler"
+does not govern it. No separate hold sidecar file, cache, or store MAY hold or
+mirror this evidence.
+
+An unreadable or incomplete evidence source is unavailable, not an empty hold
+set. The Dispatcher MUST surface that condition and retry observation on a
+bounded cadence. It MAY continue with candidates whose availability evidence is
+independently complete; it MUST NOT treat an unobserved candidate as confirmed
+unheld. This condition MUST NOT create a needs-human decision. A hold, current
+or legacy, MUST NOT refuse, delay, or re-route a dispatch whose resolved
+candidates are all outside its coverage; in particular no gate MAY refuse every
+dispatch because some provider holds a record.
+
+**Per-node selection.** For each node, the Dispatcher MUST choose the first
+candidate in configured order that has no covering live hold, has satisfied any
+outstanding post-expiry availability confirmation, and has not been skipped by
+the admission-time credential-usability probe for this evaluation. Such a
+candidate is *eligible*. Selection is made once per dispatch from one
+consistent read of the availability evidence and is journaled per node with a
+stable selection identity, the selected candidate index and identity, the
+full-chain digest, the primary-generation fingerprint, and the holds that
+skipped earlier candidates; that record contains no command, env value,
+credential, prompt, raw error, or unredacted diagnostic.
 
 The workflow MUST expose the ACP nodes that dominate every green terminal path.
-Those success-critical nodes are admission-required; for the reserved
+Those are the success-critical nodes; for the reserved
 workflow they are `dod_gate`, `implement`, `proof_capture`, `review`,
 `proof_verify`, each of which dominates every green terminal path;
 for a registered variant the success-critical set is the ACP nodes
-dominating that variant's own green terminal paths. Admission and rework admission refuse before
-claim only when at least one such chain has no candidate. A conditional repair
-or adjudication node may have an empty filtered chain at preflight, but if
-reached it MUST terminate the run before starting an adapter with the typed
-availability cause surfaced. It MUST NOT traverse a continuation/failure edge
-into janitor, non-convergence, or `needs_human`, and the Dispatcher MUST NOT
-reclassify it as deterministic work failure. An unsupported or
-ambiguous workflow graph MUST refuse fallback-enabled dispatch instead of
-guessing. Idle-factory and wait attention consume this identical verdict.
+dominating that variant's own green terminal paths. The admission-required set
+is wider: every ACP node potentially reachable in the submitted graph is
+admission-required, success-critical or not. Before submission, every ACP node
+potentially reachable in the submitted graph MUST have an eligible candidate. A
+node proven unreachable in that graph imposes no candidate requirement. If any
+potentially reachable node has no eligible candidate, the item MUST remain
+ready without a claim or blocked reason, and the Dispatcher MUST schedule
+another admission evaluation. It MUST NOT render or start a candidate covered
+by a live hold, including for conditional repair or adjudication nodes. The
+same predicate governs rework admission, where the parked item stays parked
+without a claim. The scheduled evaluation falls at the earliest expiry among
+the holds that empty a chain, and otherwise after
+`dispatcher.credential_reprobe_interval_seconds`; no human valve is the remedy
+for that wait. An unsupported or ambiguous workflow graph MUST refuse
+fallback-enabled dispatch instead of guessing. Idle-factory and wait attention
+consume this identical verdict.
 
 The admission-time credential probe creates no observed record. For a fallback-
 enabled chain, a provider-limit/rate-limit probe refusal is an ephemeral
 candidate-local skip for that one admission evaluation; the Dispatcher
-continues in order and MUST NOT hold the loop while a success-critical chain is
-viable. If all candidates are locally unusable, admission may refuse for the
-empty chain but no durable hold is minted. The re-probe wait applies to a legacy
-single candidate and a genuinely exhausted fallback chain, never a primary-only
-probe refusal with a viable fallback.
+continues in order and MUST NOT hold the loop while every admission-required
+chain is viable. If all candidates are locally unusable, admission may refuse
+for the empty chain but no durable hold is minted. The re-probe wait applies to
+a legacy single candidate and a genuinely exhausted fallback chain, never a
+primary-only probe refusal with a viable fallback. This admission-time probe is
+distinct from the availability confirmation turn below and confirms nothing
+about availability.
 
 Bounded expiry, later matching execution, and operator clearance are the only
-hold-retirement routes. A node attempt that starts after a domain observation
+hold-retirement routes; a successful availability confirmation satisfies an
+expired observation's outstanding confirmation and does not shorten a live one.
+A node attempt that starts after a domain observation
 and succeeds against the same hold key retires only that older domain record; a
 later success by the exact candidate identity retires only its older candidate
-record. A successful fallback MUST NOT clear its skipped or failed primary, even
-when the whole run succeeds. An exact scope/key clearance valve MUST be
-attributed, reason-required, append-only, and refuse a nonexistent live target;
-the legacy provider valve addresses legacy records only.
+record. A re-dispatched run that succeeds on a fallback candidate MUST NOT clear
+the held primary, even when the whole run succeeds. An exact scope/key clearance
+valve MUST be attributed, reason-required, append-only, and refuse a
+nonexistent live target; the legacy provider valve addresses legacy records
+only. Operator clearance MUST make the affected wait eligible for immediate
+reevaluation.
 
-**Reactive fallback is one bounded node visit.** The externally observable
-integration is one run id, one sandbox identity, one node deadline, no
-predecessor-node replay, ordered candidate attempts, and normal workflow
-continuation on success. The Fabro repository owns the internal handler and this
-repository consumes a capability-bearing pinned release. The scope boundary in
-§"Provider-limit permanence and root-cause surfacing" is narrowed only for this explicit integration:
-that section still does not govern Fabro generally, but the fallback-enabled
-node MUST exhibit these observables.
+**Provider-limit release and re-dispatch.** When a run terminates — through
+any terminal, the workflow's `needs_human` terminal included — and the failing
+node's recorded failure classifies under this section's signatures as an
+eligible cause, the Dispatcher MUST, in this order and without a human:
+(1) record the hold that failure observed, scoped and keyed as the matching
+signature declares; (2) journal one `provider-limit-release` record naming the
+work-item, run id, factory, failing node attempt, matched cause, scope and hold
+key, the candidate identity that failed, and the recovery source chosen under
+"Recovery from the failed run's preserved work" below or its confirmed absence;
+(3) release the item's dispatch claim and return it to `ready`, NOT to
+`blocked` and with no `blocked_reason`; and (4) leave the item to the ordinary
+admission valve, which re-dispatches it with every node selected afresh as
+"Per-node selection" specifies. When every admission-required node still has an
+eligible candidate the re-dispatch is admitted on the next pass; otherwise the
+item waits as the admission paragraph above specifies. A provider-limit release
+MUST NOT consume any budget of §"The three rework caps", MUST NOT count as an
+item-attributable terminal under §"Across-dispatch required-result progress",
+and MUST NOT be surfaced as a needs-human decision. Only a failure the
+Dispatcher cannot classify as eligible keeps its existing route, including the
+`blocked / needs-human` rest of §"A factory run never awaits a human".
 
-Every candidate shares the node's original wall-clock deadline and receives
-only its remaining time; timeout derivation MUST remain one node timeout, never
-candidate count multiplied by timeout. Within one engine handler attempt each
-candidate is tried at most once in order. `engine_attempt` and
-`candidate_index` are distinct. Before any failover, an existing outer retry for
-a non-eligible transient failure MAY retry the preflight-selected candidate.
-After the first reactive transition the node visit is non-retryable: neither an
-outer retry nor checkpoint/resume may replay any attempted or skipped candidate.
-The attempted set, original deadline, and event ids MUST survive resume.
-Exhaustion is a typed, non-retryable node outcome preserving the final cause.
+`provider-limit-release` covers the eligible availability causes defined by the
+signature grammar, including candidate-scoped model removal. The typed
+provider-usage-limit flag of §"Provider-limit permanence and root-cause
+surfacing" remains specific to usage or spend ceilings and MUST NOT be set
+merely because another eligible availability cause triggers release. A typed
+provider-limit failure from an identity-less legacy adapter MUST record the
+existing legacy provider observation and release the item to ready without
+inventing a candidate identity. Its conservative legacy coverage remains
+unchanged.
 
-Sandbox-local partial changes MAY pass to the successor with the original task
-and a delimited recovery preamble that names the interrupted attempt and
-requires inspection of current state. This is permitted only with durable proof
-that every completed tool operation was sandbox-local and no external effect
-began. A side-effect ledger MUST write onset before issuing an external mutation;
-missing, incomplete, or unknown evidence is fail-closed and terminates without
-fallback. Transition after onset additionally requires declared durable
-idempotent/resumable semantics plus the idempotency key, resume identity, and
-observed remote state. The scripted publication stages have no adapter fallback. For any ACP node
-performing external effects, missing or unreadable remote evidence MUST be
-treated as already past onset; converting publication to commands does not
-relax this rule for agent stages.
+The release operation MUST be idempotent and replayable by reconciliation,
+keyed by resolved factory, run, and failing node attempt. Reconciliation MUST
+complete any interrupted hold, release, cost-observation, and ledger-transition
+writes without refreshing the original hold expiry, duplicating cost, or
+releasing a newer dispatch claim. The failure selected for release MUST be the
+unrecovered failure responsible for the run's terminal disposition. An earlier
+failed attempt that later succeeded MUST NOT release a successful run or
+override a subsequent unrelated failure. Unreadable failure evidence MUST be
+surfaced as unavailable and retried automatically; it MUST NOT be treated as a
+measured non-match or converted into a needs-human decision.
+
+**Recovery from the failed run's preserved work.** Before stale publish-branch
+reclaim, the Dispatcher MUST evaluate the published-PR resume preconditions of
+§"Resume from a published pull request (`resume --item`)". When all pass, it
+MUST invoke resume under its own invoker identity and MUST NOT reclaim the
+branch.
+
+When resume is inapplicable because no valid proof anchor exists, the head or
+Definition of Done changed, or the resume-count bound is reached, the
+Dispatcher MUST autonomously use a plain dispatch seeded from preserved work.
+It MUST NOT inherit proof from a different head or Definition of Done. An
+unobservable forge or factory measurement requires an automatically retried
+wait, not destructive reclaim.
+
+The seed record MUST name the source run, remote, immutable commit SHA, and
+preservation reference. The Dispatcher MUST prefer the failed run's
+successfully preserved terminal tree (the pushed ref a needs-human ending
+preserves under §"A factory run never awaits a human"), then its observed
+published head or the corresponding preserved-publish ref of §"Stale
+publish-branch reclaim before a re-dispatch". It MUST verify preservation
+before deleting the publish branch. The new sandbox MUST check out the recorded
+SHA, and the goal brief MUST name that commit as an interrupted prior attempt
+whose current state the agent inspects before continuing.
+
+A confirmed absence of preserved work permits a plain dispatch from the
+default branch, with that loss recorded. An unreadable reference is not
+confirmed absence.
+
+**Availability is re-confirmed after expiry.** When a domain or candidate hold
+reaches its bounded expiry, the candidates it covered carry an outstanding
+availability confirmation, and "Per-node selection" MUST NOT choose such a
+candidate until that confirmation is satisfied. Availability is confirmed only
+by a successfully completed ACP prompt turn using the candidate's pinned adapter
+version, requested model and effort, and projected worker credential identity.
+Session creation, process exit alone, timeout, cancellation, and an ACP refusal
+do not confirm availability. A host-side probe is permitted only when these
+execution properties are equivalent and its outcome is durably observable
+through the same authoritative evidence source; otherwise the probe MUST be a
+minimal factory run. The probe sends one fixed minimal prompt.
+
+A successful confirmation satisfies the expired observations it names for that
+candidate. It MUST NOT satisfy a newer observation. An eligible refusal creates
+a new occurrence-time-scoped hold. Any other probe failure skips that candidate
+for the current evaluation, creates no hold, and allows selection to continue
+to later eligible candidates.
+
+If no candidate remains eligible, the Dispatcher MUST retry automatically after
+`dispatcher.credential_reprobe_interval_seconds`; it MUST NOT busy-loop or
+require a human. Probe execution MUST be bounded by the
+committed-configuration-only `dispatcher.availability_probe_timeout_seconds`
+(positive integer, default **120**), including termination of unfinished probe
+work. Every probe turn is journaled with the candidate identity, outcome,
+occurrence time and, where observable, its cost. A provider's own advertised
+reset instant MUST NOT schedule, shorten, or replace the probe; it MAY be
+recorded only as unverified provenance. The confirmation turn is not the
+admission-time credential-usability probe of §"Provider spend containment" and
+changes none of that probe's rules.
+
+Scheduled availability waits MUST survive Dispatcher restart through
+authoritative evidence and be reevaluated by the ordinary unattended loop. An
+expired timestamp MUST NOT schedule an immediate retry repeatedly. Operator
+clearance MUST make the affected wait eligible for immediate reevaluation.
+
+No engine-side fallback transition or fallback capability is required. Should a
+pinned Fabro engine later expose a supported extension point for trying a
+further candidate within one node visit, using it is an optional optimisation
+that requires its own ratified change; this section neither requires nor
+forbids it.
 
 **In-protocol model and effort selection.** For a candidate whose agent catalog
-entry declares the `protocol` mechanism, the rendered chain candidate MUST carry
+entry declares the `protocol` mechanism, the node adapter the Dispatcher renders
+for that candidate MUST carry
 a `config_options` object mapping ACP session config option ids to requested
 values (`model` and, when set, `effort`), and the Fabro ACP handler MUST, after
 `session/new` and before the first `session/prompt`, read the agent's advertised
@@ -6731,68 +6976,64 @@ requested option is confirmed set. When the agent does not advertise a requested
 option id, or advertises it without the requested value among its options, the
 candidate MUST terminate as a typed pre-turn refusal — cause `model_unsupported`
 at candidate scope when the option is `model`, `malformed_configuration`
-otherwise — recorded with its own identity, minting no hold, and never
-triggering reactive fallback. For a candidate whose agent entry declares an
+otherwise — recorded with its own identity, minting no hold, and never released
+for re-dispatch as a provider-limit failure; it keeps its existing route. For a candidate whose agent entry declares an
 environment or argument mapping, the Dispatcher MUST render `model` and `effort`
 into the adapter exactly as the mapping states and the handler sets no option;
 the two mechanisms MUST NOT be combined for one candidate. The
 `agent.acp.started` event MUST carry the confirmed model and effort as additive
 non-secret fields so a reader can verify which model actually ran without
-reading the command. The Fabro server MUST advertise the additive capability
-`acp.candidate_config_options.v1` alongside `acp.fallback_chain.v1`, and the
-Dispatcher MUST refuse before claim a chain carrying `config_options` when the
-resolved factory server does not advertise it, exactly as the existing
-capability gate does.
+reading the command. The selected candidate's `config_options` MUST be
+transported through a supported single-node mechanism independently of
+`acp.fallback_chain`. The Fabro server MUST advertise the additive capability
+`acp.candidate_config_options.v1`; a missing or unreadable required capability
+MUST refuse before claim. A dispatch with no selected protocol-configured
+candidate MUST NOT require this capability, and an unselected fallback's
+options never gate a dispatch.
 
-**Events and projection are compatible, idempotent, and leak-free.** The feature
-MUST NOT reuse Fabro's existing incompatible native-API `agent.failover` event.
-Each reactive or actually executed preflight transition emits a versioned
-`agent.acp.failover` event with `schema_version: 1`, stable event id, occurrence time, node visit,
-engine attempt, candidate indexes and durations, from/to display and machine
-identities, selected hold key, typed cause/scope, primary-generation
-fingerprint, and separate full-chain digest. It MUST contain no command, env
-value, credential, prompt, raw error, or unredacted diagnostic. Existing
-`agent.failover` events and stored-run consumers remain unchanged and require
-historical/native round-trip controls.
-Unknown versions MUST be round-tripped byte-for-byte and surfaced as
-unobservable; they MUST NOT mint a hold or silently disappear.
+**Fallback selection is observed from the Dispatcher's own decisions.** The
+Dispatcher MUST NOT depend on any engine fallback or failover event; the
+per-node selection record of "Per-node selection" and the
+`provider-limit-release` record are the authoritative fallback history, read
+together with the run's node outcomes on its resolved factory. Fabro's existing
+native-API `agent.failover` events and their stored-run consumers are
+unaffected by this section. Reconciliation MUST replay selection-to-execution
+observation idempotently using factory, run, node attempt, and selection
+identity. Missing or unreadable node outcomes MUST be surfaced as unavailable,
+not interpreted as an unreached node. They MUST be retried and MUST NOT clear
+an existing warning. Their unavailability alone MUST NOT create a needs-human
+decision. Existing versioned hold observations, retirement records, and
+fallback audit records remain readable. Removing dependence on new engine
+failover events MUST NOT discard existing holds or reinterpret unknown record
+versions.
 
-The Dispatcher MUST fetch events from the run's resolved factory target,
-project by stable event id, calculate holds from occurrence time, and replay
-projection during reconciliation. Read failure is not absence. It emits exactly
-one flat fact per run/node with id
-`hygiene:model-fallback-projection:<repo>:<run>:<node>`, existing `hygiene`
-kind, `high` urgency, source reference to repository and dispatch journal, a
-deterministic run/node/factory/error summary, and a `shell` handoff containing
-the same executable server-qualified inspection command reconciliation uses.
-Repeated failures aggregate into that id; it clears only after successful
-idempotent projection for the run/node or an attributed, reason-required,
-append-only operator clearance naming that exact fact id. Clearance retires the
-fact only and MUST NOT mint, retire, or reinterpret a hold; run absence alone is
-never resolution.
-
-While any projection-failure fact remains unresolved, an unattended loop MUST
-stop further picking for that repository. A human-attended `--item` dispatch MAY
-proceed only after the high-urgency warning is surfaced before claim and does
-not clear the fact.
-
-Every actually executed non-primary candidate appends one idempotent journal
-record and yields one aggregate attention fact per repository/node with id
+Every dispatch whose per-node selection rendered a non-primary candidate for a
+node the run then actually executed — as read from the run's node outcomes on
+its resolved factory — appends one idempotent journal record and yields one
+aggregate attention fact per repository/node with id
 `hygiene:model-fallback:<repo>:<node>`, existing `hygiene` kind, valid urgency,
 source reference, and executable inspection handoff. The newest unresolved
 observation supplies the deterministic summary. Later run failure does not
-erase it, and it never refuses or disposes work. A primary node attempt clears
-only a warning from the same primary-generation fingerprint when its attempt
-began after the warning and completed successfully, regardless of the overall
-run's later outcome. Older concurrent success, unrelated success, probes, and
-unexecuted preflight selection cannot clear it. Primary replacement retires the
-prior warning as append-only `superseded`; non-primary chain changes alter only
-the full-chain digest, not the primary generation, so they do not strand the
-warning.
+erase it, and it never refuses or disposes work. The warning clears only when a
+later dispatch renders the same primary generation for that node and that node
+attempt, begun after the warning, completes successfully, regardless of the
+overall run's later outcome. Older concurrent success, unrelated success,
+probes, and a selection for a node the run never reached cannot clear it.
+Primary replacement retires the prior warning as append-only `superseded`;
+non-primary chain changes alter only the full-chain digest, not the primary
+generation, so they do not strand the warning.
 
-**Cost follows every attempt in a successful fallback run.** Token use and
-elapsed time MUST be attributed and summed per candidate attempt, including
-failed attempts before the successful fallback. Emitted model identity,
+**Cost follows every attempt.** For every run released under "Provider-limit
+release and re-dispatch", and for every availability confirmation turn, the
+Dispatcher MUST journal one attempt-cost record carrying the attempt's token
+use and elapsed time per node attempt wherever the run record exposes them,
+priced under the rules below, or marked cost-unobservable. An item's cost across
+a release-and-re-dispatch sequence is the sum of those records and the final
+run's cost. Each run or probe cost observation MUST have a stable identity and
+MUST be counted at most once across reconciliation and resume. If any included
+attempt has unobservable cost, the sequence total MUST be unobservable; a known
+subtotal MAY be displayed only when explicitly labeled incomplete. A shared
+availability probe MUST NOT be charged in full to multiple items. Emitted model identity,
 normalized only by stripping one trailing `-YYYYMMDD` date suffix (any broader
 prefix match is not exact identity), selects built-in pricing only for
 the matching built-in candidate and endpoint. Pricing resolves through the model catalog
@@ -6804,8 +7045,9 @@ input, output, cache-write, and cache-read prices, and applies only when emitted
 identity matches. If any nonzero usage component cannot be priced, the whole run
 cost is unobservable, not a known partial subtotal; §"Fail-closed cost gate
 (keyed on `--item` presence)" remains authoritative. An unknown model MUST NOT
-be priced as an unrelated default or treated as free. Terminally unsuccessful
-runs retain the existing no-cost-observation/no-gate posture.
+be priced as an unrelated default or treated as free. Attempt-cost records are
+observations only and never yield a gate verdict; terminally unsuccessful runs
+otherwise retain the existing no-gate posture.
 
 ## ACP node timeouts
 
@@ -6910,6 +7152,34 @@ prose matching, and MAY fall back to prose hints when that token is absent: pros
 hints are locale- and wording-fragile, and a near-miss variant has already been
 observed to defeat a substring match that omitted one word.
 
+**Detection covers every measured form, and the verdict is never transient.**
+A provider usage, session, or spend ceiling MUST be classified permanent and
+MUST NOT be classified `transient_infra`, whichever measured form carries it:
+the provider's structured token in any spelling the pinned adapters emit (for
+Codex both `codexErrorInfo` / `usageLimitExceeded` and `codex_error_info` /
+`usage_limit_exceeded`), or, where the engine preserves only the failure
+message text, the provider's sentence (for Claude the session-limit, generic
+limit, usage-limit, and organisation spend-limit sentences; for Codex the
+usage-limit sentences), using the measured set of §"Factory-configurable ACP
+fallback priority". A Claude `rate_limit` kind alone does not establish quota
+exhaustion; its measured message discriminator is required. The provider is
+attributed from the recorded executed candidate identity, never inferred from a
+shared message literal. "Permanent" here means unsuitable for immediate retry
+within the current allowance window, not unavailable forever: the hold such a
+failure records still expires and is re-confirmed under §"Factory-configurable
+ACP fallback priority".
+
+**The typed state survives the needs_human terminal.** A run that ended at the
+workflow's `needs_human` terminal after an ACP node failed MUST be classified
+from that node's own recorded failure. The typed provider-limit state, the
+attributed provider, and the surfaced provider sentence MUST be carried on the
+outcome the Dispatcher derives, exactly as for any other terminal; when the
+typed state is set the item takes §"Factory-configurable ACP fallback
+priority" → "Provider-limit release and re-dispatch" and does NOT rest at
+`blocked / needs-human`. A dead-implementer truncation (§"Provider spend
+containment") whose surfaced implementer failure carries the typed state takes
+the same route.
+
 **CONTROL — an ordinary failure keeps its classification.** A failure whose cause
 chain carries NO permanent cause of either class above MUST retain the category
 and signature it arrived with. A rule that reclassified every failure as
@@ -6928,10 +7198,12 @@ this specification. This section therefore MUST NOT be read as preventing that
 retry: until the upstream classifier is corrected, ONE wasted attempt per
 exhausted-window dispatch is expected behaviour, and the admission gate of
 §"Provider spend containment" — not this section — is what prevents the dispatch
-from being attempted at all. The explicit same-node integration in
-§"Factory-configurable ACP fallback priority" is the sole carve-out: it binds
-that fallback-enabled node's observable transition semantics without otherwise
-placing Fabro's classifier under this specification.
+from being attempted at all. No engine-side fallback transition or fallback
+capability is required. The separate in-protocol configuration contract remains
+an engine integration requirement for selected candidates that use it. The one
+wasted engine retry remains expected; the provider-limit release route of
+§"Factory-configurable ACP fallback priority", not any engine behaviour, is
+what moves the item to an eligible candidate.
 
 **The reset instant is not a machine timestamp.** The provider's message names
 when the window reopens, and that is the most useful thing in it. It is rendered

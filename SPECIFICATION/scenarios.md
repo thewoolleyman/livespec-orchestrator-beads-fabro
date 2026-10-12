@@ -1039,8 +1039,9 @@ Scenario: A run that did not reach a successful terminal outcome is not gated
   Given LIVESPEC_COST_MODE is enforce
   And a dispatched run did not reach a successful terminal outcome
   When the cost gate runs
-  Then that run yields no cost observation and no gate verdict
-  And the Dispatcher does not refuse on its account
+  Then that run yields no gate verdict
+  And a provider-limit-released run still yields its attempt-cost observation
+  And the Dispatcher does not refuse on that observation's account
 
 Scenario: The default report posture journals a gate record but derives no keyed verdict
   Given LIVESPEC_COST_MODE is unset, empty, or unrecognized, so it resolves to report
@@ -1455,33 +1456,36 @@ Scenario: A listed decision that also changes what the specification requires st
 Feature: The Dispatcher skips observed-unavailable candidates and refuses only an exhausted required chain
   As a maintainer holding several non-interchangeable provider allowances
   I want each node's ordered candidates filtered by observed scoped holds
-  So that one exhaustion event costs one candidate attempt without defeating a viable fallback
+  So that observed exhaustion prevents subsequent admission to covered candidates without defeating an eligible fallback
 
   Scenario: A held primary with a viable fallback is admitted
-    Given a ready work-item whose success-critical node has an unexpired domain hold covering candidate zero
+    Given a ready work-item whose potentially reachable ACP node has an unexpired domain hold covering candidate zero
     And the same node has an unheld candidate one
     When the Dispatcher evaluates the admission valve
     Then the item is admitted with candidate one selected for that node
     And no sandbox is refused merely because candidate zero is held
 
-  Scenario: An exhausted success-critical chain refuses without disposing the item
-    Given a ready work-item with no unheld candidate for one success-critical ACP node
+  Scenario: An exhausted admission-required chain refuses without disposing the item
+    Given a ready work-item with no eligible candidate for one ACP node potentially reachable in the submitted graph
     When the Dispatcher evaluates the admission valve
     Then the item is not admitted
     And no sandbox run is launched
-    And the item remains at status "ready" and is not marked "blocked"
-    And the refusal is journaled with the work-item id, exhausted node, scoped hold identities, and expiries
+    And the item remains at status "ready" without a claim and is not marked "blocked"
+    And the refusal is journaled with the work-item id, governing condition, admission-required node lacking an eligible candidate, and scheduled reevaluation instant
+    And applicable hold observations and their expiries are included when present
+    And when no hold governs the refusal, the record names the outstanding confirmation, unavailable evidence source, or admission-time credential-probe skip without inventing a hold identity or expiry
 
-  Scenario: A scoped record expires and admission resumes
+  Scenario: A scoped record expires, a completed confirmation turn re-confirms the candidate, and admission resumes
     Given an observed availability record whose bounded expiry has passed
-    And the covered candidate makes a success-critical chain viable
+    And the covered candidate makes an admission-required chain viable
+    And an availability confirmation turn through that candidate completes successfully
     When the Dispatcher evaluates the admission valve on a subsequent pass
     Then the expired record does not skip the candidate
     And the item is admitted normally
 
   Scenario: A legacy provider record remains effective during migration
     Given an unexpired legacy provider-exhaustion record against provider "codex"
-    And a success-critical chain whose built-in primary carries the "codex" compatibility alias
+    And an admission-required chain whose built-in primary carries the "codex" compatibility alias
     And no fallback remains eligible
     When the Dispatcher evaluates the admission valve
     Then the legacy record exhausts that chain and refuses admission
@@ -1495,10 +1499,41 @@ Feature: The Dispatcher skips observed-unavailable candidates and refuses only a
 
   Scenario: A containment refusal never disposes a needs-human item
     Given a work-item carrying blocked_reason "needs-human"
-    And observed holds exhaust a success-critical chain
+    And observed holds exhaust an admission-required chain
     When the Dispatcher evaluates that item
     Then the item is not auto-resolved
     And the item stays surfaced through the needs-attention awareness surface
+
+  Scenario: A hold on one provider does not refuse an item wholly on another
+    Given an unexpired domain hold, current or legacy, on the codex availability domain
+    And a ready work-item whose every ACP node resolves to candidates outside that domain
+    When the Dispatcher evaluates the admission valve
+    Then the item is admitted
+    And no refusal record names the codex hold
+
+  Scenario: A hold recorded by another repository's run is visible host-wide
+    Given a run of another repository on a participating factory recorded an unexpired domain hold on the codex availability domain
+    When this repository's Dispatcher evaluates a ready item whose first implement candidate is in that domain
+    Then that candidate is skipped exactly as a hold from this repository's own run would skip it
+    And no per-repository peer list is consulted
+
+  Scenario: A chain exhausted by live holds waits until scheduled reevaluation
+    Given a ready work-item whose candidates for one potentially reachable ACP node are all covered by live holds
+    When the Dispatcher evaluates admission
+    Then the item's next admission evaluation is scheduled at the earliest expiry among the covering holds
+    And the wait is surfaced with that instant and an applicable clearance valve, never resolve-blocked
+    And the scheduled wait survives a Dispatcher restart
+    And an expired instant does not schedule repeated immediate retries
+
+  Scenario: An availability wait without a live hold remains visible and retries automatically
+    Given a ready work-item with no eligible candidate for one potentially reachable ACP node
+    And no live hold governs the wait
+    And eligibility is prevented by outstanding confirmation, unavailable evidence, or admission-time credential-probe skips
+    When the Dispatcher evaluates admission
+    Then reevaluation is scheduled after dispatcher.credential_reprobe_interval_seconds
+    And attention names the governing condition and scheduled instant with an inspection handoff
+    And no nonexistent hold clearance or resolve-blocked action is advertised
+    And the wait survives Dispatcher restart without requiring human action
 ```
 
 ## Scenario 61 — A dead implementer does not spend the second vendor
@@ -1612,6 +1647,48 @@ Scenario: An ordinary transient failure keeps its classification
   Then the failure category is the one the run reported
   And the failure signature is unchanged
   And the typed provider-limit flag is not set
+
+Scenario Outline: Every measured provider-limit form is detected against its executed candidate and is never transient
+  Given a failed run whose failing node attempt ran on a <candidate> candidate
+  And that attempt's recorded failure carries <form>
+  When the Dispatcher derives the failure detail for that run
+  Then the failure category is permanent and not transient_infra
+  And the failure detail carries the typed provider-limit flag
+  And the provider is attributed as <provider>
+
+  Examples:
+    | candidate  | form                                                                               | provider  |
+    | claude-acp | the sentence "You've hit your session limit" with structured kind rate_limit       | anthropic |
+    | claude-acp | only the message text "You've hit your limit · resets" and no structured payload   | anthropic |
+    | claude-acp | only the message text "You've hit your usage limit" and no structured payload      | anthropic |
+    | claude-acp | the organisation spend-limit sentence                                              | anthropic |
+    | codex-acp  | the structured field codexErrorInfo carrying usageLimitExceeded                    | codex     |
+    | codex-acp  | the structured field codex_error_info carrying usage_limit_exceeded                | codex     |
+    | codex-acp  | the structured usage-limit field with reordered keys and different JSON whitespace | codex     |
+    | codex-acp  | only the message text "You've hit your usage limit" and no structured payload      | codex     |
+    | codex-acp  | only the message text "usage limit exceeded" and no structured payload             | codex     |
+
+Scenario: A shared provider sentence is attributed to the candidate that ran
+  Given a failed run whose failing node attempt ran on a claude-acp candidate
+  And that attempt's recorded failure carries only the message text "You've hit your usage limit"
+  When the Dispatcher derives the failure detail for that run
+  Then the provider is attributed as anthropic and not as codex
+  And the hold recorded for it covers the executed candidate's availability domain only
+
+Scenario: A Claude rate_limit kind without the measured sentence is not a quota exhaustion
+  Given a failed run whose failing node attempt ran on a claude-acp candidate
+  And that attempt's recorded failure carries structured kind rate_limit and no measured provider-limit sentence
+  When the Dispatcher derives the failure detail for that run
+  Then the typed provider-limit flag is not set
+  And no availability hold is recorded
+
+Scenario: A provider-limit failure routed through the needs_human terminal keeps its typed state
+  Given a run that ended at the workflow's needs_human terminal after an ACP node failed on a provider usage ceiling
+  And the terminal message carries the needs-human script's output rather than the provider's sentence
+  When the Dispatcher derives the outcome
+  Then it classifies from the failing node's own recorded failure
+  And the outcome carries the typed provider-limit flag, the attributed provider, and the provider's sentence
+  And the item does not rest at blocked with blocked_reason needs-human
 ```
 
 ## Scenario 66 — A parked rework item is re-dispatched before new ready work
@@ -2105,7 +2182,7 @@ Scenario: All six enumerated waits compose, and a non-wait does not
   And a blocked item whose blocked reason is needs-human
   And a pending-approval item under an effective manual admission policy
   And a factory-unsafe ready item awaiting host routing
-  And a ready item whose success-critical ACP chain is exhausted by unexpired observed holds
+  And a ready item whose admission-required ACP chain is exhausted by unexpired observed holds
   And one healthy ready item admitted for dispatch
   When needs-attention composes the snapshot
   Then each of the six waits appears with an unblock handoff
@@ -2427,7 +2504,7 @@ Scenario: A later matching node execution expires only the matching record early
   Given the Dispatcher holds an unexpired domain or candidate availability record
   When a node attempt begins after the observation and succeeds against the same domain or exact candidate identity
   Then only the matching older record is expired even though its recorded expiry has not been reached
-  And overall fallback-run success does not clear a skipped or failed primary
+  And a re-dispatched run's success on a fallback candidate does not clear the held primary
 ```
 
 ## Scenario 95 — Dispatch admission surfaces plugin-currency staleness rather than blocking on it
@@ -3353,7 +3430,7 @@ Feature: Idle-factory visibility composes when work is ready and nothing is movi
 Scenario: The idle-factory fact appears when ready work is dispatchable and nothing holds it back
   Given at least one admission-eligible ready item under the admission valve's non-capacity conditions
   And the single-authority capacity verdict reports zero counted claims for this repository
-  And every success-critical ACP node retains an eligible candidate after observed-hold filtering
+  And every ACP node potentially reachable in the submitted graph retains an eligible candidate after observed-hold filtering
   When needs-attention composes the snapshot
   Then exactly one hygiene:idle-factory fact appears at high urgency
   And its summary names the count of admission-eligible ready items and the first ranked id
@@ -3363,7 +3440,7 @@ Scenario: The idle-factory fact clears when any trigger condition fails
   Given the idle-factory fact would otherwise compose
   When a counted claim occupies a slot for this repository
   Then no idle-factory fact appears
-  And when instead observed holds exhaust a success-critical ACP chain the idle-factory fact does not appear
+  And when instead observed holds exhaust an admission-required ACP chain the idle-factory fact does not appear
   And when instead only a primary is held but its fallback is eligible the idle-factory fact still appears
   And when instead no admission-eligible ready item exists the idle-factory fact does not appear
 ```
@@ -3385,14 +3462,14 @@ Scenario: The loop re-probes and resumes on the first usable result, journaling 
   And the refusal's remedy text carried no provider-stated reset instant as a wait-until-clock instruction
 
 Scenario: A usable probe does not retire an unexpired exhaustion record
-  Given unexpired observed availability records exhaust a success-critical chain
+  Given unexpired observed availability records exhaust an admission-required chain
   And a credential-usability probe that returns usable
   When admission is attempted
   Then admission remains refused by the exhausted chain
   And the records retire only by bounded expiry, matching node execution, or operator clearance
 
 Scenario: A primary probe refusal skips only that candidate when fallback is viable
-  Given a fallback-enabled success-critical node whose primary credential probe returns a provider rate-limit refusal
+  Given a fallback-enabled admission-required node whose primary credential probe returns a provider rate-limit refusal
   And the node has an otherwise eligible fallback candidate
   When the Dispatcher evaluates admission
   Then the probe refusal skips the primary for that evaluation only
@@ -3544,13 +3621,13 @@ Feature: Adoption of a beads-native row assigns it a livespec status and a real 
     Then every cadence remaps the row to `backlog` and assigns it the same real, non-sentinel rank outcome
 ```
 
-## Scenario 127 — Ordered ACP fallback preserves primary resolution, failure honesty, and one node visit
+## Scenario 127 — Ordered ACP fallback preserves primary resolution and failure honesty, and re-dispatches past a held provider
 
 ```gherkin
 Feature: Factory-configurable ACP fallback priority
   As a factory operator
-  I want each ACP node to use an observed-health-filtered ordered candidate chain
-  So that a removed model or exhausted allowance does not replay a long workflow or silently change its failure
+  I want each ACP node dispatched to the first eligible candidate, and a provider-limit failure re-dispatched rather than escalated
+  So that an exhausted allowance neither stalls the item nor waits on a human
 
   Scenario: v107 primary bytes survive absent and fallback-only configuration
     Given the review_fix node has no acp_nodes entry and no new-grammar metadata
@@ -3559,19 +3636,19 @@ Feature: Factory-configurable ACP fallback priority
     And `fallbacks: []` alone produces the same bytes
     And when the review_fix node carries an explicit structured entry, identity-only or fallback-only fields attach after that primary renders
 
-  Scenario: New grammar is version-gated against the resolved factory
+  Scenario: New grammar is version-gated by the release floor, not by an engine fallback capability
     Given a node carries identity, signature, pricing, or a non-empty fallback field
-    When dispatcher.minimum_release is below the first supporting release or the resolved factory server lacks the pinned Fabro capability
+    When dispatcher.minimum_release is below the first release implementing Dispatcher-level fallback
     Then dispatch refuses before claim or run creation
-    And a local Fabro binary is not evidence of the remote capability
+    But a resolved factory server that advertises no fallback-chain capability does not refuse the dispatch
 
-  Scenario: A domain-held primary is skipped and an eligible fallback executes
-    Given a success-critical node whose candidate zero is covered by an unexpired domain hold
+  Scenario: A domain-held primary is skipped and the first eligible candidate is the node's only adapter
+    Given a node whose candidate zero is covered by an unexpired domain hold
     And candidate one is not covered
-    When the node is dispatched and reached
-    Then candidate one is selected in configured order
-    And its actual execution emits one version-1 agent.acp.failover event and one idempotent journal record
-    And an unexecuted preflight selection for a node never reached emits no fallback warning
+    When the Dispatcher dispatches the item
+    Then candidate one's adapter is the only adapter rendered for that node
+    And the per-node selection record names candidate one, the full-chain digest, and the hold that skipped candidate zero
+    And a selection for a node the run never reaches emits no fallback warning
 
   Scenario: Shared and distinct identities scope holds across nodes
     Given two nodes repeat the same availability_key and candidate_key pair
@@ -3587,83 +3664,135 @@ Feature: Factory-configurable ACP fallback priority
     Then the legacy record covers that candidate until retirement
     And an identity-less arbitrary legacy adapter is covered by every live legacy record and continues to mint legacy records
 
-  Scenario: Only an exhausted success-critical chain refuses admission
-    Given implement, review, and proof_verify each retain an unheld candidate
-    And a conditional fix node retains none
+  Scenario: Admission requires an eligible candidate for every potentially reachable ACP node
+    Given every ACP node potentially reachable in the submitted graph has an eligible candidate
     When the Dispatcher evaluates admission
     Then it admits the item
-    And if fix is later reached it terminates typed before any adapter without traversing janitor, non-convergence, or needs_human
-    And when instead implement, review, or proof_verify retains none, admission refuses before claim
+    And when instead any potentially reachable ACP node has no eligible candidate, the item is not claimed, stays ready, and carries no blocked reason
+    And its next admission evaluation is scheduled
+    And no human valve is offered as the remedy
 
-  Scenario: The recorded removed-model diagnostic falls back but a generic 400 does not
+  Scenario: A conditional node with every candidate held causes a ready wait without adapter execution
+    Given a conditional repair node potentially reachable in the submitted graph
+    And every candidate of that node is covered by a live hold
+    When the Dispatcher evaluates admission
+    Then the item stays ready without a claim or blocked reason
+    And no adapter is rendered or started for any candidate covered by a live hold
+
+  Scenario: A provider-limit failure releases the item and re-dispatches it to the next eligible candidate
+    Given a dispatched item whose disposition node ran on a codex-acp candidate
+    And the run ended at the needs_human terminal after that node failed with "You've hit your usage limit"
+    When the Dispatcher derives the run's outcome
+    Then it records a domain hold on that candidate's availability key
+    And it journals one provider-limit-release record naming the item, run, factory, node attempt, cause, scope, hold key, failed candidate, and recovery source
+    And the item returns to ready with no blocked_reason
+    And the next dispatch renders disposition with the first eligible candidate in configured order
+    And no rework cap budget and no across-dispatch no-progress count is consumed
+
+  Scenario: Restart between each release step completes recovery once
+    Given a provider-limit release interrupted after any one of its hold, release record, cost observation, or ledger transition writes
+    When the Dispatcher restarts and reconciliation replays the release keyed by factory, run, and failing node attempt
+    Then each write is completed exactly once
+    And the original hold expiry is not refreshed
+    And no cost is duplicated
+    And a newer dispatch claim is not released
+
+  Scenario: A failure the Dispatcher cannot classify keeps the human route
+    Given a run whose failing node's recorded failure matches no eligible signature
+    When the Dispatcher derives the run's outcome
+    Then no availability hold or release is recorded
+    And the failure retains its existing route
+    And an ordinary needs-human outcome still rests at blocked with blocked_reason needs-human
+
+  Scenario: The recorded removed-model diagnostic re-dispatches but a generic 400 does not
     Given the pinned Codex adapter returns the measured ChatGPT-account HTTP 400 diagnostic naming the exact requested model as unsupported
-    When the built-in classifier reads its terminal protocol diagnostic
-    Then it emits candidate-scoped model_unsupported and advances once
-    But a generic HTTP 400 or 404 with no exact eligible discriminator terminates with its original identity
+    When the Dispatcher classifies the failing node's recorded failure
+    Then it records a candidate-scoped model_unsupported hold and releases the item for re-dispatch
+    And the typed provider-usage-limit flag is not set
+    But a generic HTTP 400 or 404 with no exact eligible discriminator keeps its original identity and its existing route
 
   Scenario: Non-eligible failures outrank configured text overlap
     Given a candidate signature whose literals also appear in an authentication failure, exit 127, signal termination, node timeout, sandbox transport fault, compaction 404, or code or test failure
     When classification runs
-    Then the non-eligible class terminates the chain without a hold
+    Then the non-eligible class mints no hold and is not released for re-dispatch
     And a runtime multi-match with different dispositions is surfaced as ambiguous, non-eligible, and never first-match selected
 
-  Scenario: A sandbox-local partial write is handed to the next candidate
-    Given a primary makes a sandbox-local partial write and its durable side-effect ledger proves no external-effect onset
-    And it then reports an eligible failure
-    When the next candidate starts
-    Then it runs in the same node visit and sandbox with the original task plus a delimited recovery preamble
-    And predecessor nodes do not replay and the partial write remains
+  Scenario: A re-dispatch recovers the failed run's preserved work
+    Given a run released for a provider-limit failure
+    When every published-PR resume precondition passes
+    Then the Dispatcher invokes resume under its own invoker identity and does not reclaim the publish branch
+    And when instead resume is inapplicable, the re-dispatch is a plain dispatch whose sandbox checks out the recorded commit SHA of the preserved work
+    And the seed record names the source run, remote, commit SHA, and preservation reference
+    And when the preserved reference cannot be read, the Dispatcher waits and retries rather than dispatching from the default branch
+    And only a confirmed absence of preserved work permits a plain dispatch from the default branch, with the loss recorded
 
-  Scenario: Unknown or observed external effects fail closed
-    Given an attempt may have issued an external mutation and absence of onset cannot be proved durably
-    When it reports an otherwise eligible failure
-    Then reactive fallback does not occur
-    And for any externally mutating ACP node unreadable remote effect evidence is treated as past onset
+  Scenario: A third automatic resume falls back to preserved-tree plain dispatch
+    Given a released item whose pull request has already anchored two resumes
+    When the Dispatcher re-dispatches it
+    Then it does not invoke a third resume
+    And it dispatches a plain run seeded from the preserved work's recorded commit SHA
+    And it inherits no proof from a different head or Definition of Done
 
-  Scenario: One deadline and post-transition state prevent replay
-    Given a node with several candidates and one configured timeout
-    When the primary consumes time and reactive fallback begins
-    Then every successor receives only the original deadline's remaining time
-    And the node timeout is not multiplied by candidate count
-    And outer retry, fallback exhaustion, checkpoint, or resume never cycles to an attempted or preflight-skipped candidate
+  Scenario: An expired hold is re-confirmed by a completed turn before a real dispatch uses the candidate
+    Given a domain hold whose bounded expiry has passed
+    When the Dispatcher next evaluates an item whose first candidate that hold covered
+    Then it runs one availability confirmation turn with that candidate's pinned adapter version, requested model and effort, and projected worker credential identity
+    And only a successfully completed prompt turn makes the candidate eligible for the dispatch
+    And a refusal with an eligible provider-limit cause records a new hold whose expiry runs from the probe's occurrence time
+    And the provider's advertised reset instant neither schedules nor replaces the probe
+
+  Scenario: A timed-out availability probe skips its candidate and permits an eligible fallback
+    Given an expired hold on candidate zero of a node whose candidate one is eligible
+    When the availability confirmation turn for candidate zero exceeds dispatcher.availability_probe_timeout_seconds
+    Then the unfinished probe work is terminated
+    And candidate zero is skipped for this evaluation without a new hold
+    And candidate one is selected for the node
+
+  Scenario: An unreadable availability source never becomes an empty hold set
+    Given the factory-native run records that hold a candidate's availability evidence cannot be read
+    When the Dispatcher evaluates admission
+    Then that candidate is not treated as confirmed unheld
+    And the unavailable source is surfaced and observation is retried on a bounded cadence
+    And no needs-human decision is created
+
+  Scenario: Removing a repository-local journal does not erase host-visible holds
+    Given a hold observed by a run of another repository on a participating factory
+    And this repository's local dispatch journal has been removed
+    When this repository's Dispatcher evaluates admission
+    Then the hold is reconstructed from the factory-native run records
+    And the covered candidate is skipped
 
   Scenario: A successful fallback still records the failed primary hold and warning
-    Given a primary emits an eligible domain or candidate failure and candidate one succeeds
-    When the run later succeeds or fails in another node
-    Then the occurrence-time-scoped hold, failover journal record, and hygiene:model-fallback repository-node fact remain observable
+    Given a primary's provider-limit failure recorded a hold and released the item
+    And the re-dispatched run executed that node on candidate one
+    When the re-dispatched run later succeeds or fails in another node
+    Then the occurrence-time-scoped hold, the provider-limit-release record, and the hygiene:model-fallback repository-node fact remain observable
     And overall run success does not clear the primary
 
   Scenario: Warning clearance is ordered and generation-safe
     Given a model-fallback warning for a primary generation
-    When the same primary's node attempt starts later and completes successfully
+    When a later dispatch renders the same primary for that node and that node attempt completes successfully
     Then that warning clears even if the overall run later fails
-    But an older concurrent attempt, unrelated candidate success, probe, or unexecuted selection does not clear it
+    But an older concurrent attempt, unrelated candidate success, probe, selection for an unreached node, or unreadable node outcome does not clear it
     And a committed primary replacement appends superseded while a fallback-only edit changes only the full-chain digest
 
-  Scenario: Projection is server-qualified, idempotent, and fail-closed for unattended picking
-    Given an agent.acp.failover event on the run's resolved remote factory
-    When reconciliation projects the same event more than once
-    Then its stable event id yields one hold and one journal record
-    And an unknown event version is preserved and surfaced without minting a hold
-    But when the event stream cannot be read, one high-urgency per-run-node projection fact appears with an executable server-qualified inspection handoff
-    And unattended picking stops until replay succeeds while an attended item dispatch may proceed only after surfacing the warning
-    And run absence does not clear the fact while an attributed reason-required clearance may retire that fact without changing a hold
-
-  Scenario: Successful fallback cost includes every attempt or is wholly unobservable
-    Given a successful fallback run whose failed primary and successful candidate both emit nonzero usage
+  Scenario: Every failed attempt's cost is recorded once
+    Given an item released twice for provider-limit failures whose failed runs both emitted nonzero usage, then completed by a third run
     When cost is derived
-    Then usage from both attempts is included
+    Then each released run has one attempt-cost record with a stable identity, priced or marked cost-unobservable
+    And the item's cost across the sequence is the sum of those records and the final run's cost, counted once across reconciliation and resume
+    And if any included attempt is cost-unobservable the sequence total is unobservable and any displayed subtotal is labeled incomplete
     And only one trailing -YYYYMMDD date suffix is stripped from emitted model identity
     And pricing resolves through the model catalog entry the candidate's identity names first and a per-candidate explicit table second
-    And if any nonzero component is unpriceable the whole run cost is unobservable rather than a partial subtotal or unrelated default
-    And a terminally unsuccessful run retains the existing no-cost-observation posture
+    And no attempt-cost record yields a gate verdict
 
   Scenario: Model and effort are set over the protocol and an unadvertised model refuses before the prompt
-    Given a structured candidate whose agent catalog entry declares the protocol mechanism
+    Given a selected structured candidate whose agent catalog entry declares the protocol mechanism
     When the Fabro handler opens the session
     Then it sets model and effort through session/set_config_option before the first prompt
     And the agent.acp.started event carries the confirmed model and effort
-    But when the agent does not advertise the requested model the candidate terminates typed before any prompt, mints no hold, and does not trigger reactive fallback
+    But when the agent does not advertise the requested model the candidate terminates typed before any prompt, mints no hold, and is not released for re-dispatch as a provider-limit failure
+    And a dispatch whose selected candidates use no protocol mechanism does not require the config_options capability
 ```
 
 ## Scenario 128 — An unrunnable ready item is visible but never advertised for dispatch
@@ -3678,7 +3807,7 @@ Feature: Variant-aware acceptance eligibility is shared by candidate and attenti
     Given an already-filed ready item with an AI-dispositive effective acceptance policy
     And its effective acceptance criteria resolve to zero gradeable assertions from a reported source
     And its effective workflow variant is implement-kind
-    And the repository is otherwise idle, below capacity, and has viable success-critical ACP candidates
+    And the repository is otherwise idle, below capacity, and has viable admission-required ACP candidates
     When next, needs-attention, idle-factory composition, and the Dispatcher drain enumerate candidates
     Then the item is absent from next and its pagination total
     And needs-attention composes no implementation item from next for it
