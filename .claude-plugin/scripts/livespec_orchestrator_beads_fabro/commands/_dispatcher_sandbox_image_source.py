@@ -31,9 +31,37 @@ image that never ran.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 __all__: list[str] = [
+    "CATALOG_ENVIRONMENT_IMAGE_SOURCE",
+    "COMMITTED_KEY_IMAGE_SOURCE",
+    "SandboxImageSource",
     "overlay_sandbox_image",
+    "sandbox_image_source",
 ]
+
+# The two source names `contracts.md` section "Sandbox image source" enumerates,
+# verbatim. The committed one is spelled as the CONFIGURATION KEY rather than as
+# a label, because that is the thing an operator edits when the journal row says
+# a launch took its image from there.
+CATALOG_ENVIRONMENT_IMAGE_SOURCE = "catalog_environment"
+COMMITTED_KEY_IMAGE_SOURCE = "dispatcher.fabro_sandbox_image"
+
+
+@dataclass(frozen=True, kw_only=True)
+class SandboxImageSource:
+    """WHERE one launch's sandbox image came from, as the journal records it.
+
+    `environment_id` is populated only on the catalog arm, because only that
+    arm has an id to name; the committed key is a single global setting with no
+    per-launch identity. The field is still journaled on both arms — an
+    explicit null rather than an omission — so "which source supplied this
+    image?" is answerable for every launch and not only for the unusual ones.
+    """
+
+    source: str
+    environment_id: str | None = None
 
 
 def overlay_sandbox_image(
@@ -56,3 +84,22 @@ def overlay_sandbox_image(
     if factory_environment is not None:
         return None
     return configured_image
+
+
+def sandbox_image_source(*, factory_environment: str | None) -> SandboxImageSource:
+    """The source the launch takes its sandbox image from, named for the journal.
+
+    The SAME `factory_environment` the overlay reads, so the row the record
+    carries and the substitution the overlay performs cannot disagree: one
+    input, one pure resolution, two readings of it.
+
+    The committed arm is reported whether or not `dispatcher.fabro_sandbox_image`
+    is actually set, because an unset key is still the source this launch
+    CONSULTED — the committed workflow's own image table is what it then falls
+    through to, which is that key's documented no-op rather than a third source.
+    """
+    if factory_environment is None:
+        return SandboxImageSource(source=COMMITTED_KEY_IMAGE_SOURCE)
+    return SandboxImageSource(
+        source=CATALOG_ENVIRONMENT_IMAGE_SOURCE, environment_id=factory_environment
+    )

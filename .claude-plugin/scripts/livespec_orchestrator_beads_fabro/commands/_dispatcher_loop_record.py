@@ -182,6 +182,12 @@ def record_dispatch(
         workflow_name=materialized.workflow_name,
         integration=plan.integration,
         merge_hold=plan.merge_hold,
+        # The catalog environment the plan's resolved factory declares, which
+        # decides WHICH source supplied this launch's sandbox image. Read off
+        # the PLAN for the same resolve-once reason the engine reading above is:
+        # it is the id the launch's own `--environment` carries, so the record
+        # cannot name a source the launch did not use.
+        factory_environment=plan.fabro_factory_environment,
     )
     return RecordedDispatch(
         plan=plan,
