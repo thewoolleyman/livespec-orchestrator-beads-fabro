@@ -1,0 +1,336 @@
+{
+  "title": "probe",
+  "spec": {
+    "run_id": "01M4Q6429N5D2V0GFYHBJD4M24",
+    "settings": {
+      "project": {
+        "name": null,
+        "description": null,
+        "metadata": {}
+      },
+      "workflow": {
+        "name": null,
+        "description": null,
+        "graph": "workflow.fabro",
+        "metadata": {}
+      },
+      "run": {
+        "goal": {
+          "type": "inline",
+          "value": "# probe\n"
+        },
+        "working_dir": null,
+        "metadata": {},
+        "inputs": {},
+        "model": {
+          "provider": "anthropic",
+          "name": "claude-sonnet-4-6",
+          "fallbacks": [],
+          "controls": {
+            "reasoning_effort": null,
+            "speed": null
+          }
+        },
+        "git": {
+          "author": null
+        },
+        "prepare": {
+          "commands": [],
+          "timeout_ms": 300000
+        },
+        "execution": {
+          "mode": "normal",
+          "approval": "prompt"
+        },
+        "checkpoint": {
+          "exclude_globs": [],
+          "skip_git_hooks": false,
+          "commit_timeout_ms": 30000
+        },
+        "clone": {
+          "enabled": true
+        },
+        "run_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "meta_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "environment": {
+          "id": "default",
+          "provider": "docker",
+          "image": {
+            "docker": "buildpack-deps:noble",
+            "dockerfile": null
+          },
+          "resources": {
+            "cpu": 2,
+            "memory": "4GB",
+            "disk": null
+          },
+          "network": {
+            "mode": "allow_all",
+            "allow": []
+          },
+          "lifecycle": {
+            "preserve": false,
+            "stop_on_terminal": true,
+            "auto_stop": null
+          },
+          "labels": {},
+          "volumes": [],
+          "env": {}
+        },
+        "notifications": {},
+        "interviews": {
+          "provider": null,
+          "slack": null
+        },
+        "agent": {
+          "fabro_tools": false,
+          "permissions": null,
+          "mcps": {}
+        },
+        "hooks": [],
+        "scm": {
+          "provider": null,
+          "owner": null,
+          "repository": null,
+          "github": null
+        },
+        "pull_request": null,
+        "artifacts": {
+          "include": []
+        },
+        "integrations": {
+          "github": {
+            "permissions": {}
+          }
+        }
+      }
+    },
+    "graph": {
+      "name": "FabroEnemyUnvisitedGoalGate",
+      "nodes": {
+        "janitor": {
+          "id": "janitor",
+          "attrs": {
+            "shape": {
+              "String": "parallelogram"
+            },
+            "script": {
+              "String": "c=$(cat /tmp/eut-j 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-j; test $c -ge 2"
+            },
+            "label": {
+              "String": "Janitor"
+            }
+          }
+        },
+        "exit": {
+          "id": "exit",
+          "attrs": {
+            "shape": {
+              "String": "Msquare"
+            },
+            "label": {
+              "String": "Exit"
+            }
+          }
+        },
+        "done": {
+          "id": "done",
+          "attrs": {
+            "goal_gate": {
+              "Boolean": true
+            },
+            "script": {
+              "String": "test $(cat /tmp/eut-j) = 2"
+            },
+            "shape": {
+              "String": "parallelogram"
+            },
+            "label": {
+              "String": "Done"
+            }
+          }
+        },
+        "fix": {
+          "id": "fix",
+          "attrs": {
+            "label": {
+              "String": "Fix"
+            },
+            "script": {
+              "String": "echo fixing >&2"
+            },
+            "max_visits": {
+              "Integer": 3
+            },
+            "shape": {
+              "String": "parallelogram"
+            }
+          }
+        },
+        "start": {
+          "id": "start",
+          "attrs": {
+            "label": {
+              "String": "Start"
+            },
+            "shape": {
+              "String": "Mdiamond"
+            }
+          }
+        },
+        "exhausted": {
+          "id": "exhausted",
+          "attrs": {
+            "goal_gate": {
+              "Boolean": true
+            },
+            "shape": {
+              "String": "parallelogram"
+            },
+            "label": {
+              "String": "Exhausted"
+            },
+            "script": {
+              "String": "echo exhausted >&2; exit 1"
+            }
+          }
+        }
+      },
+      "edges": [
+        {
+          "from": "start",
+          "to": "janitor",
+          "attrs": {}
+        },
+        {
+          "from": "janitor",
+          "to": "done",
+          "attrs": {
+            "condition": {
+              "String": "outcome=succeeded"
+            },
+            "label": {
+              "String": "Green"
+            }
+          }
+        },
+        {
+          "from": "janitor",
+          "to": "fix",
+          "attrs": {
+            "condition": {
+              "String": "outcome!=succeeded"
+            },
+            "label": {
+              "String": "Red"
+            }
+          }
+        },
+        {
+          "from": "janitor",
+          "to": "exhausted",
+          "attrs": {
+            "label": {
+              "String": "Exhausted"
+            }
+          }
+        },
+        {
+          "from": "fix",
+          "to": "janitor",
+          "attrs": {}
+        },
+        {
+          "from": "done",
+          "to": "exit",
+          "attrs": {}
+        },
+        {
+          "from": "exhausted",
+          "to": "exit",
+          "attrs": {}
+        }
+      ],
+      "attrs": {
+        "goal": {
+          "String": "# probe\n"
+        }
+      }
+    },
+    "graph_source": "digraph FabroEnemyUnvisitedGoalGate {\n    start [shape=Mdiamond, label=\"Start\"]\n    janitor [shape=parallelogram, label=\"Janitor\", script=\"c=$(cat /tmp/eut-j 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-j; test $c -ge 2\"]\n    fix [shape=parallelogram, label=\"Fix\", max_visits=3, script=\"echo fixing >&2\"]\n    exhausted [shape=parallelogram, label=\"Exhausted\", goal_gate=true, script=\"echo exhausted >&2; exit 1\"]\n    done [shape=parallelogram, label=\"Done\", goal_gate=true, script=\"test $(cat /tmp/eut-j) = 2\"]\n    exit [shape=Msquare, label=\"Exit\"]\n    start -> janitor\n    janitor -> done [label=\"Green\", condition=\"outcome=succeeded\"]\n    janitor -> fix [label=\"Red\", condition=\"outcome!=succeeded\"]\n    janitor -> exhausted [label=\"Exhausted\"]\n    fix -> janitor\n    done -> exit\n    exhausted -> exit\n}\n",
+    "workflow_slug": "unvisited-gate",
+    "source_directory": "/home/ubuntu/.worktrees/livespec-orchestrator-beads-fabro/eut-real-node-shapes",
+    "provenance": {
+      "server": {
+        "version": "0.254.0"
+      },
+      "client": {
+        "user_agent": "fabro-cli/0.254.0",
+        "name": "fabro-cli",
+        "version": "0.254.0"
+      },
+      "subject": {
+        "kind": "user",
+        "identity": {
+          "issuer": "fabro:dev",
+          "subject": "dev"
+        },
+        "login": "dev",
+        "auth_method": "dev_token"
+      }
+    },
+    "manifest_blob": "e65809d94b2f6bfe176980e6fdf4df64f22607597c9fac7551a643a796892b15",
+    "definition_blob": "ae9f03598e9c535cd1a6c8509a4b34eab6c898b21f1fb683e42be3ed030cc4e9",
+    "git": {
+      "origin_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+      "branch": "eut-real-node-shapes",
+      "sha": "bb752aa97a56fe8cf7cd4bd09af4962e19685e90",
+      "dirty": "dirty",
+      "push_outcome": {
+        "type": "not_attempted"
+      }
+    }
+  },
+  "web_url": "https://hp-xubuntu.perch-rudd.ts.net:32276/runs/01M4Q6429N5D2V0GFYHBJD4M24",
+  "start": null,
+  "status": {
+    "kind": "starting"
+  },
+  "status_updated_at": "2026-10-12T04:32:20.174501111Z",
+  "last_event_at": "2026-10-12T04:33:05.369869372Z",
+  "pending_control": null,
+  "checkpoints": [],
+  "conclusion": null,
+  "sandbox": {
+    "kind": "ready",
+    "plan": {
+      "provider": "docker",
+      "image": "buildpack-deps:noble"
+    },
+    "instance": {
+      "provider": "docker",
+      "image": "buildpack-deps:noble",
+      "runtime": {
+        "id": "ba829aecba882586a45ce038441c46f17f236013dafa1520e962f5e28500d2b2",
+        "working_directory": "/workspace/livespec-orchestrator-beads-fabro",
+        "repo_cloned": true,
+        "clone_origin_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+        "clone_branch": "eut-real-node-shapes",
+        "workspace_root": "/workspace",
+        "repos_root": "/repos",
+        "primary_repo_path": "/repos/thewoolleyman/livespec-orchestrator-beads-fabro",
+        "primary_repo_link": "/workspace/livespec-orchestrator-beads-fabro"
+      }
+    }
+  },
+  "pull_request": null,
+  "superseded_by": null,
+  "pending_interviews": {},
+  "stages": {}
+}

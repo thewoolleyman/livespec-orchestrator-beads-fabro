@@ -1,0 +1,15 @@
+digraph FabroEnemyUnvisitedGoalGate {
+    start [shape=Mdiamond, label="Start"]
+    janitor [shape=parallelogram, label="Janitor", script="c=$(cat /tmp/eut-j 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-j; test $c -ge 2"]
+    fix [shape=parallelogram, label="Fix", max_visits=3, script="echo fixing >&2"]
+    exhausted [shape=parallelogram, label="Exhausted", goal_gate=true, script="echo exhausted >&2; exit 1"]
+    done [shape=parallelogram, label="Done", goal_gate=true, script="test $(cat /tmp/eut-j) = 2"]
+    exit [shape=Msquare, label="Exit"]
+    start -> janitor
+    janitor -> done [label="Green", condition="outcome=succeeded"]
+    janitor -> fix [label="Red", condition="outcome!=succeeded"]
+    janitor -> exhausted [label="Exhausted"]
+    fix -> janitor
+    done -> exit
+    exhausted -> exit
+}
