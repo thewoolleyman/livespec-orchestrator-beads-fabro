@@ -265,6 +265,11 @@ def _dispatch_one_locked(
         # launched against another's resolves to nothing.
         factory_name=plan.fabro_factory_name,
         secret_sink=secret_sink,
+        # And WHICH catalog environment that factory declares, read off the same
+        # plan for the same reason: it is the id this dispatch's `--environment`
+        # already names, so the image the server selects and the image the
+        # overlay withholds cannot be decided from two different readings.
+        factory_environment=plan.fabro_factory_environment,
     )
     if overlay_error is not None:
         return failed_dispatch_outcome(

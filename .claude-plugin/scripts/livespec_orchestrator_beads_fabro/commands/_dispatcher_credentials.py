@@ -171,6 +171,11 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     # wires neither renders exactly the inline overlay it always did.
     factory_name: str = "default",
     secret_sink: VaultSecretSink | None = None,
+    # The CATALOG ENVIRONMENT that factory declares, which decides whether the
+    # repository's `dispatcher.fabro_sandbox_image` reaches the launch at all.
+    # None — a factory naming none — is the pre-key posture and substitutes the
+    # pin exactly as before.
+    factory_environment: str | None = None,
 ) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
@@ -320,6 +325,12 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # visibly and here rather than inside the reader. `unsafe_perform_io`
         # is required: `IOResult.value_or` returns `IO[value]`, not the value.
         fabro_sandbox_image=unsafe_perform_io(resolve_fabro_sandbox_image(cwd=repo).value_or(None)),
+        # The resolved factory's catalog environment, which WITHHOLDS the image
+        # above rather than competing with it: that environment's own image is a
+        # server-managed property this host cannot read, so the launch leaves
+        # the committed image table alone and the server's selection stands
+        # (`contracts.md` section "Sandbox image source").
+        factory_environment=factory_environment,
         # The per-dispatch payload's rendered graph, carrying this dispatch's
         # resolved node timeouts as literal durations, NAMED as the client that
         # collects it can resolve it.

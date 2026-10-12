@@ -19,10 +19,25 @@ reports an image that did not run.
 
 from __future__ import annotations
 
+import base64
 import importlib
+import json
 from inspect import signature
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_codex_auth,
+    _dispatcher_credentials,
+    _dispatcher_loop,
+    _dispatcher_sibling_clones,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
+    materialize_overlay,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import GitAuthor
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     render_run_config_overlay,
 )
@@ -58,6 +73,28 @@ _WORKFLOW_WITH_IMAGE = (
 )
 _FAKE_TOKEN = "test-oauth-token"
 _FAKE_GITHUB_TOKEN = "test-github-token"
+# The run graph the per-dispatch payload materializer needs: one node timeout
+# plus the run-level stall watchdog, which is the shape the literal-duration
+# rewrite requires.
+_MINIMAL_GRAPH = (
+    "digraph ImplementWorkItem {\n"
+    "    graph [\n"
+    '        stall_timeout="7200s"\n'
+    "    ]\n"
+    "\n"
+    "    implement [\n"
+    '        timeout="1800s"\n'
+    "    ]\n"
+    "}\n"
+)
+# A canned fleet manifest, so the sibling-clone resolution that runs inside
+# `materialize_overlay` never reaches a real `gh api` in the hermetic tier.
+_FLEET_MANIFEST_TEXT = (
+    "{\n"
+    '  "owner": "thewoolleyman",\n'
+    '  "members": [{ "repo": "livespec", "class": "core" }]\n'
+    "}\n"
+)
 
 
 def test_a_dispatch_naming_no_catalog_environment_still_takes_the_committed_key() -> None:
@@ -144,3 +181,159 @@ def test_the_launch_overlay_leaves_a_catalog_dispatch_image_unchanged(tmp_path: 
     assert substituted is not None
     assert f'docker = "{_CONFIGURED_IMAGE}"' in substituted
     assert _COMMITTED_IMAGE not in substituted
+
+
+def _auth_json_far_future(*, now: int) -> str:
+    """A fake host Codex auth.json whose access-token JWT outlives any budget."""
+    exp = now + 100 * 365 * 24 * 3600
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": exp}).encode()).decode().rstrip("=")
+    return json.dumps(
+        {
+            "auth_mode": "chatgpt",
+            "tokens": {
+                "access_token": f"header.{payload}.sig",
+                "refresh_token": "host-refresh-token",
+                "id_token": "id-token-value",
+                "account_id": "acct-123",
+            },
+        }
+    )
+
+
+def _written_overlay(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    factory_environment: str | None,
+) -> str:
+    """Materialize one dispatch's overlay and return the bytes it wrote.
+
+    The pin is supplied through `LIVESPEC_FABRO_SANDBOX_IMAGE`, which
+    `resolve_fabro_sandbox_image` prefers over the committed
+    `dispatcher.fabro_sandbox_image` key. That makes this the STRONGER of the
+    two inputs: a catalog environment that wins over the env override wins over
+    the committed key too, since both reduce to the one value this function
+    resolves. `test_config.py` owns the precedence between the two sources.
+    """
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    committed = tmp_path / "workflow.toml"
+    _ = committed.write_text(_WORKFLOW_WITH_IMAGE, encoding="utf-8")
+    _ = (committed.parent / "workflow.fabro").write_text(_MINIMAL_GRAPH, encoding="utf-8")
+    overlay = tmp_path / "overlay.toml"
+    now = 1_700_000_000
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _FAKE_TOKEN)
+    monkeypatch.setenv("LIVESPEC_FABRO_SANDBOX_IMAGE", _CONFIGURED_IMAGE)
+    monkeypatch.setattr(
+        _dispatcher_sibling_clones, "fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT
+    )
+    monkeypatch.setattr(_dispatcher_credentials.time, "time", lambda: now)
+    monkeypatch.setattr(
+        _dispatcher_codex_auth, "read_host_codex_auth", lambda: _auth_json_far_future(now=now)
+    )
+    error = materialize_overlay(
+        committed=committed,
+        overlay=overlay,
+        repo=tmp_path / "repo",
+        work_item_id="wi-1",
+        dispatch_id="disp-1",
+        token=lambda: _FAKE_GITHUB_TOKEN,
+        git_author=GitAuthor(name="Operator", email="operator@example.com"),
+        review_fix_visit_cap=4,
+        factory_environment=factory_environment,
+    )
+    assert error is None
+    return overlay.read_text(encoding="utf-8")
+
+
+def test_a_dispatch_naming_a_catalog_environment_launches_the_catalog_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The materialized dispatch overlay carries the catalog image, not the pin.
+
+    This is the DISPATCH leg rather than the renderer's: the pin is resolved
+    HERE, from the repository's configuration, so a renderer that withholds a
+    pin it is handed is still substituting one if this layer keeps handing it
+    over. The control — the same fixture with no catalog environment — is in the
+    same case, because the catalog assertion alone passes for a build that had
+    stopped resolving the pin at all.
+    """
+    assert "factory_environment" in signature(materialize_overlay).parameters
+
+    catalog = _written_overlay(
+        tmp_path=tmp_path / "catalog",
+        monkeypatch=monkeypatch,
+        factory_environment=_CATALOG_ENVIRONMENT,
+    )
+    assert f'docker = "{_COMMITTED_IMAGE}"' in catalog
+    assert _CONFIGURED_IMAGE not in catalog
+
+    committed_key = _written_overlay(
+        tmp_path=tmp_path / "committed-key",
+        monkeypatch=monkeypatch,
+        factory_environment=None,
+    )
+    assert f'docker = "{_CONFIGURED_IMAGE}"' in committed_key
+    assert _COMMITTED_IMAGE not in committed_key
+
+
+def test_the_dispatch_hands_the_materializer_its_factorys_catalog_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The loop forwards `plan.fabro_factory_environment`, not a re-read.
+
+    Without this the two assertions above hold of a function nothing calls with
+    a catalog environment, which is the whole defect restored one layer up. The
+    id is read off the PLAN — the one projection of the resolved factory the
+    dispatch already stamped — so it cannot disagree with the `--environment`
+    the same plan sends the server.
+    """
+    captured: dict[str, object] = {}
+    plan = SimpleNamespace(
+        review_fix_visit_cap=4,
+        branch="feat/catalog-image",
+        integration=object(),
+        acp_nodes=None,
+        fabro_factory_name="candidate",
+        fabro_factory_environment=_CATALOG_ENVIRONMENT,
+        fabro_version=None,
+    )
+    recorded = SimpleNamespace(
+        plan=plan,
+        committed_workflow=tmp_path / "workflow.toml",
+        comments=(),
+        payload=SimpleNamespace(graph=None),
+        git_author=object(),
+    )
+    monkeypatch.setattr(_dispatcher_loop, "record_dispatch", lambda **_: recorded)
+    monkeypatch.setattr(_dispatcher_loop.selfup, "github_token_supplier", lambda: lambda: "token")
+    monkeypatch.setattr(_dispatcher_loop, "read_ratified_lessons", lambda **_: ())
+    monkeypatch.setattr(_dispatcher_loop, "minijinja_openers_in_goal_sources", lambda **_: ())
+    monkeypatch.setattr(_dispatcher_loop, "resume_checkout_for", lambda **_: None)
+    monkeypatch.setattr(_dispatcher_loop, "publish_branch_for", lambda **_: "feat/catalog-image")
+    monkeypatch.setattr(_dispatcher_loop, "contract_prompt_variables", lambda **_: {})
+    monkeypatch.setattr(_dispatcher_loop, "journaled_proof_rendering", lambda **_: "")
+    monkeypatch.setattr(
+        _dispatcher_loop,
+        "fabro_vault_sink_for_plan",
+        lambda **_: SimpleNamespace(release_launch_guard=lambda: None),
+    )
+    monkeypatch.setattr(_dispatcher_loop, "run_id", lambda: "dispatch-catalog-image")
+    monkeypatch.setattr(_dispatcher_loop, "release_pre_run_claim_if_needed", lambda **_: None)
+    monkeypatch.setattr(
+        _dispatcher_loop, "run_fabro_factory_auth_login", lambda **_: None, raising=False
+    )
+
+    def _materialize(**kwargs: object) -> str:
+        captured.update(kwargs)
+        return "stop after observing the forwarded environment"
+
+    monkeypatch.setattr(_dispatcher_loop, "materialize_overlay", _materialize)
+    outcome = _dispatcher_loop.dispatch_one(
+        args=SimpleNamespace(),
+        repo=tmp_path,
+        item=SimpleNamespace(id="wi-catalog-image"),
+        journal=JournalFile(path=tmp_path / "journal.jsonl"),
+        janitor=None,
+    )
+    assert outcome.status == "failed"
+    assert captured.get("factory_environment") == _CATALOG_ENVIRONMENT
