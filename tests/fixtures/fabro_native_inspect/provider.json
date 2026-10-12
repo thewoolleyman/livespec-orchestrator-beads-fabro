@@ -1,0 +1,38 @@
+[
+  {
+    "run_id": "01M4G3CMBB2689RQGEMGNEBVDW",
+    "status": { "kind": "failed" },
+    "checkpoint": {
+      "current_node": "needs_human",
+      "next_node_id": null,
+      "completed_nodes": ["setup", "dod_gate", "implement"],
+      "loop_failure_signatures": {
+        "needs_human|deterministic|script failed": 1
+      },
+      "node_outcomes": {
+        "implement": {
+          "status": "failed",
+          "failure": {
+            "category": "transient_infra",
+            "signature": "implement|transient_infra|acp turn failed",
+            "causes": [
+              "ACP protocol error",
+              "Claude AI usage limit reached|1791793985"
+            ]
+          }
+        },
+        "needs_human": {
+          "status": "failed",
+          "failure": {
+            "category": "deterministic",
+            "signature": "needs_human|deterministic|script failed",
+            "causes": ["stage needs_human failed with no outgoing fail edge"]
+          }
+        }
+      },
+      "context_values": {
+        "failure_signature": "implement|transient_infra|acp turn failed"
+      }
+    }
+  }
+]
