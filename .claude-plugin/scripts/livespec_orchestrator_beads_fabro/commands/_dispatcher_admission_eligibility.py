@@ -135,6 +135,7 @@ def _refusal_for(
         journal=journal,
         journal_path=getattr(journal, "path", None),
         now_iso=utc_now_iso(),
+        candidates=None,
     )
     if exhaustion_refusal is not None:
         return exhaustion_refusal

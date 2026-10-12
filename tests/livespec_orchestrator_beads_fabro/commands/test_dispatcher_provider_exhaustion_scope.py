@@ -29,6 +29,7 @@ built in memory, no adapter is launched and no provider is reached.
 from __future__ import annotations
 
 import importlib
+import inspect
 import json
 from pathlib import Path
 from typing import Any
@@ -181,3 +182,54 @@ def test_the_providers_a_dispatch_can_be_refused_on_come_from_its_own_adapters(
     # An UNREADABLE resolution is not an empty candidate set: it fails
     # CLOSED onto the pre-scoping behaviour, where any live record refuses.
     assert covering(candidates=None) is not None
+
+
+class _RecordingJournal:
+    """The journal seam, recording what the refusal wrote rather than writing."""
+
+    def __init__(self) -> None:
+        self.records: list[dict[str, object]] = []
+
+    def append(self, *, record: dict[str, object]) -> None:
+        self.records.append(record)
+
+
+def test_the_refusal_fires_only_on_a_record_covering_a_rendered_candidate(
+    tmp_path: Path,
+) -> None:
+    """D6: the first refusal in the ladder refused whatever the item's nodes use."""
+    exhaustion = _module()
+    assert (
+        "candidates" in inspect.signature(exhaustion.provider_exhaustion_refusal).parameters
+    ), "the refusal is not scoped to the candidates the dispatch renders yet"
+    journal_path = _journal(
+        tmp_path=tmp_path, records=(_observation(provider="codex", expires_at=_LIVE_EXPIRY),)
+    )
+
+    def refusal(*, candidates: tuple[Any, ...] | None) -> tuple[Any, list[dict[str, object]]]:
+        journal = _RecordingJournal()
+        outcome = exhaustion.provider_exhaustion_refusal(
+            work_item_id="bd-item",
+            journal=journal,
+            journal_path=journal_path,
+            now_iso=_NOW,
+            candidates=candidates,
+        )
+        return outcome, journal.records
+
+    admitted, quiet = refusal(candidates=(_rendered(pair=_BUILTIN_ANTHROPIC, builtin=True),))
+    refused, written = refusal(candidates=(_rendered(pair=_BUILTIN_CODEX, builtin=True),))
+    blinded, _ = refusal(candidates=None)
+
+    # An all-Anthropic dispatch is admitted by the valve, and nothing is
+    # journaled for it: a refusal record naming the codex hold is exactly
+    # what Scenario 60 forbids.
+    assert admitted is None
+    assert quiet == []
+    # The control: the SAME journal still refuses a dispatch that renders a
+    # covered candidate, and still names the vendor from the record.
+    assert refused is not None
+    assert refused.status == "provider-exhaustion"
+    assert "provider=codex" in refused.detail
+    assert [record["stage"] for record in written] == ["outcome", "provider-exhaustion-refusal"]
+    assert blinded is not None
