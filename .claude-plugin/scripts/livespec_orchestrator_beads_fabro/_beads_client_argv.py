@@ -13,12 +13,20 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "build_create_argv",
+    "build_no_history_create_argv",
     "build_update_argv",
     "coerce_comment_list",
+    "coerce_created_id",
     "coerce_issue_record",
     "coerce_record_list",
     "parse_json_output",
 ]
+
+# The record type and the id-free create flags a no-history record is minted
+# with. `--no-history` keeps it out of Dolt commit history and out of every
+# `bd list` surface; unlike `--ephemeral` it is NOT eligible for TTL purge, so
+# the chain's current token cannot be garbage-collected (relay research 006).
+_NO_HISTORY_ISSUE_TYPE = "task"
 
 
 def parse_json_output(*, stdout: str, argv_repr: str) -> Any:
@@ -68,6 +76,49 @@ def coerce_comment_list(*, parsed: Any, issue_id: str) -> list[BeadsRecord]:
         )
     records = cast("list[Any]", parsed)
     return [cast("BeadsRecord", record) for record in records if isinstance(record, dict)]
+
+
+def build_no_history_create_argv(*, title: str, description: str) -> list[str]:
+    """Build the id-free `bd create --no-history --json` verb argv (pure).
+
+    NO `--id` flag, ever: an explicit-id create is an upsert that reopens a
+    closed record and erases its close reason, so a token id a caller could
+    name is one a caller could re-create (relay research note 007). The server
+    assigns the id and `coerce_created_id` reads it back out of the `--json`
+    body.
+    """
+    return [
+        "create",
+        "--type",
+        _NO_HISTORY_ISSUE_TYPE,
+        "--title",
+        title,
+        "--description",
+        description,
+        "--no-history",
+        "--json",
+    ]
+
+
+def coerce_created_id(*, parsed: Any) -> str:
+    """Read the server-assigned id out of a parsed `bd create --json` body.
+
+    BOTH shapes are accepted — the bare object `bd create --json` prints and
+    the one-element array `bd show --json` returns — because the id is the one
+    field this plugin cannot recompute if the envelope changes, and a reader
+    that knew only one shape would raise on a perfectly good create.
+    """
+    record: Any = parsed
+    if isinstance(parsed, list) and parsed:
+        record = cast("list[Any]", parsed)[0]
+    if isinstance(record, dict):
+        issue_id = cast("dict[str, Any]", record).get("id")
+        if isinstance(issue_id, str) and issue_id != "":
+            return issue_id
+    raise BeadsMappingError(
+        record_id="<create>",
+        detail="bd create --json carried no server-assigned string `id`",
+    )
 
 
 def coerce_record_list(*, parsed: Any) -> list[BeadsRecord]:

@@ -665,3 +665,84 @@ def test_shell_list_comments_non_array_raises(monkeypatch: pytest.MonkeyPatch) -
     )
     with pytest.raises(BeadsMappingError):
         _ = client.list_comments(issue_id="li-a")
+
+
+def test_shell_no_history_create_returns_the_server_assigned_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The shell create reads the id back out of the `--json` body it printed.
+
+    `--json` is also what the lifecycle guard anchors its own id extraction
+    on when it forces the new record to `backlog`, so the flag is asserted
+    here rather than left to the argv builder's own test alone.
+    """
+    client = ShellBeadsClient(config=_config())
+    seen: list[list[str]] = []
+
+    def _run_json(*, verb_args: list[str]) -> Any:
+        seen.append(verb_args)
+        return {"id": "bd-ib-wisp-9f"}
+
+    monkeypatch.setattr(client, "_run_json", _run_json)
+    assert (
+        client.create_no_history_issue(title="token", description="single-use") == "bd-ib-wisp-9f"
+    )
+    assert "--no-history" in seen[0]
+    assert "--json" in seen[0]
+    assert "--id" not in seen[0]
+
+
+def test_shell_delete_issue_builds_a_forced_delete(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = ShellBeadsClient(config=_config())
+    seen: list[list[str]] = []
+    monkeypatch.setattr(client, "_run_void", lambda *, verb_args: seen.append(verb_args))
+    client.delete_issue(issue_id="bd-ib-wisp-9f")
+    assert seen[0] == ["delete", "bd-ib-wisp-9f", "--force"]
+
+
+def test_shell_close_without_verdict_builds_the_close_and_returns_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = ShellBeadsClient(config=_config())
+    seen: list[list[str]] = []
+    monkeypatch.setattr(client, "_run_void", lambda *, verb_args: seen.append(verb_args))
+    assert client.close_issue_without_verdict(issue_id="bd-ib-wisp-9f", reason="{}") is None
+    assert seen[0] == ["close", "bd-ib-wisp-9f", "--reason", "{}"]
+
+
+def test_shell_close_without_verdict_swallows_the_losers_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Dolt `Error 1213` loser must not raise — the outcome is read back.
+
+    A non-zero close is "outcome unknown until read back", never a loss and
+    never a win: 22 of 80 closer exits were non-zero across relay research
+    note 005's 20 trials, and the winner was identified by `close_reason`
+    every time.
+    """
+    client = ShellBeadsClient(config=_config())
+
+    def _run_void(*, verb_args: list[str]) -> None:
+        raise BeadsCommandError(
+            command=" ".join(verb_args),
+            exit_code=1,
+            stderr="Error 1213 (40001): serialization failure",
+        )
+
+    monkeypatch.setattr(client, "_run_void", _run_void)
+    assert client.close_issue_without_verdict(issue_id="bd-ib-wisp-9f", reason="{}") is None
+
+
+def test_shell_close_without_verdict_still_surfaces_an_unreachable_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A connection failure is NOT suppressed: nothing can be read back."""
+    client = ShellBeadsClient(config=_config())
+
+    def _run_void(*, verb_args: list[str]) -> None:
+        _ = verb_args
+        raise BeadsConnectionError(detail="connection refused")
+
+    monkeypatch.setattr(client, "_run_void", _run_void)
+    with pytest.raises(BeadsConnectionError):
+        client.close_issue_without_verdict(issue_id="bd-ib-wisp-9f", reason="{}")
