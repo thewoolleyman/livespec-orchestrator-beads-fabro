@@ -486,8 +486,9 @@ def test_fabro_port_run_routes_implementer_to_codex_adapter(
         value for index, value in enumerate(argv[1:], start=1) if argv[index - 1] == "--input"
     ]
     # `tmp_path` carries no .livespec.jsonc, so implementation work uses the
-    # fleet's Claude Opus 5 default while the PR node takes the Claude Haiku
-    # publish default (v107) — neither class is a Codex adapter absent a pin.
+    # fleet's Claude Opus 5 default and no class is a Codex adapter absent a
+    # pin. There is NO publication adapter among these pairs: an implementation
+    # workflow publishes through command stages, so the Dispatcher renders none.
     # Every adapter launch is spliced behind the credential-use guard, which sits
     # AFTER the env assignments and BEFORE the executable: the engine turns leading
     # `KEY=value` tokens into environment, so a guard placed first would swallow them
@@ -499,16 +500,11 @@ def test_fabro_port_run_routes_implementer_to_codex_adapter(
         env_prefix="ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high",
         command=_CLAUDE_AGENT_ACP,
     )
-    claude_haiku_pr = _guarded_launch(
-        env_prefix="ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high",
-        command=_CLAUDE_AGENT_ACP,
-    )
     assert input_values == [
         f"disposition_adapter={unpinned}",
         f"dod_gate_adapter={unpinned}",
         f"fix_adapter={claude_opus_5}",
         f"implement_adapter={claude_opus_5}",
-        f"pr_adapter={claude_haiku_pr}",
         f"review_adapter={unpinned}",
         f"review_fix_adapter={claude_opus_5}",
         "review_fix_visit_cap=4",
@@ -520,13 +516,12 @@ def test_fabro_port_run_routes_implementer_to_codex_adapter(
         "INITIAL_AGENT_MODE=agent-full-access /opt/livespec/codex-acp/bin/codex-acp"
     )
     assert expected_base == CODEX_ADAPTER_BASE
-    # Absent an explicit `codex_models.pr` table the publish node renders the
-    # Claude Haiku adapter, not a Codex one. Keyed by input NAME rather than by
-    # position: the pairs are rendered in sorted-name order.
-    [pr_input] = [pair for pair in input_values if pair.startswith("pr_adapter=")]
-    assert "codex-acp" not in pr_input
-    assert "CODEX_CONFIG" not in pr_input
-    assert pr_input.endswith(" npx -y @agentclientprotocol/claude-agent-acp")
+    # No publication adapter is rendered at all. Keyed by input NAME rather than
+    # by position (the pairs are rendered in sorted-name order), and asserted as
+    # an ABSENCE because the whole-list comparison above would also be satisfied
+    # by a build that renamed the input rather than retiring it.
+    assert not [pair for pair in input_values if pair.startswith("pr_adapter=")]
+    assert not [pair for pair in input_values if "claude-haiku" in pair]
     # No node emits a Codex adapter by default.
     assert not [pair for pair in input_values if "codex-acp" in pair]
     # The un-pinned Codex base is no longer emitted bare on any node.
