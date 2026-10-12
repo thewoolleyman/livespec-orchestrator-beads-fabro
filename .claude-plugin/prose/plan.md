@@ -219,11 +219,9 @@ plan-level proof is what discharges one.
 #### The typed next action
 
 The next action is epic metadata, not prose. Every new write carries exactly five keys — `kind`, `ref`, `text`,
-`required_result`, and `budget` — beside a `last_session` string naming who wrote it and when. Legacy three-key pointers remain
-readable until their next sanctioned write:
+`required_result`, and `budget` — beside a `last_session` string naming who wrote it and when. Legacy three-key pointers remain readable until their next sanctioned write:
 
-- `kind: impl` — factory implementation of one work-item. `ref` is that work-item's id, and the action executes as
-  `impl:<ref>`.
+- `kind: impl` — factory implementation of one work-item. `ref` is that work-item's id, and the action executes as `impl:<ref>`.
 - `kind: spec-op` — a spec-lifecycle operation. `ref` is `<operation>:<topic>`, which is itself the action id.
 - `kind: proof` — `capture:<epic-id>` posts captured plan proof through the plan-record posting primitive; `verify:<epic-id>` starts a separate replaying session and posts its verdict through that same primitive.
 - `kind: review` — the epic id; commission the independent completeness reviewer described by the archive gate.
@@ -231,13 +229,11 @@ readable until their next sanctioned write:
 - `kind: await` — `run:`, `gate:`, `item:`, or `epic:` plus its id; perform a bounded wait on that named handle and report expiry through the required-result rules, never by treating elapsed time as a result.
 - `kind: human` or `none` — always raises the picker; `none` has an empty ref.
 
-The six executable kinds carry an authoritative `required_result` and a budget with an absolute UTC `deadline` and positive `max_handoffs`; preserve its epoch, original deadline, and handoff count across routine writes. `human` and `none` carry null tracking fields. Write pointers only through `append_handoff(...)`, `append_supervisor_handoff(...)`, or
-`set_next_action(...)`; those writers refuse any other kind or malformed ref. Never hand-edit epic metadata.
+The six executable kinds carry an authoritative `required_result` and a budget with an absolute UTC `deadline` and positive `max_handoffs`; preserve its epoch, original deadline, and handoff count across routine writes. `human` and `none` carry null tracking fields. Write pointers only through `append_handoff(...)`, `append_supervisor_handoff(...)`, or `set_next_action(...)`; those writers refuse any other kind, malformed ref, or malformed budget field. Never hand-edit epic metadata.
 
-A maintainer may authorize attended continuation by passing `PlanContinuationAuthorization(until=..., by=..., directive=...)` to `record_scope_event(...)`. Only an attended session may write it; the primitive writes `recorded-attended: true` itself. Revoke through `PlanContinuationRevocation(by=...)`. The latest complete ruling in timeline order governs; one missing any required line is not current. A ruling authorizes continuation only: it never supplies store-write consent or admission.
+A maintainer may authorize attended continuation by passing `PlanContinuationAuthorization(until=..., by=..., directive=...)` to `record_scope_event(...)`. Only an attended session may write it; the primitive writes `recorded-attended: true` itself, as the ruling's last line. Revoke through `PlanContinuationRevocation(by=...)`. The latest complete ruling in timeline order governs; one missing any required line, or carrying any line after the attended marker, is not current. A ruling authorizes continuation only: it never supplies store-write consent or admission.
 
-A prose `next action:` line may still appear for a human reader, but it carries no authority: a wrapped line twice truncated a
-live instruction, so typed metadata wins and is the read-back discriminator.
+A prose `next action:` line may still appear for a human reader, but it carries no authority: a wrapped line twice truncated a live instruction, so typed metadata wins and is the read-back discriminator.
 
 #### Unattended resume
 
@@ -246,17 +242,11 @@ or `on`, case- and whitespace-insensitive). The overseer daemon sets it on the r
 restart, where no operator is present to answer a question. Nothing else sets it: an operator-launched session leaves it unset
 and keeps the picker.
 
-Call `resume_directive(config=..., epic_id=..., unattended=...)`. It reads the epic's `next_action` — it parses no comment body
-— and returns `ask`, `next_action`, a `reason`, `findings`, and the authoritative result observation:
+Call `resume_directive(config=..., epic_id=..., unattended=...)`. It reads the epic's `next_action` — it parses no comment body — and returns `ask`, `next_action`, a `reason`, `findings`, and the authoritative result observation:
 
-- An unattended resume takes any of the six executable kinds with a non-empty ref when its result is observably unsatisfied and
-  its budget is unexpired. An attended resume does the same under a current continuation ruling and names that ruling in its
-  reason. Without a ruling it presents the epic's `next_action` as the default choice of that picker. A standing maintainer directive to continue satisfies that picker only when recorded as that ruling: take the default without re-prompting. `human` and `none` always ask.
-- Reconcile before acting, in order. SATISFIED is stale: report the observed result, do not execute the pointer, then re-read the
-  ledger and derive the next ready child, proof, review, or archive step. If still unsatisfied and within budget, an `impl` or
-  `spec-op` target already driven by a live factory run is rewritten to `await` with `run:<id>`, preserving the required result,
-  epoch, original deadline, and handoff count; do not start a second dispatch. An in-budget unsatisfied `await` reports waiting,
-  performs the bounded wait on its named handle, and is not rewritten. Unobservable or expired obligations do not continue.
+- An unattended resume takes any of the six executable kinds with a non-empty ref when its result is observably unsatisfied and its budget is unexpired. An attended resume does the same under a current continuation ruling and names that ruling in its reason. Without a ruling it presents the epic's `next_action` as the default choice of that picker, or the derived step when the pointer was stale. A standing maintainer directive to continue satisfies that picker only when recorded as that ruling: take the default without re-prompting. `human` and `none` always ask.
+- Reconcile before acting, in order. SATISFIED is stale: report the observed result, do not execute the pointer, then re-read the ledger and persist a replacement pointer naming the next ready child, or — when every child is disposed — the proof, review, or archive step, under a fresh epoch and the plan's own unextended deadline. That derived step is still only TAKEN without the picker when a ruling authorizes it.
+- If still unsatisfied and within budget, an `impl` or `spec-op` target already driven by a live factory run is rewritten to `await` with `run:<id>`, preserving the required result, epoch, original deadline, and handoff count; do not start a second dispatch. A factory that cannot be inspected fails closed rather than re-dispatching. An in-budget unsatisfied `await` reports waiting, performs the bounded wait on its named handle, and is not rewritten. Unobservable or expired obligations do not continue.
 
 Store-write consent remains governed by the consent contract; a typed pointer or standing continuation directive does not
 manufacture consent for a new write.
