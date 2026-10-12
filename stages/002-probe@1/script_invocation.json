@@ -1,0 +1,5 @@
+{
+  "script": "default_branch=\"master\"; echo \"default_branch=$default_branch\" >&2; test \"$default_branch\" = master",
+  "command": "exec 2>&1\ndefault_branch=\"master\"; echo \"default_branch=$default_branch\" >&2; test \"$default_branch\" = master",
+  "language": "shell"
+}
