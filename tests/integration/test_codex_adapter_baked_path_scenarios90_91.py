@@ -13,6 +13,15 @@ this repository's own `.livespec.jsonc`, so the control (every committed
 structured entry's agent, model and effort reach its rendered adapter) is
 graded against what a dispatch from here would really carry, without pinning
 which agent or model the repository has chosen.
+
+THE PINNED NODE IS `review_fix`, NOT `pr`, and the ratified scenarios say so
+outright: publication is a COMMAND stage for an implementation workflow, so
+there is no `pr` adapter for a dispatch to render and both scenarios name
+`review_fix` in its place. A case that kept pinning `pr` here would be grading a
+chain the Dispatcher does not build. The repository's own compatibility
+`acp_nodes.pr` entry is therefore SCOPED OUT below exactly as a dispatch scopes
+it, which is what keeps the committed-configuration control reading the real
+resolution rather than a refusal.
 """
 
 from __future__ import annotations
@@ -31,12 +40,17 @@ from livespec_orchestrator_beads_fabro.commands._acp_agent_mechanism import (
 )
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import builtin_catalogs
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
-from livespec_orchestrator_beads_fabro.commands._config_acp import (
-    resolve_acp_catalogs_for,
-    resolve_acp_node_overlays,
+from livespec_orchestrator_beads_fabro.commands._acp_node_repository import (
+    repository_acp_overlays,
 )
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_catalogs_for
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
     workflow_layer,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
+    GROOM_ONLY_ACP_NODES,
+    scoped_repository_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
     GUARD_SCRIPT_PATH,
@@ -47,6 +61,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     CODEX_ADAPTER_BASE,
     build_plan,
+)
+from livespec_orchestrator_beads_fabro.commands._workflow_variant_kind import (
+    WORKFLOW_KIND_IMPLEMENT,
 )
 
 _CONFIG_NAME = ".livespec.jsonc"
@@ -70,20 +87,16 @@ _UNPINNED_BASE = (
     'CODEX_CONFIG=\'{"approval_policy":"never","sandbox_mode":"danger-full-access"}\' '
     "INITIAL_AGENT_MODE=agent-full-access /opt/livespec/codex-acp/bin/codex-acp"
 )
-# The publish node's fleet DEFAULT since v107: the Claude Haiku adapter,
-# read from this repository's committed workflow.toml `pr_adapter` input.
-_PUBLISH_DEFAULT_HAIKU = (
-    "ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high "
-    "npx -y @agentclientprotocol/claude-agent-acp"
-)
-# The rendered Codex publish adapter for a repository that EXPLICITLY routes its
-# `pr` node to Codex — no longer the default. Scenario 90 names the STRUCTURED
-# entry, whose wording is: sets the pr node to agent codex-acp with a model and
-# an effort. That entry is what replaced the retired codex_models.pr tier.
-_EXPLICIT_CODEX_PR = {
-    "acp_nodes": {"pr": {"agent": "codex-acp", "model": "gpt-5.4-mini", "effort": "high"}}
+# The rendered Codex adapter for a repository that EXPLICITLY routes its
+# `review_fix` node to Codex. Scenario 90 names the STRUCTURED entry, whose
+# wording is: sets the review_fix node to agent codex-acp with a model and an
+# effort. It named `pr` until v121 retired publication's adapter entirely, and
+# `review_fix` is the node it names now — a write-capable implementer-class node
+# whose adapter a dispatch still renders.
+_EXPLICIT_CODEX_REVIEW_FIX = {
+    "acp_nodes": {"review_fix": {"agent": "codex-acp", "model": "gpt-5.4-mini", "effort": "high"}}
 }
-_PUBLISH_ADAPTER = (
+_PINNED_ADAPTER = (
     'CODEX_CONFIG=\'{"approval_policy":"never","model":"gpt-5.4-mini",'
     '"model_reasoning_effort":"high","sandbox_mode":"danger-full-access"}\' '
     "INITIAL_AGENT_MODE=agent-full-access /opt/livespec/codex-acp/bin/codex-acp"
@@ -126,7 +139,14 @@ def _rendered_adapters(*, repo: Path) -> dict[str, str]:
     builder, so the assertions below grade the string a node's `acp.command`
     would actually receive.
     """
-    overlays = resolve_acp_node_overlays(cwd=repo)
+    # Scoped by workflow kind, as `prepare_acp_nodes` scopes it: this
+    # repository's compatibility `acp_nodes.pr` entry applies to its groom-kind
+    # variant alone, and an unscoped read would refuse here for naming a node
+    # the implementation workflow declares no adapter input for.
+    scoped, _not_applied = scoped_repository_block(
+        block=dispatcher_block(cwd=repo), workflow_kind=WORKFLOW_KIND_IMPLEMENT
+    )
+    overlays = repository_acp_overlays(block=scoped, catalogs=builtin_catalogs())
     assert not isinstance(overlays, str), overlays
     # Through `workflow_layer`, which is what a dispatch uses: the committed
     # defaults are STRUCTURED entries, so a raw `workflow_adapter_inputs` read
@@ -160,45 +180,51 @@ def _rendered_adapters(*, repo: Path) -> dict[str, str]:
     return rendered
 
 
-def test_a_default_dispatch_renders_the_claude_haiku_publish_adapter(tmp_path: Path) -> None:
-    """The v107 default: an unconfigured target renders the publish node as the
-    Claude Haiku adapter (from the committed workflow.toml), not a Codex one."""
+def test_a_default_dispatch_renders_no_publication_adapter(tmp_path: Path) -> None:
+    """An unconfigured target renders the implementer default and no publisher.
+
+    The negative half is the v121 assertion and it is checked over the whole
+    resolved set rather than one key: publication is a command stage, so there
+    is no node for a publication adapter to be rendered FOR, and a key-scoped
+    check would pass just as well against a resolution that had quietly
+    reintroduced one under a different node name.
+    """
     adapters = _rendered_adapters(repo=tmp_path)
-    assert adapters["pr"] == _PUBLISH_DEFAULT_HAIKU
-    assert "codex-acp" not in adapters["pr"]
+    assert "pr" not in adapters
+    assert all("claude-haiku" not in rendered for rendered in adapters.values())
     assert adapters["implement"] == _CLAUDE_OPUS_5_ADAPTER
 
 
-def test_scenario90_a_codex_pinned_publish_dispatch_renders_both_adapters_in_their_ratified_forms(
+def test_scenario90_a_codex_pinned_dispatch_renders_both_adapters_in_their_ratified_forms(
     tmp_path: Path,
 ) -> None:
-    """With a structured codex-acp `pr` entry the publish adapter is
+    """With a structured codex-acp `review_fix` entry that adapter is
     env-then-baked-path; the implementer is unchanged."""
-    _write_dispatcher_config(repo=tmp_path, dispatcher=_EXPLICIT_CODEX_PR)
+    _write_dispatcher_config(repo=tmp_path, dispatcher=_EXPLICIT_CODEX_REVIEW_FIX)
     adapters = _rendered_adapters(repo=tmp_path)
 
-    assert adapters["pr"] == _PUBLISH_ADAPTER
-    assert adapters["pr"].endswith(f" {_CODEX_ADAPTER_COMMAND}")
-    assert '"model":"gpt-5.4-mini"' in adapters["pr"]
-    assert '"model_reasoning_effort":"high"' in adapters["pr"]
-    assert " -c model=" not in adapters["pr"]
-    assert " -c model_reasoning_effort=" not in adapters["pr"]
+    assert adapters["review_fix"] == _PINNED_ADAPTER
+    assert adapters["review_fix"].endswith(f" {_CODEX_ADAPTER_COMMAND}")
+    assert '"model":"gpt-5.4-mini"' in adapters["review_fix"]
+    assert '"model_reasoning_effort":"high"' in adapters["review_fix"]
+    assert " -c model=" not in adapters["review_fix"]
+    assert " -c model_reasoning_effort=" not in adapters["review_fix"]
 
     # The value must survive the POSIX tokenization fabro applies before it
     # launches the process. The whole-string assertion above cannot stand in
     # for this one: it is satisfied by whatever bytes the renderer emits, and
     # the two characters that decide whether the adapter can start at all are
     # exactly the ones a reader skims past.
-    tokenized = shlex.split(adapters["pr"])[0].removeprefix("CODEX_CONFIG=")
+    tokenized = shlex.split(adapters["review_fix"])[0].removeprefix("CODEX_CONFIG=")
     assert json.loads(tokenized)["model"] == "gpt-5.4-mini"
 
     assert adapters["implement"] == _CLAUDE_OPUS_5_ADAPTER
 
 
-def test_scenario90_the_publish_adapter_declares_agent_full_access(tmp_path: Path) -> None:
+def test_scenario90_the_pinned_adapter_declares_agent_full_access(tmp_path: Path) -> None:
     """A write-capable Codex class carries INITIAL_AGENT_MODE=agent-full-access."""
-    _write_dispatcher_config(repo=tmp_path, dispatcher=_EXPLICIT_CODEX_PR)
-    assert "INITIAL_AGENT_MODE=agent-full-access" in _rendered_adapters(repo=tmp_path)["pr"]
+    _write_dispatcher_config(repo=tmp_path, dispatcher=_EXPLICIT_CODEX_REVIEW_FIX)
+    assert "INITIAL_AGENT_MODE=agent-full-access" in _rendered_adapters(repo=tmp_path)["review_fix"]
 
 
 def test_scenario90_a_node_that_performs_no_writes_is_rendered_read_only(
@@ -234,10 +260,10 @@ def test_scenario90_package_name_resolution_is_never_used_to_identify_the_adapte
     adapter legitimately uses `npx -y`, so a bare `npx` count would report the
     same number whether or not the Codex adapter were fixed. Every rendering
     that mentions codex-acp at all must mention it as the baked path. A
-    structured codex-acp `pr` entry is written so at least one node actually
-    renders the Codex adapter rather than the Claude publish default.
+    structured codex-acp `review_fix` entry is written so at least one node
+    actually renders the Codex adapter rather than a Claude default.
     """
-    _write_dispatcher_config(repo=tmp_path, dispatcher=_EXPLICIT_CODEX_PR)
+    _write_dispatcher_config(repo=tmp_path, dispatcher=_EXPLICIT_CODEX_REVIEW_FIX)
     for node, rendered in _rendered_adapters(repo=tmp_path).items():
         if "codex-acp" not in rendered:
             continue
@@ -314,13 +340,25 @@ def test_this_repository_committed_entries_reach_their_rendered_adapters() -> No
     through the real dispatch path with no refusal, and that every structured
     entry's agent, model and effort reach the node's rendered adapter through
     the mechanism the agent catalog declares for that agent.
+
+    A GROOM-ONLY NODE'S ENTRY IS EXCLUDED, AND THE EXCLUSION IS ASSERTED rather
+    than taken as a `continue`. This repository configures `acp_nodes.pr` for
+    its groom-kind variant, and an implementation dispatch renders no adapter
+    for it; skipping it silently would make this control pass equally well for a
+    node whose adapter simply failed to render, so each excluded node is
+    required to be BOTH committed and unrendered.
     """
     catalogs = resolve_acp_catalogs_for(cwd=_REPO_ROOT)
     assert not isinstance(catalogs, str), catalogs
     adapters = _rendered_adapters(repo=_REPO_ROOT)
     entries = _committed_structured_entries()
 
-    for node, entry in entries.items():
+    for node in sorted(GROOM_ONLY_ACP_NODES & set(entries)):
+        assert node not in adapters, node
+
+    for node, entry in sorted(entries.items()):
+        if node in GROOM_ONLY_ACP_NODES:
+            continue
         agent = catalogs.agents[entry["agent"]]
         rendered = adapters[node]
         assert rendered.endswith(f" {agent.command}"), (node, rendered)

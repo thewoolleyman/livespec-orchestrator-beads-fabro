@@ -228,7 +228,6 @@ def test_the_committed_graph_resolves_exactly_the_nodes_dominating_every_green_p
         "proof_capture",
         "review",
         "proof_verify",
-        "pr",
     }
     assert critical.start == "start"
     assert critical.green_terminal == "exit"
@@ -239,7 +238,6 @@ def test_the_committed_graph_resolves_exactly_the_nodes_dominating_every_green_p
         "review_fix",
         "proof_capture",
         "proof_verify",
-        "pr",
         "review",
         "disposition",
     }
@@ -1229,7 +1227,6 @@ def test_a_repository_with_no_committed_workflow_is_graded_against_the_bundled_o
         "proof_capture",
         "review",
         "proof_verify",
-        "pr",
     }
     assert verdict.viable is True
 
@@ -1281,7 +1278,7 @@ def test_an_overlay_refusal_is_surfaced_rather_than_swallowed(
     composer = modules["_dispatcher_acp_preflight"]
     repo = _enabled_repo(tmp_path=tmp_path)
     monkeypatch.setattr(
-        composer, "resolve_acp_node_overlays", lambda **_: "overlay layer is unreadable"
+        composer, "repository_acp_overlays", lambda **_: "overlay layer is unreadable"
     )
 
     verdict = composer.resolve_acp_preflight(repo=repo, journal_path=None, now_iso=_NOW)
