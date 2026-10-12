@@ -695,7 +695,11 @@ deficient record to be cured rather than a decision to be taken.
   (and the Spec Reader's read-only view of the spec tree) MUST be
   re-derivable from the tenant DB. Skills MUST NOT store sidecar JSON,
   sidecar SQLite, JSONL work-item files, environment-variable state, or
-  similar.
+  similar. Factory-native run and availability evidence is an additional
+  authoritative source for Dispatcher runtime observations. This exception
+  permits no separate hold sidecar and does not change the tenant DB's
+  authority over work-item state (`contracts.md` §"Factory-configurable ACP
+  fallback priority").
 - No `CREATE DATABASE`, no direct SQL, no server-lifecycle management,
   no committed password, no per-write `DOLT_COMMIT` — restated here as
   forbidden patterns because each is an architectural boundary, not a
