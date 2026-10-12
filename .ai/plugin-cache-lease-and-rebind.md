@@ -58,12 +58,34 @@ the reload. The other supported remedy remains restarting the session, which
 binds afresh by construction.
 
 "Human-typed" means typed at the session's own prompt, not typed by the
-maintainer. A session running in a herdr pane can rebind itself: find its pane
-with `herdr pane current`, then run `herdr pane send-text <pane> "/reload-plugins"`
-followed by `herdr pane send-keys <pane> enter`. The command queues and runs when
-the current turn ends. Never report a plugin reload as a task only the maintainer
-can do; send it, then confirm the rebind by lease ownership as below.
-(Maintainer correction, 2026-10-11.)
+maintainer. A session running in a herdr pane can rebind itself, but NEVER by
+typing into its own pane while its turn is still running. Measured 2026-10-12:
+`send-text "/reload-plugins"`, `send-keys enter`, `send-text "<follow-up>"`,
+`send-keys enter`, all sent mid-turn, left ONE line in the input box,
+`/reload-plugins <follow-up>`. Neither Enter submitted anything; the two texts
+were joined into one slash command whose follow-up became its arguments; and the
+session then sat idle until the maintainer pressed Enter. Every herdr call exited
+0, so nothing reported the failure.
+
+The working form hands the keystrokes to a detached waiter that acts only once
+the pane is idle, and it puts the slash command and the follow-up prompt in
+separate submissions:
+
+```bash
+pane=$(herdr pane current | python3 -c 'import json,sys;print(json.load(sys.stdin)["result"]["pane"]["pane_id"])')
+mise exec -- just gate-start -- sh -c "
+  herdr agent wait $pane --until idle --until done --timeout 600000 &&
+  herdr pane send-text $pane /reload-plugins && herdr pane send-keys $pane enter &&
+  sleep 5 &&
+  herdr agent prompt $pane 'Plugins reloaded; confirm the rebind by lease, then <next step>.'"
+```
+
+Then end the turn with no further tool calls; the waiter fires once the turn
+ends. `herdr agent prompt` is the submit verb, and it refuses a blocked agent
+instead of silently appending to its input. After resuming, read the pane
+(`herdr pane read <pane> | tail`) to confirm the input box is empty, and confirm
+the rebind by lease ownership as below. Never report a plugin reload as a task
+only the maintainer can do. (Maintainer corrections, 2026-10-11 and 2026-10-12.)
 
 ## The trap: a stale lease file is not evidence of current binding
 

@@ -38,8 +38,11 @@ driving session opens, drives, reads, and closes. Three rules, each from a measu
    after its file is read is the same slobbery as a worktree left behind after its pull
    request merged; the maintainer's words were "Clean up after yourself."
 
-`herdr pane send-text` to a BUSY agent pane (including your own) only queues the text in
-that pane's input box; it executes when that agent next idles. That is why a
-`/reload-plugins` sent to your own pane fires only after your turn ends, and why a send to
-another working pane can block the sending command for minutes — send, then end the turn,
-rather than waiting on it.
+Do not type into a BUSY agent pane, and never into your own pane mid-turn. `send-text`
+appends to the pane's input box, but a `send-keys enter` sent while the agent is working
+does not submit it, so successive sends pile up on one line. Measured 2026-10-12: a
+`/reload-plugins` and a follow-up prompt became the single command
+`/reload-plugins <follow-up>`, and nothing ran until a human pressed Enter. Every herdr
+call exited 0. Wait for the pane to go idle (`herdr agent wait <pane> --until idle --until
+done`) and submit prompts with `herdr agent prompt`. For your own pane, run that wait in a
+detached waiter and end your turn; the recipe is in `.ai/plugin-cache-lease-and-rebind.md`.
