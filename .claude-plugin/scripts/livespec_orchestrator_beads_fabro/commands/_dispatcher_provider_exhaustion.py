@@ -237,15 +237,28 @@ def provider_exhaustion_refusal(
     journal: _Journal,
     journal_path: Path | None,
     now_iso: str,
+    candidates: tuple[RenderedCandidate, ...] | None,
 ) -> DispatchOutcome | None:
-    """Refuse this dispatch when a covered provider's ceiling is still held.
+    """Refuse this dispatch when a COVERED provider's ceiling is still held.
+
+    This is the FIRST refusal in the eligibility ladder, so the one thing it
+    must not do is refuse an item none of the held allowances could have
+    spent: a vendor ceiling is a fact about the factory, but only about the
+    part of the factory this item's nodes actually reach. `candidates` is
+    therefore the dispatch's own resolved node adapters, projected into the
+    candidates they render, and a record covering none of them refuses
+    nothing and journals nothing — a refusal line naming a hold the item
+    could not have hit is the plausible wrong answer Scenario 60's "A hold on
+    one provider does not refuse an item wholly on another" exists to forbid.
 
     The refusal names the vendor from the RECORD — the one that actually
     refused — so an operator reading the journal is told which allowance is
     gone rather than a constant that may name a vendor nothing was observed
     against.
     """
-    record = dispatch_provider_exhaustion(journal_path=journal_path, now_iso=now_iso)
+    record = covering_provider_exhaustion(
+        journal_path=journal_path, now_iso=now_iso, candidates=candidates
+    )
     if record is None:
         return None
     outcome = DispatchOutcome(
