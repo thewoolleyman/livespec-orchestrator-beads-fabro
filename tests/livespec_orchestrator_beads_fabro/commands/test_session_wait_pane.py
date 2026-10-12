@@ -216,8 +216,15 @@ def _isolated_herdr_server(*, directory: Path):
     """
     config = directory / "c"
     config.mkdir(parents=True, exist_ok=True)
+    # Every inherited `HERDR_*` variable is DROPPED, because a run launched from
+    # inside a herdr pane carries `HERDR_SOCKET_PATH`, which the server honours
+    # over the XDG roots: measured on the host, the "isolated" server found the
+    # operator's live socket, printed `herdr server is already running` and
+    # exited 1. The factory sandbox carries no such variable, so only a host
+    # run exposed it — and an inherited socket path aims at a server this
+    # fixture does not own.
     environment = dict(
-        os.environ,
+        {name: value for name, value in os.environ.items() if not name.startswith("HERDR_")},
         XDG_CONFIG_HOME=str(config),
         XDG_DATA_HOME=str(directory / "d"),
         XDG_STATE_HOME=str(directory / "s"),
@@ -273,42 +280,60 @@ def _answer_once(*, connection: socket.socket, reply: bytes) -> None:
 
 
 @contextmanager
-def _controlled_peer(*, socket_path: Path, replies: list[bytes]):
+def _controlled_peer(*, name: str, replies: list[bytes]):
     """A unix socket answering each connection with scripted bytes.
 
     The listener is bound synchronously BEFORE the context is entered, so a
     test never races its own peer: there is no readiness window to poll and
     no deadline to expire. Only the accept loop is threaded, and it is joined
     on the way out.
+
+    It OWNS its own short root and YIELDS the path it bound, rather than
+    binding a path a caller chose. The `sun_path` bound belongs to whatever
+    binds the socket, and a caller passing `tmp_path` cannot honour it: under
+    `pytest -n` that prefix gains a `popen-gwNN` segment, and a peer named for
+    one of this module's longer reply labels then overflows 107 bytes and dies
+    with `AF_UNIX path too long`. That is invisible to a serial run and fails
+    `just check`, which runs the suite in parallel — measured on
+    `observe-over-the-reply-ceiling.sock`. `_short_root` carries the same
+    bound for the server's own sockets, and the assertion below is here for
+    the same reason it is there: a future rename that lengthens a name fails
+    loudly and once instead of flaking per worker.
     """
-    stop = threading.Event()
-    served = itertools.count()
-    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    listener.bind(str(socket_path))
-    listener.listen(8)
-    listener.settimeout(0.05)
+    with _short_root() as directory:
+        socket_path = directory / name
+        assert len(str(socket_path)) <= _SUN_PATH_LIMIT, (
+            f"{socket_path} is {len(str(socket_path))} bytes, over the"
+            f" {_SUN_PATH_LIMIT}-byte sun_path limit"
+        )
+        stop = threading.Event()
+        served = itertools.count()
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(str(socket_path))
+        listener.listen(8)
+        listener.settimeout(0.05)
 
-    def serve() -> None:
-        while not stop.is_set():
-            try:
-                connection, _ = listener.accept()
-            except OSError:
-                continue
-            reply = replies[min(next(served), len(replies) - 1)]
-            threading.Thread(
-                target=_answer_once,
-                kwargs={"connection": connection, "reply": reply},
-                daemon=True,
-            ).start()
+        def serve() -> None:
+            while not stop.is_set():
+                try:
+                    connection, _ = listener.accept()
+                except OSError:
+                    continue
+                reply = replies[min(next(served), len(replies) - 1)]
+                threading.Thread(
+                    target=_answer_once,
+                    kwargs={"connection": connection, "reply": reply},
+                    daemon=True,
+                ).start()
 
-    worker = threading.Thread(target=serve, daemon=True)
-    worker.start()
-    try:
-        yield
-    finally:
-        stop.set()
-        worker.join(timeout=30.0)
-        listener.close()
+        worker = threading.Thread(target=serve, daemon=True)
+        worker.start()
+        try:
+            yield socket_path
+        finally:
+            stop.set()
+            worker.join(timeout=30.0)
+            listener.close()
 
 
 def _agent_reply(*, agent: dict[str, object]) -> bytes:
@@ -596,10 +621,7 @@ def test_routing_sends_each_target_kind_to_its_own_adapter(*, tmp_path: Path) ->
 
 
 @_requires_herdr
-def test_a_missing_pane_and_a_changed_server_end_with_distinct_outcomes(
-    *,
-    tmp_path: Path,
-) -> None:
+def test_a_missing_pane_and_a_changed_server_end_with_distinct_outcomes() -> None:
     """Scenario 155: each uncertain end has its OWN outcome, not one shared one.
 
     The three ends a wait can reach other than a reported state are a pane
@@ -649,8 +671,10 @@ def test_a_missing_pane_and_a_changed_server_end_with_distinct_outcomes(
                 observed_at=3.0,
             ).state
 
-    unreadable_path = tmp_path / "unreadable.sock"
-    with _controlled_peer(socket_path=unreadable_path, replies=[b"{not json}\n"]):
+    with _controlled_peer(
+        name="unreadable.sock",
+        replies=[b"{not json}\n"],
+    ) as unreadable_path:
         herdr_module = _module(name="_session_wait_herdr")
         types_module = _module(name="_session_wait_types")
         unreadable_target = types_module.PaneTarget(
@@ -785,9 +809,8 @@ def test_a_pane_target_cannot_be_armed_against_an_unobservable_server(
         _ = pane_module.freeze_pane_target(socket_path=not_a_socket, pane_id="w1:p1")
 
     for label, reply in _malformed_replies():
-        peer_path = tmp_path / f"arm-{label}.sock"
         with (
-            _controlled_peer(socket_path=peer_path, replies=[reply]),
+            _controlled_peer(name=f"arm-{label}.sock", replies=[reply]) as peer_path,
             pytest.raises(ValueError, match="not identifiable"),
         ):
             _ = pane_module.freeze_pane_target(
@@ -797,7 +820,7 @@ def test_a_pane_target_cannot_be_armed_against_an_unobservable_server(
             )
 
 
-def test_a_pane_observation_never_fabricates_a_pane_state(*, tmp_path: Path) -> None:
+def test_a_pane_observation_never_fabricates_a_pane_state() -> None:
     """Every unreadable, unreachable or absent answer stays out of the state set.
 
     These are the paths where an adapter most easily invents a plausible
@@ -808,8 +831,7 @@ def test_a_pane_observation_never_fabricates_a_pane_state(*, tmp_path: Path) -> 
     herdr_module = _module(name="_session_wait_herdr")
     types_module = _module(name="_session_wait_types")
     for label, reply in _malformed_replies():
-        peer_path = tmp_path / f"observe-{label}.sock"
-        with _controlled_peer(socket_path=peer_path, replies=[reply]):
+        with _controlled_peer(name=f"observe-{label}.sock", replies=[reply]) as peer_path:
             target = types_module.PaneTarget(
                 backend="herdr",
                 socket_path=peer_path,
@@ -825,22 +847,20 @@ def test_a_pane_observation_never_fabricates_a_pane_state(*, tmp_path: Path) -> 
 
     # A record that parses but reports no usable status is the same class of
     # answer: there is no state to return, so none is invented.
-    status_free = tmp_path / "status-free.sock"
     with _controlled_peer(
-        socket_path=status_free,
+        name="status-free.sock",
         replies=[_agent_reply(agent={"terminal_id": "term_test"})],
-    ):
+    ) as status_free:
         target = pane_module.freeze_pane_target(socket_path=status_free, pane_id="w1:p1")
         assert target.terminal_id == "term_test"
         unusable = pane_module.observe_pane_target(target=target, observed_at=6.0)
         assert unusable.state not in _PANE_STATES
 
     # The control: a well-formed record IS returned verbatim.
-    healthy = tmp_path / "healthy.sock"
     with _controlled_peer(
-        socket_path=healthy,
+        name="healthy.sock",
         replies=[_agent_reply(agent={"terminal_id": "term_test", "agent_status": "blocked"})],
-    ):
+    ) as healthy:
         target = pane_module.freeze_pane_target(socket_path=healthy, pane_id="w1:p1")
         observation = pane_module.observe_pane_target(target=target, observed_at=7.0)
         assert observation.state == "blocked"
