@@ -69,6 +69,27 @@ def test_the_preservation_push_does_not_run_the_repository_pre_push_check_suite(
     assert f"{_PRESERVED}: {_REF}" in completed.stderr
 
 
+def test_a_tree_that_fails_the_check_suite_still_reaches_the_needs_human_ref(
+    tmp_path: Path,
+) -> None:
+    """Assertion 2: the WORK reaches the ref, not merely the ref.
+
+    The tree this node preserves is UNCOMMITTED by construction, so a refusing
+    pre-commit hook leaves the push creating the ref at the last engine
+    checkpoint — present, plausible, and missing exactly the work the node exists
+    to save. "The ref exists" therefore passes for the failure, which is why this
+    case reads the preserved BLOB rather than the ref.
+    """
+    work, origin, marker = _sandbox(tmp_path=tmp_path)
+    _control_commit_is_refused_by_the_hook(work=work, marker=marker)
+
+    completed = _run_needs_human(work=work, run_id=_RUN_ID)
+
+    assert _pushed_refs(origin=origin) == [_REF], completed.stderr
+    assert _preserved_blob(origin=origin, ref=_REF, path=_WIP) == _WIP_BODY
+    assert "pre-commit" not in _hooks_that_ran(marker=marker)
+
+
 def test_the_publish_draft_push_still_runs_the_repository_pre_push_check_suite(
     tmp_path: Path,
 ) -> None:
@@ -108,9 +129,13 @@ def test_the_hookless_form_is_per_invocation_and_scoped_to_the_preservation_node
     needs_human = _node_script(node="needs_human")
     publish_draft = _node_script(node="publish_draft")
 
-    pushes = _git_writes(script=needs_human, verb="push")
-    assert len(pushes) == 2, pushes
-    for invocation in pushes:
+    writes = [
+        invocation
+        for verb in ("commit", "push")
+        for invocation in _git_writes(script=needs_human, verb=verb)
+    ]
+    assert len(writes) == 4, writes
+    for invocation in writes:
         assert _HOOKLESS_OPTION in invocation, invocation
     assert "--no-verify" not in needs_human
     assert not re.search(r"\bLEFTHOOK=", needs_human)
@@ -265,6 +290,38 @@ def _control_push_is_refused_by_the_hook(*, work: Path, marker: Path) -> None:
     assert completed.returncode != 0, completed.stdout
     assert "pre-push" in marker.read_text(encoding="utf-8")
     marker.unlink()
+
+
+def _control_commit_is_refused_by_the_hook(*, work: Path, marker: Path) -> None:
+    """Prove this fixture's pre-commit hook CAN fire and CAN refuse a commit.
+
+    The staging is undone afterwards so the node reaches an index in the same
+    state production hands it — the node does its own `git add -A`.
+    """
+    _git(work, "add", "-A")
+    completed = subprocess.run(
+        ["git", "commit", "--quiet", "-m", "control"],
+        cwd=str(work),
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert completed.returncode != 0, completed.stdout
+    assert "pre-commit" in marker.read_text(encoding="utf-8")
+    marker.unlink()
+    _git(work, "reset", "--quiet")
+
+
+def _preserved_blob(*, origin: Path, ref: str, path: str) -> str:
+    completed = subprocess.run(
+        ["git", "show", f"{ref}:{path}"],
+        cwd=str(origin),
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    return completed.stdout
 
 
 def _hooks_that_ran(*, marker: Path) -> str:
