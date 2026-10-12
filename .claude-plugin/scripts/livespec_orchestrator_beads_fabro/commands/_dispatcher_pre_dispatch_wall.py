@@ -24,13 +24,16 @@ from __future__ import annotations
 
 import argparse
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     pre_dispatch_criteria_refusal,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
+    implementation_pr_override_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_credential_gate import (
     codex_credential_refusal_for_items,
@@ -104,7 +107,14 @@ def pre_dispatch_wall_exit(
     below branches on which caller it is, which is the point: a refusal that
     fired for one path and not the other was a defect waiting to happen.
 
-    The FABRO CURRENCY gate is first, and its position is load-bearing rather
+    The PUBLICATION-ADAPTER wall is first, and it is first because it is the one
+    refusal here that spends NOTHING at all: it reads this dispatch's own
+    arguments and each item's recorded variant, asks no factory and no provider,
+    and an explicit implementation `pr` override cannot apply now that
+    publication is scripted. A groom selection stays eligible because its `pr`
+    node still publishes a filing plan through ACP.
+
+    The FABRO CURRENCY gate is next, and its position is load-bearing rather
     than tidy. It is the only refusal here whose answer is a property of the
     FACTORY rather than of the items, so nothing about the selection has to be
     read before it can be settled; and the two refusals that would otherwise
@@ -113,7 +123,7 @@ def pre_dispatch_wall_exit(
     refusing an unadmissible ENGINE after either would pay for a dispatch that
     could never run on it.
 
-    The criteria wall is next and is variant-aware: it is handed this dispatch's
+    The criteria wall follows and is variant-aware: it is handed this dispatch's
     explicit `--workflow-name`, resolves which graph the selection would run, and
     exempts a groom-kind dispatch, whose acceptance is the human approval of the
     draft.
@@ -155,33 +165,15 @@ def pre_dispatch_wall_exit(
     item, and it runs last because it MUTATES a remote ref: a selection this wall
     is about to refuse must leave the remote exactly as it found it.
     """
-    currency_refusal = fabro_currency_refusal(args=args, repo=repo, items=items, journal=journal)
-    if currency_refusal is not None:
-        _ = write_stderr(text=currency_refusal)
-        return EXIT_PRECONDITION_ERROR
-    ungradeable = pre_dispatch_criteria_refusal(
-        items=items, cwd=repo, workflow_name=args.workflow_name
-    )
-    if ungradeable is not None:
-        _ = write_stderr(text=ungradeable)
-        return EXIT_UNGRADEABLE_CRITERIA
-    proof_refusal = proof_assets_refusal_for_items(
-        runner=ShellCommandRunner(), repo=repo, items=items, journal=journal
-    )
-    if proof_refusal is not None:
-        _ = write_stderr(text=proof_refusal)
-        return EXIT_PRECONDITION_ERROR
     work_item_ids = [item.id for item in items]
-    credentials_refusal = proof_credentials_refusal_for_items(
-        repo=repo,
-        environ=os.environ,
-        wrapper_text=credential_wrapper_text(repo=repo),
-        work_item_ids=work_item_ids,
-        journal=journal,
+    refusing = _refusing_sequence(
+        args=args, repo=repo, items=items, journal=journal, work_item_ids=work_item_ids
     )
-    if credentials_refusal is not None:
-        _ = write_stderr(text=credentials_refusal)
-        return EXIT_PRECONDITION_ERROR
+    for ask, exit_code, newline in refusing:
+        refusal = ask()
+        if refusal is not None:
+            _ = write_stderr(text=f"{refusal}\n" if newline else refusal)
+            return exit_code
     requirement = selection_credential_requirement(args=args, repo=repo, items=items)
     # A WORKFLOW FAULT is not this wall's refusal to make, so the credential gate
     # is SKIPPED rather than answered. The derivation reads the selected
@@ -223,6 +215,80 @@ def pre_dispatch_wall_exit(
     if reclaim_publish_branches:
         reclaim_stale_publish_branches(args=args, repo=repo, items=items, journal=journal)
     return None
+
+
+def _refusing_sequence(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    items: Sequence[WorkItem],
+    journal: JournalFile,
+    work_item_ids: list[str],
+) -> tuple[tuple[Callable[[], str | None], int, bool], ...]:
+    """Every refusal this wall makes before the credential gate, IN ORDER.
+
+    A TABLE rather than a chain of early returns, and the reason is the one this
+    module's docstring already gives: reading the wall as ONE decision is what
+    keeps each command entry point's return count honest, and a sixth refusal
+    chained inline pushed `pre_dispatch_wall_exit` past the too-many-returns
+    rule. Suppressing that rule was the alternative, and it is exactly what the
+    docstring rejects — it would hide the fact that the wall had grown another
+    exit. As a table the ORDER is data a reader can see at a glance, and adding a
+    refusal is adding a row rather than another branch.
+
+    EVERY ROW IS A THUNK, AND THAT IS A CORRECTNESS REQUIREMENT RATHER THAN A
+    STYLE CHOICE. These refusals are not all pure: the proof-assets gate CREATES
+    this repository's standing prerelease, and the Fabro currency gate spends a
+    forge read and an engine read. Evaluating the table eagerly would perform
+    both for a selection an EARLIER row has already refused — minting a release
+    for a dispatch that never runs, and paying a round trip to answer a question
+    nobody asked. Deferring each row preserves the whole point of the ordering,
+    which is that the cheapest refusal able to decide the selection decides it
+    and nothing further is spent.
+
+    The third element says whether the refusal's own text ends in a newline. Two
+    of these surfaces return one and the rest do not, and normalizing that here
+    would change the bytes an operator reads from one group or the other.
+    """
+    return (
+        (
+            lambda: implementation_pr_override_refusal(
+                args=args, repo=repo, items=items, journal=journal
+            ),
+            EXIT_PRECONDITION_ERROR,
+            True,
+        ),
+        (
+            lambda: fabro_currency_refusal(args=args, repo=repo, items=items, journal=journal),
+            EXIT_PRECONDITION_ERROR,
+            False,
+        ),
+        (
+            lambda: pre_dispatch_criteria_refusal(
+                items=items, cwd=repo, workflow_name=args.workflow_name
+            ),
+            EXIT_UNGRADEABLE_CRITERIA,
+            False,
+        ),
+        (
+            lambda: proof_assets_refusal_for_items(
+                runner=ShellCommandRunner(), repo=repo, items=items, journal=journal
+            ),
+            EXIT_PRECONDITION_ERROR,
+            False,
+        ),
+        (
+            lambda: proof_credentials_refusal_for_items(
+                repo=repo,
+                environ=os.environ,
+                wrapper_text=credential_wrapper_text(repo=repo),
+                work_item_ids=work_item_ids,
+                journal=journal,
+            ),
+            EXIT_PRECONDITION_ERROR,
+            False,
+        ),
+    )
 
 
 def selection_credential_requirement(

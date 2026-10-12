@@ -26,17 +26,29 @@ stage. Nothing here widens what a groom dispatch sees.
 
 from __future__ import annotations
 
-from typing import Any, cast
+import argparse
+from collections.abc import Sequence
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_ledger import (
+    previewed_workflow_variant,
+)
 from livespec_orchestrator_beads_fabro.commands._workflow_variant_kind import (
     WORKFLOW_KIND_GROOM,
+    is_groom_variant,
 )
+from livespec_orchestrator_beads_fabro.types import WorkItem
+
+if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
 
 __all__: list[str] = [
     "ACP_PUBLICATION_POLICY_STAGE",
     "GROOM_ONLY_ACP_NODES",
     "IMPLEMENTATION_PR_NOT_APPLIED_REASON",
     "PUBLICATION_ACP_NODE",
+    "implementation_pr_override_refusal",
     "scoped_repository_block",
 ]
 
@@ -96,3 +108,73 @@ def scoped_repository_block(
             "reason": IMPLEMENTATION_PR_NOT_APPLIED_REASON,
         },
     )
+
+
+def implementation_pr_override_refusal(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    items: Sequence[WorkItem],
+    journal: JournalWriter,
+) -> str | None:
+    """Refuse a dispatch-layer `pr` adapter for any implementation selection.
+
+    Called by the shared pre-dispatch wall, so the refusal lands BEFORE
+    admission: the item is never claimed, no assignee is set, and no factory run
+    exists to reap. That position is the whole requirement — the resolver one
+    stage later already rejects the override, but by then the claim has happened
+    and the operator is left with an `active` row nobody is working.
+
+    THE SELECTION IS GRADED PER ITEM, which is what the clause asks for in a
+    mixed-workflow loop: each item's own recorded variant decides its kind, so a
+    wave carrying both kinds refuses on account of its implementation items and
+    names exactly those. A selection that resolves entirely to groom-kind
+    variants returns `None`, because every one of them has an ACP `pr` node the
+    override legitimately configures.
+
+    REPOSITORY CONFIGURATION IS DELIBERATELY NOT HANDLED HERE. It is the
+    compatibility setting `scoped_repository_block` ignores and journals; a
+    refusal here would make one configuration file unable to serve both kinds.
+
+    The node name is read from the override's own LEFT-HAND SIDE, before any
+    `=`, so a malformed value naming `pr` is refused for naming `pr` rather than
+    falling through to the generic malformed-entry refusal one stage later —
+    which would again be after the claim.
+    """
+    overrides = tuple(getattr(args, "acp_node", None) or ())
+    if not any(_override_node(value=value) == PUBLICATION_ACP_NODE for value in overrides):
+        return None
+    explicit = getattr(args, "workflow_name", None)
+    name = explicit if isinstance(explicit, str) and explicit else None
+    implementation = sorted(
+        item.id
+        for item in items
+        if not is_groom_variant(
+            repo=repo,
+            variant=previewed_workflow_variant(repo=repo, work_item_id=item.id, name=name),
+        )
+    )
+    if not implementation:
+        return None
+    detail = (
+        f"--acp-node {PUBLICATION_ACP_NODE}=... cannot apply to an implementation "
+        f"dispatch: `{PUBLICATION_ACP_NODE}` is a command stage with no publication "
+        "ACP adapter; remove the override "
+        f"(implementation items: {', '.join(implementation)})"
+    )
+    journal.append(
+        record={
+            "stage": ACP_PUBLICATION_POLICY_STAGE,
+            "work_item_ids": implementation,
+            "result": "refused",
+            "layer": "dispatch",
+            "node": PUBLICATION_ACP_NODE,
+            "reason": detail,
+        }
+    )
+    return detail
+
+
+def _override_node(*, value: str) -> str:
+    """The node name one `--acp-node` value addresses, however malformed."""
+    return value.partition("=")[0].strip()
