@@ -242,7 +242,7 @@ def resolve_dispatch_candidates(*, repo: Path) -> tuple[RenderedCandidate, ...] 
     declared = repository_acp_chains(block=block, catalogs=catalogs)
     if isinstance(declared, str):
         return None
-    resolved = _resolve_chains(repo=repo, declared=declared, catalogs=catalogs)
+    resolved = _resolve_chains(repo=repo, block=block, declared=declared, catalogs=catalogs)
     if isinstance(resolved, str):
         return None
     chains, _graph_text, builtin_pairs = resolved

@@ -505,15 +505,22 @@ def resolve_test_acp_nodes() -> ResolveAcpNodes:
     repo's committed workflow has. The workflow layer is supplied literally
     rather than read from a file so a test can assert which layer won
     without also owning a `workflow.toml`.
+
+    IT DECLARES NO `pr_adapter`, and that absence is load-bearing rather than an
+    omission. An IMPLEMENTATION workflow publishes through command stages
+    (`SPECIFICATION/contracts.md`, the scripted-publication clause), so the
+    committed workflow declares no publication adapter input and no dispatch
+    renders one. A fixture that kept declaring one would hand every consumer a
+    layer no dispatch builds — and because this fixture claims above to mirror
+    the committed shape, that divergence would be invisible: the tests would
+    keep passing against a `pr_adapter` production stopped rendering. A
+    groom-kind variant's own `pr_adapter` is a property of THAT payload, so a
+    test about it reads that payload rather than this literal.
     """
 
     def _resolve(*, repo: Path) -> Any:
         claude = "npx -y @agentclientprotocol/claude-agent-acp"
         implementer = f"ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high {claude}"
-        # The publish node's committed default is the Claude Haiku adapter
-        # (workflow.toml pr_adapter, v107), mirrored here so a test asserting
-        # the un-configured publish node grades against the real default.
-        publish = f"ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high {claude}"
         overlays = resolve_acp_node_overlays(cwd=repo)
         assert not isinstance(overlays, str), overlays
         resolution = resolve_acp_nodes(
@@ -521,7 +528,6 @@ def resolve_test_acp_nodes() -> ResolveAcpNodes:
                 "implement_adapter": implementer,
                 "fix_adapter": implementer,
                 "review_fix_adapter": implementer,
-                "pr_adapter": publish,
                 "review_adapter": claude,
                 "disposition_adapter": claude,
                 "dod_gate_adapter": claude,
