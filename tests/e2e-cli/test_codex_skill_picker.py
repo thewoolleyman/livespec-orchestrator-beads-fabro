@@ -8,6 +8,7 @@ import pty
 import re
 import select
 import shutil
+import signal
 import struct
 import subprocess
 import tempfile
@@ -15,6 +16,7 @@ import termios
 import time
 import tty
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -265,20 +267,89 @@ def test_picker_wait_refuses_an_inactive_previously_matching_screen() -> None:
         os.close(write_fd)
 
 
+def _wait_for_group_exit(*, pgid: int) -> None:
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        states = subprocess.run(
+            ["ps", "-eo", "pgid=,stat="],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=max(0.01, deadline - time.monotonic()),
+        ).stdout.splitlines()
+        if not any(
+            int(fields[0]) == pgid and not fields[1].startswith("Z")
+            for line in states
+            if len(fields := line.split()) == 2
+        ):
+            return
+        time.sleep(0.01)
+    raise AssertionError(f"Picker process group {pgid} still has live writers")
+
+
 def _stop_codex(*, proc: subprocess.Popen[bytes], fd: int) -> None:
-    if proc.poll() is None:
-        try:
-            _send(fd=fd, text="\x03")
-            _send(fd=fd, text="/quit\r")
-            proc.wait(timeout=5)
-        except (OSError, subprocess.TimeoutExpired):
-            proc.terminate()
+    try:
+        if proc.poll() is None:
             try:
+                _send(fd=fd, text="\x03")
+                _send(fd=fd, text="/quit\r")
                 proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=5)
-    os.close(fd)
+            except (OSError, subprocess.TimeoutExpired):
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
+    finally:
+        try:
+            # Background marketplace Git children can outlive the TUI parent.
+            # The fixture owns this isolated group; stop its writers before
+            # TemporaryDirectory removes their staging directories.
+            with suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            _wait_for_group_exit(pgid=proc.pid)
+        finally:
+            os.close(fd)
+
+
+def test_picker_cleanup_stops_writers_after_the_parent_exits(*, tmp_path: Path) -> None:
+    witness = tmp_path / "writer-active"
+    child_pid_file = tmp_path / "writer-pid"
+    proc = subprocess.Popen(
+        [
+            "sh",
+            "-c",
+            'while :; do printf writing > "$1"; sleep 0.01; done & ' 'printf "%s\\n" "$!" > "$2"',
+            "--",
+            str(witness),
+            str(child_pid_file),
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    try:
+        assert proc.wait(timeout=5) == 0
+        deadline = time.monotonic() + 5.0
+        while not witness.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert witness.exists()
+        child_pid = int(child_pid_file.read_text(encoding="utf-8"))
+        _stop_codex(proc=proc, fd=os.open(os.devnull, os.O_WRONLY))
+        state = subprocess.run(
+            ["ps", "-p", str(child_pid), "-o", "stat="],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        ).stdout.strip()
+        assert not state or state.startswith("Z"), "background writer survived picker cleanup"
+    finally:
+        with suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait(timeout=5)
 
 
 def _exercise_skills_picker(*, master_fd: int) -> str:
@@ -346,6 +417,7 @@ def test_skills_picker_finds_drive_by_short_name() -> None:
             stderr=slave_fd,
             env=env,
             close_fds=True,
+            start_new_session=True,
         )
         os.close(slave_fd)
         try:
