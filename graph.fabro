@@ -1,0 +1,7 @@
+digraph FabroEnemyInWordInput {
+    start [shape=Mdiamond, label="Start"]
+    probe [shape=parallelogram, label="Probe", goal_gate=true, script="ref=origin/{{ inputs.default_branch }}...HEAD; echo \"ref=$ref\" >&2; test \"$ref\" = origin/master...HEAD"]
+    exit [shape=Msquare, label="Exit"]
+    start -> probe
+    probe -> exit
+}
