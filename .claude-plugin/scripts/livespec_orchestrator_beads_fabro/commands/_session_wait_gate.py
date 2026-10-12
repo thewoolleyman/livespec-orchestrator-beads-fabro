@@ -9,7 +9,6 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults import (
@@ -115,6 +114,13 @@ class _CommandTask:
     def _run(self) -> None:
         self.native_thread_id = threading.get_native_id()
         self.ready.set()
+        if self.cancel_requested:
+            # Cancellation landed before this worker reached its probe, so no
+            # child is spawned at all. This is what makes `cancel`'s skip of
+            # the child scan SOUND rather than fail-open: without it an unready
+            # task would go on to spawn a probe nothing kills, while
+            # cancellation reported itself clean.
+            return
         observation = observe_gate_target(
             target=self.target,
             observed_at=self.observed_at,
@@ -129,21 +135,69 @@ class _CommandTask:
         return self.result
 
     def cancel(self, *, timeout_seconds: float) -> None:
+        """Stop this probe's observation. NEVER raises on a lost race.
+
+        `run_wait` cancels on every return path, the successful first-event one
+        included, so an exception here would discard a bounded result that had
+        already been computed and report the whole wait as a crash. Each way
+        the task can win the race is therefore an ordinary outcome: an unready
+        task has no thread id to scan, an exited task has no task directory and
+        has already reaped its child, and a child that exits before the signal
+        is a group that is simply gone.
+        """
         started = time.monotonic()
         self.cancel_requested = True
         _ = self.ready.wait(timeout=timeout_seconds)
-        native_thread_id = cast("int", self.native_thread_id)
-        for pid in _thread_child_pids(native_thread_id=native_thread_id):
-            os.killpg(pid, signal.SIGKILL)
-        thread = cast("threading.Thread", self.thread)
-        thread.join(timeout=max(0.0, timeout_seconds - (time.monotonic() - started)))
+        native_thread_id = self.native_thread_id
+        if native_thread_id is not None:
+            task_dir = _probe_task_dir(native_thread_id=native_thread_id)
+            for pid in _thread_child_pids(task_dir=task_dir):
+                _kill_probe_group(pid=pid)
+        thread = self.thread
+        if thread is not None:
+            thread.join(timeout=max(0.0, timeout_seconds - (time.monotonic() - started)))
 
 
-def _thread_child_pids(*, native_thread_id: int) -> tuple[int, ...]:
-    children = Path(f"/proc/{os.getpid()}/task/{native_thread_id}/children").read_text(
-        encoding="utf-8"
-    )
+def _probe_task_dir(*, native_thread_id: int) -> Path:
+    """The `/proc` task directory of one worker thread of THIS process."""
+    return Path(f"/proc/{os.getpid()}/task/{native_thread_id}")
+
+
+def _thread_child_pids(*, task_dir: Path) -> tuple[int, ...]:
+    """The probe children one worker thread owns, or none once it has exited.
+
+    An ABSENT task directory means the worker has exited, and an exited worker
+    has already reaped the child `subprocess.run` spawned — so there is nothing
+    left to kill. That is the normal outcome of a sibling probe finishing
+    between the last poll and cancellation, which is precisely why it must not
+    raise.
+
+    An EXISTING task whose `children` cannot be read is the opposite case and
+    deliberately RE-RAISES: that gauge is blind, and answering "no children"
+    there would report a clean cancellation while leaving a live probe child
+    running. Do not widen this to swallow every read failure.
+    """
+    try:
+        children = (task_dir / "children").read_text(encoding="utf-8")
+    except OSError:
+        if task_dir.exists():
+            raise
+        return ()
     return tuple(int(pid) for pid in children.split())
+
+
+def _kill_probe_group(*, pid: int) -> None:
+    """SIGKILL one probe child's group, tolerating a group that already went.
+
+    `ProcessLookupError` is the same race one level down — the child exiting
+    between the children read and the signal — and is not a fault. Every other
+    `OSError`, a permission failure say, still raises: that one says the kill
+    was REFUSED rather than unnecessary.
+    """
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
 
 
 @dataclass(kw_only=True)
