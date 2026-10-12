@@ -238,7 +238,18 @@ def test_factory_authentication_precedes_vault_materialization(
     outcome = loop_module.dispatch_one(
         args=SimpleNamespace(),
         repo=tmp_path,
-        item=SimpleNamespace(id="wi-secret-review"),
+        # The three fields the dispatch reads off a work-item on the way to the
+        # overlay: the id for the publish branch, and the title and acceptance
+        # criteria the publication-metadata renderer shapes into the pull
+        # request's title and body. This control is about ORDERING, so the
+        # values are placeholders -- but they have to be PRESENT, because the
+        # renderer reads a typed `WorkItem` and a defensive read there would
+        # hide a real wiring fault behind an empty title.
+        item=SimpleNamespace(
+            id="wi-secret-review",
+            title="a secret-review ordering control",
+            acceptance_criteria=None,
+        ),
         journal=JournalFile(path=tmp_path / "journal.jsonl"),
         janitor=None,
     )

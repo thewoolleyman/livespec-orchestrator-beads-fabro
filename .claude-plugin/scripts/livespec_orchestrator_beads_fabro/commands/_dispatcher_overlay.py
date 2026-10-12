@@ -40,6 +40,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_credential_helper import (
     git_credential_helper_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_sandbox_image import (
+    resolve_sandbox_image,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_siblings import (
     SIBLING_CLONES_ROOT_ENV_VAR,
     SiblingClones,
@@ -48,6 +51,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_siblings imp
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
     plugin_cache_gate_prepare_steps_block,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_metadata import (
+    PublicationMetadata,
+    publication_metadata_env_lines,
+    publication_metadata_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     ResumeCheckout,
@@ -211,6 +219,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     git_author: GitAuthor | None = None,
     credential_use: CredentialUseProjection | None = None,
     resume_checkout: ResumeCheckout | None = None,
+    publication_metadata: PublicationMetadata | None = None,
 ) -> str | None:
     """Render the dispatch-time run-config overlay.
 
@@ -230,6 +239,12 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     only the overlay reaches every dispatch — see
     `_dispatcher_factory_provenance` for that rationale and for why the Fabro
     run id cannot serve.
+
+    `publication_metadata` is the pull-request title and body the scripted `pr`
+    stage applies. It arrives rendered rather than being derived here, because
+    the derivation reads a WORK-ITEM and this builder is handed none — and a
+    caller that renders none projects no title line and no body step, which is
+    exactly the overlay every direct caller rendered before.
 
     `credential_use` carries the three enforcement inputs a protected sandbox
     needs: the absolute credential-use deadline, the observed credential expiry,
@@ -255,7 +270,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     if needle not in committed_text:
         return None
     rewritten = committed_text.replace(needle, f'graph = "{resolved_graph}"', 1)
-    rewritten = _resolve_sandbox_image(
+    rewritten = resolve_sandbox_image(
         text=rewritten,
         environment_id=environment_id,
         sandbox_image=sandbox_image,
@@ -321,6 +336,12 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + plugin_cache_steps
         + resume_checkout_steps
         + credential_use_steps
+        # The pull-request body, materialized as a FILE because the stage hands
+        # it to `gh pr edit --body-file`. Its path is resolved by shell
+        # expansion at both ends rather than projected into the env table: the
+        # sandbox plugins root is not known host-side and the pinned engine
+        # expands no `${...}` in an env value.
+        + publication_metadata_prepare_steps_block(metadata=publication_metadata)
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + f"[environments.{environment_id}.env]\n"
@@ -338,6 +359,11 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + codex_otel_env
         + credential_use_env
         + proof_store_env
+        # The rendered pull-request TITLE, beside the publish branch the same
+        # stage reads. Both are facts about this dispatch that a command node
+        # cannot read off the rendered goal, which is why this table is the
+        # seam for them.
+        + publication_metadata_env_lines(metadata=publication_metadata)
         # The repository's declared proof credentials, rendered inline in THIS
         # table rather than through a second channel: the pinned engine offers no
         # secret-reference syntax, so the transport is the same uncommitted,
@@ -400,74 +426,6 @@ def _escape_toml_basic_string(*, value: str) -> str:
     failure. Backslash first, so the quote escape is not re-escaped.
     """
     return value.replace("\\", "\\\\").replace('"', '\\"')
-
-
-def _resolve_sandbox_image(
-    *,
-    text: str,
-    environment_id: str,
-    sandbox_image: SandboxImageSource,
-) -> str | None:
-    """Render the resolved sandbox image source into `[environments.<id>.image]`.
-
-    Three arms, one per source, and the catalog's is the one that removes rather
-    than writes. On a Petri-era server the run intent's environment id selects
-    the catalog environment, but the submitted config's own `environments.<id>`
-    overlay still applies on top of that selection — so an image declared here
-    overrides the catalog's whatever it says. Suppressing only the configured
-    SUBSTITUTION would therefore leave the committed pin overriding the catalog
-    instead, which satisfies the clause's prohibition while still breaking its
-    requirement; withholding the declaration is what makes the catalog the one
-    source (hp-candidate run 01M4PBFW4MP8, work-item bd-ib-jy7fuh).
-    """
-    section = f"environments.{environment_id}.image"
-    if sandbox_image.catalog_governs:
-        return _withhold_image_table(text=text, section=section)
-    if sandbox_image.overlay_image is None:
-        return text
-    committed_image = toml_section_string(text=text, section=section, key="docker")
-    if committed_image is None:
-        return None
-    needle = f'docker = "{committed_image}"'
-    if needle not in text:
-        return None
-    return text.replace(needle, f"docker = {json.dumps(sandbox_image.overlay_image)}", 1)
-
-
-def _withhold_image_table(*, text: str, section: str) -> str:
-    """Drop the whole `[<section>]` table so the catalog's image stands.
-
-    The TABLE goes, not just its `docker` key: an `[environments.<id>.image]`
-    left declared but empty is a table the engine must still resolve an image
-    out of, and an engine refusing that would turn a correct placement into a
-    launch failure. Its comment block goes with it, because those comments
-    document the pin that is no longer being asserted.
-
-    A committed config declaring NO image table is returned unchanged rather
-    than refused. Nothing is competing with the catalog there, so the launch is
-    already correct, and a refusal would reject exactly the configuration the
-    clause is asking for.
-    """
-    lines = text.splitlines(keepends=True)
-    header = f"[{section}]"
-    start = next((index for index, line in enumerate(lines) if line.strip() == header), None)
-    if start is None:
-        return text
-    # The table runs to the next TOML table header (`[x]` or `[[x]]`) or to the
-    # end of the file. Keyed on a stripped line that both opens and closes with
-    # a bracket so a comment mentioning a table name does not end it early.
-    # Taking the range right up to that header carries the table's own trailing
-    # blank line away with it, which is what leaves the blank line ABOVE the
-    # withheld header separating its neighbours rather than doubled.
-    end = start + 1
-    while end < len(lines) and not _opens_toml_table(line=lines[end]):
-        end += 1
-    return "".join(lines[:start] + lines[end:])
-
-
-def _opens_toml_table(*, line: str) -> bool:
-    stripped = line.strip()
-    return stripped.startswith("[") and stripped.endswith("]")
 
 
 def _tmux_tmpdir_prepare_steps_block() -> str:
