@@ -161,6 +161,10 @@ def test_dispatcher_maps_the_sentinel_onto_the_blocked_outcome(tmp_path: Path) -
         inspect=None,
         exit_code=1,
         stderr=(
+            # The node writes its preservation sentinel before the bare marker,
+            # which the live-script case above measures; the mapper can only
+            # report a ref the run told it about.
+            f"{_PRESERVED_MARKER}: {_REF_PREFIX}01NEEDSHUMAN\n"
             f"{_SENTINEL}: loop cannot auto-resolve; work preserved by reference; "
             "decision routed to the ledger\n"
         ),
