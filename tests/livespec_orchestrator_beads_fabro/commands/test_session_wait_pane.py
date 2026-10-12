@@ -9,12 +9,12 @@ blurred, because they prove different things.
 
 A REAL ISOLATED HERDR SERVER (`_isolated_herdr_server`) is the behavioural
 proof. It is a genuine `herdr server` process, bound to its own socket under
-`tmp_path` through the XDG config root, holding its own workspaces, and it is
-driven through the same `pane.report_agent` lifecycle surface a real agent
-integration uses. Nothing in it is simulated, and it is torn down by process
-group so no server outlives its test. It is SKIPPED where `herdr` is not
-installed, so the suite still runs on a host without that capability; every
-branch of the adapter is reachable without it.
+its own XDG config root, holding its own workspaces, and it is driven through
+the same `pane.report_agent` lifecycle surface a real agent integration uses.
+Nothing in it is simulated, and it is torn down by process group so no server
+outlives its test. It is SKIPPED where `herdr` is not installed, so the suite
+still runs on a host without that capability; every branch of the adapter is
+reachable without it.
 
 CONTROLLED PEERS (`_controlled_peer`) are local unix sockets answering with
 bytes a test dictates. They exist for the protocol failures a healthy server
@@ -35,6 +35,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 from contextlib import contextmanager, suppress
@@ -50,6 +51,11 @@ _COMMANDS = "livespec_orchestrator_beads_fabro.commands"
 # probe failed" into "the server reports the agent's state as uncertain",
 # which is a claim about the agent that nobody measured.
 _PANE_STATES = frozenset({"working", "idle", "done", "blocked", "unknown"})
+
+# `sizeof(sun_path)` is 108 bytes including the terminator on Linux, and
+# `herdr-client.sock` is the longer of the two sockets herdr binds.
+_SUN_PATH_LIMIT = 107
+_LONGEST_HERDR_SOCKET_NAME = "herdr-client.sock"
 
 _requires_herdr = pytest.mark.skipif(
     shutil.which("herdr") is None,
@@ -143,24 +149,80 @@ class _HerdrServer:
         return False
 
 
+def _tail(*, path: Path, limit: int = 2000) -> str:
+    """The end of one log, or an explicit note that it does not exist."""
+    if not path.is_file():
+        return f"<{path} absent>"
+    return path.read_text(encoding="utf-8", errors="replace")[-limit:]
+
+
+def _readiness_diagnostic(
+    *,
+    socket_path: Path,
+    process: subprocess.Popen[bytes],
+    launch_log: Path,
+    server_log: Path,
+) -> str:
+    """Why a server never became session-live, in enough detail to act on.
+
+    An expiry here is reported with the SERVER'S OWN output rather than as a
+    bare timeout, because the two causes need opposite responses: a process
+    that exited is a launch failure whose reason is in its log, while a live
+    process that never answered is a readiness-gauge or load problem.
+    """
+    return (
+        f"the isolated herdr server at {socket_path} never became session-live"
+        f"\n  socket present: {socket_path.exists()}"
+        f"\n  process returncode: {process.poll()}"
+        f"\n  launch log: {_tail(path=launch_log)}"
+        f"\n  server log: {_tail(path=server_log)}"
+    )
+
+
 @contextmanager
-def _isolated_herdr_server(*, root: Path):
-    config = root / "config"
+def _isolated_herdr_server():
+    """A real herdr server on its own socket, under a SHORT temporary root.
+
+    THE ROOT IS NOT `tmp_path`, and that is a measured constraint rather than
+    a deviation for its own sake. A unix socket path is capped by
+    `sizeof(sun_path)` — 108 bytes including the terminator, so 107 usable —
+    and herdr binds TWO sockets in its config directory, of which
+    `herdr-client.sock` has the longer name. Measured on this host: under
+    `tmp_path` a serial run produces a 98-byte client path and fits, while any
+    `pytest -n` run inserts a `popen-gwNN` segment and produces 109 bytes,
+    one over. The server then exits 1 with `local socket name length exceeds
+    capacity of sun_path of sockaddr_un`, which surfaces as an unready-server
+    flake naming no path length anywhere but the server's own log. Since
+    `just check` runs the suite in parallel, a `tmp_path` root cannot pass it
+    at all.
+
+    The bound is ASSERTED below rather than assumed, so a future rename that
+    lengthens the path fails loudly and once instead of flaking per worker.
+    """
+    directory = Path(tempfile.mkdtemp(prefix="livespec-herdr-"))
+    config = directory / "c"
     config.mkdir(parents=True, exist_ok=True)
     environment = dict(
         os.environ,
         XDG_CONFIG_HOME=str(config),
-        XDG_DATA_HOME=str(root / "data"),
-        XDG_STATE_HOME=str(root / "state"),
+        XDG_DATA_HOME=str(directory / "d"),
+        XDG_STATE_HOME=str(directory / "s"),
     )
     socket_path = config / "herdr" / "herdr.sock"
-    process = subprocess.Popen(
-        ["herdr", "server"],
-        env=environment,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
+    longest = config / "herdr" / _LONGEST_HERDR_SOCKET_NAME
+    assert len(str(longest)) <= _SUN_PATH_LIMIT, (
+        f"{longest} is {len(str(longest))} bytes, over the {_SUN_PATH_LIMIT}-byte"
+        " sun_path limit; herdr would exit before binding"
     )
+    launch_log = directory / "launch.log"
+    with launch_log.open("wb") as sink:
+        process = subprocess.Popen(
+            ["herdr", "server"],
+            env=environment,
+            stdout=sink,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
     try:
         server = _HerdrServer(socket_path=socket_path)
         # BOUNDED, and the bound FAILS rather than yielding an unready server.
@@ -171,7 +233,12 @@ def _isolated_herdr_server(*, root: Path):
         while not live and time.monotonic() < deadline:
             live = socket_path.exists() and server.session_is_live()
             time.sleep(0.02)
-        assert live, f"the isolated herdr server at {socket_path} never became session-live"
+        assert live, _readiness_diagnostic(
+            socket_path=socket_path,
+            process=process,
+            launch_log=launch_log,
+            server_log=config / "herdr" / "herdr-server.log",
+        )
         yield server
     finally:
         # By process GROUP, because `herdr server` is started in its own
@@ -181,6 +248,9 @@ def _isolated_herdr_server(*, root: Path):
         with suppress(ProcessLookupError):
             os.killpg(os.getpgid(process.pid), signal.SIGKILL)
         _ = process.wait(timeout=90)
+        # The root is this fixture's own, so it owns the removal too: nothing
+        # under `tmp_path` cleans it up.
+        shutil.rmtree(directory, ignore_errors=True)
 
 
 def _answer_once(*, connection: socket.socket, reply: bytes) -> None:
@@ -333,7 +403,7 @@ def test_a_pane_wait_returns_the_actual_non_working_state(
     returned state is the state the server actually held rather than the state
     this test assumed it had set.
     """
-    with _isolated_herdr_server(root=tmp_path / "herdr") as server:
+    with _isolated_herdr_server() as server:
         # One focused pane and one unfocused pane, because focus decides which
         # states the server can reach at all — see `workspace_pane`.
         focused = server.workspace_pane(label="focused", focus=True)
@@ -390,13 +460,13 @@ def test_a_pane_wait_returns_the_actual_non_working_state(
 
 
 @_requires_herdr
-def test_a_frozen_pane_identity_binds_its_server_instance(*, tmp_path: Path) -> None:
+def test_a_frozen_pane_identity_binds_its_server_instance() -> None:
     """A reused pane id cannot alias a pane on another Herdr server."""
     pane_module = _module(name="_session_wait_pane")
     identities: list[str] = []
     pane_ids: list[str] = []
-    for label in ("first", "second"):
-        with _isolated_herdr_server(root=tmp_path / label) as server:
+    for _ in range(2):
+        with _isolated_herdr_server() as server:
             pane_id = server.workspace_pane(label="alias", focus=True)
             server.report(pane_id=pane_id, state="working")
             server.await_status(pane_id=pane_id, state="working")
