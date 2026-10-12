@@ -25,6 +25,17 @@ Report a specific unresolved input, refusal, or outage as incomplete work. Never
 Per `SPECIFICATION/constraints.md` §"Skill orchestration constraints", this is the harness-neutral operation prose; each runtime
 binding only maps its tools to it.
 
+## Bounded Host Waits
+
+When planning delegates long-running commands through detached gates, arm ONE
+bounded first-event wait over all of them through the plugin's
+`scripts/bin/session_wait.py`: `wait`, given the repository, a unique wait id,
+the owning session id, a positive finite deadline and one `--gate <run-id>` per
+target, freezes those ids at arming, returns the first terminal gate with that
+gate's own verdict, and leaves every gate running. Run `inventory` or `check`
+for the durable census before parking, then `ack` once the owning session has
+RECEIVED the result — receipt ONLY, never recovery execution or fulfillment.
+
 ## Flow
 
 ### Step 1 - Resolve The Invocation Mode
