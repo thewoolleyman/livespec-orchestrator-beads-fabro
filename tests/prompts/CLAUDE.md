@@ -40,7 +40,12 @@ instead.
   found exactly one such node whose prompt is on disk. The changed-files-only
   prohibition is pinned POSITIVELY (both physical lines of the sentence are
   required) because a probe for the absence of a narrowing phrase could never
-  return a hit and would read clean over a prompt that said nothing.
+  return a hit and would read clean over a prompt that said nothing. This tier
+  reads the COMMITTED prompt; its DISPATCHED counterpart — the same instruction
+  in the per-dispatch payload, with the check-suite input bound from the target
+  repository's own declaration — is
+  `tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_payload_implement_prompt.py`,
+  per the rendering-seam convention below.
 
 Conventions:
 
