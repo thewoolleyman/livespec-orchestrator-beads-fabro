@@ -34,6 +34,9 @@ _CLAUDE_OPUS_5_ADAPTER = (
     "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high "
     "npx -y @agentclientprotocol/claude-agent-acp"
 )
+# The GROOM-kind publish default, retained here as the string an implementation
+# dispatch must NOT render: Scenario 64 scopes it to that kind in as many words,
+# so its absence from an implementation render is the assertion.
 _CLAUDE_HAIKU_PR_ADAPTER = (
     "ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high "
     "npx -y @agentclientprotocol/claude-agent-acp"
@@ -112,20 +115,26 @@ def test_scenario64_an_unconfigured_target_renders_the_claude_structured_default
 ) -> None:
     """Scenario 64: no `acp_nodes` table means the built-in per-node defaults.
 
-    "And neither the implementer nor the publish adapter is a Codex adapter
-    absent an explicit entry" is the load-bearing half. The two defaults also
-    have to DIFFER: a regression collapsing them onto one model would satisfy
-    each adapter's own assertion while silently re-pricing the publish node.
+    "And the implementer adapter is not a Codex adapter absent an explicit
+    entry" is the load-bearing half, and "an implementation workflow renders no
+    pr adapter" is the other. The second is asserted over the WHOLE rendered
+    input set rather than as one absent key, because the defect it guards is a
+    publication adapter reappearing under any name at all.
+
+    The implementer and the un-pinned tier also have to DIFFER: a regression
+    collapsing every node onto one model would satisfy each adapter's own
+    assertion while silently re-pricing the cheap nodes.
     """
     inputs = dispatch_fabro_run_inputs(plan=_plan(repo=tmp_path, resolve=resolve_test_acp_nodes))
     implementer = _input_value(inputs=inputs, name="implement_adapter")
-    publish = _input_value(inputs=inputs, name="pr_adapter")
+    disposition = _input_value(inputs=inputs, name="disposition_adapter")
 
     assert implementer == _CLAUDE_OPUS_5_ADAPTER
-    assert publish == _CLAUDE_HAIKU_PR_ADAPTER
     assert CODEX_ADAPTER_COMMAND not in implementer
-    assert CODEX_ADAPTER_COMMAND not in publish
-    assert implementer != publish
+    assert CODEX_ADAPTER_COMMAND not in disposition
+    assert implementer != disposition
+    assert not [value for value in inputs if value.startswith("pr_adapter=")]
+    assert _CLAUDE_HAIKU_PR_ADAPTER not in inputs
 
 
 def test_scenario64_a_structured_codex_entry_pins_exactly_the_node_it_names(
@@ -154,7 +163,9 @@ def test_scenario64_a_structured_codex_entry_pins_exactly_the_node_it_names(
     # The sibling nodes the retired `implementer` class would have moved too.
     assert _input_value(inputs=inputs, name="fix_adapter") == _CLAUDE_OPUS_5_ADAPTER
     assert _input_value(inputs=inputs, name="review_fix_adapter") == _CLAUDE_OPUS_5_ADAPTER
-    assert _input_value(inputs=inputs, name="pr_adapter") == _CLAUDE_HAIKU_PR_ADAPTER
+    # Publication is a command stage on an implementation workflow, so there is
+    # no publish adapter left for the entry to leave alone.
+    assert not [value for value in inputs if value.startswith("pr_adapter=")]
 
 
 def test_scenario64_the_retired_codex_models_key_refuses_and_prints_its_replacement(
