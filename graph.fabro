@@ -1,0 +1,7 @@
+digraph FabroEnemyQuotedInput {
+    start [shape=Mdiamond, label="Start"]
+    probe [shape=parallelogram, label="Probe", goal_gate=true, script="default_branch=\"{{ inputs.default_branch }}\"; echo \"default_branch=$default_branch\" >&2; test \"$default_branch\" = master"]
+    exit [shape=Msquare, label="Exit"]
+    start -> probe
+    probe -> exit
+}
