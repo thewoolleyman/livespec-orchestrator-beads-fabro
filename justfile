@@ -57,9 +57,14 @@ fabro-enemy-tier0:
 
 # Fabro Enemy Unit Tests tier 1. Launches real, intentionally tiny workflows
 # against the configured Fabro server to assert terminal stop reasons, failed
-# inspect payload shape, event stream liveness fields, and forced removal.
+# inspect payload shape, event stream liveness fields, and forced removal,
+# plus probes that copy the real implement graph's node shapes (the janitor's
+# interpolated check suite and its fix loop, inputs rendered inside a word and
+# inside double quotes, and the declared environment's prepare toolchain).
 # This spends real runtime; run only when deliberately evaluating the pinned
-# build or an upgrade candidate:
+# build or an upgrade candidate. Set FABRO_EUT_ENVIRONMENT to the factory's
+# declared catalog environment (the candidate's `livespec-ci`); the pinned
+# engine has no --environment flag, so that probe skips without it:
 #   FABRO_EUT_BIN=/path/to/fabro just fabro-enemy-tier1
 fabro-enemy-tier1:
     uv run pytest fabro-enemy-unit-tests/test_tier1_*.py -q
