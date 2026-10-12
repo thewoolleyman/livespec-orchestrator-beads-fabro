@@ -325,7 +325,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-10-12T04:36:34.004610999Z",
-  "last_event_at": "2026-10-12T04:36:48.442369092Z",
+  "last_event_at": "2026-10-12T04:36:52.001670390Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -591,9 +591,9 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 59,
       "checkpoint": {
-        "timestamp": "2026-10-12T04:36:48.588988869Z",
+        "timestamp": "2026-10-12T04:36:51.998179510Z",
         "current_node": "publish",
         "completed_nodes": [
           "start",
@@ -601,6 +601,106 @@
           "fix",
           "janitor",
           "publish"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.retry_count.janitor": 0,
+          "internal.acp_attempt.fix": 0,
+          "thread.start.current_node": "janitor",
+          "failure_signature": "",
+          "internal.retry_count.fix": 0,
+          "internal.run_id": "01M4Q6BPD89NNBP6HZDJR2ZN83",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "failure_class": "",
+          "internal.acp_attempt.publish": 0,
+          "internal.fidelity": "compact",
+          "internal.node_visit_count": 1,
+          "current_node": "publish",
+          "outcome": "succeeded",
+          "graph.goal": "# Fabro Enemy Unit Test: janitor-fix-loop\n",
+          "internal.retry_count.publish": 0,
+          "thread.fix.current_node": "janitor",
+          "internal.acp_attempt.janitor": 0,
+          "internal.retry_count.start": 0,
+          "internal.acp_attempt.start": 0,
+          "internal.thread_id": "janitor",
+          "command.output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+          "thread.janitor.current_node": "publish"
+        },
+        "node_outcomes": {
+          "publish": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+            },
+            "notes": "Script completed: echo publish > /tmp/eut-janitor-verdict",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 136,
+              "active_time_ms": 136
+            }
+          },
+          "janitor": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+            },
+            "notes": "Script completed: eval test -f /tmp/eut-fix-applied",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 135,
+              "active_time_ms": 135
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "fix": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+            },
+            "notes": "Script completed: touch /tmp/eut-fix-applied",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 137,
+              "active_time_ms": 137
+            }
+          }
+        },
+        "next_node_id": "verdict",
+        "git_commit_sha": "bb752aa97a56fe8cf7cd4bd09af4962e19685e90",
+        "loop_failure_signatures": {
+          "janitor|deterministic|script failed with exit code: <n>": 1
+        },
+        "node_visits": {
+          "start": 1,
+          "fix": 1,
+          "publish": 1,
+          "janitor": 2
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-10-12T04:36:52.162614844Z",
+        "current_node": "verdict",
+        "completed_nodes": [
+          "start",
+          "janitor",
+          "fix",
+          "janitor",
+          "publish",
+          "verdict"
         ],
         "node_retries": {},
         "context_values": {
@@ -613,21 +713,38 @@
           "thread.fix.current_node": "janitor",
           "internal.acp_attempt.publish": 0,
           "internal.retry_count.publish": 0,
-          "current_node": "publish",
+          "current_node": "verdict",
           "internal.retry_count.janitor": 0,
           "failure_class": "",
+          "thread.publish.current_node": "verdict",
+          "internal.acp_attempt.verdict": 0,
           "internal.acp_attempt.janitor": 0,
           "internal.retry_count.fix": 0,
           "graph.goal": "# Fabro Enemy Unit Test: janitor-fix-loop\n",
           "outcome": "succeeded",
+          "internal.retry_count.verdict": 0,
           "thread.start.current_node": "janitor",
-          "internal.thread_id": "janitor",
+          "internal.thread_id": "publish",
           "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
           "internal.node_visit_count": 1,
           "internal.retry_count.start": 0,
-          "command.output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+          "command.output": "blob://sha256/11fa2ed2caefa2596935c95e6dd2e0c642be23c2e6aa455166413786abf66e00"
         },
         "node_outcomes": {
+          "verdict": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/11fa2ed2caefa2596935c95e6dd2e0c642be23c2e6aa455166413786abf66e00"
+            },
+            "notes": "Script completed: cat /tmp/eut-janitor-verdict >&2; test -f /tmp/eut-fix-applied && test \"$(cat /tmp/eut-janitor-verdict)\" = publish",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 139,
+              "active_time_ms": 139
+            }
+          },
           "start": {
             "status": "succeeded",
             "usage": null
@@ -675,12 +792,13 @@
             }
           }
         },
-        "next_node_id": "verdict",
+        "next_node_id": "exit",
         "node_visits": {
           "start": 1,
           "fix": 1,
           "janitor": 2,
-          "publish": 1
+          "publish": 1,
+          "verdict": 1
         }
       },
       "diff": {}
@@ -813,7 +931,12 @@
       "first_event_seq": 51,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Script completed: echo publish > /tmp/eut-janitor-verdict",
+        "failure_reason": null,
+        "timestamp": "2026-10-12T04:36:48.588088956Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -821,10 +944,53 @@
         "command": "exec 2>&1\necho publish > /tmp/eut-janitor-verdict",
         "language": "shell"
       },
+      "script_timing": {
+        "output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+        "exit_code": 0,
+        "duration_ms": 136,
+        "termination": "exited",
+        "output_bytes": 0,
+        "live_streaming": true
+      },
+      "parallel_results": null,
+      "output": null,
+      "output_bytes": 0,
+      "live_streaming": true,
+      "termination": "exited",
+      "started_at": "2026-10-12T04:36:48.441458779Z",
+      "handler": "command",
+      "timing": {
+        "wall_time_ms": 146,
+        "inference_time_ms": 0,
+        "tool_time_ms": 136,
+        "active_time_ms": 136
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "verdict@1": {
+      "first_event_seq": 61,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "cat /tmp/eut-janitor-verdict >&2; test -f /tmp/eut-fix-applied && test \"$(cat /tmp/eut-janitor-verdict)\" = publish",
+        "command": "exec 2>&1\ncat /tmp/eut-janitor-verdict >&2; test -f /tmp/eut-fix-applied && test \"$(cat /tmp/eut-janitor-verdict)\" = publish",
+        "language": "shell"
+      },
       "script_timing": null,
       "parallel_results": null,
       "output": null,
-      "started_at": "2026-10-12T04:36:48.441458779Z",
+      "started_at": "2026-10-12T04:36:52.000964419Z",
       "handler": "command",
       "usage": {
         "input_tokens": 0,

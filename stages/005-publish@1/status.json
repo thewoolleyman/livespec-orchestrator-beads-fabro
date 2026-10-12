@@ -1,0 +1,6 @@
+{
+  "outcome": "succeeded",
+  "notes": "Script completed: echo publish > /tmp/eut-janitor-verdict",
+  "failure_reason": null,
+  "timestamp": "2026-10-12T04:36:48.588088956Z"
+}
