@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.189.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.188.3...v0.189.0) (2026-10-12)
+
+
+### Features
+
+* continue plans under authorized rulings ([1e65dba](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1e65dba1b9a8a7e1fd08c372c4df50b4f09bf072))
+* reconcile live plan pointers before continuation ([12f5760](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/12f576086bcb6e160c2fe0c548713813dc08ce82))
+* record continuation rulings through scope events ([a5be141](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a5be1417c9b09254303b94adc516da52c050d2be))
+* validate tracked plan action writers ([0ad4dbe](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0ad4dbe72abf9a3e8eb4dbb7758ae5e557404873))
+
+
+### Bug Fixes
+
+* admit only readable epoch and handoff-count budget fields ([64b536e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/64b536e8c51133b848cadd5d7ebf945662d9fc8a))
+* advance stale plan resumes safely ([4658dfc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4658dfc4d87fc3f792c0ca226d55f3fd0f9ddbd6))
+* **dispatcher:** default the host stall window to 7200 seconds ([0fa8148](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0fa81486947d47c02c58398d170ee11eba726ed2))
+* **dispatcher:** name the stall window's layer on the cancel row ([a4b4fbb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a4b4fbb623b919b1651ed8e5101689f19f31f72a))
+* **dispatcher:** resolve the host stall window from configuration ([d5de62f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d5de62f7da4f9d98cbb9446794940a9dc3f8b32b))
+* enforce plan continuation preconditions ([aafdf52](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/aafdf52c1ca90a63da9ac149db2ebf2341d6fb13))
+* fail the duplicate-dispatch guard closed on an unobservable factory ([5fdfb76](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5fdfb7665fb6afd076221acafa6f34ea2da7ed75))
+* persist the satisfied-pointer advance and derive the plan-level legs ([0510e5c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0510e5cdf70ab4bb5cda5ae12f88297b24f01d0e))
+* require the attended marker to be a continuation ruling's last line ([aad5bde](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/aad5bde05dc4720693c79025748fcf2402f59f68))
+
 ## [0.188.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.188.2...v0.188.3) (2026-10-12)
 
 
