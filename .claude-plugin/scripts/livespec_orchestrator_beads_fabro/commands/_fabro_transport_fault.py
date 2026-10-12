@@ -4,12 +4,12 @@ The engine reports EVERY one of these under the single stage label `ACP turn
 failed`, and the label is the one thing that carries no information. Measured
 families behind it: a shell call the harness moved to a background task, an
 adapter process that exited before the protocol handshake, a turn that reached
-its ceiling, and a provider spend ceiling
-(`plan/pr-stage-backgrounded-push-fault/research/001-failure-analysis-and-mechanism-candidates-2026-10-08.md`
-sections 3.6 and 4; `bd-ib-g56f`, `bd-ib-9ek4`, `bd-ib-qulf`). So this module
-keys on the CAUSE and never on the label — a classifier that keyed on the label
-would conflate all four and report whichever family it happened to be written
-for.
+its ceiling, and a provider spend ceiling (epic `bd-ib-ctagnf`, opening research
+note "Failure analysis and mechanism candidates", sections "The measured
+backgrounded-tool fault" and "Families sharing the ACP turn failed label";
+`bd-ib-g56f`, `bd-ib-9ek4`, `bd-ib-qulf`). So this module keys on the CAUSE and
+never on the label — a classifier that keyed on the label would conflate all
+four and report whichever family it happened to be written for.
 
 WHAT IS AND IS NOT A TRANSPORT FAULT, which is the distinction the whole module
 exists to hold. A transport fault is the CARRIER between the engine and the
@@ -34,6 +34,24 @@ the adapter-exit wording was measured on `bd-ib-qulf`. The timeout marker is
 the broadest, so it is tested only after the two specific ones have been ruled
 out — a backgrounded cause that also mentions a timeout must classify as
 backgrounded, because that is the condition with the remedy.
+
+AND THE LOOSEST MARKER ADDITIONALLY REQUIRES ACP EVIDENCE, because unlike the
+other two it belongs to no component in particular. `timed out` appears in a
+merge gate waiting on checks, a provider request expiring, a test suite
+exceeding its budget, a push that could not reach origin — and in an agent's
+own question, when the thing it is asking about happens to be a timeout. Each of
+those classified as `turn-timed-out`, which made the detail announce that the
+carrier broke, that no agent asked anything, and that no answer is owed. On the
+genuine request that is not an imprecise label but a DENIAL OF A PENDING
+QUESTION: the same failure this module exists to prevent, arrived at from the
+opposite side.
+
+The evidence is the word `acp` in the cause, matched on word boundaries so a
+token merely containing those letters cannot stand in for it. The fixed `ACP
+protocol error` WRAPPER is deliberately not evidence: callers hand this function
+the INNERMOST cause, so the wrapper is out of scope by construction, and
+admitting it would restore the over-reach in full — every ACP chain carries that
+wrapper whatever the real fault was.
 """
 
 from __future__ import annotations
@@ -57,6 +75,11 @@ TURN_TIMED_OUT = "turn-timed-out"
 _BACKGROUNDED_MARKER = "continued in background"
 _ADAPTER_EXITED_MARKER = "exited before protocol completed"
 _TIMED_OUT_MARKERS = ("timed out", "timeout")
+
+# The ACP evidence the loose timeout marker is admitted alongside. Matched on
+# WORD boundaries: a substring test would let any token spelling those letters
+# vouch for a cause that is not about the carrier at all.
+_ACP_EVIDENCE_RE = re.compile(r"\bacp\b", re.IGNORECASE)
 
 # The measured cause reads `ACP tool call <id> (<the command>) continued in
 # background as task <task>; Fabro terminated the turn ...`. The command is
@@ -104,9 +127,23 @@ def transport_fault_from_cause(*, cause: str | None) -> TransportFault | None:
         return _backgrounded(cause=cause)
     if _ADAPTER_EXITED_MARKER in lowered:
         return TransportFault(family=ADAPTER_EXITED, command=None, task_id=None)
-    if any(marker in lowered for marker in _TIMED_OUT_MARKERS):
+    if _timed_out_turn(cause=cause, lowered=lowered):
         return TransportFault(family=TURN_TIMED_OUT, command=None, task_id=None)
     return None
+
+
+def _timed_out_turn(*, cause: str, lowered: str) -> bool:
+    """Whether this cause is an ACP TURN that timed out, rather than anything else.
+
+    Both halves are required and neither is sufficient. A timeout word with no
+    ACP evidence is some other component's timeout — or an agent's question
+    about one — and classifying it would deny a pending decision. ACP evidence
+    with no timeout word is an ACP fault of some other family, which the two
+    specific markers above have already had their chance at.
+    """
+    if not any(marker in lowered for marker in _TIMED_OUT_MARKERS):
+        return False
+    return _ACP_EVIDENCE_RE.search(cause) is not None
 
 
 def transport_fault_clause(*, fault: TransportFault) -> str:

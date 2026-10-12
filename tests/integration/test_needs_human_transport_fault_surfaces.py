@@ -1,7 +1,8 @@
 """A backgrounded-tool fault reads as a TRANSPORT fault on all three surfaces.
 
-`plan/pr-stage-backgrounded-push-fault/research/001-failure-analysis-and-mechanism-candidates-2026-10-08.md`
-sections 2.1 and 3.4 measured the fault this module binds. The harness moves a
+Epic `bd-ib-ctagnf`'s opening research note "Failure analysis and mechanism
+candidates", sections "The measured backgrounded-tool fault" and "The pr stage
+dies without publishing", measured the fault this module binds. The harness moves a
 shell call that reaches its default foreground budget to a BACKGROUND TASK; the
 engine (by the design of `bd-ib-bindom`, which must not be weakened) refuses to
 let the agent continue beside a detached process and ends the turn; the node
