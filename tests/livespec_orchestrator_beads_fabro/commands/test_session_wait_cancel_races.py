@@ -15,6 +15,7 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._session_wait_gate import (
     GateStatusLauncher,
     _CommandTask,
@@ -52,6 +53,7 @@ def _raised_by(action: object) -> str | None:
 def test_cancelling_a_probe_whose_task_already_finished_does_not_raise(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A sibling finishing between the last poll and cancel is not a fault.
 
@@ -64,10 +66,22 @@ def test_cancelling_a_probe_whose_task_already_finished_does_not_raise(
         command_prefix=_FAST_PROBE,
     ).launch(target=target, timeout_seconds=1.0)
 
-    assert probe.poll(now=time.monotonic()) is None
-    # Let the worker run to completion WITHOUT polling again, so the probe
-    # still holds a task whose thread has exited.
-    time.sleep(1.0)
+    # Defer worker startup until the first poll has returned. An immediately
+    # completing shell command can otherwise win that poll and clear the task
+    # before this test reaches the cancellation race it intends to exercise.
+    with monkeypatch.context() as delayed_start:
+        delayed_start.setattr(_CommandTask, "start", lambda _task: None)
+        assert probe.poll(now=time.monotonic()) is None
+
+    task = probe.task
+    assert task is not None
+    task.start()
+    assert task.thread is not None
+    task.thread.join(timeout=5.0)
+    assert task.thread.is_alive() is False
+    assert task.result is not None
+    assert task.result.state == "FAILED"
+    assert task.result.exit_code == 23
 
     assert _raised_by(lambda: probe.cancel(timeout_seconds=1.0)) is None
     assert probe.active is False
