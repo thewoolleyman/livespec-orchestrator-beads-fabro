@@ -8,6 +8,7 @@ from typing import Protocol, cast
 from uuid import uuid4
 
 from livespec_orchestrator_beads_fabro.commands._session_wait_records import (
+    DIAGNOSTIC_RECORD_DISPOSED,
     read_wait_record,
     wait_store_lock,
     write_wait_record,
@@ -49,13 +50,18 @@ class ProcessGeneration(Protocol):
     def __call__(self, *, pid: int) -> str | None: ...
 
 
-def _unavailable_record(*, path: Path, diagnostic: str) -> InventoryRecord:
+def _unavailable_record(
+    *,
+    wait_id: str,
+    diagnostic: str,
+    observations: tuple[GateObservation, ...] = (),
+) -> InventoryRecord:
     return InventoryRecord(
-        wait_id=path.stem,
+        wait_id=wait_id,
         record_state="unavailable",
         diagnostic=diagnostic,
         findings=frozenset({diagnostic}),
-        observations=(),
+        observations=observations,
         observation_sequence=0,
     )
 
@@ -111,8 +117,24 @@ def _inventory_record(
 
 
 def _persist_inventory_record(*, path: Path, record: InventoryRecord) -> InventoryRecord:
+    """Write the fresh round back, unless the record was disposed meanwhile.
+
+    The re-read happens under the lock, and the record was readable moments
+    ago when this pass started observing its targets. So a record that is not
+    readable NOW reached explicit disposition in between — a receipt
+    acknowledgement and its bounded retention sweep are exactly that — and
+    writing it back would RESURRECT inventory its receiving owner has already
+    discharged. The round that was genuinely observed is still reported; only
+    the record it belonged to is gone.
+    """
     loaded = read_wait_record(path=path)
-    payload = cast("dict[str, object]", loaded.payload)
+    if loaded.payload is None:
+        return _unavailable_record(
+            wait_id=record.wait_id,
+            diagnostic=DIAGNOSTIC_RECORD_DISPOSED,
+            observations=record.observations,
+        )
+    payload = loaded.payload
     payload["observation_sequence"] = record.observation_sequence
     payload["observations"] = [
         {
@@ -142,7 +164,7 @@ def inventory_waits(
         if loaded.payload is None:
             records.append(
                 _unavailable_record(
-                    path=path,
+                    wait_id=path.stem,
                     diagnostic=str(loaded.diagnostic),
                 )
             )
