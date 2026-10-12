@@ -1,0 +1,5 @@
+{
+  "script": "test -f /tmp/eut-check-suite-ran",
+  "command": "exec 2>&1\ntest -f /tmp/eut-check-suite-ran",
+  "language": "shell"
+}
