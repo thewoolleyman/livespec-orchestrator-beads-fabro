@@ -507,6 +507,16 @@ destructive_cli_allowlist = [
 #   it issues — the half a reader cannot check by eye — unexercised. It scrubs
 #   the child env exactly as an allowlisted spawn must, by passing an explicit
 #   `env` holding only `PATH` and `HOME`.
+# - test_scripted_publication_execution.py runs the `pr` stage's OWN script
+#   bytes, read out of the committed graph by the canonical parser. The thing
+#   under test is SHELL — whether each guard is reached, whether the stage
+#   fails closed when the forge head moves between observation and arming, and
+#   what argv it hands `gh`. None of that exists in-process: there is no
+#   Python entry point for a node's script, and a reimplementation in Python
+#   would grade a recipe this repository does not ship. It reaches `gh` and
+#   the materialized publication-head program through `PATH`, so both are
+#   stubbed or materialized per control, and it scrubs the child env exactly
+#   as an allowlisted spawn must, by passing an explicit `env`.
 #
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables
 # below (same TOML attachment reason as `destructive_cli_allowlist`).
@@ -530,6 +540,7 @@ subprocess_spawn_allowlist = [
     "tests/bin/test_payload_parent_reads_asset_after_helper_exit.py",
     "tests/bin/test_payload_canary_subject_is_the_candidate.py",
     "tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_publication_head.py",
+    "tests/integration/test_scripted_publication_execution.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]
