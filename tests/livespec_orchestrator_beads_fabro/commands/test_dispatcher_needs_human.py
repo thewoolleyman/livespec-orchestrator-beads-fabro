@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -149,9 +150,20 @@ def test_needs_human_resolver_module_is_removed() -> None:
 
 
 def test_dispatcher_loop_selection_has_no_needs_human_resolver_call_site() -> None:
+    """No call site for the DELETED resolver module remains in the drain.
+
+    The needle is the resolver's module name bounded on the right, not a bare
+    prefix. A prefix probe matches every module whose name merely STARTS with
+    it — `_dispatcher_needs_human_cause`, the durable causal record, is a
+    legitimately imported sibling — so the unbounded form reported a module
+    that must be imported as a resolver that must not be. The bound keeps the
+    guard pointed at the one module Scenario 36 retired; the control below is
+    that a real resolver reference would still be caught, since the symbol
+    assertion needs no bounding.
+    """
     source = _LOOP_SELECTION_SOURCE.read_text(encoding="utf-8")
 
-    assert "_dispatcher_needs_human" not in source
+    assert re.search(r"_dispatcher_needs_human(?![\w])", source) is None
     assert "resolve_or_bounce_needs_human" not in source
 
 

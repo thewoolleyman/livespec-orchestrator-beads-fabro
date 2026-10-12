@@ -1,4 +1,4 @@
-"""A backgrounded-tool fault reads as a TRANSPORT fault on all three surfaces.
+"""A backgrounded-tool fault reads as a TRANSPORT fault on every surface.
 
 Epic `bd-ib-ctagnf`'s opening research note "Failure analysis and mechanism
 candidates", sections "The measured backgrounded-tool fault" and "The pr stage
@@ -10,14 +10,29 @@ reports the generic stage label `ACP turn failed`, the graph routes the run to
 the `needs_human` terminal, and the operator is sent looking for a question
 nobody asked. A transport fault is NOT evidence that an agent asked anything.
 
-THE THREE SURFACES ARE ASSERTED TOGETHER BECAUSE EACH ALONE IS SATISFIED BY A
-BUILD THAT LOSES THE OTHER TWO. The clause requires the fault to be legible
-where each party actually looks: the `drive` result an operator reads, the
-dispatch journal a later reconciliation reads, and the item's own ledger
-account — the `resolve-blocked` valve lane a console renders, which is the one
-surface that outlives the run. One case carrying one cause string through all
-three is what makes that a claim about composition rather than three claims
-about three renderers.
+THE SURFACES ARE ASSERTED TOGETHER BECAUSE EACH ALONE IS SATISFIED BY A BUILD
+THAT LOSES THE OTHERS. The clause requires the fault to be legible where each
+party actually looks: the `drive` result an operator reads, the dispatch
+journal a later reconciliation reads, the `resolve-blocked` valve lane a
+console renders, and the item's own DURABLE ledger record. One case carrying
+one cause string through all of them is what makes that a claim about
+composition rather than four claims about four renderers.
+
+TWO OF THOSE WERE STOOD IN BY SOMETHING THAT COULD NOT FAIL, and the repair is
+the reason this module is worth re-reading. The drive assertion was made
+against a stand-in supplying EMPTY stderr, so it examined one channel of a
+two-channel payload — and the contradiction lived in the other one, where a
+detail saying no agent asked anything sat beside a line saying the run was
+parked at a human gate. The stderr is now the real one, threaded in from the
+dispositions that emit it.
+
+And the "ledger account" was `needs_human_question_summary`, which
+RE-INSPECTS FABRO ON DEMAND. That is a rendering, not a record: its answer
+lasts exactly as long as the run does, so it reports nothing once the factory
+prunes the run, becomes unreachable, or the run is reaped — which is precisely
+when an operator is reading the item instead of the run. The durable comment is
+asserted as its own fourth surface, read back off the tenant, and the rendering
+is kept beside it because the lane is still the right place to SEE this ending.
 
 WHAT IS STOOD IN, AND WHAT IS NOT. Exactly one seam leaves the process: the
 `fabro` CLI, at the runner seam the port publishes for it. `run_dispatch`, the
@@ -45,6 +60,7 @@ from typing import Any, cast
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
 from livespec_orchestrator_beads_fabro._store_dispatch_factory import record_dispatch_run
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
@@ -56,6 +72,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFil
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import emit_outcomes
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     post_run_dispositions,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_cause import (
+    NEEDS_HUMAN_CAUSE_MARKER,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
@@ -270,19 +289,28 @@ def _drive_report(
     *,
     root: Path,
     outcome: DispatchOutcome,
+    dispatcher_stderr: str,
     capsys: pytest.CaptureFixture[str],
-) -> tuple[str, dict[str, Any]]:
-    """The drive result's status, and the dispatch record it published back.
+) -> tuple[str, dict[str, Any], str]:
+    """The drive result's status, the dispatch record, and the stderr it carried.
 
     The bytes the drive transport parses are the ones the Dispatcher's own
     `--json` mode prints for this outcome, so neither renderer is stood in.
+
+    THE STDERR IS THE REAL ONE, threaded in from the dispositions that actually
+    emitted it, and that matters because `drive` carries BOTH channels into one
+    result. An empty stand-in here would assert only that the `detail` reads
+    correctly while leaving the other half of the same payload unexamined —
+    which is exactly where the contradiction lived: a detail saying no agent
+    asked anything beside a stderr line saying the run was parked at a human
+    gate. A proof that cannot see both channels cannot see that at all.
     """
     emit_outcomes(outcomes=[outcome], as_json=True)
     emitted = capsys.readouterr().out
 
     def _runner(*, argv: tuple[str, ...], cwd: Path | None = None) -> CommandRun:
         del cwd
-        return CommandRun(argv=argv, returncode=4, stdout=emitted, stderr="")
+        return CommandRun(argv=argv, returncode=4, stdout=emitted, stderr=dispatcher_stderr)
 
     result = run_impl_dispatch(
         repo=root,
@@ -294,17 +322,29 @@ def _drive_report(
         identity=None,
     )
     reported = cast("list[dict[str, Any]]", result["dispatcher"]["stdout_json"])
-    return (cast("str", result["status"]), reported[0])
+    return (
+        cast("str", result["status"]),
+        reported[0],
+        cast("str", result["dispatcher"]["stderr"]),
+    )
 
 
-def _journaled_outcomes(
+def _run_dispositions(
     *,
     root: Path,
     item: WorkItem,
     outcome: DispatchOutcome,
     journal: JournalFile,
-) -> list[dict[str, Any]]:
-    """Every `outcome` record the real post-run dispositions left behind."""
+    capsys: pytest.CaptureFixture[str],
+) -> tuple[list[dict[str, Any]], str]:
+    """The real post-run dispositions: their `outcome` records AND their stderr.
+
+    Both halves come from ONE execution, which is what makes the two surfaces
+    below a claim about composition. The stderr is the Dispatcher's own, written
+    by the escalation this sequence calls, and it is returned rather than
+    discarded so the drive assertion can be made against the bytes a real
+    dispatch would hand it.
+    """
     _ = post_run_dispositions(
         args=argparse.Namespace(close_on_merge=False),
         repo=root,
@@ -315,13 +355,37 @@ def _journaled_outcomes(
         dispatch_context_size=100,
         token_supplier=lambda: "token",
     )
+    emitted_stderr = capsys.readouterr().err
     lines = journal.path.read_text(encoding="utf-8").splitlines()
     records = [cast("dict[str, Any]", json.loads(line)) for line in lines if line]
-    return [
-        cast("dict[str, Any]", record["outcome"])
-        for record in records
-        if record.get("stage") == "outcome"
+    return (
+        [
+            cast("dict[str, Any]", record["outcome"])
+            for record in records
+            if record.get("stage") == "outcome"
+        ],
+        emitted_stderr,
+    )
+
+
+def _durable_record(*, root: Path) -> str:
+    """The causal record as it RESTS on the item, read back off the tenant.
+
+    This is the surface the clause names, and it is deliberately not the
+    attention rendering asserted below it: the rendering re-inspects Fabro on
+    demand, so it answers only while the run record survives, whereas this
+    comment is what an operator finds after the run is pruned or reaped. The
+    read goes through `read_work_item_comments`, which indexes the beads-native
+    `text` key — `bd show --json` carries no comment bodies at all, so a check
+    that reached for the item record instead would report this write as lost.
+    """
+    bodies = [
+        comment.text
+        for comment in read_work_item_comments(path=store_config(repo=root), work_item_id=_ITEM)
+        if NEEDS_HUMAN_CAUSE_MARKER in comment.text
     ]
+    assert len(bodies) == 1
+    return bodies[0]
 
 
 def _ledger_account(*, root: Path) -> str:
@@ -351,7 +415,7 @@ def test_a_backgrounded_tool_fault_is_a_transport_fault_on_every_surface(
     tenant: None,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Read the module docstring for why the three surfaces are one case."""
+    """Read the module docstring for why the four surfaces are one case."""
     del tenant
     _write_repo(root=tmp_path)
     item = _seed(root=tmp_path)
@@ -368,8 +432,32 @@ def test_a_backgrounded_tool_fault_is_a_transport_fault_on_every_surface(
     # query it was never asked.
     assert slept == []
 
-    # SURFACE 1 — the `drive` result.
-    status, record = _drive_report(root=tmp_path, outcome=outcome, capsys=capsys)
+    # The dispositions run FIRST, because they are what emits the dispatcher's
+    # stderr and what writes the durable record — so surfaces 1, 2 and 4 below
+    # are all read from the artefacts of one execution rather than from three.
+    journaled, dispatcher_stderr = _run_dispositions(
+        root=tmp_path, item=item, outcome=outcome, journal=journal, capsys=capsys
+    )
+
+    _assert_drive_surface(
+        root=tmp_path, outcome=outcome, dispatcher_stderr=dispatcher_stderr, capsys=capsys
+    )
+    _assert_journal_surface(journaled=journaled)
+    _assert_attention_surface(root=tmp_path)
+    _assert_durable_surface(root=tmp_path)
+
+
+def _assert_drive_surface(
+    *,
+    root: Path,
+    outcome: DispatchOutcome,
+    dispatcher_stderr: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """SURFACE 1 — the `drive` result, on BOTH of the channels it carries."""
+    status, record, carried_stderr = _drive_report(
+        root=root, outcome=outcome, dispatcher_stderr=dispatcher_stderr, capsys=capsys
+    )
     drive_detail = cast("str", record["detail"])
     assert status == "blocked"
     assert _FAULT_LABEL in drive_detail
@@ -377,17 +465,50 @@ def test_a_backgrounded_tool_fault_is_a_transport_fault_on_every_surface(
     assert _NAMED_TASK in drive_detail
     assert _NO_QUESTION in drive_detail
     assert record["fabro_failure_cause"] == _CAUSE
+    # The stderr the SAME result carries must not contradict the detail beside
+    # it. The gate wording is the specific thing asserted absent, because it is
+    # the half that named an action and so the half an operator acted on. The
+    # non-empty check comes first: every assertion below it is vacuously true
+    # of an empty string, which is exactly what the old stand-in supplied.
+    assert carried_stderr != ""
+    assert "parked at a Fabro human gate" not in carried_stderr
+    assert "no answer is owed" in carried_stderr
+    assert f"resolve-blocked:{_ITEM}:ready" in carried_stderr
 
-    # SURFACE 2 — the dispatch journal.
-    journaled = _journaled_outcomes(root=tmp_path, item=item, outcome=outcome, journal=journal)
+
+def _assert_journal_surface(*, journaled: list[dict[str, Any]]) -> None:
+    """SURFACE 2 — the dispatch journal a later reconciliation reads."""
     assert len(journaled) == 1
     journal_detail = cast("str", journaled[0]["detail"])
     assert _FAULT_LABEL in journal_detail
     assert _NAMED_COMMAND in journal_detail
     assert journaled[0]["fabro_failure_signature"] == _PR_SIGNATURE
+    assert journaled[0]["needs_human_kind"] == "stage-failure"
+    assert journaled[0]["needs_human_stages"] == ["pr"]
 
-    # SURFACE 3 — the item's own ledger account.
-    summary = _ledger_account(root=tmp_path)
+
+def _assert_attention_surface(*, root: Path) -> None:
+    """SURFACE 3 — the attention rendering, retained beside the durable record."""
+    summary = _ledger_account(root=root)
     assert _FAULT_LABEL in summary
     assert _NAMED_COMMAND in summary
     assert f"resolve-blocked:{_ITEM}:ready" in summary
+
+
+def _assert_durable_surface(*, root: Path) -> None:
+    """SURFACE 4 — the item's own DURABLE record, the one that outlives the run.
+
+    This is the surface the clause names. Each line is asserted by its LABEL
+    rather than by containment of the value alone, because the quoted cause
+    already contains the command and the signature already contains the stage —
+    so a record that merely echoed the cause would satisfy a bare `in` check
+    for both while classifying and attributing nothing.
+    """
+    durable = _durable_record(root=root)
+    assert "failed stage: pr" in durable
+    assert "transport fault: backgrounded-tool" in durable
+    assert f"backgrounded command: {_COMMAND}" in durable
+    assert f"backgrounded task: {_TASK}" in durable
+    assert f"failure signature: {_PR_SIGNATURE}" in durable
+    assert "no answer is owed" in durable
+    assert f"resolve-blocked:{_ITEM}:ready" in durable

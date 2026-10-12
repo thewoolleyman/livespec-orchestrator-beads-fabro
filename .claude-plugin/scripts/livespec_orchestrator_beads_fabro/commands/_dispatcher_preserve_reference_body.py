@@ -34,6 +34,13 @@ __all__: list[str] = [
     "FABRO_DIFF_ARTIFACT_GLOB",
     "PRESERVE_POINTER_MARKER",
     "artifact_pointer_body",
+    # Declared because the needs-human causal record is a second consumer of
+    # it. Both write ENGINE-AUTHORED text into an append-only ledger comment,
+    # where a surviving MiniJinja opener refuses every later dispatch of that
+    # item permanently — so the two must neutralize it identically. A private
+    # copy in the second writer is how that guarantee drifts into two policies
+    # that merely look alike.
+    "comment_safe_external_text",
     "dump_failed_body",
     "error_pointer_body",
     "missing_artifact_body",

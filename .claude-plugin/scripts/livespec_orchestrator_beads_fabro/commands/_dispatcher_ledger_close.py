@@ -257,6 +257,11 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # read "this ending was not attributed" off an outcome that was never a
     # needs-human ending in the first place.
     "needs_human_kind",
+    # The stages that verdict attributed the ending to, dropped on the same
+    # terms and for a sharper version of the same reason: this field is None
+    # rather than empty when no verdict was taken, so dropping it keeps "no
+    # verdict" distinguishable from "a verdict that found no failed stage".
+    "needs_human_stages",
     "provider_usage_limit_provider",
     "remedy",
     "step",

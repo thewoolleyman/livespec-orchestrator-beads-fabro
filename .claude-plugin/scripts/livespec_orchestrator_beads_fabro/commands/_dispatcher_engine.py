@@ -305,6 +305,15 @@ class DispatchOutcome:
     verdict to report, which is every non-Fabro blocked path, and that absence
     routes to the wording those callers always had rather than to one of the
     three attributed arms.
+
+    `needs_human_stages` is the stage or stages that verdict attributed the
+    ending to, and it is NOT `stage` above: `stage` is the DISPATCHER's own
+    phase, which is `fabro-run` for every Fabro terminal, while this is the
+    failed node inside the run — `pr`, `implement`. Both are needed and neither
+    substitutes for the other. It is None rather than empty for an ending with
+    no attribution, so the same null-drop that hides the verdict hides it too;
+    an empty list would assert that the verdict found no stages, which is a
+    different claim from the verdict never having been taken at all.
     """
 
     work_item_id: str
@@ -325,6 +334,7 @@ class DispatchOutcome:
     provider_usage_limit_provider: str | None = None
     dead_implementer_condition: str | None = None
     needs_human_kind: str | None = None
+    needs_human_stages: tuple[str, ...] | None = None
 
 
 def run_dispatch(

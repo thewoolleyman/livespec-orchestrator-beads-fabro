@@ -42,6 +42,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_groom_park import re
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import invoker_from_args
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import load_items
+from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_cause import (
+    record_needs_human_cause,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     journal_path,
     plugin_root,
@@ -349,6 +352,13 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     )
     if not groom_cut_filed:
         escalate_needs_human_block(repo=repo, item=item, outcome=outcome, journal=journal)
+        # AFTER the escalation, because the escalation owns the lifecycle write
+        # and this owns only the account of WHY. Writing the account first
+        # would leave a record explaining a block that a failed lifecycle write
+        # then never applied. A no-op for every outcome that is not a
+        # needs-human ending, and for the groom-cut path above, whose own
+        # comment is that run's terminal record.
+        record_needs_human_cause(repo=repo, item=item, outcome=outcome, journal=journal)
     bounce_non_convergence_to_backlog(repo=repo, item=item, outcome=outcome, journal=journal)
     emit_calibration(
         args=args,
