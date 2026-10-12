@@ -132,6 +132,22 @@ def _run_behind_master(*, tmp_path: Path) -> tuple[Path, Path, Path]:
     return run, origin, default
 
 
+def _refuse_every_branch(*, origin: Path) -> None:
+    """A forge whose default branch never settles: every non-master ref is refused."""
+    _executable(
+        path=origin / "hooks" / "pre-receive",
+        body=(
+            "#!/bin/sh\n"
+            "while read -r _old_revision _new_revision ref; do\n"
+            '    if test "$ref" = refs/heads/master; then continue; fi\n'
+            f'    echo "{_FORGE_REFUSAL} {_CI} without workflows permission" >&2\n'
+            "    exit 1\n"
+            "done\n"
+            "exit 0\n"
+        ),
+    )
+
+
 def _bump(*, default: Path, pin: str) -> str:
     _git(default, "pull", "--quiet", "--rebase", "origin", "master")
     sha = _commit(repo=default, path=_CI, content=f"pin: {pin}\n", message=f"bump {pin}")
@@ -255,7 +271,7 @@ def test_publish_draft_refreshes_again_when_master_moves_a_workflow_mid_push(
 def test_publish_draft_names_the_workflow_race_when_master_never_settles(
     tmp_path: Path,
 ) -> None:
-    run, _, default = _run_behind_master(tmp_path=tmp_path)
+    run, origin, default = _run_behind_master(tmp_path=tmp_path)
     _bump_during_push(tmp_path=tmp_path, default=default, times=99)
     env = _env(tmp_path=tmp_path)
 
@@ -273,6 +289,17 @@ def test_publish_draft_names_the_workflow_race_when_master_never_settles(
     ).read_text(encoding="utf-8")
     assert "workflows permission" in reason
     assert "did not change" in reason
+
+    # The terminal's preservation pushes deliberately no longer run the
+    # repository's pre-push hook (work-item bd-ib-3vn3mu), so the
+    # bump-during-push mechanism above cannot reach them — master simply stops
+    # moving while the node pushes, and both of its attempts would be accepted.
+    # The forge double therefore carries the never-settling condition AS THE NODE
+    # EXPERIENCES IT, refusing every non-master ref for workflows permission,
+    # which is the condition this leg has always measured. `publish_draft`'s half
+    # above is untouched and still drives the real mid-push bump through its own
+    # hook, which is why it stays the leg that proves the race is reachable.
+    _refuse_every_branch(origin=origin)
 
     terminal = _node(node="needs_human", run=run, env=env, stdin=f"{_RUN_ID}\n")
 
