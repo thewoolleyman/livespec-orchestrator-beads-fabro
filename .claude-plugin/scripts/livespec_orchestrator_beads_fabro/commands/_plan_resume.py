@@ -34,7 +34,6 @@ from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     set_next_action,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
-    OBSERVATION_UNSATISFIED,
     ResultObservation,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_resume_gap import (
@@ -45,7 +44,13 @@ from livespec_orchestrator_beads_fabro.commands._plan_resume_tracking import (
     result_observation,
     tracked_resume_directive,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_run_liveness import live_factory_run_id
+from livespec_orchestrator_beads_fabro.commands._plan_run_liveness import (
+    LIVENESS_LIVE,
+    LIVENESS_NOT_LIVE,
+    LIVENESS_UNOBSERVABLE,
+    RunLiveness,
+    observe_target_run,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig
@@ -106,13 +111,23 @@ def decide_plan_resume(*, config: StoreConfig, epic_id: str, unattended: bool) -
     )
     if tracked is not None:
         return tracked
-    action = _live_reconciled_action(
-        config=config,
-        epic_id=epic_id,
-        action=action,
-        observation=observation,
-    )
-    if action.kind == AWAIT_KIND:
+    liveness = _target_run_liveness(config=config, epic_id=epic_id, action=action)
+    if liveness.verdict == LIVENESS_UNOBSERVABLE:
+        finding = f"next_action target run liveness is unobservable: {liveness.detail}"
+        return ResumeDirective(
+            ask=False,
+            next_action=None,
+            reason=finding,
+            findings=(*findings, finding),
+            observation=observation,
+        )
+    if liveness.verdict == LIVENESS_LIVE:
+        action = _awaiting_action(
+            config=config,
+            epic_id=epic_id,
+            action=action,
+            run_id=liveness.run_id,
+        )
         identifier = f"{AWAIT_KIND}:{action.ref}"
     return _continuation_directive(
         state=_ContinuationState(
@@ -175,22 +190,40 @@ def _ruling(*, config: StoreConfig, epic_id: str, unattended: bool) -> Continuat
     )
 
 
-def _live_reconciled_action(
+def _target_run_liveness(
     *,
     config: StoreConfig,
     epic_id: str,
     action: NextAction,
-    observation: ResultObservation | None,
+) -> RunLiveness:
+    """Ask the factory only for the pointers the LIVE RUN finding governs.
+
+    The clause scopes the question to an `impl` or `spec-op` pointer whose
+    required result is still unsatisfied, so every other KIND answers not-live
+    WITHOUT a round trip. The unsatisfied half of that scope is already
+    established by the caller: `tracked_resume_directive` returns a terminal
+    directive for a satisfied, unobservable or out-of-budget obligation, so this
+    is reached only for an in-budget unsatisfied one. That ordering is what
+    keeps the SATISFIED finding strictly first — a stale pointer reaches no
+    factory at all, so a factory outage can never mask the staleness the resume
+    must report.
+    """
+    if action.kind not in (IMPL_KIND, SPEC_OP_KIND):
+        return RunLiveness(
+            verdict=LIVENESS_NOT_LIVE,
+            run_id=None,
+            detail=f"no factory run drives a {action.kind} pointer",
+        )
+    return observe_target_run(config=config, epic_id=epic_id, action=action)
+
+
+def _awaiting_action(
+    *,
+    config: StoreConfig,
+    epic_id: str,
+    action: NextAction,
+    run_id: str | None,
 ) -> NextAction:
-    if (
-        observation is None
-        or observation.status != OBSERVATION_UNSATISFIED
-        or action.kind not in (IMPL_KIND, SPEC_OP_KIND)
-    ):
-        return action
-    run_id = live_factory_run_id(config=config, epic_id=epic_id, action=action)
-    if run_id is None:
-        return action
     rewritten = replace(
         action,
         kind=AWAIT_KIND,
@@ -208,6 +241,14 @@ def _live_reconciled_action(
 
 
 def _is_impl(*, action: NextAction | None) -> bool:
+    """Whether the existing pointer is the one the gap must NOT overwrite.
+
+    `impl` ALONE, as the clause words it. A `spec-op` pointer is dispatchable and
+    is still replaced, because a plan that has not said what done means has
+    nothing for a spec operation to ratify toward — whereas an `impl` pointer
+    names work already filed, groomed and admitted, and overwriting it would
+    strand a live dispatch behind a question nobody is present to answer.
+    """
     return action is not None and action.kind == IMPL_KIND
 
 
