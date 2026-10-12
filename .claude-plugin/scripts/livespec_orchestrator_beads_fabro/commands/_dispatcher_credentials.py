@@ -53,6 +53,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_pro
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
     proof_store_env_lines,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_metadata import (
+    PublicationMetadata,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     ResumeCheckout,
 )
@@ -160,6 +163,11 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     proof_rendering: str = "",
     adapter_inputs: frozenset[str] = frozenset(),
     resume_checkout: ResumeCheckout | None = None,
+    # The pull-request title and body the scripted `pr` stage applies, rendered
+    # from the work-item by the caller that holds one. None for a direct caller
+    # that holds none, which projects neither and leaves the stage's own
+    # absent-title and absent-body sentinels to report the shortfall.
+    publication_metadata: PublicationMetadata | None = None,
     # The CLIENT build this dispatch resolved for its factory, which decides how
     # the written config may NAME its graph. None is the pinned-engine posture —
     # the absolute path every overlay has always carried — so a caller that
@@ -327,6 +335,9 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # The publish branch and head a RESUME places the sandbox clone on.
         # None for every other dispatch, which renders no step at all.
         resume_checkout=resume_checkout,
+        # The rendered title and body, forwarded rather than derived here: the
+        # derivation reads a work-item and this function is handed only an id.
+        publication_metadata=publication_metadata,
         # The resolved integration contract's values, substituted into the
         # committed run config's `{{ inputs.* }}` prepare commands because the
         # pinned engine does not render that site. Forwarded rather than
