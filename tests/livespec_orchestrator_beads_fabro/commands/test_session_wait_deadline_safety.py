@@ -3,35 +3,197 @@
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 import signal
+import socket
 import threading
 import time
-from contextlib import suppress
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import cast
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._session_wait_herdr import (
+    herdr_socket_generation,
+)
 from livespec_orchestrator_beads_fabro.commands._session_wait_types import ProbeLauncher
 from livespec_orchestrator_beads_fabro.commands.session_wait import (
     GateStatusLauncher,
     GateTarget,
+    HerdrPaneLauncher,
+    PaneTarget,
+    RoutingLauncher,
     WaitRequest,
     run_wait,
 )
 
+# Long enough that a wait which serialized behind the hung probe could only
+# return at expiry, so the two behaviours are separated by many seconds rather
+# than by a margin that load could close.
+_HUNG_DEADLINE_SECONDS = 20.0
+_FINISHED_GATE_EXIT_CODE = 7
+# `/bin/sh` rather than this interpreter: the gate launcher caps a probe's own
+# budget at one second, and a cold Python start under coverage can exceed that
+# — which would make this fixture's gate look unfinished for reasons that have
+# nothing to do with the behaviour under test. The trailing word is `sh -c`'s
+# `$0`, so the run id the probe appends lands in `$1` and is ignored.
+_FINISHED_GATE_COMMAND = (
+    "/bin/sh",
+    "-c",
+    f'printf "  state             : PASSED\\n  exit_code         : {_FINISHED_GATE_EXIT_CODE}\\n"',
+    "finished-gate-status",
+)
+_PEER_RECEIVE_BYTES = 65536
 
-def _wait_for_file(*, path: Path, timeout_seconds: float) -> None:
+
+def _written_pid(*, path: Path, timeout_seconds: float) -> int:
+    """One pid, read only once its writer has finished writing it.
+
+    The condition is NON-EMPTY CONTENT rather than mere existence, and that is
+    a race a caller cannot retry its way out of: `write_text` creates the file
+    before its bytes land, so an existence-gated read can return `""` and the
+    `int` of that raises `ValueError` — reporting a fixture race as a failure
+    of the cancellation the test was actually asserting. Measured here once in
+    four runs as soon as a sibling test put real load on the process, against
+    six clean runs without it.
+    """
     deadline = time.monotonic() + timeout_seconds
-    while not path.exists() and time.monotonic() < deadline:
-        time.sleep(0.005)
-    assert path.is_file()
+    content = ""
+    while not content and time.monotonic() < deadline:
+        with suppress(OSError):
+            content = path.read_text(encoding="utf-8").strip()
+        if not content:
+            time.sleep(0.005)
+    assert content, f"{path} never received a pid"
+    return int(content)
+
+
+@contextmanager
+def _hung_peer(*, socket_path: Path) -> Iterator[list[bytes]]:
+    """A unix socket that ACCEPTS and then never answers.
+
+    Disclosed as a CONTROLLED PEER rather than presented as a server: a healthy
+    Herdr server cannot be asked to hang, and what is under test here is what
+    the WAIT does while one observation hangs, so hanging is the peer's whole
+    job. Each accepted connection is held OPEN deliberately — closing it would
+    end the probe's read with an empty buffer, which is a reply the probe can
+    read and therefore not a hang at all.
+
+    Every request it receives is recorded and yielded, so a test can assert
+    which calls reached the target rather than assuming the adapter only reads.
+    """
+    received: list[bytes] = []
+    held: list[socket.socket] = []
+    stop = threading.Event()
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    listener.bind(str(socket_path))
+    listener.listen(8)
+    listener.settimeout(0.05)
+
+    def hold(*, connection: socket.socket) -> None:
+        with suppress(OSError):
+            connection.settimeout(1.0)
+            received.append(connection.recv(_PEER_RECEIVE_BYTES))
+
+    def serve() -> None:
+        while not stop.is_set():
+            try:
+                connection, _ = listener.accept()
+            except OSError:
+                continue
+            held.append(connection)
+            threading.Thread(
+                target=hold,
+                kwargs={"connection": connection},
+                daemon=True,
+            ).start()
+
+    worker = threading.Thread(target=serve, daemon=True)
+    worker.start()
+    try:
+        yield received
+    finally:
+        stop.set()
+        worker.join(timeout=30.0)
+        for connection in held:
+            connection.close()
+        listener.close()
+
+
+def test_a_hung_pane_probe_lets_a_finished_gate_return_first(*, tmp_path: Path) -> None:
+    """Scenario 156: a hung first probe does not serialize a finished sibling.
+
+    The pane is listed FIRST and its peer never answers, so an adapter that
+    observes a pane on the polling thread cannot reach the gate until that
+    probe's own budget expires — and that budget is the whole remaining
+    deadline. Measured against the synchronous adapter: the wait returned at
+    20.03s of a 20s deadline, reporting the HUNG PANE's `UNAVAILABLE`
+    diagnostic as the trigger while the gate that had already finished was
+    reported as unfinished.
+
+    The gate is driven by a scripted status command rather than a real gate
+    run, because what this asserts is the WAIT's scheduling; the gate only has
+    to be already finished when the wait starts.
+    """
+    gate_store_root = tmp_path / "gate-runs"
+    gate_dir = gate_store_root / "finished-gate"
+    gate_dir.mkdir(parents=True)
+    _ = (gate_dir / "started_at").write_text("generation-one\n", encoding="utf-8")
+    gate = GateTarget.freeze(gate_store_root=gate_store_root, run_id=gate_dir.name)
+    wait_store_root = tmp_path / "session-waits"
+    wait_store_root.mkdir()
+    socket_path = tmp_path / "hung.sock"
+
+    with _hung_peer(socket_path=socket_path) as received:
+        pane = PaneTarget(
+            backend="herdr",
+            socket_path=socket_path,
+            server_generation=str(herdr_socket_generation(socket_path=socket_path)),
+            pane_id="w1:p1",
+            terminal_id="term_hung",
+        )
+        started = time.monotonic()
+        result = run_wait(
+            request=WaitRequest(
+                wait_id="hung-pane-first",
+                session_id="deadline-safety",
+                repository=tmp_path,
+                deadline_seconds=_HUNG_DEADLINE_SECONDS,
+                targets=(pane, gate),
+            ),
+            launcher=RoutingLauncher(
+                gate=GateStatusLauncher(
+                    repository=tmp_path,
+                    command_prefix=_FINISHED_GATE_COMMAND,
+                ),
+                pane=HerdrPaneLauncher(),
+            ),
+            wait_store_root=wait_store_root,
+        )
+        elapsed = time.monotonic() - started
+
+    # The finished gate is what woke the wait, carrying its OWN exit code.
+    assert result.trigger_target == gate.identity
+    assert result.command_outcome == "target-ended"
+    assert result.trigger_exit_code == _FINISHED_GATE_EXIT_CODE
+    assert pane.identity in result.unfinished_targets
+    # Inside the ORIGINAL deadline and nowhere near it. A wait that polled the
+    # hung pane on its own thread could only return once that probe's budget
+    # expired, which is the entire deadline.
+    assert elapsed < _HUNG_DEADLINE_SECONDS / 2, f"returned after {elapsed:.2f}s"
+    # The hung target was READ and never written to, so the probe work that got
+    # cancelled was this wait's own and nothing belonging to the pane.
+    assert received, "the wait never reached the hung peer at all"
+    for request in received:
+        assert json.loads(request.decode("utf-8"))["method"] == "agent.get"
 
 
 def test_waiting_for_a_file_that_never_appears_refuses_at_the_deadline(*, tmp_path: Path) -> None:
     """The wait POLLS to a bounded deadline and then refuses, rather than hanging.
 
-    This is the other arm of `_wait_for_file`, and only this test can reach it.
+    This is the other arm of `_written_pid`, and only this test can reach it.
     The probe below publishes its pid through a POSIX shell that starts in
     milliseconds, so the file is already there on the first condition check and
     the polling body is never entered — the arm that matters when a probe dies
@@ -42,7 +204,7 @@ def test_waiting_for_a_file_that_never_appears_refuses_at_the_deadline(*, tmp_pa
     started = time.monotonic()
 
     with pytest.raises(AssertionError):
-        _wait_for_file(path=tmp_path / "never-written", timeout_seconds=0.05)
+        _ = _written_pid(path=tmp_path / "never-written", timeout_seconds=0.05)
 
     assert time.monotonic() - started >= 0.05
 
@@ -93,7 +255,7 @@ def test_cancelling_probe_terminates_probe_child_only(*, tmp_path: Path) -> None
     # budget to `min(1.0, ...)` and a cold CPython cannot reach its first
     # statement inside one second while the suite runs under coverage tracing
     # on a loaded host — the probe was reaped before it ever published its pid,
-    # so this test failed on `_wait_for_file` for a reason that was never about
+    # so this test failed on its pid wait for a reason that was never about
     # the code under test. The semantics it asserts are preserved exactly: the
     # trap is armed BEFORE the pid is published, so SIGTERM is already ignored
     # by the time the test can read the pid; `exec` then replaces the shell in
@@ -113,8 +275,7 @@ exec sleep 30
         command_prefix=("/bin/sh", str(helper), str(pid_file)),
     ).launch(target=target, timeout_seconds=1.0)
     assert probe.poll(now=time.monotonic()) is None
-    _wait_for_file(path=pid_file, timeout_seconds=1.0)
-    probe_pid = int(pid_file.read_text(encoding="utf-8"))
+    probe_pid = _written_pid(path=pid_file, timeout_seconds=5.0)
 
     probe.cancel(timeout_seconds=0.05)
     time.sleep(0.1)

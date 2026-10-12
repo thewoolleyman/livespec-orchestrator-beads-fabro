@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import socket
-from dataclasses import dataclass
+import threading
+from contextlib import suppress
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
@@ -77,6 +79,9 @@ class HerdrChannel:
 
     socket_path: Path
     timeout_seconds: float
+    _guard: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _in_flight: socket.socket | None = field(default=None, init=False, repr=False)
+    _cancelled: bool = field(default=False, init=False, repr=False)
 
     def agent_info(self, *, pane_id: str) -> HerdrReply:
         """Ask this server for one pane's agent record, within the budget."""
@@ -96,14 +101,56 @@ class HerdrChannel:
             # Reporting that as unavailable rather than as a pane state is
             # what keeps an unreachable server from reading as a finished one.
             return HerdrReply(agent=None, diagnostic=DIAGNOSTIC_UNAVAILABLE)
+        if raw is None:
+            # Cancelled before the request reached the server, so nothing about
+            # the pane was measured. Unavailable is the truthful answer for the
+            # same reason the OSError arm above uses it — this probe did not
+            # reach the server — and it is never a claim about the pane.
+            return HerdrReply(agent=None, diagnostic=DIAGNOSTIC_UNAVAILABLE)
         return _parse_reply(raw=raw)
 
-    def _exchange(self, *, request: str) -> str:
+    def cancel(self) -> None:
+        """Interrupt an in-flight request so a hung peer cannot pin a caller.
+
+        A read here is bounded by `timeout_seconds`, and for a wait's probe
+        that budget is the WHOLE remaining deadline — deliberately, so a hung
+        peer is reported at expiry rather than on the first slow reply. The
+        consequence is that a caller which merely stopped waiting would leave
+        its worker blocked in `recv` for the rest of the wait, so cancelling
+        has to reach the socket itself: `shutdown` makes that blocked read
+        return at once.
+
+        The `_cancelled` flag closes the race the shutdown cannot. A
+        cancellation landing between a worker's own pre-flight check and its
+        `connect` would otherwise open a socket that nothing is left to
+        interrupt, so the flag is read under the guard at the moment the
+        socket is registered and refuses the exchange outright.
+        """
+        with self._guard:
+            self._cancelled = True
+            in_flight = self._in_flight
+        if in_flight is None:
+            return
+        # A socket already shut down, closed, or never connected is a race this
+        # lost, not a failure: the read it would have interrupted is over.
+        with suppress(OSError):
+            in_flight.shutdown(socket.SHUT_RDWR)
+
+    def _exchange(self, *, request: str) -> str | None:
+        """The raw reply line, or None when this channel was cancelled first."""
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as channel:
             channel.settimeout(self.timeout_seconds)
-            channel.connect(str(self.socket_path))
-            channel.sendall(request.encode("utf-8") + b"\n")
-            return _read_line(channel=channel)
+            with self._guard:
+                if self._cancelled:
+                    return None
+                self._in_flight = channel
+            try:
+                channel.connect(str(self.socket_path))
+                channel.sendall(request.encode("utf-8") + b"\n")
+                return _read_line(channel=channel)
+            finally:
+                with self._guard:
+                    self._in_flight = None
 
 
 def _read_line(*, channel: socket.socket) -> str:

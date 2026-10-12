@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import threading
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._session_wait_herdr import (
@@ -175,24 +177,112 @@ def observe_pane_target(*, target: PaneTarget, observed_at: float) -> GateObserv
     )
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
+class _PaneTask:
+    """One pane observation running off the caller's own thread."""
+
+    target: PaneTarget
+    observed_at: float
+    channel: HerdrChannel
+    result: GateObservation | None = field(default=None, init=False)
+    thread: threading.Thread | None = field(default=None, init=False)
+    ready: threading.Event = field(default_factory=threading.Event, init=False)
+    cancel_requested: bool = field(default=False, init=False)
+
+    def start(self) -> None:
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self) -> None:
+        self.ready.set()
+        if self.cancel_requested:
+            # Cancellation landed before this worker reached its observation,
+            # so no socket is opened at all. This is what makes `cancel` SOUND
+            # rather than fail-open when it wins that race: without it an
+            # unready task would go on to open a connection after cancellation
+            # had already reported itself clean.
+            return
+        observation = pane_observation(
+            target=self.target,
+            observed_at=self.observed_at,
+            channel=self.channel,
+        )
+        if not self.cancel_requested:
+            self.result = observation
+
+    def poll(self) -> GateObservation | None:
+        return self.result
+
+    def cancel(self, *, timeout_seconds: float) -> None:
+        """Stop this observation's work, touching nothing on the server.
+
+        NEVER raises on a lost race. `run_wait` cancels on every return path,
+        the successful first-event one included, so an exception here would
+        discard a bounded result that had already been computed and report the
+        whole wait as a crash.
+
+        The SOCKET is interrupted before the join, and that order is
+        load-bearing: a worker blocked in `recv` holds its budget, which for a
+        probe is the whole remaining deadline, so joining first would make
+        cancellation cost exactly the delay it exists to avoid.
+        """
+        started = time.monotonic()
+        self.cancel_requested = True
+        self.channel.cancel()
+        _ = self.ready.wait(timeout=timeout_seconds)
+        thread = self.thread
+        if thread is not None:
+            thread.join(timeout=max(0.0, timeout_seconds - (time.monotonic() - started)))
+
+
+@dataclass(kw_only=True)
 class HerdrPaneProbe:
     target: PaneTarget
     timeout_seconds: float
+    task: _PaneTask | None = field(default=None, init=False)
+
+    @property
+    def active(self) -> bool:
+        return self.task is not None
 
     def poll(self, *, now: float) -> GateObservation | None:
-        return pane_observation(
-            target=self.target,
-            observed_at=now,
-            channel=HerdrChannel(
-                socket_path=self.target.socket_path,
-                timeout_seconds=self.timeout_seconds,
-            ),
-        )
+        """This pane's observation once it has landed, else None.
+
+        The observation runs on its OWN worker rather than on the polling
+        thread, and that is what keeps one pane from serializing an entire
+        wait. A peer that accepts and never answers holds its socket for the
+        full remaining deadline, so a synchronous poll spends the whole budget
+        before any sibling target is looked at even once — measured against the
+        synchronous adapter, a wait over a hung pane and an ALREADY-FINISHED
+        gate returned the hung pane's diagnostic at 20.02s of a 20s deadline
+        and reported the finished gate as unfinished. Answering None while the
+        work is in flight is what leaves the caller free to poll its other
+        targets at its own cadence.
+
+        A fresh channel per task is deliberate: a cancelled channel stays
+        cancelled, so reusing one would refuse every later observation.
+        """
+        if self.task is None:
+            self.task = _PaneTask(
+                target=self.target,
+                observed_at=now,
+                channel=HerdrChannel(
+                    socket_path=self.target.socket_path,
+                    timeout_seconds=self.timeout_seconds,
+                ),
+            )
+            self.task.start()
+        observation = self.task.poll()
+        if observation is None:
+            return None
+        self.task = None
+        return observation
 
     def cancel(self, *, timeout_seconds: float) -> None:
-        """Nothing to stop, and nothing on the server to touch either."""
-        del timeout_seconds
+        """Stop any in-flight observation. Nothing on the server is touched."""
+        if self.task is not None:
+            self.task.cancel(timeout_seconds=timeout_seconds)
+        self.task = None
 
 
 @dataclass(frozen=True, kw_only=True)
