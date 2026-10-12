@@ -14,11 +14,27 @@ under grade is about which KIND of stage performs publication, and that is a
 property of the committed payload: a node carrying `backend="acp"` launches an
 adapter however its script would have behaved, and a node carrying `script=`
 cannot launch one. Reading the payload is therefore reading the thing the
-assertion is about, not a proxy for it. The runtime refresh behaviour -- the
-rebase, the gate, the leased push -- is exercised against real Git and a
-controlled forge by `test_scripted_publication_execution.py`, and its
-end-to-end form against a live factory is a HOST-CAPTURED assertion of the same
-work-item.
+assertion is about, not a proxy for it.
+
+WHAT THIS FILE DOES NOT GRADE, STATED PER NODE, because a reader arrives here
+to decide whether the runtime behaviour is covered and a claim made loosely
+FORECLOSES the check that would catch a gap. Nothing below executes a single
+byte of either script. The behaviour is covered one module per node, and the
+two cover different things:
+
+- `pr`'s own bytes -- the proof-head comparison, the title and body argv, the
+  ready transition, and the arming bound to the verified head -- run in
+  `test_scripted_publication_execution.py`, against real Git and a stub forge.
+- `pr_refresh`'s own bytes -- the ownership test, the refresh bound, the
+  conflict abort, the post-rebase gate and the leased push -- run in
+  `test_scripted_refresh_execution.py`, against real Git and a real local bare
+  remote.
+
+Each module's first line says which node it executes. A claim here that some
+other file covers a node is only as good as that file's node selection, so
+read the extraction (`graph.nodes[...]`) rather than this paragraph. The
+end-to-end form against a live factory is a HOST-CAPTURED assertion of the
+same work-item and is covered by neither.
 """
 
 from __future__ import annotations
