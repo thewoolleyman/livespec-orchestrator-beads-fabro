@@ -218,7 +218,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-10-12T04:20:11.834180412Z",
-  "last_event_at": "2026-10-12T04:20:14.419584113Z",
+  "last_event_at": "2026-10-12T04:20:19.056957130Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -258,9 +258,9 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 29,
       "checkpoint": {
-        "timestamp": "2026-10-12T04:20:14.570729475Z",
+        "timestamp": "2026-10-12T04:20:19.056923106Z",
         "current_node": "probe",
         "completed_nodes": [
           "start",
@@ -268,22 +268,22 @@
         ],
         "node_retries": {},
         "context_values": {
-          "internal.node_visit_count": 1,
-          "current_node": "probe",
-          "internal.fidelity": "compact",
-          "thread.start.current_node": "probe",
-          "internal.thread_id": "start",
-          "internal.acp_attempt.probe": 0,
-          "command.output": "blob://sha256/bf74f22cfc40ffeed7eb78bf5a0a986e679e9b44ea3beb9d6202d3dbcfb849ec",
-          "outcome": "failed",
-          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
-          "failure_class": "deterministic",
-          "internal.acp_attempt.start": 0,
-          "internal.retry_count.start": 0,
-          "graph.goal": "# Fabro Enemy Unit Test: janitor-shape-fail\n",
-          "failure_signature": "probe|deterministic|script failed with exit code: <n> ## output ls: cannot access '/eut-check-suite-ran': no such file or directory",
           "internal.retry_count.probe": 0,
-          "internal.run_id": "01M4Q5DPG2VHX6N1MPSE30EN98"
+          "failure_signature": "probe|deterministic|script failed with exit code: <n> ## output ls: cannot access '/eut-check-suite-ran': no such file or directory",
+          "graph.goal": "# Fabro Enemy Unit Test: janitor-shape-fail\n",
+          "internal.acp_attempt.probe": 0,
+          "internal.node_visit_count": 1,
+          "internal.run_id": "01M4Q5DPG2VHX6N1MPSE30EN98",
+          "command.output": "blob://sha256/bf74f22cfc40ffeed7eb78bf5a0a986e679e9b44ea3beb9d6202d3dbcfb849ec",
+          "failure_class": "deterministic",
+          "internal.thread_id": "start",
+          "internal.acp_attempt.start": 0,
+          "current_node": "probe",
+          "internal.retry_count.start": 0,
+          "thread.start.current_node": "probe",
+          "outcome": "failed",
+          "internal.fidelity": "compact",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro"
         },
         "node_outcomes": {
           "start": {
@@ -309,6 +309,10 @@
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "bb752aa97a56fe8cf7cd4bd09af4962e19685e90",
+        "loop_failure_signatures": {
+          "probe|deterministic|script failed with exit code: <n> ## output ls: cannot access '/eut-check-suite-ran': no such file or directory": 1
+        },
         "node_visits": {
           "probe": 1,
           "start": 1
@@ -317,7 +321,50 @@
       "diff": {}
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-10-12T04:20:19.074514399Z",
+    "status": "failed",
+    "timing": {
+      "wall_time_ms": 7224,
+      "inference_time_ms": 0,
+      "tool_time_ms": 140,
+      "active_time_ms": 140
+    },
+    "failure": {
+      "reason": "workflow_error",
+      "detail": {
+        "message": "goal gate unsatisfied for node probe and no retry target",
+        "category": "deterministic"
+      }
+    },
+    "final_git_commit_sha": "bb752aa97a56fe8cf7cd4bd09af4962e19685e90",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "probe",
+        "stage_label": "probe",
+        "timing": {
+          "wall_time_ms": 149,
+          "inference_time_ms": 0,
+          "tool_time_ms": 140,
+          "active_time_ms": 140
+        },
+        "retries": 0
+      }
+    ],
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -348,7 +395,12 @@
       "first_event_seq": 21,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "failed",
+        "notes": null,
+        "failure_reason": "Script failed with exit code: 2\n\n## output\nls: cannot access '/eut-check-suite-ran': No such file or directory\n",
+        "timestamp": "2026-10-12T04:20:14.569692837Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -356,11 +408,27 @@
         "command": "exec 2>&1\neval ls /eut-check-suite-ran",
         "language": "shell"
       },
-      "script_timing": null,
+      "script_timing": {
+        "output": "blob://sha256/bf74f22cfc40ffeed7eb78bf5a0a986e679e9b44ea3beb9d6202d3dbcfb849ec",
+        "exit_code": 2,
+        "duration_ms": 140,
+        "termination": "exited",
+        "output_bytes": 68,
+        "live_streaming": true
+      },
       "parallel_results": null,
       "output": null,
+      "output_bytes": 68,
+      "live_streaming": true,
+      "termination": "exited",
       "started_at": "2026-10-12T04:20:14.419567402Z",
       "handler": "command",
+      "timing": {
+        "wall_time_ms": 149,
+        "inference_time_ms": 0,
+        "tool_time_ms": 140,
+        "active_time_ms": 140
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -369,7 +437,7 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "failed"
     },
     "start@1": {
       "first_event_seq": 17,
