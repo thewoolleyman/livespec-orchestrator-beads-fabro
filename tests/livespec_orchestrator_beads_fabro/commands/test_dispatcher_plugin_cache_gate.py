@@ -31,14 +31,18 @@ import json
 import subprocess
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import (
+    parse_dot_graph,
+)
+
 _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate"
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _MODULE_PATH = _REPO_ROOT.joinpath(
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands"
     "/_dispatcher_plugin_cache_gate.py"
 )
-_PR_PROMPT_PATH = _REPO_ROOT.joinpath(
-    ".claude-plugin/.fabro/workflows/implement-work-item/prompts/pr.md"
+_WORKFLOW_PATH = _REPO_ROOT.joinpath(
+    ".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro"
 )
 _MANIFEST = {"required_paths": ["plugin.json", "scripts/bin"]}
 # The plugin key and build id the three console runs failed on, kept verbatim so
@@ -416,12 +420,14 @@ def test_the_console_missing_scripts_bin_signature_is_cleared_before_the_push(
     assert _registered_builds(plugins_root=plugins_root, plugin=_ORCHESTRATOR_KEY) == []
 
 
-def test_the_pr_stage_prompt_re_enters_the_gate_before_it_pushes() -> None:
-    """The stage boundary is only a guarantee if the pr recipe actually runs it."""
+def test_the_refresh_stage_re_enters_the_gate_before_it_pushes() -> None:
+    """The stage boundary is only a guarantee if the push recipe actually runs it."""
     module = importlib.import_module(_MODULE_NAME)
-    prompt = _PR_PROMPT_PATH.read_text(encoding="utf-8")
+    graph = parse_dot_graph(text=_WORKFLOW_PATH.read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+    script = graph.nodes["pr_refresh"]["script"]
 
-    command_index = prompt.index(module.plugin_pin_gate_command())
-    push_index = prompt.index("git push -u origin HEAD:refs/heads/feat/<work-item-id>")
+    command_index = script.index(module.plugin_pin_gate_command())
+    push_index = script.index('"$push_program"')
     assert command_index < push_index
-    assert module.PLUGIN_CACHE_UNMATERIALIZED_MARKER in prompt
+    assert "LIVESPEC_PR_REFRESH_PLUGIN_GATE_FAILED" in script

@@ -10,9 +10,13 @@ land no matter what the configuration said (bd-ib-tsna). Their defaults are
 deliberately identical, so the split changed the surface and not the
 behaviour.
 
-The PR node stays separate so the publish step -- a fixed `git`/`gh` recipe
-with no design judgement in it -- can run on a cheaper tier than the
-implementer. The REVIEW node (egms32) is separate so it can run on a
+The PR node is GONE from this surface since v121: publication is the command
+stages `pr_refresh` and `pr`, which launch no adapter at all, so the
+implementation workflow declares no publication adapter input to configure. The
+groom-kind variant keeps one, because what its `pr` node publishes is a filing
+plan for the host rather than a Git branch; that variant's declaration is
+asserted in `test_groom_workflow_variant_registration`. The REVIEW node (egms32)
+is separate so it can run on a
 different provider/model (Claude Opus 4.8 + high thinking), and the
 DISPOSITION node so adjudication can be pinned independently, and the
 DOD_GATE node so grading a Definition of Done takes the review tier rather
@@ -48,7 +52,6 @@ _NODE_ACP = {
         "review_fix",
         "proof_capture",
         "proof_verify",
-        "pr",
         "review",
         "disposition",
     )
@@ -81,19 +84,19 @@ def test_each_acp_node_has_its_own_adapter_input() -> None:
     assert len(acp_lines) == len(_NODE_ACP)
 
 
-def test_pr_node_is_the_only_node_on_the_pr_adapter() -> None:
-    """The publish node is separated from the implementer tier, and only it.
+def test_no_node_rides_a_retired_publication_adapter() -> None:
+    """The retired publication adapter is referenced by no node, under any name.
 
-    The split is what lets the pr node take a cheaper model than
-    implement / fix / review_fix — the Claude Haiku default, or a per-repo
-    Codex/other override; if another node drifted onto `pr_adapter` it would
-    silently inherit that cheaper tier.
+    Asserted over the WHOLE graph rather than over the `pr` block alone, because
+    the defect this guards against is a DIFFERENT node drifting onto the retired
+    input: `pr` itself is a command stage now and carries no `acp.command` to
+    inspect, so a block-scoped check would pass vacuously while some other node
+    read an adapter the Dispatcher no longer renders.
     """
     dot = _WORKFLOW_DOT.read_text(encoding="utf-8")
-    pr_block = re.search(r"\n    pr \[(.*?)\n    \]", dot, re.DOTALL)
-    assert pr_block is not None
-    assert _NODE_ACP["pr"] in pr_block.group(1)
-    assert _acp_lines().count(_NODE_ACP["pr"]) == 1
+
+    assert "{{ inputs.pr_adapter }}" not in dot
+    assert all("pr_adapter" not in line for line in _acp_lines())
 
 
 def test_no_node_hardcodes_the_claude_adapter_command() -> None:
@@ -125,15 +128,16 @@ def test_toml_declares_every_implementer_adapter_defaulting_to_claude_opus_5() -
         assert rendered[f"{node}_adapter"] == _CLAUDE_OPUS_5_ADAPTER, node
 
 
-def test_toml_declares_pr_adapter_defaulting_to_claude_haiku() -> None:
-    """The publish input pins Claude Haiku 4.5 + high effort via the adapter's
-    own env (v107): the pr fleet default is a model-agnostic Claude adapter, so
-    a bare `fabro run` and an unconfigured dispatch both render Haiku rather than
-    a Codex model. `model`/`reasoning_effort` are API-only attributes fabro
-    rejects on acp nodes, so the model rides ANTHROPIC_MODEL on the command."""
-    assert _rendered_defaults()["pr_adapter"] == (
-        "ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high " f"{_CLAUDE_ADAPTER}"
-    )
+def test_toml_declares_no_publication_adapter_default() -> None:
+    """Nothing renders a publication adapter for an implementation dispatch.
+
+    Read through `workflow_layer`, the same seam a dispatch resolves the workflow
+    layer with, rather than by grepping the file: the question is what the
+    DISPATCH renders, and a declaration this seam did not return would be a
+    declaration no dispatch carries. Its absence is what makes the command stages
+    adapter-free in fact rather than by intention.
+    """
+    assert "pr_adapter" not in _rendered_defaults()
 
 
 def test_toml_declares_disposition_adapter_defaulting_to_claude() -> None:

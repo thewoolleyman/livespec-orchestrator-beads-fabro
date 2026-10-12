@@ -44,6 +44,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_success_critical import (
     derive_success_critical,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_workflow_graph import parse_workflow_graph
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
+    GROOM_ONLY_ACP_NODES,
+)
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     DEFAULT_FABRO_TIMEOUT_SECONDS,
     default_node_timeouts,
@@ -91,6 +94,18 @@ def _edges(*, text: str) -> list[str]:
 
 def _edges_from(*, text: str, node: str) -> list[str]:
     return [edge for edge in _edges(text=text) if edge.startswith(f"{node} ->")]
+
+
+def _node_script(*, node: str) -> str:
+    """One COMMAND node's `script` attribute, as the engine will run it.
+
+    The publication stages are commands since v121, so their recipe is an
+    attribute of the graph rather than a prompt file. Read off the node body so a
+    needle cannot be satisfied by some other node's script in the same graph.
+    """
+    body = _node_body(text=_dot(payload=_BUNDLE), node=node)
+    assert body is not None, node
+    return body
 
 
 def _prompt(*, name: str) -> str:
@@ -250,15 +265,27 @@ def test_both_new_nodes_carry_a_worst_case_visit_budget() -> None:
     Both nodes are reached once per green janitor, so each carries the review
     node's own visit budget rather than the janitor's: a run whose reviewer asks
     for three fix rounds passes through this pair four times.
+
+    THE TWO BUDGETS DIVERGED AT v121, and the asymmetry is the assertion rather
+    than an oversight. Scripted publication opened the refresh loop
+    `pr_refresh_head -> proof_capture -> review -> proof_verify -> pr_refresh`,
+    which re-enters `proof_capture` once per changed-head refresh and is bounded
+    at three — so capture carries four plus three. It re-enters `publish_draft`
+    NOT AT ALL, because the changed-head edge targets the capture node directly;
+    the only route back into `publish_draft` is a review that requests changes,
+    which `review_fix.max_visits` already caps inside the four. Asserting one
+    shared multiplier for the pair would therefore under-bill capture, and the
+    direction matters: a node budgeted below what the graph can spend is one the
+    Dispatcher's own subprocess timeout can kill mid-run.
     """
     raised = 14400
-    for node in (_PUBLISH, _CAPTURE):
+    for node, visits in ((_PUBLISH, 4), (_CAPTURE, 7)):
         longer = node_timeouts_from_block(block={"node_timeouts": {node: raised}})
         assert not isinstance(longer, str), longer
         assert default_node_timeouts().seconds_for(node=node) == 1800
         assert derive_fabro_timeout_seconds(
             timeouts=longer
-        ) == DEFAULT_FABRO_TIMEOUT_SECONDS + 4 * (raised - 1800)
+        ) == DEFAULT_FABRO_TIMEOUT_SECONDS + visits * (raised - 1800)
 
 
 def _declared(*, toml: str, name: str) -> str | None:
@@ -343,7 +370,13 @@ def test_the_registered_variant_declares_the_capture_node_and_leaves_it_unreache
     is not refused for naming a node the variant's own payload lacks. REACHING it
     would try to prove a Definition of Done the groom run has only just written.
     """
-    assert _acp_node_names(payload=_VARIANT) == _acp_node_names(payload=_BUNDLE)
+    # The ONE asymmetry runs the other way: since v121 the bundle publishes
+    # through COMMAND stages and declares no ACP `pr` node, while the groom
+    # variant keeps one for its filing plan. Read off the module that owns
+    # that scoping rather than respelled here.
+    assert (
+        _acp_node_names(payload=_VARIANT) == _acp_node_names(payload=_BUNDLE) | GROOM_ONLY_ACP_NODES
+    )
     assert re.search(
         rf'^\s*{_CAPTURE_ADAPTER_INPUT}\s*=\s*"', _toml(payload=_VARIANT), re.MULTILINE
     )
@@ -413,17 +446,24 @@ def test_the_capture_prompt_leaves_the_tree_unchanged() -> None:
     assert '{"preferred_next_label": "fix"}' in prompt
 
 
-def test_the_pr_prompt_marks_the_existing_draft_ready_instead_of_creating_one() -> None:
+def test_the_pr_stage_marks_the_existing_draft_ready_instead_of_creating_one() -> None:
     """`pr` no longer creates the pull request; it readies the one already open.
 
     Asserted in BOTH directions on purpose. The presence of `gh pr ready` alone
-    would pass for a prompt that readied a pull request it had just created, which
+    would pass for a stage that readied a pull request it had just created, which
     is exactly the double-publication this change removes — so the creation verb
-    has to be gone from the publishing steps as well.
-    """
-    prompt = _prompt(name="pr.md")
+    has to be gone from the publishing stage as well.
 
-    assert "gh pr ready" in prompt
-    assert "gh pr create" not in prompt
-    assert "--auto" in prompt
-    assert "publish_draft" in prompt
+    READ OFF THE SCRIPT, NOT A PROMPT, since v121: publication is a COMMAND stage
+    and `prompts/pr.md` is retired, so the recipe IS the node's `script`
+    attribute. That is a stronger reading than the prompt was — a prompt recorded
+    what an agent was ASKED to do, while the script is what runs.
+    """
+    script = _node_script(node="pr")
+
+    assert "gh pr ready" in script
+    assert "gh pr create" not in script
+    assert "--auto" in script
+    # And the draft it readies is the one `publish_draft` opened: the stage
+    # resolves it by the recorded publish branch rather than creating anything.
+    assert "LIVESPEC_PUBLISH_BRANCH" in script
