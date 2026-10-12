@@ -54,7 +54,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import 
     resume_checkout_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
-    overlay_sandbox_image,
+    resolve_launch_image,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_toml_read import (
     toml_section_string,
@@ -225,12 +225,15 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     exactly as before.
 
     `factory_environment` is the catalog environment id the resolved factory
-    declares, and it WITHHOLDS `fabro_sandbox_image` rather than competing
-    with it: a catalog environment's image is a property of a server-managed
-    entry this host cannot read, so the only honest action is to leave the
-    committed image table alone and let the server's own selection stand
-    (`contracts.md` section "Sandbox image source"). None — a factory naming
-    no catalog environment — substitutes exactly as before.
+    declares, and it REMOVES the environment's image declaration rather than
+    merely withholding `fabro_sandbox_image`: the committed workflow carries
+    its own independently-published `docker` tag, so withholding the pin alone
+    would leave that second host-side image standing in the submitted config.
+    A catalog environment's image is a property of a server-managed entry this
+    host cannot read, so the only way to leave the server's own selection
+    standing is to declare no image at all (`contracts.md` section "Sandbox
+    image source"). None — a factory naming no catalog environment —
+    substitutes exactly as before.
 
     `dispatch_id` is the PRE-LAUNCH id the sandbox declares as its
     factory-provenance marker. It is injected here rather than in the
@@ -263,19 +266,20 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     if needle not in committed_text:
         return None
     rewritten = committed_text.replace(needle, f'graph = "{resolved_graph}"', 1)
-    rewritten = _rewrite_fabro_sandbox_image(
-        text=rewritten,
+    # The ONE place the launch's image is resolved, decision and text rewrite
+    # together, so the dispatch-id journal record can name that source off the
+    # same resolution rather than re-deriving it a layer away — and so the
+    # removal a catalog dispatch needs is not a second rewrite here competing
+    # with the substitution.
+    resolved_image = resolve_launch_image(
+        committed_text=rewritten,
         environment_id=environment_id,
-        # The ONE place the image's source is decided, so the rewrite below
-        # keeps its single meaning — substitute the image it was handed — and
-        # the dispatch-id journal record can name that source off the same
-        # pure resolution rather than re-deriving it a layer away.
-        fabro_sandbox_image=overlay_sandbox_image(
-            factory_environment=factory_environment, configured_image=fabro_sandbox_image
-        ),
+        factory_environment=factory_environment,
+        configured_image=fabro_sandbox_image,
     )
-    if rewritten is None:
+    if resolved_image is None:
         return None
+    rewritten = resolved_image
     rewritten = resolve_workflow_git_author(committed_text=rewritten, author=git_author)
     if rewritten is None:
         return None
@@ -414,25 +418,6 @@ def _escape_toml_basic_string(*, value: str) -> str:
     failure. Backslash first, so the quote escape is not re-escaped.
     """
     return value.replace("\\", "\\\\").replace('"', '\\"')
-
-
-def _rewrite_fabro_sandbox_image(
-    *,
-    text: str,
-    environment_id: str,
-    fabro_sandbox_image: str | None,
-) -> str | None:
-    """Rewrite only `[environments.<id>.image] docker` when configured."""
-    if fabro_sandbox_image is None:
-        return text
-    section = f"environments.{environment_id}.image"
-    committed_image = toml_section_string(text=text, section=section, key="docker")
-    if committed_image is None:
-        return None
-    needle = f'docker = "{committed_image}"'
-    if needle not in text:
-        return None
-    return text.replace(needle, f"docker = {json.dumps(fabro_sandbox_image)}", 1)
 
 
 def _tmux_tmpdir_prepare_steps_block() -> str:

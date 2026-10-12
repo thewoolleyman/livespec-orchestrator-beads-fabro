@@ -13,8 +13,19 @@ environment `livespec-ci`, whose image is `python-agent-v1.93.5`, and `inspect`
 reported `sandbox.plan.image` at that tag while the container Petri actually
 started (`sandbox.instance.image`) ran `python-agent-v1.92.0` — the value of
 this repository's `dispatcher.fabro_sandbox_image`, which the launch overlay
-rewrote into the launch. Two sources of truth, so a proof reading the plan
-reports an image that did not run.
+rewrote into the submitted `[environments.<id>.image]` table. So a SUBMITTED
+image table is what the server creates the container from, and a proof reading
+the plan reports an image that did not run.
+
+WHY THESE CASES MEASURE AN ABSENCE RATHER THAN A WITHHELD PIN. The committed
+`workflow.toml` carries its OWN `docker` tag in that table, published
+independently of the pin by the dev-tooling release fan-out. Withholding the pin
+therefore leaves a host-side image standing — the committed tag — so the catalog
+is the one source only when the submitted config declares NO image whatsoever.
+Every catalog-arm assertion below is consequently taken against the PARSED
+submitted configuration (`image` absent from the environment table), never
+against the absence of one particular tag: a tag-absence assertion passes for a
+build that merely swapped which host-side tag it wrote.
 """
 
 from __future__ import annotations
@@ -25,9 +36,10 @@ import json
 from inspect import signature
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import pytest
+import tomli
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_codex_auth,
     _dispatcher_credentials,
@@ -62,24 +74,49 @@ _MODULE_PATH = (
 
 _CONFIGURED_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.92.0"
 _CATALOG_ENVIRONMENT = "livespec-ci"
-# The image the catalog environment of the same name declares on the factory
-# server. The host never reads it; it is the committed workflow's own value
-# here, which is exactly what the overlay must leave standing.
-_COMMITTED_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.93.5"
-_WORKFLOW_WITH_IMAGE = (
+# The image the COMMITTED workflow declares, which is NOT the catalog
+# environment's image. The two are independently published host-side pin
+# surfaces — the dev-tooling release fan-out rewrites this tag, while the
+# catalog entry lives on the factory server and the host never reads it — and
+# that independence is exactly why the catalog arm must DROP this declaration
+# rather than merely withhold `dispatcher.fabro_sandbox_image`.
+_COMMITTED_WORKFLOW_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.95.2"
+_IMAGE_TABLE = (
+    f"[environments.{_CATALOG_ENVIRONMENT}.image]\n"
+    "# The committed pin surface, comments and all.\n"
+    f'docker = "{_COMMITTED_WORKFLOW_IMAGE}"\n'
+)
+_RESOURCES_TABLE = f"[environments.{_CATALOG_ENVIRONMENT}.resources]\ncpu = 4\n"
+_WORKFLOW_PREFIX = (
     "_version = 1\n"
     "\n"
     "[workflow]\n"
     'graph = "workflow.fabro"\n'
     "\n"
-    f"[run.environment]\n"
+    "[run.environment]\n"
     f'id = "{_CATALOG_ENVIRONMENT}"\n'
     "\n"
     f"[environments.{_CATALOG_ENVIRONMENT}]\n"
     'provider = "docker"\n'
     "\n"
-    f"[environments.{_CATALOG_ENVIRONMENT}.image]\n"
-    f'docker = "{_COMMITTED_IMAGE}"\n'
+)
+# The image table followed by a FURTHER table, which is the shape this
+# repository's own `workflow.toml` carries.
+_WORKFLOW_WITH_IMAGE = _WORKFLOW_PREFIX + _IMAGE_TABLE + "\n" + _RESOURCES_TABLE
+# The same declaration as the LAST table in the file, so the removal's
+# end-of-file boundary is measured and not only its next-table one.
+_WORKFLOW_IMAGE_LAST = _WORKFLOW_PREFIX + _IMAGE_TABLE
+# No image declaration at all. The catalog arm has nothing to remove, which is
+# NOT a refusal: a configuration that declares no image already satisfies it.
+_WORKFLOW_WITHOUT_IMAGE = _WORKFLOW_PREFIX
+# The SAME image declaration, spelled with a header TOML accepts and a
+# line-based header match cannot see: quoted segments with surrounding
+# whitespace. TOML spells one table many ways, so the removal's result is
+# PARSED, and a declaration that survives refuses the dispatch instead of
+# launching one whose submitted configuration still names an image.
+_WORKFLOW_SPACED_IMAGE_HEADER = _WORKFLOW_PREFIX + (
+    f'[environments . "{_CATALOG_ENVIRONMENT}" . image]\n'
+    f'docker = "{_COMMITTED_WORKFLOW_IMAGE}"\n'
 )
 _FAKE_TOKEN = "test-oauth-token"
 _FAKE_GITHUB_TOKEN = "test-github-token"
@@ -107,85 +144,153 @@ _FLEET_MANIFEST_TEXT = (
 )
 
 
-def test_a_dispatch_naming_no_catalog_environment_still_takes_the_committed_key() -> None:
-    """`dispatcher.fabro_sandbox_image` supplies the image, and only then.
+def _environment_table(*, text: str) -> dict[str, Any]:
+    """The submitted configuration's own entry for the catalog environment.
+
+    Taken through a real TOML parse rather than a substring scan, because the
+    claim every catalog-arm case makes is that the submitted configuration
+    declares no image — an absence a substring scan cannot establish, since it
+    can only ever report that one particular spelling of one particular tag is
+    missing.
+    """
+    document = tomli.loads(text)
+    environments = cast("dict[str, Any]", document["environments"])
+    return cast("dict[str, Any]", environments[_CATALOG_ENVIRONMENT])
+
+
+def test_a_dispatch_naming_a_catalog_environment_declares_no_image_of_its_own() -> None:
+    """The catalog arm REMOVES the image declaration; the committed arm keeps it.
 
     The module import rides `importlib` INSIDE the test body, with the file
     existence as the first assertion, so the Red that precedes this module
     fails on a genuine assertion rather than at collection.
 
-    Both branches are asserted in one case because they are one decision: the
-    committed key reaches the launch exactly when no catalog environment is
-    named, and `None` — the overlay's documented no-op, which leaves the
-    committed image table byte-for-byte as shipped — is what the catalog case
-    resolves to instead.
+    Every arm of the one decision is asserted here, because they are one
+    decision and each alone passes for a build that has broken another: the
+    catalog arm leaves the environment with NO image key, the committed-key arm
+    substitutes the pin into it, and an unset key with no catalog environment
+    leaves the committed declaration standing byte for byte.
     """
     assert _MODULE_PATH.is_file()
     module = importlib.import_module(_MODULE_NAME)
+    assert "resolve_launch_image" in module.__all__
 
+    catalog = module.resolve_launch_image(
+        committed_text=_WORKFLOW_WITH_IMAGE,
+        environment_id=_CATALOG_ENVIRONMENT,
+        factory_environment=_CATALOG_ENVIRONMENT,
+        configured_image=_CONFIGURED_IMAGE,
+    )
+    assert catalog is not None
+    assert "image" not in _environment_table(text=catalog)
+    # The rest of the entry survives the removal, so this is the image
+    # declaration leaving rather than the environment leaving with it.
+    assert _environment_table(text=catalog)["provider"] == "docker"
+    assert _environment_table(text=catalog)["resources"] == {"cpu": 4}
+    # NEITHER host-side tag reaches the launch: not the pin the overlay used to
+    # substitute, and not the committed workflow's own independently-published
+    # value, which is the second source withholding the pin alone leaves behind.
+    assert _CONFIGURED_IMAGE not in catalog
+    assert _COMMITTED_WORKFLOW_IMAGE not in catalog
+
+    # The image table as the file's LAST table: the removal runs to end of file
+    # rather than to the next header, and that boundary has its own arm.
+    last = module.resolve_launch_image(
+        committed_text=_WORKFLOW_IMAGE_LAST,
+        environment_id=_CATALOG_ENVIRONMENT,
+        factory_environment=_CATALOG_ENVIRONMENT,
+        configured_image=_CONFIGURED_IMAGE,
+    )
+    assert last is not None
+    assert "image" not in _environment_table(text=last)
+    assert _COMMITTED_WORKFLOW_IMAGE not in last
+
+    # Nothing to remove is not a refusal, and not a rewrite either.
     assert (
-        module.overlay_sandbox_image(factory_environment=None, configured_image=_CONFIGURED_IMAGE)
-        == _CONFIGURED_IMAGE
+        module.resolve_launch_image(
+            committed_text=_WORKFLOW_WITHOUT_IMAGE,
+            environment_id=_CATALOG_ENVIRONMENT,
+            factory_environment=_CATALOG_ENVIRONMENT,
+            configured_image=_CONFIGURED_IMAGE,
+        )
+        == _WORKFLOW_WITHOUT_IMAGE
+    )
+
+    # The control, in the same case so neither reading can stand alone: with NO
+    # catalog environment the pin DOES reach the image table. Without it a
+    # resolution that had stopped substituting entirely would pass above.
+    substituted = module.resolve_launch_image(
+        committed_text=_WORKFLOW_WITH_IMAGE,
+        environment_id=_CATALOG_ENVIRONMENT,
+        factory_environment=None,
+        configured_image=_CONFIGURED_IMAGE,
+    )
+    assert substituted is not None
+    assert _environment_table(text=substituted)["image"] == {"docker": _CONFIGURED_IMAGE}
+
+    # And an unset key with no catalog environment leaves the committed
+    # declaration exactly as shipped.
+    assert (
+        module.resolve_launch_image(
+            committed_text=_WORKFLOW_WITH_IMAGE,
+            environment_id=_CATALOG_ENVIRONMENT,
+            factory_environment=None,
+            configured_image=None,
+        )
+        == _WORKFLOW_WITH_IMAGE
+    )
+
+
+def test_an_image_declaration_surviving_the_removal_refuses_the_launch() -> None:
+    """A declaration the textual removal cannot reach is a refusal, not a pass.
+
+    The removal has to be a text edit — the overlay preserves the committed
+    file's comments and never round-trips it through a serializer — but TOML
+    spells one table many ways, and a line-based edit only recognizes the
+    spellings its author thought of. An edit that silently missed one would
+    leave an image declaration standing while reporting success, which is the
+    instrument-that-cannot-hit failure this whole item exists to close. So the
+    result is PARSED and a survivor refuses.
+
+    The fixture declares the image under a header TOML accepts and the line
+    match cannot — quoted segments with surrounding whitespace — which is what
+    makes the case a measurement of the VERIFICATION rather than of the match: a
+    build carrying the removal but no verification returns the untouched text
+    here, image declaration and all, instead of refusing.
+    """
+    module = importlib.import_module(_MODULE_NAME)
+
+    # The control first, so the fixture is known to declare an image at all: a
+    # fixture that declared none would make the refusal below unobtainable and
+    # the case would pass against a build that simply never refuses.
+    assert _environment_table(text=_WORKFLOW_SPACED_IMAGE_HEADER)["image"]["docker"] == (
+        _COMMITTED_WORKFLOW_IMAGE
     )
     assert (
-        module.overlay_sandbox_image(
-            factory_environment=_CATALOG_ENVIRONMENT, configured_image=_CONFIGURED_IMAGE
+        module.resolve_launch_image(
+            committed_text=_WORKFLOW_SPACED_IMAGE_HEADER,
+            environment_id=_CATALOG_ENVIRONMENT,
+            factory_environment=_CATALOG_ENVIRONMENT,
+            configured_image=None,
         )
         is None
     )
-    # An unset key is still unset: a factory declaring no catalog environment
-    # has nothing to substitute either, which is the pre-key no-op.
-    assert module.overlay_sandbox_image(factory_environment=None, configured_image=None) is None
 
 
-def _committed_region(*, rendered: str) -> str:
-    """The COMMITTED configuration half of a rendered overlay.
+def test_the_launch_overlay_drops_a_catalog_dispatchs_image_declaration(tmp_path: Path) -> None:
+    """The rendered overlay a catalog dispatch submits carries no image.
 
-    `render_run_config_overlay` returns the rewritten committed text followed by
-    the blocks it materializes, each of which opens with a
-    `# --- Dispatcher-materialized` banner. The image table lives in the half
-    before the first banner, so that half is what an "unchanged" claim is about.
+    Asserted against the PARSED overlay, which is the submitted configuration
+    the server creates the container from, so the claim is "this launch declares
+    no image" rather than "this launch does not name that tag".
 
-    IT IS ALSO THE ONLY HALF A BYTE COMPARISON MAY USE, because the materialized
-    half is NOT byte-stable across two calls. The refreshing-`gh` block embeds a
-    base64 `tar.gz` of the support bundle, and a gzip stream carries the current
-    MTIME in bytes 4..8 of its header, so two renders that straddle a one-second
-    boundary differ there — measured 2026-10-12 in this sandbox, where
-    `github_app_env_present()` is true and the archive differed at exactly byte
-    offset 4 across a 1.1-second gap. A whole-text equality assertion therefore
-    passes on the ~1 ms spacing of two adjacent calls and fails on the rare
-    straddle, which is a time-dependent instrument rather than a measurement of
-    this behaviour. That nondeterminism predates this work and is not this
-    item's to fix; the comparison is simply aimed at the half that answers the
-    question.
-    """
-    return rendered.split("# --- Dispatcher-materialized", 1)[0]
-
-
-def test_the_launch_overlay_leaves_a_catalog_dispatch_image_unchanged(tmp_path: Path) -> None:
-    """A named catalog environment makes the image rewrite a no-op, byte for byte.
-
-    The measurement is BYTE EQUALITY of the committed-configuration region
-    against the render that passes no image at all, not a `docker = ` substring
-    check. A substring check passes for any build that happens to write the
-    committed tag somewhere while rewriting it elsewhere, and "unchanged" is a
-    claim about the bytes — the overlay's own byte-identity case in
-    `test_config.py` is the control this mirrors.
-
-    The pin is asserted ABSENT from the whole rendered text rather than only
-    from the image table, because the failure this closes was an image reaching
-    the launch from the wrong source; a pin that survived anywhere in the
-    overlay could still reach it.
+    Both tags are additionally asserted absent from the whole rendered text
+    rather than only from the environment table, because the failure this closes
+    was an image reaching the launch from the wrong source; one that survived
+    anywhere in the overlay could still reach it.
     """
     assert "factory_environment" in signature(render_run_config_overlay).parameters
 
-    unchanged = render_run_config_overlay(
-        committed_text=_WORKFLOW_WITH_IMAGE,
-        workflow_dir=tmp_path,
-        token=_FAKE_TOKEN,
-        github_token=_FAKE_GITHUB_TOKEN,
-        siblings=None,
-    )
     catalog = render_run_config_overlay(
         committed_text=_WORKFLOW_WITH_IMAGE,
         workflow_dir=tmp_path,
@@ -195,11 +300,13 @@ def test_the_launch_overlay_leaves_a_catalog_dispatch_image_unchanged(tmp_path: 
         fabro_sandbox_image=_CONFIGURED_IMAGE,
         factory_environment=_CATALOG_ENVIRONMENT,
     )
-    assert unchanged is not None
     assert catalog is not None
-    assert _committed_region(rendered=catalog) == _committed_region(rendered=unchanged)
-    assert f'docker = "{_COMMITTED_IMAGE}"' in catalog
+    assert "image" not in _environment_table(text=catalog)
     assert _CONFIGURED_IMAGE not in catalog
+    assert _COMMITTED_WORKFLOW_IMAGE not in catalog
+    # The run still names the environment, which is what leaves the server's
+    # catalog entry as the only thing that can supply an image.
+    assert tomli.loads(catalog)["run"]["environment"]["id"] == _CATALOG_ENVIRONMENT
 
     # The control, in the same case so neither reading can stand alone: with NO
     # catalog environment the same pin DOES reach the image table. Without it a
@@ -214,8 +321,7 @@ def test_the_launch_overlay_leaves_a_catalog_dispatch_image_unchanged(tmp_path: 
         factory_environment=None,
     )
     assert substituted is not None
-    assert f'docker = "{_CONFIGURED_IMAGE}"' in substituted
-    assert _COMMITTED_IMAGE not in substituted
+    assert _environment_table(text=substituted)["image"] == {"docker": _CONFIGURED_IMAGE}
 
 
 def _auth_json_far_future(*, now: int) -> str:
@@ -283,14 +389,14 @@ def _written_overlay(
 def test_a_dispatch_naming_a_catalog_environment_launches_the_catalog_image(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The materialized dispatch overlay carries the catalog image, not the pin.
+    """The materialized dispatch overlay declares no image, so the catalog's stands.
 
     This is the DISPATCH leg rather than the renderer's: the pin is resolved
-    HERE, from the repository's configuration, so a renderer that withholds a
-    pin it is handed is still substituting one if this layer keeps handing it
-    over. The control — the same fixture with no catalog environment — is in the
-    same case, because the catalog assertion alone passes for a build that had
-    stopped resolving the pin at all.
+    HERE, from the repository's configuration, so a renderer that drops a
+    declaration is still submitting a host-side image if this layer keeps
+    writing one. The control — the same fixture with no catalog environment —
+    is in the same case, because the catalog assertion alone passes for a build
+    that had stopped resolving the pin at all.
     """
     assert "factory_environment" in signature(materialize_overlay).parameters
 
@@ -299,16 +405,17 @@ def test_a_dispatch_naming_a_catalog_environment_launches_the_catalog_image(
         monkeypatch=monkeypatch,
         factory_environment=_CATALOG_ENVIRONMENT,
     )
-    assert f'docker = "{_COMMITTED_IMAGE}"' in catalog
+    assert "image" not in _environment_table(text=catalog)
     assert _CONFIGURED_IMAGE not in catalog
+    assert _COMMITTED_WORKFLOW_IMAGE not in catalog
 
     committed_key = _written_overlay(
         tmp_path=tmp_path / "committed-key",
         monkeypatch=monkeypatch,
         factory_environment=None,
     )
-    assert f'docker = "{_CONFIGURED_IMAGE}"' in committed_key
-    assert _COMMITTED_IMAGE not in committed_key
+    assert _environment_table(text=committed_key)["image"] == {"docker": _CONFIGURED_IMAGE}
+    assert _COMMITTED_WORKFLOW_IMAGE not in committed_key
 
 
 def test_the_dispatch_hands_the_materializer_its_factorys_catalog_environment(

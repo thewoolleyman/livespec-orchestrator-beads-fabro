@@ -172,7 +172,8 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     factory_name: str = "default",
     secret_sink: VaultSecretSink | None = None,
     # The CATALOG ENVIRONMENT that factory declares, which decides whether the
-    # repository's `dispatcher.fabro_sandbox_image` reaches the launch at all.
+    # submitted run config declares a sandbox image AT ALL — the repository's
+    # `dispatcher.fabro_sandbox_image`, or the committed workflow's own tag.
     # None — a factory naming none — is the pre-key posture and substitutes the
     # pin exactly as before.
     factory_environment: str | None = None,
@@ -325,10 +326,12 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # visibly and here rather than inside the reader. `unsafe_perform_io`
         # is required: `IOResult.value_or` returns `IO[value]`, not the value.
         fabro_sandbox_image=unsafe_perform_io(resolve_fabro_sandbox_image(cwd=repo).value_or(None)),
-        # The resolved factory's catalog environment, which WITHHOLDS the image
-        # above rather than competing with it: that environment's own image is a
-        # server-managed property this host cannot read, so the launch leaves
-        # the committed image table alone and the server's selection stands
+        # The resolved factory's catalog environment, which makes the launch
+        # declare NO image rather than competing with the pin above: that
+        # environment's own image is a server-managed property this host cannot
+        # read, and the committed workflow carries a second host-side tag of its
+        # own, so withholding the pin alone would still submit an image. The
+        # server's own selection stands only when nothing else names one
         # (`contracts.md` section "Sandbox image source").
         factory_environment=factory_environment,
         # The per-dispatch payload's rendered graph, carrying this dispatch's
