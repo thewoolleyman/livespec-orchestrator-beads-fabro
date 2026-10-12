@@ -5,9 +5,27 @@
 LATEST proof record on the item's open pull request carries, the *published head*
 is the full commit sha that record names, and the *resumed-at stage* is the node
 the earlier run was executing when it terminated — or, when the factory no longer
-holds the run, the stage the latest record's VERDICT implies: `verified` -> `pr`,
-`captured` -> `review`, `not_captured` or `not_reproduced` -> `fix`, no such
-record -> `proof_capture`. Scenario 142 exercises all four.
+holds the run, the stage the latest record's VERDICT implies: `verified` ->
+`pr_refresh`, `captured` -> `review`, `not_captured` or `not_reproduced` ->
+`fix`, no such record -> `proof_capture`. Scenario 142 exercises all four.
+
+WHY A `pr` ENTRY NORMALIZES TO `pr_refresh`, AND WHY BOTH SOURCES OWE IT. The
+scripted publication of v121 put `pr_refresh` in front of `pr`, and the clause
+says in as many words that "an earlier `pr` entry MUST normalize to
+`pr_refresh`". Both sources can name `pr`: a run terminated under an EARLIER
+build reports `pr` as the node it died inside, and the verdict fallback used to
+answer `pr` for `verified`. Entering `pr` directly would publish without
+refreshing the publish branch onto the authoritative default and without
+re-establishing the refresh provenance `pr` then reads — so the stage would
+refuse for absent provenance, or, worse, ready a pull request whose base nothing
+had rebased. Normalizing in the READER is what makes that true of both sources at
+once; normalizing at one call site would leave the other entering the retired
+node.
+
+THE NORMALIZED NAME IS CHECKED AGAINST THE COMMITTED GRAPH rather than against
+this module's own constant. A constant compared with itself passes for any
+spelling, including one no node in the workflow carries — and the one thing that
+makes this value correct is that the engine can enter it.
 
 WHY THE SOURCE IS PART OF THE ANSWER AND NOT A LOG LINE. The clause requires the
 resume record to name "the source that decided it", and the two sources disagree
@@ -44,6 +62,7 @@ import importlib
 from pathlib import Path
 from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     VERDICT_CAPTURED,
     VERDICT_HUMAN_ATTESTED,
@@ -60,6 +79,14 @@ _MODULE_PATH = Path(
 
 _HEAD = "a" * 40
 _OTHER_HEAD = "b" * 40
+
+# The node name the clause spells, written here as a LITERAL rather than read
+# off the module under test, so the assertions below cannot be satisfied by a
+# constant compared with itself. `test_the_normalized_entry_node_is_a_node_the_
+# committed_graph_declares` is what ties this literal to the shipped workflow.
+_PR_REFRESH = "pr_refresh"
+
+_IMPLEMENT_GRAPH = Path(".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro")
 
 
 def _anchor_module() -> Any:
@@ -122,7 +149,7 @@ def test_the_factory_record_decides_the_stage_when_the_factory_lost_the_run() ->
     """Each factory verdict implies the stage the clause names for it."""
     module = _anchor_module()
     expected = {
-        VERDICT_VERIFIED: module.RESUMED_AT_PR,
+        VERDICT_VERIFIED: _PR_REFRESH,
         VERDICT_CAPTURED: module.RESUMED_AT_REVIEW,
         VERDICT_NOT_CAPTURED: module.RESUMED_AT_FIX,
         VERDICT_NOT_REPRODUCED: module.RESUMED_AT_FIX,
@@ -150,6 +177,46 @@ def test_the_executing_node_outranks_the_verdict_fallback() -> None:
     assert anchor is not None
     assert anchor.resumed_at == "review_fix"
     assert anchor.source == module.SOURCE_FACTORY_RUN
+
+
+def test_a_legacy_pr_executing_node_normalizes_to_pr_refresh() -> None:
+    """A factory naming the retired `pr` entry resumes at `pr_refresh` instead.
+
+    The factory source is the one that can still name `pr` after v121 — a run
+    terminated under an earlier build reports the node it died inside — so the
+    normalization is asserted on that source rather than only on the fallback.
+    The SOURCE is asserted unchanged beside it: normalizing is a correction of
+    the stage, not a demotion to the inferred reading, and reporting
+    `pull-request-latest-record` here would tell an operator the factory had
+    lost a run it still holds.
+    """
+    module = _anchor_module()
+    anchor = module.resume_anchor(
+        records=[
+            _record(verdict=VERDICT_VERIFIED, body=_body(verdict=VERDICT_VERIFIED, head=_HEAD))
+        ],
+        executing_node=module.RESUMED_AT_PR,
+    )
+    assert anchor is not None
+    assert anchor.resumed_at == _PR_REFRESH
+    assert anchor.source == module.SOURCE_FACTORY_RUN
+    assert anchor.head == _HEAD
+
+
+def test_the_normalized_entry_node_is_a_node_the_committed_graph_declares() -> None:
+    """`pr_refresh` is a real entry point, and the retired `pr` is still one too.
+
+    Both halves are asserted because either alone leaves the normalization
+    unproven: a graph declaring no `pr_refresh` would make every normalized
+    resume enter a node the engine cannot find, and a graph that had DROPPED
+    `pr` would mean the input this reader normalizes can no longer arrive, so
+    the normalization would be dead code rather than a live correction.
+    """
+    module = _anchor_module()
+    graph = parse_dot_graph(text=_IMPLEMENT_GRAPH.read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+    assert _PR_REFRESH in graph.nodes
+    assert module.RESUMED_AT_PR in graph.nodes
 
 
 def test_a_non_factory_record_is_not_an_anchor() -> None:
