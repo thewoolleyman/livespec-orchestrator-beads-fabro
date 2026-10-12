@@ -68,7 +68,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_layers import (
     AcpNodeResolution,
     resolve_acp_nodes,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_node_repository import repository_acp_chains
+from livespec_orchestrator_beads_fabro.commands._acp_node_repository import (
+    repository_acp_chains,
+    repository_acp_overlays,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import (
     AcpPreflightVerdict,
     build_acp_preflight_verdict,
@@ -78,9 +81,11 @@ from livespec_orchestrator_beads_fabro.commands._acp_workflow_defaults import (
     rendered_workflow_defaults,
 )
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
-from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
     workflow_adapter_inputs,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
+    scoped_repository_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import workflow_graph_path
@@ -94,7 +99,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_variant imp
     WorkflowVariantRefusal,
     prepare_workflow_variant,
 )
-from livespec_orchestrator_beads_fabro.commands._workflow_variants import RESERVED_WORKFLOW_NAME
+from livespec_orchestrator_beads_fabro.commands._workflow_variant_kind import variant_kind
+from livespec_orchestrator_beads_fabro.commands._workflow_variants import (
+    RESERVED_WORKFLOW_NAME,
+    workflow_variant_from_block,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
@@ -136,7 +145,7 @@ def resolve_acp_preflight(
     leave it absent by the same default, which is what makes their verdict
     free of any external call.
     """
-    block = dispatcher_block(cwd=repo)
+    block = _workflow_scoped_block(repo=repo)
     catalogs = resolve_acp_catalogs(block=block)
     if isinstance(catalogs, str):
         return AcpPreflightVerdict(fallback_enabled=True, refusal=catalogs)
@@ -145,7 +154,7 @@ def resolve_acp_preflight(
         return AcpPreflightVerdict(fallback_enabled=True, refusal=declared)
     if not any(chain.enabled for chain in declared.values()):
         return no_fallback_verdict()
-    resolved = _resolve_chains(repo=repo, declared=declared, catalogs=catalogs)
+    resolved = _resolve_chains(repo=repo, block=block, declared=declared, catalogs=catalogs)
     if isinstance(resolved, str):
         return AcpPreflightVerdict(fallback_enabled=True, refusal=resolved)
     chains, graph_text, builtin_pairs = resolved
@@ -186,14 +195,14 @@ def resolve_acp_primary_generations(*, repo: Path) -> Mapping[str, str]:
     strand the very evidence an operator needs. An empty mapping retires
     no warning and reports no fact, which is the conservative answer.
     """
-    block = dispatcher_block(cwd=repo)
+    block = _workflow_scoped_block(repo=repo)
     catalogs = resolve_acp_catalogs(block=block)
     if isinstance(catalogs, str):
         return {}
     declared = repository_acp_chains(block=block, catalogs=catalogs)
     if isinstance(declared, str) or not any(chain.enabled for chain in declared.values()):
         return {}
-    resolved = _resolve_chains(repo=repo, declared=declared, catalogs=catalogs)
+    resolved = _resolve_chains(repo=repo, block=block, declared=declared, catalogs=catalogs)
     if isinstance(resolved, str):
         return {}
     chains, _graph_text, _builtin_pairs = resolved
@@ -305,9 +314,37 @@ def _legacy_providers(*, journal_path: Path | None, now_iso: str) -> frozenset[s
     )
 
 
+def _workflow_scoped_block(*, repo: Path) -> dict[str, object]:
+    """The repository block as it applies to the workflow this target would run.
+
+    Every read in this module -- the catalogs, the declared chains, the resolved
+    primaries -- has to see the SAME block, which is why the scoping happens here
+    at the one read rather than per consumer. A repository-level `pr` entry is
+    compatibility configuration for a groom-kind variant
+    (`_dispatcher_acp_publication_policy`), so on an implementation workflow it
+    must reach none of them: left in, it makes this preflight refuse for naming
+    a node the implementation workflow declares no adapter input for, and before
+    that it would have required a provider credential for a command stage --
+    both of which the ratified clause forbids in as many words.
+
+    The not-applied audit row is deliberately DISCARDED here. This surface
+    refuses and reports; the row belongs to the dispatch that actually resolves
+    the nodes (`_dispatcher_acp_nodes.prepare_acp_nodes`), and journaling it
+    twice would make one ignored entry read as two.
+    """
+    block = dispatcher_block(cwd=repo)
+    variant = workflow_variant_from_block(block=block)
+    scoped, _not_applied = scoped_repository_block(
+        block=block,
+        workflow_kind=variant_kind(repo=repo, variant=variant),
+    )
+    return scoped
+
+
 def _resolve_chains(
     *,
     repo: Path,
+    block: dict[str, object],
     declared: Mapping[str, AcpNodeChain],
     catalogs: AcpCatalogs,
 ) -> tuple[Mapping[str, ResolvedAcpChain], str | None, frozenset[tuple[str, str]]] | str:
@@ -324,7 +361,7 @@ def _resolve_chains(
     )
     if isinstance(workflow_inputs, str):
         return workflow_inputs
-    overlays = resolve_acp_node_overlays(cwd=repo)
+    overlays = repository_acp_overlays(block=block, catalogs=catalogs)
     if isinstance(overlays, str):
         return overlays
     resolution = resolve_acp_nodes(

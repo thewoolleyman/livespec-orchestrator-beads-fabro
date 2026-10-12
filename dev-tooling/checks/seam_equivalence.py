@@ -116,12 +116,20 @@ from _seam_equivalence_scan import (  # noqa: E402  — sibling private import
 from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (  # noqa: E402
     NODE_INPUT_CANDIDATES,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (  # noqa: E402
+    GROOM_ONLY_ACP_NODES,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (  # noqa: E402
     contract_run_inputs,
     workflow_declared_inputs,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import (  # noqa: E402
     resolve_repo_integration_contract,
+)
+from livespec_orchestrator_beads_fabro.commands._workflow_variant_kind import (  # noqa: E402
+    WORKFLOW_KIND_GROOM,
+    WORKFLOW_KIND_IMPLEMENT,
+    declared_workflow_kind,
 )
 
 __all__: list[str] = [
@@ -269,17 +277,50 @@ def control_failures(*, repo_root: Path) -> list[str]:
 
 
 def _discovery_failures(*, payload: CheckedPayload) -> list[str]:
-    """That the scan of THIS directory still returns the tokens that are in it."""
+    """That the scan of THIS directory still returns the tokens that are in it.
+
+    The expected node set is SCOPED BY THE PAYLOAD'S OWN KIND, and the scoping
+    cuts in one direction only: a GROOM-ONLY ACP node is expected of a
+    groom-kind directory and of nothing else. Publication on an implementation
+    workflow is command stages (SPECIFICATION/contracts.md, the
+    scripted-publication clause of the Definition-of-Done and Proof-of-Done
+    stages section), so the `pr` adapter token is ABSENT there by ratification
+    and a control demanding it would be a control the conformant payload cannot
+    pass.
+
+    THE KIND IS READ, NOT THE DECLARED INPUTS, and that distinction is the whole
+    guarantee. Expecting only the adapters a directory happens to declare is the
+    vacuous-shrink defect `rendered_input_names` records: a variant that dropped
+    an adapter input would shrink its own comparand and certify itself. Reading
+    the kind keeps the expectation a property of the RATIFIED cut.
+    """
     occurrences = payload_occurrences(payload=payload)
     seen = {
         occurrence.name for occurrence in occurrences if occurrence.position == _ADAPTER_POSITION
     }
+    expected = _expected_adapter_nodes(payload=payload)
     missing = f"the graph scan found no `{_ADAPTER_POSITION}` token"
     return [
         f"discovery control: {payload.where}: {missing} for node {node}"
         for node, candidates in sorted(NODE_INPUT_CANDIDATES.items())
-        if not any(name in seen for name in candidates)
+        if node in expected and not any(name in seen for name in candidates)
     ]
+
+
+def _expected_adapter_nodes(*, payload: CheckedPayload) -> frozenset[str]:
+    """Which ACP nodes THIS directory owes an adapter token for.
+
+    An unreadable or absent run config reads as the IMPLEMENT kind, which is the
+    same direction `variant_kind` defaults in and for the same reason: the kind
+    that unlocks a door is the one that has to be said. The completeness control
+    reports the unreadable directory by name, so this arm does not also have to.
+    """
+    declared = declared_workflow_kind(
+        committed_text=_file_text(path=payload.directory / "workflow.toml")
+    )
+    kind = WORKFLOW_KIND_IMPLEMENT if declared is None else declared
+    nodes = frozenset(NODE_INPUT_CANDIDATES)
+    return nodes if kind == WORKFLOW_KIND_GROOM else nodes - GROOM_ONLY_ACP_NODES
 
 
 def _matcher_failures(*, occurrences: list[Occurrence]) -> list[str]:

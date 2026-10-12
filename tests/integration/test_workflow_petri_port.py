@@ -55,6 +55,16 @@ _GRAPH = _PAYLOAD / "workflow.fabro"
 # rollback is a file copy rather than a revert archaeology exercise.
 _ROLLBACK = _PAYLOAD / "workflow.pre-petri.fabro"
 
+# The scripted publication stages (v121) and the cycle they open. `pr_refresh`
+# reconciles the publish branch with the authoritative default and its
+# postcondition breaker routes a CHANGED head back to `proof_capture`, so the
+# refresh loop re-enters capture, review and replay -- which is why those three
+# nodes' derived visit counts move even though neither their attributes nor
+# their own edges changed.
+_PUBLICATION_STAGES_ADDED = {"pr_refresh", "pr_refresh_head"}
+_PUBLICATION_STAGES = _PUBLICATION_STAGES_ADDED | {"pr", "verify_pr"}
+_REFRESH_LOOP = _PUBLICATION_STAGES_ADDED | {"proof_capture", "review", "proof_verify"}
+
 # Every edge statement's `condition` attribute value, which is the ONLY place
 # the two refused shapes matter. Anchored on an identifier followed by `->` so a
 # `//` DOT comment containing an arrow -- of which this graph has several --
@@ -177,6 +187,18 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
     would keep agreeing with itself every time this repository's configuration
     moved the node timeouts underneath it, and the claim is parity with the
     pre-port graph, not equality with a number.
+
+    PARITY IS NOW ATTRIBUTED RATHER THAN EXACT, and that change is stated here
+    rather than absorbed. v121 replaced the ACP `pr` turn with the command stages
+    `pr_refresh` and `pr_refresh_head`, which open a NEW cycle back through
+    capture, review and replay, so the ported graph's allowance is genuinely
+    LARGER than the pre-port one -- claiming equality would now require either a
+    graph that does not carry the refresh or a derivation that does not see it.
+    What the case asserts instead is that the whole difference is ATTRIBUTABLE:
+    the two new stages are the only nodes added, nothing was dropped, and every
+    node whose visit or attempt count moved is either a publication stage or a
+    member of the refresh loop. An unrelated node's budget moving still fails,
+    which is the regression this case exists to catch.
     """
     toml = (_PAYLOAD / "workflow.toml").read_text(encoding="utf-8")
     timeouts = resolve_node_timeouts(cwd=_REPO_ROOT)
@@ -203,8 +225,26 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
     ported = budget(text=_graph_text())
     pre_port = budget(text=_ROLLBACK.read_text(encoding="utf-8"))
 
-    assert ported.seconds == pre_port.seconds
-    # The visit TABLE too, not just its sum: two different tables can total the
-    # same seconds, and it is the per-node figure the credential deadline and the
-    # fabro-run subprocess ceiling are both derived from.
-    assert ported.node_visits == pre_port.node_visits
+    # The two new stages are the ONLY nodes added, and nothing was dropped: a
+    # node the ported graph lost would be an executable path missing from a
+    # figure still presented as an allowance.
+    assert set(ported.node_visits) - set(pre_port.node_visits) == _PUBLICATION_STAGES_ADDED
+    assert set(pre_port.node_visits) - set(ported.node_visits) == set()
+
+    # The visit TABLE, not just its sum: two different tables can total the same
+    # seconds, and it is the per-node figure the credential deadline and the
+    # fabro-run subprocess ceiling are both derived from. Every node whose count
+    # moved must be one the scripted publication reaches.
+    moved = {
+        node
+        for node in set(ported.node_visits) | set(pre_port.node_visits)
+        if (ported.node_visits.get(node), ported.node_attempts.get(node))
+        != (pre_port.node_visits.get(node), pre_port.node_attempts.get(node))
+    }
+    assert moved <= _PUBLICATION_STAGES | _REFRESH_LOOP, sorted(
+        moved - (_PUBLICATION_STAGES | _REFRESH_LOOP)
+    )
+    # And the direction is the honest one: the graph grew, so the allowance grew.
+    # Asserted rather than left implicit, because an allowance that SHRANK after
+    # nodes were added would mean the derivation stopped seeing one of them.
+    assert ported.seconds > pre_port.seconds
