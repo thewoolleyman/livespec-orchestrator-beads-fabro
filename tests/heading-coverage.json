@@ -1723,5 +1723,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for catalog-image precedence over dispatcher.fabro_sandbox_image and the journaled image source; bd-ib-jy7fuh implements the behaviour and owns the binding.",
     "work_item": "bd-ib-jy7fuh"
+  },
+  {
+    "heading": "## Scenario 170 \u2014 A failed engine checkpoint commit names its node and cause and rests the item at needs-human",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for checkpoint-failure attribution, the needs-human disposition and the journal and ledger records through the actual Dispatcher; existing child bd-ib-6jkjzm owns it.",
+    "work_item": "bd-ib-6jkjzm"
   }
 ]

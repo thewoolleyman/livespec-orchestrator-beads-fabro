@@ -5429,3 +5429,88 @@ Feature: Sandbox image source
     Then the launch carries image B
     And the dispatch journal records the image source dispatcher.fabro_sandbox_image
 ```
+
+## Scenario 170 — A failed engine checkpoint commit names its node and cause and rests the item at needs-human
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Failed engine checkpoint commit attribution".
+
+```gherkin
+Feature: attribute a failed engine checkpoint commit and route its decision to the ledger
+  Scenario Outline: a hook refusal names the node, the failed hook command and every failed target
+    Given a dispatched run ends workflow_error because the engine checkpoint commit of node <node> failed
+      And the run's checkpoint.failed event carries an output tail with carriage-return line-feed line endings
+      And that tail carries a structured Failed targets summary naming <targets>
+      And the hook runner's summary marks hook command <hook> failed
+      And recipe error lines outside the summary name other recipes
+    When the Dispatcher reports the dispatch result
+    Then the outcome is blocked at stage fabro-run
+      And the outcome detail names the run, node <node>, the engine's checkpoint error, hook command <hook> and every one of <targets>
+      And it does not attribute the failure to a recipe outside the summary
+      And the checkpoint-failure journal row carries node <node>, attribution failed-targets, failed_hook_commands <hook> and failed_targets <targets>
+      And the item rests blocked with blocked_reason needs-human and a needs-human-blocked journal row
+      And a livespec-checkpoint-failure ledger comment on the item names the same node, hook command and targets
+      And the dispatch reports exit code 4
+    Examples:
+      | node       | hook                | targets                                    |
+      | implement  | 03-check-pre-commit | check-master-ci-green                      |
+      | review_fix | 03-check-pre-commit | check-per-file-coverage and check-coverage |
+
+  Scenario: a commit-msg refusal without a Failed targets summary names only the failed hook command
+    Given a dispatched run's engine checkpoint commit of node fix failed with git commit failed (exit 1)
+      And its checkpoint.failed tail has no Failed targets summary
+      And the hook runner's summary marks hook command 01-red-green-replay failed
+    When the Dispatcher reports the dispatch result
+    Then the outcome detail and the checkpoint-failure journal row name node fix and hook command 01-red-green-replay
+      And failed_targets is empty
+      And the item rests blocked with blocked_reason needs-human
+
+  Scenario: a tail with no recognized summary is labelled as an observation
+    Given a dispatched run's engine checkpoint commit failed with git commit failed (exit 1)
+      And its checkpoint.failed tail carries neither a Failed targets summary nor a recognized hook runner summary
+    When the Dispatcher reports the dispatch result
+    Then the checkpoint-failure journal row has attribution observation and a bounded observation_excerpt
+      And the outcome detail labels the excerpt as an observation
+      And it does not claim any hook, target or recipe in the excerpt caused the failure
+      And the ledger comment carries no excerpt of the captured output
+
+  Scenario: a checkpoint budget expiry names the node, the configured budget and the engine's measurement
+    Given the dispatch submitted a run configuration whose run.checkpoint commit_timeout is 15m
+      And the run ends because the checkpoint operation budget was exceeded on node fix with git commit timed out after 900004ms
+    When the Dispatcher reports the dispatch result
+    Then the outcome detail and the checkpoint-failure journal row name node fix, the timed-out operation git commit, configured_budget_seconds 900 and engine_reported_elapsed 900004ms
+      And the engine's figure is labelled as the engine's measurement, not as the configured budget
+      And the checkpoint-failure journal row has attribution budget-expiry
+      And the item rests blocked with blocked_reason needs-human
+
+  Scenario: a git add failure with no output tail is attributed to the engine error alone
+    Given a dispatched run's engine checkpoint of node dod_gate failed with git add failed
+      And its checkpoint.failed event carries no output tail
+    When the Dispatcher reports the dispatch result
+    Then the checkpoint-failure journal row has attribution engine-error, node dod_gate and checkpoint_error git add failed
+      And failed_targets and failed_hook_commands are empty
+      And the item rests blocked with blocked_reason needs-human
+
+  Scenario: the uncommitted work is recorded by reference
+    Given a run ended on a failed engine checkpoint
+      And its run.failed event carries a terminal patch
+      And the run's export holds no stage diff artifact
+    When the Dispatcher records the dispatch
+    Then the checkpoint-failure journal row and the livespec-checkpoint-failure comment carry the terminal patch's byte size and sha256 digest
+      And the preserve-by-reference pointer for the run is written as for any non-green run
+
+  Scenario: unreadable events still produce the disposition without invented targets
+    Given a run's terminal failure message reads git checkpoint commit failed for node implement: git commit failed (exit 1)
+      And the run's events cannot be read from the dispatch's resolved factory
+    When the Dispatcher reports the dispatch result
+    Then the outcome is blocked and names node implement and the engine's checkpoint error
+      And the checkpoint-failure journal row records events_read as the failure reason
+      And terminal_patch_bytes and terminal_patch_sha256 are null and both records state the terminal patch is unavailable rather than absent
+      And failed_targets is empty and no cause is asserted
+      And the item rests blocked with blocked_reason needs-human
+
+  Scenario: an earlier classification keeps its route
+    Given a run whose output carries the needs_human terminal's sentinel
+    When the Dispatcher reports the dispatch result
+    Then no checkpoint-failure journal row is written
+      And the needs_human terminal's existing outcome stands
+```
