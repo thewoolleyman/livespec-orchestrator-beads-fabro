@@ -1,0 +1,15 @@
+digraph FabroEnemyJanitorFixLoop {
+    start [shape=Mdiamond, label="Start"]
+    janitor [shape=parallelogram, label="Janitor", script="eval {{ inputs.sandbox_check_suite }}"]
+    fix [shape=parallelogram, label="Fix", max_visits=3, script="touch /tmp/eut-fix-applied"]
+    exhausted [shape=parallelogram, label="Exhausted", goal_gate=true, script="echo 'no outcome edge matched' >&2; exit 1"]
+    publish [shape=parallelogram, label="Publish", goal_gate=true, script="test -f /tmp/eut-fix-applied"]
+    exit [shape=Msquare, label="Exit"]
+    start -> janitor
+    janitor -> publish [label="Green", condition="outcome=succeeded"]
+    janitor -> fix [label="Red", condition="outcome!=succeeded"]
+    janitor -> exhausted [label="Exhausted (fix-loop cap)"]
+    fix -> janitor
+    publish -> exit
+    exhausted -> exit
+}

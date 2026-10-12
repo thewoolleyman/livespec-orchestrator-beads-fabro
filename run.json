@@ -1,0 +1,338 @@
+{
+  "title": "Fabro Enemy Unit Test: janitor-fix-loop",
+  "spec": {
+    "run_id": "01M4Q5ZT05GAWGX38SMRTJFPQP",
+    "settings": {
+      "project": {
+        "name": null,
+        "description": null,
+        "metadata": {}
+      },
+      "workflow": {
+        "name": null,
+        "description": null,
+        "graph": "workflow.fabro",
+        "metadata": {}
+      },
+      "run": {
+        "goal": {
+          "type": "inline",
+          "value": "# Fabro Enemy Unit Test: janitor-fix-loop\n"
+        },
+        "working_dir": null,
+        "metadata": {},
+        "inputs": {
+          "sandbox_check_suite": "test -f /tmp/eut-fix-applied"
+        },
+        "model": {
+          "provider": "anthropic",
+          "name": "claude-sonnet-4-6",
+          "fallbacks": [],
+          "controls": {
+            "reasoning_effort": null,
+            "speed": null
+          }
+        },
+        "git": {
+          "author": null
+        },
+        "prepare": {
+          "commands": [],
+          "timeout_ms": 300000
+        },
+        "execution": {
+          "mode": "normal",
+          "approval": "prompt"
+        },
+        "checkpoint": {
+          "exclude_globs": [],
+          "skip_git_hooks": false,
+          "commit_timeout_ms": 30000
+        },
+        "clone": {
+          "enabled": true
+        },
+        "run_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "meta_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "environment": {
+          "id": "default",
+          "provider": "docker",
+          "image": {
+            "docker": "buildpack-deps:noble",
+            "dockerfile": null
+          },
+          "resources": {
+            "cpu": 2,
+            "memory": "4GB",
+            "disk": null
+          },
+          "network": {
+            "mode": "allow_all",
+            "allow": []
+          },
+          "lifecycle": {
+            "preserve": false,
+            "stop_on_terminal": true,
+            "auto_stop": null
+          },
+          "labels": {},
+          "volumes": [],
+          "env": {}
+        },
+        "notifications": {},
+        "interviews": {
+          "provider": null,
+          "slack": null
+        },
+        "agent": {
+          "fabro_tools": false,
+          "permissions": null,
+          "mcps": {}
+        },
+        "hooks": [],
+        "scm": {
+          "provider": null,
+          "owner": null,
+          "repository": null,
+          "github": null
+        },
+        "pull_request": null,
+        "artifacts": {
+          "include": []
+        },
+        "integrations": {
+          "github": {
+            "permissions": {}
+          }
+        }
+      }
+    },
+    "graph": {
+      "name": "FabroEnemyJanitorFixLoop",
+      "nodes": {
+        "start": {
+          "id": "start",
+          "attrs": {
+            "shape": {
+              "String": "Mdiamond"
+            },
+            "label": {
+              "String": "Start"
+            }
+          }
+        },
+        "publish": {
+          "id": "publish",
+          "attrs": {
+            "label": {
+              "String": "Publish"
+            },
+            "script": {
+              "String": "test -f /tmp/eut-fix-applied"
+            },
+            "goal_gate": {
+              "Boolean": true
+            },
+            "shape": {
+              "String": "parallelogram"
+            }
+          }
+        },
+        "exit": {
+          "id": "exit",
+          "attrs": {
+            "shape": {
+              "String": "Msquare"
+            },
+            "label": {
+              "String": "Exit"
+            }
+          }
+        },
+        "exhausted": {
+          "id": "exhausted",
+          "attrs": {
+            "script": {
+              "String": "echo 'no outcome edge matched' >&2; exit 1"
+            },
+            "shape": {
+              "String": "parallelogram"
+            },
+            "goal_gate": {
+              "Boolean": true
+            },
+            "label": {
+              "String": "Exhausted"
+            }
+          }
+        },
+        "fix": {
+          "id": "fix",
+          "attrs": {
+            "script": {
+              "String": "touch /tmp/eut-fix-applied"
+            },
+            "shape": {
+              "String": "parallelogram"
+            },
+            "max_visits": {
+              "Integer": 3
+            },
+            "label": {
+              "String": "Fix"
+            }
+          }
+        },
+        "janitor": {
+          "id": "janitor",
+          "attrs": {
+            "shape": {
+              "String": "parallelogram"
+            },
+            "label": {
+              "String": "Janitor"
+            },
+            "script": {
+              "String": "eval test -f /tmp/eut-fix-applied"
+            }
+          }
+        }
+      },
+      "edges": [
+        {
+          "from": "start",
+          "to": "janitor",
+          "attrs": {}
+        },
+        {
+          "from": "janitor",
+          "to": "publish",
+          "attrs": {
+            "condition": {
+              "String": "outcome=succeeded"
+            },
+            "label": {
+              "String": "Green"
+            }
+          }
+        },
+        {
+          "from": "janitor",
+          "to": "fix",
+          "attrs": {
+            "condition": {
+              "String": "outcome!=succeeded"
+            },
+            "label": {
+              "String": "Red"
+            }
+          }
+        },
+        {
+          "from": "janitor",
+          "to": "exhausted",
+          "attrs": {
+            "label": {
+              "String": "Exhausted (fix-loop cap)"
+            }
+          }
+        },
+        {
+          "from": "fix",
+          "to": "janitor",
+          "attrs": {}
+        },
+        {
+          "from": "publish",
+          "to": "exit",
+          "attrs": {}
+        },
+        {
+          "from": "exhausted",
+          "to": "exit",
+          "attrs": {}
+        }
+      ],
+      "attrs": {
+        "goal": {
+          "String": "# Fabro Enemy Unit Test: janitor-fix-loop\n"
+        }
+      }
+    },
+    "graph_source": "digraph FabroEnemyJanitorFixLoop {\n    start [shape=Mdiamond, label=\"Start\"]\n    janitor [shape=parallelogram, label=\"Janitor\", script=\"eval {{ inputs.sandbox_check_suite }}\"]\n    fix [shape=parallelogram, label=\"Fix\", max_visits=3, script=\"touch /tmp/eut-fix-applied\"]\n    exhausted [shape=parallelogram, label=\"Exhausted\", goal_gate=true, script=\"echo 'no outcome edge matched' >&2; exit 1\"]\n    publish [shape=parallelogram, label=\"Publish\", goal_gate=true, script=\"test -f /tmp/eut-fix-applied\"]\n    exit [shape=Msquare, label=\"Exit\"]\n    start -> janitor\n    janitor -> publish [label=\"Green\", condition=\"outcome=succeeded\"]\n    janitor -> fix [label=\"Red\", condition=\"outcome!=succeeded\"]\n    janitor -> exhausted [label=\"Exhausted (fix-loop cap)\"]\n    fix -> janitor\n    publish -> exit\n    exhausted -> exit\n}\n",
+    "workflow_slug": "janitor-fix-loop",
+    "source_directory": "/home/ubuntu/.worktrees/livespec-orchestrator-beads-fabro/eut-real-node-shapes",
+    "provenance": {
+      "server": {
+        "version": "0.254.0"
+      },
+      "client": {
+        "user_agent": "fabro-cli/0.254.0",
+        "name": "fabro-cli",
+        "version": "0.254.0"
+      },
+      "subject": {
+        "kind": "user",
+        "identity": {
+          "issuer": "fabro:dev",
+          "subject": "dev"
+        },
+        "login": "dev",
+        "auth_method": "dev_token"
+      }
+    },
+    "manifest_blob": "5c5ea546261c8333ec68c3393345108244af4120c394815132e0102bd867c115",
+    "definition_blob": "9984abce3871cb4ad4ca568dccf8db7274f9c5805f1d571062e9c749e60bb384",
+    "git": {
+      "origin_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+      "branch": "eut-real-node-shapes",
+      "sha": "bb752aa97a56fe8cf7cd4bd09af4962e19685e90",
+      "dirty": "dirty",
+      "push_outcome": {
+        "type": "not_attempted"
+      }
+    }
+  },
+  "web_url": "https://hp-xubuntu.perch-rudd.ts.net:32276/runs/01M4Q5ZT05GAWGX38SMRTJFPQP",
+  "start": null,
+  "status": {
+    "kind": "starting"
+  },
+  "status_updated_at": "2026-10-12T04:30:00.470747484Z",
+  "last_event_at": "2026-10-12T04:30:03.925077245Z",
+  "pending_control": null,
+  "checkpoints": [],
+  "conclusion": null,
+  "sandbox": {
+    "kind": "ready",
+    "plan": {
+      "provider": "docker",
+      "image": "buildpack-deps:noble"
+    },
+    "instance": {
+      "provider": "docker",
+      "image": "buildpack-deps:noble",
+      "runtime": {
+        "id": "996b409759088cd11c4c4912e2181d19f1060a501df3607828cd44917b0211f9",
+        "working_directory": "/workspace/livespec-orchestrator-beads-fabro",
+        "repo_cloned": true,
+        "clone_origin_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+        "clone_branch": "eut-real-node-shapes",
+        "workspace_root": "/workspace",
+        "repos_root": "/repos",
+        "primary_repo_path": "/repos/thewoolleyman/livespec-orchestrator-beads-fabro",
+        "primary_repo_link": "/workspace/livespec-orchestrator-beads-fabro"
+      }
+    }
+  },
+  "pull_request": null,
+  "superseded_by": null,
+  "pending_interviews": {},
+  "stages": {}
+}
