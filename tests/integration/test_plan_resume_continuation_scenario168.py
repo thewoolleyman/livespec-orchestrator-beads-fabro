@@ -542,7 +542,7 @@ def test_resume_reconciles_satisfied_live_and_waiting_pointers_before_continuati
     _assert_live_rewrite_and_wait(repo=repo, runner=runner)
 
 
-def test_live_factory_reader_covers_absent_unstamped_failed_and_terminal_targets(
+def test_live_factory_reader_separates_not_live_from_an_unobservable_factory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -556,37 +556,79 @@ def test_live_factory_reader_covers_absent_unstamped_failed_and_terminal_targets
     runner = _InspectRunner(
         results=[
             CommandResult(exit_code=1, stdout="", stderr="factory unavailable"),
+            CommandResult(exit_code=0, stdout="not json at all", stderr=""),
             CommandResult(exit_code=0, stdout='[{"status": "completed"}]', stderr=""),
+            CommandResult(exit_code=0, stdout='[{"status": "running"}]', stderr=""),
         ]
     )
     monkeypatch.setattr(liveness, "ShellCommandRunner", lambda: runner)
+    # An absent record and an unstamped one are CONFIDENT negatives: the ledger
+    # read succeeded and no run was ever recorded against the target. A failed
+    # or unreadable INSPECTION is a different answer, and collapsing it onto the
+    # same `None` is what let a second dispatch start against a live run the
+    # gauge merely could not see.
+    observe = getattr(liveness, "observe_target_run", None)
+    assert observe is not None, "the liveness reader must report a three-way verdict"
 
-    missing = NextAction(kind="impl", ref="bd-ib-missing", text="Dispatch it.")
-    assert (
-        liveness.live_factory_run_id(
-            config=_config(repo=repo), epic_id="bd-ib-plan", action=missing
-        )
-        is None
-    )
+    def _verdict(*, issue_id: str) -> tuple[str, str | None]:
+        action = NextAction(kind="impl", ref=issue_id, text="Dispatch it.")
+        seen = observe(config=_config(repo=repo), epic_id="bd-ib-plan", action=action)
+        return (seen.verdict, seen.run_id)
+
+    assert _verdict(issue_id="bd-ib-missing") == (liveness.LIVENESS_NOT_LIVE, None)
     _seed_item(repo=repo, issue_id="bd-ib-unstamped")
-    unstamped = NextAction(kind="impl", ref="bd-ib-unstamped", text="Dispatch it.")
-    assert (
-        liveness.live_factory_run_id(
-            config=_config(repo=repo), epic_id="bd-ib-plan", action=unstamped
-        )
-        is None
-    )
-    for issue_id, run_id in (("bd-ib-failed", "01FAILED"), ("bd-ib-terminal", "01DONE")):
+    assert _verdict(issue_id="bd-ib-unstamped") == (liveness.LIVENESS_NOT_LIVE, None)
+    for issue_id, run_id, expected in (
+        ("bd-ib-refused", "01REFUSED", liveness.LIVENESS_UNOBSERVABLE),
+        ("bd-ib-unreadable", "01GARBLED", liveness.LIVENESS_UNOBSERVABLE),
+        ("bd-ib-terminal", "01DONE", liveness.LIVENESS_NOT_LIVE),
+        ("bd-ib-running", "01ALIVE", liveness.LIVENESS_LIVE),
+    ):
         _seed_item(repo=repo, issue_id=issue_id)
         _stamp_run(repo=repo, issue_id=issue_id, run_id=run_id)
-        action = NextAction(kind="impl", ref=issue_id, text="Dispatch it.")
-        assert (
-            liveness.live_factory_run_id(
-                config=_config(repo=repo), epic_id="bd-ib-plan", action=action
-            )
-            is None
-        )
-    assert [call[2] for call in runner.calls] == ["01FAILED", "01DONE"]
+        verdict, observed = _verdict(issue_id=issue_id)
+        assert verdict == expected
+        assert observed == (run_id if expected == liveness.LIVENESS_LIVE else None)
+    assert [call[2] for call in runner.calls] == ["01REFUSED", "01GARBLED", "01DONE", "01ALIVE"]
+
+
+def test_resume_never_redispatches_while_the_factory_is_unobservable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _configure_repo(repo=repo)
+    monkeypatch.chdir(repo)
+    _seed_target(repo=repo)
+    liveness = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._plan_run_liveness"
+    )
+    runner = _InspectRunner(
+        results=[CommandResult(exit_code=1, stdout="", stderr="factory unavailable")]
+    )
+    monkeypatch.setattr(liveness, "ShellCommandRunner", lambda: runner)
+    _seed_epic(
+        repo=repo,
+        epic_id="bd-ib-blind-factory",
+        kind="impl",
+        ref="bd-ib-stamped-child",
+        ruling=True,
+    )
+    _seed_item(repo=repo, issue_id="bd-ib-stamped-child")
+    _stamp_run(repo=repo, issue_id="bd-ib-stamped-child", run_id="01M4BLIND")
+    before = _fake(repo=repo).show_issue(issue_id="bd-ib-blind-factory")["metadata"]
+    blind = resume_directive(
+        config=_config(repo=repo), epic_id="bd-ib-blind-factory", unattended=False
+    )
+    after = _fake(repo=repo).show_issue(issue_id="bd-ib-blind-factory")["metadata"]
+    assert blind.next_action is None
+    assert not blind.ask
+    assert "liveness is unobservable" in blind.reason
+    assert blind.findings[-1] == blind.reason
+    # The pointer is left exactly as it stood: an unobservable factory licenses
+    # neither a second dispatch nor an `await` rewrite onto a run nobody read.
+    assert after == before
 
 
 def _record_continuation(
