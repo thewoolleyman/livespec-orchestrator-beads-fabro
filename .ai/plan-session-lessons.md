@@ -75,3 +75,15 @@ shell; `herdr pane list --workspace <ws>` shows the state, and
 - Write ledger scripts with idempotency markers (a comment carrying a
   marker string, checked before each mutation) so a partial run can be
   re-run without double-filing.
+- `append_handoff`, `append_supervisor_handoff` and `set_next_action`
+  RETURN a `NextActionRefusal` instead of raising. When a script ignores
+  the return value, nothing is written and nothing is reported. Since
+  plugin v0.189.0 every new pointer of an executable kind must carry
+  `required_result` (a typed result reference such as
+  `{"repo": "<project dir name>", "item_status": {"item_id": "<id>", "status": "closed"}}`)
+  and `budget` (`{"deadline": "<UTC ISO>Z", "max_handoffs": <positive int>}`).
+  A legacy three-key pointer is refused with "required_result and budget
+  must be recorded on every new write". Measured 2026-10-12 on
+  `bd-ib-ctagnf`: a handoff script printed success, and only the
+  `read_timeline` read-back showed the entry was absent. Check the return
+  value, then compare the read-back body for equality.
