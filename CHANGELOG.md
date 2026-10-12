@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.188.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.188.0...v0.188.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* survive a default branch that moves its workflow files mid-publication (bd-ib-cvge) ([a500dc5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a500dc56bd0b287ffaebd35c2d81bedfe41f38f0))
+
 ## [0.188.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.187.1...v0.188.0) (2026-10-12)
 
 
