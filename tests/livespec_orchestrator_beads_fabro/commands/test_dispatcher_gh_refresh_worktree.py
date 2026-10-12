@@ -86,6 +86,43 @@ def test_a_run_branch_rebase_is_not_blocked_by_the_gh_refresh_bundle(
     assert rebase.returncode == 0, rebase.stderr
 
 
+def test_no_checkpoint_of_the_prepare_chain_can_stage_a_bundle_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every prepare step is a checkpoint, so EVERY step must be covered.
+
+    The engine checkpoints after each graph node, not once at the end of
+    the chain, and the chain's own intermediate artifact -- the base64
+    payload the chunk steps stream out before the unpack step consumes
+    and deletes it -- is as committable as the unpacked bundle. Staging
+    is therefore measured after every step rather than after the last.
+    """
+    repo = _git_repo(root=tmp_path / "clone")
+    bundle_root = repo / _BUNDLE_DIRNAME
+    payload = repo / f"{_BUNDLE_DIRNAME}.b64"
+    scripts = _rendered_prepare_scripts(monkeypatch=monkeypatch, bundle_root=bundle_root)
+    bin_dir = _stub_path_dir(root=tmp_path / "bin", capture=tmp_path / "gh-calls.txt")
+    _git("checkout", "-b", _RUN_BRANCH, repo=repo)
+
+    payload_was_on_disk = False
+    for index, script in enumerate(scripts):
+        _run_prepare_step(script=script, index=index, repo=repo, bin_dir=bin_dir, tmp_path=tmp_path)
+        _git("add", "-A", repo=repo)
+
+        assert _bundle_paths(_git_stdout("diff", "--cached", "--name-only", repo=repo)) == []
+
+        payload_was_on_disk = payload_was_on_disk or payload.exists()
+        _git("commit", "--allow-empty", "-m", f"fabro checkpoint run_prepare_{index}", repo=repo)
+
+    # Positive controls: the staging instrument was pointed at a worktree
+    # where BOTH bundle paths really did exist, so the empty results above
+    # are measurements rather than a vacuously clean fixture.
+    assert payload_was_on_disk
+    assert (bundle_root / "bin" / "mint_app_token.py").is_file()
+    assert _bundle_paths(_git_stdout("ls-files", repo=repo)) == []
+
+
 def test_the_installed_gh_wrapper_still_runs_the_bundles_mint_helper(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -175,6 +212,27 @@ def _git(*argv: str, repo: Path) -> None:
     subprocess.run(["git", *argv], cwd=repo, capture_output=True, text=True, check=True)
 
 
+def _git_stdout(*argv: str, repo: Path) -> str:
+    completed = subprocess.run(
+        ["git", *argv],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return completed.stdout
+
+
+def _bundle_paths(listing: str) -> list[str]:
+    """The listed worktree-relative paths that belong to the bundle.
+
+    Keyed on the first path SEGMENT so both of the chain's paths are
+    caught by one predicate -- the unpacked `.livespec-gh-refresh/` tree
+    and the sibling `.livespec-gh-refresh.b64` payload.
+    """
+    return [path for path in listing.splitlines() if path.split("/")[0].startswith(_BUNDLE_DIRNAME)]
+
+
 def _commit_file(*, repo: Path, name: str, body: str) -> None:
     (repo / name).write_text(body, encoding="utf-8")
     _git("add", name, repo=repo)
@@ -226,19 +284,30 @@ def _run_prepare_chain(
     tmp_path: Path,
 ) -> None:
     """Execute the rendered prepare steps for real, in order, in `repo`."""
-    env = _chain_env(
-        bin_dir=bin_dir,
-        capture=tmp_path / "gh-calls.txt",
-        mint_log=tmp_path / "mint-args.txt",
-    )
     for index, script in enumerate(scripts):
-        step = tmp_path / f"prepare-{index}.sh"
-        step.write_text(script, encoding="utf-8")
-        subprocess.run(
-            ["/bin/bash", str(step)],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        _run_prepare_step(script=script, index=index, repo=repo, bin_dir=bin_dir, tmp_path=tmp_path)
+
+
+def _run_prepare_step(
+    *,
+    script: str,
+    index: int,
+    repo: Path,
+    bin_dir: Path,
+    tmp_path: Path,
+) -> None:
+    """Execute ONE rendered prepare step the way fabro does: `bash <script>`."""
+    step = tmp_path / f"prepare-{index}.sh"
+    step.write_text(script, encoding="utf-8")
+    subprocess.run(
+        ["/bin/bash", str(step)],
+        cwd=repo,
+        env=_chain_env(
+            bin_dir=bin_dir,
+            capture=tmp_path / "gh-calls.txt",
+            mint_log=tmp_path / "mint-args.txt",
+        ),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
