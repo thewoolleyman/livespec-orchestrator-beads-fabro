@@ -1,0 +1,7 @@
+digraph FabroEnemyJanitorShape {
+    start [shape=Mdiamond, label="Start"]
+    probe [shape=parallelogram, label="Probe", goal_gate=true, script="eval {{ inputs.sandbox_check_suite }}"]
+    exit [shape=Msquare, label="Exit"]
+    start -> probe
+    probe -> exit
+}
