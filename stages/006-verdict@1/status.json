@@ -1,0 +1,6 @@
+{
+  "outcome": "succeeded",
+  "notes": "Script completed: cat /tmp/eut-janitor-verdict >&2; test -f /tmp/eut-fix-applied && test \"$(cat /tmp/eut-janitor-verdict)\" = publish",
+  "failure_reason": null,
+  "timestamp": "2026-10-12T04:36:52.161913763Z"
+}
