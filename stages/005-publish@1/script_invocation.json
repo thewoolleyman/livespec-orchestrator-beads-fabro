@@ -1,0 +1,5 @@
+{
+  "script": "echo publish > /tmp/eut-janitor-verdict",
+  "command": "exec 2>&1\necho publish > /tmp/eut-janitor-verdict",
+  "language": "shell"
+}
