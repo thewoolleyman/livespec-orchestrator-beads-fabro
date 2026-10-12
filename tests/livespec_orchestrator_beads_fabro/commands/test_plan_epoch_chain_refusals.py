@@ -8,8 +8,6 @@ that never happened.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from livespec_orchestrator_beads_fabro._beads_client import (
     FakeBeadsClient,
     IssueDraft,
@@ -23,15 +21,19 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain import (
     TransitionRequest,
     commit_transition,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_epoch_payload import AuthorityState
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import (
+    RECEIPT_WITHOUT_EVENT,
+    ChainFinding,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_payload import (
+    AuthorityState,
+    OperationReceipt,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_tokens import (
     attempt_close,
     create_token,
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig
-
-if TYPE_CHECKING:
-    from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import ChainFinding
 
 _EPIC_ID = "bd-ib-relay1"
 
@@ -119,4 +121,47 @@ def test_a_token_closed_with_text_that_is_not_a_transition_names_no_winner() -> 
     assert isinstance(refusal, StaleEpochRefusal)
     assert refusal.winning_operation_id is None
     assert "carries no readable transition" in refusal.detail
+    assert fake.no_history_issue_ids() == (token,)
+
+
+def test_a_ring_receipt_with_no_progress_event_at_all_is_reported() -> None:
+    """The ring is proof the transition happened, so a fresh commit is forbidden.
+
+    This is the sibling of a DAMAGED event: there the comment exists and its
+    payload line is unreadable, here no comment for the operation exists at
+    all. Both mean the chain holds a transition whose record cannot be
+    returned, and both must refuse to duplicate the handoff the ring accounts
+    for rather than commit again.
+    """
+    fake = _fresh_fake()
+    token = create_token(client=fake)
+    request = _request(token_id=token)
+    with_ring = TransitionRequest(
+        operation_id=request.operation_id,
+        observed_head=ChainHead(
+            current_token_id=token,
+            latest_closed_token_id=None,
+            epoch=1,
+            authority=AuthorityState(
+                receipts=(
+                    OperationReceipt(
+                        operation_id=request.operation_id,
+                        epoch=1,
+                        recorded_at="2026-10-12T08:30:00Z",
+                    ),
+                ),
+            ),
+        ),
+        authority=request.authority,
+        event_kind=request.event_kind,
+        author=request.author,
+        now=request.now,
+    )
+
+    outcome = commit_transition(config=_config(), epic_id=_EPIC_ID, request=with_ring)
+
+    assert isinstance(outcome, ChainFinding)
+    assert outcome.code == RECEIPT_WITHOUT_EVENT
+    assert fake.list_comments(issue_id=_EPIC_ID) == []
+    # Nothing was created or closed: the refusal lands before any write.
     assert fake.no_history_issue_ids() == (token,)
