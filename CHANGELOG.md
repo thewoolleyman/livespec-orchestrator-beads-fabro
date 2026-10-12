@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.187.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.187.0...v0.187.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **fabro:** release the janitor check-suite evaluation for the Petri-era engine ([8ea22cf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8ea22cf0dd1a8a5d164ae8495443c24c8eaf4178))
+
 ## [0.187.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.186.1...v0.187.0) (2026-10-11)
 
 
