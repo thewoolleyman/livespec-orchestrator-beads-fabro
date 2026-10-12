@@ -34,7 +34,12 @@ from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     set_next_action,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
+    OBSERVATION_SATISFIED,
     ResultObservation,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_resume_advance import (
+    AdvanceRequest,
+    advance_after_satisfied_result,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_resume_gap import (
     definition_of_done_findings,
@@ -101,10 +106,48 @@ def decide_plan_resume(*, config: StoreConfig, epic_id: str, unattended: bool) -
             reason=_picker_reason(action=action),
             findings=findings,
         )
-    observation = result_observation(config=config, action=action)
-    tracked = tracked_resume_directive(
+    return _reconciled_directive(
         config=config,
         epic_id=epic_id,
+        unattended=unattended,
+        action=action,
+        identifier=identifier,
+        findings=findings,
+    )
+
+
+def _reconciled_directive(
+    *,
+    config: StoreConfig,
+    epic_id: str,
+    unattended: bool,
+    action: NextAction,
+    identifier: str,
+    findings: tuple[str, ...],
+) -> ResumeDirective:
+    """Reconcile the pointer against its required result, then decide who acts.
+
+    The two reconciliation findings are evaluated IN THE CLAUSE'S ORDER, and the
+    order is explicit HERE rather than buried inside one reconciler: a stale
+    pointer must never reach the factory, so a factory outage cannot mask the
+    staleness this resume owes its reader.
+    """
+    observation = result_observation(config=config, action=action)
+    if observation is not None and observation.status == OBSERVATION_SATISFIED:
+        return advance_after_satisfied_result(
+            request=AdvanceRequest(
+                config=config,
+                epic_id=epic_id,
+                action=action,
+                observation=observation,
+                findings=findings,
+                unattended=unattended,
+                ruling_identity=_ruling_identity(
+                    config=config, epic_id=epic_id, unattended=unattended
+                ),
+            )
+        )
+    tracked = tracked_resume_directive(
         action=action,
         observation=observation,
         findings=findings,
@@ -188,6 +231,11 @@ def _ruling(*, config: StoreConfig, epic_id: str, unattended: bool) -> Continuat
         epic_id=epic_id,
         now=utc_now_iso(),
     )
+
+
+def _ruling_identity(*, config: StoreConfig, epic_id: str, unattended: bool) -> str | None:
+    ruling = _ruling(config=config, epic_id=epic_id, unattended=unattended)
+    return None if ruling is None else ruling.identity
 
 
 def _target_run_liveness(

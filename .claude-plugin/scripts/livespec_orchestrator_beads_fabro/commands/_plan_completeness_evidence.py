@@ -70,13 +70,14 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
+    "PLAN_COMPLETENESS_REVIEW_PREFIX",
     "CompletenessReviewEvidence",
     "CompletenessReviewEvidenceFields",
     "completeness_review_evidence",
     "record_completeness_review_evidence",
 ]
 
-_PLAN_COMPLETENESS_REVIEW_PREFIX = "plan-completeness-review-evidence"
+PLAN_COMPLETENESS_REVIEW_PREFIX = "plan-completeness-review-evidence"
 _REVIEWED_CHILDREN_FIELD = "reviewed-children"
 _TIMESTAMP_FIELD = "timestamp"
 _TRUE = "true"
@@ -236,7 +237,7 @@ def _evidence_comment_body(
     coverage = str(evidence["attests_complete_requirement_coverage"]).lower()
     reviewed = ", ".join(evidence["reviewed_child_ids"])
     return (
-        f"{_PLAN_COMPLETENESS_REVIEW_PREFIX}\n"
+        f"{PLAN_COMPLETENESS_REVIEW_PREFIX}\n"
         f"evidence-id: {evidence['evidence_id']}\n"
         f"reviewer-identity: {reviewer_identity}\n"
         f"{_REVIEWED_CHILDREN_FIELD}: {reviewed}\n"
@@ -265,7 +266,7 @@ def _reviewed_child_ids(*, fields: dict[str, str]) -> tuple[str, ...]:
 def _evidence_fields(*, text: str) -> dict[str, str]:
     header = text.split("\n\n", maxsplit=1)[0]
     lines = header.splitlines()
-    if not lines or lines[0] != _PLAN_COMPLETENESS_REVIEW_PREFIX:
+    if not lines or lines[0] != PLAN_COMPLETENESS_REVIEW_PREFIX:
         return {}
     fields: dict[str, str] = {}
     for line in lines[1:]:
