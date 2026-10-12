@@ -10,12 +10,10 @@ from pathlib import Path
 from typing import cast
 
 from livespec_runtime.github_auth.errors import GithubAppAuthError
-from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._config import (
     dispatcher_block,
-    resolve_fabro_sandbox_image,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config import (
     codex_otel_config_toml,
@@ -55,6 +53,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     ResumeCheckout,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
+    COMMITTED_RUN_CONFIG_IMAGE,
+    SandboxImageSource,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel import (
     SecretChannelRefusal,
@@ -171,6 +173,12 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     # wires neither renders exactly the inline overlay it always did.
     factory_name: str = "default",
     secret_sink: VaultSecretSink | None = None,
+    # WHERE this dispatch's sandbox image comes from, as the plan resolved it.
+    # The default is the pinned-engine posture — no catalog environment and no
+    # configured override, so the committed run config's own image stands
+    # byte-for-byte — which is what a caller that wires nothing rendered before
+    # this decision existed.
+    sandbox_image: SandboxImageSource = COMMITTED_RUN_CONFIG_IMAGE,
 ) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
@@ -316,10 +324,13 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         otel_env=otel_env,
         codex_auth_snapshot=codex_leg.snapshot,
         codex_otel_config=codex_otel_config,
-        # An unreadable `.livespec.jsonc` falls back to "no image override",
-        # visibly and here rather than inside the reader. `unsafe_perform_io`
-        # is required: `IOResult.value_or` returns `IO[value]`, not the value.
-        fabro_sandbox_image=unsafe_perform_io(resolve_fabro_sandbox_image(cwd=repo).value_or(None)),
+        # WHERE this dispatch's sandbox image comes from, resolved ONCE with the
+        # plan and forwarded rather than re-read here. The dispatch record names
+        # the same decision, and a second read of the same configuration cannot
+        # be proven to agree with the first — the disagreement would be
+        # invisible, because both reads produce a well-formed image
+        # (bd-ib-jy7fuh).
+        sandbox_image=sandbox_image,
         # The per-dispatch payload's rendered graph, carrying this dispatch's
         # resolved node timeouts as literal durations, NAMED as the client that
         # collects it can resolve it.

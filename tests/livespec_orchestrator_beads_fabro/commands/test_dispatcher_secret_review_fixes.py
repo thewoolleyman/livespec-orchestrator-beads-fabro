@@ -32,6 +32,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFil
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_fabro_launcher import (
     WatchedFabroLauncher,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
+    COMMITTED_RUN_CONFIG_IMAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel import (
     SECRET_CHANNEL_INLINE_OVERLAY,
     SECRET_CHANNEL_NATIVE_SECRETS,
@@ -193,6 +196,10 @@ def test_factory_authentication_precedes_vault_materialization(
         # the factory login against the first vault store, and a double missing
         # the field would fail on its absence rather than on that order.
         fabro_version=None,
+        # The resolved sandbox image source, neutral here for the same reason:
+        # this case is about that order, not about which image the launch
+        # carries, so the double carries the no-declaration answer.
+        sandbox_image=COMMITTED_RUN_CONFIG_IMAGE,
     )
     recorded = SimpleNamespace(
         plan=plan,

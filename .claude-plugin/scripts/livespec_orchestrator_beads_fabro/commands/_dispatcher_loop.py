@@ -265,6 +265,12 @@ def _dispatch_one_locked(
         # launched against another's resolves to nothing.
         factory_name=plan.fabro_factory_name,
         secret_sink=secret_sink,
+        # WHERE this dispatch's sandbox image comes from, read off the plan's
+        # single resolution for the same resolve-once reason the integration
+        # contract gives: the dispatch record already named that decision, so a
+        # second read here could disagree with the record without either
+        # surface showing it.
+        sandbox_image=plan.sandbox_image,
     )
     if overlay_error is not None:
         return failed_dispatch_outcome(

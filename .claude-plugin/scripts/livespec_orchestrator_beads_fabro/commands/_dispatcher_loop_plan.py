@@ -19,7 +19,10 @@ from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro._store_merge_hold import merge_hold_from_labels
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import AcpNodeResolution
-from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
+from livespec_orchestrator_beads_fabro.commands._config import (
+    FactoryTarget,
+    resolve_fabro_sandbox_image,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_default_branch import (
     resolve_default_branch,
 )
@@ -41,6 +44,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_overrides imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     DEFAULT_MERGE_ON_REVIEW_CAP,
     DEFAULT_REVIEW_FIX_CAP,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
+    sandbox_image_source,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import (
     stall_window_from_timeouts,
@@ -122,6 +128,18 @@ def dispatch_plan_for_item(  # noqa: PLR0913 — kw-only plan resolver; each fie
         fabro_factory_server=factory_target.server,
         fabro_factory_dev_token=factory_target.dev_token,
         fabro_factory_environment=factory_environment_id(factory=factory_target),
+        # WHERE this dispatch's sandbox image comes from, decided ONCE here and
+        # projected to both consumers off the plan: the launch overlay renders
+        # from it and the dispatch record names it. An unreadable
+        # `.livespec.jsonc` falls back to "no configured override", visibly and
+        # here rather than inside the reader. `unsafe_perform_io` is required:
+        # `IOResult.value_or` returns `IO[value]`, not the value.
+        sandbox_image=sandbox_image_source(
+            factory_environment=factory_environment_id(factory=factory_target),
+            configured_image=unsafe_perform_io(
+                resolve_fabro_sandbox_image(cwd=repo).value_or(None)
+            ),
+        ),
         janitor=janitor,
         janitor_checkout=janitor_checkout_path(repo=repo, work_item_id=item.id),
         config_text=livespec_config_text(repo=repo),

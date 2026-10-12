@@ -52,6 +52,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     DEFAULT_MERGE_ON_REVIEW_CAP,
     DEFAULT_REVIEW_FIX_CAP,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
+    COMMITTED_RUN_CONFIG_IMAGE,
+    SandboxImageSource,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import (
     DEFAULT_STALL_WINDOW,
     StallWindow,
@@ -134,6 +138,13 @@ class DispatchPlan:
     # is a factory that names none, so the run intent carries no environment
     # and the server selects whatever it selects today.
     fabro_factory_environment: str | None = None
+    # WHERE this dispatch's sandbox image comes from, decided ONCE from the
+    # factory's catalog environment and the repository's configured override.
+    # It rides the plan because TWO seams consume it — the launch overlay
+    # renders from it and the dispatch record names it — and a seam resolving
+    # its own copy would give the record and the launch independent answers
+    # with nothing announcing the divergence (bd-ib-jy7fuh).
+    sandbox_image: SandboxImageSource = COMMITTED_RUN_CONFIG_IMAGE
     janitor: tuple[str, ...]
     janitor_checkout: Path
     janitor_core_checkout: Path
@@ -215,6 +226,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
     fabro_factory_server: str | None = None,
     fabro_factory_dev_token: str | None = None,
     fabro_factory_environment: str | None = None,
+    sandbox_image: SandboxImageSource = COMMITTED_RUN_CONFIG_IMAGE,
     janitor: tuple[str, ...] | None,
     janitor_checkout: Path,
     # The two declaration sources the contract resolves from. `config_text` is
@@ -253,6 +265,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
         fabro_factory_server=fabro_factory_server,
         fabro_factory_dev_token=fabro_factory_dev_token,
         fabro_factory_environment=fabro_factory_environment,
+        sandbox_image=sandbox_image,
         janitor=janitor_argv(
             check_suite=janitor_check_suite_from_contract(resolved=integration, janitor=janitor)
         ),
