@@ -177,6 +177,11 @@ digraph ImplementWorkItem {
     // substitutes the suite as raw text, while Petri shell-quotes the whole
     // interpolated value as one word. In both forms, eval executes that value
     // as the declared command line and returns the suite's exit status.
+    // Measured 2026-10-11 on hp-candidate run 01M4PCG8ADWW: without eval the
+    // quoted word exited 127 (the whole suite looked up as one command name,
+    // "command not found") on all three janitor visits; Petri quotes in
+    // attractor frontend
+    // template.rs render_script (bd-ib-zlcmyz).
     // This fleet's default suite refuses workflow-file drift before the
     // rest of its checks, and a non-zero suite MUST prevent the PR stage
     // (livespec non-functional-requirements.md §"Orchestrator-internal
