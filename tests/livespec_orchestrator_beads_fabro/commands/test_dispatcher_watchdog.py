@@ -51,13 +51,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import 
     StallWindow,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
-    DEFAULT_STALL_SECONDS,
-    STALL_SECONDS_ENV_VAR,
     LivenessSample,
     StallVerdict,
     decide_stall,
     parse_last_event_epoch,
-    resolve_stall_seconds,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroRunSummary,
@@ -131,28 +128,6 @@ class _FakeLauncher:
     ) -> FabroRunResult:
         _ = (plan, runner, journal)
         return self.result
-
-
-# ---------------------------------------------------------------------------
-# resolve_stall_seconds
-# ---------------------------------------------------------------------------
-
-
-def test_resolve_stall_seconds_defaults_when_unset() -> None:
-    assert resolve_stall_seconds(environ={}) == DEFAULT_STALL_SECONDS
-
-
-def test_resolve_stall_seconds_reads_env_override() -> None:
-    assert resolve_stall_seconds(environ={STALL_SECONDS_ENV_VAR: "600"}) == 600.0
-
-
-def test_resolve_stall_seconds_falls_back_on_garbage_or_nonpositive() -> None:
-    # A misconfigured window must never DISABLE the backstop or set a
-    # zero/negative window that fires instantly.
-    assert resolve_stall_seconds(environ={STALL_SECONDS_ENV_VAR: "nope"}) == DEFAULT_STALL_SECONDS
-    assert resolve_stall_seconds(environ={STALL_SECONDS_ENV_VAR: "0"}) == DEFAULT_STALL_SECONDS
-    assert resolve_stall_seconds(environ={STALL_SECONDS_ENV_VAR: "-5"}) == DEFAULT_STALL_SECONDS
-    assert resolve_stall_seconds(environ={STALL_SECONDS_ENV_VAR: ""}) == DEFAULT_STALL_SECONDS
 
 
 # ---------------------------------------------------------------------------
@@ -489,7 +464,7 @@ def test_run_dispatch_reports_stalled_no_progress_and_skips_pr_flow(tmp_path: Pa
     assert outcome.stage == "fabro-run"
     assert outcome.pr_number is None
     assert "01RUNSTALLED" in outcome.detail
-    assert STALL_SECONDS_ENV_VAR in outcome.detail
+    assert "dispatcher.stall_timeout_seconds" in outcome.detail
     # The runner was never touched -> the PR flow was never entered (the
     # engine short-circuited on the stall).
     assert runner.calls == []
@@ -642,7 +617,7 @@ def test_scripted_runner_rejects_unknown_verb(tmp_path: Path) -> None:
 
 
 def test_wall_clock_probe_reads_only_the_event_stream_never_fabro_inspect(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    tmp_path: Path,
 ) -> None:
     # bd-ib-tec5sz: the `updated_at` fallback is REMOVED, not repointed.
     # The pinned fabro build never emits that field, and the only
@@ -650,29 +625,31 @@ def test_wall_clock_probe_reads_only_the_event_stream_never_fabro_inspect(
     # rather than per event, so it cannot be a wall-clock liveness signal.
     # Pinned from both ends: the production probe issues `fabro events`
     # and NEVER `fabro inspect`, and the parser accepts no inspect payload.
-    monkeypatch.setenv(STALL_SECONDS_ENV_VAR, "1000")
     frozen = '[{"timestamp": "2026-06-13T08:00:00Z"}]'
     runner = _ScriptedFabroRunner(events_jsons=[frozen])
     launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
-    result = launcher.launch(plan=_plan(repo=tmp_path), runner=runner, journal=_RecordingJournal())
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_seconds=1000.0),
+        runner=runner,
+        journal=_RecordingJournal(),
+    )
     assert result.stalled_run_id == "01RUN"
     assert "events" in runner.verbs
     assert "inspect" not in runner.verbs
     assert "inspect_json" not in signature(parse_last_event_epoch).parameters
 
 
-def test_watched_launcher_cancels_a_confirmed_stall(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_watched_launcher_cancels_a_confirmed_stall(tmp_path: Path) -> None:
     # A frozen event timestamp across every poll -> the watch loop
     # confirms a stall within the (tight, test-set) window and `fabro rm
     # -f`-es the run. Injected clock advances 600s/sample; window 1000s.
-    monkeypatch.setenv(STALL_SECONDS_ENV_VAR, "1000")
     frozen = '[{"timestamp": "2026-06-13T08:00:00Z"}]'
     runner = _ScriptedFabroRunner(events_jsons=[frozen])
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
-    result = launcher.launch(plan=_plan(repo=tmp_path), runner=runner, journal=journal)
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
+    )
     assert result.stalled_run_id == "01RUN"
     assert runner.rm_calls == ["01RUN"]
     stages = [record.get("stage") for record in journal.records]
@@ -713,15 +690,12 @@ def test_watched_launcher_cancels_after_progress_then_a_confirmed_quiet_window(
     assert [record.get("quiet_seconds") for record in cancels] == [1200.0]
 
 
-def test_watched_launcher_lets_a_healthy_run_complete(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_watched_launcher_lets_a_healthy_run_complete(tmp_path: Path) -> None:
     # The run completes on its own during the watch sleep before the
     # would-be deciding sample. The background thread is alive at the top
     # of the watch iteration, but the launcher must notice completion
     # after the sleep boundary and return the real CommandResult without
     # probing/canceling the finished run.
-    monkeypatch.setenv(STALL_SECONDS_ENV_VAR, "1000")
     runner = _ScriptedFabroRunner(events_jsons=['[{"timestamp": "2026-06-13T08:00:00Z"}]'])
     polls = {"n": 0}
 
@@ -733,20 +707,19 @@ def test_watched_launcher_lets_a_healthy_run_complete(
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
-    result = launcher.launch(plan=_plan(repo=tmp_path), runner=runner, journal=journal)
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
+    )
     assert result.stalled_run_id is None
     assert result.command.exit_code == 0
     assert runner.rm_calls == []
 
 
-def test_watched_launcher_does_not_cancel_when_events_advance(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_watched_launcher_does_not_cancel_when_events_advance(tmp_path: Path) -> None:
     # Advancing event timestamps -> progress -> never stalls. The oldest
     # sample's timestamp stays below the newest, so `decide_stall` returns
     # CONTINUE indefinitely; the test ends the run after a few polls via
     # the injected sleep so launch() returns without a cancel.
-    monkeypatch.setenv(STALL_SECONDS_ENV_VAR, "1000")
     # One advancing entry per poll the watch loop can reach. The scripted
     # runner CLAMPS to the LAST entry once the list is exhausted, so a
     # short list goes frozen partway through the watch and — correctly,
@@ -774,19 +747,20 @@ def test_watched_launcher_does_not_cancel_when_events_advance(
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
-    result = launcher.launch(plan=_plan(repo=tmp_path), runner=runner, journal=journal)
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
+    )
     assert result.stalled_run_id is None
     assert runner.rm_calls == []
 
 
 def test_watched_launcher_treats_probe_failure_as_no_signal_never_cancels(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    tmp_path: Path,
 ) -> None:
     # `fabro ps` keeps erroring -> the run id is never discovered -> every
     # sample is no-signal -> decide_stall stays CONTINUE forever, the run
     # is NEVER cancelled (the load-bearing fail-safety property at the
     # production launcher level). The test ends the run after a few polls.
-    monkeypatch.setenv(STALL_SECONDS_ENV_VAR, "1000")
     runner = _ScriptedFabroRunner(
         events_jsons=['[{"timestamp": "2026-06-13T08:00:00Z"}]'], ps_exit=1
     )
@@ -799,7 +773,9 @@ def test_watched_launcher_treats_probe_failure_as_no_signal_never_cancels(
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
-    result = launcher.launch(plan=_plan(repo=tmp_path), runner=runner, journal=journal)
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
+    )
     assert result.stalled_run_id is None
     assert runner.rm_calls == []
 
@@ -807,7 +783,6 @@ def test_watched_launcher_treats_probe_failure_as_no_signal_never_cancels(
 def test_watched_launcher_continues_when_discovered_run_item_is_absent(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv(STALL_SECONDS_ENV_VAR, "1000")
     _ = tmp_path.joinpath(".livespec.jsonc").write_text(
         """
         {
@@ -842,20 +817,21 @@ def test_watched_launcher_continues_when_discovered_run_item_is_absent(
     monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", _no_items)
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
-    result = launcher.launch(plan=_plan(repo=tmp_path), runner=runner, journal=journal)
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
+    )
 
     assert result.abandoned_run_id is None
     assert runner.rm_calls == []
 
 
 def test_watched_launcher_events_probe_error_is_no_signal_never_cancels(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    tmp_path: Path,
 ) -> None:
     # The run id resolves (ps ok) but `fabro events` keeps erroring, and
     # there is no second source to consult -> no usable timestamp ->
     # no-signal -> never stalls. Proves an events-probe outage degrades to
     # no detection, not a false kill.
-    monkeypatch.setenv(STALL_SECONDS_ENV_VAR, "1000")
     runner = _ScriptedFabroRunner(events_jsons=["whatever"], events_exit=1)
     polls = {"n": 0}
 
@@ -866,6 +842,8 @@ def test_watched_launcher_events_probe_error_is_no_signal_never_cancels(
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
-    result = launcher.launch(plan=_plan(repo=tmp_path), runner=runner, journal=journal)
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
+    )
     assert result.stalled_run_id is None
     assert runner.rm_calls == []

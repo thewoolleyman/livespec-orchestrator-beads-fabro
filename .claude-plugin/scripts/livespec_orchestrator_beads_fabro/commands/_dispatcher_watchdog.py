@@ -52,7 +52,6 @@ foreground while `fabro run` executes in a background thread) lives in
 
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass
 from datetime import timezone
@@ -62,50 +61,46 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_events import (
     fabro_event_records_from_stdout,
 )
 from livespec_orchestrator_beads_fabro.effects import (
-    FloatParseFailure,
     IsoDatetimeParseFailure,
-    parse_float,
     parse_iso_datetime,
 )
 
 __all__: list[str] = [
-    "DEFAULT_STALL_SECONDS",
-    "STALL_SECONDS_ENV_VAR",
     "LivenessProbe",
     "LivenessSample",
     "StallVerdict",
     "decide_stall",
     "parse_last_event_epoch",
     "quiet_window_seconds",
-    "resolve_stall_seconds",
 ]
 
-# Coarse stall window (seconds of genuinely-absent events that confirm a
-# stall). Calibration — this window must sit:
-#   * WELL UNDER the phase graph's own `stall_timeout` = 7200s (2h,
-#     workflow.fabro `graph[...]`): the host backstop must fire FIRST for
-#     the 7us.6 hang class, which the Fabro-internal watchdog demonstrably
-#     missed (152min of silence, never cancelled);
-#   * WELL UNDER the implement node's per-turn ceiling = 14400s (4h,
-#     workflow.fabro `implement[...]` timeout) and the engine's 15h
-#     `_FABRO_TIMEOUT_SECONDS` subprocess ceiling;
-#   * GENEROUSLY OVER the longest LEGITIMATE inter-event gap. The longest
-#     legitimate quiet stretch is one `just check` leg inside the janitor
-#     node — pytest + coverage + lint runs as a single Bash `tool_result`
-#     that emits no fabro event until it returns; that is minutes, not
-#     tens of minutes, even on the full aggregate.
-# 1500s (25min) gives a single long `just check` leg comfortable margin
-# (roughly 5x the observed worst-case aggregate) while still cancelling a
-# true deadlock ~5x sooner than the 7200s Fabro watchdog would have (and
-# it fired for the 7us.6 hang where Fabro's did not). Tune per dispatch
-# via LIVESPEC_DISPATCH_STALL_SECONDS without a code change.
-DEFAULT_STALL_SECONDS = 1500.0
-
-# Env-var NAME (not a secret). An operator raises it for a known-slow
-# repo/leg or lowers it to fail faster; an unset/blank/invalid value
-# falls back to DEFAULT_STALL_SECONDS (a misconfigured window must never
-# disable the backstop).
-STALL_SECONDS_ENV_VAR = "LIVESPEC_DISPATCH_STALL_SECONDS"
+# WHERE THE WINDOW COMES FROM, and why it is not a constant here. The
+# interval this module grades a quiet stretch against is RESOLVED
+# CONFIGURATION — `dispatcher.stall_timeout_seconds` through the same layers
+# as the node timeouts — and it reaches `decide_stall` as the
+# `stall_seconds` argument, projected off the dispatch plan by
+# `_dispatcher_stall_window`. This module therefore owns the DECISION and
+# never the interval.
+#
+# It did own one, and the divergence is the defect that moved it
+# (bd-ib-3ugnfr). A private 1500-second default read from an environment
+# variable sat beside a phase graph carrying `stall_timeout="7200s"`, so the
+# configured key governed the graph while the host backstop cancelled against
+# an unrelated number, and the calibration that sized the smaller one — "the
+# longest legitimate quiet stretch is one `just check` leg inside the janitor
+# node, minutes rather than tens of minutes" — stopped holding under the load
+# measured on 2026-10-12: a sandbox `just check` ran to 21 minutes, a single
+# implement tool call ran 20 minutes emitting no events at all, and legacy hp
+# run 01M4QGDETRJ3 was cancelled at 1529.9 quiet seconds with roughly four
+# hours of unpublished work in it. A window shorter than an ordinary quiet
+# stretch is not a backstop; it is a reaper.
+#
+# The calibration the resolved window must still satisfy is unchanged in
+# shape: it has to sit under the engine's own `_FABRO_TIMEOUT_SECONDS`
+# subprocess ceiling — which is DERIVED from it
+# (`_node_timeouts.derive_fabro_timeout_seconds`), so that holds by
+# construction — and generously over the longest legitimate inter-event gap,
+# which is what a repository raises the key for.
 
 # The timestamp fields whose value is an ISO-8601 instant or a count of
 # SECONDS. These are what the pinned 0.254 build emits.
@@ -183,26 +178,6 @@ class StallVerdict:
     STALLED: Final = StallVerdictValue(value="stalled-no-progress")
 
 
-def resolve_stall_seconds(*, environ: dict[str, str] | None = None) -> float:
-    """Resolve the stall window from the env, defaulting to DEFAULT_STALL_SECONDS.
-
-    Reads LIVESPEC_DISPATCH_STALL_SECONDS; an unset, blank, non-numeric,
-    or non-positive value falls back to the default (a misconfigured
-    window must never DISABLE the backstop or set a zero/negative window
-    that would fire instantly). The resolved value is the only tunable;
-    the decision logic is fixed.
-    """
-    env = dict(os.environ) if environ is None else environ
-    raw = env.get(STALL_SECONDS_ENV_VAR, "")
-    parsed = parse_float(text=raw)
-    if isinstance(parsed, FloatParseFailure):
-        return DEFAULT_STALL_SECONDS
-    value = parsed
-    if value <= 0:
-        return DEFAULT_STALL_SECONDS
-    return value
-
-
 def parse_last_event_epoch(*, events_json: str) -> float | None:
     """Extract the most-recent liveness timestamp as epoch seconds; None on no signal.
 
@@ -240,9 +215,10 @@ def parse_last_event_epoch(*, events_json: str) -> float | None:
     # stale inside `start`, and run 01M0M9DEHMC4 spent 42m12s of its
     # 45m28s wall time inside inference-bearing nodes. Any window under
     # ~45 minutes would kill healthy runs — including that one, which
-    # succeeded and merged its PR — while DEFAULT_STALL_SECONDS is 1500s
-    # (25 min), and a window over 45 minutes is coarser than the graph's
-    # own machinery this backstop exists to beat.
+    # succeeded and merged its PR — and the window is now RESOLVED
+    # CONFIGURATION, which a repository shortens to fail faster, so this
+    # module cannot assume one wide enough to make a node-resolution
+    # clock safe.
     #
     # Decisive on its own: the fallback fires exactly when the `fabro
     # events` probe yields nothing, i.e. on a probe OUTAGE. Feeding a

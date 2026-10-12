@@ -31,9 +31,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_open_diff import parse_pr_diff_size
 from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import post_verdict_runner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import (
+    resolve_stall_window,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_order_sink import TddOrderSink
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_probe import gather_tdd_signals
-from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import resolve_stall_seconds
 from livespec_orchestrator_beads_fabro.effects import (
     AttemptFailure,
     JsonParseFailure,
@@ -140,10 +142,10 @@ def _build_and_append_calibration(  # noqa: PLR0913 - injectable calibration sea
         ),
         # The stall window is resolved HERE rather than inside the pure
         # classification, so `_dispatcher_calibration` stays a derivation of its
-        # inputs and makes no environment read of its own.
+        # inputs and reads no configuration of its own.
         bounce_cap=non_convergence_cap(
             outcome=outcome,
-            stall_seconds=resolve_stall_seconds(),
+            stall_seconds=resolve_stall_window(cwd=repo).seconds,
         ),
         # The SAME journal records feed the TDD gather: they carry this
         # dispatch's id (which selects its own commit series by the

@@ -26,9 +26,22 @@ from livespec_orchestrator_beads_fabro.commands import _dispatcher_io_fabro_laun
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import WatchedFabroLauncher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan, build_plan
-from livespec_orchestrator_beads_fabro.commands._node_timeouts import REPOSITORY_LAYER
+from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
+    REPOSITORY_LAYER,
+    WORKFLOW_DEFAULT_LAYER,
+)
 
 _MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window"
+_WATCHDOG_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog"
+
+# The environment-only resolution this module replaces. Named here rather than
+# imported, because the point of the assertion below is that none of these
+# names exists any more.
+_RETIRED_WATCHDOG_NAMES = (
+    "DEFAULT_STALL_SECONDS",
+    "STALL_SECONDS_ENV_VAR",
+    "resolve_stall_seconds",
+)
 
 _WORK_ITEM_ID = "bd-ib-3ugnfr"
 _RUN_ID = "01RUN"
@@ -167,6 +180,46 @@ def test_host_stall_watchdog_window_resolves_from_the_repository_stall_timeout_k
     assert runner.rm_calls == [_RUN_ID]
     cancels = [r for r in journal.records if r.get("stage") == "watchdog-stall-cancel"]
     assert [record.get("stall_seconds") for record in cancels] == [3000.0]
+
+
+def test_no_configured_value_leaves_the_host_stall_window_at_7200_seconds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A target configuring no stall timeout resolves the 7200-second default.
+
+    Asserted together with the RETIREMENT of the environment-only resolution,
+    because the two are one claim: while a second resolver with a private
+    1500-second default survives in the tree, "the host stall window with no
+    configured value" has two answers — and the two post-run surfaces that
+    report which cap a bounce tripped still read the other one.
+    """
+    watchdog = importlib.import_module(_WATCHDOG_MODULE)
+
+    surviving = [name for name in _RETIRED_WATCHDOG_NAMES if hasattr(watchdog, name)]
+
+    assert surviving == []
+
+    stall_window = _stall_window_module()
+    # A dispatcher block that configures NODE timeouts and no stall timeout:
+    # the block is present and read, so an absent window is a resolution
+    # rather than an unread file.
+    _write_config(repo=tmp_path, dispatcher_keys='"node_timeouts": {"implement": 14400}')
+    window = stall_window.resolve_stall_window(cwd=tmp_path)  # pyright: ignore[reportAttributeAccessIssue]
+
+    assert (window.seconds, window.layer) == (7200.0, WORKFLOW_DEFAULT_LAYER)
+
+    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", lambda **_: [])
+    runner = _ScriptedFabroRunner(events_jsons=[_FROZEN_EVENTS])
+    journal = _RecordingJournal()
+    launcher = WatchedFabroLauncher(sleep=lambda _seconds: None, clock=_advancing_clock())
+
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_window=window), runner=runner, journal=journal
+    )
+
+    assert result.stalled_run_id == _RUN_ID
+    cancels = [r for r in journal.records if r.get("stage") == "watchdog-stall-cancel"]
+    assert [record.get("stall_seconds") for record in cancels] == [7200.0]
 
 
 def test_a_refused_stall_timeout_value_falls_soft_onto_the_default_window(

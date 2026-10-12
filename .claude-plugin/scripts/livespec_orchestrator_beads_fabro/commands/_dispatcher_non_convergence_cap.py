@@ -25,12 +25,12 @@ S6's work, which is where the commit-series instrument that can measure it
 lands.
 
 THE CAP NAMES ARE WHAT AN OPERATOR WOULD TUNE, not internal labels. The stall
-window's name is the environment variable its resolver reads, so a bounce record
-says which knob moves it; the fix-loop cap's name points at the graph edge that
-enforces it.
+window's name is the committed configuration key its resolver reads, so a
+bounce record says which knob moves it; the fix-loop cap's name points at the
+graph edge that enforces it.
 
 This module is PURE: the stall window is passed IN by the two callers that
-resolve it, so no environment read happens here. That keeps
+resolve it, so no configuration read happens here. That keeps
 `_dispatcher_calibration` — which holds this value on its record — a pure
 derivation of its inputs.
 """
@@ -56,10 +56,17 @@ __all__: list[str] = [
 ]
 
 # The two cap identities, each named as the thing an operator would change. The
-# stall window's name is the env var `_dispatcher_watchdog.resolve_stall_seconds`
-# reads, so the record points at the knob; the fix-loop cap's name points at the
-# `janitor -> fix` visit guard in the workflow graph that enforces it.
-STALL_WINDOW_CAP = "LIVESPEC_DISPATCH_STALL_SECONDS"
+# stall window's name is the COMMITTED CONFIGURATION KEY the host watchdog
+# resolves it from, so the record points at the knob; the fix-loop cap's name
+# points at the `janitor -> fix` visit guard in the workflow graph that
+# enforces it.
+#
+# It named an environment variable until bd-ib-3ugnfr, which is a worse failure
+# than a stale label: the key and the variable resolved to DIFFERENT windows, so
+# a bounce record pointed an operator at a knob that moved nothing while
+# reporting a figure 4.8x off the window the watchdog had actually cancelled
+# against.
+STALL_WINDOW_CAP = "dispatcher.stall_timeout_seconds"
 FIX_LOOP_VISIT_CAP = "workflow.janitor_fix_loop_visit_cap"
 
 # The journal stage the bounce appends, and the two keys the cap rides under.

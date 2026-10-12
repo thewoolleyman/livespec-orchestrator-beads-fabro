@@ -111,7 +111,9 @@ def stalled_outcome(
             f"run {run_id} made no progress for the full stall window "
             f"(no new fabro event); the coarse wall-clock watchdog "
             f"`fabro rm -f`-ed it (the 7us.6 silent-deadlock class). "
-            f"Set LIVESPEC_DISPATCH_STALL_SECONDS to tune the window; the DEFERRED 29f "
+            f"Set dispatcher.stall_timeout_seconds to tune the window — the "
+            f"`watchdog-stall-cancel` journal row carries the window this run "
+            f"was graded against and the layer that supplied it; the DEFERRED 29f "
             f"OTEL metrics-heartbeat primary will refine this coarse signal."
         ),
         fabro_run_id=run_id,

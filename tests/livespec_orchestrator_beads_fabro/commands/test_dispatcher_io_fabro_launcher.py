@@ -23,11 +23,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io_fabro_launcher im
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_plan
-from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
-    STALL_SECONDS_ENV_VAR,
-    LivenessSample,
-)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import StallWindow
+from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import LivenessSample
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroRunSummary
+from livespec_orchestrator_beads_fabro.commands._node_timeouts import REPOSITORY_LAYER
 from livespec_orchestrator_beads_fabro.errors import BeadsConnectionError
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -342,6 +341,10 @@ def test_watched_launcher_does_not_stall_cancel_queued_active_run(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    # The window is TIGHT and the scripted samples span 1100 quiet seconds, so
+    # the only thing standing between this run and a cancel is the status gate
+    # under test. A plan carrying the 7200-second default would pass on the
+    # window alone and assert nothing about `runnable`.
     plan = build_plan(
         repo=tmp_path,
         work_item_id="bd-ib-queued",
@@ -350,6 +353,7 @@ def test_watched_launcher_does_not_stall_cancel_queued_active_run(
         fabro_bin="fabro",
         janitor=None,
         janitor_checkout=tmp_path / "janitor",
+        stall_window=StallWindow(seconds=1000.0, layer=REPOSITORY_LAYER),
     )
     runner = _QueuedRunner(calls=[], rm_calls=[])
     journal = _Journal(records=[])
@@ -390,7 +394,6 @@ def test_watched_launcher_does_not_stall_cancel_queued_active_run(
         )
 
     launcher = WatchedFabroLauncher(sleep=lambda _seconds: None, clock=lambda: 0.0)
-    monkeypatch.setenv(STALL_SECONDS_ENV_VAR, "1000")
     monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _thread)
     monkeypatch.setattr(_dispatcher_io_fabro_launcher, "_work_item_status", lambda **_: "active")
     # The per-poll sample assembly now lives in `_dispatcher_io_liveness_probe`
