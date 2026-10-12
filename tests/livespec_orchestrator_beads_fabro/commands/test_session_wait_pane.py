@@ -180,26 +180,40 @@ def _readiness_diagnostic(
 
 
 @contextmanager
-def _isolated_herdr_server():
-    """A real herdr server on its own socket, under a SHORT temporary root.
+def _short_root():
+    """A SHORT owned directory for a herdr server's XDG roots.
 
-    THE ROOT IS NOT `tmp_path`, and that is a measured constraint rather than
-    a deviation for its own sake. A unix socket path is capped by
-    `sizeof(sun_path)` — 108 bytes including the terminator, so 107 usable —
-    and herdr binds TWO sockets in its config directory, of which
-    `herdr-client.sock` has the longer name. Measured on this host: under
-    `tmp_path` a serial run produces a 98-byte client path and fits, while any
-    `pytest -n` run inserts a `popen-gwNN` segment and produces 109 bytes,
-    one over. The server then exits 1 with `local socket name length exceeds
-    capacity of sun_path of sockaddr_un`, which surfaces as an unready-server
-    flake naming no path length anywhere but the server's own log. Since
-    `just check` runs the suite in parallel, a `tmp_path` root cannot pass it
-    at all.
+    NOT `tmp_path`, and that is a measured constraint rather than a deviation
+    for its own sake. A unix socket path is capped by `sizeof(sun_path)` — 108
+    bytes including the terminator, so 107 usable — and herdr binds TWO
+    sockets in its config directory, of which `herdr-client.sock` has the
+    longer name. Measured on this host: under `tmp_path` a serial run produces
+    a 98-byte client path and fits, while any `pytest -n` run inserts a
+    `popen-gwNN` segment and produces 109 bytes, one over. The server then
+    exits 1 with `local socket name length exceeds capacity of sun_path of
+    sockaddr_un`, which surfaces as an unready-server flake naming no path
+    length anywhere but the server's own log. Since `just check` runs the
+    suite in parallel, a `tmp_path` root cannot pass it at all.
 
-    The bound is ASSERTED below rather than assumed, so a future rename that
-    lengthens the path fails loudly and once instead of flaking per worker.
+    It is a separate context from the server so that a RESTART can reuse the
+    same root, and therefore the same socket path — which is the only way to
+    exercise a changed server generation at a path that did not move.
     """
     directory = Path(tempfile.mkdtemp(prefix="livespec-herdr-"))
+    try:
+        yield directory
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+@contextmanager
+def _isolated_herdr_server(*, directory: Path):
+    """A real herdr server bound under one owned short root.
+
+    The `sun_path` bound is ASSERTED rather than assumed, so a future rename
+    that lengthens the path fails loudly and once instead of flaking per
+    worker.
+    """
     config = directory / "c"
     config.mkdir(parents=True, exist_ok=True)
     environment = dict(
@@ -248,9 +262,6 @@ def _isolated_herdr_server():
         with suppress(ProcessLookupError):
             os.killpg(os.getpgid(process.pid), signal.SIGKILL)
         _ = process.wait(timeout=90)
-        # The root is this fixture's own, so it owns the removal too: nothing
-        # under `tmp_path` cleans it up.
-        shutil.rmtree(directory, ignore_errors=True)
 
 
 def _answer_once(*, connection: socket.socket, reply: bytes) -> None:
@@ -403,7 +414,7 @@ def test_a_pane_wait_returns_the_actual_non_working_state(
     returned state is the state the server actually held rather than the state
     this test assumed it had set.
     """
-    with _isolated_herdr_server() as server:
+    with _short_root() as directory, _isolated_herdr_server(directory=directory) as server:
         # One focused pane and one unfocused pane, because focus decides which
         # states the server can reach at all — see `workspace_pane`.
         focused = server.workspace_pane(label="focused", focus=True)
@@ -466,7 +477,7 @@ def test_a_frozen_pane_identity_binds_its_server_instance() -> None:
     identities: list[str] = []
     pane_ids: list[str] = []
     for _ in range(2):
-        with _isolated_herdr_server() as server:
+        with _short_root() as directory, _isolated_herdr_server(directory=directory) as server:
             pane_id = server.workspace_pane(label="alias", focus=True)
             server.report(pane_id=pane_id, state="working")
             server.await_status(pane_id=pane_id, state="working")
@@ -582,6 +593,86 @@ def test_routing_sends_each_target_kind_to_its_own_adapter(*, tmp_path: Path) ->
         )
         is True
     )
+
+
+@_requires_herdr
+def test_a_missing_pane_and_a_changed_server_end_with_distinct_outcomes(
+    *,
+    tmp_path: Path,
+) -> None:
+    """Scenario 155: each uncertain end has its OWN outcome, not one shared one.
+
+    The three ends a wait can reach other than a reported state are a pane
+    that is GONE from a live server, a server that was REPLACED under the
+    frozen identity, and a reply that could not be READ. They are asserted
+    PAIRWISE DISTINCT rather than merely non-success: one shared diagnostic
+    satisfies every "is not a state" check while telling an operator nothing
+    about which of three different repairs applies.
+
+    The missing-pane and changed-generation cases run on a REAL herdr server
+    — the generation case by restarting one at the SAME socket path, which is
+    the only way the path itself does not change. Only the unreadable case
+    uses a controlled peer, because no healthy server will truncate its own
+    reply.
+    """
+    pane_module = _module(name="_session_wait_pane")
+    outcomes: dict[str, str] = {}
+    with _short_root() as directory:
+        with _isolated_herdr_server(directory=directory) as first:
+            pane_id = first.workspace_pane(label="distinct", focus=True)
+            first.report(pane_id=pane_id, state="working")
+            first.await_status(pane_id=pane_id, state="working")
+            frozen = pane_module.freeze_pane_target(
+                socket_path=first.socket_path,
+                pane_id=pane_id,
+            )
+            # A live server that no longer holds the pane: the server answers,
+            # and its answer is that this target is gone.
+            _ = first.call(method="pane.close", params={"pane_id": pane_id})
+            outcomes["missing"] = pane_module.observe_pane_target(
+                target=frozen,
+                observed_at=1.0,
+            ).state
+        # The socket is gone with its server, which is a different end again.
+        outcomes["socket-gone"] = pane_module.observe_pane_target(
+            target=frozen,
+            observed_at=2.0,
+        ).state
+        # A DIFFERENT server instance at the SAME socket path. The frozen
+        # identity must not follow the path onto it, however plausible the
+        # pane id it happens to mint.
+        with _isolated_herdr_server(directory=directory) as second:
+            reused = second.workspace_pane(label="distinct", focus=True)
+            assert reused == frozen.pane_id, "the restart did not reuse the pane id"
+            outcomes["generation-changed"] = pane_module.observe_pane_target(
+                target=frozen,
+                observed_at=3.0,
+            ).state
+
+    unreadable_path = tmp_path / "unreadable.sock"
+    with _controlled_peer(socket_path=unreadable_path, replies=[b"{not json}\n"]):
+        herdr_module = _module(name="_session_wait_herdr")
+        types_module = _module(name="_session_wait_types")
+        unreadable_target = types_module.PaneTarget(
+            backend="herdr",
+            socket_path=unreadable_path,
+            server_generation=str(
+                herdr_module.herdr_socket_generation(socket_path=unreadable_path)
+            ),
+            pane_id="w1:p1",
+            terminal_id="term_test",
+        )
+        outcomes["unreadable"] = pane_module.observe_pane_target(
+            target=unreadable_target,
+            observed_at=4.0,
+        ).state
+
+    assert set(outcomes) == {"missing", "socket-gone", "generation-changed", "unreadable"}
+    for label, state in outcomes.items():
+        assert state not in _PANE_STATES, f"{label} was reported as a pane state: {state}"
+    # PAIRWISE distinct, which is the whole assertion: a single shared
+    # diagnostic would pass every check above.
+    assert len(set(outcomes.values())) == len(outcomes), outcomes
 
 
 def test_a_readiness_failure_reports_the_servers_own_cause(*, tmp_path: Path) -> None:
