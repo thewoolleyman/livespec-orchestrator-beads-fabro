@@ -222,6 +222,43 @@ def test_no_configured_value_leaves_the_host_stall_window_at_7200_seconds(
     assert [record.get("stall_seconds") for record in cancels] == [7200.0]
 
 
+def test_the_cancel_row_names_the_layer_that_supplied_the_stall_window(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A cancellation record says WHICH layer the window it graded came from.
+
+    Driven twice, with a repository override and with the fleet default,
+    because one arm alone is satisfied by a record carrying a constant — and a
+    constant is exactly what this row would then be mistaken for. The layer is
+    the first question asked of any cancellation: an operator who cannot tell
+    an override from the built-in default cannot tell whether raising the key
+    would have saved the run.
+    """
+    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", lambda **_: [])
+    stall_window = _stall_window_module()
+    configured = tmp_path / "configured"
+    defaulted = tmp_path / "defaulted"
+    for repo, keys in ((configured, '"stall_timeout_seconds": 1800'), (defaulted, "")):
+        repo.mkdir()
+        _write_config(repo=repo, dispatcher_keys=keys)
+
+    rows: list[dict[str, object]] = []
+    for repo in (configured, defaulted):
+        window = stall_window.resolve_stall_window(cwd=repo)  # pyright: ignore[reportAttributeAccessIssue]
+        journal = _RecordingJournal()
+        launcher = WatchedFabroLauncher(sleep=lambda _seconds: None, clock=_advancing_clock())
+        result = launcher.launch(
+            plan=_plan(repo=repo, stall_window=window),
+            runner=_ScriptedFabroRunner(events_jsons=[_FROZEN_EVENTS]),
+            journal=journal,
+        )
+        assert result.stalled_run_id == _RUN_ID
+        rows.extend(r for r in journal.records if r.get("stage") == "watchdog-stall-cancel")
+
+    assert [row.get("stall_layer") for row in rows] == [REPOSITORY_LAYER, WORKFLOW_DEFAULT_LAYER]
+    assert [row.get("stall_seconds") for row in rows] == [1800.0, 7200.0]
+
+
 def test_a_refused_stall_timeout_value_falls_soft_onto_the_default_window(
     tmp_path: Path,
 ) -> None:
