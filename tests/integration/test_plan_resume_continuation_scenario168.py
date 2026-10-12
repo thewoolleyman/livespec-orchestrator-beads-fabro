@@ -781,6 +781,34 @@ def test_pointer_writers_refuse_missing_tracking_without_partial_handoffs(
         assert "required_result and budget" in refused.detail
         assert client.show_issue(issue_id=epic_id)["metadata"] == baseline_metadata
 
+    # `epoch` and `handoff_count` are the two budget fields resume CONSUMES and
+    # the live-run rewrite promises to preserve. An unvalidated one passes
+    # admission and then raises inside the budget read, so a sanctioned write
+    # creates a pointer that crashes the next resume instead of failing closed.
+    for budget, expected in (
+        ({**_BUDGET, "handoff_count": "1"}, "budget handoff_count must be an integer"),
+        ({**_BUDGET, "handoff_count": True}, "budget handoff_count must be an integer"),
+        ({**_BUDGET, "handoff_count": -1}, "budget handoff_count must not be negative"),
+        ({**_BUDGET, "epoch": ""}, "budget epoch must be a non-empty string"),
+        ({**_BUDGET, "epoch": 7}, "budget epoch must be a non-empty string"),
+    ):
+        refused = plan.set_next_action(
+            config=_config(repo=repo),
+            epic_id=epic_id,
+            action=NextAction(
+                kind="impl",
+                ref="bd-ib-child",
+                text="Take a pointer whose budget cannot be read.",
+                required_result=_RESULT,
+                budget=budget,
+            ),
+            session="budget-writer",
+            now=_NOW,
+        )
+        assert isinstance(refused, plan.NextActionRefusal)
+        assert refused.detail == expected
+        assert client.show_issue(issue_id=epic_id)["metadata"] == baseline_metadata
+
     invalid = NextAction(kind="surprise", ref="anything", text="Refuse this pointer.")
     for append in (
         lambda: plan.append_handoff(

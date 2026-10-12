@@ -29,6 +29,8 @@ __all__: list[str] = [
 _EXECUTABLE_KINDS = ("impl", "spec-op", "proof", "review", "archive", "await")
 _ALL_KINDS = (*_EXECUTABLE_KINDS, "human", "none")
 _AWAIT_PREFIXES = ("run", "gate", "item", "epic")
+_HANDOFF_COUNT_FIELD = "handoff_count"
+_EPOCH_FIELD = "epoch"
 
 
 class NextActionShape(Protocol):
@@ -129,6 +131,8 @@ def _validate_budget(*, value: object) -> NextActionRefusal | None:
                     deadline=parsed,
                     max_handoffs=fields.get("max_handoffs"),
                 )
+                if refusal is None:
+                    refusal = _validate_progress_fields(fields=fields)
     return refusal
 
 
@@ -146,6 +150,29 @@ def _validate_deadline_and_handoffs(
         refusal = _refusal(detail="budget max_handoffs must be an integer")
     elif max_handoffs <= 0:
         refusal = _refusal(detail="budget max_handoffs must be positive")
+    return refusal
+
+
+def _validate_progress_fields(*, fields: dict[str, Any]) -> NextActionRefusal | None:
+    """Grade the two progress fields a resume READS off an admitted budget.
+
+    `epoch` and `handoff_count` are optional — the ratified budget shape
+    requires only `deadline` and `max_handoffs` — but they are not free-form.
+    The resume compares the count against `max_handoffs`, and the live-run
+    rewrite promises to carry both forward unchanged, so an unreadable one is a
+    pointer that raises on the next resume rather than one that fails closed.
+    `bool` is excluded from the count explicitly, because `True` is an `int` in
+    Python and would otherwise be admitted as one accepted handoff.
+    """
+    refusal: NextActionRefusal | None = None
+    count: object = fields.get(_HANDOFF_COUNT_FIELD)
+    epoch: object = fields.get(_EPOCH_FIELD)
+    if count is not None and (not isinstance(count, int) or isinstance(count, bool)):
+        refusal = _refusal(detail="budget handoff_count must be an integer")
+    elif isinstance(count, int) and not isinstance(count, bool) and count < 0:
+        refusal = _refusal(detail="budget handoff_count must not be negative")
+    elif epoch is not None and (not isinstance(epoch, str) or epoch.strip() == ""):
+        refusal = _refusal(detail="budget epoch must be a non-empty string")
     return refusal
 
 
