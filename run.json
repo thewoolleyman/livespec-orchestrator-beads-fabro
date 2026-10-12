@@ -218,7 +218,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-10-12T04:35:54.797025Z",
-  "last_event_at": "2026-10-12T04:35:57.489047854Z",
+  "last_event_at": "2026-10-12T04:36:02.275623762Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -258,9 +258,9 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 29,
       "checkpoint": {
-        "timestamp": "2026-10-12T04:35:57.641847573Z",
+        "timestamp": "2026-10-12T04:36:02.275525839Z",
         "current_node": "probe",
         "completed_nodes": [
           "start",
@@ -268,28 +268,24 @@
         ],
         "node_retries": {},
         "context_values": {
-          "internal.fidelity": "compact",
-          "internal.acp_attempt.start": 0,
-          "failure_class": "",
-          "failure_signature": "",
-          "internal.run_id": "01M4Q6AGQ57ZFS1P2SP5SBFHCG",
-          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
           "internal.node_visit_count": 1,
-          "outcome": "succeeded",
-          "current_node": "probe",
-          "internal.retry_count.start": 0,
+          "internal.fidelity": "compact",
           "thread.start.current_node": "probe",
-          "command.output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+          "internal.retry_count.probe": 0,
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "current_node": "probe",
+          "failure_class": "",
           "graph.goal": "# Fabro Enemy Unit Test: janitor-shape-pass\n",
+          "internal.retry_count.start": 0,
           "internal.acp_attempt.probe": 0,
+          "failure_signature": "",
+          "outcome": "succeeded",
+          "internal.run_id": "01M4Q6AGQ57ZFS1P2SP5SBFHCG",
           "internal.thread_id": "start",
-          "internal.retry_count.probe": 0
+          "internal.acp_attempt.start": 0,
+          "command.output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
         },
         "node_outcomes": {
-          "start": {
-            "status": "succeeded",
-            "usage": null
-          },
           "probe": {
             "status": "succeeded",
             "context_updates": {
@@ -303,9 +299,14 @@
               "tool_time_ms": 137,
               "active_time_ms": 137
             }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "bb752aa97a56fe8cf7cd4bd09af4962e19685e90",
         "node_visits": {
           "probe": 1,
           "start": 1
@@ -314,7 +315,43 @@
       "diff": {}
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-10-12T04:36:02.323220159Z",
+    "status": "succeeded",
+    "timing": {
+      "wall_time_ms": 7479,
+      "inference_time_ms": 0,
+      "tool_time_ms": 137,
+      "active_time_ms": 137
+    },
+    "final_git_commit_sha": "bb752aa97a56fe8cf7cd4bd09af4962e19685e90",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "probe",
+        "stage_label": "probe",
+        "timing": {
+          "wall_time_ms": 151,
+          "inference_time_ms": 0,
+          "tool_time_ms": 137,
+          "active_time_ms": 137
+        },
+        "retries": 0
+      }
+    ],
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -345,7 +382,12 @@
       "first_event_seq": 21,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Script completed: eval test ok = ok",
+        "failure_reason": null,
+        "timestamp": "2026-10-12T04:35:57.640598215Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -353,11 +395,27 @@
         "command": "exec 2>&1\neval test ok = ok",
         "language": "shell"
       },
-      "script_timing": null,
+      "script_timing": {
+        "output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+        "exit_code": 0,
+        "duration_ms": 137,
+        "termination": "exited",
+        "output_bytes": 0,
+        "live_streaming": true
+      },
       "parallel_results": null,
       "output": null,
+      "output_bytes": 0,
+      "live_streaming": true,
+      "termination": "exited",
       "started_at": "2026-10-12T04:35:57.489034720Z",
       "handler": "command",
+      "timing": {
+        "wall_time_ms": 151,
+        "inference_time_ms": 0,
+        "tool_time_ms": 137,
+        "active_time_ms": 137
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -366,7 +424,41 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "succeeded"
+    },
+    "exit@1": {
+      "first_event_seq": 31,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-10-12T04:36:02.275623762Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-12T04:36:02.275606760Z",
+      "handler": "exit",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
     },
     "start@1": {
       "first_event_seq": 17,
