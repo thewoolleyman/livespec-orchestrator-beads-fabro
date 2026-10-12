@@ -11,6 +11,15 @@ implies when the factory no longer holds the run. This module reads that answer;
 the refusals that guard it and the dispatch that acts on it are separate concerns
 in separate modules.
 
+WHY THE RETIRED `pr` ENTRY IS CORRECTED HERE AND NOT AT EITHER SOURCE. The
+scripted publication of v121 put `pr_refresh` in front of `pr`, and the clause
+says an earlier `pr` entry MUST normalize to `pr_refresh`. Both sources could
+deliver `pr` — the factory record of a run terminated under an older build names
+the node it died inside, and the verdict table answered `pr` for `verified` — so
+the correction belongs on the one value both of them flow through. See
+`normalized_entry_node` for what entering `pr` on a resumed run would actually
+do.
+
 WHY THE SOURCE IS PART OF THE ANSWER. The clause requires the `resume` record to
 name "the source that decided it", and the two sources differ in the direction
 that matters: the factory's own run record knows the node the run died INSIDE,
@@ -61,10 +70,12 @@ __all__: list[str] = [
     "RESUMED_AT_FIX",
     "RESUMED_AT_PR",
     "RESUMED_AT_PROOF_CAPTURE",
+    "RESUMED_AT_PR_REFRESH",
     "RESUMED_AT_REVIEW",
     "SOURCE_FACTORY_RUN",
     "SOURCE_LATEST_RECORD",
     "ResumeAnchor",
+    "normalized_entry_node",
     "published_head",
     "resume_anchor",
     "resumed_at_for_verdict",
@@ -75,7 +86,11 @@ __all__: list[str] = [
 # reader and the writer cannot drift into naming different lines.
 PUBLISH_HEAD_LABEL = "Publish-branch head"
 
+# The RETIRED publication entry, kept because it is still an INPUT this reader
+# has to recognise: a run terminated under a build older than the scripted
+# publication reports `pr` as the node it died inside. It is never an ANSWER.
 RESUMED_AT_PR = "pr"
+RESUMED_AT_PR_REFRESH = "pr_refresh"
 RESUMED_AT_REVIEW = "review"
 RESUMED_AT_FIX = "fix"
 RESUMED_AT_PROOF_CAPTURE = "proof_capture"
@@ -101,7 +116,7 @@ FACTORY_RECORD_VERDICTS = (
 # `not_captured` and `not_reproduced` share `fix` because both are findings a code
 # change has to answer, which is the node that owns one.
 _RESUMED_AT_BY_VERDICT = {
-    VERDICT_VERIFIED: RESUMED_AT_PR,
+    VERDICT_VERIFIED: RESUMED_AT_PR_REFRESH,
     VERDICT_CAPTURED: RESUMED_AT_REVIEW,
     VERDICT_NOT_CAPTURED: RESUMED_AT_FIX,
     VERDICT_NOT_REPRODUCED: RESUMED_AT_FIX,
@@ -152,6 +167,30 @@ def published_head(*, body: str) -> str | None:
     return found.pop() if len(found) == 1 else None
 
 
+def normalized_entry_node(*, node: str) -> str:
+    """One resumed-at stage with the RETIRED publication entry corrected.
+
+    The clause requires that "an earlier `pr` entry MUST normalize to
+    `pr_refresh`", and the correction lives here — on the ONE value both sources
+    flow through — rather than at either source. The factory source is the one
+    that can still name `pr`, since a run terminated under a build older than
+    the scripted publication reports the node it died inside; the verdict table
+    above answers `pr_refresh` directly. Normalizing at a single source would
+    leave the other able to deliver `pr`.
+
+    Entering `pr` on a resumed run is not merely out of date. `pr` reads the
+    published head out of the refresh provenance `pr_refresh` establishes, so a
+    resume entering it directly either refuses for absent provenance or, where
+    a resume anchor supplied one, readies a pull request whose base nothing
+    rebased onto the authoritative default.
+
+    Every other node is returned UNCHANGED rather than validated against the
+    graph: the factory names the node it was executing, and a reader that
+    second-guessed that answer would be deciding, not normalizing.
+    """
+    return RESUMED_AT_PR_REFRESH if node == RESUMED_AT_PR else node
+
+
 def resumed_at_for_verdict(*, verdict: str) -> str:
     """The stage one factory verdict implies, for the factory-lost-the-run fallback.
 
@@ -186,7 +225,10 @@ def resume_anchor(
         return None
     if executing_node is not None:
         return ResumeAnchor(
-            record=latest, head=head, resumed_at=executing_node, source=SOURCE_FACTORY_RUN
+            record=latest,
+            head=head,
+            resumed_at=normalized_entry_node(node=executing_node),
+            source=SOURCE_FACTORY_RUN,
         )
     return ResumeAnchor(
         record=latest,
