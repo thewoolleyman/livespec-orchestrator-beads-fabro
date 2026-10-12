@@ -53,6 +53,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import 
     ResumeCheckout,
     resume_checkout_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
+    overlay_sandbox_image,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_toml_read import (
     toml_section_string,
 )
@@ -199,6 +202,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     codex_auth_snapshot: str | None = None,
     codex_otel_config: str | None = None,
     fabro_sandbox_image: str | None = None,
+    factory_environment: str | None = None,
     graph_override: Path | None = None,
     prepare_inputs: Mapping[str, str] | None = None,
     dispatch_id: str | None = None,
@@ -219,6 +223,14 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     literal durations — instead of the committed file. Absent (a direct
     caller that materialized no payload), the committed graph is absolutized
     exactly as before.
+
+    `factory_environment` is the catalog environment id the resolved factory
+    declares, and it WITHHOLDS `fabro_sandbox_image` rather than competing
+    with it: a catalog environment's image is a property of a server-managed
+    entry this host cannot read, so the only honest action is to leave the
+    committed image table alone and let the server's own selection stand
+    (`contracts.md` section "Sandbox image source"). None — a factory naming
+    no catalog environment — substitutes exactly as before.
 
     `dispatch_id` is the PRE-LAUNCH id the sandbox declares as its
     factory-provenance marker. It is injected here rather than in the
@@ -254,7 +266,13 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     rewritten = _rewrite_fabro_sandbox_image(
         text=rewritten,
         environment_id=environment_id,
-        fabro_sandbox_image=fabro_sandbox_image,
+        # The ONE place the image's source is decided, so the rewrite below
+        # keeps its single meaning — substitute the image it was handed — and
+        # the dispatch-id journal record can name that source off the same
+        # pure resolution rather than re-deriving it a layer away.
+        fabro_sandbox_image=overlay_sandbox_image(
+            factory_environment=factory_environment, configured_image=fabro_sandbox_image
+        ),
     )
     if rewritten is None:
         return None
