@@ -1,0 +1,15 @@
+digraph FabroEnemyJanitorShapeFail {
+    start [shape=Mdiamond, label="Start"]
+    janitor [shape=parallelogram, label="Janitor", script="eval {{ inputs.sandbox_check_suite }}"]
+    red [shape=parallelogram, label="Red", goal_gate=true, script="test -f /tmp/eut-check-suite-ran"]
+    green [shape=parallelogram, label="Green", goal_gate=true, script="echo 'failing suite reported success' >&2; exit 1"]
+    exhausted [shape=parallelogram, label="Exhausted", goal_gate=true, script="echo 'no outcome edge matched' >&2; exit 1"]
+    exit [shape=Msquare, label="Exit"]
+    start -> janitor
+    janitor -> green [condition="outcome=succeeded"]
+    janitor -> red [condition="outcome!=succeeded"]
+    janitor -> exhausted
+    red -> exit
+    green -> exit
+    exhausted -> exit
+}
