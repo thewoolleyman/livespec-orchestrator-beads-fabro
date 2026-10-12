@@ -29,9 +29,10 @@ the cases here establish is narrower and still necessary: that the launches whic
 DO route through a wrapped input are guarded, and that executing one really is
 bounded by the deadline.
 
-THE FIRST CASE GRADES ALL NINE NODES THROUGH THE REAL RESOLVER rather than one
-adapter through a fixture, because a single node passing says nothing about the
-other eight.
+THE FIRST CASE GRADES ALL EIGHT IMPLEMENTATION ACP NODES THROUGH THE REAL
+RESOLVER rather than one adapter through a fixture, because a single node
+passing says nothing about the other seven. Publication is now command-stage
+owned and therefore has no adapter launch to guard.
 
 THE EXECUTION CASES USE A SYNTHETIC COMMAND ON PURPOSE. The real adapters are not
 installed here, so launching one would measure the absence of a binary; what is
@@ -228,7 +229,7 @@ def _last_beat(*, beat_file: Path) -> float:
 
 
 def test_every_resolved_adapter_launches_through_the_guard(tmp_path: Path) -> None:
-    """ALL NINE nodes, through the real resolver: each launches behind the guard.
+    """All eight implementation ACP nodes launch behind the guard.
 
     The claim is "every supported route", so every node this repository's workflow
     declares is graded rather than one sampled adapter. The guard must sit AFTER
@@ -237,7 +238,7 @@ def test_every_resolved_adapter_launches_through_the_guard(tmp_path: Path) -> No
     them as its own arguments and the adapter would lose its configuration.
     """
     adapters = _rendered_adapters(repo=tmp_path)
-    assert len(adapters) >= 9, adapters
+    assert len(adapters) >= 8, adapters
     for node, rendered in adapters.items():
         adapter_env, argv = _engine_launch(rendered=rendered, sandbox=tmp_path)
         assert argv[:3] == [

@@ -37,6 +37,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_success_critical import (
     derive_success_critical,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_workflow_graph import parse_workflow_graph
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
+    GROOM_ONLY_ACP_NODES,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal import (
     fabro_run_terminal_outcome,
@@ -239,7 +242,10 @@ def test_the_registered_variant_declares_the_bundles_acp_node_set() -> None:
     bundle = _acp_node_names(payload=_BUNDLE)
 
     assert _GATE in bundle
-    assert _acp_node_names(payload=_VARIANT) == bundle
+    # The ONE asymmetry runs the other way: since v121 the bundle publishes
+    # through COMMAND stages and declares no ACP `pr` node, while the groom
+    # variant keeps one for its filing plan.
+    assert _acp_node_names(payload=_VARIANT) == bundle | GROOM_ONLY_ACP_NODES
     assert re.search(rf'^\s*{_ADAPTER_INPUT}\s*=\s*"', _toml(payload=_VARIANT), re.MULTILINE)
 
 

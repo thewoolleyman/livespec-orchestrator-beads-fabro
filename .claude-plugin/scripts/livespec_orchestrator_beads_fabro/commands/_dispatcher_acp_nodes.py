@@ -58,8 +58,16 @@ from livespec_orchestrator_beads_fabro.commands._acp_workflow_defaults import (
     rendered_workflow_defaults,
 )
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget, dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
+    GROOM_ONLY_ACP_NODES,
+    scoped_repository_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     workflow_declared_inputs,
+)
+from livespec_orchestrator_beads_fabro.commands._workflow_variant_kind import (
+    WORKFLOW_KIND_IMPLEMENT,
+    declared_workflow_kind,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
@@ -186,16 +194,17 @@ def prepare_acp_nodes(
     dispatch that would otherwise have run the default it meant to replace.
     """
     block = dispatcher_block(cwd=repo)
-    layers = _repository_layer(block=block)
-    if isinstance(layers, str):
-        return layers
-    catalogs, repository = layers
+    configured = _dispatch_workflow_configuration(block=block, committed=committed)
+    if isinstance(configured, str):
+        return configured
+    catalogs, workflow_inputs, workflow_kind = configured
+    scoped_block, not_applied = scoped_repository_block(block=block, workflow_kind=workflow_kind)
+    repository = repository_acp_overlays(block=scoped_block, catalogs=catalogs)
+    if isinstance(repository, str):
+        return repository
     dispatch = dispatch_acp_overlays(overrides=overrides, catalogs=catalogs)
     if isinstance(dispatch, str):
         return dispatch
-    workflow_inputs = workflow_layer(committed=committed, catalogs=catalogs)
-    if isinstance(workflow_inputs, str):
-        return workflow_inputs
     resolution = resolve_acp_nodes(
         workflow_inputs=workflow_inputs,
         repository=repository,
@@ -204,7 +213,7 @@ def prepare_acp_nodes(
     if isinstance(resolution, str):
         return resolution
     chains = _resolve_chains(
-        block=block,
+        block=scoped_block,
         catalogs=catalogs,
         resolution=resolution,
         dispatch=dispatch,
@@ -213,14 +222,37 @@ def prepare_acp_nodes(
     )
     if isinstance(chains, str):
         return chains
-    journal.append(
-        record={
-            "stage": ACP_NODES_STAGE,
-            "work_item_id": work_item_id,
-            **acp_nodes_journal_record(resolution=resolution, redacted=chains),
-        }
-    )
+    record: dict[str, object] = {
+        "stage": ACP_NODES_STAGE,
+        "work_item_id": work_item_id,
+        **acp_nodes_journal_record(resolution=resolution, redacted=chains),
+    }
+    if not_applied:
+        record["not_applied"] = list(not_applied)
+    journal.append(record=record)
     return resolution
+
+
+def _dispatch_workflow_configuration(
+    *, block: dict[str, object], committed: Path
+) -> tuple[AcpCatalogs, Mapping[str, str], str] | str:
+    """Catalogs and rendered workflow defaults, from ONE read of each source.
+
+    The catalogs come back WITH the workflow layer because the chain reader
+    downstream needs the same catalogs the overlay render used -- a fallback and
+    its node's primary resolve against one snapshot by contract -- and the KIND
+    comes back with them because it is read off the same committed text the
+    defaults are, and a second read of that file cannot be proven to agree with
+    the first.
+    """
+    catalogs = resolve_acp_catalogs(block=block)
+    if isinstance(catalogs, str):
+        return catalogs
+    configured = _workflow_configuration(committed=committed, catalogs=catalogs)
+    if isinstance(configured, str):
+        return configured
+    workflow_inputs, workflow_kind = configured
+    return catalogs, workflow_inputs, workflow_kind
 
 
 def workflow_layer(*, committed: Path, catalogs: AcpCatalogs) -> Mapping[str, str] | str:
@@ -238,34 +270,41 @@ def workflow_layer(*, committed: Path, catalogs: AcpCatalogs) -> Mapping[str, st
     so raw structured JSON reaching it would key on text no resolved node can
     equal, and every built-in identity would silently stop attaching.
     """
+    configured = _workflow_configuration(committed=committed, catalogs=catalogs)
+    return configured if isinstance(configured, str) else configured[0]
+
+
+def _workflow_configuration(
+    *, committed: Path, catalogs: AcpCatalogs
+) -> tuple[Mapping[str, str], str] | str:
+    """The rendered adapter defaults AND the workflow kind, from one read.
+
+    THE KIND IS WHAT RETIRES AN ADAPTER INPUT RATHER THAN THE INPUT'S ABSENCE.
+    A groom-kind workflow legitimately declares `pr_adapter`, and an
+    implementation workflow must render none -- so an implementation payload
+    that still declared one (a variant copied from the groom directory, say)
+    would otherwise have it rendered and merged, giving a command stage an
+    adapter nothing reads. Dropping every GROOM-ONLY node's input candidates
+    here, by kind, is what makes the retirement a property of the ratified cut
+    instead of a property of what each payload happens to declare.
+
+    An unreadable or absent kind declaration reads as the IMPLEMENT kind, which
+    is the direction `variant_kind` defaults in and for the same reason: the
+    kind that unlocks a door is the one that has to be said.
+    """
     committed_text = attempt(
         action=lambda: committed.read_text(encoding="utf-8"),
         exceptions=(OSError,),
     )
     if isinstance(committed_text, AttemptFailure):
         return f"workflow config {committed} is unreadable: {committed_text.error}"
-    return rendered_workflow_defaults(
-        declared=workflow_adapter_inputs(committed_text=committed_text), catalogs=catalogs
-    )
-
-
-def _repository_layer(
-    *,
-    block: dict[str, object],
-) -> tuple[AcpCatalogs, Mapping[str, AcpNodeOverlay]] | str:
-    """The catalogs and the repository overlay layer, from ONE read of the block.
-
-    Both come back together because the chain reader downstream needs the same
-    catalogs the overlay render used -- a fallback and its node's primary resolve
-    against one snapshot by contract.
-    """
-    catalogs = resolve_acp_catalogs(block=block)
-    if isinstance(catalogs, str):
-        return catalogs
-    overlays = repository_acp_overlays(block=block, catalogs=catalogs)
-    if isinstance(overlays, str):
-        return overlays
-    return (catalogs, overlays)
+    kind = declared_workflow_kind(committed_text=committed_text) or WORKFLOW_KIND_IMPLEMENT
+    declared = workflow_adapter_inputs(committed_text=committed_text)
+    if kind == WORKFLOW_KIND_IMPLEMENT:
+        retired = {name for node in GROOM_ONLY_ACP_NODES for name in NODE_INPUT_CANDIDATES[node]}
+        declared = {name: value for name, value in declared.items() if name not in retired}
+    rendered = rendered_workflow_defaults(declared=declared, catalogs=catalogs)
+    return rendered if isinstance(rendered, str) else (rendered, kind)
 
 
 def _factory_name(*, factory: FactoryTarget | None) -> str:

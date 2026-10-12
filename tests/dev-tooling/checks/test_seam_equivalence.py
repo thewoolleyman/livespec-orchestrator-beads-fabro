@@ -251,17 +251,19 @@ def test_declaring_an_integration_input_no_position_reads_fails_the_payload(
     tmp_path: Path,
 ) -> None:
     payload = _seed_repo(repo_root=tmp_path, check=check)
-    prompt = payload / "prompts" / "pr.md"
-    # `merge_mode` stays DECLARED in `[run.inputs]`; its one reading position
-    # (the publish prompt's merge-method flag) is put back to a literal.
-    _ = prompt.write_text(
-        prompt.read_text(encoding="utf-8").replace("--{{ inputs.merge_mode }}", "--rebase", 1),
+    # `merge_mode` stays DECLARED in `[run.inputs]`; its one reading position is
+    # put back to a literal. Since v121 that position is the `pr` COMMAND stage's
+    # own merge-method flag, where the retired publication PROMPT used to carry
+    # it, so the edit lands in the graph.
+    graph = payload / "workflow.fabro"
+    _ = graph.write_text(
+        graph.read_text(encoding="utf-8").replace("--{{ inputs.merge_mode }}", "--rebase", 1),
         encoding="utf-8",
     )
 
     # Prove the edit landed by reading the persisted payload back, then prove
     # the Dispatcher would still render the input no position reads any more.
-    assert "inputs.merge_mode" not in prompt.read_text(encoding="utf-8")
+    assert "inputs.merge_mode" not in graph.read_text(encoding="utf-8")
     assert "merge_mode" in check.rendered_input_names(repo_root=tmp_path)
     findings = check.payload_findings(repo_root=tmp_path)
     assert [finding.kind for finding in findings] == ["rendered-input-without-token"]
