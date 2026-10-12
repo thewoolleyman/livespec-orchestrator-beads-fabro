@@ -101,10 +101,14 @@ def legacy_record_covers_dispatch(
     ANY rather than EVERY, and the asymmetry is the contract's: one
     identity-less legacy adapter anywhere in the dispatch keeps every live
     record effective, because that posture is the conservative v107 path the
-    blanket exists to preserve. The set being empty therefore means covered by
-    nothing -- which is an answer about candidates, not about whether they
-    could be read; an unreadable resolution is the caller's fail-closed
-    decision and never an empty tuple.
+    blanket exists to preserve.
+
+    Whether a dispatch could be READ at all is not this function's question
+    and must not be expressed as an empty set here: an empty set covers
+    nothing, which is a confident negative, while a dispatch whose adapters
+    were never observed supports no verdict either way.
+    `_dispatcher_acp_preflight.resolve_dispatch_candidates` is where that
+    distinction lives, and it hands this an empty tuple from nowhere.
     """
     return any(
         legacy_record_covers_candidate(

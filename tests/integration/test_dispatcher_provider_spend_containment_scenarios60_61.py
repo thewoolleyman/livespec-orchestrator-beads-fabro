@@ -395,11 +395,16 @@ def test_scenario60_unexpired_exhaustion_refuses_admission_without_disposing_the
 ) -> None:
     """An unexpired record refuses the dispatch and leaves the item ready."""
     repo, workflow = _repo(tmp_path=tmp_path)
-    item = _item(id="bd-ib-codex-held")
+    item = _item(id="bd-ib-held")
     append_work_item(path=_config(), item=item)
+    # The record names the domain this fixture's OWN resolved ACP nodes
+    # render, which is what makes it cover this dispatch. A record on any
+    # other domain refuses nothing here, which is the sibling scenario
+    # "A hold on one provider does not refuse an item wholly on another"
+    # asserted below.
     _seed_journal(
         repo=repo,
-        records=[_exhaustion_record(provider="codex", expires_at=_UNEXPIRED)],
+        records=[_exhaustion_record(provider="anthropic", expires_at=_UNEXPIRED)],
     )
     calls: list[str] = []
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording(calls))
@@ -424,10 +429,53 @@ def test_scenario60_unexpired_exhaustion_refuses_admission_without_disposing_the
         >= {
             "work_item_id": item.id,
             "governing_condition": _GOVERNING_CONDITION,
-            "provider": "codex",
+            "provider": "anthropic",
             "record_expires_at": _UNEXPIRED,
         }.items()
     )
+
+
+def test_scenario60_a_hold_on_one_provider_does_not_refuse_an_item_wholly_on_another(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A record covering none of this dispatch's rendered candidates refuses nothing.
+
+    The counterpart of the case above, on the same fixture and the same
+    unexpired-record shape, differing only in the domain the record names.
+    Before the gate was scoped to the candidates a dispatch's resolved ACP
+    nodes render, a record for EITHER vendor in a hard-coded pair refused
+    every dispatch, and the refusal it journaled read exactly like a genuine
+    vendor ceiling this item had run into.
+
+    The record's liveness is asserted rather than assumed, because an admitted
+    item is equally consistent with a record that simply expired -- which is
+    the neighbouring scenario and a different mechanism.
+    """
+    repo, workflow = _repo(tmp_path=tmp_path)
+    item = _item(id="bd-ib-elsewhere")
+    append_work_item(path=_config(), item=item)
+    _seed_journal(
+        repo=repo,
+        records=[_exhaustion_record(provider="codex", expires_at=_UNEXPIRED)],
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording(calls))
+
+    exit_code = _loop(repo=repo, workflow=workflow)
+
+    assert exit_code == 0
+    assert calls == [item.id]
+    assert _stored()[item.id].status == "active"
+    records = _journal_records(repo=repo)
+    assert "provider-exhaustion-refusal" not in {record.get("stage") for record in records}
+    # The record is STILL HELD: the admission is scoping, not expiry.
+    still_held = active_provider_exhaustion(
+        provider="codex",
+        journal_path=repo / _JOURNAL,
+        now_iso="2026-10-12T00:00:00Z",
+    )
+    assert still_held is not None
 
 
 def test_scenario60_an_expired_record_refuses_nothing_on_a_later_pass(
@@ -613,7 +661,7 @@ def test_scenario60_a_containment_refusal_never_disposes_a_needs_human_item(
     append_work_item(path=_config(), item=held)
     _seed_journal(
         repo=repo,
-        records=[_exhaustion_record(provider="codex", expires_at=_UNEXPIRED)],
+        records=[_exhaustion_record(provider="anthropic", expires_at=_UNEXPIRED)],
     )
     calls: list[str] = []
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording(calls))

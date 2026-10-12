@@ -575,6 +575,30 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   dispatch — every dispatch in this fleet today — pays no round trip.
   `_dispatcher_acp_nodes._resolve_chains` is where it is called, before the
   attach.
+- `_acp_dispatch_coverage` is the DISPATCH-scoped half of the legacy
+  provider-record coverage rule: `_acp_hold_coverage` answers it for one
+  candidate, and this answers it for the whole set a dispatch's resolved node
+  adapters render. PURE, and the repair of a measured fail-wide
+  (`bd-ib-4nlb5s`): the legacy admission gate iterated a hard-coded
+  `("anthropic", "codex")` tuple, so a record for either vendor refused EVERY
+  dispatch including one routed wholly to the other, and a record for any
+  third provider was unreadable. Both halves are now derived — the readable
+  providers from the journal's own records
+  (`_dispatcher_provider_exhaustion.live_provider_exhaustions`), the
+  refusable ones from the rendered candidates
+  (`covering_provider_exhaustion`). Three properties an editor must not
+  invert. `builtin` TRAVELS WITH the candidate and is never re-derived from
+  an identity, because it is read from the rendered-bytes table and an
+  operator who spelled their own `availability_key` with a vendor's word has
+  not opted into that vendor's blanket. A node's FALLBACKS are in the set: a
+  legacy record carries no scope, candidate key or node, so it cannot support
+  a judgement about which chain position it reached, and reasoning about
+  chain viability belongs to `_acp_candidate_preflight`. And an UNREADABLE
+  resolution is `None` rather than the empty tuple — the empty tuple is an
+  answer about candidates, `None` is the absence of a measurement, and the
+  gate owes them opposite treatments. `_dispatcher_acp_preflight.
+  resolve_dispatch_candidates` is the one place the resolution is read off
+  disk, and `_dispatcher_admission_eligibility` spends it ONCE PER PASS.
 - The **TDD order calibration** modules (plan `factory-test-first-enforcement`
   slice S3, `bd-ib-3h5vfq`) put seven `tdd.*` fields plus the implement
   adapter on the terminal `dispatcher.calibration` span, so "is the factory
