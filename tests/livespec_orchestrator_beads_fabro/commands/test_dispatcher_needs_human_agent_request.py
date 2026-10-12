@@ -128,13 +128,26 @@ def test_a_preserved_tree_is_named_and_the_decision_guidance_is_retained(
     assert "no agent asked anything" not in detail
 
 
-def test_a_record_reporting_neither_outcome_still_names_the_run_scoped_ref(
+def test_a_record_reporting_neither_outcome_claims_neither_outcome(
     tmp_path: Path,
 ) -> None:
-    """Silence is the ordinary case; treating it as failure would retract a real ref."""
+    """Silence names no ref and alleges no failure — it is UNKNOWN, both ways.
+
+    This case asserted the opposite until the three-way invariant landed: it
+    read a missing failure marker as positive evidence of a successful push,
+    and so pointed every legacy and truncated record at a ref `git fetch`
+    cannot find. The mirror claim is refused in the same breath, because
+    inventing a failed push sends a rework to the dump pointer while the ref is
+    really there.
+    """
     detail = _detail(tmp_path=tmp_path, stderr=f"{_PROMPT_LINE}\n")
 
-    assert f"the tree was preserved on {_REF}" in detail
+    assert "whether the tree reached a run-scoped ref is UNKNOWN" in detail
+    assert f"the tree was preserved on {_REF}" not in detail
+    assert _REF not in detail
+    assert "the tree was not pushed" not in detail
+    # The route out and the pointer are RETAINED; only the claim is withdrawn.
+    assert _POINTER in detail
     assert _GUIDANCE in detail
 
 

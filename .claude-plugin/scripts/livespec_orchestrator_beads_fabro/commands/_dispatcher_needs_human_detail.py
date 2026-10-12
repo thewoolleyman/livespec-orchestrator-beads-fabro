@@ -6,26 +6,40 @@ pure rendering of the needs-human terminal's own account. Keeping the render
 here is what lets it read the causal stage and the structured failure without
 the routing module growing a second concern.
 
-THE TWO ENDINGS SHARE ONE STATUS AND MUST NOT SHARE ONE WORDING, which is the
+THE THREE ENDINGS SHARE ONE STATUS AND MUST NOT SHARE ONE WORDING, which is the
 same defect `_blocked_detail` already fixed for the `blocked` status and which
-the v093 terminal made unreachable again
-(`plan/pr-stage-backgrounded-push-fault/research/001-failure-analysis-and-mechanism-candidates-2026-10-08.md`
-section 3.5). An AGENT that ended through the needs-human protocol asked a
-question and a human has something to decide; an ENGINE that routed a
-non-retryable node failure here asked nothing, and telling its triager that a
-decision awaits them sends them hunting for a question nobody wrote. The
-discriminator is the causal stage: an agent-reported ending rides a conditional
-edge off a node that SUCCEEDED, so it records no loop failure signature.
+the v093 terminal made unreachable again (epic `bd-ib-ctagnf`, opening research
+note "Failure analysis and mechanism candidates", section "The needs-human
+terminal renders one wording for two endings"). An AGENT that ended through the
+needs-human protocol asked a question and a human has something to decide; an
+ENGINE that routed a non-retryable node failure here asked nothing, and telling
+its triager that a decision awaits them sends them hunting for a question nobody
+wrote. A record that establishes NEITHER must claim neither.
+
+The discriminator is `_fabro_causal_stage`'s verdict, which grades the terminal
+checkpoint's own per-node outcome map. It is deliberately NOT the absence of a
+loop failure signature: that absence is ambiguous in both directions, and
+reading it as "an agent asked" is what made a provider-ceiling run — which
+never got as far as asking anything — render as a pending question.
 
 The agent-reported wording is kept BYTE-IDENTICAL to what it was before the
 stage attribution existed. That ending was never mis-rendered, so changing its
 text would be churn in the one arm this change is not about.
+
+EVERY ARM NAMES THE SAME LEDGER VALVE, and that is not a redundancy to be
+collapsed. The lifecycle does not branch — the item rests at `blocked /
+needs-human` and `resolve-blocked:<id>:ready` is its only exit — so an arm that
+withheld the valve would describe a state with no way out. What the arms differ
+on is whether a QUESTION is pending, which is what the reader goes looking for.
 """
 
 from __future__ import annotations
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import NEEDS_HUMAN_MARKER
-from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import CausalStageFailure
+from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import (
+    AGENT_REQUEST,
+    CausalStageFailure,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_escalation import ESCALATION_NODE_ID
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import FabroFailureDetail
 from livespec_orchestrator_beads_fabro.commands._fabro_transport_fault import (
@@ -50,6 +64,11 @@ _FALL_BACK_TO_POINTER = (
 # own distinguishing suffix.
 _PUSH_FAILED_SENTINEL = f"{NEEDS_HUMAN_MARKER}_PUSH_FAILED"
 _NO_RUN_ID_SENTINEL = f"{NEEDS_HUMAN_MARKER}_NO_RUN_ID"
+
+# The POSITIVE sentinel, which is the only evidence that a push LANDED. It is
+# colon-and-space terminated because the node writes the ref it pushed after it,
+# and that ref is what gets reported rather than one derived from the run id.
+_PRESERVED_SENTINEL = f"{NEEDS_HUMAN_MARKER}_PRESERVED: "
 
 # The terminal's own reason line, and the routing suffix it always carries.
 # The reason is the ONLY account of why the loop gave up that a node whose
@@ -90,8 +109,8 @@ def needs_human_terminal_detail(
         _head(run_label=run_label, causal=causal),
         *_attribution(causal=causal, failure=failure),
         _reason(text=text),
-        _preservation(run_id=run_id, text=text),
-        _decision(work_item_id=work_item_id),
+        _preservation(text=text),
+        _decision(work_item_id=work_item_id, causal=causal),
     )
     return "; ".join(clauses)
 
@@ -181,28 +200,61 @@ def _attribution(
     return tuple(clauses)
 
 
-def _preservation(*, run_id: str | None, text: str) -> str:
+def _preservation(*, text: str) -> str:
     """What a rework can start FROM — the fact the ledger answer turns on.
 
-    The ref used to be DERIVED from the run id and asserted unconditionally, so
-    a preservation push that failed read exactly like one that landed and sent
-    the operator to a ref `git fetch` cannot find. The terminal node says which
-    happened; this reads it.
+    THE INVARIANT IS THREE-WAY AND EVERY ARM NEEDS ITS OWN EVIDENCE: a POSITIVE
+    sentinel means preserved, an explicit NEGATIVE sentinel means failed, and
+    the absence of both means UNKNOWN.
 
-    SILENCE IS THE PRESERVED ARM, deliberately. Only an explicit negative
-    sentinel — or an unparsed run id, which makes a run-scoped ref unnameable
-    on its face — retracts the ref. A record that reports neither outcome is
-    the ordinary one, and treating it as failure would retract a ref that is
-    really there, which is the mirror-image lie.
+    Silence used to be the preserved arm, and that is the defect this function
+    exists to close. A missing failure marker is not positive evidence of a
+    successful push: a legacy ending, an output capture that never reached this
+    reader, and a genuine failure whose sentinel was truncated all look
+    identical to a push that landed, and all three were sent to
+    `refs/heads/needs-human/<run>` — a ref `git fetch` cannot find. Unknown is
+    not the failure claim either, because inventing a failed push sends the
+    operator to the dump pointer while the ref is really there; that is the same
+    lie pointing the other way.
+
+    THE REF IS READ OFF THE POSITIVE SENTINEL, never derived from the run id.
+    The node prints the ref it actually pushed, so deriving one would be this
+    module's guess about another component's act — and the two can differ.
+
+    AN UNPARSED RUN ID IS A PARSE GAP, NOT A PUSH FAILURE. It says nothing about
+    what the terminal did, and it can co-exist with a positive sentinel that
+    names the ref outright — which is why the sentinel is tested FIRST and the
+    run id is never consulted here at all.
     """
-    if run_id is None:
-        return _not_pushed(because="no run id was parsed from the launch output")
+    preserved_ref = _after(text=text, sentinel=_PRESERVED_SENTINEL)
+    if preserved_ref is not None:
+        return f"the tree was preserved on {preserved_ref} ({_PRESERVED_POINTER})"
     if _NO_RUN_ID_SENTINEL in text:
         return _not_pushed(because="the terminal reported that no run id reached it")
     if _PUSH_FAILED_SENTINEL in text:
         return _not_pushed(because="the terminal reported that its preservation push failed")
-    ref = f"refs/heads/needs-human/{run_id}"
-    return f"the tree was preserved on {ref} ({_PRESERVED_POINTER})"
+    return (
+        "whether the tree reached a run-scoped ref is UNKNOWN — the run's "
+        f"record carries neither the terminal's {_PRESERVED_SENTINEL.strip().rstrip(':')} "
+        f"sentinel nor a failure one, so no ref can be named; {_FALL_BACK_TO_POINTER}"
+    )
+
+
+def _after(*, text: str, sentinel: str) -> str | None:
+    """The non-empty text following the first occurrence of one sentinel.
+
+    Returns None for a sentinel that is present but names nothing. A positive
+    preservation sentinel whose ref is blank has not identified a ref, and
+    reporting the empty string as one would claim preservation on a ref nobody
+    can fetch — the very class of claim this module refuses.
+    """
+    for line in text.splitlines():
+        index = line.find(sentinel)
+        if index >= 0:
+            trailing = line[index + len(sentinel) :].strip()
+            if trailing != "":
+                return trailing
+    return None
 
 
 def _not_pushed(*, because: str) -> str:
@@ -219,10 +271,43 @@ def _not_pushed(*, because: str) -> str:
     )
 
 
-def _decision(*, work_item_id: str) -> str:
-    """Where the decision lives, which is the ledger and never a live run."""
+def _decision(*, work_item_id: str, causal: CausalStageFailure) -> str:
+    """What the human is actually being asked to do, which differs by ending.
+
+    THE VALVE IS NAMED IN EVERY ARM and the lifecycle never moves: the item
+    rests at `blocked / needs-human` and `resolve-blocked:<id>:ready` is the
+    only route out of it. What the arms disagree about is whether a QUESTION is
+    pending, and that is not a nuance — it decides what the operator goes
+    looking for.
+
+    The GENUINE REQUEST arm is byte-identical to the wording this clause always
+    had. An agent asked something, a human has something to decide, and that
+    ending was never mis-rendered.
+
+    The other two arms do NOT say the decision lives in the ledger awaiting an
+    answer, because for them there is no answer to give. A transport fault asked
+    nothing; telling its triager a decision awaits them is what sent one
+    incident hunting for roughly twenty hours for a question nobody wrote. They
+    get triage-and-re-dispatch guidance instead — the same valve, a different
+    instruction — and the UNESTABLISHED arm additionally says that the ending
+    itself is unexplained, so the triager starts by establishing which of the
+    other two it was rather than by assuming.
+    """
+    valve = f"`resolve-blocked:{work_item_id}:ready`"
+    if causal.kind == AGENT_REQUEST:
+        return (
+            "no run is waiting — the decision lives in the ledger: answer with "
+            f"{valve} (re-dispatch, seeding rework from "
+            "the preserved ref or from scratch) or leave the item blocked"
+        )
+    if causal.is_stage_failure:
+        return (
+            "no run is waiting and no answer is owed — triage the failure named above, "
+            f"then release the item with {valve} to re-dispatch (seeding rework from the "
+            "preserved tree or from scratch), or leave the item blocked"
+        )
     return (
-        "no run is waiting — the decision lives in the ledger: answer with "
-        f"`resolve-blocked:{work_item_id}:ready` (re-dispatch, seeding rework from "
-        "the preserved ref or from scratch) or leave the item blocked"
+        "no run is waiting, and this record does not establish whether a stage failed "
+        "or an agent asked — triage the run to find out before answering, then release "
+        f"the item with {valve} to re-dispatch, or leave the item blocked"
     )
