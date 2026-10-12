@@ -28,12 +28,28 @@ this checkpoint budget rather than by some unrelated narrowing of the graph.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any
+
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement import (
+    credential_lifetime_requirement_for,
+    resolve_credential_lifetime_requirement,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _PAYLOAD = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
 _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
+
+# The bound the freshness requirement has to sit under, and the figure the
+# RETIRED `"15m"` resolved. The bound is deliberately looser than the measured
+# 519630 seconds this budget yields: the requirement also sums the resolved node
+# timeouts, so pinning it exactly would make every unrelated timeout edit fail
+# this case. The control below pins the 15m figure exactly, because that one is
+# the thing being moved away from and a drifting comparand would hide the move.
+_FRESHNESS_BOUND_SECONDS = 530_000
+_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 796_830
 
 
 def _checkpoint() -> dict[str, Any]:
@@ -67,3 +83,58 @@ def test_the_run_branch_checkpoint_skips_this_repositorys_commit_hooks() -> None
     accepted them would certify a configuration no run could load.
     """
     assert _checkpoint()["skip_git_hooks"] is True
+
+
+def test_the_run_branch_checkpoint_budget_is_five_minutes() -> None:
+    """`commit_timeout` is `"5m"`, which is a ceiling question, not a local one.
+
+    Floor: the engine's stock thirty seconds destroyed completed work when a
+    hook-free `git add` or `git commit` crossed it (ledger bd-ib-6ka), so the
+    budget has to be generously above it. Ceiling: the Dispatcher bills this
+    value THREE TIMES PER ATTEMPT into the credential-lifetime floor, and the
+    case below is what holds that end.
+
+    Five minutes is ten times the stock budget and ample for a hook-free stage
+    and commit in a contended sandbox -- the hooks are what took minutes, and
+    `skip_git_hooks` above has now removed them.
+    """
+    assert _checkpoint()["commit_timeout"] == "5m"
+
+
+def test_the_checkpoint_budget_holds_the_credential_freshness_floor_under_the_bound(
+    tmp_path: Path,
+) -> None:
+    """The shipped declaration resolves a freshness requirement under the bound.
+
+    WHY THE CONTROL IS THE LOAD-BEARING HALF. The requirement sums the resolved
+    node timeouts, the visit caps and the retry budgets as well as this
+    checkpoint value, so a bare inequality would also be satisfied by a graph
+    that happened to shrink -- a pass earned by something this item never
+    touched. The control re-resolves the SAME payload with only the checkpoint
+    budget restored to the retired `"15m"` and requires it to land ABOVE the
+    bound at exactly the measured 796830 seconds, which is what makes the first
+    assertion evidence about this declaration rather than about the graph.
+
+    The replacement is asserted to match exactly once before it is applied: a
+    `str.replace` that matched nothing would leave the control resolving the
+    shipped value and reporting agreement with itself.
+    """
+    resolved = resolve_credential_lifetime_requirement(repo=_REPO_ROOT)
+    assert hasattr(resolved, "required_seconds"), resolved
+    assert resolved.required_seconds < _FRESHNESS_BOUND_SECONDS
+
+    copied = tmp_path / _PAYLOAD.name
+    _ = shutil.copytree(_PAYLOAD, copied)
+    committed = copied / _SHIPPED_WORKFLOW.name
+    shipped_text = committed.read_text(encoding="utf-8")
+    assert shipped_text.count('commit_timeout = "5m"') == 1, "the budget is not declared once"
+    _ = committed.write_text(
+        shipped_text.replace('commit_timeout = "5m"', 'commit_timeout = "15m"'), encoding="utf-8"
+    )
+
+    retired = credential_lifetime_requirement_for(
+        committed=committed, block=dispatcher_block(cwd=_REPO_ROOT)
+    )
+    assert hasattr(retired, "required_seconds"), retired
+    assert retired.required_seconds == _FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES
+    assert retired.required_seconds > _FRESHNESS_BOUND_SECONDS
