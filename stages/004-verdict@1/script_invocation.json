@@ -1,0 +1,5 @@
+{
+  "script": "cat /tmp/eut-janitor-verdict >&2; test \"$(cat /tmp/eut-janitor-verdict)\" = red",
+  "command": "exec 2>&1\ncat /tmp/eut-janitor-verdict >&2; test \"$(cat /tmp/eut-janitor-verdict)\" = red",
+  "language": "shell"
+}

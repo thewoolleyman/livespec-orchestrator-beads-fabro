@@ -1,0 +1,6 @@
+{
+  "outcome": "succeeded",
+  "notes": "Script completed: test -f /tmp/eut-check-suite-ran && echo red > /tmp/eut-janitor-verdict",
+  "failure_reason": null,
+  "timestamp": "2026-10-12T04:36:17.886139832Z"
+}
