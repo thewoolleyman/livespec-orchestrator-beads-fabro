@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dead_implementer import (
     dead_implementer_condition_from_text,
@@ -26,12 +26,6 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroInspectResult,
     fabro_port_for_plan,
 )
-from livespec_orchestrator_beads_fabro.commands._fabro_port_checkpoints import (
-    fabro_inspect_checkpoints,
-)
-from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
-    fabro_inspect_record,
-)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -44,10 +38,10 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "fabro_run_terminal_outcome",
     "inspect_run",
+    "inspect_terminal_run",
 ]
 
 _FABRO_INSPECT_TIMEOUT_SECONDS = 300.0
-_RUN_STORE_LOSS_MESSAGE = "Worker exited before emitting a terminal run event: exit status: 0"
 
 
 def inspect_run(
@@ -73,6 +67,32 @@ def inspect_run(
     return inspect
 
 
+def inspect_terminal_run(
+    *,
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    journal: JournalWriter,
+    run_id: str | None,
+    exit_code: int,
+) -> FabroInspectResult | None:
+    """Inspect once, then refresh a failed record whose cause has not arrived."""
+    inspect = inspect_run(plan=plan, runner=runner, journal=journal, run_id=run_id)
+    needs_refresh = bool(
+        exit_code != 0
+        and run_id is not None
+        and inspect is not None
+        and inspect.command.exit_code == 0
+        and inspect.status_kind == "failed"
+        and inspect.failure is None
+    )
+    refreshed = (
+        inspect_run(plan=plan, runner=runner, journal=journal, run_id=run_id)
+        if needs_refresh
+        else None
+    )
+    return refreshed if refreshed is not None and refreshed.failure is not None else inspect
+
+
 def fabro_run_terminal_outcome(
     *,
     outcome_type: type[DispatchOutcome],
@@ -92,8 +112,6 @@ def fabro_run_terminal_outcome(
     if blocked is not None:
         return blocked
     if exit_code == 0:
-        return None
-    if _successful_store_loss_checkpoint(run_id=run_id, inspect=inspect):
         return None
     failure = None if inspect is None else inspect.failure
     detail = fabro_failure_outcome_detail(failure=failure, fallback=tail(text=stderr))
@@ -126,34 +144,6 @@ def fabro_run_terminal_outcome(
         # are read, because a probe aimed at one channel would report a clean
         # "no truncation" for a truncation carried on the other.
         dead_implementer_condition=dead_implementer_condition_from_text(text=f"{stderr}\n{detail}"),
-    )
-
-
-def _successful_store_loss_checkpoint(
-    *, run_id: str | None, inspect: FabroInspectResult | None
-) -> bool:
-    """Recognize the incident's last durable successful checkpoint."""
-    record = None if inspect is None else fabro_inspect_record(payload=inspect.payload)
-    checkpoints = () if record is None else fabro_inspect_checkpoints(record=record)
-    checkpoint: dict[str, Any] = {} if not checkpoints else checkpoints[-1]
-    outcomes_raw: object = checkpoint.get("node_outcomes")
-    outcomes = cast("dict[object, object]", outcomes_raw) if isinstance(outcomes_raw, dict) else {}
-    final_raw: object = outcomes.get("verify_pr")
-    final = cast("dict[object, object]", final_raw) if isinstance(final_raw, dict) else {}
-    failure = None if inspect is None else inspect.failure
-    return bool(
-        run_id is not None
-        and inspect is not None
-        and inspect.command.exit_code == 0
-        and inspect.status_kind == "failed"
-        and failure is not None
-        and failure.cause == _RUN_STORE_LOSS_MESSAGE
-        and record is not None
-        and record.get("run_id") == run_id
-        and checkpoint.get("current_node") == "verify_pr"
-        and checkpoint.get("next_node_id") == "exit"
-        and final.get("status") == "succeeded"
-        and isinstance(checkpoint.get("git_commit_sha"), str)
     )
 
 
