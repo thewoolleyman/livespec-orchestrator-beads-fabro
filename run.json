@@ -299,7 +299,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-10-12T04:29:45.948266422Z",
-  "last_event_at": "2026-10-12T04:29:53.096817212Z",
+  "last_event_at": "2026-10-12T04:29:56.684035755Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -402,9 +402,9 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 39,
       "checkpoint": {
-        "timestamp": "2026-10-12T04:29:53.241306154Z",
+        "timestamp": "2026-10-12T04:29:56.683935437Z",
         "current_node": "red",
         "completed_nodes": [
           "start",
@@ -413,30 +413,44 @@
         ],
         "node_retries": {},
         "context_values": {
-          "internal.fidelity": "compact",
-          "command.output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
-          "thread.janitor.current_node": "red",
-          "internal.retry_count.red": 0,
-          "internal.acp_attempt.red": 0,
-          "internal.acp_attempt.start": 0,
-          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
-          "internal.node_visit_count": 1,
-          "current_node": "red",
-          "outcome": "succeeded",
-          "failure_class": "",
           "internal.retry_count.janitor": 0,
           "graph.goal": "# Fabro Enemy Unit Test: janitor-shape-fail\n",
           "internal.acp_attempt.janitor": 0,
+          "internal.fidelity": "compact",
+          "internal.node_visit_count": 1,
+          "internal.retry_count.red": 0,
           "failure_signature": "",
+          "command.output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+          "internal.acp_attempt.start": 0,
+          "failure_class": "",
           "internal.run_id": "01M4Q5Z7WHXJEH57ZWC6SWWYC5",
           "internal.thread_id": "janitor",
+          "thread.janitor.current_node": "red",
+          "current_node": "red",
+          "internal.acp_attempt.red": 0,
           "internal.retry_count.start": 0,
+          "outcome": "succeeded",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
           "thread.start.current_node": "janitor"
         },
         "node_outcomes": {
           "start": {
             "status": "succeeded",
             "usage": null
+          },
+          "red": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+            },
+            "notes": "Script completed: test -f /tmp/eut-check-suite-ran",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 135,
+              "active_time_ms": 135
+            }
           },
           "janitor": {
             "status": "failed",
@@ -454,33 +468,70 @@
               "tool_time_ms": 136,
               "active_time_ms": 136
             }
-          },
-          "red": {
-            "status": "succeeded",
-            "context_updates": {
-              "command.output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
-            },
-            "notes": "Script completed: test -f /tmp/eut-check-suite-ran",
-            "usage": null,
-            "timing": {
-              "wall_time_ms": 0,
-              "inference_time_ms": 0,
-              "tool_time_ms": 135,
-              "active_time_ms": 135
-            }
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "bb752aa97a56fe8cf7cd4bd09af4962e19685e90",
+        "loop_failure_signatures": {
+          "janitor|deterministic|script failed with exit code: <n>": 1
+        },
         "node_visits": {
+          "start": 1,
           "red": 1,
-          "janitor": 1,
-          "start": 1
+          "janitor": 1
         }
       },
       "diff": {}
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-10-12T04:29:56.723503626Z",
+    "status": "succeeded",
+    "timing": {
+      "wall_time_ms": 10737,
+      "inference_time_ms": 0,
+      "tool_time_ms": 271,
+      "active_time_ms": 271
+    },
+    "final_git_commit_sha": "bb752aa97a56fe8cf7cd4bd09af4962e19685e90",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "janitor",
+        "stage_label": "janitor",
+        "timing": {
+          "wall_time_ms": 146,
+          "inference_time_ms": 0,
+          "tool_time_ms": 136,
+          "active_time_ms": 136
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "red",
+        "stage_label": "red",
+        "timing": {
+          "wall_time_ms": 144,
+          "inference_time_ms": 0,
+          "tool_time_ms": 135,
+          "active_time_ms": 135
+        },
+        "retries": 0
+      }
+    ],
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -525,6 +576,40 @@
       "output": null,
       "started_at": "2026-10-12T04:29:48.148912822Z",
       "handler": "start",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "exit@1": {
+      "first_event_seq": 41,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-10-12T04:29:56.684035755Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-12T04:29:56.684012371Z",
+      "handler": "exit",
       "timing": {
         "wall_time_ms": 0,
         "inference_time_ms": 0,
@@ -593,7 +678,12 @@
       "first_event_seq": 31,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Script completed: test -f /tmp/eut-check-suite-ran",
+        "failure_reason": null,
+        "timestamp": "2026-10-12T04:29:53.240523911Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -601,11 +691,27 @@
         "command": "exec 2>&1\ntest -f /tmp/eut-check-suite-ran",
         "language": "shell"
       },
-      "script_timing": null,
+      "script_timing": {
+        "output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+        "exit_code": 0,
+        "duration_ms": 135,
+        "termination": "exited",
+        "output_bytes": 0,
+        "live_streaming": true
+      },
       "parallel_results": null,
       "output": null,
+      "output_bytes": 0,
+      "live_streaming": true,
+      "termination": "exited",
       "started_at": "2026-10-12T04:29:53.096140707Z",
       "handler": "command",
+      "timing": {
+        "wall_time_ms": 144,
+        "inference_time_ms": 0,
+        "tool_time_ms": 135,
+        "active_time_ms": 135
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -614,7 +720,7 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "succeeded"
     }
   }
 }
