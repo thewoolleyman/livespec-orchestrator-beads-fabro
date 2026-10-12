@@ -9,13 +9,33 @@ from pathlib import Path
 from typing import cast
 
 __all__: list[str] = [
+    "DIAGNOSTIC_MISSING",
     "DIAGNOSTIC_UNAVAILABLE",
+    "DIAGNOSTIC_UNREADABLE",
     "HerdrChannel",
     "HerdrReply",
     "herdr_socket_generation",
 ]
 
+# The three ends a reply can reach that are not a pane state. They are
+# SEPARATE values rather than one shared diagnostic because each names a
+# different repair: a pane the server no longer holds is gone for good, a
+# reply that could not be read is a protocol or version fault, and an
+# unreachable server is a transport fault that may clear on its own.
+DIAGNOSTIC_MISSING = "MISSING"
 DIAGNOSTIC_UNAVAILABLE = "UNAVAILABLE"
+DIAGNOSTIC_UNREADABLE = "UNREADABLE"
+
+# Every error code with which this server reports that the target itself is
+# not there. Anything else it names is a measurement that failed rather than a
+# verdict about the pane, so it stays UNAVAILABLE.
+_MISSING_ERROR_CODES = frozenset(
+    {
+        "agent_not_found",
+        "pane_not_found",
+        "terminal_not_found",
+    }
+)
 
 _AGENT_METHOD = "agent.get"
 _REQUEST_ID = "livespec-session-wait"
@@ -102,27 +122,37 @@ def _mapping(*, value: object) -> dict[str, object] | None:
 
 
 def _parse_reply(*, raw: str) -> HerdrReply:
-    agent = _agent_record(raw=raw)
+    """One reply, read as either an agent record or exactly one diagnostic.
+
+    The ORDER is load-bearing. A well-formed ERROR object is read before the
+    success shape, because an error reply has no `result` and would otherwise
+    fall through to the unreadable arm — which would report a server that
+    answered clearly, naming the pane as absent, as a server whose reply
+    could not be parsed.
+    """
+    payload = _mapping(value=_decoded(raw=raw))
+    if payload is None:
+        return HerdrReply(agent=None, diagnostic=DIAGNOSTIC_UNREADABLE)
+    error = _mapping(value=payload.get("error"))
+    if error is not None:
+        return HerdrReply(agent=None, diagnostic=_error_diagnostic(error=error))
+    result = _mapping(value=payload.get("result"))
+    agent = None if result is None else _mapping(value=result.get("agent"))
     if agent is None:
-        return HerdrReply(agent=None, diagnostic=DIAGNOSTIC_UNAVAILABLE)
+        return HerdrReply(agent=None, diagnostic=DIAGNOSTIC_UNREADABLE)
     return HerdrReply(agent=agent, diagnostic=None)
 
 
-def _agent_record(*, raw: str) -> dict[str, object] | None:
-    """The agent record a well-formed success reply carries, or None.
-
-    Every shape that is not that record returns None rather than a partially
-    indexed payload: a caller that defaulted a missing field in would be
-    inventing a pane state it never read.
-    """
+def _decoded(*, raw: str) -> object | None:
     try:
-        decoded = json.loads(raw)
+        return json.loads(raw)
     except json.JSONDecodeError:
         return None
-    payload = _mapping(value=decoded)
-    if payload is None:
-        return None
-    result = _mapping(value=payload.get("result"))
-    if result is None:
-        return None
-    return _mapping(value=result.get("agent"))
+
+
+def _error_diagnostic(*, error: dict[str, object]) -> str:
+    """Whether a named server error is about the TARGET or the measurement."""
+    code = error.get("code")
+    if isinstance(code, str) and code in _MISSING_ERROR_CODES:
+        return DIAGNOSTIC_MISSING
+    return DIAGNOSTIC_UNAVAILABLE
