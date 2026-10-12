@@ -181,6 +181,12 @@ class WaitRequest:
     repository: Path
     deadline_seconds: float
     targets: tuple[WaitTarget, ...]
+    # The `monotonic` instant the caller's budget began, for a caller that has
+    # already spent part of it observing targets before handing them over —
+    # the CLI freezes each pane's identity first. The wait measures its
+    # deadline from that instant rather than restarting it, so the caller's
+    # own observations and the wait spend ONE budget. None starts it at arming.
+    started_at: float | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

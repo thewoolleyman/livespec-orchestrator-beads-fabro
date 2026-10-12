@@ -131,7 +131,8 @@ def run_wait(
             trigger_exit_code=None,
             observations={},
         )
-    deadline = monotonic() + request.deadline_seconds
+    started_at = monotonic() if request.started_at is None else request.started_at
+    deadline = started_at + request.deadline_seconds
     lock_budget = LockBudget(deadline=deadline, monotonic=monotonic, sleeper=sleeper)
     registration = register_wait(
         request=request,
