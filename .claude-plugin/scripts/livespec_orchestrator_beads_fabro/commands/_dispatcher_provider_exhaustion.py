@@ -8,14 +8,19 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol, cast
 
+from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import (
+    RenderedCandidate,
+    legacy_record_covers_dispatch,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.effects import parse_iso_datetime
 
 __all__: list[str] = [
-    "DISPATCH_PROVIDERS",
     "ProviderExhaustionRecord",
     "active_provider_exhaustion",
+    "covering_provider_exhaustion",
     "dispatch_provider_exhaustion",
+    "live_provider_exhaustions",
     "provider_exhaustion_clearance_record",
     "provider_exhaustion_refusal",
     "record_provider_exhaustion_if_observed",
@@ -23,19 +28,20 @@ __all__: list[str] = [
 
 _GOVERNING_CONDITION = "provider_usage_limit"
 
-# The vendors a dispatch of this repository SPENDS, which is the set the
-# admission condition is evaluated over: a record covers this dispatch when its
-# provider is one of these. Both are listed because one run spends both — the
-# implementer nodes are Anthropic-backed and the publish node is Codex-backed by
-# this repository's own `dispatcher` configuration — so a ceiling on either
-# vendor is a ceiling this dispatch would run into.
+# NO VENDOR LIST LIVES HERE ANY MORE, and its absence is the fix rather than
+# an omission. A hard-coded `("anthropic", "codex")` tuple used to stand in for
+# "the vendors a dispatch spends", and it was wrong in BOTH directions at once:
+# a record for either vendor refused EVERY dispatch — including one routed
+# wholly to the other — while a record naming any third provider was
+# unreadable, which surfaced as a clean, plausible "no record held".
 #
-# It is NOT the label a record carries: that is read off the observed failure
-# (`_fabro_port_records`), which is the whole point of this module's fix. Keying
-# the record on the vendor and this gate on the vendors actually spent is what
-# lets a record for a provider outside this set refuse nothing, instead of one
-# vendor's ceiling silently standing in for another's.
-DISPATCH_PROVIDERS: tuple[str, ...] = ("anthropic", "codex")
+# Both halves are now DERIVED. `live_provider_exhaustions` enumerates whatever
+# providers the journal's own records name, so the readable set is a fact about
+# the records; and `covering_provider_exhaustion` asks each live record whether
+# it covers a candidate THIS DISPATCH'S RESOLVED NODE ADAPTERS render, so the
+# refusable set is a fact about the adapters. Keying the record on the observed
+# vendor (`_fabro_port_records`) and the gate on the rendered candidates is
+# what keeps one vendor's ceiling from silently standing in for another's.
 
 _RECORD_STAGE = "provider-exhaustion-observed"
 _REFUSAL_STAGE = "provider-exhaustion-refusal"
@@ -119,6 +125,46 @@ def provider_exhaustion_clearance_record(*, provider: str, reason: str) -> dict[
     }
 
 
+def live_provider_exhaustions(
+    *,
+    journal_path: Path | None,
+    now_iso: str,
+) -> tuple[ProviderExhaustionRecord, ...]:
+    """Every provider's newest unexpired record, newest observation first.
+
+    WHICH PROVIDERS EXIST IS A FACT ABOUT THE JOURNAL, not about any list this
+    build carries. A record naming a vendor nothing here anticipated is read
+    exactly as `anthropic` and `codex` are, because the label is written from
+    the observed failure and a reader enumerating names of its own can only
+    report a plausible absence for the ones it never thought of.
+
+    The walk is newest-first, so the operator's early clearance costs one
+    branch: a `provider-exhaustion-cleared` line met BEFORE any observation for
+    a provider means that provider's newest observation is already retired, and
+    nothing is held for it. Meeting it AFTER an unexpired observation is a
+    clearance an operator has since re-observed past, so it retires nothing.
+    An EXPIRED observation decides nothing either way and the walk continues
+    past it, which is what lets a provider's older live record still answer.
+    """
+    now = _parse_journal_iso(text=now_iso)
+    if journal_path is None or not journal_path.is_file():
+        return ()
+    live: list[ProviderExhaustionRecord] = []
+    decided: set[object] = set()
+    for record in reversed(_records(text=journal_path.read_text(encoding="utf-8"))):
+        provider = record.get("provider")
+        if provider in decided:
+            continue
+        if record.get("stage") == _CLEARED_STAGE:
+            decided.add(provider)
+            continue
+        parsed = _provider_record(record=record)
+        if _parse_journal_iso(text=parsed.record_expires_at) > now:
+            decided.add(provider)
+            live.append(parsed)
+    return tuple(live)
+
+
 def active_provider_exhaustion(
     *,
     provider: str,
@@ -129,26 +175,14 @@ def active_provider_exhaustion(
 
     Selective by construction: a record naming another vendor is skipped, so a
     provider this dispatch holds no record for is never refused on another
-    vendor's ceiling.
-
-    The walk is already newest-first, so the operator's early clearance costs
-    one branch: a `provider-exhaustion-cleared` line met BEFORE any observation
-    for this provider means the newest observation is already retired, and
-    nothing is held. Meeting it AFTER an unexpired observation is a clearance
-    an operator has since re-observed past, so it retires nothing.
+    vendor's ceiling. This is the LEGACY VALVE's own read -- it names the
+    provider it is clearing -- and it is a projection of the one walk above
+    rather than a second walk, so the valve and the gate cannot disagree about
+    what is live.
     """
-    now = _parse_journal_iso(text=now_iso)
-    if journal_path is None or not journal_path.is_file():
-        return None
-    for record in reversed(_records(text=journal_path.read_text(encoding="utf-8"))):
-        if record.get("provider") != provider:
-            continue
-        if record.get("stage") == _CLEARED_STAGE:
-            return None
-        parsed = _provider_record(record=record)
-        expiry = _parse_journal_iso(text=parsed.record_expires_at)
-        if expiry > now:
-            return parsed
+    for record in live_provider_exhaustions(journal_path=journal_path, now_iso=now_iso):
+        if record.provider == provider:
+            return record
     return None
 
 
@@ -157,14 +191,42 @@ def dispatch_provider_exhaustion(
     journal_path: Path | None,
     now_iso: str,
 ) -> ProviderExhaustionRecord | None:
-    """The unexpired record covering a provider this dispatch would spend."""
-    for provider in DISPATCH_PROVIDERS:
-        record = active_provider_exhaustion(
-            provider=provider,
-            journal_path=journal_path,
-            now_iso=now_iso,
-        )
-        if record is not None:
+    """The newest unexpired legacy record on this journal, whatever it names.
+
+    This is the FACTORY-WIDE question -- "is a provider-exhaustion wait in
+    force here at all?" -- which the awareness surface asks because it reports
+    a wait rather than deciding one item's admission. The ADMISSION question is
+    narrower and has its own read: `covering_provider_exhaustion`, which no
+    record answers without covering a candidate the dispatch renders.
+    """
+    live = live_provider_exhaustions(journal_path=journal_path, now_iso=now_iso)
+    return live[0] if live else None
+
+
+def covering_provider_exhaustion(
+    *,
+    journal_path: Path | None,
+    now_iso: str,
+    candidates: tuple[RenderedCandidate, ...] | None,
+) -> ProviderExhaustionRecord | None:
+    """The newest live record COVERING a candidate this dispatch renders.
+
+    `candidates` is the dispatch's resolved node adapters, projected into the
+    candidates they render; the providers this dispatch can be refused on are
+    derived from them, which is what replaced the hard-coded vendor tuple
+    described at the top of this module.
+
+    `None` means the resolution could not be READ, and it is deliberately not
+    the empty tuple: an empty set of candidates is an answer -- this dispatch
+    renders nothing the record covers -- while an unreadable one is the absence
+    of a measurement. A gauge that admitted when blinded would turn every
+    unreadable configuration into a pass, so the unreadable arm FAILS CLOSED
+    onto the pre-scoping behaviour, where any live record refuses.
+    """
+    for record in live_provider_exhaustions(journal_path=journal_path, now_iso=now_iso):
+        if candidates is None or legacy_record_covers_dispatch(
+            provider=record.provider, candidates=candidates
+        ):
             return record
     return None
 

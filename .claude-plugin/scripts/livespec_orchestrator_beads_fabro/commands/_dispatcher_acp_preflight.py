@@ -76,8 +76,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     executing_payload_root,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
-    DISPATCH_PROVIDERS,
-    active_provider_exhaustion,
+    live_provider_exhaustions,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_variant import (
     WorkflowVariantRefusal,
@@ -239,12 +238,16 @@ def credential_reprobe_wait_applies(*, verdict: AcpPreflightVerdict) -> bool:
 
 
 def _legacy_providers(*, journal_path: Path | None, now_iso: str) -> frozenset[str]:
-    """The vendors still carrying an unexpired LEGACY provider-exhaustion record."""
+    """The vendors still carrying an unexpired LEGACY provider-exhaustion record.
+
+    Read off the journal's own live records rather than by asking about a list
+    of vendor names, so the per-candidate filter below sees a record naming a
+    provider this build never anticipated. Asking name by name could only ever
+    return the names it already held.
+    """
     return frozenset(
-        provider
-        for provider in DISPATCH_PROVIDERS
-        if active_provider_exhaustion(provider=provider, journal_path=journal_path, now_iso=now_iso)
-        is not None
+        record.provider
+        for record in live_provider_exhaustions(journal_path=journal_path, now_iso=now_iso)
     )
 
 
