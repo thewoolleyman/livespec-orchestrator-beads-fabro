@@ -20,6 +20,8 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_gate import (
 )
 from livespec_orchestrator_beads_fabro.commands._session_wait_lock import LockBudget
 from livespec_orchestrator_beads_fabro.commands._session_wait_records import (
+    REGISTRATION_CONFLICT,
+    REGISTRATION_UNAVAILABLE,
     WaiterIdentity,
     current_waiter_identity,
     record_observations,
@@ -29,6 +31,7 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_records import (
 from livespec_orchestrator_beads_fabro.commands._session_wait_types import (
     GateObservation,
     GateTarget,
+    Probe,
     ProbeLauncher,
     WaitRequest,
     WaitResult,
@@ -120,8 +123,13 @@ def run_wait(
         armed_at=wall_clock(),
         lock_budget=lock_budget,
     )
-    if registration == "unavailable":
-        return _deadline_result(request=request, observations={}, deadline=deadline)
+    refusal = _registration_refusal(
+        registration=registration,
+        request=request,
+        deadline=deadline,
+    )
+    if refusal is not None:
+        return refusal
     handles = [
         launcher.launch(
             target=target,
@@ -129,6 +137,65 @@ def run_wait(
         )
         for target in request.targets
     ]
+    observations = _observe_until(
+        handles=handles,
+        deadline=deadline,
+        monotonic=monotonic,
+        sleeper=sleeper,
+    )
+    for handle in handles:
+        handle.cancel(timeout_seconds=max(0.0, deadline - monotonic()))
+    result = _wait_result(request=request, observations=observations, deadline=deadline)
+    _persist_result(
+        wait_store_root=wait_store_root,
+        request=request,
+        result=result,
+        lock_budget=lock_budget,
+    )
+    return result
+
+
+def _registration_refusal(
+    *,
+    registration: str,
+    request: WaitRequest,
+    deadline: float,
+) -> WaitResult | None:
+    """The refusal registration owes, or None when this wait owns its id.
+
+    A CONFLICT refuses before any probe exists. A live record already owns
+    this wait id, and its frozen targets, owner and deadline ARE that record,
+    so launching probes and carrying on would retarget an armed wait through
+    the back door. An UNAVAILABLE store could not be measured at all, which is
+    reported as the deadline outcome rather than as a verdict about a target.
+    """
+    if registration == REGISTRATION_CONFLICT:
+        return WaitResult(
+            command_outcome="registration-conflict",
+            trigger_target=None,
+            trigger_exit_code=None,
+            observations={},
+            unfinished_targets=tuple(target.identity for target in request.targets),
+        )
+    if registration == REGISTRATION_UNAVAILABLE:
+        return _deadline_result(request=request, observations={}, deadline=deadline)
+    return None
+
+
+def _observe_until(
+    *,
+    handles: list[Probe],
+    deadline: float,
+    monotonic: Callable[[], float],
+    sleeper: _Sleeper,
+) -> dict[str, GateObservation]:
+    """Poll every probe until one target ends or the shared deadline expires.
+
+    The deadline is the one computed before registration and is never
+    recomputed or extended here, so a hung probe cannot push the return out:
+    each round polls every probe once, and the sleep between rounds is capped
+    at one second so a sibling stays independently observable at that cadence.
+    """
     observations: dict[str, GateObservation] = {}
     while True:
         now = monotonic()
@@ -136,52 +203,55 @@ def run_wait(
             observation = handle.poll(now=now)
             if observation is not None:
                 observations[observation.target.identity] = observation
-        terminal_observations = [
-            observation for observation in observations.values() if observation.state != "RUNNING"
-        ]
-        if terminal_observations:
-            terminal = min(
-                terminal_observations,
-                key=lambda observation: observation.observed_at,
-            )
-            for handle in handles:
-                handle.cancel(timeout_seconds=max(0.0, deadline - monotonic()))
-            result = WaitResult(
-                command_outcome="target-ended",
-                trigger_target=terminal.target.identity,
-                trigger_exit_code=terminal.exit_code,
-                observations=observations,
-                unfinished_targets=tuple(
-                    target.identity
-                    for target in request.targets
-                    if target.identity != terminal.target.identity
-                ),
-            )
-            _ = record_observations(
-                wait_store_root=wait_store_root,
-                wait_id=request.wait_id,
-                observations=tuple(result.observations.values()),
-                lock_budget=lock_budget,
-            )
-            _ = record_return_ready(
-                wait_store_root=wait_store_root,
-                wait_id=request.wait_id,
-                return_reason=result.command_outcome,
-                lock_budget=lock_budget,
-            )
-            return result
+        if _first_terminal(observations=observations) is not None:
+            return observations
         remaining = deadline - monotonic()
         if remaining <= 0:
-            break
+            return observations
         sleeper(seconds=min(1.0, remaining))
 
-    for handle in handles:
-        handle.cancel(timeout_seconds=max(0.0, deadline - monotonic()))
-    result = _deadline_result(
-        request=request,
+
+def _first_terminal(*, observations: dict[str, GateObservation]) -> GateObservation | None:
+    """The earliest-observed target that has left the running state."""
+    terminal = [
+        observation for observation in observations.values() if observation.state != "RUNNING"
+    ]
+    if not terminal:
+        return None
+    return min(terminal, key=lambda observation: observation.observed_at)
+
+
+def _wait_result(
+    *,
+    request: WaitRequest,
+    observations: dict[str, GateObservation],
+    deadline: float,
+) -> WaitResult:
+    """Build the outcome from what was actually observed."""
+    terminal = _first_terminal(observations=observations)
+    if terminal is None:
+        return _deadline_result(request=request, observations=observations, deadline=deadline)
+    return WaitResult(
+        command_outcome="target-ended",
+        trigger_target=terminal.target.identity,
+        trigger_exit_code=terminal.exit_code,
         observations=observations,
-        deadline=deadline,
+        unfinished_targets=tuple(
+            target.identity
+            for target in request.targets
+            if target.identity != terminal.target.identity
+        ),
     )
+
+
+def _persist_result(
+    *,
+    wait_store_root: Path,
+    request: WaitRequest,
+    result: WaitResult,
+    lock_budget: LockBudget,
+) -> None:
+    """Record the round and that a result became RETURNABLE — never received."""
     _ = record_observations(
         wait_store_root=wait_store_root,
         wait_id=request.wait_id,
@@ -194,4 +264,3 @@ def run_wait(
         return_reason=result.command_outcome,
         lock_budget=lock_budget,
     )
-    return result

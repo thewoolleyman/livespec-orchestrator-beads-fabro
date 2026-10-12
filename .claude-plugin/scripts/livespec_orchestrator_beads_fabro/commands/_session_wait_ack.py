@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -50,7 +49,13 @@ def ack_wait(
     with wait_store_lock(wait_store_root=wait_store_root):
         if not path.exists():
             return AckResult(wait_id=wait_id, status="not-found")
-        payload = cast("dict[str, object]", json.loads(path.read_text(encoding="utf-8")))
+        loaded = read_wait_record(path=path)
+        if loaded.payload is None:
+            # The record EXISTS and cannot be understood, which is a different
+            # fact from its absence and has a different remedy. Reporting it as
+            # `not-found` would invite disposing of an outstanding obligation.
+            return AckResult(wait_id=wait_id, status="unavailable")
+        payload = loaded.payload
         if payload["session_id"] != session_id:
             return AckResult(wait_id=wait_id, status="owner-mismatch")
         payload["acknowledgement"] = {

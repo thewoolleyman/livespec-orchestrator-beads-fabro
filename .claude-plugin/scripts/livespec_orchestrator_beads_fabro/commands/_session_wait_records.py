@@ -23,6 +23,14 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_types import (
 )
 
 __all__: list[str] = [
+    "DIAGNOSTIC_INVALID_RECORD",
+    "DIAGNOSTIC_RECORD_DISPOSED",
+    "DIAGNOSTIC_UNREADABLE_RECORD",
+    "DIAGNOSTIC_UNSUPPORTED_SCHEMA",
+    "REGISTRATION_CONFLICT",
+    "REGISTRATION_REGISTERED",
+    "REGISTRATION_UNAVAILABLE",
+    "SCHEMA_VERSION",
     "WaitRecordRead",
     "WaiterIdentity",
     "current_waiter_identity",
@@ -37,6 +45,35 @@ __all__: list[str] = [
 ]
 
 SCHEMA_VERSION = 1
+
+DIAGNOSTIC_UNREADABLE_RECORD = "unreadable-record"
+DIAGNOSTIC_INVALID_RECORD = "invalid-record"
+DIAGNOSTIC_UNSUPPORTED_SCHEMA = "unsupported-schema"
+DIAGNOSTIC_RECORD_DISPOSED = "record-disposed"
+
+REGISTRATION_REGISTERED = "registered"
+REGISTRATION_CONFLICT = "conflict"
+REGISTRATION_UNAVAILABLE = "unavailable"
+
+# Every field a version-1 record carries. A record missing or mistyping any of
+# them is INVALID rather than partially usable: a consumer that defaulted one
+# in would be inventing a deadline or an owner it never read.
+_REQUIRED_FIELDS = frozenset(
+    {
+        "acknowledgement",
+        "armed_at",
+        "deadline_at",
+        "deadline_seconds",
+        "observation_sequence",
+        "observations",
+        "repository",
+        "return_ready",
+        "session_id",
+        "targets",
+        "wait_id",
+        "waiter",
+    }
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -72,13 +109,50 @@ def write_wait_record(*, path: Path, payload: dict[str, object]) -> None:
 
 
 def read_wait_record(*, path: Path) -> WaitRecordRead:
+    """Read one record, reporting every unusable shape as a diagnostic.
+
+    This NEVER raises. A record that cannot be understood has to stay VISIBLE
+    as a finding: an inventory pass that died on one corrupt file would take
+    down the census that exists to surface it, and one that skipped the file
+    silently would report a clean, plausible, incomplete answer. So each
+    distinguishable failure gets its own diagnostic and no payload, and a
+    payload that IS returned has been checked well enough for its consumers to
+    index it.
+    """
     try:
-        payload = cast("dict[str, object]", json.loads(path.read_text(encoding="utf-8")))
-    except (OSError, json.JSONDecodeError, TypeError):
-        return WaitRecordRead(payload=None, diagnostic="unreadable-record")
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return WaitRecordRead(payload=None, diagnostic=DIAGNOSTIC_UNREADABLE_RECORD)
+    try:
+        loaded = json.loads(raw)
+    except json.JSONDecodeError:
+        return WaitRecordRead(payload=None, diagnostic=DIAGNOSTIC_INVALID_RECORD)
+    if not isinstance(loaded, dict):
+        return WaitRecordRead(payload=None, diagnostic=DIAGNOSTIC_INVALID_RECORD)
+    payload = cast("dict[str, object]", loaded)
     if payload.get("schema_version") != SCHEMA_VERSION:
-        return WaitRecordRead(payload=None, diagnostic="unsupported-schema")
+        return WaitRecordRead(payload=None, diagnostic=DIAGNOSTIC_UNSUPPORTED_SCHEMA)
+    if not _well_formed(payload=payload):
+        return WaitRecordRead(payload=None, diagnostic=DIAGNOSTIC_INVALID_RECORD)
     return WaitRecordRead(payload=payload, diagnostic=None)
+
+
+def _well_formed(*, payload: dict[str, object]) -> bool:
+    """Whether a version-1 record carries every field at an indexable type."""
+    return all(
+        (
+            payload.keys() >= _REQUIRED_FIELDS,
+            isinstance(payload.get("acknowledgement"), dict),
+            isinstance(payload.get("deadline_at"), float | int),
+            isinstance(payload.get("observation_sequence"), int),
+            isinstance(payload.get("observations"), list),
+            isinstance(payload.get("return_ready"), bool),
+            isinstance(payload.get("session_id"), str),
+            isinstance(payload.get("targets"), list),
+            isinstance(payload.get("wait_id"), str),
+            isinstance(payload.get("waiter"), dict),
+        )
+    )
 
 
 def register_wait(
@@ -100,14 +174,14 @@ def register_wait(
             armed_at=armed_at,
         ),
     )
-    return "unavailable" if result is None else result
+    return REGISTRATION_UNAVAILABLE if result is None else result
 
 
 def _register_wait(
     *, path: Path, request: WaitRequest, waiter: WaiterIdentity, armed_at: float
 ) -> str:
     if path.exists():
-        return "conflict"
+        return REGISTRATION_CONFLICT
     targets: list[dict[str, object]] = [
         {
             "generation": target.generation,
@@ -140,11 +214,7 @@ def _register_wait(
         "waiter": {"generation": waiter.generation, "pid": waiter.pid},
     }
     write_wait_record(path=path, payload=payload)
-    return "registered"
-
-
-def _load_known_record(*, path: Path) -> dict[str, object]:
-    return cast("dict[str, object]", json.loads(path.read_text(encoding="utf-8")))
+    return REGISTRATION_REGISTERED
 
 
 def _observation_payload(*, observation: GateObservation) -> dict[str, object]:
@@ -170,12 +240,18 @@ def record_observations(
         budget=lock_budget,
         action=lambda: _record_observations(path=path, observations=observations),
     )
-    return result is not None
+    # `is True`, not `is not None`: the lock helper reports an unacquired lock
+    # as None, and the action reports a DISPOSED record as False. Reading only
+    # for None would swallow the disposal the re-read exists to detect.
+    return result is True
 
 
 def _record_observations(*, path: Path, observations: tuple[GateObservation, ...]) -> bool:
-    payload = _load_known_record(path=path)
-    payload["observation_sequence"] = int(str(payload["observation_sequence"])) + 1
+    loaded = read_wait_record(path=path)
+    if loaded.payload is None:
+        return False
+    payload = loaded.payload
+    payload["observation_sequence"] = cast("int", payload["observation_sequence"]) + 1
     payload["observations"] = [
         _observation_payload(observation=observation) for observation in observations
     ]
@@ -199,11 +275,14 @@ def record_return_ready(
             return_reason=return_reason,
         ),
     )
-    return result is not None
+    return result is True
 
 
 def _record_return_ready(*, path: Path, return_reason: str) -> bool:
-    payload = _load_known_record(path=path)
+    loaded = read_wait_record(path=path)
+    if loaded.payload is None:
+        return False
+    payload = loaded.payload
     payload["return_ready"] = True
     payload["return_reason"] = return_reason
     write_wait_record(path=path, payload=payload)
