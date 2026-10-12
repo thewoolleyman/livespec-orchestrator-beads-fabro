@@ -1,0 +1,297 @@
+{
+  "title": "Fabro Enemy Unit Test: janitor-shape-fail",
+  "spec": {
+    "run_id": "01M4Q5K5DAT8HNC097XT22J64R",
+    "settings": {
+      "project": {
+        "name": null,
+        "description": null,
+        "metadata": {}
+      },
+      "workflow": {
+        "name": null,
+        "description": null,
+        "graph": "workflow.fabro",
+        "metadata": {}
+      },
+      "run": {
+        "goal": {
+          "type": "inline",
+          "value": "# Fabro Enemy Unit Test: janitor-shape-fail\n"
+        },
+        "working_dir": null,
+        "metadata": {},
+        "inputs": {
+          "sandbox_check_suite": "touch /tmp/eut-check-suite-ran && false"
+        },
+        "model": {
+          "provider": "anthropic",
+          "name": "claude-sonnet-4-6",
+          "fallbacks": [],
+          "controls": {
+            "reasoning_effort": null,
+            "speed": null
+          }
+        },
+        "git": {
+          "author": null
+        },
+        "prepare": {
+          "commands": [],
+          "timeout_ms": 300000
+        },
+        "execution": {
+          "mode": "normal",
+          "approval": "prompt"
+        },
+        "checkpoint": {
+          "exclude_globs": [],
+          "skip_git_hooks": false,
+          "commit_timeout_ms": 30000
+        },
+        "clone": {
+          "enabled": true
+        },
+        "run_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "meta_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "environment": {
+          "id": "default",
+          "provider": "docker",
+          "image": {
+            "docker": "buildpack-deps:noble",
+            "dockerfile": null
+          },
+          "resources": {
+            "cpu": 2,
+            "memory": "4GB",
+            "disk": null
+          },
+          "network": {
+            "mode": "allow_all",
+            "allow": []
+          },
+          "lifecycle": {
+            "preserve": false,
+            "stop_on_terminal": true,
+            "auto_stop": null
+          },
+          "labels": {},
+          "volumes": [],
+          "env": {}
+        },
+        "notifications": {},
+        "interviews": {
+          "provider": null,
+          "slack": null
+        },
+        "agent": {
+          "fabro_tools": false,
+          "permissions": null,
+          "mcps": {}
+        },
+        "hooks": [],
+        "scm": {
+          "provider": null,
+          "owner": null,
+          "repository": null,
+          "github": null
+        },
+        "pull_request": null,
+        "artifacts": {
+          "include": []
+        },
+        "integrations": {
+          "github": {
+            "permissions": {}
+          }
+        }
+      }
+    },
+    "graph": {
+      "name": "FabroEnemyJanitorShapeFail",
+      "nodes": {
+        "exit": {
+          "id": "exit",
+          "attrs": {
+            "shape": {
+              "String": "Msquare"
+            },
+            "label": {
+              "String": "Exit"
+            }
+          }
+        },
+        "janitor": {
+          "id": "janitor",
+          "attrs": {
+            "shape": {
+              "String": "parallelogram"
+            },
+            "label": {
+              "String": "Janitor"
+            },
+            "script": {
+              "String": "eval touch /tmp/eut-check-suite-ran && false"
+            }
+          }
+        },
+        "wrong": {
+          "id": "wrong",
+          "attrs": {
+            "goal_gate": {
+              "Boolean": true
+            },
+            "script": {
+              "String": "echo 'failing suite reported success' >&2; exit 1"
+            },
+            "shape": {
+              "String": "parallelogram"
+            },
+            "label": {
+              "String": "Wrong"
+            }
+          }
+        },
+        "start": {
+          "id": "start",
+          "attrs": {
+            "shape": {
+              "String": "Mdiamond"
+            },
+            "label": {
+              "String": "Start"
+            }
+          }
+        },
+        "ran": {
+          "id": "ran",
+          "attrs": {
+            "label": {
+              "String": "Ran"
+            },
+            "shape": {
+              "String": "parallelogram"
+            },
+            "script": {
+              "String": "test -f /tmp/eut-check-suite-ran"
+            },
+            "goal_gate": {
+              "Boolean": true
+            }
+          }
+        }
+      },
+      "edges": [
+        {
+          "from": "start",
+          "to": "janitor",
+          "attrs": {}
+        },
+        {
+          "from": "janitor",
+          "to": "ran",
+          "attrs": {
+            "condition": {
+              "String": "outcome=failed"
+            }
+          }
+        },
+        {
+          "from": "janitor",
+          "to": "wrong",
+          "attrs": {}
+        },
+        {
+          "from": "ran",
+          "to": "exit",
+          "attrs": {}
+        },
+        {
+          "from": "wrong",
+          "to": "exit",
+          "attrs": {}
+        }
+      ],
+      "attrs": {
+        "goal": {
+          "String": "# Fabro Enemy Unit Test: janitor-shape-fail\n"
+        }
+      }
+    },
+    "graph_source": "digraph FabroEnemyJanitorShapeFail {\n    start [shape=Mdiamond, label=\"Start\"]\n    janitor [shape=parallelogram, label=\"Janitor\", script=\"eval {{ inputs.sandbox_check_suite }}\"]\n    ran [shape=parallelogram, label=\"Ran\", goal_gate=true, script=\"test -f /tmp/eut-check-suite-ran\"]\n    wrong [shape=parallelogram, label=\"Wrong\", goal_gate=true, script=\"echo 'failing suite reported success' >&2; exit 1\"]\n    exit [shape=Msquare, label=\"Exit\"]\n    start -> janitor\n    janitor -> ran [condition=\"outcome=failed\"]\n    janitor -> wrong\n    ran -> exit\n    wrong -> exit\n}\n",
+    "workflow_slug": "janitor-shape-fail",
+    "source_directory": "/home/ubuntu/.worktrees/livespec-orchestrator-beads-fabro/eut-real-node-shapes",
+    "provenance": {
+      "server": {
+        "version": "0.254.0"
+      },
+      "client": {
+        "user_agent": "fabro-cli/0.254.0",
+        "name": "fabro-cli",
+        "version": "0.254.0"
+      },
+      "subject": {
+        "kind": "user",
+        "identity": {
+          "issuer": "fabro:dev",
+          "subject": "dev"
+        },
+        "login": "dev",
+        "auth_method": "dev_token"
+      }
+    },
+    "manifest_blob": "9dca661f7428c3aa786447d4b7b02f6afa094c2d9ea1b2b59ae0151785c7512d",
+    "definition_blob": "45eeff81c97d97e45ec77865ac1be018f1245be2859e09debac3511520101b36",
+    "git": {
+      "origin_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+      "branch": "eut-real-node-shapes",
+      "sha": "bb752aa97a56fe8cf7cd4bd09af4962e19685e90",
+      "dirty": "dirty",
+      "push_outcome": {
+        "type": "not_attempted"
+      }
+    }
+  },
+  "web_url": "https://hp-xubuntu.perch-rudd.ts.net:32276/runs/01M4Q5K5DAT8HNC097XT22J64R",
+  "start": null,
+  "status": {
+    "kind": "starting"
+  },
+  "status_updated_at": "2026-10-12T04:23:06.165092239Z",
+  "last_event_at": "2026-10-12T04:23:09.219587138Z",
+  "pending_control": null,
+  "checkpoints": [],
+  "conclusion": null,
+  "sandbox": {
+    "kind": "ready",
+    "plan": {
+      "provider": "docker",
+      "image": "buildpack-deps:noble"
+    },
+    "instance": {
+      "provider": "docker",
+      "image": "buildpack-deps:noble",
+      "runtime": {
+        "id": "035790fbcca25af2cb5e0c580ba18bdd62946288427ce88fec9f0ca78fb20acc",
+        "working_directory": "/workspace/livespec-orchestrator-beads-fabro",
+        "repo_cloned": true,
+        "clone_origin_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+        "clone_branch": "eut-real-node-shapes",
+        "workspace_root": "/workspace",
+        "repos_root": "/repos",
+        "primary_repo_path": "/repos/thewoolleyman/livespec-orchestrator-beads-fabro",
+        "primary_repo_link": "/workspace/livespec-orchestrator-beads-fabro"
+      }
+    }
+  },
+  "pull_request": null,
+  "superseded_by": null,
+  "pending_interviews": {},
+  "stages": {}
+}
