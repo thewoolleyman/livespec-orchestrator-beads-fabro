@@ -10,6 +10,14 @@ including the staged Red test, which fails by design (work-item bd-ib-c4sfpr).
 
 The Green-amend arm is the control: coverage is exactly what must run once the
 impl is staged, so that arm must NOT skip the incremental gate.
+
+`check-master-ci-green` is a separate, ENVIRONMENTAL refusal, and it is keyed on
+the checkout rather than on the staged shape: inside a Fabro sandbox — a fresh
+full clone carrying the resolved sandbox-exemption marker — master CI re-queues
+on every merge, so the gate is frequently red-or-running through no fault of the
+staged tree and refuses the sandbox's own Red and Green commits (work-item
+bd-ib-hot3g6). A checkout WITHOUT that marker is the control: it must still run
+the gate exactly as before.
 """
 
 from __future__ import annotations
@@ -22,6 +30,8 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SCRIPT = _REPO_ROOT / "dev-tooling" / "just-check-pre-commit.sh"
 _INCREMENTAL_GATE = "check-check-coverage-incremental"
+_MASTER_CI_GATE = "check-master-ci-green"
+_SANDBOX_EXEMPT_MARKER = "livespec.sandboxExempt"
 _RED_TRAILER = "TDD-Red-Test-File-Checksum: deadbeef"
 
 
@@ -113,3 +123,70 @@ def test_green_amend_arm_still_runs_the_incremental_coverage_gate(*, tmp_path: P
         "check-codex-skill-picker",
     ]
     assert _INCREMENTAL_GATE not in invocation
+
+
+def _declare_sandbox_exempt(*, repo: Path) -> None:
+    """Set the resolved sandbox-exemption marker the way the sandbox prepare step does."""
+    result = _run(argv=["git", "config", "--bool", _SANDBOX_EXEMPT_MARKER, "true"], cwd=repo)
+    assert result.returncode == 0, result.stderr
+
+
+def test_sandbox_exempt_red_mode_arm_skips_the_master_ci_green_gate(*, tmp_path: Path) -> None:
+    repo, env = _init_repo(tmp_path=tmp_path, baseline_message="baseline")
+    _declare_sandbox_exempt(repo=repo)
+    _stage(repo=repo, relative_path="tests/test_placeholder.py", body="def test_red(): assert 0\n")
+
+    invocation = _invoke_pre_commit(repo=repo, env=env)
+
+    assert invocation.split() == [
+        "check-skipping",
+        "check-coverage",
+        "check-per-file-coverage",
+        _INCREMENTAL_GATE,
+        "check-codex-skill-picker",
+        _MASTER_CI_GATE,
+    ]
+
+
+def test_sandbox_exempt_green_amend_arm_skips_the_master_ci_green_gate(*, tmp_path: Path) -> None:
+    repo, env = _init_repo(tmp_path=tmp_path, baseline_message=f"fix: red\n\n{_RED_TRAILER}\n")
+    _declare_sandbox_exempt(repo=repo)
+    _stage(repo=repo, relative_path=".claude-plugin/scripts/widget.py", body="VALUE = 1\n")
+
+    invocation = _invoke_pre_commit(repo=repo, env=env)
+
+    assert invocation.split() == [
+        "check-skipping",
+        "check-red-green-replay",
+        "check-codex-skill-picker",
+        _MASTER_CI_GATE,
+    ]
+
+
+def test_sandbox_exempt_full_arm_skips_the_master_ci_green_gate(*, tmp_path: Path) -> None:
+    repo, env = _init_repo(tmp_path=tmp_path, baseline_message="baseline")
+    _declare_sandbox_exempt(repo=repo)
+    _stage(repo=repo, relative_path="tests/test_placeholder.py", body="def test_green(): pass\n")
+    _stage(repo=repo, relative_path=".claude-plugin/scripts/widget.py", body="VALUE = 1\n")
+
+    invocation = _invoke_pre_commit(repo=repo, env=env)
+
+    assert invocation.split() == [
+        "check-skipping",
+        "check-codex-skill-picker",
+        _MASTER_CI_GATE,
+    ]
+
+
+def test_checkout_without_the_marker_still_runs_the_master_ci_green_gate(*, tmp_path: Path) -> None:
+    repo, env = _init_repo(tmp_path=tmp_path, baseline_message="baseline")
+    _stage(repo=repo, relative_path="tests/test_placeholder.py", body="def test_green(): pass\n")
+    _stage(repo=repo, relative_path=".claude-plugin/scripts/widget.py", body="VALUE = 1\n")
+
+    invocation = _invoke_pre_commit(repo=repo, env=env)
+
+    assert invocation.split() == [
+        "check-skipping",
+        "check-codex-skill-picker",
+    ]
+    assert _MASTER_CI_GATE not in invocation
