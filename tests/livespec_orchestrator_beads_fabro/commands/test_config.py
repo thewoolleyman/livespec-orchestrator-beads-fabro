@@ -31,6 +31,10 @@ from livespec_orchestrator_beads_fabro.commands._config import (
     resolve_fabro_bin,
     resolve_store_config,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
+    SandboxImageSource,
+    sandbox_image_source,
+)
 from livespec_orchestrator_beads_fabro.errors import (
     ConnectionPrefixMissingError,
     LivespecConfigUnreadableError,
@@ -694,22 +698,32 @@ _WORKFLOW_WITH_IMAGE = (
 )
 
 _IMAGE_OVERRIDE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v9.9.9"
+
+
+def _configured_image(*, image: str) -> SandboxImageSource:
+    """The resolved image source for a repository that configures the override.
+
+    Built through the production decision rather than constructed field by
+    field, so these cases exercise the same arm a real dispatch to a factory
+    declaring no catalog environment resolves.
+    """
+    return sandbox_image_source(factory_environment=None, configured_image=image)
+
+
 _FAKE_TOKEN = "test-oauth-token"
 _FAKE_GITHUB_TOKEN = "test-github-token"
 
 
 def test_render_run_config_overlay_accepts_a_sandbox_image_override(tmp_path: Path) -> None:
     """Image override rewrites only the image table; graph remains workflow-local."""
-    assert (
-        "fabro_sandbox_image" in signature(_dispatcher_overlay.render_run_config_overlay).parameters
-    )
+    assert "sandbox_image" in signature(_dispatcher_overlay.render_run_config_overlay).parameters
     rendered = _dispatcher_overlay.render_run_config_overlay(
         committed_text=_WORKFLOW_WITH_IMAGE,
         workflow_dir=tmp_path / "plugin-workflow",
         token=_FAKE_TOKEN,
         github_token=_FAKE_GITHUB_TOKEN,
         siblings=None,
-        fabro_sandbox_image=_IMAGE_OVERRIDE,
+        sandbox_image=_configured_image(image=_IMAGE_OVERRIDE),
     )
     assert rendered is not None
     pre_env_table = rendered.split("[environments.livespec-ci.env]", 1)[0]
@@ -763,9 +777,7 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
 
 def test_render_run_config_overlay_image_override_is_scope_fenced(tmp_path: Path) -> None:
     """The override value is TOML-quoted and cannot reach graph, env id, or steps."""
-    assert (
-        "fabro_sandbox_image" in signature(_dispatcher_overlay.render_run_config_overlay).parameters
-    )
+    assert "sandbox_image" in signature(_dispatcher_overlay.render_run_config_overlay).parameters
     hostile = (
         'ghcr.io/example/custom:tag"\n'
         'graph = "other.fabro"\n'
@@ -778,7 +790,7 @@ def test_render_run_config_overlay_image_override_is_scope_fenced(tmp_path: Path
         token=_FAKE_TOKEN,
         github_token=_FAKE_GITHUB_TOKEN,
         siblings=None,
-        fabro_sandbox_image=hostile,
+        sandbox_image=_configured_image(image=hostile),
     )
     assert rendered is not None
     pre_env_table = rendered.split("[environments.livespec-ci.env]", 1)[0]

@@ -246,6 +246,27 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   construction and its value is one the Dispatcher itself supplies. The
   projection is fail-closed in both arms: a declaration the parse refuses, or a
   name whose value is absent, renders NO overlay line.
+- `_dispatcher_sandbox_image_source.py` — WHICH of the three sources supplies one
+  dispatch's sandbox image (`bd-ib-jy7fuh`, Scenario 169). PURE and a leaf; the
+  decision is resolved ONCE in `_dispatcher_loop_plan`, rides
+  `DispatchPlan.sandbox_image`, and is read from there by both consumers — the
+  launch overlay renders from it and the dispatch record names it — for the same
+  resolve-once reason the integration contract gives. Three properties an editor
+  must not invert. The CATALOG arm wins over `dispatcher.fabro_sandbox_image`
+  unconditionally, because the configured key is a repository-wide pin and the
+  catalog environment is the placement this dispatch was ROUTED to. It wins by
+  the overlay DECLARING NOTHING rather than by declaring the catalog's image:
+  the catalog lives on the factory server and the Dispatcher reads it at no
+  point, so there is no value it could render on the catalog's behalf — and the
+  submitted config's own `environments.<id>` overlay still applies on top of the
+  server's environment selection, so suppressing only the SUBSTITUTION would
+  leave the committed pin overriding the catalog instead (the measured defect,
+  hp-candidate run 01M4PBFW4MP8, where `sandbox.plan.image` named the catalog's
+  image while the started container ran the override). And `catalog_governs` is
+  a question about the SOURCE rather than an inference from an absent
+  `overlay_image`, which the committed-run-config arm also carries: those two
+  arms need opposite handling, and collapsing them would make a repository that
+  configures nothing withhold a declaration nothing is competing with.
 - `_dispatcher_proof_budget.py` — the declared size budget every proof record is
   measured against before it is posted (`bd-ib-555xcd`). PURE, and the ONE place
   the three figures are named: the MEASURED forge comment ceiling, the record

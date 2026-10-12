@@ -34,6 +34,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     render_run_config_overlay,
     resolve_sandbox_otel_endpoint,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
+    sandbox_image_source,
+)
 
 # The CC content-bearing export flags that MUST stay OFF at the source
 # (cc-otel-gap-analysis.md §1.5 / telemetry design §3.4): the overlay
@@ -191,7 +194,9 @@ def test_render_run_config_overlay_image_override_requires_image_table(tmp_path:
             token=_FAKE_TOKEN,
             github_token=_FAKE_GITHUB_TOKEN,
             siblings=None,
-            fabro_sandbox_image="ghcr.io/example/custom:tag",
+            sandbox_image=sandbox_image_source(
+                factory_environment=None, configured_image="ghcr.io/example/custom:tag"
+            ),
         )
         is None
     )
@@ -213,7 +218,9 @@ def test_render_run_config_overlay_image_override_rejects_noncanonical_docker_li
             token=_FAKE_TOKEN,
             github_token=_FAKE_GITHUB_TOKEN,
             siblings=None,
-            fabro_sandbox_image="ghcr.io/example/custom:tag",
+            sandbox_image=sandbox_image_source(
+                factory_environment=None, configured_image="ghcr.io/example/custom:tag"
+            ),
         )
         is None
     )
