@@ -568,6 +568,34 @@ digraph ImplementWorkItem {
     // the time this node runs, so the forge can merge within seconds of
     // `gh pr ready`. One CLOSED WITHOUT MERGING fails closed instead: a human
     // closed that publication and a script must not reopen it.
+    //
+    // THE ARMING IS BOUND TO THE VERIFIED HEAD AT THE FORGE, NOT BY AN EARLIER
+    // CHECK. The two comparisons above are READS, and they are followed by
+    // `gh pr edit` and `gh pr ready` before anything is armed. A branch update
+    // landing inside that window would leave every read passing on the head
+    // this run proved while the forge holds a different one, so an unbound
+    // `gh pr merge --auto` would arm — and the forge would then merge — a head
+    // nothing captured, verified or replayed, while this stage's own stdout
+    // reported the earlier head as proof-verified. `--match-head-commit` makes
+    // the arming CONDITIONAL on that head at the forge, which is the only party
+    // that can decide it without a window of its own: re-reading the head after
+    // `gh pr ready` would merely MOVE the race, because every read has the same
+    // gap after it. A rejected arming asks once whether the pull request merged
+    // anyway — the benign case, since the forge can land it between the two
+    // calls — and otherwise fails closed under LIVESPEC_PR_ARM_FAILED.
+    //
+    // WHAT THAT LEAVES OPEN, STATED HONESTLY RATHER THAN CLAIMED CLOSED. The
+    // title, body and ready transitions are NOT head-bound, because neither
+    // `gh pr edit` nor `gh pr ready` takes an expected head. So a head moving
+    // inside the window does leave a pull request that is READY while carrying
+    // a head this run never proved, and under a merge hold it leaves the
+    // MERGE_HOLD=held report describing that same unproven head. Both are
+    // reported states rather than merges: the arming is rejected, the stage
+    // exits non-zero, and no auto-merge request exists, so nothing the forge
+    // does next can land an unverified tree. Closing the residual would need a
+    // conditional ready the forge does not offer. Do NOT paper over it by
+    // asserting the earlier head read was atomic, and do NOT widen the
+    // `--match-head-commit` remedy into a claim it does not make.
     pr [
         label="Ready the exact pull request for the verified head + arm auto-merge"
         shape=parallelogram
