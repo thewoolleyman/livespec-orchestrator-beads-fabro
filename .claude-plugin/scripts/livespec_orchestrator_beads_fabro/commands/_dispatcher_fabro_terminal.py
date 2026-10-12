@@ -195,6 +195,7 @@ def _needs_human_terminal_outcome(
             failure=failure,
         ),
         needs_human_kind=causal.kind,
+        needs_human_stages=causal.stages,
         fabro_run_id=run_id,
         fabro_failure_cause=None if failure is None else failure.cause,
         fabro_failure_category=None if failure is None else failure.category,
