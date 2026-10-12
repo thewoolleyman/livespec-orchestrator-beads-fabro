@@ -21,6 +21,18 @@ __all__: list[str] = [
 
 _EDGE_PARENT_CHILD = "parent-child"
 
+# The id shape the server hands a no-history record. The live tenant mints
+# `bd-ib-wisp-<hex>`; the fake counts instead, because a deterministic id is
+# what lets a test name a token in an assertion. What matters is that the
+# caller cannot CHOOSE it: a token id derived from any caller-supplied value
+# would be an explicit-id create, which is an upsert and never an exclusion
+# (relay research note 007).
+_NO_HISTORY_ID_PREFIX = "fake-wisp-"
+
+# The status the lifecycle guard forces onto every create, no-history records
+# included (measured in relay research note 005).
+_FORCED_CREATE_STATUS = "backlog"
+
 
 class FakeBeadsClient:
     """Pure in-memory `BeadsClient` — runtime fallback + hermetic test backend.
@@ -30,15 +42,41 @@ class FakeBeadsClient:
     field map works identically against the fake and the shell backend.
     Writes mutate the in-memory dict; reads return copies so callers
     cannot accidentally mutate the backing store.
+
+    THREE OF ITS BEHAVIOURS ARE DELIBERATELY AWKWARD, because the server's
+    are, and a convenient fake would make the epoch-token chain's exclusion
+    untestable (relay research notes 005 and 007). `close_issue` is
+    CONDITIONAL: a record already closed keeps its first close reason, as
+    `bd close`'s `WHERE status != 'closed'` guarantees. `create_issue` with an
+    id that already exists is an UPSERT that reopens the record and erases its
+    close reason, which is why nothing may ever re-create a token id. And a
+    no-history record is omitted from `list_issues` (and therefore from
+    `exists`, which the shell client resolves through that same listing) while
+    `show_issue` still returns it.
     """
 
     def __init__(self) -> None:
         self._issues: dict[str, BeadsRecord] = {}
         self._comments: dict[str, list[BeadsRecord]] = {}
+        self._no_history: set[str] = set()
+        self._assigned_ids: int = 0
         self.custom_statuses_registered: bool = False
 
     def list_issues(self) -> list[BeadsRecord]:
-        return [dict(record) for record in self._issues.values()]
+        return [
+            dict(record)
+            for issue_id, record in self._issues.items()
+            if issue_id not in self._no_history
+        ]
+
+    def no_history_issue_ids(self) -> tuple[str, ...]:
+        """Return the live no-history record ids (fake-only inspection seam).
+
+        No list surface can answer this on the real server, which is the whole
+        point of a no-history record; a test asserting how many token records
+        stay live needs SOME way to count them, so the fake supplies one.
+        """
+        return tuple(sorted(self._no_history))
 
     def show_issue(self, *, issue_id: str) -> BeadsRecord:
         record = self._issues.get(issue_id)
@@ -88,7 +126,13 @@ class FakeBeadsClient:
         ]
 
     def exists(self, *, issue_id: str) -> bool:
-        return issue_id in self._issues
+        """Report presence as the LIST surface sees it, no-history records aside.
+
+        The shell client answers this from `list_issues`, which omits every
+        no-history record, so a fake answering from its backing dict would
+        report `True` where the live tenant reports `False`.
+        """
+        return issue_id in self._issues and issue_id not in self._no_history
 
     def create_issue(self, *, draft: IssueDraft) -> str:
         dependencies: list[DependencyEdge] = []
@@ -115,7 +159,42 @@ class FakeBeadsClient:
         if draft.notes is not None:
             record["notes"] = draft.notes
         self._issues[draft.issue_id] = record
+        self._no_history.discard(draft.issue_id)
         return draft.issue_id
+
+    def create_no_history_issue(self, *, title: str, description: str) -> str:
+        """Create a no-history record under a SERVER-assigned id; return that id."""
+        self._assigned_ids += 1
+        issue_id = f"{_NO_HISTORY_ID_PREFIX}{self._assigned_ids}"
+        self._issues[issue_id] = {
+            "id": issue_id,
+            "issue_type": "task",
+            "title": title,
+            "description": description,
+            "priority": 2,
+            "assignee": None,
+            "created_at": None,
+            "status": _FORCED_CREATE_STATUS,
+            "close_reason": None,
+            "labels": [],
+            "metadata": {},
+            "spec_id": None,
+            "parent_id": None,
+            "dependencies": [],
+        }
+        self._no_history.add(issue_id)
+        return issue_id
+
+    def delete_issue(self, *, issue_id: str) -> None:
+        """Delete one record and its comments (`bd delete <id> --force`)."""
+        if issue_id not in self._issues:
+            raise BeadsMappingError(
+                record_id=issue_id,
+                detail="cannot delete an issue that is not present in the tenant",
+            )
+        del self._issues[issue_id]
+        _ = self._comments.pop(issue_id, None)
+        self._no_history.discard(issue_id)
 
     def update_issue(  # noqa: PLR0913 — kw-only partial-update verb; each field is an independent optional mutation.
         self,
@@ -156,14 +235,34 @@ class FakeBeadsClient:
         _remove_labels(record=record, labels=remove_labels)
 
     def close_issue(self, *, issue_id: str, reason: str | None) -> None:
+        """Close one record CONDITIONALLY, as the server's own statement does.
+
+        `bd close` is `UPDATE … SET status='closed', close_reason=? WHERE id=?
+        AND status!='closed'`, so a second closer matches zero rows: the first
+        reason stands and the second is discarded. Measured over 20 trials of
+        4 concurrent closers in relay research note 005, where exactly one
+        reason won every time.
+        """
         record = self._issues.get(issue_id)
         if record is None:
             raise BeadsMappingError(
                 record_id=issue_id,
                 detail="cannot close an issue that is not present in the tenant",
             )
+        if record.get("status") == "closed":
+            return
         record["status"] = "closed"
         record["close_reason"] = reason
+
+    def close_issue_without_verdict(self, *, issue_id: str, reason: str) -> None:
+        """Attempt the conditional close, reporting NOTHING about who won.
+
+        The real `bd` exit code does not identify the winner — a loser exits 0
+        when its update matched no row, or exits 1 with Dolt `Error 1213` — so
+        every caller must read `close_reason` back. This verb exists to make
+        that unavoidable: it has no return value to misread.
+        """
+        self.close_issue(issue_id=issue_id, reason=reason)
 
     def add_dependency(self, *, from_id: str, to_id: str, edge_type: str) -> None:
         record = self._issues.get(from_id)

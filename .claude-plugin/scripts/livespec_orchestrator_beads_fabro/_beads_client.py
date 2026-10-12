@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import subprocess
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 from livespec_orchestrator_beads_fabro._beads_client_argv import (
     build_create_argv,
+    build_no_history_create_argv,
     build_update_argv,
     coerce_comment_list,
+    coerce_created_id,
     coerce_issue_record,
     coerce_record_list,
     parse_json_output,
@@ -23,6 +26,7 @@ from livespec_orchestrator_beads_fabro.effects._beads_client_shell import (
     invoke,
     raise_for_status,
 )
+from livespec_orchestrator_beads_fabro.errors import BeadsCommandError
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig
@@ -113,6 +117,38 @@ class BeadsClient(Protocol):
 
     def create_issue(self, *, draft: IssueDraft) -> str:
         """Create an issue with an operator-supplied id; return the id."""
+        ...
+
+    def create_no_history_issue(self, *, title: str, description: str) -> str:
+        """Create a no-history record under a SERVER-assigned id; return that id.
+
+        The epoch-token chain's only create. It takes no id because an
+        explicit-id create is an UPSERT that reopens a closed record and
+        erases its close reason (relay research note 007), so an id a caller
+        could supply is an id a caller could re-create — which would admit a
+        second winner for an already-committed transition.
+        """
+        ...
+
+    def delete_issue(self, *, issue_id: str) -> None:
+        """Delete one record outright (`bd delete <id> --force`).
+
+        The chain deletes the predecessor of its latest closed token so that
+        at most two token records stay live.
+        """
+        ...
+
+    def close_issue_without_verdict(self, *, issue_id: str, reason: str) -> None:
+        """Attempt a conditional close, reporting NOTHING about who won.
+
+        `bd close` is the server-enforced compare-and-swap the chain
+        serializes on, but its EXIT CODE does not identify the winner: a loser
+        exits 0 when its conditional update matched no row, or exits 1 with
+        Dolt `Error 1213` (22 of 80 closer exits were non-zero across relay
+        research note 005's 20 trials). So this verb deliberately has no
+        return value and swallows the command failure: the outcome is unknown
+        until the caller reads `close_reason` back.
+        """
         ...
 
     def update_issue(  # noqa: PLR0913 — kw-only partial-update verb; each field is an independent optional mutation.
@@ -246,6 +282,33 @@ class ShellBeadsClient:
     def create_issue(self, *, draft: IssueDraft) -> str:
         self._run_void(verb_args=build_create_argv(draft=draft))
         return draft.issue_id
+
+    def create_no_history_issue(self, *, title: str, description: str) -> str:
+        """Create a no-history record and return the id the SERVER assigned.
+
+        `--json` is load-bearing rather than decorative: the lifecycle guard
+        extracts the new id from this create's stdout to force the record to
+        `backlog`, and it anchors that extraction on the JSON form.
+        """
+        verb_args = build_no_history_create_argv(title=title, description=description)
+        return coerce_created_id(parsed=self._run_json(verb_args=verb_args))
+
+    def delete_issue(self, *, issue_id: str) -> None:
+        self._run_void(verb_args=["delete", issue_id, "--force"])
+
+    def close_issue_without_verdict(self, *, issue_id: str, reason: str) -> None:
+        """Attempt the conditional close and report nothing about the winner.
+
+        The `BeadsCommandError` suppressed here is the LOSER's Dolt `Error
+        1213` serialization failure, which says the transaction conflicted —
+        not that the close failed to happen and not that it happened. Either
+        reading would be a verdict this verb has no standing to give, so the
+        caller reads `close_reason` back instead. A connection or
+        credential failure is NOT suppressed: nothing was reachable to read
+        back, so there is no outcome to establish.
+        """
+        with suppress(BeadsCommandError):
+            self._run_void(verb_args=["close", issue_id, "--reason", reason])
 
     def update_issue(  # noqa: PLR0913 — kw-only partial-update verb; each field is an independent optional mutation.
         self,
