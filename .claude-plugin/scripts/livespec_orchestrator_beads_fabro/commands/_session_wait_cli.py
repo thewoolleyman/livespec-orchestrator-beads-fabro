@@ -7,6 +7,7 @@ import json
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+from math import isfinite
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -131,15 +132,31 @@ def _snapshot_payload(*, snapshot: InventorySnapshot) -> dict[str, object]:
     }
 
 
-def _frozen_targets(*, args: argparse.Namespace, gate_store_root: Path) -> tuple[WaitTarget, ...]:
-    """Every target this invocation named, frozen as it stands right now."""
+def _frozen_targets(
+    *,
+    args: argparse.Namespace,
+    gate_store_root: Path,
+    deadline: float,
+) -> tuple[WaitTarget, ...]:
+    """Every target this invocation named, frozen as it stands right now.
+
+    Each pane's identity is read within what REMAINS of the one deadline, not
+    within a socket timeout of its own. Freezing is an observation of the
+    target like any other, so a slow or silent server must not spend time the
+    caller never granted: measured before this bound, a 0.1s request against
+    a peer that accepted `agent.get` and never answered took 5.01s to refuse.
+    """
     gate_ids = cast("list[str] | None", args.gate) or []
     panes = cast("list[list[str]] | None", args.pane) or []
     gates: tuple[WaitTarget, ...] = tuple(
         GateTarget.freeze(gate_store_root=gate_store_root, run_id=run_id) for run_id in gate_ids
     )
     frozen_panes: tuple[WaitTarget, ...] = tuple(
-        freeze_pane_target(socket_path=Path(socket_path), pane_id=pane_id)
+        freeze_pane_target(
+            socket_path=Path(socket_path),
+            pane_id=pane_id,
+            timeout_seconds=max(0.0, deadline - time.monotonic()),
+        )
         for socket_path, pane_id in panes
     )
     return gates + frozen_panes
@@ -155,14 +172,28 @@ def _wait_command(
 ) -> int:
     from livespec_orchestrator_beads_fabro.commands.session_wait import run_wait
 
-    targets = _frozen_targets(args=args, gate_store_root=gate_store_root)
+    deadline_seconds = float(args.deadline_seconds)
+    started_at = time.monotonic()
+    # An invalid deadline freezes nothing: the wait refuses it before any
+    # target is observed, and freezing first would spend an unbounded
+    # observation on a request that was never going to be armed.
+    targets = (
+        _frozen_targets(
+            args=args,
+            gate_store_root=gate_store_root,
+            deadline=started_at + deadline_seconds,
+        )
+        if isfinite(deadline_seconds) and deadline_seconds > 0
+        else ()
+    )
     result = run_wait(
         request=WaitRequest(
             wait_id=str(args.wait_id),
             session_id=str(args.session_id),
             repository=primary,
-            deadline_seconds=float(args.deadline_seconds),
+            deadline_seconds=deadline_seconds,
             targets=targets,
+            started_at=started_at,
         ),
         launcher=seams.launcher(repository=primary),
         wait_store_root=wait_store_root,
