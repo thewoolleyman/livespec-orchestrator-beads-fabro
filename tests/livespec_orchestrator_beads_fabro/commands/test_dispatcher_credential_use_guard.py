@@ -151,6 +151,10 @@ def _heartbeat_argv(*, beat_file: Path, pid_file: Path) -> list[str]:
 
 def _last_beat(*, beat_file: Path) -> float:
     """The last instant the child was observed executing."""
+    # A child stopped before its FIRST beat leaves no file at all. That is the
+    # same "nothing was measured" outcome as an empty file, and it must say so
+    # rather than surface as a FileNotFoundError that reads like a harness bug.
+    assert beat_file.exists(), "the child never recorded a heartbeat, so nothing was measured"
     beats = [
         line.strip() for line in beat_file.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
@@ -563,6 +567,11 @@ def test_a_bidirectional_protocol_session_survives_the_guard(tmp_path: Path) -> 
             "    sys.stdout.flush()\n",
         ],
         stdin_text=requests,
+        # The deadline is an hour away, so nothing here is timing-sensitive; the
+        # budget only bounds a hung guard. The default settle budget was exceeded
+        # by interpreter startup alone on a loaded factory sandbox (run
+        # 01M4Q7GCZQBG, 2026-10-12), failing a case that measures stdin, not time.
+        timeout=60,
     )
 
     assert result.returncode == 0
@@ -598,16 +607,17 @@ def test_a_fractional_start_still_stops_by_the_absolute_epoch(
     result = _run(
         tmp_path=tmp_path,
         deadline=str(deadline),
+        # A shell child that ignores TERM from its FIRST instruction. A Python
+        # child ignored TERM only once its interpreter was up, and on a loaded
+        # factory sandbox that took longer than the ~2 seconds before TERM is
+        # due, so the child died before its first beat and the case measured
+        # interpreter startup instead of the deadline (runs 01M4PPN7RX2M and
+        # 01M4Q7GDZZVW, 2026-10-12). The ignored disposition is inherited by
+        # `date` and `sleep`, so only KILL can stop it -- the arm under test.
         argv=[
-            "python3",
+            "/bin/sh",
             "-c",
-            "import signal, time\n"
-            "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-            f"handle = open({str(beat_file)!r}, 'a')\n"
-            "while True:\n"
-            "    handle.write('%.6f\\n' % time.time())\n"
-            "    handle.flush()\n"
-            "    time.sleep(0.05)\n",
+            f"trap '' TERM; while : ; do date +%s.%N >> {beat_file}; sleep 0.05; done",
         ],
         timeout=_SOON_SECONDS + _SETTLE_SECONDS,
     )
