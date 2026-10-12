@@ -69,6 +69,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head imp
     PROOF_HEAD_PROGRAM_FILENAME,
     proof_head_program_source,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_metadata import (
+    PR_BODY_FILE_ENV_VAR,
+    PR_TITLE_ENV_VAR,
+    PUBLICATION_BODY_FILENAME,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state import (
     PUBLICATION_STATE_GIT_PATH,
     PUBLISH_HEAD_STATE_FILENAME,
@@ -320,7 +325,7 @@ def _run(
     box: _Sandbox,
     merge_mode: str = "rebase",
     merge_hold: str = "false",
-    title: str = "feat: a scripted publication",
+    title: str | None = "feat: a scripted publication",
     body: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Execute the stage's bytes in `box`, with an env holding only what it reads.
@@ -329,18 +334,23 @@ def _run(
     subprocess-spawn allowlist requires and which also keeps a control honest:
     an inherited `LIVESPEC_*` from the enclosing factory run could satisfy a
     guard this control meant to exercise.
+
+    `title=None` withholds the key entirely rather than setting it empty, which
+    is what a broken overlay projection actually looks like; the stage treats
+    both the same and the absent-title control asserts the sentinel.
     """
     env = {
         "PATH": f"{box.bin_dir}:/usr/local/bin:/usr/bin:/bin",
         "HOME": str(box.repo.parent / "home"),
         "LIVESPEC_FAKE_FORGE": str(box.forge_state),
         "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
-        "LIVESPEC_PR_TITLE": title,
         SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(box.plugins_root),
     }
+    if title is not None:
+        env[PR_TITLE_ENV_VAR] = title
     if body is not None:
         _ = box.body_file.write_text(body, encoding="utf-8")
-        env["LIVESPEC_PR_BODY_FILE"] = str(box.body_file)
+        env[PR_BODY_FILE_ENV_VAR] = str(box.body_file)
     return subprocess.run(
         ["bash", "-c", _pr_script(merge_mode=merge_mode, merge_hold=merge_hold)],
         cwd=box.repo,
@@ -541,6 +551,70 @@ def test_the_title_and_body_ride_as_data_through_the_forge_argv(tmp_path: Path) 
     assert argv[argv.index("--title") + 1] == hostile
     assert argv[argv.index("--body-file") + 1] == str(box.body_file)
     assert not Path("/tmp/livespec-should-not-exist").exists()
+
+
+def test_the_body_is_read_from_the_path_the_dispatcher_materializes(tmp_path: Path) -> None:
+    """With no override, the stage reads the file the prepare chain wrote.
+
+    The two ends have to agree or the body is silently lost, and the agreement
+    cannot be an env value: the sandbox plugins root is not known host-side, so
+    both ends resolve it by shell expansion. The control writes the body at that
+    expansion's own location and withholds `LIVESPEC_PR_BODY_FILE` entirely, so
+    a stage resolving any other default would report an absent body and edit the
+    title alone.
+    """
+    box = _sandbox(root=tmp_path)
+    materialized = "A body the prepare step wrote, at the path both ends resolve.\n"
+    _ = (box.plugins_root / PUBLICATION_BODY_FILENAME).write_text(materialized, encoding="utf-8")
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_BODY_ABSENT" not in result.stderr
+    edits = [
+        [str(token) for token in call]
+        for call in box.forge()["calls"]  # pyright: ignore[reportUnknownVariableType]
+        if isinstance(call, list) and call[:2] == ["pr", "edit"]
+    ]
+    assert len(edits) == 1
+    applied = Path(edits[0][edits[0].index("--body-file") + 1])
+    assert applied.read_text(encoding="utf-8") == materialized
+
+
+def test_an_absent_title_and_body_each_announce_themselves_and_still_publish(
+    tmp_path: Path,
+) -> None:
+    """The regression this slice repairs, asserted in both of its halves.
+
+    When publication became a command stage the Dispatcher-rendered shaping was
+    dropped, and the fallbacks were SILENT: the pull request took the publish
+    branch name as its title and kept `publish_draft`'s placeholder body, at
+    exit 0, with nothing on the run record saying so. The fallbacks are retained
+    deliberately -- a title and a body decide nothing about the tree, and
+    failing closed over a cosmetic value would strand reviewed, proof-verified
+    work -- so the assertion is that each absence is NAMED.
+
+    Both halves in one case, because the stage takes one `gh pr edit` and the
+    claim is about that single argv: a case asserting only the title sentinel
+    would pass for a build that had lost the body channel entirely, and the
+    argv is where "published anyway, with the fallback" is observable.
+    """
+    box = _sandbox(root=tmp_path)
+
+    result = _run(box=box, title=None)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_TITLE_ABSENT" in result.stderr
+    assert "LIVESPEC_PR_BODY_ABSENT" in result.stderr
+    assert "LIVESPEC_PR_READY_AND_ARMED" in result.stderr
+    edits = [
+        [str(token) for token in call]
+        for call in box.forge()["calls"]  # pyright: ignore[reportUnknownVariableType]
+        if isinstance(call, list) and call[:2] == ["pr", "edit"]
+    ]
+    assert len(edits) == 1
+    assert edits[0][edits[0].index("--title") + 1] == _BRANCH
+    assert "--body-file" not in edits[0], "a placeholder body must not be applied as data"
 
 
 def test_the_execution_boundary_leaves_enclosing_run_state_intact(tmp_path: Path) -> None:

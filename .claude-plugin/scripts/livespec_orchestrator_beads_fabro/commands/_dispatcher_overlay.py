@@ -49,6 +49,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_siblings imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
     plugin_cache_gate_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_metadata import (
+    PublicationMetadata,
+    publication_metadata_env_lines,
+    publication_metadata_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     ResumeCheckout,
     resume_checkout_prepare_steps_block,
@@ -207,6 +212,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     git_author: GitAuthor | None = None,
     credential_use: CredentialUseProjection | None = None,
     resume_checkout: ResumeCheckout | None = None,
+    publication_metadata: PublicationMetadata | None = None,
 ) -> str | None:
     """Render the dispatch-time run-config overlay.
 
@@ -226,6 +232,12 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     only the overlay reaches every dispatch — see
     `_dispatcher_factory_provenance` for that rationale and for why the Fabro
     run id cannot serve.
+
+    `publication_metadata` is the pull-request title and body the scripted `pr`
+    stage applies. It arrives rendered rather than being derived here, because
+    the derivation reads a WORK-ITEM and this builder is handed none — and a
+    caller that renders none projects no title line and no body step, which is
+    exactly the overlay every direct caller rendered before.
 
     `credential_use` carries the three enforcement inputs a protected sandbox
     needs: the absolute credential-use deadline, the observed credential expiry,
@@ -317,6 +329,12 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + plugin_cache_steps
         + resume_checkout_steps
         + credential_use_steps
+        # The pull-request body, materialized as a FILE because the stage hands
+        # it to `gh pr edit --body-file`. Its path is resolved by shell
+        # expansion at both ends rather than projected into the env table: the
+        # sandbox plugins root is not known host-side and the pinned engine
+        # expands no `${...}` in an env value.
+        + publication_metadata_prepare_steps_block(metadata=publication_metadata)
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + f"[environments.{environment_id}.env]\n"
@@ -334,6 +352,11 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + codex_otel_env
         + credential_use_env
         + proof_store_env
+        # The rendered pull-request TITLE, beside the publish branch the same
+        # stage reads. Both are facts about this dispatch that a command node
+        # cannot read off the rendered goal, which is why this table is the
+        # seam for them.
+        + publication_metadata_env_lines(metadata=publication_metadata)
         # The repository's declared proof credentials, rendered inline in THIS
         # table rather than through a second channel: the pinned engine offers no
         # secret-reference syntax, so the transport is the same uncommitted,

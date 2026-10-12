@@ -81,6 +81,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition i
     journaled_proof_rendering,
     publish_branch_for,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_metadata import (
+    publication_metadata_for,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     resume_checkout_for,
 )
@@ -265,6 +268,13 @@ def _dispatch_one_locked(
         # launched against another's resolves to nothing.
         factory_name=plan.fabro_factory_name,
         secret_sink=secret_sink,
+        # The pull-request title and body the scripted `pr` stage applies. This
+        # is the ONE call site that holds the work-item, which is why the
+        # rendering happens here and travels down as a value: `pr` is a command
+        # node, so it cannot read the rendered goal the retired `pr` prompt did,
+        # and without this projection it falls back to the publish branch name
+        # as its title and keeps `publish_draft`'s placeholder body.
+        publication_metadata=publication_metadata_for(item=item),
     )
     if overlay_error is not None:
         return failed_dispatch_outcome(
