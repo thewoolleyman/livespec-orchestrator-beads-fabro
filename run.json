@@ -307,7 +307,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-10-12T04:33:05.861604157Z",
-  "last_event_at": "2026-10-12T04:33:13.256185991Z",
+  "last_event_at": "2026-10-12T04:33:16.812400865Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -410,9 +410,9 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 39,
       "checkpoint": {
-        "timestamp": "2026-10-12T04:33:13.417858677Z",
+        "timestamp": "2026-10-12T04:33:16.808511299Z",
         "current_node": "fix",
         "completed_nodes": [
           "start",
@@ -421,27 +421,45 @@
         ],
         "node_retries": {},
         "context_values": {
-          "internal.acp_attempt.start": 0,
-          "failure_class": "",
-          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
-          "outcome": "succeeded",
-          "thread.start.current_node": "janitor",
-          "internal.retry_count.janitor": 0,
-          "internal.fidelity": "compact",
-          "failure_signature": "",
-          "internal.acp_attempt.janitor": 0,
-          "command.output": "blob://sha256/26d9fcb52166663bda9f057b1b86606b711a69df08193b10328ef38437d0be0b",
-          "internal.acp_attempt.fix": 0,
-          "internal.node_visit_count": 1,
-          "internal.retry_count.fix": 0,
-          "internal.thread_id": "janitor",
-          "internal.run_id": "01M4Q6429N5D2V0GFYHBJD4M24",
           "current_node": "fix",
-          "graph.goal": "# probe\n",
+          "failure_class": "",
+          "internal.fidelity": "compact",
+          "command.output": "blob://sha256/26d9fcb52166663bda9f057b1b86606b711a69df08193b10328ef38437d0be0b",
+          "outcome": "succeeded",
+          "internal.thread_id": "janitor",
+          "internal.retry_count.janitor": 0,
+          "internal.node_visit_count": 1,
+          "internal.acp_attempt.start": 0,
+          "internal.acp_attempt.janitor": 0,
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "internal.retry_count.fix": 0,
           "internal.retry_count.start": 0,
-          "thread.janitor.current_node": "fix"
+          "thread.janitor.current_node": "fix",
+          "internal.acp_attempt.fix": 0,
+          "graph.goal": "# probe\n",
+          "failure_signature": "",
+          "thread.start.current_node": "janitor",
+          "internal.run_id": "01M4Q6429N5D2V0GFYHBJD4M24"
         },
         "node_outcomes": {
+          "fix": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/26d9fcb52166663bda9f057b1b86606b711a69df08193b10328ef38437d0be0b"
+            },
+            "notes": "Script completed: echo fixing >&2",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 139,
+              "active_time_ms": 139
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
           "janitor": {
             "status": "failed",
             "context_updates": {
@@ -457,6 +475,69 @@
               "inference_time_ms": 0,
               "tool_time_ms": 148,
               "active_time_ms": 148
+            }
+          }
+        },
+        "next_node_id": "janitor",
+        "git_commit_sha": "bb752aa97a56fe8cf7cd4bd09af4962e19685e90",
+        "loop_failure_signatures": {
+          "janitor|deterministic|script failed with exit code: <n>": 1
+        },
+        "node_visits": {
+          "janitor": 1,
+          "fix": 1,
+          "start": 1
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-10-12T04:33:16.966104204Z",
+        "current_node": "janitor",
+        "completed_nodes": [
+          "start",
+          "janitor",
+          "fix",
+          "janitor"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.acp_attempt.start": 0,
+          "failure_class": "",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "outcome": "succeeded",
+          "thread.start.current_node": "janitor",
+          "thread.fix.current_node": "janitor",
+          "internal.retry_count.janitor": 0,
+          "internal.fidelity": "compact",
+          "failure_signature": "",
+          "internal.acp_attempt.janitor": 0,
+          "command.output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+          "internal.acp_attempt.fix": 0,
+          "internal.node_visit_count": 2,
+          "internal.retry_count.fix": 0,
+          "internal.thread_id": "fix",
+          "internal.run_id": "01M4Q6429N5D2V0GFYHBJD4M24",
+          "current_node": "janitor",
+          "graph.goal": "# probe\n",
+          "internal.retry_count.start": 0,
+          "thread.janitor.current_node": "fix"
+        },
+        "node_outcomes": {
+          "janitor": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+            },
+            "notes": "Script completed: c=$(cat /tmp/eut-j 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-j; test $c -ge 2",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 142,
+              "active_time_ms": 142
             }
           },
           "fix": {
@@ -478,9 +559,9 @@
             "usage": null
           }
         },
-        "next_node_id": "janitor",
+        "next_node_id": "done",
         "node_visits": {
-          "janitor": 1,
+          "janitor": 2,
           "fix": 1,
           "start": 1
         }
@@ -519,7 +600,12 @@
       "first_event_seq": 31,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Script completed: echo fixing >&2",
+        "failure_reason": null,
+        "timestamp": "2026-10-12T04:33:13.416908430Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -527,11 +613,27 @@
         "command": "exec 2>&1\necho fixing >&2",
         "language": "shell"
       },
-      "script_timing": null,
+      "script_timing": {
+        "output": "blob://sha256/26d9fcb52166663bda9f057b1b86606b711a69df08193b10328ef38437d0be0b",
+        "exit_code": 0,
+        "duration_ms": 139,
+        "termination": "exited",
+        "output_bytes": 7,
+        "live_streaming": true
+      },
       "parallel_results": null,
       "output": null,
+      "output_bytes": 7,
+      "live_streaming": true,
+      "termination": "exited",
       "started_at": "2026-10-12T04:33:13.255267292Z",
       "handler": "command",
+      "timing": {
+        "wall_time_ms": 161,
+        "inference_time_ms": 0,
+        "tool_time_ms": 139,
+        "active_time_ms": 139
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -540,7 +642,7 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "succeeded"
     },
     "start@1": {
       "first_event_seq": 17,
@@ -623,6 +725,33 @@
         "cache_write_tokens": 0
       },
       "state": "failed"
+    },
+    "janitor@2": {
+      "first_event_seq": 41,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "c=$(cat /tmp/eut-j 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-j; test $c -ge 2",
+        "command": "exec 2>&1\nc=$(cat /tmp/eut-j 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-j; test $c -ge 2",
+        "language": "shell"
+      },
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-12T04:33:16.811723198Z",
+      "handler": "command",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "running"
     }
   }
 }

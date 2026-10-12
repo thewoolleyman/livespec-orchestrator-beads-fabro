@@ -1,0 +1,5 @@
+{
+  "script": "c=$(cat /tmp/eut-j 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-j; test $c -ge 2",
+  "command": "exec 2>&1\nc=$(cat /tmp/eut-j 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-j; test $c -ge 2",
+  "language": "shell"
+}
