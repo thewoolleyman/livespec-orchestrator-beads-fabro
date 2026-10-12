@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.188.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.188.2...v0.188.3) (2026-10-12)
+
+
+### Bug Fixes
+
+* skip check-master-ci-green in a sandbox-exempt checkout ([33fcdea](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/33fcdea41b0f9d68d5a7998800b9273f3838df13))
+
 ## [0.188.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.188.1...v0.188.2) (2026-10-12)
 
 
