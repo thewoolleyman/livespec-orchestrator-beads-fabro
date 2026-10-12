@@ -1,0 +1,5 @@
+{
+  "script": "eval test -f /tmp/eut-fix-applied",
+  "command": "exec 2>&1\neval test -f /tmp/eut-fix-applied",
+  "language": "shell"
+}

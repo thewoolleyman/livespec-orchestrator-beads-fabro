@@ -300,14 +300,114 @@
     }
   },
   "web_url": "https://hp-xubuntu.perch-rudd.ts.net:32276/runs/01M4Q5ZT05GAWGX38SMRTJFPQP",
-  "start": null,
-  "status": {
-    "kind": "starting"
+  "start": {
+    "start_time": "2026-10-12T04:30:04.357870079Z",
+    "run_branch": "fabro/run/01M4Q5ZT05GAWGX38SMRTJFPQP",
+    "base_sha": "bb752aa97a56fe8cf7cd4bd09af4962e19685e90"
   },
-  "status_updated_at": "2026-10-12T04:30:00.470747484Z",
-  "last_event_at": "2026-10-12T04:30:03.925077245Z",
+  "status": {
+    "kind": "running"
+  },
+  "status_updated_at": "2026-10-12T04:30:04.357899023Z",
+  "last_event_at": "2026-10-12T04:30:06.838097543Z",
   "pending_control": null,
-  "checkpoints": [],
+  "checkpoints": [
+    {
+      "seq": 20,
+      "checkpoint": {
+        "timestamp": "2026-10-12T04:30:06.838008887Z",
+        "current_node": "start",
+        "completed_nodes": [
+          "start"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.retry_count.start": 0,
+          "internal.acp_attempt.start": 0,
+          "current_node": "start",
+          "internal.node_visit_count": 1,
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "outcome": "succeeded",
+          "failure_signature": "",
+          "graph.goal": "# Fabro Enemy Unit Test: janitor-fix-loop\n",
+          "failure_class": "",
+          "internal.fidelity": "compact",
+          "internal.thread_id": null,
+          "internal.run_id": "01M4Q5ZT05GAWGX38SMRTJFPQP"
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "janitor",
+        "node_visits": {
+          "start": 1
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-10-12T04:30:06.990373512Z",
+        "current_node": "janitor",
+        "completed_nodes": [
+          "start",
+          "janitor"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.fidelity": "compact",
+          "internal.acp_attempt.janitor": 0,
+          "command.output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+          "internal.run_id": "01M4Q5ZT05GAWGX38SMRTJFPQP",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "internal.acp_attempt.start": 0,
+          "current_node": "janitor",
+          "failure_class": "deterministic",
+          "thread.start.current_node": "janitor",
+          "graph.goal": "# Fabro Enemy Unit Test: janitor-fix-loop\n",
+          "internal.thread_id": "start",
+          "failure_signature": "janitor|deterministic|script failed with exit code: <n>",
+          "internal.node_visit_count": 1,
+          "internal.retry_count.janitor": 0,
+          "internal.retry_count.start": 0,
+          "outcome": "failed"
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "janitor": {
+            "status": "failed",
+            "context_updates": {
+              "command.output": "blob://sha256/12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+            },
+            "failure": {
+              "message": "Script failed with exit code: 1",
+              "category": "deterministic"
+            },
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 139,
+              "active_time_ms": 139
+            }
+          }
+        },
+        "next_node_id": "fix",
+        "node_visits": {
+          "start": 1,
+          "janitor": 1
+        }
+      },
+      "diff": {}
+    }
+  ],
   "conclusion": null,
   "sandbox": {
     "kind": "ready",
@@ -334,5 +434,67 @@
   "pull_request": null,
   "superseded_by": null,
   "pending_interviews": {},
-  "stages": {}
+  "stages": {
+    "start@1": {
+      "first_event_seq": 17,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-10-12T04:30:06.837926173Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-12T04:30:06.837860289Z",
+      "handler": "start",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "janitor@1": {
+      "first_event_seq": 21,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "eval test -f /tmp/eut-fix-applied",
+        "command": "exec 2>&1\neval test -f /tmp/eut-fix-applied",
+        "language": "shell"
+      },
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-12T04:30:06.838077826Z",
+      "handler": "command",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "running"
+    }
+  }
 }
