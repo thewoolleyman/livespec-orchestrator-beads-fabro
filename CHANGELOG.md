@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.188.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.188.1...v0.188.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **dispatcher:** carry the provider ceiling and its vendor through the terminal ([3f494d6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3f494d651322bbdf0c523066d200f2affb77c687))
+* **dispatcher:** claim preservation and a pending question only on evidence ([76778b4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/76778b4fd57bdbaea2c0232214dde0369b434b16))
+* **dispatcher:** classify a backgrounded ACP tool call as a transport fault ([d8e1cd8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d8e1cd813f07864dd57fff49c6cefa878bfa0b38))
+* **dispatcher:** name the causal stage and cause at the needs_human terminal ([4ed3db2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4ed3db2d613a101f2bb474771849ec0d38985051))
+* **dispatcher:** persist the needs-human causal fault on the item ([e7a0795](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e7a07953a0086d844cd047b663501de8adb6443f))
+* **dispatcher:** read the needs-human terminal from its native checkpoint ([657486f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/657486f20f2d499a4d7ec192c1f9e26f128f8dfb))
+* **dispatcher:** require ACP evidence before naming a turn timeout ([ff889c4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ff889c4f190fa5070d4b565d3cdc1064d2bd3012))
+* **dispatcher:** route the needs-human escalation stderr by its ending ([f0ab84d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f0ab84d038b11b63e712cf6ecdc94441e19d82eb))
+* **dispatcher:** stop claiming a preserved ref the needs_human push never wrote ([d9b0d6a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d9b0d6ad734689fa28c6bc2e565b237b263b10fb))
+
 ## [0.188.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.188.0...v0.188.1) (2026-10-12)
 
 
