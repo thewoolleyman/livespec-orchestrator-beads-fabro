@@ -152,13 +152,18 @@ def write_chain_cache(
     )
 
 
-def progress_event_body(*, payload: TransitionPayload, event_kind: str, now: str) -> str:
-    """Render one progress event's body: the readable lines, then the payload."""
+def progress_event_body(*, payload: TransitionPayload, now: str) -> str:
+    """Render one progress event's body: the readable lines, then the payload.
+
+    The event kind is read off the PAYLOAD rather than taken as a parameter, so
+    a re-projection performed by the reconciler cannot render a kind that
+    differs from the one the transition committed.
+    """
     state = payload.authority
     return "\n".join(
         (
             f"{_OPERATION_LABEL}{payload.operation_id}",
-            f"event: {event_kind}",
+            f"event: {payload.event_kind}",
             f"epoch: {payload.prior_epoch} -> {payload.new_epoch}",
             f"prior-token: {payload.prior_token_id}",
             f"next-token: {payload.next_token_id}",
@@ -176,7 +181,6 @@ def write_progress_event(
     client: BeadsClient,
     epic_id: str,
     payload: TransitionPayload,
-    event_kind: str,
     author: str,
     now: str,
 ) -> None:
@@ -187,7 +191,7 @@ def write_progress_event(
             prefix=PLAN_PROGRESS_PREFIX,
             author=author,
             now=now,
-            body=progress_event_body(payload=payload, event_kind=event_kind, now=now),
+            body=progress_event_body(payload=payload, now=now),
         ),
     )
 
