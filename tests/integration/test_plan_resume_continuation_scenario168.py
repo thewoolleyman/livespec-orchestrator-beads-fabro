@@ -249,6 +249,10 @@ def _invalid_rulings() -> tuple[str, ...]:
             "plan-continuation: authorized\nuntil: never\nby: Chad Woolley\n"
             "directive: Finish.\nrecorded-attended: true"
         ),
+        (
+            "plan-continuation: authorized\nuntil: archive\nby: Chad Woolley\n"
+            "directive: Finish.\nrecorded-attended: true\ndirective: Also finish that."
+        ),
     )
 
 

@@ -79,7 +79,12 @@ def current_continuation_ruling_from_entries(
     lines = latest.body.splitlines()
     if lines[0] == REVOKED_PREFIX:
         return None
-    if len(lines) < _AUTHORIZED_LINE_COUNT:
+    # EXACTLY five lines, not "at least five". The attended marker is written by
+    # the scope-event primitive AFTER every caller-provided field, so it is the
+    # LAST line of a ruling the primitive wrote. A body carrying a sixth line is
+    # one a caller appended to by hand, and an index read of line five would
+    # treat it as current anyway.
+    if len(lines) != _AUTHORIZED_LINE_COUNT:
         return None
     until = _line_value(line=lines[1], prefix=_UNTIL_PREFIX)
     by = _line_value(line=lines[2], prefix=_BY_PREFIX)
