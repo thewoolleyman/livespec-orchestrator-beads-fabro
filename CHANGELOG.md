@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.188.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.187.1...v0.188.0) (2026-10-12)
+
+
+### Features
+
+* **session-wait:** bound all probes by one deadline ([f28e323](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f28e3239f5a82d79da6cce5e4443859aafc18e59))
+* **session-wait:** enforce the shared deadline through cancellation ([391f758](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/391f7586ff345cbe08a10c48b92b4fd15d7357c8))
+* **session-wait:** expose the bounded wait CLI as a host entry point ([d637ceb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d637cebc01026058e1501c3cc7dad776a634ed53))
+* **session-wait:** persist inventory and receipt acknowledgement ([44eefc9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/44eefc9a8210e31bb563b5d6b19cfb0a8a2dcdef))
+* **session-wait:** wake on the first completed gate ([fd7618a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fd7618aa5e21c74e313e77e5f3725731d2133de5))
+
+
+### Bug Fixes
+
+* **session-wait:** keep unreadable records visible and wait identities closed ([ff374f1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ff374f1014bff15cfbf2dcca6a9e09ef73f6229b))
+* **session-wait:** survive a probe task that wins the race against cancel ([bb752aa](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bb752aa97a56fe8cf7cd4bd09af4962e19685e90))
+
 ## [0.187.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.187.0...v0.187.1) (2026-10-12)
 
 
