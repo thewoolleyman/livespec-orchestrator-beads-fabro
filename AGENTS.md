@@ -626,6 +626,23 @@ Measured instances from 2026-08-21 and 2026-08-22:
   control is the one this catalogue already prescribes: search for a PR you KNOW
   exists before believing an empty survey.
 
+- **A factory-readiness wait aimed at the web console, then at the API.**
+  Measured 2026-10-12 on hp. After an attended `fabro-server` restart, a wait
+  for `curl …:32276/runs` to return 200 burned its whole two-hour deadline.
+  `/runs` and `/login` are the web console's routes and returned 404 throughout,
+  while `/api/v1/runs` answered 200 and `fabro ps --server` worked from the
+  second minute after the restart. The second layer was also wrong: an API that
+  answers does not mean a factory that accepts work. Docker and containerd had
+  been stopped for a storage move, so every run on hp failed at 0 ms with
+  "Failed to inspect Docker image … Connection refused" (category
+  `transient_infra`). The positive control is a run that EXECUTES. Wait for
+  `systemctl is-active docker` to report `active` on the factory host AND for
+  `fabro ps --server <factory>` to list a run in progress. Read
+  `fabro inspect --server <factory> <run>` at
+  `conclusion.failure.detail.causes` for any 0 ms failure. Put an ssh probe that
+  runs in a loop into a script file, because the fleet host guard refuses an
+  inline loop it cannot classify.
+
 **The existing "state the scope you searched" rule is necessary and NOT sufficient**
 — see "Verification discipline (repo-additive)" below, whose Rule 1 this extends. In
 the anchored-regex instance the scope was stated and correct (ten repos, every `.py`,
