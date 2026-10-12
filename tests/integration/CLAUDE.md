@@ -693,6 +693,25 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   this tier's per-file coverage gate reads a never-taken branch in a fixture
   exactly as it reads one in the product.
 
+- `test_needs_human_preservation_push_hookless.py` — binds work-item
+  bd-ib-3vn3mu against the SPECIFICATION/contracts.md rule that a factory run
+  never awaits a human (ratified v093, Scenario 103): the `needs_human`
+  terminal's own script, extracted from the committed graph and unescaped, runs
+  in a throwaway repository with a real bare origin and REAL `.git/hooks`, and
+  its preservation commit and push must complete without executing the governed
+  repository's check suite. Every case that asserts a hook did NOT run first runs
+  a CONTROL — a plain `git` write of the same kind in the same fixture — that
+  MUST record the hook and MUST be refused, because an absent marker is
+  otherwise equally consistent with "the node skipped the hook" and with "no
+  hook was ever wired", and nothing in the output distinguishes them. The
+  content assertion is what makes the commit leg worth anything: a hook-refused
+  commit still leaves the push creating the ref, so "the ref exists" passes for
+  a preservation that saved the last checkpoint and lost the work. The
+  `publish_draft` counterpart is driven in the same module against the same
+  refusing-hook fixture and MUST still be hook-gated, since the two nodes'
+  pushes are one line apart in intent and only the measured difference keeps
+  them apart.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
