@@ -153,9 +153,12 @@ def _continuation_body(*, continuation: PlanContinuationWrite) -> str:
 
 
 def _epic_description(*, client: BeadsClient, epic_id: str) -> str:
-    """One epic's description, tolerating the key's absence."""
-    record = client.show_issue(issue_id=epic_id)
-    description = record.get("description")
+    """One epic's description, tolerating the key's absence.
+
+    Beads records are `omitempty`-sparse: an epic holding no description omits
+    the key entirely rather than carrying an empty string.
+    """
+    description = client.show_issue(issue_id=epic_id).get("description")
     return description if isinstance(description, str) else ""
 
 

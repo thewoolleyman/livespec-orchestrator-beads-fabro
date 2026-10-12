@@ -19,7 +19,7 @@ import importlib
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import (
@@ -32,9 +32,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Comman
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import NextAction
 from livespec_orchestrator_beads_fabro.commands.plan import resume_directive
 from livespec_orchestrator_beads_fabro.types import StoreConfig
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 _NOW = "2026-10-10T12:00:00Z"
 _TARGET = "bd-ib-result"
@@ -309,22 +306,31 @@ def _assert_missing_tracking_never_continues(*, repo: Path) -> None:
         assert "required_result" in directive.reason
 
 
-def _assert_satisfied_result_is_stale(*, repo: Path) -> None:
-    _fake(repo=repo).close_issue(issue_id=_TARGET, reason="result observed")
-    next_child = "bd-ib-satisfied.2"
+def _seed_ready_child(*, repo: Path, epic_id: str, child_id: str) -> None:
     _ = _fake(repo=repo).create_issue(
         draft=IssueDraft(
-            issue_id=next_child,
+            issue_id=child_id,
             issue_type="task",
             title="the next ready plan child",
             description="The ledger-derived next step.",
             assignee=None,
             created_at=_NOW,
-            parent_id="bd-ib-satisfied",
+            parent_id=epic_id,
             metadata={"rank": "a0"},
         )
     )
-    _fake(repo=repo).update_issue(issue_id=next_child, status="ready")
+    _fake(repo=repo).update_issue(issue_id=child_id, status="ready")
+
+
+def _pointer(*, repo: Path, epic_id: str) -> dict[str, object]:
+    metadata = _fake(repo=repo).show_issue(issue_id=epic_id)["metadata"]
+    return dict(metadata["next_action"])
+
+
+def _assert_satisfied_result_is_stale(*, repo: Path) -> None:
+    _fake(repo=repo).close_issue(issue_id=_TARGET, reason="result observed")
+    next_child = "bd-ib-satisfied.2"
+    _seed_ready_child(repo=repo, epic_id="bd-ib-satisfied", child_id=next_child)
     _seed_epic(
         repo=repo,
         epic_id="bd-ib-satisfied",
@@ -341,6 +347,227 @@ def _assert_satisfied_result_is_stale(*, repo: Path) -> None:
     assert satisfied.observation.status == "satisfied"
     assert "next_action stale" in satisfied.reason
     assert next_child in satisfied.reason
+    # The ADVANCE IS PERSISTED, not merely reported. A transient action id
+    # leaves the stale pointer standing in the ledger, so the very next resume
+    # re-observes the same satisfied result and re-derives the same step for
+    # ever; and nothing downstream of this session can see where the plan now
+    # stands. The replacement carries all five keys, a FRESH obligation
+    # (handoff count back to zero under a new epoch) and the plan's OWN
+    # unextended deadline, because a satisfied result permits a new result and
+    # budget but never a postponed plan deadline.
+    assert _pointer(repo=repo, epic_id="bd-ib-satisfied") == {
+        "kind": "impl",
+        "ref": next_child,
+        "text": f"Implement plan child {next_child}.",
+        "required_result": {
+            "repo": "repo",
+            "item_status": {"item_id": next_child, "status": "closed"},
+        },
+        "budget": {
+            "deadline": _BUDGET["deadline"],
+            "max_handoffs": _BUDGET["max_handoffs"],
+            "epoch": f"bd-ib-satisfied:impl:{next_child}",
+            "handoff_count": 0,
+        },
+    }
+    _fake(repo=repo).update_issue(issue_id=_TARGET, status="ready")
+
+
+def _assert_disposed_plan_advances_to_proof_review_then_archive(*, repo: Path) -> None:
+    """A plan with every child disposed must still reach its archive.
+
+    The three plan-level legs are derived from the satisfied pointer's own kind,
+    because that pointer is the ledger's record of where the plan stood. Each
+    leg's required result is the LEDGER record that leg produces — the plan
+    proof record, the completeness-review evidence, the closed epic — so the
+    obligation is the step's own observable outcome rather than a restatement
+    of it.
+    """
+    _fake(repo=repo).close_issue(issue_id=_TARGET, reason="result observed")
+    for epic_id, satisfied_kind, satisfied_ref, expected in (
+        (
+            "bd-ib-to-proof",
+            "impl",
+            "bd-ib-child",
+            {
+                "kind": "proof",
+                "ref": "capture:bd-ib-to-proof",
+                "text": "Capture the plan Proof of Done record for bd-ib-to-proof.",
+                "required_result": {
+                    "repo": "repo",
+                    "item_comment": {
+                        "item_id": "bd-ib-to-proof",
+                        "marker": "Plan Proof of Done",
+                    },
+                },
+                "action_id": "proof:capture:bd-ib-to-proof",
+            },
+        ),
+        (
+            "bd-ib-to-review",
+            "proof",
+            "capture:bd-ib-to-review",
+            {
+                "kind": "review",
+                "ref": "bd-ib-to-review",
+                "text": "Commission the independent completeness review of bd-ib-to-review.",
+                "required_result": {
+                    "repo": "repo",
+                    "item_comment": {
+                        "item_id": "bd-ib-to-review",
+                        "marker": "plan-completeness-review-evidence",
+                    },
+                },
+                "action_id": "review:bd-ib-to-review",
+            },
+        ),
+        (
+            "bd-ib-to-archive",
+            "review",
+            "bd-ib-to-archive",
+            {
+                "kind": "archive",
+                "ref": "bd-ib-to-archive",
+                "text": "Archive plan bd-ib-to-archive through archive_thread.",
+                "required_result": {
+                    "repo": "repo",
+                    "item_status": {"item_id": "bd-ib-to-archive", "status": "closed"},
+                },
+                "action_id": "archive:bd-ib-to-archive",
+            },
+        ),
+    ):
+        _seed_epic(
+            repo=repo,
+            epic_id=epic_id,
+            kind=satisfied_kind,
+            ref=satisfied_ref,
+            ruling=True,
+        )
+        directive = resume_directive(config=_config(repo=repo), epic_id=epic_id, unattended=False)
+        assert not directive.ask
+        assert directive.next_action == expected["action_id"]
+        assert "next_action stale" in directive.reason
+        assert _pointer(repo=repo, epic_id=epic_id) == {
+            "kind": expected["kind"],
+            "ref": expected["ref"],
+            "text": expected["text"],
+            "required_result": expected["required_result"],
+            "budget": {
+                "deadline": _BUDGET["deadline"],
+                "max_handoffs": _BUDGET["max_handoffs"],
+                "epoch": f"{epic_id}:{expected['kind']}:{expected['ref']}",
+                "handoff_count": 0,
+            },
+        }
+
+    # A satisfied ARCHIVE pointer is the end of the derivation: the plan has
+    # archived, so there is no further step to name and the pointer is left
+    # alone rather than rewritten into a loop back through the same legs.
+    _seed_epic(
+        repo=repo,
+        epic_id="bd-ib-archived",
+        kind="archive",
+        ref="bd-ib-archived",
+        ruling=True,
+    )
+    before = _pointer(repo=repo, epic_id="bd-ib-archived")
+    archived = resume_directive(
+        config=_config(repo=repo), epic_id="bd-ib-archived", unattended=False
+    )
+    assert not archived.ask
+    assert archived.next_action is None
+    assert "next_action stale" in archived.reason
+    assert "no further plan step" in archived.reason
+    assert _pointer(repo=repo, epic_id="bd-ib-archived") == before
+    _fake(repo=repo).update_issue(issue_id=_TARGET, status="ready")
+
+
+def _assert_derived_step_still_needs_a_ruling(*, repo: Path) -> None:
+    """Reconciliation runs first, but the derived step is not thereby AUTHORIZED.
+
+    SATISFIED is reconciled before the attended-authorization decision, which
+    is what let a satisfied pointer with a derived child return an executable
+    action id outright and skip the picker an attended resume without a ruling
+    is owed. Order and authority are separate questions: the advance is
+    persisted either way, and only the TAKING of it needs the ruling.
+    """
+    _fake(repo=repo).close_issue(issue_id=_TARGET, reason="result observed")
+    next_child = "bd-ib-unruled-advance.2"
+    _seed_ready_child(repo=repo, epic_id="bd-ib-unruled-advance", child_id=next_child)
+    _seed_epic(
+        repo=repo,
+        epic_id="bd-ib-unruled-advance",
+        kind="impl",
+        ref="bd-ib-child",
+        ruling=False,
+    )
+    presented = resume_directive(
+        config=_config(repo=repo), epic_id="bd-ib-unruled-advance", unattended=False
+    )
+    assert presented.ask
+    assert presented.next_action is None
+    assert presented.picker_default == f"impl:{next_child}"
+    assert "next_action stale" in presented.reason
+    assert _pointer(repo=repo, epic_id="bd-ib-unruled-advance")["ref"] == next_child
+
+    # A SEPARATE epic for the unattended leg, because the advance above already
+    # replaced the first one's pointer: re-resuming it observes the new child's
+    # OWN unsatisfied result and never reaches the advance at all, so the same
+    # epic would report a no-picker continuation that proves nothing about it.
+    unattended_child = "bd-ib-unruled-unattended.2"
+    _seed_ready_child(repo=repo, epic_id="bd-ib-unruled-unattended", child_id=unattended_child)
+    _seed_epic(
+        repo=repo,
+        epic_id="bd-ib-unruled-unattended",
+        kind="impl",
+        ref="bd-ib-child",
+        ruling=False,
+    )
+    unattended = resume_directive(
+        config=_config(repo=repo), epic_id="bd-ib-unruled-unattended", unattended=True
+    )
+    assert not unattended.ask
+    assert unattended.next_action == f"impl:{unattended_child}"
+    assert "next_action stale" in unattended.reason
+    assert "under continuation ruling" not in unattended.reason
+    assert _pointer(repo=repo, epic_id="bd-ib-unruled-unattended")["ref"] == unattended_child
+    _fake(repo=repo).update_issue(issue_id=_TARGET, status="ready")
+
+
+def _assert_a_refused_replacement_pointer_continues_nothing(*, repo: Path) -> None:
+    """A derived step whose obligation could not be WRITTEN is not taken.
+
+    `set_next_action` is the single authority on a pointer's admissibility, so
+    the advance carries the satisfied budget's two fields through as found and
+    reports whatever that writer refuses. Riding past the refusal would leave
+    the plan executing a step against no recorded budget at all — the very state
+    the required-result rules exist to make impossible.
+    """
+    _fake(repo=repo).close_issue(issue_id=_TARGET, reason="result observed")
+    for epic_id, budget, expected in (
+        ("bd-ib-unwritable-budget", "whenever", "budget deadline must be a string"),
+        (
+            "bd-ib-nonpositive-budget",
+            {**_BUDGET, "max_handoffs": 0},
+            "budget max_handoffs must be positive",
+        ),
+    ):
+        _seed_epic(
+            repo=repo,
+            epic_id=epic_id,
+            kind="impl",
+            ref="bd-ib-child",
+            ruling=True,
+            budget=budget,
+        )
+        before = _pointer(repo=repo, epic_id=epic_id)
+        refused = resume_directive(config=_config(repo=repo), epic_id=epic_id, unattended=False)
+        assert not refused.ask
+        assert refused.next_action is None
+        assert "next_action stale" in refused.reason
+        assert f"replacement pointer was refused: {expected}" in refused.reason
+        assert _pointer(repo=repo, epic_id=epic_id) == before
     _fake(repo=repo).update_issue(issue_id=_TARGET, status="ready")
 
 
@@ -416,6 +643,9 @@ def test_scenario168_current_ruling_takes_all_six_typed_actions_and_preserves_pi
     _assert_only_current_complete_rulings_continue(repo=repo)
     _assert_missing_tracking_never_continues(repo=repo)
     _assert_satisfied_result_is_stale(repo=repo)
+    _assert_disposed_plan_advances_to_proof_review_then_archive(repo=repo)
+    _assert_derived_step_still_needs_a_ruling(repo=repo)
+    _assert_a_refused_replacement_pointer_continues_nothing(repo=repo)
     _assert_expired_and_unobservable_results_do_not_continue(repo=repo)
     _assert_unknown_kind_asks(repo=repo)
 
@@ -432,7 +662,11 @@ def _assert_stale_precedes_liveness(*, repo: Path, liveness_calls: list[str]) ->
     stale = resume_directive(
         config=_config(repo=repo), epic_id="bd-ib-stale-before-live", unattended=False
     )
-    assert stale.next_action is None
+    # The epic has no ready child, so the advance derives the plan's proof leg.
+    # What this case is about is the ORDER: the pointer's target carries no run
+    # stamp at all, and the factory was never asked, so the staleness cannot
+    # have been reached through a liveness reading.
+    assert stale.next_action == "proof:capture:bd-ib-stale-before-live"
     assert "next_action stale" in stale.reason
     assert liveness_calls == []
     _fake(repo=repo).update_issue(issue_id=_TARGET, status="ready")
@@ -755,6 +989,31 @@ def _assert_latest_complete_ruling_governs(*, repo: Path, monkeypatch: pytest.Mo
         )
         is None
     )
+
+
+def test_moved_helpers_kept_their_design_rationale_verbatim() -> None:
+    """A decomposition MOVES code; it does not re-golf the bodies it relocates.
+
+    Both sentences below are DESIGN RECORD rather than description: the first
+    says why an absent `impl` carve-out is `impl` alone, and the second says why
+    an absent description key is normal rather than a fault. Neither buys any
+    LLOC — the counter excludes docstrings — so dropping one costs the next
+    reader the rationale and gains nothing.
+    """
+    package = Path(__file__).resolve().parents[2] / ".claude-plugin" / "scripts"
+    commands = package / "livespec_orchestrator_beads_fabro" / "commands"
+    for module, needle in (
+        (
+            "_plan_resume.py",
+            "`impl` ALONE, as the clause words it. A `spec-op` pointer is dispatchable and",
+        ),
+        (
+            "_plan_scope_event.py",
+            "Beads records are `omitempty`-sparse: an epic holding no description omits",
+        ),
+    ):
+        source = (commands / module).read_text(encoding="utf-8")
+        assert needle in source, f"{module} dropped a moved design comment"
 
 
 def test_scope_event_primitive_records_attended_continuation_rulings_and_refuses_forgery(
