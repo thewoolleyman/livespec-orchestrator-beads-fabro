@@ -8,7 +8,9 @@ import pytest
 from livespec_orchestrator_beads_fabro._beads_client import IssueDraft
 from livespec_orchestrator_beads_fabro._beads_client_argv import (
     build_create_argv,
+    build_no_history_create_argv,
     build_update_argv,
+    coerce_created_id,
     coerce_record_list,
 )
 from livespec_orchestrator_beads_fabro.errors import BeadsMappingError
@@ -174,3 +176,36 @@ def test_coerce_record_list_unknown_shape_raises() -> None:
 def test_coerce_record_list_scalar_raises() -> None:
     with pytest.raises(BeadsMappingError):
         _ = coerce_record_list(parsed=42)
+
+
+def test_build_no_history_create_argv_carries_no_id_flag() -> None:
+    """The token create NEVER names an id — that is what makes it an exclusion.
+
+    An explicit-id create is an upsert that reopens a closed record and erases
+    its close reason (relay research note 007), so the absence of `--id` here
+    is load-bearing rather than incidental.
+    """
+    argv = build_no_history_create_argv(title="token", description="single-use")
+    assert argv == [
+        "create",
+        "--type",
+        "task",
+        "--title",
+        "token",
+        "--description",
+        "single-use",
+        "--no-history",
+        "--json",
+    ]
+    assert "--id" not in argv
+
+
+def test_coerce_created_id_reads_the_bare_object_and_the_one_element_array() -> None:
+    assert coerce_created_id(parsed={"id": "bd-ib-wisp-01"}) == "bd-ib-wisp-01"
+    assert coerce_created_id(parsed=[{"id": "bd-ib-wisp-02"}]) == "bd-ib-wisp-02"
+
+
+def test_coerce_created_id_refuses_every_body_carrying_no_id() -> None:
+    for parsed in ([], 42, {"no_id": "x"}, {"id": 7}, {"id": ""}):
+        with pytest.raises(BeadsMappingError):
+            _ = coerce_created_id(parsed=parsed)
