@@ -1,0 +1,354 @@
+{
+  "title": "Fabro Enemy Unit Test: janitor-fix-loop",
+  "spec": {
+    "run_id": "01M4Q6BPD89NNBP6HZDJR2ZN83",
+    "settings": {
+      "project": {
+        "name": null,
+        "description": null,
+        "metadata": {}
+      },
+      "workflow": {
+        "name": null,
+        "description": null,
+        "graph": "workflow.fabro",
+        "metadata": {}
+      },
+      "run": {
+        "goal": {
+          "type": "inline",
+          "value": "# Fabro Enemy Unit Test: janitor-fix-loop\n"
+        },
+        "working_dir": null,
+        "metadata": {},
+        "inputs": {
+          "sandbox_check_suite": "test -f /tmp/eut-fix-applied"
+        },
+        "model": {
+          "provider": "anthropic",
+          "name": "claude-sonnet-4-6",
+          "fallbacks": [],
+          "controls": {
+            "reasoning_effort": null,
+            "speed": null
+          }
+        },
+        "git": {
+          "author": null
+        },
+        "prepare": {
+          "commands": [],
+          "timeout_ms": 300000
+        },
+        "execution": {
+          "mode": "normal",
+          "approval": "prompt"
+        },
+        "checkpoint": {
+          "exclude_globs": [],
+          "skip_git_hooks": false,
+          "commit_timeout_ms": 30000
+        },
+        "clone": {
+          "enabled": true
+        },
+        "run_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "meta_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "environment": {
+          "id": "default",
+          "provider": "docker",
+          "image": {
+            "docker": "buildpack-deps:noble",
+            "dockerfile": null
+          },
+          "resources": {
+            "cpu": 2,
+            "memory": "4GB",
+            "disk": null
+          },
+          "network": {
+            "mode": "allow_all",
+            "allow": []
+          },
+          "lifecycle": {
+            "preserve": false,
+            "stop_on_terminal": true,
+            "auto_stop": null
+          },
+          "labels": {},
+          "volumes": [],
+          "env": {}
+        },
+        "notifications": {},
+        "interviews": {
+          "provider": null,
+          "slack": null
+        },
+        "agent": {
+          "fabro_tools": false,
+          "permissions": null,
+          "mcps": {}
+        },
+        "hooks": [],
+        "scm": {
+          "provider": null,
+          "owner": null,
+          "repository": null,
+          "github": null
+        },
+        "pull_request": null,
+        "artifacts": {
+          "include": []
+        },
+        "integrations": {
+          "github": {
+            "permissions": {}
+          }
+        }
+      }
+    },
+    "graph": {
+      "name": "FabroEnemyJanitorFixLoop",
+      "nodes": {
+        "exhausted": {
+          "id": "exhausted",
+          "attrs": {
+            "label": {
+              "String": "Exhausted"
+            },
+            "script": {
+              "String": "echo exhausted > /tmp/eut-janitor-verdict"
+            },
+            "shape": {
+              "String": "parallelogram"
+            }
+          }
+        },
+        "exit": {
+          "id": "exit",
+          "attrs": {
+            "label": {
+              "String": "Exit"
+            },
+            "shape": {
+              "String": "Msquare"
+            }
+          }
+        },
+        "publish": {
+          "id": "publish",
+          "attrs": {
+            "label": {
+              "String": "Publish"
+            },
+            "shape": {
+              "String": "parallelogram"
+            },
+            "script": {
+              "String": "echo publish > /tmp/eut-janitor-verdict"
+            }
+          }
+        },
+        "verdict": {
+          "id": "verdict",
+          "attrs": {
+            "label": {
+              "String": "Verdict"
+            },
+            "goal_gate": {
+              "Boolean": true
+            },
+            "shape": {
+              "String": "parallelogram"
+            },
+            "script": {
+              "String": "cat /tmp/eut-janitor-verdict >&2; test -f /tmp/eut-fix-applied && test \"$(cat /tmp/eut-janitor-verdict)\" = publish"
+            }
+          }
+        },
+        "start": {
+          "id": "start",
+          "attrs": {
+            "label": {
+              "String": "Start"
+            },
+            "shape": {
+              "String": "Mdiamond"
+            }
+          }
+        },
+        "fix": {
+          "id": "fix",
+          "attrs": {
+            "label": {
+              "String": "Fix"
+            },
+            "max_visits": {
+              "Integer": 3
+            },
+            "shape": {
+              "String": "parallelogram"
+            },
+            "script": {
+              "String": "touch /tmp/eut-fix-applied"
+            }
+          }
+        },
+        "janitor": {
+          "id": "janitor",
+          "attrs": {
+            "shape": {
+              "String": "parallelogram"
+            },
+            "script": {
+              "String": "eval test -f /tmp/eut-fix-applied"
+            },
+            "label": {
+              "String": "Janitor"
+            }
+          }
+        }
+      },
+      "edges": [
+        {
+          "from": "start",
+          "to": "janitor",
+          "attrs": {}
+        },
+        {
+          "from": "janitor",
+          "to": "publish",
+          "attrs": {
+            "label": {
+              "String": "Green"
+            },
+            "condition": {
+              "String": "outcome=succeeded"
+            }
+          }
+        },
+        {
+          "from": "janitor",
+          "to": "fix",
+          "attrs": {
+            "condition": {
+              "String": "outcome!=succeeded"
+            },
+            "label": {
+              "String": "Red"
+            }
+          }
+        },
+        {
+          "from": "janitor",
+          "to": "exhausted",
+          "attrs": {
+            "label": {
+              "String": "Exhausted (fix-loop cap)"
+            }
+          }
+        },
+        {
+          "from": "fix",
+          "to": "janitor",
+          "attrs": {}
+        },
+        {
+          "from": "publish",
+          "to": "verdict",
+          "attrs": {}
+        },
+        {
+          "from": "exhausted",
+          "to": "verdict",
+          "attrs": {}
+        },
+        {
+          "from": "verdict",
+          "to": "exit",
+          "attrs": {}
+        }
+      ],
+      "attrs": {
+        "goal": {
+          "String": "# Fabro Enemy Unit Test: janitor-fix-loop\n"
+        }
+      }
+    },
+    "graph_source": "digraph FabroEnemyJanitorFixLoop {\n    start [shape=Mdiamond, label=\"Start\"]\n    janitor [shape=parallelogram, label=\"Janitor\", script=\"eval {{ inputs.sandbox_check_suite }}\"]\n    fix [shape=parallelogram, label=\"Fix\", max_visits=3, script=\"touch /tmp/eut-fix-applied\"]\n    exhausted [shape=parallelogram, label=\"Exhausted\", script=\"echo exhausted > /tmp/eut-janitor-verdict\"]\n    publish [shape=parallelogram, label=\"Publish\", script=\"echo publish > /tmp/eut-janitor-verdict\"]\n    verdict [shape=parallelogram, label=\"Verdict\", goal_gate=true, script=\"cat /tmp/eut-janitor-verdict >&2; test -f /tmp/eut-fix-applied && test \\\"$(cat /tmp/eut-janitor-verdict)\\\" = publish\"]\n    exit [shape=Msquare, label=\"Exit\"]\n    start -> janitor\n    janitor -> publish [label=\"Green\", condition=\"outcome=succeeded\"]\n    janitor -> fix [label=\"Red\", condition=\"outcome!=succeeded\"]\n    janitor -> exhausted [label=\"Exhausted (fix-loop cap)\"]\n    fix -> janitor\n    publish -> verdict\n    exhausted -> verdict\n    verdict -> exit\n}\n",
+    "workflow_slug": "janitor-fix-loop",
+    "source_directory": "/home/ubuntu/.worktrees/livespec-orchestrator-beads-fabro/eut-real-node-shapes",
+    "provenance": {
+      "server": {
+        "version": "0.254.0"
+      },
+      "client": {
+        "user_agent": "fabro-cli/0.254.0",
+        "name": "fabro-cli",
+        "version": "0.254.0"
+      },
+      "subject": {
+        "kind": "user",
+        "identity": {
+          "issuer": "fabro:dev",
+          "subject": "dev"
+        },
+        "login": "dev",
+        "auth_method": "dev_token"
+      }
+    },
+    "manifest_blob": "3e1d6b9834bd8bb123cfbf43d9cde8931e0f6bab9b49c054caf755a611bdc535",
+    "definition_blob": "9e3214f084bf1ff96991061e54f354c5696ad8d4754414b6ef7360b5c6c87f2d",
+    "git": {
+      "origin_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+      "branch": "eut-real-node-shapes",
+      "sha": "bb752aa97a56fe8cf7cd4bd09af4962e19685e90",
+      "dirty": "dirty",
+      "push_outcome": {
+        "type": "not_attempted"
+      }
+    }
+  },
+  "web_url": "https://hp-xubuntu.perch-rudd.ts.net:32276/runs/01M4Q6BPD89NNBP6HZDJR2ZN83",
+  "start": null,
+  "status": {
+    "kind": "starting"
+  },
+  "status_updated_at": "2026-10-12T04:36:30.129782141Z",
+  "last_event_at": "2026-10-12T04:36:33.546913406Z",
+  "pending_control": null,
+  "checkpoints": [],
+  "conclusion": null,
+  "sandbox": {
+    "kind": "ready",
+    "plan": {
+      "provider": "docker",
+      "image": "buildpack-deps:noble"
+    },
+    "instance": {
+      "provider": "docker",
+      "image": "buildpack-deps:noble",
+      "runtime": {
+        "id": "5197ba7c93226855e1b74648c45f7fb3170a846eabc68d593563028421c9ed62",
+        "working_directory": "/workspace/livespec-orchestrator-beads-fabro",
+        "repo_cloned": true,
+        "clone_origin_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+        "clone_branch": "eut-real-node-shapes",
+        "workspace_root": "/workspace",
+        "repos_root": "/repos",
+        "primary_repo_path": "/repos/thewoolleyman/livespec-orchestrator-beads-fabro",
+        "primary_repo_link": "/workspace/livespec-orchestrator-beads-fabro"
+      }
+    }
+  },
+  "pull_request": null,
+  "superseded_by": null,
+  "pending_interviews": {},
+  "stages": {}
+}

@@ -1,0 +1,17 @@
+digraph FabroEnemyJanitorFixLoop {
+    start [shape=Mdiamond, label="Start"]
+    janitor [shape=parallelogram, label="Janitor", script="eval {{ inputs.sandbox_check_suite }}"]
+    fix [shape=parallelogram, label="Fix", max_visits=3, script="touch /tmp/eut-fix-applied"]
+    exhausted [shape=parallelogram, label="Exhausted", script="echo exhausted > /tmp/eut-janitor-verdict"]
+    publish [shape=parallelogram, label="Publish", script="echo publish > /tmp/eut-janitor-verdict"]
+    verdict [shape=parallelogram, label="Verdict", goal_gate=true, script="cat /tmp/eut-janitor-verdict >&2; test -f /tmp/eut-fix-applied && test \"$(cat /tmp/eut-janitor-verdict)\" = publish"]
+    exit [shape=Msquare, label="Exit"]
+    start -> janitor
+    janitor -> publish [label="Green", condition="outcome=succeeded"]
+    janitor -> fix [label="Red", condition="outcome!=succeeded"]
+    janitor -> exhausted [label="Exhausted (fix-loop cap)"]
+    fix -> janitor
+    publish -> verdict
+    exhausted -> verdict
+    verdict -> exit
+}
