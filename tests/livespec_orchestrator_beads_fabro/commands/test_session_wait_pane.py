@@ -28,6 +28,7 @@ Nothing here touches a pane, workspace or server this test did not create.
 from __future__ import annotations
 
 import importlib
+import itertools
 import json
 import os
 import shutil
@@ -37,20 +38,12 @@ import subprocess
 import threading
 import time
 from contextlib import contextmanager, suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
-_PACKAGE_DIR = (
-    Path(__file__).resolve().parents[3]
-    / ".claude-plugin"
-    / "scripts"
-    / "livespec_orchestrator_beads_fabro"
-    / "commands"
-)
 _COMMANDS = "livespec_orchestrator_beads_fabro.commands"
-_NEW_MODULES = ("_session_wait_pane", "_session_wait_herdr", "_session_wait_routing")
 
 # Every state a Herdr pane can report. A diagnostic must never be rendered as
 # one of these: an unreadable reply presented as `unknown` would turn "this
@@ -65,16 +58,14 @@ _requires_herdr = pytest.mark.skipif(
 
 
 def _module(*, name: str) -> object:
-    """One session-wait module, after proving the new ones exist on disk.
+    """One session-wait module, imported inside the test body.
 
-    The file check is FIRST and is a genuine assertion, so the Red commit of
-    an "extract to a new module" slice fails on the assertion rather than
-    dying at collection on an import that cannot resolve.
+    The import is deliberately NOT at module top: the Red moment of this
+    slice runs the pane behaviour against minimal failing stubs of the new
+    adapter modules, and a top-level import would turn a later absence into a
+    collection error — which proves only unimportability, not that the
+    behaviour is unimplemented.
     """
-    for new_module in _NEW_MODULES:
-        assert (
-            _PACKAGE_DIR / f"{new_module}.py"
-        ).is_file(), f"{new_module} must exist before a pane wait can observe anything"
     return importlib.import_module(f"{_COMMANDS}.{name}")
 
 
@@ -85,19 +76,14 @@ class _HerdrServer:
     def call(self, *, method: str, params: dict[str, object]) -> dict[str, object]:
         channel = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         channel.settimeout(30.0)
-        buffer = bytearray()
         try:
             channel.connect(str(self.socket_path))
             request = {"id": "test", "method": method, "params": params}
             channel.sendall(json.dumps(request).encode("utf-8") + b"\n")
-            while b"\n" not in buffer:
-                chunk = channel.recv(65536)
-                if not chunk:
-                    break
-                buffer.extend(chunk)
+            line = channel.makefile("rb").readline()
         finally:
             channel.close()
-        return json.loads(bytes(buffer).split(b"\n", 1)[0].decode("utf-8"))
+        return json.loads(line.decode("utf-8"))
 
     def workspace_pane(self, *, label: str, focus: bool) -> str:
         """The root pane of a new workspace, focused or not as asked.
@@ -114,6 +100,7 @@ class _HerdrServer:
             method="workspace.create",
             params={"cwd": "/tmp", "label": label, "focus": focus},
         )
+        assert "result" in created, f"workspace.create failed: {created}"
         return str(created["result"]["root_pane"]["pane_id"])
 
     def report(self, *, pane_id: str, state: str) -> None:
@@ -132,12 +119,28 @@ class _HerdrServer:
         return str(observed["result"]["agent"]["agent_status"])
 
     def await_status(self, *, pane_id: str, state: str) -> None:
+        observed = ""
         deadline = time.monotonic() + 30.0
-        while time.monotonic() < deadline:
-            if self.agent_status(pane_id=pane_id) == state:
-                return
+        while observed != state and time.monotonic() < deadline:
+            observed = self.agent_status(pane_id=pane_id)
             time.sleep(0.05)
-        raise AssertionError(f"pane {pane_id} never reached {state}")
+        assert observed == state, f"pane {pane_id} settled at {observed!r}, not {state!r}"
+
+    def session_is_live(self) -> bool:
+        """Whether this server's SESSION actor answers, not just its socket.
+
+        `ping` is the wrong readiness gauge and this is the whole reason the
+        method exists: it is answered by the transport before the session
+        actor exists. Measured on herdr 0.9.3 under load, `ping` answered at
+        ~0.12s while `session.snapshot` only answered 0.6-1.1s later, and a
+        `workspace.create` issued in that window is refused with
+        `server_unavailable` / "receiving on a closed channel". A fixture
+        gated on `ping` therefore hands out a server that cannot yet hold a
+        workspace, which presents as a flaky KeyError on the reply.
+        """
+        with suppress(OSError, json.JSONDecodeError):
+            return "result" in self.call(method="session.snapshot", params={})
+        return False
 
 
 @contextmanager
@@ -160,15 +163,15 @@ def _isolated_herdr_server(*, root: Path):
     )
     try:
         server = _HerdrServer(socket_path=socket_path)
+        # BOUNDED, and the bound FAILS rather than yielding an unready server.
+        # Readiness is the session actor answering, never the socket merely
+        # existing or `ping` replying — see `session_is_live`.
+        live = False
         deadline = time.monotonic() + 90.0
-        answered = False
-        while not answered and time.monotonic() < deadline:
-            if socket_path.exists():
-                with suppress(OSError, json.JSONDecodeError):
-                    answered = server.call(method="ping", params={})["result"]["type"] == "pong"
-            if not answered:
-                time.sleep(0.05)
-        assert answered, "the isolated herdr server never answered a ping"
+        while not live and time.monotonic() < deadline:
+            live = socket_path.exists() and server.session_is_live()
+            time.sleep(0.02)
+        assert live, f"the isolated herdr server at {socket_path} never became session-live"
         yield server
     finally:
         # By process GROUP, because `herdr server` is started in its own
@@ -180,65 +183,51 @@ def _isolated_herdr_server(*, root: Path):
         _ = process.wait(timeout=90)
 
 
-@dataclass(kw_only=True)
-class _ControlledPeer:
-    """A unix socket answering each connection with scripted bytes."""
-
-    socket_path: Path
-    replies: list[bytes]
-    listener: socket.socket | None = field(default=None, init=False)
-    stop: threading.Event = field(default_factory=threading.Event, init=False)
-    thread: threading.Thread | None = field(default=None, init=False)
-
-    def start(self) -> None:
-        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        listener.bind(str(self.socket_path))
-        listener.listen(8)
-        listener.settimeout(0.05)
-        self.listener = listener
-        self.thread = threading.Thread(target=self._serve, args=(listener,), daemon=True)
-        self.thread.start()
-
-    def _serve(self, listener: socket.socket) -> None:
-        index = 0
-        while not self.stop.is_set():
-            try:
-                connection, _ = listener.accept()
-            except OSError:
-                continue
-            reply = self.replies[min(index, len(self.replies) - 1)]
-            index += 1
-            worker = threading.Thread(
-                target=self._answer,
-                args=(connection, reply),
-                daemon=True,
-            )
-            worker.start()
-
-    def _answer(self, connection: socket.socket, reply: bytes) -> None:
-        with suppress(OSError):
-            _ = connection.recv(65536)
-            if reply:
-                connection.sendall(reply)
-        with suppress(OSError):
-            connection.close()
-
-    def close(self) -> None:
-        self.stop.set()
-        if self.thread is not None:
-            self.thread.join(timeout=30.0)
-        if self.listener is not None:
-            self.listener.close()
+def _answer_once(*, connection: socket.socket, reply: bytes) -> None:
+    with suppress(OSError):
+        _ = connection.recv(65536)
+        if reply:
+            connection.sendall(reply)
+        connection.close()
 
 
 @contextmanager
 def _controlled_peer(*, socket_path: Path, replies: list[bytes]):
-    peer = _ControlledPeer(socket_path=socket_path, replies=replies)
-    peer.start()
+    """A unix socket answering each connection with scripted bytes.
+
+    The listener is bound synchronously BEFORE the context is entered, so a
+    test never races its own peer: there is no readiness window to poll and
+    no deadline to expire. Only the accept loop is threaded, and it is joined
+    on the way out.
+    """
+    stop = threading.Event()
+    served = itertools.count()
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    listener.bind(str(socket_path))
+    listener.listen(8)
+    listener.settimeout(0.05)
+
+    def serve() -> None:
+        while not stop.is_set():
+            try:
+                connection, _ = listener.accept()
+            except OSError:
+                continue
+            reply = replies[min(next(served), len(replies) - 1)]
+            threading.Thread(
+                target=_answer_once,
+                kwargs={"connection": connection, "reply": reply},
+                daemon=True,
+            ).start()
+
+    worker = threading.Thread(target=serve, daemon=True)
+    worker.start()
     try:
-        yield peer
+        yield
     finally:
-        peer.close()
+        stop.set()
+        worker.join(timeout=30.0)
+        listener.close()
 
 
 def _agent_reply(*, agent: dict[str, object]) -> bytes:
@@ -286,13 +275,13 @@ def _wait_argv(
 
 def _poll_until_observed(*, probe: object):
     """One observation from a probe, however it schedules its own work."""
+    observation = None
     deadline = time.monotonic() + 30.0
-    while time.monotonic() < deadline:
+    while observation is None and time.monotonic() < deadline:
         observation = probe.poll(now=time.monotonic())
-        if observation is not None:
-            return observation
         time.sleep(0.01)
-    raise AssertionError("the probe never produced an observation")
+    assert observation is not None, "the probe never produced an observation"
+    return observation
 
 
 def _run_pane_wait(
@@ -505,8 +494,12 @@ def test_routing_sends_each_target_kind_to_its_own_adapter(*, tmp_path: Path) ->
     assert _poll_until_observed(probe=pane_probe).state not in _PANE_STATES
     pane_probe.cancel(timeout_seconds=5.0)
     gate_probe.cancel(timeout_seconds=5.0)
-    # The default observer routes the same way. A gate store holding no
-    # `started_at` is observable without any gate-status command at all.
+    # The default observer routes the same way, through each kind's own
+    # adapter. The pane's socket does not exist and the gate store holds no
+    # `started_at`, so both answers are diagnostics rather than states.
+    assert routing.observe_wait_target(target=pane_target, observed_at=2.0).state not in (
+        _PANE_STATES
+    )
     gate_observation = routing.observe_wait_target(target=gate_target, observed_at=1.0)
     assert gate_observation.state == "GONE"
     assert types_module.observation_is_running(observation=gate_observation) is False
