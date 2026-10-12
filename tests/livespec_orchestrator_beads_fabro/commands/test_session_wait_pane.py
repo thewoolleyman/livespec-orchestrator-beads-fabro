@@ -741,7 +741,11 @@ def _malformed_replies() -> list[tuple[str, bytes]]:
     return [
         ("truncated", b"{not json at all}\n"),
         ("not-an-object", b"[1, 2, 3]\n"),
-        ("protocol-error", b'{"id":"test","error":{"code":"agent_not_found"}}\n'),
+        ("target-absent-error", b'{"id":"test","error":{"code":"agent_not_found"}}\n'),
+        # A named server error that is NOT about the target: the measurement
+        # failed, which is a different end from the pane being absent.
+        ("server-side-error", b'{"id":"test","error":{"code":"server_unavailable"}}\n'),
+        ("unnamed-error", b'{"id":"test","error":{"code":17}}\n'),
         ("no-agent-record", b'{"id":"test","result":{"type":"agent_info"}}\n'),
         ("agent-without-identity", _agent_reply(agent={"pane_id": "w1:p1"})),
         ("closed-without-reply", b""),

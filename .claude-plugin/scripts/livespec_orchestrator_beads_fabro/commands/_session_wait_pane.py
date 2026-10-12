@@ -17,6 +17,8 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_types import (
 )
 
 __all__: list[str] = [
+    "DIAGNOSTIC_GONE",
+    "DIAGNOSTIC_REPLACED",
     "HERDR_BACKEND",
     "HerdrPaneLauncher",
     "HerdrPaneProbe",
@@ -26,6 +28,14 @@ __all__: list[str] = [
 ]
 
 HERDR_BACKEND = "herdr"
+
+# The two ends that are about the TARGET'S IDENTITY rather than about one
+# reply: its server is no longer there at all, or the thing answering is not
+# the instance that was armed. They reuse the gate adapter's own vocabulary so
+# one operator reads both target kinds the same way.
+DIAGNOSTIC_GONE = "GONE"
+DIAGNOSTIC_REPLACED = "REPLACED"
+
 _DEFAULT_TIMEOUT_SECONDS = 5.0
 
 
@@ -80,6 +90,23 @@ def freeze_pane_target(
     )
 
 
+def _server_diagnostic(*, target: PaneTarget) -> str | None:
+    """Whether this target's SERVER is still the one that was armed.
+
+    Asked BEFORE the pane is, and that order is load-bearing: a restarted
+    server at the same socket path mints pane ids from the same sequence, so
+    the frozen pane id routinely resolves on the new instance. Asking the pane
+    first would get a clean, plausible state back from a server nobody armed
+    against.
+    """
+    generation = herdr_socket_generation(socket_path=target.socket_path)
+    if generation is None:
+        return DIAGNOSTIC_GONE
+    if generation != target.server_generation:
+        return DIAGNOSTIC_REPLACED
+    return None
+
+
 def _diagnostic(*, target: PaneTarget, state: str, observed_at: float) -> GateObservation:
     return GateObservation(
         target=target,
@@ -103,6 +130,9 @@ def pane_observation(
     different outcomes to an operator and collapsing them would turn a pane
     that is waiting on a human into one that finished its work.
     """
+    server = _server_diagnostic(target=target)
+    if server is not None:
+        return _diagnostic(target=target, state=server, observed_at=observed_at)
     reply = channel.agent_info(pane_id=target.pane_id)
     agent = reply.agent
     if agent is None:
@@ -111,6 +141,12 @@ def pane_observation(
             state=str(reply.diagnostic),
             observed_at=observed_at,
         )
+    if _reported_terminal_id(reply=reply) != target.terminal_id:
+        # The pane id resolves, but to a DIFFERENT terminal than the one that
+        # was armed. Reporting its state would answer a question about
+        # somebody else's pane, which is exactly the retargeting this frozen
+        # identity exists to refuse.
+        return _diagnostic(target=target, state=DIAGNOSTIC_REPLACED, observed_at=observed_at)
     status = agent.get("agent_status")
     if not isinstance(status, str):
         return _diagnostic(
