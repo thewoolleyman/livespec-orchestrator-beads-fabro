@@ -17,6 +17,7 @@ _RUN = "01M44F9E56XCEWZNMVJX4M14Z6"
 _PR_SIGNATURE = "pr|deterministic|acp turn failed"
 _REVIEW_SIGNATURE = "review|deterministic|acp turn failed"
 _CAUSE = "ACP tool call toolu_01 (git push) continued in background as task b9hp9md1u"
+_REF = f"refs/heads/needs-human/{_RUN}"
 
 
 def _causal(
@@ -63,15 +64,20 @@ def test_an_unattributed_ending_renders_the_whole_account_and_claims_no_cause() 
 
     assert detail == (
         f"run {_RUN} terminated at the needs_human node (needs-human); "
-        "terminal reason: not recorded; the tree was "
-        f"preserved on refs/heads/needs-human/{_RUN} (see the preserve-by-reference "
-        "pointer on the item for the dump digest); no run is waiting — the decision "
-        f"lives in the ledger: answer with `resolve-blocked:{_ITEM}:ready` "
-        "(re-dispatch, seeding rework from the preserved ref or from scratch) or "
-        "leave the item blocked"
+        "terminal reason: not recorded; "
+        "whether the tree reached a run-scoped ref is UNKNOWN — the run's record "
+        "carries neither the terminal's LIVESPEC_NEEDS_HUMAN_PRESERVED sentinel nor a "
+        "failure one, so no ref can be named; rework from the preserve-by-reference "
+        "dump pointer instead — see the preserve-by-reference pointer on the item for "
+        "the dump digest; no run is waiting, and this record does not establish "
+        "whether a stage failed or an agent asked — triage the run to find out before "
+        f"answering, then release the item with `resolve-blocked:{_ITEM}:ready` to "
+        "re-dispatch, or leave the item blocked"
     )
-    # The arm that establishes nothing must not borrow the fault arm's denial.
+    # The arm that establishes nothing must not borrow the fault arm's denial,
+    # nor the request arm's promise that an answer is owed.
     assert "no agent asked anything" not in detail
+    assert "the decision lives in the ledger: answer with" not in detail
 
 
 def test_an_engine_routed_ending_names_the_stage_cause_and_signature() -> None:
@@ -210,8 +216,46 @@ def test_an_unattributed_ending_still_reports_the_history_it_carries() -> None:
     assert "innermost cause" not in detail
 
 
+def test_a_preservation_sentinel_naming_no_ref_reads_as_unknown() -> None:
+    """A sentinel is only evidence when it IDENTIFIES the ref it claims.
+
+    Reporting the empty string as the preserved ref would claim preservation on
+    a ref nobody can fetch — the exact class of claim the three-way invariant
+    exists to refuse, reached through the positive arm rather than through
+    silence. A later line that DOES name a ref is still read, so this is a case
+    about skipping an empty sentinel and not about abandoning the scan.
+    """
+    blank = needs_human_terminal_detail(
+        work_item_id=_ITEM,
+        run_id=_RUN,
+        text="LIVESPEC_NEEDS_HUMAN_PRESERVED: \n",
+        causal=_unestablished(),
+        failure=None,
+    )
+
+    assert "whether the tree reached a run-scoped ref is UNKNOWN" in blank
+    assert "the tree was preserved on" not in blank
+
+    named = needs_human_terminal_detail(
+        work_item_id=_ITEM,
+        run_id=_RUN,
+        text=f"LIVESPEC_NEEDS_HUMAN_PRESERVED: \nLIVESPEC_NEEDS_HUMAN_PRESERVED: {_REF}\n",
+        causal=_unestablished(),
+        failure=None,
+    )
+
+    assert f"the tree was preserved on {_REF}" in named
+
+
 def test_an_unparsed_run_id_renders_the_unknown_run_label_and_offers_no_ref() -> None:
-    """A run-scoped ref cannot be named without a run id, so none is claimed."""
+    """A run-scoped ref cannot be named without one, so none is claimed.
+
+    The run LABEL still degrades to `unknown-run`, because the detail has to
+    name its subject. What changed is the preservation verdict: an unparsed
+    launch id is a gap in THIS reader's evidence and says nothing about what
+    the terminal pushed, so it reports unknown rather than alleging a failed
+    push the record never mentions.
+    """
     detail = needs_human_terminal_detail(
         work_item_id=_ITEM,
         run_id=None,
@@ -222,4 +266,5 @@ def test_an_unparsed_run_id_renders_the_unknown_run_label_and_offers_no_ref() ->
 
     assert "run unknown-run terminated at the needs_human node" in detail
     assert "refs/heads/needs-human/" not in detail
-    assert "no run id was parsed from the launch output" in detail
+    assert "whether the tree reached a run-scoped ref is UNKNOWN" in detail
+    assert "the tree was not pushed" not in detail

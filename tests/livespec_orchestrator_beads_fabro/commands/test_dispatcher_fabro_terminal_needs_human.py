@@ -49,6 +49,14 @@ _MARKER_LINE = "LIVESPEC_NEEDS_HUMAN: the acceptance criteria name a scenario he
 _PETRI_RUN_ID = "01M4DCSSJM6C"
 _LEGACY_RUN_ID = "01M4DCXHTECH"
 
+# The terminal node writes a preservation sentinel on the SAME channel as
+# the bare marker, always, and names the ref it pushed. These fixtures carry
+# it because the node does: a fixture carrying only the marker describes
+# output no run produces, and the detail can only report a ref it was told
+# about.
+_PETRI_PRESERVED_LINE = f"LIVESPEC_NEEDS_HUMAN_PRESERVED: refs/heads/needs-human/{_PETRI_RUN_ID}"
+_LEGACY_PRESERVED_LINE = f"LIVESPEC_NEEDS_HUMAN_PRESERVED: refs/heads/needs-human/{_LEGACY_RUN_ID}"
+
 # The candidate's terminal conclusion for a goal-gated script node that failed:
 # the script's own stderr arrives in `conclusion.failure.detail.message`.
 _PETRI_NEEDS_HUMAN_PAYLOAD: list[dict[str, Any]] = [
@@ -68,7 +76,9 @@ _PETRI_NEEDS_HUMAN_PAYLOAD: list[dict[str, Any]] = [
             "failure": {
                 "reason": "workflow_error",
                 "detail": {
-                    "message": f"script exited with status 1\n{_MARKER_LINE}",
+                    "message": (
+                        "script exited with status 1\n" f"{_PETRI_PRESERVED_LINE}\n{_MARKER_LINE}"
+                    ),
                     "category": "deterministic",
                 },
             },
@@ -187,7 +197,7 @@ def test_legacy_needs_human_marker_on_run_stderr_still_blocks_the_item(
         run_id=_LEGACY_RUN_ID,
         inspect=inspect,
         exit_code=1,
-        stderr=f"{_MARKER_LINE}\nnode fail exited 1",
+        stderr=f"{_LEGACY_PRESERVED_LINE}\n{_MARKER_LINE}\nnode fail exited 1",
     )
 
     assert outcome is not None
