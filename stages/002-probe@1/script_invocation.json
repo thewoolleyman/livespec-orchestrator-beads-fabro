@@ -1,0 +1,5 @@
+{
+  "script": "ref=origin/master...HEAD; echo \"ref=$ref\" >&2; test \"$ref\" = origin/master...HEAD",
+  "command": "exec 2>&1\nref=origin/master...HEAD; echo \"ref=$ref\" >&2; test \"$ref\" = origin/master...HEAD",
+  "language": "shell"
+}
