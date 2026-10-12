@@ -1,0 +1,5 @@
+{
+  "script": "eval ls /eut-check-suite-ran",
+  "command": "exec 2>&1\neval ls /eut-check-suite-ran",
+  "language": "shell"
+}
