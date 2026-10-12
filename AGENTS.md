@@ -1488,6 +1488,12 @@ references passes with its guidance orphaned.
   herdr pane, and the plan-primitive gaps (no `title` on `update_issue`, no
   Definition-of-Done amend primitive, `create_thread` writes into
   `project_root`) that stall a ledger rewrite.
+- Read `.ai/ledger-writers-are-multi-host.md` BEFORE designing anything that
+  serializes, locks or fences ledger writers. The maintainer ruled that writers
+  may share nothing but the Beads server, so a host-scoped fence is invalid even
+  though the tenant listens on loopback today. The file also records which public
+  `bd` writes are server-side compare-and-swap operations, and that the exit code
+  of `bd close` does not identify the winner.
 - Read `.ai/herdr-helper-sessions.md` BEFORE opening a second agent session
   in herdr for a bounded job (an independent critique, a host-proof replay, a
   second opinion). It records that a helper is a SPLIT of your own pane in the
