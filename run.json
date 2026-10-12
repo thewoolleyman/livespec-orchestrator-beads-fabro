@@ -1,0 +1,247 @@
+{
+  "title": "Fabro Enemy Unit Test: in-word-input",
+  "spec": {
+    "run_id": "01M4Q6CK7A8N1M09WTD05PRD4T",
+    "settings": {
+      "project": {
+        "name": null,
+        "description": null,
+        "metadata": {}
+      },
+      "workflow": {
+        "name": null,
+        "description": null,
+        "graph": "workflow.fabro",
+        "metadata": {}
+      },
+      "run": {
+        "goal": {
+          "type": "inline",
+          "value": "# Fabro Enemy Unit Test: in-word-input\n"
+        },
+        "working_dir": null,
+        "metadata": {},
+        "inputs": {
+          "default_branch": "master"
+        },
+        "model": {
+          "provider": "anthropic",
+          "name": "claude-sonnet-4-6",
+          "fallbacks": [],
+          "controls": {
+            "reasoning_effort": null,
+            "speed": null
+          }
+        },
+        "git": {
+          "author": null
+        },
+        "prepare": {
+          "commands": [],
+          "timeout_ms": 300000
+        },
+        "execution": {
+          "mode": "normal",
+          "approval": "prompt"
+        },
+        "checkpoint": {
+          "exclude_globs": [],
+          "skip_git_hooks": false,
+          "commit_timeout_ms": 30000
+        },
+        "clone": {
+          "enabled": true
+        },
+        "run_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "meta_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "environment": {
+          "id": "default",
+          "provider": "docker",
+          "image": {
+            "docker": "buildpack-deps:noble",
+            "dockerfile": null
+          },
+          "resources": {
+            "cpu": 2,
+            "memory": "4GB",
+            "disk": null
+          },
+          "network": {
+            "mode": "allow_all",
+            "allow": []
+          },
+          "lifecycle": {
+            "preserve": false,
+            "stop_on_terminal": true,
+            "auto_stop": null
+          },
+          "labels": {},
+          "volumes": [],
+          "env": {}
+        },
+        "notifications": {},
+        "interviews": {
+          "provider": null,
+          "slack": null
+        },
+        "agent": {
+          "fabro_tools": false,
+          "permissions": null,
+          "mcps": {}
+        },
+        "hooks": [],
+        "scm": {
+          "provider": null,
+          "owner": null,
+          "repository": null,
+          "github": null
+        },
+        "pull_request": null,
+        "artifacts": {
+          "include": []
+        },
+        "integrations": {
+          "github": {
+            "permissions": {}
+          }
+        }
+      }
+    },
+    "graph": {
+      "name": "FabroEnemyInWordInput",
+      "nodes": {
+        "start": {
+          "id": "start",
+          "attrs": {
+            "shape": {
+              "String": "Mdiamond"
+            },
+            "label": {
+              "String": "Start"
+            }
+          }
+        },
+        "probe": {
+          "id": "probe",
+          "attrs": {
+            "script": {
+              "String": "ref=origin/master...HEAD; echo \"ref=$ref\" >&2; test \"$ref\" = origin/master...HEAD"
+            },
+            "goal_gate": {
+              "Boolean": true
+            },
+            "shape": {
+              "String": "parallelogram"
+            },
+            "label": {
+              "String": "Probe"
+            }
+          }
+        },
+        "exit": {
+          "id": "exit",
+          "attrs": {
+            "shape": {
+              "String": "Msquare"
+            },
+            "label": {
+              "String": "Exit"
+            }
+          }
+        }
+      },
+      "edges": [
+        {
+          "from": "start",
+          "to": "probe",
+          "attrs": {}
+        },
+        {
+          "from": "probe",
+          "to": "exit",
+          "attrs": {}
+        }
+      ],
+      "attrs": {
+        "goal": {
+          "String": "# Fabro Enemy Unit Test: in-word-input\n"
+        }
+      }
+    },
+    "graph_source": "digraph FabroEnemyInWordInput {\n    start [shape=Mdiamond, label=\"Start\"]\n    probe [shape=parallelogram, label=\"Probe\", goal_gate=true, script=\"ref=origin/{{ inputs.default_branch }}...HEAD; echo \\\"ref=$ref\\\" >&2; test \\\"$ref\\\" = origin/master...HEAD\"]\n    exit [shape=Msquare, label=\"Exit\"]\n    start -> probe\n    probe -> exit\n}\n",
+    "workflow_slug": "in-word-input",
+    "source_directory": "/home/ubuntu/.worktrees/livespec-orchestrator-beads-fabro/eut-real-node-shapes",
+    "provenance": {
+      "server": {
+        "version": "0.254.0"
+      },
+      "client": {
+        "user_agent": "fabro-cli/0.254.0",
+        "name": "fabro-cli",
+        "version": "0.254.0"
+      },
+      "subject": {
+        "kind": "user",
+        "identity": {
+          "issuer": "fabro:dev",
+          "subject": "dev"
+        },
+        "login": "dev",
+        "auth_method": "dev_token"
+      }
+    },
+    "manifest_blob": "d446146dcc94f48305f0084cfb1c90610e79d1bd7d5928d1fc2c415f4c890892",
+    "definition_blob": "214cee6a1013988e479f3a9733fc22c421a51c411339d2a0ba8c32d19ebeadf7",
+    "git": {
+      "origin_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+      "branch": "eut-real-node-shapes",
+      "sha": "bb752aa97a56fe8cf7cd4bd09af4962e19685e90",
+      "dirty": "dirty",
+      "push_outcome": {
+        "type": "not_attempted"
+      }
+    }
+  },
+  "web_url": "https://hp-xubuntu.perch-rudd.ts.net:32276/runs/01M4Q6CK7A8N1M09WTD05PRD4T",
+  "start": null,
+  "status": {
+    "kind": "starting"
+  },
+  "status_updated_at": "2026-10-12T04:36:59.723749765Z",
+  "last_event_at": "2026-10-12T04:37:43.047780645Z",
+  "pending_control": null,
+  "checkpoints": [],
+  "conclusion": null,
+  "sandbox": {
+    "kind": "ready",
+    "plan": {
+      "provider": "docker",
+      "image": "buildpack-deps:noble"
+    },
+    "instance": {
+      "provider": "docker",
+      "image": "buildpack-deps:noble",
+      "runtime": {
+        "id": "f305641408910dc2b2b3de440c5bf626d34f27c44d4e8d523d3cf426ac3c57b2",
+        "working_directory": "/workspace/livespec-orchestrator-beads-fabro",
+        "repo_cloned": true,
+        "clone_origin_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+        "clone_branch": "eut-real-node-shapes",
+        "workspace_root": "/workspace",
+        "repos_root": "/repos",
+        "primary_repo_path": "/repos/thewoolleyman/livespec-orchestrator-beads-fabro",
+        "primary_repo_link": "/workspace/livespec-orchestrator-beads-fabro"
+      }
+    }
+  },
+  "pull_request": null,
+  "superseded_by": null,
+  "pending_interviews": {},
+  "stages": {}
+}
