@@ -1,5 +1,13 @@
 # Per-epic write serialization under the installed Beads surface
 
+> **WITHDRAWN RECOMMENDATION (2026-10-12).** The maintainer ruled the
+> single-host writer assumption invalid: writes may come from several hosts,
+> containers or cloud instances that share no state except the Beads server.
+> Option A below, the host-root kernel fence, and the "Measurement 3"
+> topology argument therefore do not hold. Measurements 1 and 2 stand. Read
+> `005-cross-host-serialization-by-conditional-close-2026-10-12.md` for the
+> current analysis.
+
 Written 2026-10-12 by the restarted relay session (Claude Code, session
 `relay-delivery-and-progress-deadline`). It consumes the Beads PR 1 closure
 and the stall plan's local-alternatives investigation, adds two measurements
