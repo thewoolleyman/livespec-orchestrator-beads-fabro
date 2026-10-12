@@ -249,6 +249,14 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     "fabro_failure_category",
     "fabro_failure_signature",
     "missing_integration_point",
+    # The three-way needs-human verdict, which only a Fabro needs-human
+    # terminal carries. Dropping it when unset keeps every other outcome's
+    # payload the shape it has always been — and it matters more here than for
+    # the siblings above, because this field is read as an ATTRIBUTION: an
+    # explicit null on a green or failed outcome would invite a consumer to
+    # read "this ending was not attributed" off an outcome that was never a
+    # needs-human ending in the first place.
+    "needs_human_kind",
     "provider_usage_limit_provider",
     "remedy",
     "step",
