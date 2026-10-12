@@ -1,0 +1,5 @@
+{
+  "script": "eval test ok = ok",
+  "command": "exec 2>&1\neval test ok = ok",
+  "language": "shell"
+}
