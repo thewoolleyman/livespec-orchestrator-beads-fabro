@@ -167,9 +167,20 @@ def _needs_human_terminal_outcome(
     observed` keys on `provider_usage_limit_provider` alone, so dropping it here
     meant a ceiling observed at a needs-human ending wrote NO dispatcher-owned
     hold — and the next dispatch burned the same exhausted credential.
+
+    THE CAUSAL VERDICT IS COMPUTED ONCE AND CARRIED, rather than rendered into
+    the detail and recovered downstream. The escalation that writes this
+    ending's operator guidance to stderr needs the same three-way verdict the
+    detail is rendered from, and it runs long after this mapper with no access
+    to the inspect payload — so a second derivation there could only read the
+    rendered prose back, which is the coupling every typed field above exists
+    to avoid. One verdict, two surfaces, no reparse.
     """
     if NEEDS_HUMAN_MARKER not in text:
         return None
+    causal = causal_stage_failure(
+        evidence=None if inspect is None else terminal_evidence(payload=inspect.payload)
+    )
     return outcome_type(
         work_item_id=plan.work_item_id,
         status="blocked",
@@ -180,11 +191,10 @@ def _needs_human_terminal_outcome(
             work_item_id=plan.work_item_id,
             run_id=run_id,
             text=text,
-            causal=causal_stage_failure(
-                evidence=None if inspect is None else terminal_evidence(payload=inspect.payload)
-            ),
+            causal=causal,
             failure=failure,
         ),
+        needs_human_kind=causal.kind,
         fabro_run_id=run_id,
         fabro_failure_cause=None if failure is None else failure.cause,
         fabro_failure_category=None if failure is None else failure.category,

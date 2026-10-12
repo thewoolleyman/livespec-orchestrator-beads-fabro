@@ -294,6 +294,17 @@ class DispatchOutcome:
     consumer to recover from the journal: the journal lives in the `tmp/` tree of
     whichever host ran the dispatch, and the result is what an operator and an
     exit code see.
+
+    `needs_human_kind` is `_fabro_causal_stage`'s verdict about WHICH of the
+    three needs-human endings this was, carried as a typed field for the same
+    seam reason as `dead_implementer_condition` above. The escalation that has
+    to route its own operator guidance runs long after the terminal mapper, and
+    the only other way to reach the verdict there is to re-match the rendered
+    `detail` prose — which is precisely what this field set exists to stop every
+    consumer from doing. It is None on every outcome built by a caller with no
+    verdict to report, which is every non-Fabro blocked path, and that absence
+    routes to the wording those callers always had rather than to one of the
+    three attributed arms.
     """
 
     work_item_id: str
@@ -313,6 +324,7 @@ class DispatchOutcome:
     provider_usage_limit: bool = False
     provider_usage_limit_provider: str | None = None
     dead_implementer_condition: str | None = None
+    needs_human_kind: str | None = None
 
 
 def run_dispatch(
