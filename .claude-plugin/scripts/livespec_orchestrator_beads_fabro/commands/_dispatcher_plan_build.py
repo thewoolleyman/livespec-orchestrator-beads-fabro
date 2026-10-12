@@ -52,6 +52,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     DEFAULT_MERGE_ON_REVIEW_CAP,
     DEFAULT_REVIEW_FIX_CAP,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import (
+    DEFAULT_STALL_WINDOW,
+    StallWindow,
+)
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     DEFAULT_FABRO_TIMEOUT_SECONDS,
 )
@@ -179,6 +183,15 @@ class DispatchPlan:
     # shortening one is not masked. Both launchers read it from here, which
     # is what keeps the watched and synchronous paths on one number.
     fabro_timeout_seconds: float = DEFAULT_FABRO_TIMEOUT_SECONDS
+    # The HOST-side stall watchdog's quiet window, resolved from this
+    # dispatch's `dispatcher.stall_timeout_seconds` through the same layers as
+    # the node timeouts, and carrying the layer that supplied it. It rides the
+    # plan for a sharper reason than most: `fabro_timeout_seconds` above is
+    # DERIVED from the same resolved `stall_seconds`, so a watchdog that re-read
+    # the file could grade its window against one reading while the subprocess
+    # ceiling that must outlive it was budgeted against another — and neither
+    # record would show the disagreement.
+    stall_window: StallWindow = DEFAULT_STALL_WINDOW
     # WHERE this invocation retains a FAILED post-merge janitor command's
     # complete captured output, and under which identity. It rides the plan
     # because the venue is per-INVOCATION state resolved up front -- the
@@ -221,6 +234,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
     merge_hold: bool = False,
     fabro_version: str | None = None,
     fabro_timeout_seconds: float = DEFAULT_FABRO_TIMEOUT_SECONDS,
+    stall_window: StallWindow = DEFAULT_STALL_WINDOW,
     acp_nodes: AcpNodeResolution | None = None,
 ) -> DispatchPlan:
     """Resolve the per-item dispatch plan (publish branch, argv config, contract)."""
@@ -257,6 +271,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
         merge_hold=merge_hold,
         fabro_version=fabro_version,
         fabro_timeout_seconds=fabro_timeout_seconds,
+        stall_window=stall_window,
         acp_nodes=acp_nodes,
         integration=integration,
         integration_inputs=contract_run_inputs(

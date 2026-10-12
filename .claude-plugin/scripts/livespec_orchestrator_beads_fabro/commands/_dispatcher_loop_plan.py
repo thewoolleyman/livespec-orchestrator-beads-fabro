@@ -42,6 +42,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     DEFAULT_MERGE_ON_REVIEW_CAP,
     DEFAULT_REVIEW_FIX_CAP,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import (
+    stall_window_from_timeouts,
+)
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     NodeTimeouts,
     derive_fabro_timeout_seconds,
@@ -149,6 +152,12 @@ def dispatch_plan_for_item(  # noqa: PLR0913 — kw-only plan resolver; each fie
         # than a constant, so lengthening a node cannot outrun the poller and
         # shortening one is not masked.
         fabro_timeout_seconds=derive_fabro_timeout_seconds(timeouts=timeouts),
+        # The host-side stall watchdog's window is a PROJECTION of that same
+        # resolution — `dispatcher.stall_timeout_seconds` through the node
+        # timeouts' own layers — so the window the watchdog grades against, the
+        # `stall_timeout` written into the rendered graph, and the subprocess
+        # ceiling derived above all come from ONE read of the file.
+        stall_window=stall_window_from_timeouts(timeouts=timeouts),
         # Already resolved and journaled by the caller, so the run renders the
         # adapters the dispatch record names rather than a re-derivation.
         acp_nodes=acp_nodes,
