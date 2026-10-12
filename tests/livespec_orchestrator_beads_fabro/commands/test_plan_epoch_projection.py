@@ -41,6 +41,7 @@ def _payload() -> TransitionPayload:
         new_epoch=1,
         prior_token_id=_PRIOR,
         next_token_id=_NEXT,
+        event_kind="handoff",
         authority=AuthorityState(
             required_result={"repo": "r", "file": "f.md"},
             original_deadline="2026-10-19T09:00:00Z",
@@ -157,7 +158,7 @@ def test_a_progress_event_carries_the_readable_lines_and_the_canonical_payload()
     Prose cannot be parsed back into a transition, so a recovery reading only
     the readable lines would answer the retry with an event nobody committed.
     """
-    body = progress_event_body(payload=_payload(), event_kind="handoff", now="t")
+    body = progress_event_body(payload=_payload(), now="t")
 
     assert "operation: op-1" in body
     assert "event: handoff" in body
@@ -182,7 +183,6 @@ def test_a_written_progress_event_reads_back_with_its_payload() -> None:
         client=fake,
         epic_id=_EPIC_ID,
         payload=_payload(),
-        event_kind="handoff",
         author="relay-session",
         now="2026-10-12T09:00:00Z",
     )
@@ -206,7 +206,6 @@ def test_the_event_read_ignores_every_comment_that_is_not_one() -> None:
         client=fake,
         epic_id=_EPIC_ID,
         payload=_payload(),
-        event_kind="handoff",
         author="relay-session",
         now="t",
     )

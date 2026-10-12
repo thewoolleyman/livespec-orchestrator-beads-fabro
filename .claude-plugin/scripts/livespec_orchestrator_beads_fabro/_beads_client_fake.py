@@ -163,7 +163,14 @@ class FakeBeadsClient:
         return draft.issue_id
 
     def create_no_history_issue(self, *, title: str, description: str) -> str:
-        """Create a no-history record under a SERVER-assigned id; return that id."""
+        """Create a no-history record under a SERVER-assigned id; return that id.
+
+        The record is SPARSE, and that is fidelity rather than shorthand: `bd`'s
+        serializer omits every field holding its zero value, so a real token
+        record carries no labels, metadata, parent or dependency keys at all. A
+        fake that padded them in would let a reader index a key the live tenant
+        omits.
+        """
         self._assigned_ids += 1
         issue_id = f"{_NO_HISTORY_ID_PREFIX}{self._assigned_ids}"
         self._issues[issue_id] = {
@@ -171,16 +178,8 @@ class FakeBeadsClient:
             "issue_type": "task",
             "title": title,
             "description": description,
-            "priority": 2,
-            "assignee": None,
-            "created_at": None,
             "status": _FORCED_CREATE_STATUS,
             "close_reason": None,
-            "labels": [],
-            "metadata": {},
-            "spec_id": None,
-            "parent_id": None,
-            "dependencies": [],
         }
         self._no_history.add(issue_id)
         return issue_id

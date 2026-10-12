@@ -100,6 +100,7 @@ def _close_with(
                 new_epoch=prior_epoch + 1,
                 prior_token_id=token_id if prior_token_id is None else prior_token_id,
                 next_token_id=next_token_id,
+                event_kind="handoff",
                 authority=_authority(consumed=prior_epoch + 1),
             )
         ),
