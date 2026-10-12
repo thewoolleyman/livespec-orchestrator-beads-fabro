@@ -1,77 +1,104 @@
-"""Which STAGE's failure routed a run to the needs-human terminal.
+"""WHICH stage's failure routed a run to the needs-human terminal, if any did.
 
 `_fabro_escalation` answers whether the ENGINE routed a run to the terminal at
-all; this module answers the next question, which the operator-facing rendering
-needs and which that reader deliberately does not take a position on: WHICH
-node's failure did it. The two are separate because the discriminator for
-"escalated or not" is the presence of any signature, while the attribution
-needs the signatures taken apart.
+all; `_fabro_terminal_evidence` reads the terminal checkpoint's own fields. This
+module is the DECISION between the three endings those fields can describe, and
+it is separate because the rendering needs a single verdict while the evidence
+needs to stay unjudged.
 
-A loop failure signature is `<node>|<category>|<cause label>` — measured as
-`pr|deterministic|acp turn failed` on run 01M44F9E56XCEWZNMVJX4M14Z6 and
-`review|deterministic|acp turn failed` on run 01M10CYZ8S9TNPZ2MW096NJW7V — so
-the stage is the first field.
+THE THREE ENDINGS, AND WHY NONE OF THEM MAY BE THE DEFAULT:
 
-THE TERMINAL'S OWN SIGNATURE IS EXCLUDED, and that exclusion is the whole
-reason this module exists rather than a one-line split at the call site. The
-`needs_human` node is a dead-end script that exits 1 by design, so a run that
-reaches it ends `stage needs_human failed with no outgoing fail edge` and can
-record a signature for the terminal BESIDE the one for the node that actually
-failed. The signatures arrive as an unordered map, so a reader that took
-whichever it met first would name the terminal — a node that only ever runs
-because something else already failed, and therefore the one node that cannot
-be the cause. The wrong answer is a plausible, non-empty, confidently-rendered
-stage attribution, which is why it has to be refused structurally.
+- `STAGE_FAILURE` — a node is recorded failed in the terminal checkpoint's own
+  outcome map. There is a stage to name and no question to answer.
+- `AGENT_REQUEST` — the outcome map WAS read and records no failed predecessor,
+  so an agent rode a conditional edge off a node that succeeded. A question
+  genuinely awaits a human.
+- `UNESTABLISHED` — the record cannot ground either answer: no terminal
+  checkpoint was readable, or one was but its outcome map was not. Nothing is
+  attributed and nothing is denied.
 
-Every surviving signature is carried, not just the first. More than one node
-CAN record a failure in a single loop, and naming one of several would hide the
-rest behind an answer that looks complete.
+The third arm is the one that keeps the other two honest. `AGENT_REQUEST` used
+to be reached by SILENCE — no loop failure signature meant "an agent asked" —
+and that inference fails in BOTH directions on measured records. A
+provider-ceiling run records an explicit failed `implement` outcome with no loop
+signature at all, so silence reported a question for a run that never asked; and
+the engine never clears a loop signature when a later visit to the same node
+succeeds, so a run that recovered and THEN asked still carried a signature that
+would be attributed as its cause. Reading an absence as a positive finding
+produced both, so `AGENT_REQUEST` now requires the positive evidence of a READ
+outcome map, and a record supplying none lands in `UNESTABLISHED` rather than
+being assigned the more convenient of the two.
+
+HISTORY IS CARRIED BESIDE THE VERDICT, NEVER FOLDED INTO IT. A loop signature
+belonging to a stage that is not currently failed is real evidence about the
+run and no evidence about this ending. Dropping it loses the run's account;
+attributing it invents a cause. It travels as `history` so a renderer can say
+which it is.
+
+Every surviving stage is carried rather than only the newest: more than one
+node CAN fail in a single loop, and naming one of several hides the rest behind
+an answer that looks complete.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from livespec_orchestrator_beads_fabro.commands._fabro_escalation import ESCALATION_NODE_ID
+from livespec_orchestrator_beads_fabro.commands._fabro_terminal_evidence import TerminalEvidence
 
 __all__: list[str] = [
+    "AGENT_REQUEST",
+    "STAGE_FAILURE",
+    "UNESTABLISHED",
     "CausalStageFailure",
     "causal_stage_failure",
 ]
 
-_FIELD_SEPARATOR = "|"
+STAGE_FAILURE = "stage-failure"
+AGENT_REQUEST = "agent-request"
+UNESTABLISHED = "unestablished"
 
 
 @dataclass(frozen=True, kw_only=True)
 class CausalStageFailure:
-    """The non-terminal stages a terminated run recorded a loop failure for."""
+    """One verdict about why a run reached the needs-human terminal.
 
+    `stages` and `signatures` are populated only for `STAGE_FAILURE`; `history`
+    can be populated under any kind, because a run can carry outlived failures
+    whatever its ending turned out to be.
+    """
+
+    kind: str
     stages: tuple[str, ...]
     signatures: tuple[str, ...]
+    history: tuple[str, ...]
+
+    @property
+    def is_stage_failure(self) -> bool:
+        """Whether a recorded stage failure caused this ending — the fault arm."""
+        return self.kind == STAGE_FAILURE
 
 
-def causal_stage_failure(*, signatures: tuple[str, ...]) -> CausalStageFailure | None:
-    """The causal stages behind a needs-human terminal, or None when there are none.
+def causal_stage_failure(*, evidence: TerminalEvidence | None) -> CausalStageFailure:
+    """Decide between the three endings one terminal's evidence can describe.
 
-    `None` is the AGENT-REPORTED ending: a node that SUCCEEDED and rode a
-    conditional edge records no loop failure signature, so there is no stage to
-    attribute and the generic needs-human wording is the correct one. It is also
-    the answer when the only signature the loop recorded belongs to the terminal
-    itself, because that says the terminal ran and nothing about why.
+    A verdict is ALWAYS returned, including for absent evidence. Returning
+    `None` for "nothing established" is what let an unreadable record share an
+    arm with a genuine question: both reached one renderer, which then had to
+    tell a single story about two opposite situations.
     """
-    causal = tuple(
-        signature for signature in signatures if _stage(signature=signature) != ESCALATION_NODE_ID
+    if evidence is None:
+        return CausalStageFailure(kind=UNESTABLISHED, stages=(), signatures=(), history=())
+    if evidence.failed_stages:
+        return CausalStageFailure(
+            kind=STAGE_FAILURE,
+            stages=evidence.failed_stages,
+            signatures=evidence.stage_signatures,
+            history=evidence.history_signatures,
+        )
+    return CausalStageFailure(
+        kind=AGENT_REQUEST if evidence.outcomes_observed else UNESTABLISHED,
+        stages=(),
+        signatures=(),
+        history=evidence.history_signatures,
     )
-    if not causal:
-        return None
-    stages: list[str] = []
-    for signature in causal:
-        stage = _stage(signature=signature)
-        if stage not in stages:
-            stages.append(stage)
-    return CausalStageFailure(stages=tuple(stages), signatures=causal)
-
-
-def _stage(*, signature: str) -> str:
-    """The node field of one signature — everything before the first separator."""
-    return signature.split(_FIELD_SEPARATOR, maxsplit=1)[0].strip()

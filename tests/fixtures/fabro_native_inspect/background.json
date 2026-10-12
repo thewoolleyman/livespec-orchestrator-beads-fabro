@@ -1,0 +1,51 @@
+[
+  {
+    "run_id": "01M44F9E56XCEWZNMVJX4M14Z6",
+    "status": { "kind": "failed" },
+    "checkpoint": {
+      "current_node": "needs_human",
+      "next_node_id": null,
+      "completed_nodes": [
+        "setup",
+        "dod_gate",
+        "implement",
+        "janitor",
+        "review",
+        "disposition",
+        "pr"
+      ],
+      "loop_failure_signatures": {
+        "pr|deterministic|acp turn failed": 2,
+        "needs_human|deterministic|script failed": 1
+      },
+      "node_outcomes": {
+        "implement": { "status": "succeeded" },
+        "janitor": { "status": "succeeded" },
+        "review": { "status": "succeeded" },
+        "disposition": { "status": "succeeded" },
+        "pr": {
+          "status": "failed",
+          "failure": {
+            "category": "deterministic",
+            "signature": "pr|deterministic|acp turn failed",
+            "causes": [
+              "ACP protocol error",
+              "ACP tool call toolu_01SANITIZEDTOOLCALL (git push -u origin HEAD:refs/heads/feat/bd-ib-qm4luz 2>&1 | tail -100) continued in background as task b9hp9md1u; Fabro terminated the turn before the agent could start conflicting work"
+            ]
+          }
+        },
+        "needs_human": {
+          "status": "failed",
+          "failure": {
+            "category": "deterministic",
+            "signature": "needs_human|deterministic|script failed",
+            "causes": ["stage needs_human failed with no outgoing fail edge"]
+          }
+        }
+      },
+      "context_values": {
+        "failure_signature": "pr|deterministic|acp turn failed"
+      }
+    }
+  }
+]

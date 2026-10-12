@@ -31,6 +31,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroInspectResult,
     fabro_port_for_plan,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_terminal_evidence import terminal_evidence
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -169,7 +170,6 @@ def _needs_human_terminal_outcome(
     """
     if NEEDS_HUMAN_MARKER not in text:
         return None
-    escalation = None if inspect is None else fabro_escalation_from_payload(payload=inspect.payload)
     return outcome_type(
         work_item_id=plan.work_item_id,
         status="blocked",
@@ -181,7 +181,7 @@ def _needs_human_terminal_outcome(
             run_id=run_id,
             text=text,
             causal=causal_stage_failure(
-                signatures=() if escalation is None else escalation.loop_failure_signatures
+                evidence=None if inspect is None else terminal_evidence(payload=inspect.payload)
             ),
             failure=failure,
         ),
