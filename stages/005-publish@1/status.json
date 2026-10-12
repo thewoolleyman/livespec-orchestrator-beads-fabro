@@ -1,0 +1,6 @@
+{
+  "outcome": "succeeded",
+  "notes": "Script completed: test -f /tmp/eut-fix-applied",
+  "failure_reason": null,
+  "timestamp": "2026-10-12T04:30:20.049713165Z"
+}
