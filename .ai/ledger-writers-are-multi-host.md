@@ -50,8 +50,12 @@ and `005-cross-host-serialization-by-conditional-close-2026-10-12.md`.
   unusable here.** The lifecycle guard at `/usr/local/bin/bd` refuses it on
   every record, and it needs the native `open` status, which the conformant
   store never holds.
-- **Creating a record with an explicit id is an upsert, not an exclusion.**
-  Never use `bd create --id <fixed>` as a "first creator wins" step.
+- **Creating a record with an explicit id is an upsert, not an exclusion, and
+  it REOPENS closed records.** A second `bd create --id X` on a closed X exits 0
+  and resets it to `backlog`, erasing `close_reason` and replacing the title.
+  Concurrent duplicate creates all exit 0. Never use `bd create --id <fixed>` as
+  a "first creator wins" step, and never re-create a record whose close carries
+  meaning (research note 007 of the relay plan).
 
 ## How to apply
 
