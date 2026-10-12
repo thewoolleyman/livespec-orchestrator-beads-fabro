@@ -120,7 +120,7 @@ def refreshing_gh_prepare_steps_block() -> str:
     mint_helper = f"{bundle_root}/bin/mint_app_token.py"
     payload_path = f"{bundle_root}.b64"
     scripts = [
-        _worktree_exclude_script(bundle_root=bundle_root),
+        _worktree_exclude_script(bundle_root=bundle_root, payload_path=payload_path),
         *_payload_chunk_scripts(payload_path=payload_path),
         _unpack_script(bundle_root=bundle_root, mint_helper=mint_helper, payload_path=payload_path),
     ]
@@ -155,7 +155,7 @@ def _assert_step_within_limit(*, script: str) -> None:
         raise ValueError(msg)
 
 
-def _worktree_exclude_script(*, bundle_root: str) -> str:
+def _worktree_exclude_script(*, bundle_root: str, payload_path: str) -> str:
     """Make the bundle invisible to git BEFORE a byte of it is written.
 
     The bundle root is inside the run's own git worktree (`/workspace` is the
@@ -176,24 +176,27 @@ def _worktree_exclude_script(*, bundle_root: str) -> str:
     `info/exclude` git actually reads in a linked worktree; it answers the same
     path in an ordinary clone, which is what the sandbox has.
 
-    Every arm that cannot MEASURE where the bundle sits exits 0 without
+    BOTH paths are excluded, and the payload is not an afterthought: the chunk
+    steps stream the base64 archive to `<bundle_root>.b64` and only the unpack
+    step deletes it, so on a per-node-checkpointing engine every chunk step's
+    own checkpoint commits that file. Excluding the unpacked tree alone leaves
+    the same defect one path over.
+
+    Every arm that cannot MEASURE where a path sits is passed over without
     writing: a prepare step that fails kills the run at launch, before any work
-    is driven, and a bundle outside any worktree is one git was never going to
-    stage. The pattern is anchored with a leading `/` because `info/exclude`
+    is driven, and a path outside any worktree is one git was never going to
+    stage. Each pattern is anchored with a leading `/` because `info/exclude`
     patterns resolve against the worktree top, which is what `--show-toplevel`
     returns.
     """
     return (
         "set -eu\n"
         f'bundle_root="{bundle_root}"\n'
+        f'payload_path="{payload_path}"\n'
         'parent="$(dirname "$bundle_root")"\n'
         'mkdir -p "$parent"\n'
         'toplevel="$(git -C "$parent" rev-parse --show-toplevel 2>/dev/null || true)"\n'
         'if [ -z "$toplevel" ]; then exit 0; fi\n'
-        'case "$bundle_root" in\n'
-        '  "$toplevel"/*) ;;\n'
-        "  *) exit 0 ;;\n"
-        "esac\n"
         'common_dir="$(cd "$toplevel" && git rev-parse --git-common-dir)"\n'
         'case "$common_dir" in\n'
         "  /*) ;;\n"
@@ -201,10 +204,15 @@ def _worktree_exclude_script(*, bundle_root: str) -> str:
         "esac\n"
         'exclude_file="$common_dir/info/exclude"\n'
         'mkdir -p "$common_dir/info"\n'
-        'entry="/${bundle_root#"$toplevel"/}"\n'
-        'if ! grep -qxF "$entry" "$exclude_file" 2>/dev/null; then\n'
-        '  printf \'%s\\n\' "$entry" >> "$exclude_file"\n'
-        "fi"
+        'for path in "$bundle_root" "$payload_path"; do\n'
+        '  case "$path" in\n'
+        '    "$toplevel"/*) entry="/${path#"$toplevel"/}" ;;\n'
+        "    *) continue ;;\n"
+        "  esac\n"
+        '  if ! grep -qxF "$entry" "$exclude_file" 2>/dev/null; then\n'
+        '    printf \'%s\\n\' "$entry" >> "$exclude_file"\n'
+        "  fi\n"
+        "done"
     )
 
 
