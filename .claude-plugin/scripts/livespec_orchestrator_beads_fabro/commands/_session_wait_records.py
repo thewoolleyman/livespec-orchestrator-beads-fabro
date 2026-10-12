@@ -182,16 +182,12 @@ def _register_wait(
 ) -> str:
     if path.exists():
         return REGISTRATION_CONFLICT
-    targets: list[dict[str, object]] = [
-        {
-            "generation": target.generation,
-            "gate_store_root": str(target.gate_store_root),
-            "identity": target.identity,
-            "kind": "gate",
-            "run_id": target.run_id,
-        }
-        for target in request.targets
-    ]
+    # Each target renders its OWN entry: the fields that qualify a gate and
+    # the fields that qualify a pane do not overlap, so a writer here that
+    # knew one shape would silently record a pane as a gate — and inventory
+    # would then re-observe the gate it was told about rather than the pane
+    # that was armed.
+    targets: list[dict[str, object]] = [target.record_payload() for target in request.targets]
     payload: dict[str, object] = {
         "acknowledgement": {
             "acknowledged": False,

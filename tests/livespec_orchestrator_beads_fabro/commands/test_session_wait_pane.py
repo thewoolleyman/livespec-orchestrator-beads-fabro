@@ -584,6 +584,45 @@ def test_routing_sends_each_target_kind_to_its_own_adapter(*, tmp_path: Path) ->
     )
 
 
+def test_a_readiness_failure_reports_the_servers_own_cause(*, tmp_path: Path) -> None:
+    """An unready server is reported with the evidence that discriminates why.
+
+    This exercises the fixture's own diagnostic directly, because a green run
+    never reaches it. It is worth testing rather than merely writing: a
+    process that EXITED is a launch failure whose reason is in its own log —
+    the `sun_path` overflow this fixture is bounded against is exactly that
+    shape — while a live process that never answered is a readiness-gauge or
+    load problem. A bare timeout cannot tell those apart, and an absent log
+    has to say it is absent rather than read as an empty one.
+    """
+    absent = tmp_path / "gone.sock"
+    # No socket to connect to, so the probe raises and is reported as not
+    # live rather than escaping the fixture.
+    assert _HerdrServer(socket_path=absent).session_is_live() is False
+    launch_log = tmp_path / "launch.log"
+    _ = launch_log.write_text(
+        'Error: Custom { kind: InvalidInput, error: "local socket name length exceeds capacity of sun_path of sockaddr_un" }\n',
+        encoding="utf-8",
+    )
+    # A REAL process that has really exited, so the diagnostic reports an exit
+    # code it actually read. `true` rather than a Python child: an
+    # instrumented Python subprocess races coverage collection, and this test
+    # needs only something that terminates.
+    exited = subprocess.Popen(["true"])
+    _ = exited.wait(timeout=60)
+    message = _readiness_diagnostic(
+        socket_path=absent,
+        process=exited,
+        launch_log=launch_log,
+        server_log=tmp_path / "never-written.log",
+    )
+    assert "never became session-live" in message
+    assert "socket present: False" in message
+    assert "process returncode: 0" in message
+    assert "sun_path" in message
+    assert "never-written.log absent" in message
+
+
 def test_a_wait_demands_at_least_one_target(*, tmp_path: Path) -> None:
     """Arming with no target at all is a usage error, not an empty wait."""
     session_wait = _module(name="session_wait")
