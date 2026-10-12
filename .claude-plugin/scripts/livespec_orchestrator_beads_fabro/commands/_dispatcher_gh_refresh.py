@@ -107,6 +107,12 @@ def refreshing_gh_prepare_steps_block() -> str:
     prepare steps rather than embedded in one. Fabro executes each step as
     `bash -c <script>`, so a step is a single argv argument and is bounded by
     MAX_ARG_STRLEN, not by the much larger ARG_MAX total (bd-ib-gnli).
+
+    The FIRST step hides the bundle from the run's git worktree, and its
+    position is load-bearing: the Petri-era engine runs each prepare step as a
+    graph node and checkpoints after it, so a step that writes a byte of the
+    bundle before the exclusion is in place is a step whose checkpoint commits
+    it (bd-ib-dud2ww).
     """
     if not github_app_env_present():
         return ""
@@ -114,6 +120,7 @@ def refreshing_gh_prepare_steps_block() -> str:
     mint_helper = f"{bundle_root}/bin/mint_app_token.py"
     payload_path = f"{bundle_root}.b64"
     scripts = [
+        _worktree_exclude_script(bundle_root=bundle_root),
         *_payload_chunk_scripts(payload_path=payload_path),
         _unpack_script(bundle_root=bundle_root, mint_helper=mint_helper, payload_path=payload_path),
     ]
@@ -146,6 +153,59 @@ def _assert_step_within_limit(*, script: str) -> None:
             "with 'argument list too long' and destroy the run"
         )
         raise ValueError(msg)
+
+
+def _worktree_exclude_script(*, bundle_root: str) -> str:
+    """Make the bundle invisible to git BEFORE a byte of it is written.
+
+    The bundle root is inside the run's own git worktree (`/workspace` is the
+    sandbox clone's top level), and nothing ignored it. The Petri-era engine
+    checkpoints after every graph node, prepare steps included, so each
+    checkpoint staged the bundle into the run branch -- and `publish_draft`'s
+    `git rebase origin/$default_branch` then met its own committed copy as an
+    untracked file on disk and refused at that checkpoint's pick (measured on
+    hp-candidate run 01M4Q45S5AGK, bd-ib-dud2ww).
+
+    The exclusion is written to the clone's OWN exclude file rather than to a
+    tracked `.gitignore`: the bundle is an artifact of how this Dispatcher
+    projects credentials into one sandbox, so a governed repository must not
+    have to carry a rule about it, and a rule this step added to a tracked file
+    would itself be a change every checkpoint commits.
+
+    `--git-common-dir` and not `--git-dir`, because that is the directory whose
+    `info/exclude` git actually reads in a linked worktree; it answers the same
+    path in an ordinary clone, which is what the sandbox has.
+
+    Every arm that cannot MEASURE where the bundle sits exits 0 without
+    writing: a prepare step that fails kills the run at launch, before any work
+    is driven, and a bundle outside any worktree is one git was never going to
+    stage. The pattern is anchored with a leading `/` because `info/exclude`
+    patterns resolve against the worktree top, which is what `--show-toplevel`
+    returns.
+    """
+    return (
+        "set -eu\n"
+        f'bundle_root="{bundle_root}"\n'
+        'parent="$(dirname "$bundle_root")"\n'
+        'mkdir -p "$parent"\n'
+        'toplevel="$(git -C "$parent" rev-parse --show-toplevel 2>/dev/null || true)"\n'
+        'if [ -z "$toplevel" ]; then exit 0; fi\n'
+        'case "$bundle_root" in\n'
+        '  "$toplevel"/*) ;;\n'
+        "  *) exit 0 ;;\n"
+        "esac\n"
+        'common_dir="$(cd "$toplevel" && git rev-parse --git-common-dir)"\n'
+        'case "$common_dir" in\n'
+        "  /*) ;;\n"
+        '  *) common_dir="$toplevel/$common_dir" ;;\n'
+        "esac\n"
+        'exclude_file="$common_dir/info/exclude"\n'
+        'mkdir -p "$common_dir/info"\n'
+        'entry="/${bundle_root#"$toplevel"/}"\n'
+        'if ! grep -qxF "$entry" "$exclude_file" 2>/dev/null; then\n'
+        '  printf \'%s\\n\' "$entry" >> "$exclude_file"\n'
+        "fi"
+    )
 
 
 def _payload_chunk_scripts(*, payload_path: str) -> list[str]:
