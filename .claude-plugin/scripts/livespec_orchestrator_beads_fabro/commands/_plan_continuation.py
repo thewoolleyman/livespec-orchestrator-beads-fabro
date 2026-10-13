@@ -28,16 +28,20 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "AUTHORIZED_PREFIX",
     "REVOKED_PREFIX",
+    "UNTIL_PREFIX",
     "ContinuationRuling",
     "current_continuation_ruling",
     "current_continuation_ruling_from_entries",
     "instant_expired",
+    "is_continuation_ruling",
+    "ruling_line_value",
 ]
 
 AUTHORIZED_PREFIX = "plan-continuation: authorized"
 REVOKED_PREFIX = "plan-continuation: revoked"
 
-_UNTIL_PREFIX = "until: "
+UNTIL_PREFIX = "until: "
+
 _BY_PREFIX = "by: "
 _DIRECTIVE_PREFIX = "directive: "
 _RECORDED_ATTENDED_LINE = "recorded-attended: true"
@@ -72,7 +76,7 @@ def current_continuation_ruling_from_entries(
     *, entries: Sequence[PlanTimelineEntry], now: str
 ) -> ContinuationRuling | None:
     """Return the latest ruling only when it is complete and unexpired."""
-    shaped = [entry for entry in entries if _is_ruling(entry=entry)]
+    shaped = [entry for entry in entries if is_continuation_ruling(entry=entry)]
     if not shaped:
         return None
     latest = shaped[-1]
@@ -86,9 +90,9 @@ def current_continuation_ruling_from_entries(
     # treat it as current anyway.
     if len(lines) != _AUTHORIZED_LINE_COUNT:
         return None
-    until = _line_value(line=lines[1], prefix=_UNTIL_PREFIX)
-    by = _line_value(line=lines[2], prefix=_BY_PREFIX)
-    directive = _line_value(line=lines[3], prefix=_DIRECTIVE_PREFIX)
+    until = ruling_line_value(line=lines[1], prefix=UNTIL_PREFIX)
+    by = ruling_line_value(line=lines[2], prefix=_BY_PREFIX)
+    directive = ruling_line_value(line=lines[3], prefix=_DIRECTIVE_PREFIX)
     if until is None or by is None or directive is None or lines[4] != _RECORDED_ATTENDED_LINE:
         return None
     if until != "archive" and instant_expired(until=until, now=now):
@@ -101,14 +105,29 @@ def current_continuation_ruling_from_entries(
     )
 
 
-def _is_ruling(*, entry: PlanTimelineEntry) -> bool:
+def is_continuation_ruling(*, entry: PlanTimelineEntry) -> bool:
+    """Whether this timeline entry is a scope event shaped like a ruling.
+
+    PUBLIC because the `plan_continuation_ruling` conformance verdict reports the
+    rulings this parser declines to treat as current, and the guarantee it owes —
+    that a ruling it reports is not current — only holds while the two sides agree
+    about which events are rulings at all. A second copy of this predicate would
+    read identically on the day it was written.
+    """
     if entry.kind != SCOPE_KIND:
         return False
     first = entry.body.splitlines()[0] if entry.body.splitlines() else ""
     return first in (AUTHORIZED_PREFIX, REVOKED_PREFIX)
 
 
-def _line_value(*, line: str, prefix: str) -> str | None:
+def ruling_line_value(*, line: str, prefix: str) -> str | None:
+    """One ruling line's value, or `None` when the line is absent or empty.
+
+    An empty value is ABSENCE rather than presence: a `until: ` carrying nothing
+    after its colon satisfies a reader that tests the prefix alone while giving
+    the expiry rule no deadline to read. PUBLIC for the same reason
+    `is_continuation_ruling` is.
+    """
     if not line.startswith(prefix):
         return None
     value = line.removeprefix(prefix)
