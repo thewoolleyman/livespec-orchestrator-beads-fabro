@@ -683,11 +683,13 @@ _PS_RUNNING = (
     ' "status": {"kind": "running"}}]'
 )
 # What `fabro inspect 01RUN --json` answers once the watch loop has BOUND the
-# run: the same run, still running, as a one-element list (the shape the
-# pinned build returns). The listing above is only reachable on the FIRST
-# poll now, so a runner that scripted no inspect would stall the loop at its
-# second poll rather than exercise it.
-_INSPECT_RUNNING = '[{"run_id": "01RUN", "status": {"kind": "running"}}]'
+# run, as a one-element list (the shape the pinned build returns). The
+# listing above is only reachable on the FIRST poll now, so a runner that
+# scripted no inspect would stall the loop at its second poll rather than
+# exercise it. The status is a knob so a case can send the bound run
+# TERMINAL mid-dispatch, which the listing could express only by dropping
+# the row.
+_INSPECT_RECORD = '[{{"run_id": "01RUN", "status": {{"kind": "{status}"}}}}]'
 
 # The janitor's own start and completion events, in the shape the engine
 # emits them (`node_id` at the top level beside the envelope's timestamp),
@@ -721,7 +723,10 @@ class _ScriptedFabroRunner:
     """
 
     events_jsons: list[str]
+    inspect_status: str = "running"
     ps_exit: int = 0
+    inspect_exit: int = 0
+    inspect_stderr: str = "boom"
     events_exit: int = 0
     run_done: threading.Event = field(default_factory=threading.Event)
     run_returned: threading.Event = field(default_factory=threading.Event)
@@ -756,7 +761,11 @@ class _ScriptedFabroRunner:
         return CommandResult(exit_code=self.ps_exit, stdout=_PS_RUNNING, stderr="boom")
 
     def _inspect(self) -> CommandResult:
-        return CommandResult(exit_code=self.ps_exit, stdout=_INSPECT_RUNNING, stderr="boom")
+        return CommandResult(
+            exit_code=self.inspect_exit,
+            stdout="" if self.inspect_exit else _INSPECT_RECORD.format(status=self.inspect_status),
+            stderr=self.inspect_stderr,
+        )
 
     def _events(self) -> CommandResult:
         index = min(self._poll, len(self.events_jsons) - 1)
@@ -869,6 +878,108 @@ def test_watched_launcher_cancels_after_progress_then_a_confirmed_quiet_window(
     cancels = [r for r in journal.records if r.get("stage") == "watchdog-stall-cancel"]
     assert [record.get("stall_seconds") for record in cancels] == [1000.0]
     assert [record.get("quiet_seconds") for record in cancels] == [1200.0]
+
+
+def test_a_stall_is_still_confirmed_while_the_bound_run_is_polled_by_id(
+    tmp_path: Path,
+) -> None:
+    """bd-ib-6pdigz: binding the run must not cost the watchdog its stall detection.
+
+    ONE listing to find the run, then per-run reads for the rest of the
+    dispatch — and the cancel still fires on the confirmed quiet window. The
+    verb tally is asserted beside the cancel because the cancel alone passes
+    equally well on a build that never stopped listing, which is the thing
+    being removed.
+    """
+    runner = _ScriptedFabroRunner(events_jsons=['[{"timestamp": "2026-06-13T08:00:00Z"}]'])
+    launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
+
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_seconds=1000.0),
+        runner=runner,
+        journal=_RecordingJournal(),
+    )
+
+    assert result.stalled_run_id == "01RUN"
+    assert runner.rm_calls == ["01RUN"]
+    assert runner.verbs.count("ps") == 1
+    assert runner.verbs.count("inspect") >= 1
+
+
+def test_a_bound_run_that_goes_terminal_is_observed_and_never_stall_cancelled(
+    tmp_path: Path,
+) -> None:
+    """The other half of bd-ib-6pdigz's detection claim: a terminal bound run.
+
+    The event stream is FROZEN and the window is tight, so a watchdog that
+    could no longer tell a terminal run from a running one would cancel here.
+    It does not, and each per-run read says why — which is the record a
+    listing-based poll could only express by the row disappearing.
+    """
+    runner = _ScriptedFabroRunner(
+        events_jsons=['[{"timestamp": "2026-06-13T08:00:00Z"}]'],
+        inspect_status="succeeded",
+    )
+    polls = {"n": 0}
+
+    def _sleep_then_finish(_seconds: float) -> None:
+        polls["n"] += 1
+        if polls["n"] >= 4:
+            runner.run_done.set()
+            assert runner.run_returned.wait(timeout=1.0)
+
+    journal = _RecordingJournal()
+    launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
+
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
+    )
+
+    bound = [r for r in journal.records if r.get("stage") == "watchdog-bound-poll"]
+    assert result.stalled_run_id is None
+    assert runner.rm_calls == []
+    assert len(bound) >= 2
+    assert {record.get("reason") for record in bound} == {"status-kind-not-running"}
+    assert {record.get("status_kind") for record in bound} == {"succeeded"}
+
+
+def test_a_failed_per_run_read_leaves_a_record_and_cancels_nothing(
+    tmp_path: Path,
+) -> None:
+    """A per-run read that FAILED observed nothing, so it decides nothing.
+
+    The event stream is frozen and the window is tight, so a watchdog that
+    read a failed probe as an observation about the run would cancel here.
+    The reason NAME is deliberately not pinned — only that the poll is
+    recorded, saw nothing, and does not claim the factory stopped holding
+    the run, which is the claim a failed read cannot support.
+    """
+    runner = _ScriptedFabroRunner(
+        events_jsons=['[{"timestamp": "2026-06-13T08:00:00Z"}]'],
+        inspect_exit=1,
+        inspect_stderr="error: connection refused",
+    )
+    polls = {"n": 0}
+
+    def _sleep_then_finish(_seconds: float) -> None:
+        polls["n"] += 1
+        if polls["n"] >= 4:
+            runner.run_done.set()
+            assert runner.run_returned.wait(timeout=1.0)
+
+    journal = _RecordingJournal()
+    launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
+
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
+    )
+
+    bound = [r for r in journal.records if r.get("stage") == "watchdog-bound-poll"]
+    assert result.stalled_run_id is None
+    assert runner.rm_calls == []
+    assert len(bound) >= 2
+    assert {record.get("matched") for record in bound} == {False}
+    assert "run-not-held" not in {record.get("reason") for record in bound}
 
 
 def test_watched_launcher_does_not_cancel_while_a_command_node_is_open(tmp_path: Path) -> None:
