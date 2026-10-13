@@ -63,6 +63,29 @@ _OPERATOR_NAME = "Chad Woolley"
 _OPERATOR_EMAIL = "thewoolleyman@gmail.com"
 _ABSENT_ORIGIN = "absent-origin.git"
 
+# The reported bound, read off the marker line the node prints rather than kept
+# as a private expectation: an operator reading a truncated diagnosis has to be
+# told it was truncated and by how much, or they read the tail's absence as the
+# push having said nothing more.
+_BOUND_BYTES = 2000
+_BOUND_CLAUSE = f"bounded to {_BOUND_BYTES} bytes"
+
+# A `git://` origin carrying userinfo. git echoes this one VERBATIM — see the
+# module docstring for why that makes it the fixture rather than an https URL,
+# whose `unable to access` line git 2.43 anonymizes on its own.
+_USERNAME = "x-access-token"
+_TOKEN = "ghs_THISISTHESECRETINSTALLATIONTOKEN"
+_CREDENTIAL_HOST = "127.0.0.1:9418"
+_CREDENTIAL_ORIGIN = f"git://{_USERNAME}:{_TOKEN}@{_CREDENTIAL_HOST}/owner/repo.git"
+_REDACTION_MARKER = "<credential-redacted>"
+
+# A path long enough that the push's own diagnosis quoting it overruns the
+# bound. The error is dominated by the path, so the length is the fixture's to
+# choose; the case still asserts the overrun off the MEASURED control rather
+# than trusting this number.
+_LONG_SEGMENTS = 15
+_LONG_SEGMENT = "p" * 200
+
 
 def test_a_failed_preservation_push_reports_the_push_error_after_the_marker(
     tmp_path: Path,
@@ -91,6 +114,61 @@ def test_the_node_still_terminates_non_green_with_the_needs_human_marker_after_a
     assert completed.returncode == 1
     assert f"{_REASON}loop cannot auto-resolve this work-item" in completed.stderr
     assert _PUSH_FAILED in completed.stderr
+
+
+def test_the_reported_push_error_redacts_a_credential_carried_in_the_remote_url(
+    tmp_path: Path,
+) -> None:
+    """Assertion 2, redaction half.
+
+    The CONTROL is what makes the absence mean anything: it proves the push's
+    own output DID carry the credential, so "the token is not in the report" is
+    evidence of redaction rather than of a node that discarded the whole text —
+    which is exactly what this node used to do, and which satisfies every
+    token-absence assertion perfectly.
+
+    The surviving `<redacted>@<host>` and `unable to look up` are asserted for
+    the mirror reason: a report that redacted the WHOLE line would also carry no
+    token, and would carry no diagnosis either.
+    """
+    work = _sandbox(tmp_path=tmp_path, origin_url=_CREDENTIAL_ORIGIN)
+    leaked = _control_push_error(work=work)
+    assert _TOKEN in leaked
+    assert _USERNAME in leaked
+
+    completed = _run_needs_human(work=work, run_id=_RUN_ID)
+
+    reported = _reported_push_error(stderr=completed.stderr)
+    assert _TOKEN not in completed.stderr
+    assert _USERNAME not in completed.stderr
+    assert f"{_REDACTION_MARKER}@{_CREDENTIAL_HOST}" in reported
+    assert "unable to look up" in reported
+
+
+def test_the_reported_push_error_is_bounded_in_length(tmp_path: Path) -> None:
+    """Assertion 2, bound half.
+
+    Asserted as BYTES AGAINST THE CONTROL'S OWN BYTES rather than against a
+    phrase expected to survive: the report must be the leading `_BOUND_BYTES`
+    of what the push printed, which says in one comparison that the bound held,
+    that the text is the push's own, and that the truncation kept the head.
+    A phrase-presence assertion would instead encode this git version's exact
+    message lengths, and would pass for a report that rewrote the text.
+
+    The control establishes the overrun. Without it a bounded report is
+    indistinguishable from a short error reported whole, which is what the two
+    cases above already exercise.
+    """
+    work = _sandbox(tmp_path=tmp_path, origin_url=_long_absent_origin(tmp_path=tmp_path))
+    unbounded = _control_push_error(work=work).rstrip("\n").encode("utf-8")
+    assert len(unbounded) > _BOUND_BYTES
+
+    completed = _run_needs_human(work=work, run_id=_RUN_ID)
+
+    reported = _reported_push_error(stderr=completed.stderr).rstrip("\n").encode("utf-8")
+    assert len(reported) <= _BOUND_BYTES
+    assert reported == unbounded[:_BOUND_BYTES].rstrip(b"\n")
+    assert _BOUND_CLAUSE in completed.stderr
 
 
 def test_a_successful_preservation_push_names_the_ref_it_pushed(tmp_path: Path) -> None:
@@ -136,6 +214,11 @@ def _sandbox(*, tmp_path: Path, origin_url: str) -> Path:
     _git(work, "remote", "add", "origin", origin_url)
     (work / _WIP).write_text(_WIP_BODY, encoding="utf-8")
     return work
+
+
+def _long_absent_origin(*, tmp_path: Path) -> str:
+    """An origin path that does not exist and is long enough to overrun the bound."""
+    return str(tmp_path.joinpath(*([_LONG_SEGMENT] * _LONG_SEGMENTS), "absent.git"))
 
 
 def _bare_origin(*, tmp_path: Path) -> Path:
