@@ -19,12 +19,16 @@ from dataclasses import dataclass
 __all__: list[str] = [
     "CHAIN_FORK",
     "CHAIN_UNREADABLE",
+    "GENESIS_ALREADY_NAMED",
+    "GENESIS_UNCONFIRMED",
     "MISSING_TRACKING",
     "PARTIAL_WRITE",
     "RECEIPT_WITHOUT_EVENT",
     "ChainFinding",
     "chain_fork_finding",
     "chain_unreadable_finding",
+    "genesis_already_named_finding",
+    "genesis_unconfirmed_finding",
     "missing_tracking_finding",
     "partial_write_finding",
     "receipt_without_event_finding",
@@ -35,6 +39,8 @@ CHAIN_FORK = "plan-epoch-chain: fork"
 CHAIN_UNREADABLE = "plan-epoch-chain: unreadable"
 PARTIAL_WRITE = "plan-epoch-chain: partial-write"
 RECEIPT_WITHOUT_EVENT = "plan-epoch-chain: receipt-without-event"
+GENESIS_ALREADY_NAMED = "plan-epoch-chain: genesis-already-named"
+GENESIS_UNCONFIRMED = "plan-epoch-chain: genesis-unconfirmed"
 
 # The sanctioned operation that creates a live epic's genesis token. Named in
 # the missing-tracking finding because that is the ONE write permitted to
@@ -131,4 +137,39 @@ def receipt_without_event_finding(*, epic_id: str, operation_id: str) -> ChainFi
             "but no progress event carries its recorded transition"
         ),
         remedy="recover the operation's progress event before retrying it",
+    )
+
+
+def genesis_already_named_finding(*, epic_id: str, token_id: str) -> ChainFinding:
+    """Report an epic whose chain already stands, so no genesis was created.
+
+    Its remedy is to do NOTHING, which is why it is a finding of its own: a
+    second migration of an already-migrated epic is an ordinary operator
+    mistake, and telling them to repair something would invite the very second
+    chain the refusal just prevented.
+    """
+    return ChainFinding(
+        code=GENESIS_ALREADY_NAMED,
+        detail=f"{epic_id} already names chain token {token_id}, so no genesis was created",
+        remedy="nothing to do: the epic's chain already stands",
+    )
+
+
+def genesis_unconfirmed_finding(
+    *, epic_id: str, token_id: str, observed: str | None
+) -> ChainFinding:
+    """Report a genesis whose own write did not survive, naming what stands instead.
+
+    The created token has been deleted, so the epic names exactly one chain or
+    none. Naming the value that WAS observed is what tells a second operator's
+    successful migration apart from a cache that went missing entirely.
+    """
+    standing = "no chain at all" if observed is None else f"token {observed}"
+    return ChainFinding(
+        code=GENESIS_UNCONFIRMED,
+        detail=(
+            f"{epic_id}: the genesis token {token_id} was created and then deleted because "
+            f"the epic names {standing} rather than it"
+        ),
+        remedy="re-read the epic before migrating it again; another writer may have migrated it",
     )
