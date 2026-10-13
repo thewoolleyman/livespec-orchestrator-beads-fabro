@@ -25,7 +25,7 @@ In SPECIFICATION/contracts.md, in the plan Proof of Done record paragraph, repla
 
 > The release rule is judged against the RELEASE REPOSITORY of each record: the repository named by the first whitespace-delimited word of the record's installed build identifier, when that word equals the governed repository's name or names a readable clone checked out beside the governed repository's root. When the record carries no installed build identifier, or its first word is not such a name, the release repository is the plan's governed repository. Where a release applies to the plan's work — the release repository carries at least one release tag — a `captured` record taken against an unreleased tree is not evidence: the steps MUST run against the released artifact installed through its normal installation path, and the archive gate MUST reject a record that states `release: none` for such a repository, or names a release tag the release repository does not carry, naming the missing release identity and the release repository it judged. The gate MUST NOT accept a tag merely because some repository carries it: the tag MUST be carried by the record's release repository.
 
-In the same paragraph, replace the sentence "The installed build identifier is recorded, not verified." with:
+In the same paragraph, replace the sentence "The installed build identifier is recorded, not verified." that immediately follows the release-rule sentence above (the plan record's occurrence; the identical sentence in the work-item Proof of Done rule elsewhere in contracts.md MUST stay unchanged) with:
 
 > The installed build identifier is recorded, not verified, save for the repository name the release rule reads from it.
 
