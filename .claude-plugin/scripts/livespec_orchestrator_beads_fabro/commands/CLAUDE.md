@@ -953,7 +953,13 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   winner for a committed transition. The payload carries the FULL resulting
   state and never a delta, which is affordable only because the receipt ring is
   bounded, and safe only because the predecessor of the latest closed token is
-  deleted (note 006 measured both over 60 transitions). The RING IS CHAIN
+  deleted (note 006 measured both over 60 transitions) — a delete the
+  RECONCILER also performs, because a writer that stopped after its close never
+  reached its own and every later commit discards only the predecessor of the
+  token IT closed, so one partial write otherwise strands one record for the
+  rest of the epic's life (measured on the live tenant 2026-10-13 against
+  released build v0.194.0: three live records at every checkpoint of a
+  60-transition run). The RING IS CHAIN
   HISTORY and no writer supplies it: `carrying_receipts` exists because taking
   the receipts from the requesting writer left a 24-transition chain holding
   one receipt. The progress event is projected BEFORE the cache, since a

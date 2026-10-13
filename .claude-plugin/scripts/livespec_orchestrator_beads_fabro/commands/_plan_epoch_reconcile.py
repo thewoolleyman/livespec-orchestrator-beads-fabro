@@ -6,7 +6,7 @@ dispatch until reconciled". This module is both halves: `verify_projections`
 makes the state diagnosable, `authorized_head` withholds the dispatch while it
 stands, and `reconcile_projections` repairs it.
 
-FOUR PROPERTIES AN EDITOR MUST NOT INVERT.
+FIVE PROPERTIES AN EDITOR MUST NOT INVERT.
 
 THE CHAIN IS THE AUTHORITY AND THE PROJECTIONS ARE REPAIRED FROM IT, never the
 reverse. A transition commits in one server statement and its two projections
@@ -29,6 +29,18 @@ THE RECONCILER SIGNS THE EVENT AS ITSELF. The write it finishes was owed by
 another writer that is gone, so no session identity is its honest author — the
 same reservation `plan-resume` and `plan-archive` make for the pointers they
 write on their own behalf.
+
+THE REPAIR FINISHES THE STOPPED WRITER'S DELETE TOO, and that is what keeps the
+two-live-token bound a property of the chain rather than of an uninterrupted
+run. A completed commit discards the predecessor of the token it closed; a
+writer that stopped after its close never reached that discard, and every later
+commit discards only the predecessor of the token IT closed, so the stranded
+record is never swept by the ordinary path. Measured on the live tenant
+2026-10-13 against released build v0.194.0: one partial write left THREE live
+records at every checkpoint of a 60-transition run. The predecessor is read off
+the STALE CACHE rather than re-derived, because that cache is what the stopped
+writer observed its own head through, so what it still names as the latest
+closed token is exactly the record that writer owed a delete for.
 """
 
 from __future__ import annotations
@@ -52,10 +64,14 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
     write_chain_cache,
     write_progress_event,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_epoch_tokens import token_reading
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_tokens import (
+    discard_token,
+    token_reading,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
+    from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import ChainCache
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
@@ -76,7 +92,7 @@ def verify_projections(*, config: StoreConfig, epic_id: str) -> ChainFinding | N
     graded = _graded_chain(client=client, epic_id=epic_id)
     if isinstance(graded, ChainFinding):
         return graded
-    return graded[1]
+    return graded[2]
 
 
 def authorized_head(*, config: StoreConfig, epic_id: str) -> ChainHead | ChainFinding:
@@ -90,7 +106,7 @@ def authorized_head(*, config: StoreConfig, epic_id: str) -> ChainHead | ChainFi
     graded = _graded_chain(client=client, epic_id=epic_id)
     if isinstance(graded, ChainFinding):
         return graded
-    head, finding = graded
+    _, head, finding = graded
     return head if finding is None else finding
 
 
@@ -110,7 +126,7 @@ def reconcile_projections(
     graded = _graded_chain(client=client, epic_id=epic_id)
     if isinstance(graded, ChainFinding):
         return graded
-    head, finding = graded
+    cache, head, finding = graded
     if finding is None:
         return None
     _restore_missing_event(client=client, epic_id=epic_id, head=head, now=now)
@@ -120,14 +136,46 @@ def reconcile_projections(
         latest_closed=head.latest_closed_token_id,
         current=head.current_token_id,
     )
+    _discard_superseded_predecessor(client=client, cache=cache, head=head)
     return finding
+
+
+def _discard_superseded_predecessor(
+    *,
+    client: BeadsClient,
+    cache: ChainCache,
+    head: ChainHead,
+) -> None:
+    """Delete the predecessor the stopped writer never reached its discard for.
+
+    Runs AFTER both projections, exactly where a completed commit performs the
+    same delete: the record is only superseded once the state that replaced it
+    is the state a reader will find, and deleting it first would widen the
+    window in which a crash leaves the chain shorter than its projections.
+
+    The candidate is the token the STALE cache still names as the latest
+    closed, which is what the stopped writer read its own head through — so it
+    is that writer's own owed delete rather than a record this reconciler
+    chose. It is discarded only when the walk has moved PAST it, because a
+    cache that already names the current latest closed describes a partial
+    write of some other shape (the event alone), where nothing was stranded
+    and the named token is still the one every reader starts from. The discard
+    tolerates an absent record for the reason `discard_token` exists: a
+    concurrent reconciler may have finished the same delete, and failing a
+    completed repair over a record that is already gone would turn a benign
+    outcome into a refusal.
+    """
+    predecessor = cache.latest_closed
+    if predecessor is None or predecessor == head.latest_closed_token_id:
+        return
+    discard_token(client=client, token_id=predecessor)
 
 
 def _graded_chain(
     *,
     client: BeadsClient,
     epic_id: str,
-) -> tuple[ChainHead, ChainFinding | None] | ChainFinding:
+) -> tuple[ChainCache, ChainHead, ChainFinding | None] | ChainFinding:
     """Walk the chain and grade the projections against it, in that order.
 
     The order is fail-closed: an epic that names no chain, or whose chain
@@ -146,6 +194,7 @@ def _graded_chain(
     )
     if stale_cache:
         return (
+            cache,
             head,
             partial_write_finding(
                 epic_id=epic_id,
@@ -158,6 +207,7 @@ def _graded_chain(
         )
     if _event_is_missing(client=client, epic_id=epic_id, head=head):
         return (
+            cache,
             head,
             partial_write_finding(
                 epic_id=epic_id,
@@ -167,7 +217,7 @@ def _graded_chain(
                 ),
             ),
         )
-    return (head, None)
+    return (cache, head, None)
 
 
 def _event_is_missing(*, client: BeadsClient, epic_id: str, head: ChainHead) -> bool:

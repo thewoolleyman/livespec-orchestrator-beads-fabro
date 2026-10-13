@@ -261,6 +261,46 @@ def test_a_cache_that_lags_while_the_event_stands_is_still_a_partial_write() -> 
     assert [event.operation_id for event in events] == ["op-1"]
 
 
+def test_reconciling_a_partial_write_also_discards_the_predecessor_it_leaked() -> None:
+    """A repaired partial write leaves at most two live tokens, as a commit does.
+
+    The stopped writer's close is durable, so the chain has moved on while the
+    token that writer's OWN completed commit would have discarded — the
+    predecessor the stale cache still names as the latest closed — stays live.
+    Restoring the event and the cache does not retire it, and every LATER
+    commit discards only the predecessor of the token IT closed, so one stopped
+    writer leaks one record for the rest of the epic's life unless the
+    reconciler finishes that delete too.
+
+    Measured on the live tenant 2026-10-13 against released build v0.194.0:
+    after one partial write a disposable epic held THREE live token records at
+    every checkpoint of a 60-transition run, the chain's own pair plus the
+    stranded predecessor.
+
+    The count is read after the reconcile AND after each later commit, because
+    a reconciler that deleted the right record but left the ordinary commit
+    path broken would satisfy a single end-state reading.
+    """
+    _seed_chain()
+    _ = _commit_through_the_chain(operation_id="op-1")
+    leaked = _head().latest_closed_token_id
+    _ = _commit_and_stop(operation_id="op-stopped")
+
+    reconciled = reconcile_projections(config=_config(), epic_id=_EPIC_ID, now=_RECONCILED_AT)
+
+    assert isinstance(reconciled, ChainFinding)
+    assert leaked is not None
+    assert leaked not in _fake().no_history_issue_ids()
+    live_counts = [len(_fake().no_history_issue_ids())]
+    for index in range(2, 6):
+        _ = _commit_through_the_chain(operation_id=f"op-{index}")
+        live_counts.append(len(_fake().no_history_issue_ids()))
+    assert live_counts == [2, 2, 2, 2, 2]
+    # The repair itself is unchanged: the chain still walks to the epoch the
+    # stopped writer committed plus the four that followed it.
+    assert _head().epoch == 6
+
+
 def test_an_epic_naming_no_chain_withholds_the_dispatch_with_its_own_finding() -> None:
     """A missing chain is NOT a partial write, and the two remedies differ.
 

@@ -125,7 +125,14 @@ Tests for the thin-transport command modules under
   primitives, which is what a stopped writer actually leaves behind, and its
   first case is the positive control: without a healthy chain reporting
   NOTHING, a verifier that called every chain a partial write would satisfy
-  every other case in the module. `test_plan_epoch_chain_close_readback.py`
+  every other case in the module. Its live-token-count case commits a
+  transition BEFORE the one it stops, because the predecessor a stopped writer
+  strands is the one its observed head already named — a stop taken against a
+  genesis-only chain has no predecessor to leak and passes whether or not the
+  reconciler sweeps one; and it reads the count after the reconcile AND after
+  each later commit, since a reconciler that swept the right record while
+  breaking the ordinary commit path would satisfy a single end-state reading.
+  `test_plan_epoch_chain_close_readback.py`
   fails ONLY the read-back and lets the close itself land, which is the single
   interleaving that separates a won close from a lost one — its helper reads
   the head BEFORE installing the failure, because a patch covering the writer's
