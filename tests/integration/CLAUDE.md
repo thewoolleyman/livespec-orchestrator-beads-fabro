@@ -792,6 +792,30 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   string no import graph can see, and a rename on either side drops the node
   onto the stdin fallback — the placeholder on one engine, nothing on the other.
 
+- `test_watchdog_bound_run_poll_scenario173.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 173 and the `contracts.md` paragraph it
+  exercises (the Dispatcher progress watchdog's "Observing the run"): once the
+  run id is bound every poll reads THAT run by id and the factory's run history
+  is never listed again, while discovery before the bind is unchanged. The
+  journey runs through the PRODUCTION launcher — real `WatchedFabroLauncher`,
+  real `FabroPort`, the real per-poll observation seam and real threading — with
+  only the fabro subprocess stood in, and stood in AT THE ARGV, because the rule
+  is about which call each poll ISSUES and no returned run can distinguish a
+  per-run read from a listing that happened to contain the same row. Three
+  things about the cases are worth knowing before editing. The bound node id is
+  the listing-then-read case because it carries BOTH halves of one rule on one
+  dispatch; split apart, a bound-poll-only fixture passes against a build that
+  never discovered its run at all. The ps listing deliberately carries a SECOND
+  row belonging to another work-item, so the discovery leg is a real attribution
+  rather than a single-row lookup. And the no-longer-held and failed-read cases
+  assert against EACH OTHER's reason rather than on `matched` alone: a vanished
+  run, a run the factory still holds but is no longer running, and a read that
+  observed nothing all report `matched: False`, so a boolean-only assertion is
+  satisfied identically by the one outcome the clause forbids — a confident
+  claim that the factory dropped the run, earned from a read that saw nothing.
+  Every case asserts a poll-count FLOOR and the shape of the tail rather than an
+  exact count, because a poll can still land while the launch thread unwinds.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

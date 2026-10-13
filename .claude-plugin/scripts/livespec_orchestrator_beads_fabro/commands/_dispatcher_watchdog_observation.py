@@ -35,6 +35,17 @@ run?" across a dispatch whose polls changed mode partway through:
   different fact from the one above and a different remedy: the run is gone
   rather than finished, so collapsing the two makes a vanished run read as
   a completed one.
+* `run-read-unobservable` — the read FAILED, or answered something this
+  module cannot interpret. It is NOT a disappearance and NOT a status: it
+  is the absence of a reading, and the watchdog owes it exactly what it
+  owes a listing that could not be read — nothing. The clause says so in as
+  many words, and the direction matters: a failed probe reported as
+  `run-not-held` is a confident claim about the factory earned from no
+  evidence at all, which is the kind of finding nothing downstream
+  re-examines.
+
+The marker that separates the last two is therefore consulted ONLY where no
+status could be read, and never on a reading that yielded one.
 """
 
 from __future__ import annotations
@@ -61,6 +72,7 @@ from livespec_orchestrator_beads_fabro.commands._run_attribution import RunAttri
 __all__: list[str] = [
     "BOUND_POLL_JOURNAL_STAGE",
     "BOUND_POLL_REASON_RUN_NOT_HELD",
+    "BOUND_POLL_REASON_UNOBSERVABLE",
     "BoundPollOutcome",
     "classify_bound_poll",
     "journaled_bound_poll",
@@ -76,14 +88,14 @@ __all__: list[str] = [
 BOUND_POLL_JOURNAL_STAGE = "watchdog-bound-poll"
 
 BOUND_POLL_REASON_RUN_NOT_HELD = "run-not-held"
+BOUND_POLL_REASON_UNOBSERVABLE = "run-read-unobservable"
 
 # The factory's own answer for a run it does not hold, lower-cased. Copied
 # from the message `fabro dump` printed against hp-xubuntu:32276 on
 # 2026-10-12 for run 01M4R5S6GST6XNQA10SGJ9TA2H — a leading cross glyph then
 # "No run found matching '<id>' (tried run ID prefix and workflow name)" —
-# rather than paraphrased,
-# because a reconstructed phrase is the shape that matches nothing and then
-# reports the absence as a measurement.
+# rather than paraphrased, because a reconstructed phrase is the shape that
+# matches nothing and then reports the absence as a measurement.
 #
 # A READING THAT YIELDED A STATUS IS NEVER SCANNED FOR IT. `fabro inspect`
 # echoes the run's whole `run_spec`, rendered goal included, so any run whose
@@ -207,7 +219,7 @@ def classify_bound_poll(
     return _outcome(
         run_id=run_id,
         run=None,
-        reason=DISCOVERY_REASON_STATUS_KIND_NOT_RUNNING,
+        reason=BOUND_POLL_REASON_UNOBSERVABLE,
         inspect_exit_code=inspect_exit_code,
         status_kind=status_kind,
     )
