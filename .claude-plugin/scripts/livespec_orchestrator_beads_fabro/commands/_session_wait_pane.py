@@ -40,6 +40,21 @@ DIAGNOSTIC_REPLACED = "REPLACED"
 
 _DEFAULT_TIMEOUT_SECONDS = 5.0
 
+# How far a probe's own read budget OUTLASTS the deadline budget the wait hands
+# it. The budget bounds a read that cancellation is expected to interrupt, so
+# it is a BACKSTOP rather than the wait's bound — and a backstop that expires
+# at the same instant the bound does is not one. A budget equal to the
+# remaining deadline made a hung probe's timeout diagnostic arrive together
+# with the deadline, and a diagnostic is not a running state, so whichever the
+# final poll round saw first decided the outcome label: measured 2026-10-13,
+# two consecutive runs of one three-second wait whose only target was a pane
+# that never answers returned `target-ended` and then `deadline` for the
+# identical request. One second is longer than the wait's own one-second poll
+# cadence, so the round that observes expiry cannot also be the round that
+# observes the timeout — and it leaves a real interval for the wait to return
+# inside of rather than a coincidence nothing can assert against.
+_READ_BUDGET_GRACE_SECONDS = 1.0
+
 
 def _reported_terminal_id(*, reply: HerdrReply) -> str | None:
     """The pane's own terminal identity, or None when the reply carries none.
@@ -223,8 +238,8 @@ class _PaneTask:
 
         The SOCKET is interrupted before the join, and that order is
         load-bearing: a worker blocked in `recv` holds its budget, which for a
-        probe is the whole remaining deadline, so joining first would make
-        cancellation cost exactly the delay it exists to avoid.
+        probe OUTLASTS the whole remaining deadline, so joining first would
+        make cancellation cost more than the delay it exists to avoid.
         """
         started = time.monotonic()
         self.cancel_requested = True
@@ -250,14 +265,14 @@ class HerdrPaneProbe:
 
         The observation runs on its OWN worker rather than on the polling
         thread, and that is what keeps one pane from serializing an entire
-        wait. A peer that accepts and never answers holds its socket for the
-        full remaining deadline, so a synchronous poll spends the whole budget
-        before any sibling target is looked at even once — measured against the
-        synchronous adapter, a wait over a hung pane and an ALREADY-FINISHED
-        gate returned the hung pane's diagnostic at 20.02s of a 20s deadline
-        and reported the finished gate as unfinished. Answering None while the
-        work is in flight is what leaves the caller free to poll its other
-        targets at its own cadence.
+        wait. A peer that accepts and never answers holds its socket for this
+        probe's whole read budget, which outlasts the remaining deadline, so a
+        synchronous poll spends that whole budget before any sibling target is
+        looked at even once — measured against the synchronous adapter, a wait
+        over a hung pane and an ALREADY-FINISHED gate returned the hung pane's
+        diagnostic at 20.02s of a 20s deadline and reported the finished gate
+        as unfinished. Answering None while the work is in flight is what
+        leaves the caller free to poll its other targets at its own cadence.
 
         A fresh channel per task is deliberate: a cancelled channel stays
         cancelled, so reusing one would refuse every later observation.
@@ -268,7 +283,7 @@ class HerdrPaneProbe:
                 observed_at=now,
                 channel=HerdrChannel(
                     socket_path=self.target.socket_path,
-                    timeout_seconds=self.timeout_seconds,
+                    timeout_seconds=self.timeout_seconds + _READ_BUDGET_GRACE_SECONDS,
                 ),
             )
             self.task.start()

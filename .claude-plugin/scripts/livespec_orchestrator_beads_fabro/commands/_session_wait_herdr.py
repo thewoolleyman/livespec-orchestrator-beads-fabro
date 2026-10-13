@@ -113,12 +113,14 @@ class HerdrChannel:
         """Interrupt an in-flight request so a hung peer cannot pin a caller.
 
         A read here is bounded by `timeout_seconds`, and for a wait's probe
-        that budget is the WHOLE remaining deadline — deliberately, so a hung
-        peer is reported at expiry rather than on the first slow reply. The
+        that budget deliberately OUTLASTS the whole remaining deadline, so a
+        hung peer is reported by the wait's own expiry rather than on the first
+        slow reply — and never by this timeout, whose diagnostic landing at
+        expiry is what used to decide a lone hung pane's outcome label. The
         consequence is that a caller which merely stopped waiting would leave
-        its worker blocked in `recv` for the rest of the wait, so cancelling
-        has to reach the socket itself: `shutdown` makes that blocked read
-        return at once.
+        its worker blocked in `recv` for longer than the wait itself, so
+        cancelling has to reach the socket itself: `shutdown` makes that
+        blocked read return at once.
 
         The `_cancelled` flag closes the race the shutdown cannot. A
         cancellation landing between a worker's own pre-flight check and its
