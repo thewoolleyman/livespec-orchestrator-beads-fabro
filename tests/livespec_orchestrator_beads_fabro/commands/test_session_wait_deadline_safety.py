@@ -16,6 +16,7 @@ from typing import cast
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._session_wait_herdr import (
+    DIAGNOSTIC_UNAVAILABLE,
     herdr_socket_generation,
 )
 from livespec_orchestrator_beads_fabro.commands._session_wait_types import ProbeLauncher
@@ -46,6 +47,51 @@ _FINISHED_GATE_COMMAND = (
     "finished-gate-status",
 )
 _PEER_RECEIVE_BYTES = 65536
+# The lone-hung-pane wait below. Short, because what it asserts is the OUTCOME
+# LABEL rather than a duration, and the race that decided that label is
+# reproduced by the sleeper rather than waited for.
+_LONE_DEADLINE_SECONDS = 0.4
+# How far past the budget it was asked for `_overshooting_sleeper` really
+# sleeps. It has to exceed a probe's launch latency — the few milliseconds
+# between a round starting its worker and that worker reaching its `recv` —
+# so the round that observes expiry reliably lands after the probe's own
+# budget would have expired.
+_POLL_OVERSHOOT_SECONDS = 0.8
+# Repeated runs of ONE request, because the defect was an unstable label
+# rather than a wrong one: the same wait reported `target-ended` and then
+# `deadline` on two consecutive runs.
+_LONE_RUNS = 2
+
+
+def _hung_pane(*, socket_path: Path, terminal_id: str) -> PaneTarget:
+    """A pane target whose SERVER identity matches the peer holding the socket.
+
+    The generation is read from the peer's own socket file. A mismatched one is
+    answered by the identity arm before any connection is attempted, which is a
+    different end entirely and would let a case pass without the transport
+    being exercised at all.
+    """
+    return PaneTarget(
+        backend="herdr",
+        socket_path=socket_path,
+        server_generation=str(herdr_socket_generation(socket_path=socket_path)),
+        pane_id="w1:p1",
+        terminal_id=terminal_id,
+    )
+
+
+def _overshooting_sleeper(*, seconds: float) -> None:
+    """Sleep the budget the wait asked for, plus the overshoot that decides it.
+
+    `time.sleep` overshoots on its own, and the measured race turned on exactly
+    that: the poll round that observes expiry runs a little AFTER the deadline,
+    so whether it ALSO sees the hung probe's timeout diagnostic is settled by
+    microseconds nobody controls. Overshooting deliberately, by far more than a
+    probe's launch latency, makes that round see the diagnostic on every run —
+    so a wait that can still report a hung probe as a finished target reports
+    it here every time instead of half the time.
+    """
+    time.sleep(seconds + _POLL_OVERSHOOT_SECONDS)
 
 
 def _written_pid(*, path: Path, timeout_seconds: float) -> int:
@@ -185,6 +231,74 @@ def test_a_hung_pane_probe_lets_a_finished_gate_return_first(*, tmp_path: Path) 
     assert elapsed < _HUNG_DEADLINE_SECONDS / 2, f"returned after {elapsed:.2f}s"
     # The hung target was READ and never written to, so the probe work that got
     # cancelled was this wait's own and nothing belonging to the pane.
+    assert received, "the wait never reached the hung peer at all"
+    for request in received:
+        assert json.loads(request.decode("utf-8"))["method"] == "agent.get"
+
+
+def test_a_lone_hung_pane_wait_returns_the_deadline_outcome_on_every_run(
+    *,
+    tmp_path: Path,
+) -> None:
+    """Scenario 156: a pane that never answers is UNFINISHED, never ended.
+
+    Measured 2026-10-13 against the real wait CLI with a hung controlled peer:
+    two consecutive runs of one 3-second lone-hung-pane wait returned
+    `target-ended` with state `UNAVAILABLE` and then `deadline` with the same
+    state, for the identical request. A pane probe's read budget was the
+    remaining deadline, so its timeout diagnostic and the deadline arrived
+    together and the label went to whichever the final poll round happened to
+    see first — and `target-ended` reports a hung probe as a FINISHED target,
+    naming a pane nobody observed as the thing that woke the wait.
+
+    The timing was correct on both of those runs, so what is asserted here is
+    the LABEL, the unfinished-target listing and the staleness of the reported
+    observation, over repeated runs of one request.
+    """
+    wait_store_root = tmp_path / "session-waits"
+    wait_store_root.mkdir()
+    socket_path = tmp_path / "lone-hung.sock"
+    endings: list[tuple[str, str | None, tuple[str, ...]]] = []
+    stale_readings: list[tuple[str, bool, bool]] = []
+
+    with _hung_peer(socket_path=socket_path) as received:
+        pane = _hung_pane(socket_path=socket_path, terminal_id="term_lone")
+        for run in range(_LONE_RUNS):
+            started = time.monotonic()
+            result = run_wait(
+                request=WaitRequest(
+                    wait_id=f"lone-hung-pane-{run}",
+                    session_id="deadline-safety",
+                    repository=tmp_path,
+                    deadline_seconds=_LONE_DEADLINE_SECONDS,
+                    targets=(pane,),
+                ),
+                launcher=RoutingLauncher(
+                    gate=GateStatusLauncher(repository=tmp_path),
+                    pane=HerdrPaneLauncher(),
+                ),
+                wait_store_root=wait_store_root,
+                sleeper=_overshooting_sleeper,
+            )
+            observation = result.observations[pane.identity]
+            endings.append(
+                (result.command_outcome, result.trigger_target, result.unfinished_targets)
+            )
+            stale_readings.append(
+                (
+                    observation.state,
+                    observation.fresh,
+                    observation.observed_at >= started + _LONE_DEADLINE_SECONDS,
+                )
+            )
+
+    assert endings == [("deadline", None, (pane.identity,))] * _LONE_RUNS
+    # What an unfinished target owes: `UNAVAILABLE` says this wait measured no
+    # state at all, `fresh=False` says the reading is not a current one, and
+    # the timestamp is the expiry the wait returned at.
+    assert stale_readings == [(DIAGNOSTIC_UNAVAILABLE, False, True)] * _LONE_RUNS
+    # The hung target was READ and never written to, so the work that got
+    # cancelled at expiry was this wait's own and nothing belonging to the pane.
     assert received, "the wait never reached the hung peer at all"
     for request in received:
         assert json.loads(request.decode("utf-8"))["method"] == "agent.get"

@@ -213,20 +213,34 @@ def _observe_until(
     recomputed or extended here, so a hung probe cannot push the return out:
     each round polls every probe once, and the sleep between rounds is capped
     at one second so a sibling stays independently observable at that cadence.
+
+    EXPIRY IS TESTED BEFORE A ROUND POLLS ANYTHING, and that order decides the
+    outcome LABEL rather than merely saving a round. No probe's own budget can
+    expire before this deadline does, so the first reading a post-expiry round
+    can add is a probe's timeout diagnostic — and a diagnostic is not a running
+    state, so it would be read as a FINISHED target and returned as the thing
+    that woke the wait. Measured 2026-10-13 on a three-second wait whose only
+    target was a pane that never answers: two consecutive runs of the identical
+    request returned `target-ended` and then `deadline`, the label going to
+    whichever of the two the final round happened to see first. Once the
+    deadline has passed the wait owes the deadline outcome, so nothing read
+    afterwards may change it.
     """
     observations: dict[str, GateObservation] = {}
     while True:
         now = monotonic()
+        if now >= deadline:
+            return observations
         for handle in handles:
             observation = handle.poll(now=now)
             if observation is not None:
                 observations[observation.target.identity] = observation
         if _first_terminal(observations=observations) is not None:
             return observations
-        remaining = deadline - monotonic()
-        if remaining <= 0:
-            return observations
-        sleeper(seconds=min(1.0, remaining))
+        # Clamped at both ends: at one second so a sibling stays observable at
+        # that cadence, and at zero because polling can itself outrun what was
+        # left, and a negative sleep raises rather than returning at once.
+        sleeper(seconds=max(0.0, min(1.0, deadline - monotonic())))
 
 
 def _first_terminal(*, observations: dict[str, GateObservation]) -> GateObservation | None:
