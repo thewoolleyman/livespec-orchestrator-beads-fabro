@@ -113,6 +113,26 @@ concrete, copy-pasteable action or command. The steps must be:
   A phrase such as "with the program shown in the capture" is a PROMISE this
   bullet makes binding — before you publish, re-read each such step and
   confirm the source it points at is really there.
+- **Unfalsifiable by your own record.** Posting this record ADDS a comment
+  to the very pull request your steps observe, so an expectation stated as
+  an exact TOTAL — a timeline's whole event set, a comment count, a tally
+  of everything present — is falsified by your own publication, and again
+  by every record posted after it. No replayer can ever meet it. Measured
+  here: a step expecting a timeline "whose unique event set is `committed`"
+  was replayed against `commented,committed`, because the capture's own
+  comment had landed in between. State what the assertion turns on as a
+  PRESENCE or an ABSENCE — "no `auto_merge_enabled` event" — and
+  never as an exact set, count or total of everything present.
+- **Re-runnable over your own leavings.** The replay leg runs in THIS
+  sandbox, AFTER you, so every scratch directory, repository and file your
+  steps created is still on disk when they run again. A published program
+  that builds its scratch state without tolerating a pre-existing copy
+  aborts before it exercises anything. Measured here: a harness calling
+  `Path.mkdir(parents=True)` with no `exist_ok=True` raised
+  `FileExistsError` on four of five published steps, so the replay observed
+  none of the behaviour they prove. Make each program tolerate its own
+  prior run — `exist_ok=True`, or clear the scratch state it owns first —
+  or derive a per-invocation scratch root.
 
 ## Step 3 — execute the steps verbatim
 
@@ -125,6 +145,14 @@ If a step does not work, FIX THE STEP, re-run from the top of that
 assertion's sequence, and publish the corrected version. Never publish a
 step you did not run, and never publish output from a command other than
 the one the step names.
+
+Then run the WHOLE sequence a SECOND time, in the same sandbox, without
+clearing anything by hand. The replay leg inherits the state your first
+pass left behind, so a sequence that only works once works only for you,
+and this second pass is the cheap mechanical proof of the "re-runnable
+over your own leavings" property above. A second pass that needs a
+hand-cleaned scratch root is a step to FIX here, not a note for the
+replayer to work around.
 
 ## Step 4 — capture the proof
 

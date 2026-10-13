@@ -47,6 +47,21 @@ instead.
   `tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_payload_implement_prompt.py`,
   per the rendering-seam convention below.
 
+- `test_proof_capture_replayable_steps.py` — bd-ib-mhqj3h: the proof-capture
+  prompt's reproduction-step property list demands the two replayability
+  properties a `not_reproduced` verdict was traced to, and Step 3 demands the
+  second pass that catches the cheaper of them. Both defects were in the
+  PUBLISHED PROCEDURE while the implementation under it was correct: a step
+  expected a pull-request timeline's unique event set to be `committed`, which
+  posting the record itself falsified forever, and a published harness called
+  `Path.mkdir(parents=True)` with no `exist_ok=True`, so the capture leg's own
+  surviving scratch worlds aborted four of five steps in the sandbox the replay
+  inherits. The prompt is DERIVED from the graph's `proof_capture` node with a
+  control asserting the derivation named one node whose file is on disk, and a
+  further control asserts every pinned needle sits within one physical line —
+  without it, a needle straddling a hard wrap could only fail silently while
+  the prose said exactly the required thing.
+
 Conventions:
 
 - Read the prompt as COMMITTED BYTES. Never render it through a template engine

@@ -623,7 +623,10 @@ digraph ImplementWorkItem {
     // null as the EMPTY STRING, never as the four characters `null` — measured
     // on gh 2.102.0 against pull request 2902, whose `--json autoMergeRequest`
     // is `{"autoMergeRequest":null}` and whose `--jq '.autoMergeRequest'`
-    // printed zero bytes at exit 0. A test against the literal `null` alone was
+    // printed zero bytes at exit 0. Re-measured since on pull request 2907 at
+    // gh 2.102.0, and by the filing operator on 2902 at gh 2.96.0: two gh
+    // versions over two pull requests, so this is gh's settled convention and
+    // not one version's quirk. A test against the literal `null` alone was
     // therefore true for EVERY pull request, so every merge-held item failed
     // closed here under LIVESPEC_PR_HOLD_ARMED while its timeline carried no
     // auto-merge event at all. Empty-or-`null` reads unarmed; the `null` arm is

@@ -120,7 +120,10 @@ _MERGE_SHA = "3333333333333333333333333333333333333333"
 # this repository's pull request 2902, whose `--json autoMergeRequest` is
 # `{"autoMergeRequest":null}`: `--jq '.autoMergeRequest'` printed ZERO bytes at
 # exit 0, and the same filter over an object field printed that object as
-# compact JSON. A stub that answered the literal `null` is what let a
+# compact JSON. Re-measured since on pull request 2907 at gh 2.102.0, and by
+# the filing operator on 2902 at gh 2.96.0 -- two gh versions over two pull
+# requests, so this is gh's settled convention and not one version's quirk.
+# A stub that answered the literal `null` is what let a
 # comparison against that literal pass here for weeks while EVERY merge-held
 # item failed closed on the live forge, so `absentAutoMergeRender` carries the
 # measured empty string by default. One control overrides it with `null`,
