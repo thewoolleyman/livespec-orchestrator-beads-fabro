@@ -26,6 +26,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_contract
     resolve_integration_contract,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
+    COMMITTED_RUN_CONFIG_IMAGE,
+)
 
 
 def _dispatcher_parser() -> argparse.ArgumentParser:
@@ -170,6 +173,10 @@ def test_the_dispatch_record_carries_workflow_name_beside_workflow_toml(
         workflow_name="codex-first",
         integration=resolve_integration_contract(declaration={}),
         merge_hold=False,
+        # The launch's image source, immaterial to what this case measures: the
+        # no-declaration answer is what a target configuring neither a catalog
+        # environment nor an override resolves.
+        sandbox_image=COMMITTED_RUN_CONFIG_IMAGE,
     )
 
     record = json.loads((tmp_path / "journal.jsonl").read_text(encoding="utf-8").strip())

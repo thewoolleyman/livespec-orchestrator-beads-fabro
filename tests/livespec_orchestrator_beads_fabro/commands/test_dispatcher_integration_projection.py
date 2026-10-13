@@ -61,6 +61,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import (
     resolve_repo_integration_contract,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
+    COMMITTED_RUN_CONFIG_IMAGE,
+)
 
 _PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
 
@@ -154,6 +157,10 @@ def test_the_dispatch_record_journals_the_resolved_contract(tmp_path: Path) -> N
         workflow_name="implement-work-item",
         integration=plan.integration,
         merge_hold=plan.merge_hold,
+        # The launch's image source, immaterial to what this case measures: the
+        # no-declaration answer is what a target configuring neither a catalog
+        # environment nor an override resolves.
+        sandbox_image=COMMITTED_RUN_CONFIG_IMAGE,
     )
 
     record = json.loads((tmp_path / "journal.jsonl").read_text(encoding="utf-8").strip())

@@ -60,6 +60,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_input
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_records import (
     ReconcileRunsSummary,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
+    COMMITTED_RUN_CONFIG_IMAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
 from livespec_orchestrator_beads_fabro.commands._needs_attention_orphan_runs import (
     InertJournal,
@@ -412,6 +415,10 @@ def test_the_dispatch_record_names_the_binary_that_drove_the_dispatch(
         workflow_name="implement-work-item",
         integration=UNDECLARED_INTEGRATION_CONTRACT,
         merge_hold=False,
+        # The launch's image source, immaterial to what this case measures: the
+        # no-declaration answer is what a target configuring neither a catalog
+        # environment nor an override resolves.
+        sandbox_image=COMMITTED_RUN_CONFIG_IMAGE,
     )
 
     record = json.loads(journal_path.read_text(encoding="utf-8").strip())

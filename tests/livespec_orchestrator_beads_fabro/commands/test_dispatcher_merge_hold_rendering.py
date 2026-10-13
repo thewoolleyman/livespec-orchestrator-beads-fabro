@@ -69,6 +69,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection impor
     post_run_dispositions,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan, build_plan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
+    COMMITTED_RUN_CONFIG_IMAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import NodeTimeouts
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
@@ -276,6 +279,10 @@ def test_the_dispatch_record_journals_the_rendered_hold(tmp_path: Path) -> None:
         workflow_name="implement-work-item",
         integration=plan.integration,
         merge_hold=plan.merge_hold,
+        # The launch's image source, immaterial to what this case measures: the
+        # no-declaration answer is what a target configuring neither a catalog
+        # environment nor an override resolves.
+        sandbox_image=COMMITTED_RUN_CONFIG_IMAGE,
     )
 
     record = json.loads((tmp_path / "journal.jsonl").read_text(encoding="utf-8").strip())

@@ -182,6 +182,12 @@ def record_dispatch(
         workflow_name=materialized.workflow_name,
         integration=plan.integration,
         merge_hold=plan.merge_hold,
+        # The ONE sandbox-image-source resolution this plan carries, projected
+        # rather than re-read: the launch overlay renders from the same value, so
+        # a second read here could put a source in the record that the launch did
+        # not take — and both reads produce a well-formed answer, so nothing
+        # would announce it.
+        sandbox_image=plan.sandbox_image,
     )
     return RecordedDispatch(
         plan=plan,
