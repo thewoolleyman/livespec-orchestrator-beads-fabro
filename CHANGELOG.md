@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.194.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.194.0...v0.194.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **plan-epoch:** discard the predecessor a reconciled partial write leaks ([07694e2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/07694e29767968fb7733bff45cebc00f7743308a))
+
 ## [0.194.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.193.0...v0.194.0) (2026-10-13)
 
 
