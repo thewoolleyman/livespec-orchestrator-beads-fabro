@@ -10,7 +10,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
-from livespec_orchestrator_beads_fabro.commands import _plan_next_action
+from livespec_orchestrator_beads_fabro.commands import _plan_next_action, _plan_tracked_write
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     LAST_SESSION_METADATA_KEY,
     NEXT_ACTION_KINDS,
@@ -659,6 +659,15 @@ def test_a_wrapped_prose_marker_line_no_longer_decides_the_resume() -> None:
 def test_a_metadata_less_record_reads_as_no_pointer_rather_than_raising(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """`omitempty` omits the metadata key entirely on an epic never written to.
+
+    BOTH seams are patched because the read and the write now live in different
+    modules: `read_next_action` resolves its client here, while `set_next_action`
+    reaches the ledger through `_plan_tracked_write`'s epoch-routed path. The
+    sparse record carries no chain cache, so that path takes its legacy arm —
+    which is the arm this case is about, since an epic with no metadata at all is
+    exactly an epic whose authority chain does not exist yet.
+    """
     _seed_epic()
 
     class _SparseClient:
@@ -675,6 +684,7 @@ def test_a_metadata_less_record_reads_as_no_pointer_rather_than_raising(
         return sparse
 
     monkeypatch.setattr(_plan_next_action, "make_beads_client", _sparse_client)
+    monkeypatch.setattr(_plan_tracked_write, "make_beads_client", _sparse_client)
 
     assert read_next_action(config=_config(), epic_id=_EPIC_ID) is None
     set_next_action(
