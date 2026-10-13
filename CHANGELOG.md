@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.191.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.190.3...v0.191.0) (2026-10-13)
+
+
+### Features
+
+* **session-wait:** give each uncertain pane end its own outcome ([7eee213](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7eee2130efb68178c30292f88eb2e202c451f765))
+* **session-wait:** give each uncertain pane end its own outcome ([426481e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/426481ee9af0b681a78fd9505159c604de83f453))
+* **session-wait:** let a finished gate wake a wait past a hung pane ([07d3771](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/07d3771594ee769e9d74471aa539923ba535e75b))
+* **session-wait:** observe a Herdr pane's actual non-working state ([45f0df1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/45f0df194510b267e750744a37e51acdeccd99a7))
+* **session-wait:** return a Herdr pane's actual non-working state ([5108106](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5108106450ad95a30fcab32fe11efe1356c51208))
+* **session-wait:** return a Herdr pane's actual non-working state ([d0fdf41](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d0fdf4163c7043983c859f0ac62f363741ae82ce))
+* **session-wait:** return a Herdr pane's actual non-working state ([0dd80a4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0dd80a4e06c07de09b93877b3563c6c0ce320cd2))
+
+
+### Bug Fixes
+
+* **session-wait:** spend one deadline on freezing panes and on waiting ([c4a2d9e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c4a2d9e737624a25a00f39d18d6d8f2e4efb99a5))
+
 ## [0.190.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.190.2...v0.190.3) (2026-10-13)
 
 
