@@ -5,6 +5,7 @@ from __future__ import annotations
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import (
     CHAIN_FORK,
     CHAIN_UNREADABLE,
+    CLOSE_OUTCOME_UNKNOWN,
     GENESIS_ALREADY_NAMED,
     GENESIS_UNCONFIRMED,
     MISSING_TRACKING,
@@ -12,6 +13,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import (
     RECEIPT_WITHOUT_EVENT,
     chain_fork_finding,
     chain_unreadable_finding,
+    close_outcome_unknown_finding,
     genesis_already_named_finding,
     genesis_unconfirmed_finding,
     missing_tracking_finding,
@@ -82,6 +84,34 @@ def test_the_receipt_without_event_finding_refuses_to_invent_the_original() -> N
     assert "recover" in finding.remedy
 
 
+def test_the_close_outcome_unknown_finding_names_both_dispositions() -> None:
+    """One remedy cannot choose between them, because the evidence is missing.
+
+    The close reason nobody could read is the only thing that says whether the
+    transition committed, and this finding exists precisely because it was not
+    read. A remedy naming only the reconcile would have an operator project a
+    transition that may never have been admitted; one naming only the delete
+    would have them sever a chain whose own payload names that candidate.
+    """
+    closed = "wisp-2"
+    candidate = "wisp-3"
+    finding = close_outcome_unknown_finding(
+        epic_id="bd-ib-relay1",
+        token_id=closed,
+        candidate_token_id=candidate,
+        operation_id="op-3",
+    )
+
+    assert finding.code == CLOSE_OUTCOME_UNKNOWN
+    assert closed in finding.detail
+    assert candidate in finding.detail
+    assert "op-3" in finding.detail
+    assert "could not be read back" in finding.detail
+    assert "reconcile" in finding.remedy
+    assert "delete" in finding.remedy
+    assert candidate in finding.remedy
+
+
 def test_every_finding_code_is_distinct() -> None:
     """A shared code would make two conditions with different remedies one fact."""
     codes = (
@@ -92,6 +122,7 @@ def test_every_finding_code_is_distinct() -> None:
         RECEIPT_WITHOUT_EVENT,
         GENESIS_ALREADY_NAMED,
         GENESIS_UNCONFIRMED,
+        CLOSE_OUTCOME_UNKNOWN,
     )
 
     assert len(set(codes)) == len(codes)
