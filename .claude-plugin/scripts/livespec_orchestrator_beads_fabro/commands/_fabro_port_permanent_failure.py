@@ -28,9 +28,10 @@ __all__: list[str] = [
 # billing or rolling-usage window: retrying spends more of an allowance that is
 # already gone, and only a human (or the clock) clears them.
 #
-# `codex_error_info: "usage_limit_exceeded"` is the machine-readable
-# discriminator and is matched FIRST because it cannot drift with copy edits.
-# The prose hints are the fallback for providers that ship no such field.
+# Codex's own error-info field is the machine-readable discriminator and is
+# matched FIRST because it cannot drift with copy edits. The prose hints are the
+# fallback for providers that ship no such field, and for the engine form that
+# preserves only the failure message text.
 #
 # MEASURED 2026-08-22 across the 53 failed runs on the hp factory: 13 carried a
 # diagnosable cause chain, and 10 of those were Codex usage-limit refusals
@@ -43,7 +44,28 @@ __all__: list[str] = [
 # "hit your limit" does NOT substring-match it. That exact near-miss is why the
 # fabro-side fix on `fix/classify-provider-spend-limit-not-transient` would not
 # have caught the Codex form even once merged.
-_PROVIDER_USAGE_LIMIT_FIELD = '"codex_error_info": "usage_limit_exceeded"'
+
+# Codex's structured usage-limit token, as a (field name, value) PAIR per
+# measured spelling. Both spellings the pinned adapters emit are recognised:
+# the October payload carries the camelCase form while the August one carried
+# the snake_case form, and the contract requires both.
+#
+# IT IS A FIELD LOOKUP, NEVER A BYTE STRING. The previous form compared the
+# literal bytes `"codex_error_info": "usage_limit_exceeded"` against the
+# whitespace-collapsed cause, which recognised exactly ONE serialization of ONE
+# spelling: the camelCase payload could not match at all, and a serializer that
+# emitted no space after the colon, or ordered the field before `message`,
+# defeated it on the spelling it did know. Both of those are well-formed
+# payloads carrying the same token, so the byte match was reporting a
+# serialization difference as the absence of a ceiling.
+#
+# THE VALUE IS THE TOKEN, so the pair is checked together: `codex_error_info`
+# also carries non-ceiling values, and keying on the field name alone would
+# claim every Codex error that happens to populate it.
+_CODEX_USAGE_LIMIT_FIELDS: tuple[tuple[str, str], ...] = (
+    ("codexErrorInfo", "usageLimitExceeded"),
+    ("codex_error_info", "usage_limit_exceeded"),
+)
 _PROVIDER_CODEX = "codex"
 _PROVIDER_ANTHROPIC = "anthropic"
 
@@ -137,14 +159,10 @@ def fabro_provider_message(*, text: str) -> str | None:
     parses. Returns None when there is no JSON object or no message inside it,
     and the caller keeps the raw text.
     """
-    start = text.find("{")
-    end = text.rfind("}")
-    if start < 0 or end <= start:
+    payload = _embedded_object(text=text)
+    if payload is None:
         return None
-    parsed = parse_json(text=text[start : end + 1])
-    if isinstance(parsed, JsonParseFailure) or not isinstance(parsed, dict):
-        return None
-    data_raw: object = cast("dict[str, Any]", parsed).get("data")
+    data_raw: object = payload.get("data")
     if not isinstance(data_raw, dict):
         return None
     message: object = cast("dict[str, Any]", data_raw).get("message")
@@ -161,15 +179,14 @@ def _is_provider_usage_limit(*, text: str) -> bool:
 def _usage_limit_provider(*, text: str) -> str | None:
     """The vendor whose ceiling this cause reports, or None if it is not one.
 
-    The structured field is checked on the WHITESPACE-NORMALIZED text, because
-    its value is a machine token rather than prose; the hint list is the prose
-    fallback and is matched case-insensitively. Recognition and attribution are
-    one step deliberately — a second, separate vendor pass could answer for a
-    cause the first pass never matched, which is how a fixed label gets
-    reintroduced by accident.
+    The structured token is read out of the PARSED payload, because it is a
+    machine field rather than prose; the hint conjunctions are the prose
+    fallback and are matched on the whitespace-normalized, case-folded text.
+    Recognition and attribution are one step deliberately — a second, separate
+    vendor pass could answer for a cause the first pass never matched, which is
+    how a fixed label gets reintroduced by accident.
     """
-    normalized = " ".join(text.split())
-    lowered = normalized.lower()
+    lowered = " ".join(text.split()).lower()
     hinted = next(
         (
             provider
@@ -178,13 +195,57 @@ def _usage_limit_provider(*, text: str) -> str | None:
         ),
         None,
     )
-    if _PROVIDER_USAGE_LIMIT_FIELD not in normalized and hinted is None:
+    if not _codex_structured_usage_limit(text=text) and hinted is None:
         return None
     marked = next(
         (provider for marker, provider in _PROVIDER_MARKERS if marker in lowered),
         None,
     )
     return marked if marked is not None else hinted
+
+
+def _codex_structured_usage_limit(*, text: str) -> bool:
+    """Whether an embedded payload carries Codex's usage-limit field."""
+    payload = _embedded_object(text=text)
+    return payload is not None and _carries_usage_limit_field(value=payload)
+
+
+def _carries_usage_limit_field(*, value: object) -> bool:
+    """Whether this parsed object, or an object nested in it, carries the field.
+
+    The measured payload nests the field one level down, under `data`, so the
+    walk follows OBJECT values rather than reading a fixed path: a serializer
+    that moved the field up to the top level, or down one more level, carries
+    the same token and should read the same way. It deliberately does NOT
+    descend into arrays — no measured payload puts the field inside one, and an
+    unmeasured shape is not guessed at.
+    """
+    if not isinstance(value, dict):
+        return False
+    mapping = cast("dict[str, Any]", value)
+    if any(mapping.get(field) == token for field, token in _CODEX_USAGE_LIMIT_FIELDS):
+        return True
+    return any(_carries_usage_limit_field(value=nested) for nested in mapping.values())
+
+
+def _embedded_object(*, text: str) -> dict[str, Any] | None:
+    """The outermost embedded JSON object this cause text carries, parsed.
+
+    Returns None when the text carries no brace pair, when what the braces
+    enclose does not parse, or when it parses to something other than an
+    object. Both readers above need the same parse, and they must agree: a
+    cause whose payload the structured reader could parse while the message
+    reader could not would surface a vendor's raw cargo-path text beside a
+    typed verdict derived from inside it.
+    """
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    parsed = parse_json(text=text[start : end + 1])
+    if isinstance(parsed, JsonParseFailure) or not isinstance(parsed, dict):
+        return None
+    return cast("dict[str, Any]", parsed)
 
 
 def _is_remote_compaction_404(*, text: str) -> bool:
