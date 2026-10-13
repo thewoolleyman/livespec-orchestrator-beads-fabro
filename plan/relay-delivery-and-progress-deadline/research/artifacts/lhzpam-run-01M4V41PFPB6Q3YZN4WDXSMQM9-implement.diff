@@ -1,0 +1,611 @@
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_plan_record_genesis.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_plan_record_genesis.py
+new file mode 100644
+index 00000000..6d6fbbd2
+--- /dev/null
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_plan_record_genesis.py
+@@ -0,0 +1,72 @@
++"""The plan-record migration's GENESIS leg: starting a live epic's chain.
++
++Relay research note 007 names exactly two writes that may create a plan epic's
++first authority token, and this is the second of them: the sanctioned
++plan-record migration, a deliberate once-per-epic operator act. Every other
++sanctioned writer leaves a chain-less epic on its legacy pointer path and
++reports `plan-epoch-chain: missing`, whose own remedy names this migration — so
++until this leg runs, the remedy every reader prints creates nothing.
++
++IT IS ITS OWN MODULE BECAUSE IT IS THE ONE LEG THAT DECIDES NOTHING LOCALLY.
++The slug, anchor and pointer legs each hold a judgement about existing state,
++which is why `_plan_record_migration` exists to keep those judgements testable.
++This leg hands every judgement to `create_genesis_token` — the refusal when a
++chain already stands, and the read-back that narrows two operators migrating one
++epic at the same moment — and only ROUTES what comes back.
++
++NO EPIC IS JUDGED BY ITS CACHE HERE, deliberately. `create_genesis_token` reads
++the cache itself and refuses before creating anything, so a pre-check in this
++module would be a second reading of the same question, taken at a different
++instant from the one the create actually acts on. The whole value of a refusal
++that happens inside the primitive is that nothing can get between the two.
++
++AN ALREADY-NAMED CHAIN IS A SKIP AND NOT A REFUSAL. Running this migration
++twice is an ordinary operator act, and the second run's whole claim is that it
++changed nothing; reporting it among the refusals would make idempotence read as
++a tenant full of ambiguous state a human still has to resolve by hand.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import TYPE_CHECKING
++
++from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import ChainFinding
++from livespec_orchestrator_beads_fabro.commands._plan_epoch_genesis import create_genesis_token
++
++if TYPE_CHECKING:
++    from collections.abc import Sequence
++
++    from livespec_orchestrator_beads_fabro.types import StoreConfig
++
++__all__: list[str] = ["GenesisLeg", "create_migration_genesis"]
++
++
++@dataclass(frozen=True, kw_only=True)
++class GenesisLeg:
++    """What the genesis leg wrote, and what it deliberately left alone."""
++
++    written: tuple[str, ...]
++    skipped: tuple[str, ...]
++
++
++def create_migration_genesis(*, config: StoreConfig, epic_ids: Sequence[str]) -> GenesisLeg:
++    """Start the chain of each named epic that has none, naming every outcome.
++
++    Each written entry names the TOKEN as well as the epic, because the token id
++    is the only thing that distinguishes this write from the one a second
++    operator's migration made in the same minute — and it is what an operator
++    reading a chain-walk finding has to compare the epic's cache against. The
++    skipped entry is the finding's own detail for the same reason: it already
++    names the standing token, and re-wording it here would be a second account
++    of one measurement.
++    """
++    written: list[str] = []
++    skipped: list[str] = []
++    for epic_id in epic_ids:
++        outcome = create_genesis_token(config=config, epic_id=epic_id)
++        if isinstance(outcome, ChainFinding):
++            skipped.append(outcome.detail)
++            continue
++        written.append(f"{epic_id} genesis token {outcome}")
++    return GenesisLeg(written=tuple(written), skipped=tuple(skipped))
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_plan_record_migration.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_plan_record_migration.py
+index a36a29db..ce811897 100644
+--- a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_plan_record_migration.py
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_plan_record_migration.py
+@@ -117,11 +117,18 @@ class SlugDecision:
+ 
+ @dataclass(frozen=True, kw_only=True)
+ class PlanRecordMigrationReport:
+-    """What one tenant's migration wrote, skipped, and refused."""
++    """What one tenant's migration wrote, skipped, and refused.
++
++    `genesis_written` is REQUIRED rather than defaulted to the empty tuple, like
++    every other bucket here: a default is how a report assembled without the
++    genesis leg reads exactly like one whose genesis leg ran and found nothing
++    to start, and those two states owe an operator opposite conclusions.
++    """
+ 
+     slugs_written: tuple[str, ...]
+     anchors_written: tuple[str, ...]
+     next_actions_seeded: tuple[str, ...]
++    genesis_written: tuple[str, ...]
+     skipped: tuple[str, ...]
+     refused: tuple[str, ...]
+ 
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/migrate_plan_records.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/migrate_plan_records.py
+index 6df76d4e..05413904 100644
+--- a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/migrate_plan_records.py
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/migrate_plan_records.py
+@@ -46,6 +46,9 @@ from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
+     parse_next_action,
+     set_next_action,
+ )
++from livespec_orchestrator_beads_fabro.commands._plan_record_genesis import (
++    create_migration_genesis,
++)
+ from livespec_orchestrator_beads_fabro.commands._plan_record_migration import (
+     MIGRATION_SESSION,
+     PlanEpic,
+@@ -87,6 +90,14 @@ def migrate_plan_records(
+     anchors and the `next_action` seeds both key on which epic carries which
+     slug, and an epic tagged in this same run must anchor its own directory
+     rather than reading as unassigned for one more migration.
++
++    GENESIS RUNS LAST, so every epic this migration touches reaches the same
++    starting state. The pointer the seed writes is the migration's GUESS at a
++    next action and carries no obligation; letting it commit the chain's first
++    transition would start the authority history with a record of nothing, and
++    would leave a freshly-seeded epic at epoch 1 while an epic whose pointer
++    already stood sat at epoch 0 — two shapes out of one run, distinguishable
++    only by whether the tenant happened to need a pointer.
+     """
+     epics = _plan_epics(config=config)
+     decisions = slug_decisions(epics=epics)
+@@ -95,18 +106,17 @@ def migrate_plan_records(
+     anchors_written, anchors_skipped = _write_anchors(
+         project_root=project_root, epic_by_slug=epic_by_slug
+     )
+-    seeded, seeds_skipped = _seed_next_actions(
+-        config=config,
+-        project_root=project_root,
+-        epics=epics,
+-        epic_by_slug=epic_by_slug,
+-        now=now,
+-    )
++    live = _live_plan_epics(epics=epics, epic_by_slug=epic_by_slug, project_root=project_root)
++    seeded, seeds_skipped = _seed_next_actions(config=config, epics=live, now=now)
++    genesis = create_migration_genesis(config=config, epic_ids=[epic.epic_id for epic in live])
+     return PlanRecordMigrationReport(
+         slugs_written=tuple(slugs_written),
+         anchors_written=tuple(anchors_written),
+         next_actions_seeded=tuple(seeded),
+-        skipped=tuple([*_slug_skips(epics=epics), *anchors_skipped, *seeds_skipped]),
++        genesis_written=genesis.written,
++        skipped=tuple(
++            [*_slug_skips(epics=epics), *anchors_skipped, *seeds_skipped, *genesis.skipped]
++        ),
+         refused=tuple(_slug_refusals(decisions=decisions)),
+     )
+ 
+@@ -230,23 +240,33 @@ def _write_anchors(
+     return written, skipped
+ 
+ 
++def _live_plan_epics(
++    *,
++    epics: Sequence[PlanEpic],
++    epic_by_slug: dict[str, str],
++    project_root: Path,
++) -> list[PlanEpic]:
++    """The open epics whose plan directory is live — the ones this run owes work.
++
++    An archived or slugless plan has no live directory to resume, and a closed
++    epic has nothing left to do; neither owes a typed pointer or an authority
++    chain. Both per-epic legs read this ONE selection rather than each deciding
++    for itself, so the population they report on cannot differ.
++    """
++    live = _live_slugs(project_root=project_root)
++    slug_of = {epic_id: slug for slug, epic_id in epic_by_slug.items()}
++    return [epic for epic in epics if epic.is_open and slug_of.get(epic.epic_id) in live]
++
++
+ def _seed_next_actions(
+     *,
+     config: StoreConfig,
+-    project_root: Path,
+     epics: Sequence[PlanEpic],
+-    epic_by_slug: dict[str, str],
+     now: str,
+ ) -> tuple[list[str], list[str]]:
+-    live = _live_slugs(project_root=project_root)
+-    slug_of = {epic_id: slug for slug, epic_id in epic_by_slug.items()}
+     seeded: list[str] = []
+     skipped: list[str] = []
+     for epic in epics:
+-        # An archived or slugless plan has no live directory to resume, and a
+-        # closed epic has nothing left to do; neither owes a pointer.
+-        if not epic.is_open or slug_of.get(epic.epic_id) not in live:
+-            continue
+         if epic.has_next_action:
+             skipped.append(f"{epic.epic_id} already carries next_action")
+             continue
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/plan.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/plan.py
+index 80bcc228..fe5e7bdb 100644
+--- a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/plan.py
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/plan.py
+@@ -36,6 +36,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_disposition import (
+     close_plan_child,
+     reparent_plan_child,
+ )
++from livespec_orchestrator_beads_fabro.commands._plan_epoch_genesis import create_genesis_token
+ from livespec_orchestrator_beads_fabro.commands._plan_handoff import (
+     append_handoff,
+     append_supervisor_handoff,
+@@ -162,6 +163,13 @@ def create_thread(  # noqa: PLR0913 — package primitive mirrors the plan-creat
+     )
+     append_work_item(path=config, item=epic)
+     _ = tag_epic_plan_slug(config=config, epic_id=epic.id, title=title, slug=slug)
++    # Genesis, and one of only two places research note 007 permits it: the epic
++    # id above has not been seen by any other party until this call returns, so
++    # the create is single-writer by construction. The outcome is DISCARDED
++    # rather than branched on, because neither of `create_genesis_token`'s two
++    # findings is reachable from here — a fresh id names no chain to refuse, and
++    # no concurrent writer knows the id to overwrite the cache with.
++    _ = create_genesis_token(config=config, epic_id=epic.id)
+     anchor_path = write_plan_anchor(project_root=project_root, slug=slug, epic_id=epic.id)
+     return {
+         "anchor_path": anchor_path.relative_to(project_root).as_posix(),
+diff --git a/tests/integration/test_migrate_plan_records_scenario112.py b/tests/integration/test_migrate_plan_records_scenario112.py
+index edb142bd..c70cf433 100644
+--- a/tests/integration/test_migrate_plan_records_scenario112.py
++++ b/tests/integration/test_migrate_plan_records_scenario112.py
+@@ -218,10 +218,14 @@ def test_scenario112_a_second_run_writes_nothing_and_leaves_every_record_identic
+     first = _run(project_root=tmp_path, capsys=capsys)
+     anchors_after_first = _anchors(project_root=tmp_path)
+     records_after_first = _records()
++    tokens_after_first = _client().no_history_issue_ids()
+ 
+     second = _run(project_root=tmp_path, capsys=capsys)
+ 
+     assert len(_written(lines=first)) == 7
++    # The two live plan epics gained a genesis token on the first run, in epic-id
++    # order, so the second run reports each of them as already chained.
++    [alpha_token, kappa_token] = tokens_after_first
+     assert second == [
+         "migrate-plan-records: 0 write(s)",
+         f"skipped: {_ALPHA} already carries plan_slug=alpha",
+@@ -234,8 +238,11 @@ def test_scenario112_a_second_run_writes_nothing_and_leaves_every_record_identic
+         f"skipped: plan/archive/gamma/{_ANCHOR_FILENAME} already anchored",
+         f"skipped: {_ALPHA} already carries next_action",
+         f"skipped: {_KAPPA} already carries next_action",
++        f"skipped: {_ALPHA} already names chain token {alpha_token}," " so no genesis was created",
++        f"skipped: {_KAPPA} already names chain token {kappa_token}," " so no genesis was created",
+         f"refused: {_COLLIDES} derives plan_slug=shared-topic, already carried by {_HOLDER}",
+     ]
+     assert _written(lines=second) == []
+     assert _anchors(project_root=tmp_path) == anchors_after_first
+     assert _records() == records_after_first
++    assert _client().no_history_issue_ids() == tokens_after_first
+diff --git a/tests/livespec_orchestrator_beads_fabro/commands/test_migrate_plan_records.py b/tests/livespec_orchestrator_beads_fabro/commands/test_migrate_plan_records.py
+index 93f159d1..d4176023 100644
+--- a/tests/livespec_orchestrator_beads_fabro/commands/test_migrate_plan_records.py
++++ b/tests/livespec_orchestrator_beads_fabro/commands/test_migrate_plan_records.py
+@@ -4,6 +4,13 @@ Scenario 112, end to end against the hermetic fake tenant and a `tmp_path`
+ repository: anchors from existing slugs, derived slugs with a refused
+ collision, `next_action` seeded from the newest handoff, and a second run that
+ writes nothing.
++
++Scenario 147's genesis leg is covered here too, because it is the second of the
++two writes research note 007 permits to start a plan epic's authority chain and
++it is only observable against a tenant. Its cases read the CHAIN rather than
++the report alone: a leg that reported a write it did not record would satisfy
++every report assertion and leave the epic chain-less, which is the state the
++missing-tracking finding names this very migration as the remedy for.
+ """
+ 
+ from __future__ import annotations
+@@ -18,6 +25,19 @@ from livespec_orchestrator_beads_fabro._beads_client import (
+ )
+ from livespec_orchestrator_beads_fabro.commands import _plan_identity
+ from livespec_orchestrator_beads_fabro.commands import migrate_plan_records as module
++from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain import (
++    ChainHead,
++    read_chain_head,
++)
++from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import (
++    MISSING_TRACKING,
++    ChainFinding,
++)
++from livespec_orchestrator_beads_fabro.commands._plan_epoch_genesis import create_genesis_token
++from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
++    ChainCache,
++    read_chain_cache,
++)
+ from livespec_orchestrator_beads_fabro.commands._plan_record_migration import (
+     PlanRecordMigrationReport,
+     total_writes,
+@@ -69,10 +89,23 @@ def _seed_epic(
+     spec_id: str | None = None,
+     notes: str | None = None,
+     closed: bool = False,
++    pointer: bool = False,
+ ) -> None:
+     metadata: dict[str, Any] = {"rank": "a1"}
+     if plan_slug is not None:
+         metadata["plan_slug"] = plan_slug
++    if pointer:
++        # A typed pointer already standing, so the seeding leg SKIPS this epic.
++        # That matters whenever a case is about the chain: the seed is itself a
++        # sanctioned write, so on an epic whose chain stands it would commit a
++        # transition and move the very cache the case is measuring.
++        metadata["next_action"] = {
++            "kind": "human",
++            "ref": "",
++            "text": "Ask the maintainer what this plan does next.",
++            "required_result": None,
++            "budget": None,
++        }
+     client = _fake()
+     _ = client.create_issue(
+         draft=IssueDraft(
+@@ -120,6 +153,12 @@ def _run(*, project_root: Path) -> PlanRecordMigrationReport:
+     return migrate_plan_records(config=_config(), project_root=project_root, now=_NOW)
+ 
+ 
++def _chain_cache(*, epic_id: str) -> ChainCache | None:
++    metadata = _fake().show_issue(issue_id=epic_id)["metadata"]
++    assert isinstance(metadata, dict)
++    return read_chain_cache(metadata=metadata)
++
++
+ def test_every_plan_directory_is_anchored_to_its_epic_or_to_unassigned(
+     tmp_path: Path,
+ ) -> None:
+@@ -233,6 +272,75 @@ def test_a_closed_or_archived_plan_epic_is_not_seeded(tmp_path: Path) -> None:
+     assert "next_action" not in _fake().show_issue(issue_id="bd-ib-archived")["metadata"]
+ 
+ 
++def test_a_live_plan_epic_carrying_no_chain_gains_a_genesis_token(tmp_path: Path) -> None:
++    """The remedy every chain-less reader names finally creates a chain.
++
++    Three controls, each ruling out a different way this could pass for the
++    wrong reason. The CLOSED and the ARCHIVED epic have no work left to
++    serialize, so a leg that started a chain for every epic it could see would
++    satisfy the alpha assertions on its own. And the epic whose chain ALREADY
++    STANDS is what tells "creates a chain where there is none" apart from
++    "creates a chain": a second chain on one epic admits two simultaneous
++    winners, which is the exact failure the design exists to prevent, so the
++    standing token has to be the one still there afterwards.
++    """
++    _seed_epic(epic_id="bd-ib-alpha", plan_slug="alpha")
++    _seed_epic(epic_id="bd-ib-standing", plan_slug="standing", pointer=True)
++    _seed_epic(epic_id="bd-ib-archived", plan_slug="archived-plan")
++    _seed_epic(epic_id="bd-ib-closed", plan_slug="closed-plan", closed=True)
++    for slug in ("alpha", "standing", "closed-plan"):
++        _ = _plan_dir(project_root=tmp_path, slug=slug)
++    _ = _archive_dir(project_root=tmp_path, slug="archived-plan")
++    standing = create_genesis_token(config=_config(), epic_id="bd-ib-standing")
++    assert isinstance(standing, str)
++
++    report = _run(project_root=tmp_path)
++
++    tokens = _fake().no_history_issue_ids()
++    assert len(tokens) == 2
++    [created] = [token for token in tokens if token != standing]
++    assert _chain_cache(epic_id="bd-ib-alpha") == ChainCache(latest_closed=None, current=created)
++    assert report.genesis_written == (f"bd-ib-alpha genesis token {created}",)
++    head = read_chain_head(config=_config(), epic_id="bd-ib-alpha")
++    assert isinstance(head, ChainHead)
++    assert head.current_token_id == created
++    assert head.epoch == 0
++    assert _chain_cache(epic_id="bd-ib-standing") == ChainCache(
++        latest_closed=None, current=standing
++    )
++    for epic_id in ("bd-ib-archived", "bd-ib-closed"):
++        assert _chain_cache(epic_id=epic_id) is None
++        finding = read_chain_head(config=_config(), epic_id=epic_id)
++        assert isinstance(finding, ChainFinding)
++        assert finding.code == MISSING_TRACKING
++
++
++def test_an_epic_whose_chain_already_stands_is_reported_as_skipped(tmp_path: Path) -> None:
++    """A second migration of a migrated epic reports it, rather than refusing it.
++
++    Running this migration twice is an ordinary operator act, and the second
++    run's whole claim is that it changed nothing — so the already-named outcome
++    belongs in `skipped` beside "already carries next_action", never in
++    `refused`, which is where an operator looks for state they must resolve by
++    hand. The entry names the standing TOKEN because that is the value an
++    operator compares the epic's own cache against when a walk reports trouble.
++    """
++    _seed_epic(epic_id="bd-ib-standing", plan_slug="standing", pointer=True)
++    _ = _plan_dir(project_root=tmp_path, slug="standing")
++    standing = create_genesis_token(config=_config(), epic_id="bd-ib-standing")
++    assert isinstance(standing, str)
++
++    report = _run(project_root=tmp_path)
++
++    assert report.genesis_written == ()
++    assert report.refused == ()
++    assert (
++        f"bd-ib-standing already names chain token {standing}, so no genesis was created"
++        in report.skipped
++    )
++    assert _fake().no_history_issue_ids() == (standing,)
++
++
+ def test_a_second_run_writes_nothing_and_leaves_every_record_identical(
+     tmp_path: Path,
+ ) -> None:
+@@ -245,12 +353,14 @@ def test_a_second_run_writes_nothing_and_leaves_every_record_identical(
+     first = _run(project_root=tmp_path)
+     first_anchor = _anchor(directory=alpha)
+     first_records = _fake().list_issues()
++    first_tokens = _fake().no_history_issue_ids()
+ 
+     second = _run(project_root=tmp_path)
+ 
+     # One slug, two anchors, two seeded pointers — then nothing left to do.
+     assert total_writes(report=first) == 5
+     assert total_writes(report=second) == 0
++    [alpha_token, kappa_token] = first_tokens
+     assert second.skipped == (
+         "bd-ib-alpha already carries plan_slug=alpha",
+         "bd-ib-kappa already carries plan_slug=kappa",
+@@ -258,7 +368,12 @@ def test_a_second_run_writes_nothing_and_leaves_every_record_identical(
+         "plan/kappa/associated_work_item_id already anchored",
+         "bd-ib-alpha already carries next_action",
+         "bd-ib-kappa already carries next_action",
++        f"bd-ib-alpha already names chain token {alpha_token}, so no genesis was created",
++        f"bd-ib-kappa already names chain token {kappa_token}, so no genesis was created",
+     )
++    # The second run created no further token, which is what makes the two skip
++    # entries above a report of idempotence rather than of a second chain.
++    assert _fake().no_history_issue_ids() == first_tokens
+     assert second.slugs_written == ()
+     assert second.anchors_written == ()
+     assert second.next_actions_seeded == ()
+diff --git a/tests/livespec_orchestrator_beads_fabro/commands/test_plan.py b/tests/livespec_orchestrator_beads_fabro/commands/test_plan.py
+index d7199f4a..bf750fb0 100644
+--- a/tests/livespec_orchestrator_beads_fabro/commands/test_plan.py
++++ b/tests/livespec_orchestrator_beads_fabro/commands/test_plan.py
+@@ -214,6 +214,11 @@ def test_handoff_append_is_ledger_comment_and_timeline_readable(tmp_path: Path)
+     assert entries[0].created_at == "2026-08-11T01:02:03Z"
+     assert entries[0].body == "Next action: dispatch bd-ib-child through the factory."
+     metadata = _fake().show_issue(issue_id=created["epic_id"])["metadata"]
++    # `create_thread` now starts the epic's authority chain, so this handoff is
++    # a TRACKED write rather than a legacy one: it commits the chain's first
++    # transition and the stored pointer is that transition's projection. Hence
++    # the two projected budget fields — the accepted-handoff count this write
++    # consumed, and the epoch whose authority the pointer is projecting.
+     assert metadata["next_action"] == {
+         "kind": "impl",
+         "ref": "bd-ib-child",
+@@ -222,7 +227,12 @@ def test_handoff_append_is_ledger_comment_and_timeline_readable(tmp_path: Path)
+             "repo": "repo",
+             "item_status": {"item_id": created["epic_id"], "status": "closed"},
+         },
+-        "budget": {"deadline": "2099-08-11T00:00:00Z", "max_handoffs": 3},
++        "budget": {
++            "deadline": "2099-08-11T00:00:00Z",
++            "max_handoffs": 3,
++            "handoff_count": 1,
++            "epoch": "1",
++        },
+     }
+     assert metadata["last_session"] == "factory-test at 2026-08-11T01:02:03Z"
+ 
+diff --git a/tests/livespec_orchestrator_beads_fabro/commands/test_plan_create_thread_genesis.py b/tests/livespec_orchestrator_beads_fabro/commands/test_plan_create_thread_genesis.py
+new file mode 100644
+index 00000000..23b1551f
+--- /dev/null
++++ b/tests/livespec_orchestrator_beads_fabro/commands/test_plan_create_thread_genesis.py
+@@ -0,0 +1,120 @@
++"""`create_thread` starts the new plan epic's authority chain.
++
++Genesis happens only where ONE writer can exist by construction, and
++`create_thread` is the first of the two places research note 007 names: the
++epic id it mints has not been seen by any other party until the call returns,
++so no concurrent writer can be racing for the same chain.
++
++The assertion here is deliberately about the END STATE rather than about a call
++having happened, because the state is what every later reader depends on: the
++epic's `plan_epoch_chain` cache names the created token as `current`, the walk
++from that cache reaches it, and the chain reports epoch 0 with nothing
++committed. A `create_thread` that created a token and failed to record it would
++satisfy a call-counting assertion and leave an orphan nothing names.
++
++The identity check beside it binds the OTHER half of the design constraint:
++genesis goes through `create_genesis_token` and there is no second genesis path.
++A private create-if-absent here would produce the same cache and the same walk,
++and would also re-create a closed token's id on its second run.
++"""
++
++from __future__ import annotations
++
++import importlib
++from typing import TYPE_CHECKING
++
++from livespec_orchestrator_beads_fabro._beads_client import (
++    FakeBeadsClient,
++    make_beads_client,
++    reset_fake_singleton,
++)
++from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
++    PlanDefinitionOfDone,
++)
++from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain import (
++    ChainHead,
++    read_chain_head,
++)
++from livespec_orchestrator_beads_fabro.commands._plan_epoch_genesis import create_genesis_token
++from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
++    ChainCache,
++    read_chain_cache,
++)
++from livespec_orchestrator_beads_fabro.types import StoreConfig
++
++if TYPE_CHECKING:
++    from pathlib import Path
++
++_SLUG = "relay-genesis"
++
++
++def _config() -> StoreConfig:
++    return StoreConfig(
++        tenant="livespec-impl-beads",
++        prefix="bd-ib",
++        server_user="livespec-impl-beads",
++        database="livespec-impl-beads",
++        bd_path="bd",
++        fake=True,
++    )
++
++
++def _fake() -> FakeBeadsClient:
++    client = make_beads_client(config=_config())
++    assert isinstance(client, FakeBeadsClient)
++    return client
++
++
++def _create(*, project_root: Path) -> str:
++    reset_fake_singleton()
++    plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
++    created = plan.create_thread(
++        project_root=project_root,
++        config=_config(),
++        slug=_SLUG,
++        title="Relay genesis planning",
++        research_filename="initial.md",
++        research_text="research\n",
++        now="2026-10-13T08:00:00Z",
++        definition_of_done=PlanDefinitionOfDone(
++            statement="Done when the plan's authority chain starts at creation.",
++            assertions=("The created plan epic names its own genesis token.",),
++        ),
++    )
++    return created["epic_id"]
++
++
++def test_create_thread_records_the_genesis_token_as_the_chain_start(tmp_path: Path) -> None:
++    """A brand-new plan epic names its own chain from the moment it exists."""
++    epic_id = _create(project_root=tmp_path)
++
++    tokens = _fake().no_history_issue_ids()
++    metadata = _fake().show_issue(issue_id=epic_id)["metadata"]
++    assert isinstance(metadata, dict)
++
++    assert len(tokens) == 1
++    assert read_chain_cache(metadata=metadata) == ChainCache(latest_closed=None, current=tokens[0])
++    head = read_chain_head(config=_config(), epic_id=epic_id)
++    assert isinstance(head, ChainHead)
++    assert head.current_token_id == tokens[0]
++    assert head.latest_closed_token_id is None
++    assert head.epoch == 0
++    assert head.winning_operation_id is None
++    # The genesis write is a read-modify-write of the epic's metadata, so the
++    # slug the same call tagged has to survive it: `bd update --metadata`
++    # replaces a nested object wholesale, and the cache is a nested object.
++    assert metadata["plan_slug"] == _SLUG
++
++
++def test_create_thread_reaches_the_one_sanctioned_genesis_primitive(tmp_path: Path) -> None:
++    """There is no second genesis path, and this is what says so.
++
++    A private create-if-absent would produce an indistinguishable chain on its
++    FIRST run and an upsert that reopens a closed token on a later one, which is
++    the hazard note 007 measured. Binding the name is what keeps the refusal and
++    the read-back `create_genesis_token` performs in the path.
++    """
++    _ = _create(project_root=tmp_path)
++    plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
++
++    assert getattr(plan, "create_genesis_token", None) is create_genesis_token
+diff --git a/tests/livespec_orchestrator_beads_fabro/commands/test_plan_record_migration.py b/tests/livespec_orchestrator_beads_fabro/commands/test_plan_record_migration.py
+index 15ed2db2..95dd712d 100644
+--- a/tests/livespec_orchestrator_beads_fabro/commands/test_plan_record_migration.py
++++ b/tests/livespec_orchestrator_beads_fabro/commands/test_plan_record_migration.py
+@@ -255,6 +255,7 @@ def test_the_report_renders_writes_skips_and_refusals() -> None:
+         slugs_written=("bd-ib-kappa plan_slug=kappa",),
+         anchors_written=("plan/kappa/associated_work_item_id -> bd-ib-kappa",),
+         next_actions_seeded=("bd-ib-kappa kind=none ref=''",),
++        genesis_written=(),
+         skipped=("bd-ib-tagged already carries plan_slug=tagged",),
+         refused=("bd-ib-collides derives plan_slug=shared, already carried by bd-ib-holder",),
+     )
+@@ -279,6 +280,7 @@ def test_an_empty_report_counts_zero_writes() -> None:
+         slugs_written=(),
+         anchors_written=(),
+         next_actions_seeded=(),
++        genesis_written=(),
+         skipped=(),
+         refused=(),
+     )
