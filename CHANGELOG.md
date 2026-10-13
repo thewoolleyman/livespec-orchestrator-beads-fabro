@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.194.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.194.3...v0.194.4) (2026-10-13)
+
+
+### Bug Fixes
+
+* **factory:** name the open Red commit in a timed-out stage's needs-human reason ([3a0afe2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3a0afe2c89be2e5b02e9b044da7f4cca4ebb123e))
+
 ## [0.194.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.194.2...v0.194.3) (2026-10-13)
 
 
