@@ -44,7 +44,6 @@ from typing import TYPE_CHECKING, Any, cast
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._plan_next_action_validation import (
     NextActionRefusal,
-    validate_next_action,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import ResultObservation
 
@@ -255,27 +254,32 @@ def set_next_action(
     action: NextAction,
     session: str,
     now: str,
+    operation_id: str | None = None,
 ) -> NextActionRefusal | None:
-    """Update one epic's `next_action` and `last_session` metadata in place."""
-    refusal = validate_next_action(
-        action=action,
-        epic_id=epic_id,
-        legacy_tracking=LEGACY_TRACKING,
+    """Update one epic's `next_action` and `last_session` metadata in place.
+
+    A direct pointer write CONSUMES NO HANDOFF UNIT and cannot move either limit
+    of an unmet obligation, per contracts.md's "Required result, budget and
+    progress epoch". It reaches the ledger through the same epoch transition
+    every sanctioned writer takes, so the pointer it stores is a projection of
+    the durable authority rather than whatever budget the caller proposed.
+    """
+    from livespec_orchestrator_beads_fabro.commands._plan_tracked_write import (
+        TrackedWriteRequest,
+        commit_tracked_write,
     )
-    if refusal is not None:
-        return refusal
-    client = make_beads_client(config=config)
-    record = client.show_issue(issue_id=epic_id)
-    client.update_issue(
-        issue_id=epic_id,
-        metadata=next_action_metadata(
-            existing_metadata=plan_record_metadata(record=record),
+
+    outcome = commit_tracked_write(
+        request=TrackedWriteRequest(
+            config=config,
+            epic_id=epic_id,
             action=action,
-            session=session,
+            author=session,
             now=now,
-        ),
+            operation_id=operation_id,
+        )
     )
-    return None
+    return outcome if isinstance(outcome, NextActionRefusal) else None
 
 
 def resume_directive(*, config: StoreConfig, epic_id: str, unattended: bool) -> ResumeDirective:
