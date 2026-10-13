@@ -23,6 +23,9 @@ credential is injected at `docker run` time.
 | `build-and-verify.sh` | Stages the fabro binary, builds the image, runs the privileged container with an ext4-backed volume + injected secrets, and runs tier-1 verification. |
 | `tier2-dispatch-proof.sh` | Runs the W7 Tier-2 proof: one explicit shadow dispatch from inside the container against a tiny ready item, with redacted logs and inner-daemon evidence. **Bind-mounts the host impl-beads checkout** — it is a proof runner, not the real-work substrate. |
 | `real-work-dispatch.sh` | The W7 step-5 **real-work substrate**: dispatches one ready work-item with **no host checkout bind-mount**. It fresh-`git clone`s impl-beads (dispatcher code + the `.fabro/workflows` graph) *and* the dispatch target *inside* the container, `uv sync`s the dispatcher clone, regenerates the gitignored `.beads/metadata.json` (server-stable `project_id`), and points `dispatcher.py loop --repo` at the in-container target clone. The only host coupling is the `-e` secret set. |
+| `take-candidate-canary.sh` | Takes ONE candidate canary: files a fresh fixture work-item from the committed template, then dispatches it to the factory NAMED on the command line. The sanctioned way to take a canary — see "Taking a candidate canary" below. |
+| `candidate-canary-work-item-template.md` | The committed fixture brief a canary carries: its title, description, Definition of Done and `References`, with `@@CANARY_ID@@` / `@@CANARY_FACTORY@@` substituted at filing time. Reviewed once through the ordinary gates and thereafter rendered mechanically. |
+| `candidate-canary-log.md` | The factory-ops record of which candidate canaries have been taken, and the one file a canary edits: its whole change is one appended `- ` entry line. The entry format is enforced by the repository's own check suite. |
 | `fabro` | The pinned fabro binary, fetched at build time from `~/.fabro/bin/fabro`. **Gitignored — never committed** (111MB blob; the version is pinned in the Dockerfile's `FABRO_VERSION` for documentation). |
 
 ## Hard constraints (proven by the spike + this build)
@@ -418,6 +421,55 @@ capability present on one target and absent on the other, which is the whole
 question this comparison answers — but it is reported as a `skip-delta` rather
 than folded into the regression count, so a genuine failure stays
 distinguishable from a capability gap.
+
+### Taking a candidate canary
+
+A canary is the step AFTER the Enemy Unit Test comparison above: the comparison
+asks whether a candidate engine answers the same way about the same questions,
+and a canary asks whether a whole dispatch — Definition-of-Done gate, implement,
+janitor, review, publish, merge — actually completes on it.
+
+Take one with the recipe, which is the sanctioned route:
+
+```bash
+just take-candidate-canary -- --factory hp
+just take-candidate-canary -- --factory hp-candidate
+just take-candidate-canary -- --factory hp-candidate --dry-run
+```
+
+It does two things, in order: files a FRESH fixture work-item from the committed
+brief at `orchestrator-image/candidate-canary-work-item-template.md`, then
+dispatches that item to the factory named by `--factory`. Both legs, because a
+file-without-dispatch leaves a fresh fixture item stranded in the ledger;
+`--dry-run` stops before the first leg rather than between the two. Every item it
+files carries the `canary:fixture` label, so a ledger survey can tell
+instrumentation from work somebody wanted.
+
+**`--factory` is required and never defaulted.** A canary is usually evidence
+about ONE engine, and the configured factories can carry different Fabro builds —
+they have diverged for days at a time while a re-pin rolled out one host at a
+time. A dispatch that silently took `dispatcher.default_factory` would exercise
+the wrong build and come back a perfectly normal green run, with nothing in the
+output to say which engine answered.
+
+**Do not file a canary by hand.** That is how a canary acquires a brief nobody
+reviewed, and it is the specific failure this fixture exists to remove: canaries
+5 and 6 of plan `fabro-currency` (runs `01M4NWARSD8T` and `01M4PBFW4MP8` on
+hp-candidate, 2026-10-11) each reused a real backlog item whose `References` line
+named a heading that governs something else, so both reached the `dod_gate` node
+and were refused. At the surface an operator watches, an item-quality refusal is
+indistinguishable from the engine fault the canary was taken to look for — which
+is why the second canary repeated the first's mistake.
+
+The canary's whole change is ONE appended entry line in
+`orchestrator-image/candidate-canary-log.md`, whose format the repository's own
+check suite enforces, so a malformed append fails the janitor gate rather than
+merging quietly. Read that file to see which canaries have been taken.
+
+What a GREEN canary establishes is that the engine ran a dispatch end to end. It
+is not a currency evaluation (that is the dispatch-time Fabro currency
+admission), and it is not a capability comparison (that is
+`just fabro-enemy-compare` above).
 
 ### Start / restart
 
