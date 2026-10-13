@@ -9,25 +9,32 @@ an `impl:` dispatch, so one operator act is attributed the same way wherever it
 lands. Its two READ-ONLY actions (`config`, `config-manifest`) resolve identity
 identically but are never refused on attribution grounds.
 
-This module is the CLI supervisor and action ROUTER: parse, refuse, pick a
-handler, render. The handlers live beside it — `_drive_valves` for the human
+This module is the CLI supervisor and action ROUTER: refuse, pick a handler,
+decide the outcome. The handlers live beside it — `_drive_valves` for the human
 valves, `_drive_config` for the settings surface, and `_drive_impl_dispatch`
-for the one handler that shells out to the Dispatcher.
+for the one handler that shells out to the Dispatcher — and `_drive_cli` owns
+the operator transport on either side of the router: the argv surface going in,
+the rendered payload and exit code coming back.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     InvokerIdentity,
-    add_invoker_argument,
     default_invoker_identity,
     invoker_from_args,
     require_invoker_refusal,
+)
+from livespec_orchestrator_beads_fabro.commands._drive_cli import (
+    EXIT_PRECONDITION_ERROR,
+    build_parser,
+    emit_payload,
+    exit_code_for_status,
+    resolve_repo,
 )
 from livespec_orchestrator_beads_fabro.commands._drive_config import (
     is_config_action,
@@ -44,9 +51,13 @@ from livespec_orchestrator_beads_fabro.commands._drive_impl_dispatch import (
     build_dispatcher_argv,
     run_impl_dispatch,
 )
+from livespec_orchestrator_beads_fabro.commands._drive_plan_progress_diagnosis import (
+    is_plan_progress_diagnosis_action,
+    run_plan_progress_diagnosis,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_valve_grammar import is_human_valve_action
 from livespec_orchestrator_beads_fabro.commands._drive_valves import run_human_valve_action
-from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
+from livespec_orchestrator_beads_fabro.io import write_stderr
 
 __all__: list[str] = [
     "CommandRun",
@@ -56,9 +67,6 @@ __all__: list[str] = [
     "run_human_valve_action",
 ]
 
-_EXIT_FAILURE = 1
-_EXIT_PRECONDITION_ERROR = 3
-_EXIT_BLOCKED = 4
 _IMPL_PREFIX = "impl:"
 _RESOLVE_BLOCKED_PREFIX = "resolve-blocked:"
 
@@ -102,7 +110,7 @@ _DRIVER_SESSION_SCOPE_SUMMARY = (
 )
 
 
-def run_action(  # noqa: PLR0913 — kw-only router; `answer` is one more independent transport input, not a coupled one.
+def run_action(  # noqa: PLR0911, PLR0913 — kw-only router; one return per claimed action family, and `answer` is one more independent transport input, not a coupled one.
     *,
     repo: Path,
     action_id: str,
@@ -159,6 +167,8 @@ def run_action(  # noqa: PLR0913 — kw-only router; `answer` is one more indepe
         )
     if is_config_action(action_id=action_id):
         return run_config_action(repo=repo, action_id=action_id)
+    if is_plan_progress_diagnosis_action(action_id=action_id):
+        return run_plan_progress_diagnosis(repo=repo, action_id=action_id)
     if not action_id.startswith(_IMPL_PREFIX):
         return {
             "action_id": action_id,
@@ -204,16 +214,16 @@ def _scope_refusal(*, action_id: str, summary: str) -> dict[str, Any]:
 
 
 def main(*, argv: list[str] | None = None, runner: CommandRunner | None = None) -> int:
-    parser = _build_parser()
+    parser = build_parser()
     args = parser.parse_args(argv)
     if args.retired_subcommand is not None:
         parser.error(f"invalid choice: {args.retired_subcommand!r}")
     if args.action is None:
         parser.error("the following arguments are required: --action")
-    repo = _resolve_repo(repo_arg=args.repo)
+    repo = resolve_repo(repo_arg=args.repo)
     if not repo.exists():
         _ = write_stderr(text=f"ERROR: --repo does not exist: {repo}\n")
-        return _EXIT_PRECONDITION_ERROR
+        return EXIT_PRECONDITION_ERROR
     refusal_exit = _invoker_refusal_exit(args=args, repo=repo)
     if refusal_exit is not None:
         return refusal_exit
@@ -227,8 +237,8 @@ def main(*, argv: list[str] | None = None, runner: CommandRunner | None = None) 
         answer=args.answer,
         driver_session=args.driver_session,
     )
-    _emit_payload(payload=result, as_json=args.as_json)
-    return _exit_code_for_status(status=str(result["status"]))
+    emit_payload(payload=result, as_json=args.as_json)
+    return exit_code_for_status(status=str(result["status"]))
 
 
 def _invoker_refusal_exit(*, args: argparse.Namespace, repo: Path) -> int | None:
@@ -246,114 +256,4 @@ def _invoker_refusal_exit(*, args: argparse.Namespace, repo: Path) -> int | None
     if refusal is None:
         return None
     _ = write_stderr(text=refusal)
-    return _EXIT_PRECONDITION_ERROR
-
-
-def _exit_code_for_status(*, status: str) -> int:
-    if status == "green":
-        return 0
-    if status == "blocked":
-        return _EXIT_BLOCKED
-    return _EXIT_FAILURE
-
-
-def _resolve_repo(*, repo_arg: str | None) -> Path:
-    """Resolve the target repo: the cwd when `--repo` is omitted, else the path."""
-    if repo_arg is None:
-        return Path.cwd()
-    return Path(repo_arg)
-
-
-def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="drive")
-    _ = parser.add_argument("retired_subcommand", nargs="?")
-    _ = parser.add_argument("--repo", dest="repo", required=False, default=None)
-    _ = parser.add_argument("--action", dest="action", required=False, default=None)
-    # The PER-DISPATCH ACP adapter layer, reachable from the operator
-    # surface as well as from `dispatcher.py` directly. It is an ARGUMENT
-    # and never an environment variable so the override lands in the
-    # recorded argv and on the dispatch record.
-    _ = parser.add_argument(
-        "--acp-node",
-        dest="acp_node",
-        action="append",
-        default=None,
-        metavar="NODE=ADAPTER",
-        help=(
-            "override one ACP node's adapter for this dispatch only, as a complete "
-            "adapter command line; repeatable"
-        ),
-    )
-    # The PER-DISPATCH workflow-variant selector, reachable from the operator
-    # surface on the same terms as `--acp-node` above and re-emitted into the
-    # `dispatcher.py loop` argv verbatim. An ARGUMENT and never an environment
-    # variable: which GRAPH the factory runs must be visible in the recorded
-    # argv and on the dispatch record.
-    _ = parser.add_argument(
-        "--workflow-name",
-        dest="workflow_name",
-        default=None,
-        metavar="NAME",
-        help=(
-            "select one registered `dispatcher.workflows` variant for this dispatch; "
-            "forwarded to the Dispatcher, which resolves the work-item's recorded "
-            "variant then dispatcher.default_workflow when this is omitted"
-        ),
-    )
-    # The v093-native answer route. A factory run that needs a human decision
-    # TERMINATES, so the answer cannot go back to the run that asked: it is
-    # written to the item's ledger, which is what the NEXT dispatch's goal brief
-    # already reads.
-    _ = parser.add_argument(
-        "--answer",
-        dest="answer",
-        default=None,
-        metavar="TEXT",
-        help=(
-            "the answer to the question a terminated run published, for "
-            "resolve-blocked only; written to the work-item's ledger before the "
-            "transition so the re-dispatched brief carries it"
-        ),
-    )
-    # The driver-dispatch door's one input: WHICH session is taking the
-    # host-only item. An ARGUMENT for the same reason `--acp-node` is one — the
-    # reference belongs in the recorded argv and on the journal record, not in
-    # an environment variable no reader of either can see.
-    _ = parser.add_argument(
-        "--driver-session",
-        dest="driver_session",
-        default=None,
-        metavar="REF",
-        help=(
-            "reference to the session that will drive the item by hand, for "
-            "driver-dispatch only; journaled with the ready -> active transition. "
-            "Defaults to the resolved invoker."
-        ),
-    )
-    add_invoker_argument(parser=parser)
-    _ = parser.add_argument("--json", dest="as_json", action="store_true")
-    return parser
-
-
-def _emit_payload(*, payload: dict[str, Any], as_json: bool) -> None:
-    if as_json:
-        _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
-        return
-    _ = write_stdout(text=_human_summary(payload=payload) + "\n")
-
-
-def _human_summary(*, payload: dict[str, Any]) -> str:
-    """Render a drive result as human-readable Markdown."""
-    return _run_markdown(payload=payload)
-
-
-def _run_markdown(*, payload: dict[str, Any]) -> str:
-    action_id = str(payload.get("action_id", "unknown"))
-    status = str(payload.get("status", "unknown"))
-    lines = [f"# drive — {action_id}", "", f"- status: **{status}**"]
-    dispatcher = payload.get("dispatcher")
-    if isinstance(dispatcher, dict):
-        dispatcher_dict = cast("dict[str, Any]", dispatcher)
-        lines.append(f"- dispatcher exit code: {dispatcher_dict.get('exit_code')}")
-    lines.append(f"- {payload.get('summary', '')}")
-    return "\n".join(lines)
+    return EXIT_PRECONDITION_ERROR

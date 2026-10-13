@@ -970,6 +970,75 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   each caller remembers: a caller that forgot to verify would still get a
   perfectly good head.
 
+- The RESULT BUDGET AND TYPED CAUSAL RECOVERY of `contracts.md`'s "Required
+  result, budget and progress epoch" clause (`bd-ib-zi5ygh`, Scenarios 147 and
+  148) — how a plan's obligation survives every pointer rewrite. Six cohesive
+  modules, and the dependency direction reads bottom-up: `_plan_obligation`
+  (PURE: the obligation read out of the chain's `AuthorityState`, its two exact
+  inclusive limits, and the pointer projection) and `_plan_recovery` (PURE: the
+  typed attempt, the CLOSED executable-operation grammar, the cause-to-operation
+  authorization table and every refusal) → `_plan_progress_decision` (PURE: what
+  one write may do to the obligation) → `_plan_tracked_write` (the ONE path all
+  three writers take through `_plan_epoch_chain`) and `_plan_progress_resume`
+  (the read-only reading a resume takes before deciding to dispatch) →
+  `_drive_plan_progress_diagnosis` (the `diagnose-plan-progress:<epic>` executor).
+  THE AUTHORITY IS THE CHAIN, NEVER THE POINTER, and that is the whole design.
+  `next_action` is one metadata object every sanctioned writer rewrites
+  WHOLESALE, so a budget stored there is one any writer can grant itself a new
+  value for — and the defect is invisible, because the rewritten pointer is
+  well-formed whether it preserved the deadline or extended it. The pointer and
+  the `plan-progress-event` comments are PROJECTIONS of committed transitions.
+  SEVEN PROPERTIES AN EDITOR MUST NOT INVERT. The projection is DERIVED from the
+  committed authority and never accepted from the candidate, which is what makes
+  a writer's request unable to matter. It has TWO hand-back guards and both are
+  needed — one keyed on the ACTION carrying null tracking, one on the AUTHORITY
+  tracking nothing — because a `human` pointer written while an unmet obligation
+  is RETAINED must carry explicit nulls while the authority keeps the
+  obligation; a projection keyed only on the authority stamps it back onto the
+  one pointer that must not carry it, and the result fails validation on its next
+  read. Both limits are INCLUSIVE (`>=`), since "At the exact deadline or when
+  accepted handoffs reach max_handoffs, the next continuation is expired", and
+  the COUNT is reported ahead of a clock that also passed because the count is a
+  settled fact while the clock keeps moving. `satisfied` is the ONLY observation
+  permitted to replace a budget — an `unobservable` result is a failure to
+  MEASURE, so letting it advance makes a broken reader the cheapest route to a
+  fresh deadline. The recovery operation needs TWO independent gates, the closed
+  grammar AND equality with what the measured CAUSE authorizes, and the DERIVED
+  operation is itself grammar-checked: the draft this replaced derived it from
+  the pointer's own `ref` and treated equality as authorization, so a caller who
+  authored the ref authorized itself (measured: `"I will try a different
+  approach."` with a host cause and `diagnose-this-is-not-a-supported-operation`
+  with an unknown cause were both ACCEPTED). These writers NEVER create a chain
+  genesis — research note 007 — so an epic without one takes the legacy path and
+  every reader reports `plan-progress-tracking: missing` naming
+  `migrate-plan-records`. And the DIAGNOSIS reads the obligation from the chain
+  rather than parsing the pointer, which is the repair rather than a guard in
+  front of the old dereferences: the handler it replaces cast an optional parse
+  to a `NextAction` and reached through a `ResultReferenceRefusal` for an
+  identity, crashing on an epic with no pointer and on a legacy one — the two
+  states it most needed to answer for.
+- `_plan_resume_reconcile.py` — the reconciliation half of the resume, split out
+  of `_plan_resume` by cohesion once the durable progress check pushed that file
+  past its size ceiling. `_plan_resume` keeps the TOP-LEVEL sequence (the
+  progress check, the missing-Definition-of-Done pre-emption, the pointer parse
+  and the picker reasons); this owns what follows them, at ONE public entry
+  point. The progress check's POSITION in that sequence is load-bearing: a plan
+  that is both expired and missing its Definition of Done must report the
+  expiry, and settling the dispatch question first answers with the gap pointer
+  and never reads the obligation.
+- `_drive_cli.py` — the `drive` CLI's operator transport, split out of `drive.py`
+  on the same seam `_session_wait_cli` sits on for `session_wait` once routing
+  the diagnosis executor pushed that file past its size ceiling. `drive.py` keeps
+  the two things that DECIDE — the action router and the supervisor sequence —
+  while this owns the conversion between an operator's shell and a typed call:
+  the argv surface going in, the payload rendering and exit code coming back.
+  The exit codes live here, with `exit_code_for_status` as the one place a result
+  status is mapped to one, and `EXIT_PRECONDITION_ERROR` is PUBLIC because the
+  supervisor returns it directly for the two faults it detects before any action
+  runs — a `--repo` that does not exist and an unattributed state-changing
+  invocation. Do NOT keep one code private by splitting the set across the two
+  modules: that is how the surface comes to disagree with itself.
+
 Rules an agent editing this tree must follow:
 
 - `main()` is the only place `sys.stdout.write` / `sys.stderr.write`

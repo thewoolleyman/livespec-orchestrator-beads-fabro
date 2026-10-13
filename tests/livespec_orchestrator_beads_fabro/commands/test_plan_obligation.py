@@ -206,6 +206,27 @@ def test_an_authority_tracking_nothing_leaves_a_picker_pointer_untouched() -> No
     assert projected_action(action=action, authority=AuthorityState(), epoch=3) is action
 
 
+def test_a_tracked_pointer_against_an_untracked_authority_is_left_alone() -> None:
+    """The SECOND of the projection's two hand-back guards.
+
+    Its sibling above keys on the ACTION carrying null tracking; this one keys
+    on the AUTHORITY tracking no obligation. Both are needed and they fire on
+    different inputs, so each needs its own case: a tracked pointer committed
+    against an empty authority has nothing to project, and inventing a budget
+    for it is exactly what "legacy reads alone MUST NOT invent budgets" forbids
+    one level up.
+    """
+    action = NextAction(
+        kind="impl",
+        ref="bd-ib-target",
+        text="Keep going.",
+        required_result=_RESULT,
+        budget={"deadline": _DEADLINE, "max_handoffs": 5},
+    )
+
+    assert projected_action(action=action, authority=AuthorityState(), epoch=3) is action
+
+
 def test_the_projection_overwrites_whatever_budget_the_candidate_proposed() -> None:
     """This is the assertion the whole module exists for.
 

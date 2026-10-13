@@ -170,8 +170,9 @@ tree's modification times.
 
 Surface every warning it returns, then carry on. This guard only WARNS: it never refuses a write, and exceeding the threshold is
 not an error. A genuinely busy day is allowed to exceed it. What is NOT allowed is a thread quietly accumulating a day's worth of
-records nobody sees, so the warning MUST be surfaced rather than swallowed. When one fires, the useful question is whether the
-thread is blocked on something that a handoff entry cannot fix.
+records nobody sees, so the warning MUST be surfaced rather than swallowed.
+
+When one fires, DIAGNOSE it rather than acknowledge it: an acknowledgment is itself one more record, so the count climbs while nothing moves. A recorded attempt is not its required result — fifteen handoffs about one unmet target are fifteen attempts and zero results — so answer what the thread is blocked on that a handoff cannot fix. `diagnose-plan-progress:<epic-id>` through `drive` observes that obligation read-only, so it can be run while a warning is live without adding to the count it is diagnosing.
 
 #### The plan Definition of Done
 
@@ -219,7 +220,7 @@ plan-level proof is what discharges one.
 #### The typed next action
 
 The next action is epic metadata, not prose. Every new write carries exactly five keys — `kind`, `ref`, `text`,
-`required_result`, and `budget` — beside a `last_session` string naming who wrote it and when. Legacy three-key pointers remain readable until their next sanctioned write:
+`required_result`, and `budget` — beside a `last_session` string naming who wrote it and when:
 
 - `kind: impl` — factory implementation of one work-item. `ref` is that work-item's id, and the action executes as `impl:<ref>`.
 - `kind: spec-op` — a spec-lifecycle operation. `ref` is `<operation>:<topic>`, which is itself the action id.
@@ -229,7 +230,11 @@ The next action is epic metadata, not prose. Every new write carries exactly fiv
 - `kind: await` — `run:`, `gate:`, `item:`, or `epic:` plus its id; perform a bounded wait on that named handle and report expiry through the required-result rules, never by treating elapsed time as a result.
 - `kind: human` or `none` — always raises the picker; `none` has an empty ref.
 
-The six executable kinds carry an authoritative `required_result` and a budget with an absolute UTC `deadline` and positive `max_handoffs`; preserve its epoch, original deadline, and handoff count across routine writes. `human` and `none` carry null tracking fields. Write pointers only through `append_handoff(...)`, `append_supervisor_handoff(...)`, or `set_next_action(...)`; those writers refuse any other kind, malformed ref, or malformed budget field. Never hand-edit epic metadata.
+The six executable kinds carry an authoritative `required_result` and a budget with an absolute UTC `deadline` and positive `max_handoffs`. `human` and `none` carry EXPLICITLY NULL tracking fields, and changing to one retains any unmet obligation in the progress history rather than discharging it. A legacy three-key pointer stays readable and acquires the new shape on its next sanctioned write. Write pointers only through `append_handoff(...)`, `append_supervisor_handoff(...)`, or `set_next_action(...)`; those writers refuse any other kind, malformed ref, or malformed budget field. Never hand-edit epic metadata.
+
+THE POINTER IS A PROJECTION, NOT THE AUTHORITY. The original deadline, the `max_handoffs` ceiling and the accepted-handoff count live in the epic's authority chain, and every sanctioned writer commits through that chain's single-use epoch token, which hands back the ORIGINAL budget rather than the candidate one — so you cannot move either limit by asking for a different one. That is deliberate: the pointer is one metadata object each writer rewrites wholesale, so a budget kept there is one any writer could grant itself.
+
+What each write costs is fixed. An accepted handoff consumes ONE handoff unit; a direct `set_next_action(...)` consumes none; neither resets either limit. Only a SATISFIED result permits advancing to a new result and a new budget: an unobservable one preserves the original budget and refuses any transition claiming completion, renaming an unmet target is refused rather than read as new work, and a retried write carrying the same operation identity recovers its original transition instead of appending a second handoff or extending a deadline.
 
 A maintainer may authorize attended continuation by passing `PlanContinuationAuthorization(until=..., by=..., directive=...)` to `record_scope_event(...)`. Only an attended session may write it; the primitive writes `recorded-attended: true` itself, as the ruling's last line. Revoke through `PlanContinuationRevocation(by=...)`. The latest complete ruling in timeline order governs; one missing any required line, or carrying any line after the attended marker, is not current. A ruling authorizes continuation only: it never supplies store-write consent or admission.
 
@@ -237,29 +242,26 @@ A prose `next action:` line may still appear for a human reader, but it carries 
 
 #### Unattended resume
 
-A resume is *unattended* when the environment variable `LIVESPEC_PLAN_UNATTENDED` is set to a truthy value (`1`, `true`, `yes`,
-or `on`, case- and whitespace-insensitive). The overseer daemon sets it on the resume it triggers after a context-threshold
-restart, where no operator is present to answer a question. Nothing else sets it: an operator-launched session leaves it unset
-and keeps the picker.
+A resume is *unattended* when the environment variable `LIVESPEC_PLAN_UNATTENDED` is set to a truthy value (`1`, `true`, `yes`, or `on`, case- and whitespace-insensitive). The overseer daemon sets it on the resume it triggers after a context-threshold restart, where no operator is present to answer a question. Nothing else sets it: an operator-launched session leaves it unset and keeps the picker.
 
 Call `resume_directive(config=..., epic_id=..., unattended=...)`. It reads the epic's `next_action` — it parses no comment body — and returns `ask`, `next_action`, a `reason`, `findings`, and the authoritative result observation:
 
 - An unattended resume takes any of the six executable kinds with a non-empty ref when its result is observably unsatisfied and its budget is unexpired. An attended resume does the same under a current continuation ruling and names that ruling in its reason. Without a ruling it presents the epic's `next_action` as the default choice of that picker, or the derived step when the pointer was stale. A standing maintainer directive to continue satisfies that picker only when recorded as that ruling: take the default without re-prompting. `human` and `none` always ask.
 - Reconcile before acting, in order. SATISFIED is stale: report the observed result, do not execute the pointer, then re-read the ledger and persist a replacement pointer naming the next ready child, or — when every child is disposed — the proof, review, or archive step, under a fresh epoch and the plan's own unextended deadline. That derived step is still only TAKEN without the picker when a ruling authorizes it.
-- If still unsatisfied and within budget, an `impl` or `spec-op` target already driven by a live factory run is rewritten to `await` with `run:<id>`, preserving the required result, epoch, original deadline, and handoff count; do not start a second dispatch. A factory that cannot be inspected fails closed rather than re-dispatching. An in-budget unsatisfied `await` reports waiting, performs the bounded wait on its named handle, and is not rewritten. Unobservable or expired obligations do not continue.
+- If still unsatisfied and within budget, an `impl` or `spec-op` target already driven by a live factory run is rewritten to `await` with `run:<id>`, preserving the required result, epoch, original deadline, and handoff count; do not start a second dispatch. A factory that cannot be inspected fails closed rather than re-dispatching. An in-budget unsatisfied `await` reports waiting, performs the bounded wait on its named handle, and is not rewritten. Unobservable or expired obligations do not continue: the directive withholds the dispatch, RETAINS the obligation and exposes an authorized action instead of stalling — `diagnose-plan-progress:<epic-id>`, or a recorded still-bounded recovery attempt's own operation — and reading an obligation is never a write.
+
+EXPIRY IS EXACT AND INCLUSIVE. At the deadline, or when accepted handoffs reach `max_handoffs`, the next continuation is expired; it is refused BEFORE the handoff is appended or the pointer updated, and an expired wall clock is visible even when no new handoff is written. Continuing anyway takes a typed causal recovery attempt, passed as `recovery=` to `append_handoff(...)` or `set_next_action(...)`, naming the unresolved obligation, the previous epoch, measured failure evidence, a cause (`host`, `item`, or `unknown`), an executable authorized next operation, a stable unique attempt id and a bounded attempt deadline. Nothing self-declared qualifies: a prose `approach:` line, an acknowledgment, a repair-child milestone and a cosmetic pointer rewrite are all refused.
+
+Two independent things must hold of that next operation: it is in the closed grammar this fleet can actually execute — `impl:<item-id>`, `diagnose-plan-progress:<epic-id>`, or `propose-change|revise|critique|prune-history:<topic>` — AND it equals the one the measured cause authorizes. An unknown cause authorizes diagnosis and nothing else; a host or item-attributable cause authorizes the pointer's own operation re-run under the attempt's bound. You do not choose it, and equality with an operation you wrote yourself authorizes nothing. The attempt's deadline bounds the ATTEMPT and never replaces or postpones the original obligation deadline, which survives every attempt; host and unknown causes leave the item-attributable repetition count alone. Registering an attempt is not running it, and running it is not fulfilling the target: claim, execution and outcome receipts stay distinct, and a fresh attempt asserting any of them is refused.
 
 Store-write consent remains governed by the consent contract; a typed pointer or standing continuation directive does not
 manufacture consent for a new write.
 
-Report the `reason` when the picker is raised in an unattended session: that string is how a hands-off restart explains why it
-stopped rather than parking silently on a question nobody will see.
+Report the `reason` when the picker is raised in an unattended session: that string is how a hands-off restart explains why it stopped rather than parking silently on a question nobody will see.
 
-ALWAYS surface every entry in `findings`, in both modes. Today it carries one: `plan-definition-of-done: missing`, for a plan
-epic created before that section was required. An ATTENDED resume of such an epic MUST author the section with the maintainer
-before recording any further carrier-map event. An UNATTENDED resume MUST NOT author the assertions on the maintainer's behalf
-— `resume_directive` has already set `next_action` to `kind: human` naming the gap, and `ask` is true — unless `next_action`
-was already `kind: impl`, which it still takes, because that names work already filed and admitted. The finding is reported
-either way: reported and acted on are different things.
+ALWAYS surface every entry in `findings`, in both modes. `plan-definition-of-done: missing` names a plan epic created before that section was required: an ATTENDED resume MUST author the section with the maintainer before recording any further carrier-map event, while an UNATTENDED resume MUST NOT author the assertions on the maintainer's behalf — `resume_directive` has already set `next_action` to `kind: human` naming the gap, and `ask` is true — unless `next_action` was already `kind: impl`, which it still takes, because that names work already filed and admitted.
+
+`plan-progress-tracking: missing` names an epic whose pointer predates the tracking fields, or whose authority chain was never established; these writers never create one, so the remedy the finding names is `migrate-plan-records`, the sanctioned write that supplies the fields. Expired and unobservable obligations report the same way, each with its authorized action. The finding is reported either way: reported and acted on are different things.
 
 ### Step 4 - Handoff Timeline And Exit Audit
 

@@ -182,11 +182,21 @@ def projected_action(
 ) -> NextAction:
     """Overlay the COMMITTED obligation onto the pointer a writer will store.
 
-    An authority tracking no obligation hands the action back unchanged, which is
-    what keeps a `human` or `none` pointer's explicit null tracking fields null:
-    the clause requires both to be null for those kinds, so projecting an
-    obligation onto one would make the pointer itself invalid.
+    TWO conditions hand the action back unchanged, and BOTH are needed.
+
+    An authority tracking no obligation has nothing to project. And an action
+    whose OWN tracking is explicitly null is a `human` or `none` pointer, which
+    the clause requires to carry null `required_result` and `budget` — while
+    ALSO requiring that changing to one "retain any unmet obligation in the
+    progress history". Those two requirements pull in opposite directions
+    exactly here: the authority deliberately keeps the obligation, so a
+    projection keyed only on the authority would stamp it back onto the very
+    pointer that must not carry it, and the resulting pointer fails validation
+    on its next read. The POINTER goes null and the AUTHORITY keeps the
+    obligation; this is the line where those two diverge.
     """
+    if action.required_result is None and action.budget is None:
+        return action
     obligation = obligation_of(authority=authority)
     if obligation is None:
         return action
