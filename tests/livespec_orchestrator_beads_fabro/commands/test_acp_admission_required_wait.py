@@ -54,6 +54,14 @@ _WORKFLOW_GRAPH = (
     / "workflow.fabro"
 )
 
+# The dominators of the committed graph's green terminal -- the set
+# `derive_success_critical` must keep returning, unchanged by the widening.
+# `fix`, `review_fix` and `disposition` are absent: a run that never goes Red
+# reaches `exit` without any of them.
+_COMMITTED_DOMINATORS = frozenset(
+    {"dod_gate", "implement", "proof_capture", "proof_verify", "pr", "review"}
+)
+
 _NOW = "2026-10-13T12:00:00Z"
 _EXPIRY = "2026-10-13T12:15:00Z"
 
@@ -171,3 +179,34 @@ def test_every_potentially_reachable_acp_node_is_admission_required() -> None:
     assert set(verdict.admission_required) == _COMMITTED_ACP_NODES
     assert {"fix", "review_fix", "disposition"} <= set(verdict.exhausted)
     assert verdict.viable is False
+
+
+def test_the_dominator_derivation_still_returns_the_narrower_success_critical_set() -> None:
+    """The widening ADDED a derivation; it did not widen the existing one.
+
+    This is the control on the obvious wrong way to satisfy its sibling above:
+    make `derive_success_critical` return the reachable set. That passes every
+    admission assertion in this module and silently destroys the dominator set
+    the reached-node termination and the attention surfaces read -- `fix` would
+    then report as a node no green path can avoid, which is false of the graph
+    and would make a held `fix` indistinguishable from a held `implement` at
+    every surface that tells those two apart.
+
+    So the two sets are asserted APART, on ONE graph, in ONE verdict: the
+    dominators exactly, the reachable set exactly, and the strict-subset
+    relation between them. A derivation that collapsed them in either direction
+    fails at least one of the three.
+    """
+    graph_module = importlib.import_module(f"{_PACKAGE}._acp_workflow_graph")
+    critical_module = importlib.import_module(f"{_PACKAGE}._acp_success_critical")
+    graph = graph_module.parse_workflow_graph(text=_WORKFLOW_GRAPH.read_text(encoding="utf-8"))
+
+    critical = critical_module.derive_success_critical(graph=graph)
+    verdict = _committed_verdict()
+
+    assert set(critical.nodes) == _COMMITTED_DOMINATORS
+    assert critical.start == "start"
+    assert critical.green_terminal == "exit"
+    assert set(verdict.success_critical) == _COMMITTED_DOMINATORS
+    assert _COMMITTED_DOMINATORS < _COMMITTED_ACP_NODES
+    assert {"fix", "review_fix", "disposition"} == _COMMITTED_ACP_NODES - _COMMITTED_DOMINATORS
