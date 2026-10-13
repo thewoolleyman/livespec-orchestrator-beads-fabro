@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.196.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.0...v0.196.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **session-wait:** keep waiting when a gate-status probe is reaped by its own budget ([6af6ba4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6af6ba4f411513a833d4bffa8e2e1e7a9b986615))
+
 ## [0.196.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.195.0...v0.196.0) (2026-10-13)
 
 
