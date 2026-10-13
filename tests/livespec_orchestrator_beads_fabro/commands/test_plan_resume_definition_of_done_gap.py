@@ -154,7 +154,15 @@ def test_an_unattended_resume_still_takes_an_impl_next_action_despite_the_gap() 
 
 
 def test_an_epic_carrying_the_section_reports_no_finding() -> None:
-    """The control. Without it, a finding hard-coded to fire would pass every case."""
+    """The control. Without it, a finding hard-coded to fire would pass every case.
+
+    Scoped to the GAP finding, the same way its three siblings above are. The
+    resume reports every finding it is owed, and this fixture's epic carries no
+    authority chain, so it legitimately also reports missing plan-progress
+    tracking — a different finding, from a different clause. Asserting an empty
+    tuple here would make this control fail whenever any unrelated finding is
+    added, which is the opposite of what a control is for.
+    """
     _seed_epic(description=_SECTION)
     set_next_action(
         config=_config(),
@@ -172,7 +180,7 @@ def test_an_epic_carrying_the_section_reports_no_finding() -> None:
 
     directive = resume_directive(config=_config(), epic_id=_EPIC_ID, unattended=True)
 
-    assert directive.findings == ()
+    assert not any(one.startswith(_MISSING_FINDING) for one in directive.findings)
     # And the ordinary typed-pointer behaviour is untouched: a `human` pointer
     # raises the picker with its own reason, not the gap's.
     assert directive.ask
