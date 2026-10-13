@@ -65,11 +65,48 @@ _PROVIDER_MARKERS: tuple[tuple[str, str], ...] = (
     ("anthropic", _PROVIDER_ANTHROPIC),
     ("claude", _PROVIDER_ANTHROPIC),
 )
-_PROVIDER_USAGE_LIMIT_HINTS: tuple[tuple[str, str], ...] = (
-    ("hit your usage limit", _PROVIDER_CODEX),
-    ("monthly spend limit", _PROVIDER_ANTHROPIC),
-    ("spend limit", _PROVIDER_ANTHROPIC),
-    ("usage limit exceeded", _PROVIDER_CODEX),
+
+# EACH HINT IS A CONJUNCTION, never a single phrase, because two of the
+# measured forms are only identifiable by a PAIR of literals: "You've hit your
+# limit" alone is the prefix of several innocent sentences, and "spend limit"
+# alone says nothing about whose allowance it was. The contract fixes the set
+# (`SPECIFICATION/contracts.md` section "Factory-configurable ACP fallback
+# priority"): a newly measured form is added by a committed change here, never
+# by loosening one of these literals into a broader match.
+#
+# THE MEASURED SET, each with the vendor the form was measured in:
+#
+# - `hit your session limit` -- Claude's five-hour session ceiling. Measured
+#   2026-08-23, 2026-09-09 (twice) and 2026-10-09 as "You've hit your session
+#   limit - resets 3:40am (UTC)", arriving with a structured `errorKind` of
+#   `rate_limit`. Every one was classified `transient_infra` with NO provider
+#   attributed, because no hint named it.
+# - `hit your limit` plus `resets` -- the Petri-era Anthropic wording, where
+#   the structured payload is gone and only the message text survives.
+#   Measured as "You've hit your limit - resets Jul 31, 5am (UTC)"
+#   (`plan/fabro-currency/research/004-acp-spend-limit-evidence.json`, mode
+#   `usage-cap`). `resets` is load-bearing: it is what distinguishes a spent
+#   allowance from a sentence that merely opens the same way.
+# - `hit your usage limit` -- the Codex form, measured ten times in the
+#   2026-08-22 sweep below. Claude emits the same sentence, which is why
+#   vendor attribution is a separate pass rather than read off the hint.
+# - `org` plus `spend limit` -- the organisation spend ceiling, measured as
+#   "You've hit your org's monthly spend limit - ask your admin to raise it at
+#   claude.ai/settings/usage" (same evidence file, mode `monthly-cap`).
+# - `usage limit exceeded` -- the Codex prose form of its structured token.
+#
+# The last two entries are the PRE-v127 broader hints, kept so nothing that
+# used to be recognised stops being: they are strictly wider than the measured
+# organisation form and sit after it so the measured conjunction is what
+# matches the measured sentence.
+_PROVIDER_USAGE_LIMIT_HINTS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("hit your session limit",), _PROVIDER_ANTHROPIC),
+    (("hit your limit", "resets"), _PROVIDER_ANTHROPIC),
+    (("hit your usage limit",), _PROVIDER_CODEX),
+    (("org", "spend limit"), _PROVIDER_ANTHROPIC),
+    (("usage limit exceeded",), _PROVIDER_CODEX),
+    (("monthly spend limit",), _PROVIDER_ANTHROPIC),
+    (("spend limit",), _PROVIDER_ANTHROPIC),
 )
 
 
@@ -134,7 +171,11 @@ def _usage_limit_provider(*, text: str) -> str | None:
     normalized = " ".join(text.split())
     lowered = normalized.lower()
     hinted = next(
-        (provider for hint, provider in _PROVIDER_USAGE_LIMIT_HINTS if hint in lowered),
+        (
+            provider
+            for literals, provider in _PROVIDER_USAGE_LIMIT_HINTS
+            if all(literal in lowered for literal in literals)
+        ),
         None,
     )
     if _PROVIDER_USAGE_LIMIT_FIELD not in normalized and hinted is None:
