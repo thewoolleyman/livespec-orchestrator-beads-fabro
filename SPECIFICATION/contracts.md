@@ -5387,6 +5387,29 @@ Definition-of-Done finding, so that it is repaired before a sandbox is
 spent on it. The implement prompt MUST state the kept-current rule
 below. Scenario 140 in `scenarios.md` exercises this clause.
 
+**Judged before admission.** Before intake routes an implement-kind
+item to `ready` — from `backlog` or `pending-approval`, whether through
+intake, the approve valve, or groom — the Dispatcher MUST run the same
+Definition-of-Done judgement the `dod_gate` node applies (its prompt,
+against the item's effective criteria, the referenced specification
+headings and the resolved sandbox capabilities). When that judgement
+would end a run through the structured needs-human ending, the item
+MUST NOT be routed to `ready`: it rests where a mechanical finding
+would hold it, and the verdict, with each remedy, MUST be appended to
+the item as a ledger comment. When that judgement admits the item,
+intake MUST route it exactly as it would without the judgement. When
+the judgement cannot be run (no eligible model, a timeout, or an
+unparseable verdict), intake MUST record on the item that the
+pre-admission judgement did not run and why, and MUST route the item as
+it would without the judgement; the in-run `dod_gate` node remains the
+backstop, so an unrun judgement never admits anything the gate would
+not have seen. A wall finding the judgement did not grade stays
+ADVISORY as above. `needs-attention` MUST list, as hygiene facts, each
+item held by the pre-admission judgement with its verdict's first
+remedy; the ready-item advisory hygiene fact above still applies to
+items the judgement admitted or could not judge. Scenario 173 in
+`scenarios.md` exercises this paragraph.
+
 **Kept current.** The Definition of Done is the statement the proof
 stages capture against and the acceptance pass grades against, read from
 the dispatch-time snapshot. A factory run MUST NOT deliver behaviour that
