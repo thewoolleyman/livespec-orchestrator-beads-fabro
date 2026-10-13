@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.190.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.190.0...v0.190.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* exclude the gh-refresh bundle from the run's git worktree ([8f03d9b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8f03d9be5e282e2c6e69fcf8b9ccdb9c4173139f))
+* exclude the gh-refresh payload from the run's git worktree too ([1db7ff4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1db7ff4503614710e599bc0b44a7032e9219eedd))
+* normalize the gh-refresh bundle path before the worktree comparison ([3d0bc55](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3d0bc5566f0f98416cd541b0f8b451c408e12bf5))
+
 ## [0.190.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.189.0...v0.190.0) (2026-10-13)
 
 
