@@ -37,6 +37,9 @@ _DEFAULT_COMMAND = (
 )
 _STATE_PATTERN = re.compile(r"^\s*state\s*:\s*(\S+)\s*$", re.MULTILINE)
 _EXIT_PATTERN = re.compile(r"^\s*exit_code\s*:\s*(-?\d+)\s*$", re.MULTILINE)
+# The exit code `ShellCommandRunner` maps a child it had to REAP onto, so the
+# runner's own timeout is routable data rather than an exception.
+_TIMEOUT_EXIT_CODE = 124
 
 
 def resolve_primary_repository(*, repository: Path) -> Path:
@@ -73,16 +76,53 @@ def _generation_observation(*, target: GateTarget, observed_at: float) -> GateOb
     return None
 
 
-def _parse_status(*, target: GateTarget, output: str, observed_at: float) -> GateObservation:
+def _unavailable(*, target: GateTarget, observed_at: float) -> GateObservation:
+    """The diagnostic for a gate that WAS probed and could not be read."""
+    return GateObservation(
+        target=target,
+        state="UNAVAILABLE",
+        exit_code=None,
+        observed_at=observed_at,
+        fresh=True,
+    )
+
+
+def _parse_status(
+    *,
+    target: GateTarget,
+    output: str,
+    probe_exit_code: int,
+    observed_at: float,
+) -> GateObservation | None:
+    """This probe's reading of the gate, or None when it never took one.
+
+    `probe_exit_code` is the PROBE PROCESS's own exit code and is never the
+    gate's: the gate's is parsed out of the status output below. Keeping them
+    under separate names is what stops a reaped probe's 124 from being
+    reported as a verdict the gate never printed.
+
+    A probe REAPED BY ITS OWN BUDGET observed nothing: its empty output is the
+    absence of a reading, not a gate whose status cannot be read, and the two
+    owe opposite treatments. Reporting the diagnostic there ended a bounded
+    wait on its own instrument's slowness — measured 2026-10-12 and again
+    2026-10-13 on this host, where a `gate-status` call takes about 0.3s
+    against the one-second per-probe budget and an ordinary load spike pushes
+    it past that. Three waits returned `target-ended` with their trigger in
+    state `UNAVAILABLE`, one of them almost six hours short of its deadline,
+    while `gate-status` reported `RUNNING` for the same gate moments later and
+    its runner process was alive.
+
+    A probe that COMPLETED and printed no state line is the genuinely
+    unreadable target the contract's distinct unavailable outcome is for, and
+    keeps it. The state line is therefore looked for FIRST: a reaped child's
+    PARTIAL output still reaches here, so a probe that printed its state and
+    was then reaped did observe the gate and is read as having done so.
+    """
     state_match = _STATE_PATTERN.search(output)
     if state_match is None:
-        return GateObservation(
-            target=target,
-            state="UNAVAILABLE",
-            exit_code=None,
-            observed_at=observed_at,
-            fresh=True,
-        )
+        if probe_exit_code == _TIMEOUT_EXIT_CODE:
+            return None
+        return _unavailable(target=target, observed_at=observed_at)
     state = state_match.group(1)
     exit_match = _EXIT_PATTERN.search(output)
     exit_code = int(exit_match.group(1)) if exit_match is not None else None
@@ -106,6 +146,12 @@ class _CommandTask:
     ready: threading.Event = field(default_factory=threading.Event, init=False)
     cancel_requested: bool = field(default=False, init=False)
     native_thread_id: int | None = field(default=None, init=False)
+    # This probe FINISHED without observing the target, because its own budget
+    # reaped it. It is its own field rather than an absent `result`, which a
+    # probe still in flight also has: the two are indistinguishable from the
+    # result alone, and they owe opposite handling — one is waited on, the
+    # other is retired so a fresh probe can take the reading.
+    unobserved: bool = field(default=False, init=False)
 
     def start(self) -> None:
         self.thread = threading.Thread(target=self._run, daemon=True)
@@ -121,15 +167,23 @@ class _CommandTask:
             # task would go on to spawn a probe nothing kills, while
             # cancellation reported itself clean.
             return
-        observation = observe_gate_target(
+        observation = _gate_status_observation(
             target=self.target,
             observed_at=self.observed_at,
             command_prefix=self.command_prefix,
             timeout_seconds=self.timeout_seconds,
             start_new_session=True,
         )
-        if not self.cancel_requested:
-            self.result = observation
+        if self.cancel_requested:
+            # A cancelled probe's reading is discarded, and so is its failure
+            # to take one: cancellation already released this task, so marking
+            # it unobserved would say something about a probe nobody is still
+            # waiting on.
+            return
+        if observation is None:
+            self.unobserved = True
+            return
+        self.result = observation
 
     def poll(self) -> GateObservation | None:
         return self.result
@@ -229,8 +283,16 @@ class GateStatusProbe:
                 timeout_seconds=self.timeout_seconds,
             )
             self.task.start()
-        observation = self.task.poll()
+        task = self.task
+        observation = task.poll()
         if observation is None:
+            if task.unobserved:
+                # The probe was reaped by its own budget, so it is RETIRED
+                # here rather than kept. That is what lets the next round
+                # launch a fresh probe inside the same deadline — keeping it
+                # would leave a finished task answering None for the rest of
+                # the wait, which is a hang traded for the false verdict.
+                self.task = None
             return None
         self.task = None
         return observation
@@ -255,14 +317,15 @@ class GateStatusLauncher:
         )
 
 
-def observe_gate_target(
+def _gate_status_observation(
     *,
     target: GateTarget,
     observed_at: float,
-    command_prefix: tuple[str, ...] = _DEFAULT_COMMAND,
-    timeout_seconds: float = 1.0,
-    start_new_session: bool = False,
-) -> GateObservation:
+    command_prefix: tuple[str, ...],
+    timeout_seconds: float,
+    start_new_session: bool,
+) -> GateObservation | None:
+    """One probe of this gate, or None when the probe took no reading."""
     generation_observation = _generation_observation(target=target, observed_at=observed_at)
     if generation_observation is not None:
         return generation_observation
@@ -275,5 +338,34 @@ def observe_gate_target(
     return _parse_status(
         target=target,
         output=result.stdout + result.stderr,
+        probe_exit_code=result.exit_code,
         observed_at=observed_at,
     )
+
+
+def observe_gate_target(
+    *,
+    target: GateTarget,
+    observed_at: float,
+    command_prefix: tuple[str, ...] = _DEFAULT_COMMAND,
+    timeout_seconds: float = 1.0,
+    start_new_session: bool = False,
+) -> GateObservation:
+    """One SYNCHRONOUS reading of a gate, reporting a reaped probe UNAVAILABLE.
+
+    The retry that makes "no reading" a useful answer needs a later round to
+    take one in, and a single blocking observation — what the inventory and
+    check surfaces take — has none. So it reports the unreadable-target
+    diagnostic rather than inventing a state or returning nothing a caller
+    could render. `GateStatusProbe` is the path that retries.
+    """
+    observation = _gate_status_observation(
+        target=target,
+        observed_at=observed_at,
+        command_prefix=command_prefix,
+        timeout_seconds=timeout_seconds,
+        start_new_session=start_new_session,
+    )
+    if observation is None:
+        return _unavailable(target=target, observed_at=observed_at)
+    return observation
