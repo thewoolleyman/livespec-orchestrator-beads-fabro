@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.195.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.194.4...v0.195.0) (2026-10-13)
+
+
+### Features
+
+* **dispatcher:** refuse a publication adapter override before claim ([4ce1b9d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4ce1b9d31eeafe946b3221bfe2c9d3a43d1cadb8))
+* **dispatcher:** render the publication title and body the pr stage applies ([b440324](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b4403242b3420205eb654a48f4b9d07ba5931e73))
+* **workflow:** script the implementation PR refresh and publication stages ([fed9105](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fed9105906be8da9ce3e5b68bd941b45c59ec2f0))
+
+
+### Bug Fixes
+
+* **dispatcher:** normalize a legacy pr resume entry to pr_refresh ([4cc437b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4cc437b576d7f9e5224d77eeb4dbe4a5eb36ac70))
+* **dispatcher:** scope the dispatch-candidate read to the selected workflow ([0475b13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0475b130e1688dfae82a2d21da52c64e7dc49983))
+* **workflow:** bind publication arming to the proof-verified head ([e73394d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e73394d969e71363edabd2558a2466a1e1613ef8))
+
 ## [0.194.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.194.3...v0.194.4) (2026-10-13)
 
 
