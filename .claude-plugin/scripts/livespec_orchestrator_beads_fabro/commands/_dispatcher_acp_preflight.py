@@ -46,6 +46,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Protocol
 
+from livespec_orchestrator_beads_fabro.commands._acp_availability_wait import AvailabilityWait
 from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import (
     builtin_acp_identities,
 )
@@ -248,13 +249,30 @@ def acp_preflight_refusal(
     work_item_id: str,
     verdict: AcpPreflightVerdict,
     journal: JournalWriter,
+    wait: AvailabilityWait | None,
 ) -> DispatchOutcome | None:
-    """Refuse one candidate before claim when a success-critical chain is gone.
+    """Refuse one candidate before claim when an admission-required chain is gone.
 
     Returns `None` for a viable verdict, which is every verdict a repository
     with no fallback configuration can produce. The refusal names the verdict's
     own deterministic explanation rather than re-deriving one, so the journal
     line and the operator-visible detail cannot disagree.
+
+    NOTHING HERE TOUCHES THE ITEM, and that absence is the contract: "the item
+    MUST remain ready without a claim or blocked reason". There is no status
+    write, no assignee resolution and no dispatch lock on this path -- the
+    refusal is a journal record plus a returned outcome, and the row the caller
+    handed in is returned to it unchanged.
+
+    `wait` is the pass's scheduled reevaluation, resolved ONCE for the whole
+    wave by the caller and `None` only where no node is waiting. It is a
+    REQUIRED keyword rather than a defaulted one on purpose: a default is how
+    one call site silently reports a refusal with no schedule on it, and the
+    scheduled instant is the one field an operator reads to learn when the item
+    moves again. A GRAPH-SHAPE or configuration refusal legitimately carries
+    none -- it is a fault whose remedy is a committed change rather than the
+    passage of time -- so its record omits those fields instead of stamping an
+    instant nothing will ever retire.
     """
     if verdict.viable:
         return None
@@ -272,8 +290,10 @@ def acp_preflight_refusal(
             "work_item_id": work_item_id,
             "detail": verdict.detail,
             "success_critical": list(verdict.success_critical),
+            "admission_required": list(verdict.admission_required),
             "exhausted": list(verdict.exhausted),
             "unobservable_observations": len(verdict.unobservable),
+            **({} if wait is None else wait.record),
         }
     )
     return outcome

@@ -33,6 +33,7 @@ provider.
 from __future__ import annotations
 
 import importlib
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -432,3 +433,249 @@ def test_an_unreadable_evaluation_clock_raises_rather_than_naming_an_instant() -
         _ = waits.schedule_availability_wait(
             verdict=verdict, now_iso="not-an-instant", reprobe_interval_seconds=_REPROBE_SECONDS
         )
+
+
+def _pass_wait() -> Any:
+    """The per-pass wait resolver, proving its file exists first."""
+    module_path = _COMMANDS / "_dispatcher_availability_wait.py"
+    assert module_path.is_file(), "_dispatcher_availability_wait.py is not implemented yet"
+    return importlib.import_module(f"{_PACKAGE}._dispatcher_availability_wait")
+
+
+@dataclass(kw_only=True)
+class _MemoryJournal:
+    """A journal that keeps every appended record, so the refusal is readable."""
+
+    records: list[dict[str, object]] = field(default_factory=list)
+
+    def append(self, *, record: dict[str, object]) -> None:
+        self.records.append(record)
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Accounting:
+    """The claim accounting, stubbed so the rework leg has a marked row."""
+
+    active_count: int = 0
+    live_lock_active_ids: tuple[str, ...] = ()
+    journal_unreadable_active_ids: tuple[str, ...] = ()
+    green_terminal_active_ids: tuple[str, ...] = ()
+    rework_pending_active_ids: tuple[str, ...] = ()
+
+
+def _item(**overrides: object) -> Any:
+    types = importlib.import_module("livespec_orchestrator_beads_fabro.types")
+    fields: dict[str, object] = {
+        "id": "bd-ib-item",
+        "type": "task",
+        "status": "ready",
+        "title": "Task",
+        "description": "Do it.",
+        "origin": "freeform",
+        "gap_id": None,
+        "rank": "a1",
+        "assignee": None,
+        "depends_on": (),
+        "captured_at": "2026-10-13T00:00:00Z",
+        "resolution": None,
+        "reason": None,
+        "audit": None,
+        "superseded_by": None,
+        "admission_policy": None,
+        "acceptance_policy": None,
+    }
+    fields.update(overrides)
+    return types.WorkItem(**fields)
+
+
+def _held_conditional_verdict() -> Any:
+    """A verdict whose ONLY emptied chain is the conditional repair node."""
+    held = (_hold(hold_key="anthropic"),)
+    return _minimal_verdict(
+        chains={
+            "implement": _single(node="implement", availability_key="codex"),
+            "fix": _single(node="fix", availability_key="anthropic"),
+        },
+        holds=held,
+    )
+
+
+def test_the_pass_resolver_reads_the_committed_reprobe_interval(tmp_path: Path) -> None:
+    """The dial comes from the repository, never from a constant in the code.
+
+    The committed value is deliberately NOT the 300-second default: a resolver
+    that returned the default would satisfy an undeclared-key fixture exactly
+    as a correct one does, so only a declared non-default interval can tell
+    them apart. The second half asserts the default IS still the answer when
+    the key is absent, which is the arm the first half cannot reach.
+    """
+    pass_wait = _pass_wait()
+    policy = importlib.import_module(f"{_PACKAGE}._dispatcher_policy_settings")
+    declared = tmp_path / "declared"
+    declared.mkdir()
+    (declared / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"dispatcher": '
+        '{"credential_reprobe_interval_seconds": 900}}}',
+        encoding="utf-8",
+    )
+    undeclared = tmp_path / "undeclared"
+    undeclared.mkdir()
+    verdict = _minimal_verdict(
+        chains={"implement": _single(node="implement"), "fix": _single(node="fix")},
+        probe=lambda _key: "exhausted",
+    )
+
+    assert policy.DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS != 900
+    assert (
+        pass_wait.resolve_availability_wait(
+            repo=declared, verdict=verdict, now_iso=_NOW
+        ).scheduled_at
+        == "2026-10-13T12:15:00Z"
+    )
+    assert (
+        pass_wait.resolve_availability_wait(
+            repo=undeclared, verdict=verdict, now_iso=_NOW
+        ).scheduled_at
+        == _NOW_PLUS_REPROBE
+    )
+
+
+def test_a_viable_pass_resolves_no_wait_and_reads_no_configuration(tmp_path: Path) -> None:
+    """Nothing is waiting, so the committed dial is never even read.
+
+    The read is skipped rather than performed and discarded, which is what
+    keeps the common viable pass free of a configuration read whose answer
+    cannot change anything. The unreadable fixture is the observable: a
+    resolver that read first would refuse or raise on it.
+    """
+    pass_wait = _pass_wait()
+    (tmp_path / ".livespec.jsonc").write_text("{ this is not json", encoding="utf-8")
+    verdict = _minimal_verdict(
+        chains={"implement": _single(node="implement"), "fix": _single(node="fix")}
+    )
+
+    assert verdict.viable is True
+    assert pass_wait.resolve_availability_wait(repo=tmp_path, verdict=verdict, now_iso=_NOW) is None
+
+
+def test_the_containment_refusal_names_the_condition_the_node_and_the_instant() -> None:
+    """The three fields Scenario 60 requires on the journaled refusal.
+
+    "the refusal is journaled with the work-item id, governing condition,
+    admission-required node lacking an eligible candidate, and scheduled
+    reevaluation instant" -- and, "when present", the applicable hold
+    observations and their expiries.
+    """
+    waits = _waits()
+    composer = importlib.import_module(f"{_PACKAGE}._dispatcher_acp_preflight")
+    journal = _MemoryJournal()
+    verdict = _held_conditional_verdict()
+    wait = waits.schedule_availability_wait(
+        verdict=verdict, now_iso=_NOW, reprobe_interval_seconds=_REPROBE_SECONDS
+    )
+
+    outcome = composer.acp_preflight_refusal(
+        work_item_id="bd-ib-waiting", verdict=verdict, journal=journal, wait=wait
+    )
+
+    assert outcome is not None
+    [record] = [
+        entry
+        for entry in journal.records
+        if entry.get("stage") == composer.ACP_PREFLIGHT_REFUSAL_STAGE
+    ]
+    assert record["work_item_id"] == "bd-ib-waiting"
+    assert record["governing_condition"] == waits.LIVE_HOLD_CONDITION
+    assert record["nodes"] == ["fix"]
+    assert record[waits.SCHEDULED_AT_KEY] == _EXPIRY
+    assert record["hold_expiries"] == [_EXPIRY]
+    assert record["admission_required"] == ["implement", "fix"]
+    assert record["exhausted"] == ["fix"]
+
+
+def test_a_graph_shape_refusal_names_no_node_and_no_instant() -> None:
+    """A fault is not a wait, so it invents neither a node nor a schedule.
+
+    An unreadable or ambiguous graph refuses a fallback-enabled dispatch and
+    its remedy is a committed change, not the passage of time. Stamping a
+    scheduled instant on it would advertise a wait that nothing will ever
+    retire, and naming a node would name one no measurement found.
+    """
+    waits = _waits()
+    composer = importlib.import_module(f"{_PACKAGE}._dispatcher_acp_preflight")
+    journal = _MemoryJournal()
+    verdict = build_acp_preflight_verdict(
+        chains={"implement": _single(node="implement")},
+        graph_text="    start [shape=Mdiamond]\n",
+        ledger=_ledger(),
+        inputs=_inputs(),
+    )
+
+    outcome = composer.acp_preflight_refusal(
+        work_item_id="bd-ib-broken-graph",
+        verdict=verdict,
+        journal=journal,
+        wait=waits.schedule_availability_wait(
+            verdict=verdict, now_iso=_NOW, reprobe_interval_seconds=_REPROBE_SECONDS
+        ),
+    )
+
+    [record] = [
+        entry
+        for entry in journal.records
+        if entry.get("stage") == composer.ACP_PREFLIGHT_REFUSAL_STAGE
+    ]
+    assert outcome is not None
+    assert "declares no green terminal node" in str(record["detail"])
+    assert waits.SCHEDULED_AT_KEY not in record
+    assert "nodes" not in record
+    assert "governing_condition" not in record
+
+
+def test_a_waiting_item_keeps_its_ready_row_with_no_claim_and_no_blocked_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The item is untouched: no status write, no assignee, no dispatch lock.
+
+    This is the half of the clause no journal record can establish -- "the
+    item MUST remain ready without a claim or blocked reason". The observables
+    are the two writes a claim consists of, so the assertions are that neither
+    happened: `update_work_item_status` is never called, and the dispatch-lock
+    directory the claim would create does not exist. A refusal that journaled
+    all three required fields and still claimed the row would pass every other
+    assertion in this module.
+    """
+    admission = importlib.import_module(f"{_PACKAGE}._dispatcher_admission")
+    eligibility = importlib.import_module(f"{_PACKAGE}._dispatcher_admission_eligibility")
+    lock = importlib.import_module(f"{_PACKAGE}._dispatcher_dispatch_lock")
+    composer = importlib.import_module(f"{_PACKAGE}._dispatcher_acp_preflight")
+    waits = _waits()
+    status_writes: list[dict[str, object]] = []
+    monkeypatch.setattr(admission, "store_config", lambda **_: tmp_path)
+    monkeypatch.setattr(
+        admission, "update_work_item_status", lambda **kwargs: status_writes.append(kwargs)
+    )
+    monkeypatch.setattr(eligibility, "read_dispatch_labels", lambda **_: ())
+    monkeypatch.setattr(admission, "resolve_acp_preflight", lambda **_: _held_conditional_verdict())
+    journal = _MemoryJournal()
+
+    verdict = admission.admit_and_select(
+        repo=tmp_path,
+        items=[],
+        candidates=[_item(id="bd-ib-waiting", status="ready")],
+        journal=journal,
+        enforce_cap=False,
+    )
+
+    assert verdict.admitted == []
+    assert [outcome.work_item_id for outcome in verdict.refused] == ["bd-ib-waiting"]
+    assert status_writes == []
+    assert not lock.dispatch_lock_path(repo=tmp_path, work_item_id="bd-ib-waiting").exists()
+    [record] = [
+        entry
+        for entry in journal.records
+        if entry.get("stage") == composer.ACP_PREFLIGHT_REFUSAL_STAGE
+    ]
+    assert record["governing_condition"] == waits.LIVE_HOLD_CONDITION
+    assert record["nodes"] == ["fix"]
+    assert record[waits.SCHEDULED_AT_KEY] == _EXPIRY

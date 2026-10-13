@@ -14,7 +14,11 @@ per-row ladder: an unreadable `dispatcher.adopted_assertion_count_ceiling` is
 a fact about the repository that refuses every candidate identically, so
 resolving it per row would re-read one file once per candidate to reach the
 same answer. The dispatch's RENDERED ACP CANDIDATES are resolved there for
-the same reason. The FIVE per-row refusals then run in this order:
+the same reason, and so is the pass's SCHEDULED AVAILABILITY WAIT -- the
+instant an emptied admission-required chain is reevaluated at is a fact about
+the factory and the repository's committed re-probe dial, so every row this
+pass refuses names the same instant rather than one computed per row from a
+clock that moved in between. The FIVE per-row refusals then run in this order:
 
 1. An unexpired LEGACY provider-exhaustion record COVERING a candidate this
    dispatch's resolved ACP nodes render. A vendor ceiling this dispatch would
@@ -50,11 +54,15 @@ from pathlib import Path
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro.commands._acp_availability_wait import AvailabilityWait
 from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import RenderedCandidate
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     acp_preflight_refusal,
     resolve_dispatch_candidates,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_availability_wait import (
+    resolve_availability_wait,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import host_only_refusal
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import read_dispatch_labels
@@ -111,6 +119,11 @@ def filter_eligible_candidates(
             for item in candidates
         ]
     adopted_ceiling = unsafe_perform_io(resolved_ceiling.unwrap())
+    # The scheduled reevaluation an emptied admission-required chain owes,
+    # resolved ONCE for the whole wave. It is `None` on every viable verdict,
+    # which is the common case, and the resolution reads no configuration
+    # there.
+    wait = resolve_availability_wait(repo=repo, verdict=preflight, now_iso=utc_now_iso())
     # The candidates this repository's ACP nodes render are committed
     # configuration too, and the legacy provider gate is scoped to them. They
     # are resolved ONCE here for the same reason the ceiling above is: the
@@ -128,6 +141,7 @@ def filter_eligible_candidates(
             journal=journal,
             adopted_ceiling=adopted_ceiling,
             rendered=rendered,
+            wait=wait,
         )
         if refusal is None:
             admittable.append(item)
@@ -136,7 +150,7 @@ def filter_eligible_candidates(
     return admittable, refused
 
 
-def _refusal_for(
+def _refusal_for(  # noqa: PLR0913 — one keyword per condition the ladder reads; see the module docstring.
     *,
     repo: Path,
     preflight: AcpPreflightVerdict,
@@ -144,6 +158,7 @@ def _refusal_for(
     journal: JournalFile,
     adopted_ceiling: int | None,
     rendered: tuple[RenderedCandidate, ...] | None,
+    wait: AvailabilityWait | None,
 ) -> DispatchOutcome | None:
     """The first condition this row fails, or `None` when it passes all five."""
     exhaustion_refusal = provider_exhaustion_refusal(
@@ -155,7 +170,9 @@ def _refusal_for(
     )
     if exhaustion_refusal is not None:
         return exhaustion_refusal
-    chain_refusal = acp_preflight_refusal(work_item_id=item.id, verdict=preflight, journal=journal)
+    chain_refusal = acp_preflight_refusal(
+        work_item_id=item.id, verdict=preflight, journal=journal, wait=wait
+    )
     if chain_refusal is not None:
         return chain_refusal
     size_refusals = route_factory_size_dispatch_entry(

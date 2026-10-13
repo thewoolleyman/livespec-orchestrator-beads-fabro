@@ -58,6 +58,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import Ac
 
 __all__: list[str] = [
     "LIVE_HOLD_CONDITION",
+    "SCHEDULED_AT_KEY",
     "AvailabilityWait",
     "schedule_availability_wait",
 ]
@@ -67,6 +68,11 @@ __all__: list[str] = [
 # journal is greppable and the attention surface and the refusal cannot word
 # the same condition two ways.
 LIVE_HOLD_CONDITION = "live-availability-hold"
+
+# The record key the scheduled instant is journaled under. Named here, beside
+# the value, so the refusal that writes it and anything that later reads a
+# recorded schedule back agree on one spelling rather than on two literals.
+SCHEDULED_AT_KEY = "scheduled_reevaluation_at"
 
 _ISO_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
@@ -93,6 +99,23 @@ class AvailabilityWait:
     governing_condition: str
     scheduled_at: str
     hold_expiries: tuple[str, ...] = ()
+
+    @property
+    def record(self) -> dict[str, object]:
+        """The journal fields a containment refusal reports this wait as.
+
+        Rendered HERE rather than at the refusal so the one surface that owns
+        the wait owns its spelling too: the refusal, an attention row and any
+        later reader of a recorded schedule would otherwise each name these
+        fields themselves, and three spellings of one fact is how two of them
+        come to disagree about which key carries the instant.
+        """
+        return {
+            "governing_condition": self.governing_condition,
+            "nodes": list(self.nodes),
+            SCHEDULED_AT_KEY: self.scheduled_at,
+            "hold_expiries": list(self.hold_expiries),
+        }
 
 
 def schedule_availability_wait(
