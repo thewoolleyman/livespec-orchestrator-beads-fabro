@@ -29,10 +29,33 @@ _FLEET_MANIFEST_API_PATH = "repos/thewoolleyman/livespec/contents/.livespec-flee
 _FLEET_MANIFEST_FETCH_TIMEOUT_SECONDS = 60.0
 
 # In-sandbox directory the sibling clones land under; projected into
-# the sandbox env as LIVESPEC_SIBLING_CLONES_ROOT. `/workspace` is the
-# fabro docker sandbox's workspace root (the target repo's clone sits
-# at /workspace/<repo>), so the siblings root never collides with it.
-_SIBLING_CLONES_ROOT = "/workspace/siblings"
+# the sandbox env as LIVESPEC_SIBLING_CLONES_ROOT.
+#
+# IT SITS OUTSIDE `/workspace`, AND THAT IS THE WHOLE POINT. It was
+# `/workspace/siblings`, written on the premise that the target repository's
+# clone sits at `/workspace/<repo>` — true on the pinned 0.254 engine, where
+# `/workspace/<repo>` is a symlink to the clone and the siblings root is that
+# clone's PEER. The Petri-era engine checks the target repository out AT the
+# mount (its hooks log `site=Sandbox("/workspace")`), which made every sibling
+# clone a directory INSIDE the target repository's own tree: a whole-tree check
+# then reads the siblings' files, so the commit hooks refuse on a sibling and no
+# Red commit can land. Measured 2026-10-13 on hp-candidate run 01M4SNYP3GT2,
+# where the implement stage spent 15 minutes and failed with no Red.
+#
+# ONE OVERLAY SERVES BOTH ENGINES and nothing in it learns which layout the run
+# will land in, so a root outside the mount is what makes it outside the clone
+# under EITHER layout — there is no in-sandbox clone path to derive it from.
+#
+# A FILESYSTEM-ROOT path rather than one under `/tmp`: the prepare step's own
+# `mkdir -p` has to succeed or the run dies at launch with no work done, and the
+# sandbox image family declares no `USER` in any of its stages, so a dispatched
+# sandbox runs as uid 0 on a writable overlay root (measured in-sandbox
+# 2026-10-13: `uid=0(root)`, `/` an `rw` overlay mount). `/tmp` would have been
+# the more permissive choice but `ruff`'s S108 refuses a hardcoded `/tmp` path
+# outright, and a waiver is not something to spend on a directory that has an
+# unobjectionable spelling. The sandbox is per-run and discarded with the
+# container, so the clones need no life beyond it.
+_SIBLING_CLONES_ROOT = "/livespec-siblings"
 
 
 def fetch_fleet_manifest_text() -> str | None:

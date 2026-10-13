@@ -38,8 +38,10 @@
 # [[run.prepare.steps]] block per fleet member (from livespec master's
 # .livespec-fleet-manifest.jsonc, fetched host-side via `gh api`; the dispatch
 # target is excluded) so cross-repo checks resolve family siblings
-# under /workspace/siblings inside the sandbox (work-item
-# livespec-impl-beads-8m2), and (c) APPENDS an
+# under /livespec-siblings inside the sandbox — OUTSIDE the target
+# repository's own clone, which the Petri-era engine checks out at
+# /workspace itself (work-item livespec-impl-beads-8m2,
+# bd-ib-3eleqo), and (c) APPENDS an
 # [environments.livespec-ci.env] table carrying the real
 # CLAUDE_CODE_OAUTH_TOKEN value read from the Dispatcher's process
 # environment and a GITHUB_TOKEN freshly minted from the GitHub App
