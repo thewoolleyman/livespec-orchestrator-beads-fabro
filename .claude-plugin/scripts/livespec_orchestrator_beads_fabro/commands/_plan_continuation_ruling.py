@@ -52,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_continuation import (
     BY_PREFIX,
     DIRECTIVE_PREFIX,
     RECORDED_ATTENDED_LINE,
+    REVOKED_PREFIX,
     UNTIL_PREFIX,
     is_continuation_ruling,
     ruling_line_value,
@@ -150,8 +151,9 @@ def _finding(*, epic_id: str, entry: PlanTimelineEntry) -> PlanContinuationRulin
     if not is_continuation_ruling(entry=entry):
         return None
     lines = entry.body.splitlines()
-    missing = _missing_lines(lines=lines)
-    over_length = len(lines) > AUTHORIZED_LINE_COUNT
+    revoked = lines[0] == REVOKED_PREFIX
+    missing = _revoked_missing(lines=lines) if revoked else _missing_lines(lines=lines)
+    over_length = not revoked and len(lines) > AUTHORIZED_LINE_COUNT
     if not missing and not over_length:
         return None
     return PlanContinuationRulingFinding(
@@ -170,8 +172,23 @@ def _finding(*, epic_id: str, entry: PlanTimelineEntry) -> PlanContinuationRulin
     )
 
 
+def _revoked_missing(*, lines: Sequence[str]) -> tuple[str, ...]:
+    """The `by:` line a revocation owes, when it does not carry one.
+
+    A revocation owes that line and NOTHING else, which is why it has its own arm
+    rather than a shared one with a flag. The primitive writes it as exactly two
+    lines, so neither the attended marker nor the five-line count is a condition
+    on it: an authorization's arms applied here would report every well-formed
+    revocation ever written, and the attended marker in particular is a claim
+    about recording a DIRECTIVE, which a revocation does not carry.
+    """
+    if _carries_line(lines=lines, prefix=BY_PREFIX):
+        return ()
+    return (BY_PREFIX.strip(),)
+
+
 def _missing_lines(*, lines: Sequence[str]) -> tuple[str, ...]:
-    """Every required line this ruling body does not carry, in the clause's order.
+    """Every required line an AUTHORIZATION body does not carry, in the clause's order.
 
     `lines[-1]` is safe without a length test because `is_continuation_ruling`
     has already matched the first line, so the body is never empty here.
