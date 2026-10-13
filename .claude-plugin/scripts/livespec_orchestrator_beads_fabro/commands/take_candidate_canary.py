@@ -31,9 +31,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 __all__: list[str] = [
+    "CANARY_MARKER_RELPATH",
     "CanaryFixture",
+    "marker_entry_findings",
     "render_canary_fixture",
 ]
+
+# The dedicated marker file the fixture's one assertion names. The canary's
+# WHOLE change is one appended line here, which is what keeps a canary's diff
+# incapable of failing for a reason of its own.
+CANARY_MARKER_RELPATH = "orchestrator-image/candidate-canary-log.md"
 
 # The two field markers of the committed template, each matched as a line of its
 # own. The template's own prose refers to them in backticks for exactly that
@@ -43,6 +50,12 @@ _DESCRIPTION_MARKER = "DESCRIPTION:"
 _ID_PLACEHOLDER = "@@CANARY_ID@@"
 _FACTORY_PLACEHOLDER = "@@CANARY_FACTORY@@"
 _NEWLINE = "\n"
+
+# The marker file's own grammar, which is the whole of what the check suite has
+# to accept for a canary's edit to merge: one heading, then one `- ` line per
+# canary taken.
+_MARKER_ENTRIES_HEADING = "## Entries"
+_MARKER_ENTRY_PREFIX = "- "
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -86,6 +99,62 @@ def render_canary_fixture(*, template_text: str, item_id: str, factory: str) -> 
             item_id=item_id,
             factory=factory,
         ),
+    )
+
+
+def marker_entry_findings(*, marker_text: str) -> tuple[str, ...]:
+    """Every way the candidate-canary log's entry list is malformed, or an empty tuple.
+
+    This is what makes "the check suite accepts the canary's edit" a measured
+    property rather than an absence of objection. The suite grades the COMMITTED
+    log through this function and grades it again with the fixture's own entry
+    appended, so the one edit a canary makes is known-accepted before any canary
+    makes it; the malformed cases are what stop that acceptance from being
+    vacuous.
+
+    Findings rather than a boolean, and one line each naming the offending
+    element and the remedy, because that is the shape every other grading
+    surface in this repository reports — an operator reading a janitor failure
+    needs the line that is wrong, not a verdict on the file.
+    """
+    lines = marker_text.splitlines()
+    heading_index = next(
+        (index for index, line in enumerate(lines) if line.strip() == _MARKER_ENTRIES_HEADING),
+        None,
+    )
+    if heading_index is None:
+        return (_absent_heading_finding(),)
+    entries = [line for line in lines[heading_index + 1 :] if line.strip()]
+    if not entries:
+        return (_empty_entry_list_finding(),)
+    return tuple(
+        _malformed_entry_finding(line=line)
+        for line in entries
+        if not line.startswith(_MARKER_ENTRY_PREFIX)
+    )
+
+
+def _absent_heading_finding() -> str:
+    return (
+        f"the candidate-canary log carries no `{_MARKER_ENTRIES_HEADING}` heading,"
+        " so there is no entry list for a canary to append to; restore the heading"
+        " rather than appending beneath the prose"
+    )
+
+
+def _empty_entry_list_finding() -> str:
+    return (
+        f"the candidate-canary log carries no entry under `{_MARKER_ENTRIES_HEADING}`;"
+        " the file is append-only and keeps at least its seed entry, so an empty"
+        " list means entries were removed rather than added"
+    )
+
+
+def _malformed_entry_finding(*, line: str) -> str:
+    return (
+        f"the candidate-canary log line {line!r} does not begin with"
+        f" `{_MARKER_ENTRY_PREFIX}`, so it is not one entry; make the canary's change"
+        " exactly one appended entry line and edit nothing else"
     )
 
 
