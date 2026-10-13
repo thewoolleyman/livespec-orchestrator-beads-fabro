@@ -712,6 +712,35 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   pushes are one line apart in intent and only the measured difference keeps
   them apart.
 
+- `test_fix_stage_failure_routes_to_needs_human.py`,
+  `test_open_red_needs_human_reason.py` and
+  `test_completed_red_green_pair_still_proceeds.py` — bind the three
+  Definition-of-Done assertions of work-item `bd-ib-qhv7qs` against
+  `SPECIFICATION/scenarios.md` Scenario 103: a `fix` or `review_fix` stage whose
+  agent turn times out with a Red commit open at the branch head ends through
+  the needs-human terminal with the tree preserved, the dispatch result and the
+  item's DURABLE record name both the timed-out stage and that open Red, and a
+  stage that ends normally with a completed pair still proceeds. The split is by
+  the layer each assertion lives in. The first reads the committed graph's EDGES
+  and nothing else, because routing a node failure is entirely an edge property.
+  The second DRIVES the terminal's own script — extracted from the graph and
+  unescaped — by `sh` in a throwaway repository whose HEAD really carries Red
+  trailers, then feeds that real stderr through the production terminal mapper
+  and the durable-record writer over the real store/client seam, because the
+  reason comes from the SANDBOX while the failed stage comes from the ENGINE's
+  outcome map and neither can supply the other. The third is the preservation
+  assertion, which has nothing to implement and is therefore the one most easily
+  lost: each of its three facts is also a control in a sibling module, and what
+  it adds is the ORDINARY JOURNEY none of them asserts — a route onward, a
+  checkpoint no repository gate can refuse, and silence about an open Red. Two
+  controls are load-bearing. A completed Red-Green pair must produce the
+  unchanged generic reason, since the discriminator is the GREEN's absence and
+  not the Red's presence, and a completed pair is what every healthy stage
+  leaves. And each routed node must keep exactly ONE unconditional out-edge,
+  because an edge added by consuming the fallthrough routes the timeout
+  correctly and publishes a graph `fabro validate` rejects outright — the
+  `all_conditional_edges` defect that took the whole factory down twice.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
