@@ -41,6 +41,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_refusal
     MasterCiOutcome,
     pending_outcome,
 )
+from livespec_orchestrator_beads_fabro.io import write_stderr
 
 __all__: list[str] = [
     "POLL_INTERVAL_SECONDS",
@@ -91,6 +92,7 @@ def awaited_outcome(
     reading = read()
     while isinstance(reading, PendingRun):
         waited = now() - started
+        write_stderr(text=_progress_line(pending=reading, branch=branch, waited=waited))
         if waited >= WAIT_BOUND_SECONDS:
             return pending_outcome(
                 pipeline=pipeline,
@@ -102,3 +104,18 @@ def awaited_outcome(
         sleeper(min(POLL_INTERVAL_SECONDS, WAIT_BOUND_SECONDS - waited))
         reading = read()
     return reading
+
+
+def _progress_line(*, pending: PendingRun, branch: str, waited: float) -> str:
+    """One line per pending poll: a wait and a hang look identical without it.
+
+    Emitted from INSIDE the loop rather than once before it, because the whole
+    distinction it draws is between a process that is still checking and one
+    that has stopped. It names the run on purpose: across a window this long
+    the run being waited on can change, and a line that said only "waiting"
+    would hide exactly that.
+    """
+    return (
+        f"master-ci: run {pending.run_id} on `{branch}` is {pending.status}; "
+        f"waited {int(waited)}s of {int(WAIT_BOUND_SECONDS)}s\n"
+    )

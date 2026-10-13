@@ -693,6 +693,28 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   this tier's per-file coverage gate reads a never-taken branch in a fixture
   exactly as it reads one in the product.
 
+- `test_master_ci_pending_wait_scenario171.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 171 — A still-running master CI run
+  makes the preflight wait, not refuse" and the "A still-running master CI run
+  is not a failure" rule of `SPECIFICATION/contracts.md` it realizes. All four
+  of the heading's gherkin scenarios are driven through the REAL pre-dispatch
+  gate, `step_discipline_refusal` — the one sequence both dispatch paths reach
+  — so each outcome is read off what a dispatch actually consults: the gate's
+  proceed-or-refuse return value and the records it appends to a real on-disk
+  journal. They live in ONE module because they are four exits from one loop.
+  Only the gate's `CommandRunner` and the two wait figures are stood in; the
+  CLOCK and the SLEEP are the shipped ones, which is precisely what the focused
+  tests cannot exercise — those inject a fake clock, which is what makes the
+  1800-second bound and the 60-second poll ceiling assertable at all and also
+  means they never execute the production default. The expiry case asserts the
+  refusal and the `deferred` status as a PAIR, because either alone is
+  satisfied by a wrong outcome: a proceed journaled `deferred` would start a
+  dispatch against a default branch nobody has read a verdict for, and a
+  refusal journaled `failed` is the exact report the scenario exists to retire.
+  The newer-run case pends the first reading on run 404's OWN aggregate job
+  rather than on the run rollup, since a wait that narrowed to that job would
+  conclude about 404, never look at 505, and still produce a perfectly ordinary
+  pass.
 - `test_needs_human_preservation_push_hookless.py` — binds work-item
   bd-ib-3vn3mu against the SPECIFICATION/contracts.md rule that a factory run
   never awaits a human (ratified v093, Scenario 103): the `needs_human`

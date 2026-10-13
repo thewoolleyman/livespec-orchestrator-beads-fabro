@@ -1736,8 +1736,8 @@
     "heading": "## Scenario 171 \u2014 A still-running master CI run makes the preflight wait, not refuse",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "A real integration-tier test is owed for the master-CI preflight's bounded wait on a still-running default-branch run (green proceeds, red refuses, a newer run is followed, bound expiry defers with reason master-ci-pending) through the actual Dispatcher; existing child bd-ib-ex35cb owns it.",
+    "test": "tests.integration.test_master_ci_pending_wait_scenario171",
+    "reason": "All four of the heading's gherkin scenarios are driven through the REAL pre-dispatch gate (step_discipline_refusal, the one sequence both dispatch paths reach), so each outcome is read off what a dispatch actually consults: the gate's proceed-or-refuse return value and the records it appends to the dispatch journal. The module binds the whole heading in one place because the four outcomes are four exits from one loop. Only the gate's CommandRunner and the two wait figures are stood in; the clock and the sleep are the SHIPPED ones, which is what the focused tests cannot exercise - they inject a fake clock to make the 1800-second bound and the 60-second ceiling assertable at all.",
     "work_item": "bd-ib-ex35cb"
   },
   {

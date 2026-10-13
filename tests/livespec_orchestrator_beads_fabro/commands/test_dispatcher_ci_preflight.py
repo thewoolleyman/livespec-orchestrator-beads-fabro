@@ -631,6 +631,46 @@ def test_a_run_still_pending_at_the_bound_defers_after_the_whole_window(
     assert "waited 1800s" in outcome.refusal.detail
 
 
+def test_every_poll_that_observes_a_pending_run_prints_one_progress_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One line per pending poll, so an operator can tell a wait from a hang.
+
+    At the terminal a silent half-hour wait and a wedged dispatch are the same
+    observation, and they have opposite remedies. The count is asserted against
+    the number of polls actually taken rather than merely being non-zero: a
+    single line printed once would leave the remaining twenty-nine minutes
+    looking exactly like the hang it is meant to rule out.
+    """
+    assert _WAIT_MODULE_PATH.is_file()
+    waits = _Waits()
+    runner = _Runner(results=_results(run_list=_result(stdout=_run_list_payload(status="queued"))))
+
+    outcome = _waited(repo=tmp_path, runner=runner, waits=waits)
+
+    assert outcome.record["reason"] == "master-ci-pending"
+    lines = [line for line in capsys.readouterr().err.splitlines() if line]
+    assert len(lines) == len(waits.slept) + 1
+    assert all("303" in line for line in lines)
+    assert all("queued" in line for line in lines)
+    assert all(_DEFAULT_BRANCH in line for line in lines)
+
+
+def test_a_reading_that_was_never_pending_prints_no_progress_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Progress belongs to a WAIT, not to every dispatch.
+
+    The ordinary dispatch reads a concluded run and says nothing; a line here
+    would put a wait notice on every green preflight, which is the fastest way
+    to teach an operator to stop reading them.
+    """
+    runner = _Runner(results=_results())
+
+    assert _outcome(repo=tmp_path, runner=runner).refusal is None
+    assert capsys.readouterr().err == ""
+
+
 @pytest.mark.parametrize(
     ("run_list", "jobs"),
     [
