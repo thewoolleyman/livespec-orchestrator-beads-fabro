@@ -16,6 +16,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_failure import
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_detail import (
     needs_human_terminal_detail,
+    needs_human_terminal_reason,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     NEEDS_HUMAN_MARKER,
@@ -168,6 +169,13 @@ def _needs_human_terminal_outcome(
     meant a ceiling observed at a needs-human ending wrote NO dispatcher-owned
     hold — and the next dispatch burned the same exhausted credential.
 
+    THE TERMINAL'S OWN REASON IS PARSED ONCE AND CARRIED, for the same reason
+    and from the same text the detail is rendered from. The durable ledger
+    record is appended long after this mapper, from the outcome alone, so a
+    reason left only inside `detail` would reach it only as prose to re-match —
+    and for a stage that TIMED OUT that line is the sole account of what the
+    half-finished turn left behind (work-item bd-ib-qhv7qs).
+
     THE CAUSAL VERDICT IS COMPUTED ONCE AND CARRIED, rather than rendered into
     the detail and recovered downstream. The escalation that writes this
     ending's operator guidance to stderr needs the same three-way verdict the
@@ -196,6 +204,7 @@ def _needs_human_terminal_outcome(
         ),
         needs_human_kind=causal.kind,
         needs_human_stages=causal.stages,
+        needs_human_reason=needs_human_terminal_reason(text=text),
         fabro_run_id=run_id,
         fabro_failure_cause=None if failure is None else failure.cause,
         fabro_failure_category=None if failure is None else failure.category,

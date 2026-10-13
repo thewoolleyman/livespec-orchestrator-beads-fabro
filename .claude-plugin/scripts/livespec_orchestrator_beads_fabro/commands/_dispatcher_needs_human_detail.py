@@ -49,6 +49,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_transport_fault import (
 
 __all__: list[str] = [
     "needs_human_terminal_detail",
+    "needs_human_terminal_reason",
 ]
 
 _UNKNOWN_RUN = "unknown-run"
@@ -115,23 +116,45 @@ def needs_human_terminal_detail(
     return "; ".join(clauses)
 
 
-def _reason(*, text: str) -> str:
-    """The terminal node's own emitted reason, stripped of its routing suffix.
+def needs_human_terminal_reason(*, text: str) -> str | None:
+    """The reason the terminal node itself emitted, stripped of its routing suffix.
 
-    Rendered for every ending because it is the only channel some failures have
-    at all: a `publish_draft` refusal writes its whole diagnosis — the file it
-    refused and the permission it lacked — into this line, and the engine
-    classifies no cause for it. Dropping the clause lost that diagnosis from the
-    one surface an operator reads.
+    PUBLIC because TWO surfaces owe an operator this line and neither may
+    re-derive it. `_reason` below renders it into the dispatch RESULT, which is
+    read once; `_dispatcher_needs_human_cause` writes it into the item's DURABLE
+    record, which is appended long after the run's output has scrolled away and
+    is the only account that survives the factory pruning the run. So the parse
+    is resolved ONCE here and carried on `DispatchOutcome.needs_human_reason`,
+    for the same resolve-once-project-everywhere reason every other typed field
+    on that outcome exists: a second partition of the same text in a module that
+    never sees the text is not reachable at all, and one in a module that does
+    is a second implementation of one rule.
+
+    The line matters because it is the only channel some failures have at all: a
+    `publish_draft` refusal writes its whole diagnosis — the file it refused and
+    the permission it lacked — into it, the terminal writes the open-Red clause
+    for a stage that timed out mid Red-Green pair, and the engine classifies no
+    cause for either.
+
+    `None` RATHER THAN A PLACEHOLDER, because the two callers owe an absence
+    opposite renderings. The detail says `not recorded` in as many words, since
+    its reader is looking for the clause and needs to know it was looked for.
+    The record OMITS the line, since every line it carries is a claim a reader
+    acts on and the comment cannot be edited afterwards — "the terminal recorded
+    nothing" is a claim about the terminal, and an unreadable run output supports
+    it no better than it supports any other.
     """
-    with_fallback = f"{text}\n{_REASON_PREFIX}{_REASON_UNRECORDED}"
-    recorded = (
-        with_fallback.partition(_REASON_PREFIX)[2]
-        .partition(_REASON_SUFFIX)[0]
-        .splitlines()[0]
-        .strip()
-    )
-    return f"terminal reason: {recorded or _REASON_UNRECORDED}"
+    if _REASON_PREFIX not in text:
+        return None
+    lines = text.partition(_REASON_PREFIX)[2].partition(_REASON_SUFFIX)[0].splitlines()
+    if not lines:
+        return None
+    return lines[0].strip() or None
+
+
+def _reason(*, text: str) -> str:
+    """The terminal's own reason as the dispatch result reports it."""
+    return f"terminal reason: {needs_human_terminal_reason(text=text) or _REASON_UNRECORDED}"
 
 
 def _head(*, run_label: str, causal: CausalStageFailure) -> str:

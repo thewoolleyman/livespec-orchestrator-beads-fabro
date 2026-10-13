@@ -22,7 +22,10 @@ is a claim a reader ACTS on, and this record outlives everything that could
 correct it — `bd comments` offers add and list, with no edit and no delete. For
 the same reason it claims nothing about PRESERVATION: whether a ref was pushed
 is read from the terminal's own sentinels by `_dispatcher_needs_human_detail`,
-which has the run output this writer does not.
+which has the run output this writer does not. The terminal's own REASON line is
+the one thing out of that output this record does carry, and it arrives already
+parsed on the outcome rather than re-derived here, precisely because this writer
+never sees the text.
 
 TWO HAZARDS COME FROM THE TEXT BEING ENGINE-AUTHORED RATHER THAN OURS, and both
 are closed by primitives that already exist rather than by local copies.
@@ -164,6 +167,7 @@ def needs_human_cause_body(*, outcome: DispatchOutcome) -> str:
         f"run id: {outcome.fabro_run_id or '(not parsed from the launch output)'}",
         f"ending: {outcome.needs_human_kind}",
         *_attribution(outcome=outcome),
+        *_terminal_reason(outcome=outcome),
         *_provider(outcome=outcome),
         "",
         _decision(outcome=outcome),
@@ -229,6 +233,32 @@ def _fault(*, cause: str) -> tuple[str, ...]:
     if fault.task_id is not None:
         lines.append(f"backgrounded task: {fault.task_id}")
     return tuple(lines)
+
+
+def _terminal_reason(*, outcome: DispatchOutcome) -> tuple[str, ...]:
+    """The reason the terminal node printed, which for some endings is the only one.
+
+    RENDERED UNDER EVERY KIND, unlike `_attribution` above, because the terminal
+    prints this line whatever routed the run to it and the engine classifies no
+    cause for several of the endings that reach it. A `publish_draft` permission
+    refusal and a stage that timed out mid Red-Green pair both arrive here with
+    the whole diagnosis in this one line and nothing in the outcome map; the
+    transient surfaces already carry it (`_dispatcher_needs_human_detail`), and
+    without it here the durable record — the one that outlives the run — was the
+    only surface missing the account (work-item bd-ib-qhv7qs).
+
+    OMITTED rather than reported absent, per this module's own rule that a
+    silence is meaningful: a line saying the terminal recorded nothing is a
+    claim about the TERMINAL, and an unreadable or truncated run output supports
+    it no better than it supports any other.
+
+    Through `_safe` for the same reason every other engine-authored line is: the
+    reason can quote an agent's own words, a path, or a command, and this record
+    cannot be repaired after the fact.
+    """
+    if outcome.needs_human_reason is None:
+        return ()
+    return (f"terminal reason: {_safe(text=outcome.needs_human_reason)}",)
 
 
 def _provider(*, outcome: DispatchOutcome) -> tuple[str, ...]:
