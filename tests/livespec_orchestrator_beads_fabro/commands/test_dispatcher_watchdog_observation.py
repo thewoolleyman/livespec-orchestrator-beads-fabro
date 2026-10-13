@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_watchdog_observation
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_discovery import (
     DISCOVERY_JOURNAL_STAGE,
@@ -29,6 +31,14 @@ _PS_ROW = (
     '"goal": "Work-item: bd-ib-mine\\nRepo: /tmp/repo"}]'
 )
 _INSPECT_RECORD = '[{"run_id": "01BOUND", "status": {"kind": "running"}}]'
+# The factory's own answer for a run it does not hold, copied from the message
+# `fabro dump` printed for run 01M4R5S6GST6XNQA10SGJ9TA2H against
+# hp-xubuntu:32276 on 2026-10-12 (recorded on this work-item's own ledger).
+_NOT_FOUND_STDERR = "\u00d7 No run found matching '01BOUND' (tried run ID prefix and workflow name)"
+# Spelled as a LITERAL and bound to the exported name by the case below,
+# because this module's Red predates the constant and a top-level import of a
+# name that does not exist yet would make the Red a collection error.
+_RUN_NOT_HELD = "run-not-held"
 
 
 @dataclass(kw_only=True)
@@ -51,6 +61,7 @@ class _Runner:
 
     argvs: list[list[str]]
     stdout_by_verb: dict[str, str]
+    stderr_by_verb: dict[str, str]
     exit_code_by_verb: dict[str, int]
 
     @property
@@ -71,7 +82,7 @@ class _Runner:
         return CommandResult(
             exit_code=self.exit_code_by_verb.get(argv[1], 0),
             stdout=self.stdout_by_verb.get(argv[1], ""),
-            stderr="",
+            stderr=self.stderr_by_verb.get(argv[1], ""),
         )
 
 
@@ -87,11 +98,13 @@ def _port(*, runner: _Runner) -> FabroPort:
 def _runner(
     *,
     stdout_by_verb: dict[str, str] | None = None,
+    stderr_by_verb: dict[str, str] | None = None,
     exit_code_by_verb: dict[str, int] | None = None,
 ) -> _Runner:
     return _Runner(
         argvs=[],
         stdout_by_verb=stdout_by_verb if stdout_by_verb is not None else {},
+        stderr_by_verb=stderr_by_verb if stderr_by_verb is not None else {},
         exit_code_by_verb=exit_code_by_verb if exit_code_by_verb is not None else {},
     )
 
@@ -100,9 +113,10 @@ def _inspect(
     *,
     exit_code: int = 0,
     status_kind: str | None = "running",
+    stderr: str = "",
 ) -> FabroInspectResult:
     return FabroInspectResult(
-        command=CommandResult(exit_code=exit_code, stdout="", stderr=""),
+        command=CommandResult(exit_code=exit_code, stdout="", stderr=stderr),
         payload=None,
         status_kind=status_kind,
         failure=None,
@@ -178,6 +192,7 @@ def test_classify_bound_poll_matches_a_running_run() -> None:
         run_id="01BOUND",
         inspect_exit_code=0,
         status_kind="running",
+        output=_INSPECT_RECORD,
     )
 
     assert outcome.reason == DISCOVERY_REASON_MATCHED
@@ -194,6 +209,7 @@ def test_classify_bound_poll_matches_a_runnable_run_so_the_reaper_still_sees_it(
         run_id="01BOUND",
         inspect_exit_code=0,
         status_kind="runnable",
+        output=_INSPECT_RECORD,
     )
 
     assert outcome.reason == DISCOVERY_REASON_MATCHED
@@ -206,6 +222,7 @@ def test_classify_bound_poll_reports_a_terminal_run_and_still_names_its_subject(
         run_id="01BOUND",
         inspect_exit_code=0,
         status_kind="succeeded",
+        output=_INSPECT_RECORD,
     )
 
     assert outcome.reason == DISCOVERY_REASON_STATUS_KIND_NOT_RUNNING
@@ -260,3 +277,105 @@ def test_journaled_bound_poll_records_a_poll_that_saw_no_actionable_run() -> Non
             "status_kind": "failed",
         }
     ]
+
+
+def test_the_run_not_held_reason_is_the_exported_constant() -> None:
+    """Bind the literal above to the name the module exports.
+
+    The literal exists because this module's Red predates the constant; this
+    case is what stops the two drifting once it does not.
+    """
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_observation"
+    )
+
+    assert getattr(module, "BOUND_POLL_REASON_RUN_NOT_HELD", None) == _RUN_NOT_HELD
+    assert _dispatcher_watchdog_observation is module
+
+
+def test_a_bound_poll_reports_a_run_the_factory_no_longer_holds() -> None:
+    """A factory answering "no such run" is a DISAPPEARANCE, and is named one.
+
+    Distinct from `status-kind-not-running`, which says the factory still
+    holds the run and is simply not running it: the two are different facts
+    about the factory with different remedies, so collapsing them would make
+    a vanished run read as a finished one.
+    """
+    outcome = classify_bound_poll(
+        work_item_id="bd-ib-mine",
+        run_id="01BOUND",
+        inspect_exit_code=1,
+        status_kind=None,
+        output=_NOT_FOUND_STDERR,
+    )
+
+    assert outcome.reason == _RUN_NOT_HELD
+    assert outcome.run is None
+    assert outcome.run_id == "01BOUND"
+
+
+def test_a_readable_status_wins_over_a_not_found_phrase_inside_the_payload() -> None:
+    """A run whose own payload quotes the not-found message is still held.
+
+    `fabro inspect` echoes the run's whole `run_spec`, rendered goal included,
+    so the marker can appear in a perfectly healthy reading — this very
+    work-item's goal quotes it. The status the read DID yield is therefore
+    consulted first, and the marker is only ever read where no status could
+    be. Without this case a scan of the whole output passes every other
+    assertion here while reporting a live run as vanished.
+    """
+    outcome = classify_bound_poll(
+        work_item_id="bd-ib-mine",
+        run_id="01BOUND",
+        inspect_exit_code=0,
+        status_kind="running",
+        output='[{"run_spec": {"goal": "stderr: No run found matching ..."}}]',
+    )
+
+    assert outcome.reason == DISCOVERY_REASON_MATCHED
+    assert outcome.run is not None
+
+
+def test_journaled_bound_poll_records_a_run_the_factory_no_longer_holds() -> None:
+    journal = _Journal(records=[])
+
+    run = journaled_bound_poll(
+        work_item_id="bd-ib-mine",
+        run_id="01BOUND",
+        inspect=_inspect(exit_code=1, status_kind=None, stderr=_NOT_FOUND_STDERR),
+        journal=journal,
+    )
+
+    assert run is None
+    assert journal.records == [
+        {
+            "work_item_id": "bd-ib-mine",
+            "stage": BOUND_POLL_JOURNAL_STAGE,
+            "matched": False,
+            "reason": _RUN_NOT_HELD,
+            "run_id": "01BOUND",
+            "inspect_exit_code": 1,
+            "status_kind": None,
+        }
+    ]
+
+
+def test_a_bound_poll_whose_factory_holds_no_such_run_reports_it_through_the_port() -> None:
+    """End to end through the real port: the engine's own refusal is read back."""
+    runner = _runner(
+        stderr_by_verb={"inspect": _NOT_FOUND_STDERR},
+        exit_code_by_verb={"inspect": 1},
+    )
+    journal = _Journal(records=[])
+
+    run = observed_run(
+        work_item_id="bd-ib-mine",
+        port=_port(runner=runner),
+        journal=journal,
+        attribution=GOAL_TEXT_ONLY,
+        bound_run_id="01BOUND",
+    )
+
+    assert run is None
+    assert runner.verbs == ["inspect"]
+    assert [record["reason"] for record in journal.records] == [_RUN_NOT_HELD]

@@ -23,14 +23,18 @@ dispatching host plus a full-store scan on the factory for every one.
 server-side scan dominates: `--label` took 12-14 s and the running-only form
 (no `-a`) took 30 s. Only asking about one run removes the growth term.
 
-THE BOUND POLL'S FOUR REASONS. Two are shared verbatim with the discovery
-poll, because they mean the same thing about the run whichever way it was
+THE BOUND POLL'S REASONS. Two are shared verbatim with the discovery poll,
+because they mean the same thing about the run whichever way it was
 observed — which is what lets `matched` answer "could the watchdog see its
 run?" across a dispatch whose polls changed mode partway through:
 
 * `matched` — the read answered with a status the watchdog may act on.
 * `status-kind-not-running` — it answered with one the watchdog may not
   (already terminal, say). The factory still holds the run.
+* `run-not-held` — the factory answered that it holds NO SUCH RUN. A
+  different fact from the one above and a different remedy: the run is gone
+  rather than finished, so collapsing the two makes a vanished run read as
+  a completed one.
 """
 
 from __future__ import annotations
@@ -56,6 +60,7 @@ from livespec_orchestrator_beads_fabro.commands._run_attribution import RunAttri
 
 __all__: list[str] = [
     "BOUND_POLL_JOURNAL_STAGE",
+    "BOUND_POLL_REASON_RUN_NOT_HELD",
     "BoundPollOutcome",
     "classify_bound_poll",
     "journaled_bound_poll",
@@ -69,6 +74,24 @@ __all__: list[str] = [
 # The `matched` boolean and the two shared reason names are what keep the
 # pair queryable together.
 BOUND_POLL_JOURNAL_STAGE = "watchdog-bound-poll"
+
+BOUND_POLL_REASON_RUN_NOT_HELD = "run-not-held"
+
+# The factory's own answer for a run it does not hold, lower-cased. Copied
+# from the message `fabro dump` printed against hp-xubuntu:32276 on
+# 2026-10-12 for run 01M4R5S6GST6XNQA10SGJ9TA2H — a leading cross glyph then
+# "No run found matching '<id>' (tried run ID prefix and workflow name)" —
+# rather than paraphrased,
+# because a reconstructed phrase is the shape that matches nothing and then
+# reports the absence as a measurement.
+#
+# A READING THAT YIELDED A STATUS IS NEVER SCANNED FOR IT. `fabro inspect`
+# echoes the run's whole `run_spec`, rendered goal included, so any run whose
+# brief QUOTES this message carries the marker in a perfectly healthy
+# payload — this very work-item's goal does. The marker is therefore consulted
+# only where no status could be read at all, which is the one reading it can
+# say anything about.
+_RUN_NOT_HELD_MARKER = "no run found"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -145,6 +168,7 @@ def journaled_bound_poll(
         run_id=run_id,
         inspect_exit_code=inspect.command.exit_code,
         status_kind=inspect.status_kind,
+        output=f"{inspect.command.stdout}\n{inspect.command.stderr}",
     )
     journal.append(record=_bound_poll_record(work_item_id=work_item_id, outcome=outcome))
     return outcome.run
@@ -156,6 +180,7 @@ def classify_bound_poll(
     run_id: str,
     inspect_exit_code: int,
     status_kind: str | None,
+    output: str,
 ) -> BoundPollOutcome:
     """Classify one `fabro inspect <run-id>` reading of an already-bound run.
 
@@ -163,12 +188,19 @@ def classify_bound_poll(
     The Dispatcher bound it, so the poll already knows which run it asked
     about, and re-deriving it would make a payload this module could not parse
     look like a poll about no run in particular.
+
+    The LADDER IS ORDERED, and the order is the whole defence against reading
+    a healthy run as a vanished one: a reading that yielded a status is
+    graded on that status and never scanned, and only a reading that yielded
+    none is asked whether the factory refused to find the run at all.
     """
-    if inspect_exit_code == 0 and status_kind in ACTIONABLE_STATUS_KINDS:
+    if inspect_exit_code == 0 and status_kind is not None:
+        return _read_status(work_item_id=work_item_id, run_id=run_id, status_kind=status_kind)
+    if _RUN_NOT_HELD_MARKER in output.casefold():
         return _outcome(
             run_id=run_id,
-            run=_bound_run(work_item_id=work_item_id, run_id=run_id, status_kind=status_kind),
-            reason=DISCOVERY_REASON_MATCHED,
+            run=None,
+            reason=BOUND_POLL_REASON_RUN_NOT_HELD,
             inspect_exit_code=inspect_exit_code,
             status_kind=status_kind,
         )
@@ -177,6 +209,20 @@ def classify_bound_poll(
         run=None,
         reason=DISCOVERY_REASON_STATUS_KIND_NOT_RUNNING,
         inspect_exit_code=inspect_exit_code,
+        status_kind=status_kind,
+    )
+
+
+def _read_status(*, work_item_id: str, run_id: str, status_kind: str) -> BoundPollOutcome:
+    """Grade a reading that DID yield a status for the bound run."""
+    actionable = status_kind in ACTIONABLE_STATUS_KINDS
+    return _outcome(
+        run_id=run_id,
+        run=_bound_run(work_item_id=work_item_id, run_id=run_id, status_kind=status_kind)
+        if actionable
+        else None,
+        reason=DISCOVERY_REASON_MATCHED if actionable else DISCOVERY_REASON_STATUS_KIND_NOT_RUNNING,
+        inspect_exit_code=0,
         status_kind=status_kind,
     )
 
