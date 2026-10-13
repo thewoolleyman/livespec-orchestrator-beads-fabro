@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.196.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.195.0...v0.196.0) (2026-10-13)
+
+
+### Features
+
+* **plan:** keep legacy pointers readable and make plan diagnosis read-only ([ef082e7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ef082e7ce2ee4a92708bf3409572dce911bb8d6e))
+* **plan:** preserve the original result budget across every pointer writer ([bd63fe4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bd63fe413865a7e908d80c797f3dc9e7aecfaed3))
+* **plan:** require typed causal recovery to continue an expired obligation ([f4aab3e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f4aab3ed3ba9cb3bea1c086737cba9ff4057c09e))
+* **plan:** resume reports durable progress and withholds exhausted dispatch ([a8f59a4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a8f59a445e6956ce5111681200e1b696d934b814))
+
 ## [0.195.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.194.4...v0.195.0) (2026-10-13)
 
 
