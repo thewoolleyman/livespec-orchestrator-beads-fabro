@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.194.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.194.1...v0.194.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* **acp:** price every model identity this repository renders ([27812a9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/27812a9a77386c06551b7d8b30249f84438f0070))
+
 ## [0.194.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.194.0...v0.194.1) (2026-10-13)
 
 
