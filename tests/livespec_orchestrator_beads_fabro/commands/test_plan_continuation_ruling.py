@@ -40,6 +40,21 @@ from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
     PlanTimelineEntry,
 )
 
+# Every ruling-line name the verdict reads, which must be ONE object shared with
+# the parser rather than a second copy. Spelled out rather than derived from
+# either module's `__all__`: a derived list would shrink to whatever the verdict
+# happens to import and could never report a name that went missing.
+_RULING_VOCABULARY = (
+    "AUTHORIZED_LINE_COUNT",
+    "BY_PREFIX",
+    "DIRECTIVE_PREFIX",
+    "RECORDED_ATTENDED_LINE",
+    "REVOKED_PREFIX",
+    "UNTIL_PREFIX",
+    "is_continuation_ruling",
+    "ruling_line_value",
+)
+
 _EPIC = "bd-ib-liveplan"
 _SLUG = "a-live-plan"
 _AUTHOR = "Chad Woolley"
@@ -97,15 +112,18 @@ def test_the_ruling_line_prefixes_are_imported_rather_than_redefined() -> None:
     the two modules cannot be allowed to disagree about what a ruling line is. A
     second copy of a prefix would read identically on the day it was written and
     silently stop agreeing on the day either side changed.
+
+    IDENTITY, not equality, and over the WHOLE vocabulary rather than a sample.
+    Equality is what a redefined copy also satisfies, which is the only failure
+    this test exists to catch; and a sampled subset leaves every unsampled name
+    free to be the redefined one. The two predicates are here beside the six
+    literals because the same argument covers them: `is_continuation_ruling`
+    decides which events are rulings at all, and `ruling_line_value` decides that
+    a blank value is an absent line.
     """
-    assert "UNTIL_PREFIX" in _plan_continuation.__all__
-    assert "is_continuation_ruling" in _plan_continuation.__all__
-    assert "ruling_line_value" in _plan_continuation.__all__
-    assert _plan_continuation_ruling.UNTIL_PREFIX is _plan_continuation.UNTIL_PREFIX
-    assert _plan_continuation_ruling.is_continuation_ruling is (
-        _plan_continuation.is_continuation_ruling
-    )
-    assert _plan_continuation_ruling.ruling_line_value is _plan_continuation.ruling_line_value
+    for name in _RULING_VOCABULARY:
+        assert name in _plan_continuation.__all__, name
+        assert getattr(_plan_continuation_ruling, name) is getattr(_plan_continuation, name), name
 
 
 def test_a_ruling_lacking_its_until_line_is_reported_naming_the_epic_and_the_instant() -> None:
