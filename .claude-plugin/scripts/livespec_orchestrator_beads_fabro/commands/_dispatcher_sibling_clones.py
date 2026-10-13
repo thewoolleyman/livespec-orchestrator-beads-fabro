@@ -29,10 +29,29 @@ _FLEET_MANIFEST_API_PATH = "repos/thewoolleyman/livespec/contents/.livespec-flee
 _FLEET_MANIFEST_FETCH_TIMEOUT_SECONDS = 60.0
 
 # In-sandbox directory the sibling clones land under; projected into
-# the sandbox env as LIVESPEC_SIBLING_CLONES_ROOT. `/workspace` is the
-# fabro docker sandbox's workspace root (the target repo's clone sits
-# at /workspace/<repo>), so the siblings root never collides with it.
-_SIBLING_CLONES_ROOT = "/workspace/siblings"
+# the sandbox env as LIVESPEC_SIBLING_CLONES_ROOT.
+#
+# IT SITS OUTSIDE `/workspace` ENTIRELY, AND THAT IS THE WHOLE POINT:
+# the two engines put the target repository's clone in DIFFERENT places
+# inside that mount, so no path under it is outside the clone on both.
+# The pinned 0.254 layout checks the target out at `/workspace/<repo>`
+# (a symlink to the real clone), which left the former
+# `/workspace/siblings` beside it; the Petri-era engine checks it out AT
+# the workspace root — its hooks log `site=Sandbox("/workspace")` — which
+# turned that same path into a directory INSIDE the clone. Every
+# whole-tree check the governed repository runs then scans the sibling
+# checkouts: measured 2026-10-13 on hp-candidate run 01M4SNYP3GT2
+# (fabro 0.382.0-nightly.0), the implement stage spent fifteen minutes
+# and could not land one Red commit, because the commit hooks kept
+# failing on a sibling's own dev-tooling files.
+#
+# A sibling of the workspace mount rather than a child of it, so the
+# relationship holds whichever layout the engine hands the run. The
+# sandbox executes its prepare steps as uid 0 (measured in-sandbox on
+# the family image), so the step's `mkdir -p` reaches the container
+# filesystem root; the clones are not temporary — every in-sandbox check
+# reads them for the whole run — so they do not belong under `/tmp`.
+_SIBLING_CLONES_ROOT = "/livespec-siblings"
 
 
 def fetch_fleet_manifest_text() -> str | None:

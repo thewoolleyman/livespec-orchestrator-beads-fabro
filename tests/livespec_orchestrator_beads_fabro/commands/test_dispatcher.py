@@ -2129,13 +2129,15 @@ def test_render_run_config_overlay_rejects_unusable_shapes(tmp_path: Path) -> No
 
 
 # The sandbox sibling-clone plan the render tests exercise: clones land
-# under the fabro sandbox workspace root, mirroring how livespec CI
-# provisions LIVESPEC_SIBLING_CLONES_ROOT for the cross-repo wiring
-# check.
+# OUTSIDE the target repository's clone — beside the fabro sandbox
+# workspace mount rather than under it, since the Petri-era engine checks
+# that clone out at the workspace root itself (bd-ib-3eleqo) — mirroring
+# how livespec CI provisions LIVESPEC_SIBLING_CLONES_ROOT for the
+# cross-repo wiring check.
 _SIBLINGS = SiblingClones(
     owner="thewoolleyman",
     repos=("livespec", "livespec-dev-tooling"),
-    clones_root="/workspace/siblings",
+    clones_root="/livespec-siblings",
 )
 
 
@@ -2154,13 +2156,13 @@ def _expected_clone_script(repo_name: str) -> str:
         "livespec-orchestrator-beads-fabro dispatcher: sibling clone skipped" f" for {repo_name}: "
     )
     return (
-        "mkdir -p /workspace/siblings || exit 1;"
+        "mkdir -p /livespec-siblings || exit 1;"
         f" GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code {url} HEAD"
         " >/dev/null 2>&1 ||"
         f" {{ echo '{prefix}repository not reachable (nonexistent or no access)'"
         " >&2; exit 0; };"
         f" GIT_TERMINAL_PROMPT=0 git clone --quiet --depth 1 {url}"
-        f" /workspace/siblings/{repo_name} ||"
+        f" /livespec-siblings/{repo_name} ||"
         f" {{ echo '{prefix}clone failed after a successful reachability probe"
         " (transient)' >&2; exit 0; }"
     )
@@ -2172,7 +2174,7 @@ _DEV_TOOLING_CLONE_STEP_LINE = "script = " + json.dumps(
     _expected_clone_script("livespec-dev-tooling")
 )
 
-_SIBLING_ENV_LINE = 'LIVESPEC_SIBLING_CLONES_ROOT = "/workspace/siblings"'
+_SIBLING_ENV_LINE = 'LIVESPEC_SIBLING_CLONES_ROOT = "/livespec-siblings"'
 _CURRENCY_GATE_ENV_LINE = 'LIVESPEC_CURRENCY_GATE = "fail"'
 _TMUX_TMPDIR_ENV_LINE = 'TMUX_TMPDIR = "/workspace/.tmux"'
 _NO_AUTO_BACKGROUND_ENV_LINE = 'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "1"'
@@ -2186,7 +2188,7 @@ _TMUX_TMPDIR_PREPARE_STEP_LINE = (
 # sandbox via this projected env key, valued at the in-sandbox core-sibling
 # clone path (`<clones_root>/livespec/.claude-plugin`).
 _CORE_PLUGIN_ROOT_ENV_LINE = (
-    'LIVESPEC_CORE_PLUGIN_ROOT = "/workspace/siblings/livespec/.claude-plugin"'
+    'LIVESPEC_CORE_PLUGIN_ROOT = "/livespec-siblings/livespec/.claude-plugin"'
 )
 
 
@@ -2360,7 +2362,7 @@ def test_render_run_config_overlay_sibling_clone_steps_tolerate_bad_members(
         # NON-BREAKING: the healthy path still runs the identical clone.
         assert (
             "git clone --quiet --depth 1 https://github.com/thewoolleyman/"
-            f"{repo_name}.git /workspace/siblings/{repo_name}" in script
+            f"{repo_name}.git /livespec-siblings/{repo_name}" in script
         )
 
 
@@ -2419,7 +2421,7 @@ def test_render_run_config_overlay_without_core_sibling_omits_core_plugin_root(
     siblings = SiblingClones(
         owner="thewoolleyman",
         repos=("livespec-dev-tooling",),
-        clones_root="/workspace/siblings",
+        clones_root="/livespec-siblings",
     )
     overlay_token = "test-oauth-token"
     rendered = render_run_config_overlay(
@@ -5344,7 +5346,7 @@ def test_dispatch_overlay_provisions_sibling_clones_for_fleet(
 ) -> None:
     """The materialized overlay provisions every fleet member EXCEPT the
     dispatch target (already the sandbox workspace clone) as a depth-1
-    prepare-step clone under /workspace/siblings, and projects
+    prepare-step clone under /livespec-siblings, and projects
     LIVESPEC_SIBLING_CLONES_ROOT into the sandbox env table so
     cross-repo checks under `just check` resolve the siblings there —
     mirroring livespec CI's sibling-clone provisioning."""
