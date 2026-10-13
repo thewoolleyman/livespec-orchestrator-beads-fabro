@@ -38,6 +38,7 @@ __all__: list[str] = [
     "AuthorityState",
     "OperationReceipt",
     "TransitionPayload",
+    "carrying_receipts",
     "parse_payload",
     "render_payload",
     "with_receipt",
@@ -120,6 +121,29 @@ def with_receipt(*, state: AuthorityState, receipt: OperationReceipt) -> Authori
         consumed_handoffs=state.consumed_handoffs,
         last_recovery_attempt=state.last_recovery_attempt,
         receipts=(*state.receipts, receipt)[-RECEIPT_RING_SIZE:],
+    )
+
+
+def carrying_receipts(
+    *,
+    state: AuthorityState,
+    receipts: tuple[OperationReceipt, ...],
+) -> AuthorityState:
+    """Return a writer's authority fields over the CHAIN's receipt ring.
+
+    The ring is chain history and no writer supplies it. A transition that
+    committed the caller's own `receipts` would erase the receipts that make
+    another operation's retry recognisable — measured on this module's first
+    build, where a chain of 24 transitions held ONE receipt because each
+    writer arrived with an empty ring.
+    """
+    return AuthorityState(
+        required_result=state.required_result,
+        original_deadline=state.original_deadline,
+        max_handoffs=state.max_handoffs,
+        consumed_handoffs=state.consumed_handoffs,
+        last_recovery_attempt=state.last_recovery_attempt,
+        receipts=receipts,
     )
 
 

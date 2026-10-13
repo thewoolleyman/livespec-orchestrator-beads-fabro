@@ -55,6 +55,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import (
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_payload import (
     OperationReceipt,
     TransitionPayload,
+    carrying_receipts,
     parse_payload,
     render_payload,
     with_receipt,
@@ -190,7 +191,10 @@ def _close_and_project(
         next_token_id=candidate,
         event_kind=request.event_kind,
         authority=with_receipt(
-            state=request.authority,
+            state=carrying_receipts(
+                state=request.authority,
+                receipts=head.authority.receipts,
+            ),
             receipt=OperationReceipt(
                 operation_id=request.operation_id,
                 epoch=head.epoch + 1,
@@ -222,6 +226,8 @@ def _close_and_project(
         latest_closed=head.current_token_id,
         current=candidate,
     )
+    if head.latest_closed_token_id is not None:
+        discard_token(client=client, token_id=head.latest_closed_token_id)
     return CommittedTransition(payload=payload, source=COMMITTED)
 
 
