@@ -1,0 +1,3529 @@
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/CLAUDE.md b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/CLAUDE.md
+index fe9ca87d..55e34f7d 100644
+--- a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/CLAUDE.md
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/CLAUDE.md
+@@ -970,6 +970,46 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
+   each caller remembers: a caller that forgot to verify would still get a
+   perfectly good head.
+ 
++- The FAILED ENGINE CHECKPOINT ATTRIBUTION of `contracts.md`'s
++  failed-engine-checkpoint-commit-attribution clause (`bd-ib-6jkjzm`, Scenario
++  170) — what a dispatch reports when the engine's own `git add` / `git commit`
++  on the run branch fails OUTSIDE every workflow node, where the graph has no
++  edge to route it and the `needs_human` terminal never fires. Eight cohesive
++  modules, and the dependency direction reads bottom-up: `_fabro_failed_targets`
++  (PURE: the aggregate runner's `Failed targets` summary and the hook runner's own
++  per-command run summary) and `_fabro_checkpoint_message` (PURE: the engine's
++  terminal failure message, and the timed-out operation and elapsed figure inside
++  it) and `_fabro_checkpoint_event` (PURE: the `checkpoint.failed` event and the
++  terminal `run.failed` patch) → `_dispatcher_checkpoint_record` (the typed
++  attribution plus the closed four-arm vocabulary) →
++  `_dispatcher_checkpoint_attribution` (PURE: the ladder) →
++  `_dispatcher_checkpoint_detail` / `_dispatcher_checkpoint_journal` /
++  `_dispatcher_checkpoint_comment` (the three surfaces, each a projection) →
++  `_dispatcher_checkpoint_events` (the one factory read) and
++  `_dispatcher_checkpoint_outcome` (the arm `_dispatcher_fabro_terminal` calls
++  LAST, after every classification that already owns a run).
++  `_dispatcher_checkpoint_probe` carries the two IO seams as one optional value.
++  Six properties an editor must not invert. RECOGNITION IS FROM THE EVENT STREAM
++  and the message only when that stream cannot be read: the event carries the node,
++  the error AND the output tail while the message carries the first two, so a
++  message-first reading discards every target the attribution exists to name. The
++  events are read from the DISPATCH'S OWN factory and a factory declaring no
++  server url is reported UNREAD rather than surveyed through a bare client, which
++  on this fleet answers for loopback with a clean, plausible, empty result. The
++  attribution set is CLOSED at four and each member names the EVIDENCE that earned
++  it, so a tail with no recognized summary is an `observation` that asserts nothing
++  rather than a cause inferred from whatever recipe printed last. The CONFIGURED
++  budget and the ENGINE's measurement are separate fields and a budget that could
++  not be read names its reason — the engine's stock budget is never substituted,
++  because the smaller figure is just as well-formed a number. The TERMINAL PATCH
++  has three states: `recorded`, `absent` (the event was read and carried none) and
++  `unavailable` (the stream was not read), and collapsing the third into the second
++  reports a run whose work was never observed as a run that produced none. And the
++  ledger comment carries NAMES AND FIGURES ONLY — every name identifier-shaped or
++  left out and counted, the whole body put to the shared template-opener detector
++  before it is written, because `bd comments` offers add and list with no edit and
++  no delete.
++
+ Rules an agent editing this tree must follow:
+ 
+ - `main()` is the only place `sys.stdout.write` / `sys.stderr.write`
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_blocked.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_blocked.py
+index 4cacbc72..33656f89 100644
+--- a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_blocked.py
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_blocked.py
+@@ -18,6 +18,9 @@ from pathlib import Path
+ from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
+     update_work_item_blocked_state,
+ )
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_record import (
++    CHECKPOINT_FAILURE_ENDING,
++)
+ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+@@ -105,6 +108,11 @@ def _surface_line(*, item_id: str, kind: str | None) -> str:
+     pending — which is what the reader goes looking for, and the thing a single
+     wording had to be wrong about for two of the three endings.
+ 
++    THE CHECKPOINT ENDING NEEDS ITS OWN ARM, and it is tested FIRST for the same
++    reason the other two attributed arms are: it never reached the needs-human
++    terminal at all, so the gate wording would announce a question nobody asked
++    and the unestablished wording would call an attributed ending unexplained.
++
+     THE GATE WORDING IS THE FALLTHROUGH, and it serves three inputs that are
+     not the same thing. A genuine `AGENT_REQUEST` belongs there on its merits —
+     an agent asked, a human has something to decide, and that ending was never
+@@ -119,6 +127,15 @@ def _surface_line(*, item_id: str, kind: str | None) -> str:
+     reached by falling past them, rather than the gate being tested for.
+     """
+     valve = f"`resolve-blocked:{item_id}:ready`"
++    if kind == CHECKPOINT_FAILURE_ENDING:
++        return (
++            f"SURFACE: work-item {item_id}'s run ended because the engine's own "
++            "checkpoint commit of a node failed, outside every workflow node; no "
++            "agent asked anything, so no answer is owed — marked "
++            "blocked/needs-human; triage the attribution named in the dispatch "
++            f"detail and in the item's {CHECKPOINT_FAILURE_ENDING} comment, then "
++            f"release it with {valve}.\n"
++        )
+     if kind == STAGE_FAILURE:
+         return (
+             f"SURFACE: work-item {item_id} reached the Fabro needs-human terminal "
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_attribution.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_attribution.py
+new file mode 100644
+index 00000000..9a675d4f
+--- /dev/null
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_attribution.py
+@@ -0,0 +1,195 @@
++"""Composing one failed engine checkpoint's attribution from what was observed.
++
++PURE, and split from the IO leg that gathers its inputs for the usual reason this
++tree splits that way: the decision is a function of an event reading, and a
++decision that reached for the factory itself could not be exercised across every
++state the clause distinguishes without a double for one.
++
++THE LADDER IS ORDERED BY WHAT THE EVIDENCE CAN SUPPORT, not by convenience. A
++budget expiry is the engine saying outright which operation ran out of time, so
++it wins over anything in the tail. A recognized structured summary names what the
++aggregate runner or the hook runner itself judged failed, so it comes next. A
++tail with neither is an OBSERVATION and asserts nothing. With no tail at all
++there is only the engine's own checkpoint error.
++
++EITHER RECOGNIZED SUMMARY EARNS `failed-targets`, which names the ARM rather than
++the list: a `commit-msg` refusal has no aggregate to produce targets and its hook
++command is still a recognized structured attribution, not an observation.
++
++THE EXCERPT IS A SUFFIX, and it is bounded here rather than left to a renderer.
++The engine already recorded a bounded suffix of the hook output, and what matters
++in it is the END — the summary a recognizer would have found sits there, so a
++PREFIX excerpt would reliably show the start of a recipe banner and nothing of
++the failure. Bounding once, in the record, is also what keeps the journal row and
++the dispatch detail quoting the same bytes.
++"""
++
++from __future__ import annotations
++
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_record import (
++    ATTRIBUTION_BUDGET_EXPIRY,
++    ATTRIBUTION_ENGINE_ERROR,
++    ATTRIBUTION_FAILED_TARGETS,
++    ATTRIBUTION_OBSERVATION,
++    TERMINAL_PATCH_ABSENT,
++    TERMINAL_PATCH_RECORDED,
++    TERMINAL_PATCH_UNAVAILABLE,
++    CheckpointFailure,
++)
++from livespec_orchestrator_beads_fabro.commands._fabro_checkpoint_event import (
++    CheckpointFailedEvent,
++    TerminalPatch,
++)
++from livespec_orchestrator_beads_fabro.commands._fabro_checkpoint_message import (
++    CheckpointMessage,
++    checkpoint_error_figures,
++)
++from livespec_orchestrator_beads_fabro.commands._fabro_failed_targets import (
++    failed_hook_commands,
++    failed_targets,
++)
++
++__all__: list[str] = [
++    "OBSERVATION_EXCERPT_MAX_CHARS",
++    "UNREPORTED_CHECKPOINT_ERROR",
++    "checkpoint_failure_from_event",
++    "checkpoint_failure_from_message",
++]
++
++# What the checkpoint error renders as when the engine reported none. Said rather
++# than left blank, for the same reason the unreported node is: a rendering surface
++# absorbs an empty string into its own prose and the reader cannot tell that the
++# engine was silent.
++UNREPORTED_CHECKPOINT_ERROR = "not reported by the engine"
++
++# The observation excerpt's bound. Wide enough to carry the end of a refusal —
++# the last recipe's own error lines — and far short of the engine's own
++# eight-kilobyte tail, which the clause's bounded-excerpt limit does not admit
++# onto an outcome detail.
++OBSERVATION_EXCERPT_MAX_CHARS = 1200
++
++
++def checkpoint_failure_from_event(
++    *,
++    event: CheckpointFailedEvent,
++    events_read: str,
++    patch: TerminalPatch | None = None,
++    patch_observed: bool = False,
++    configured_budget: int | str | None = None,
++) -> CheckpointFailure:
++    """Attribute one failed checkpoint from its own event.
++
++    `patch_observed` says the terminal event WAS read, which is what separates a
++    run that carried no work from a run whose work nobody could observe. It is a
++    separate argument rather than inferred from `patch is None`, because those two
++    states share that value and the clause owes them opposite words.
++    """
++    tail = event.output_tail
++    targets = () if tail is None else failed_targets(output=tail)
++    hooks = () if tail is None else failed_hook_commands(output=tail)
++    error = event.checkpoint_error or UNREPORTED_CHECKPOINT_ERROR
++    operation, elapsed = checkpoint_error_figures(checkpoint_error=error)
++    return _composed(
++        node=event.node,
++        error=error,
++        tail=tail,
++        targets=targets,
++        hooks=hooks,
++        budget_expiry=elapsed is not None,
++        operation=operation,
++        elapsed=elapsed,
++        configured_budget=configured_budget,
++        events_read=events_read,
++        patch=patch,
++        patch_observed=patch_observed,
++    )
++
++
++def checkpoint_failure_from_message(
++    *,
++    message: CheckpointMessage,
++    events_read: str,
++    configured_budget: int | str | None = None,
++) -> CheckpointFailure:
++    """Attribute one failed checkpoint from the engine's terminal message alone.
++
++    NO TARGET, NO HOOK COMMAND AND NO EXCERPT are produced here, whatever the
++    message happens to contain: the message is not the output tail, and the clause
++    forbids inventing a target, a hook command or a cause when the events could
++    not be read.
++    """
++    return _composed(
++        node=message.node,
++        error=message.checkpoint_error,
++        tail=None,
++        targets=(),
++        hooks=(),
++        budget_expiry=message.budget_expiry,
++        operation=message.timed_out_operation,
++        elapsed=message.engine_reported_elapsed,
++        configured_budget=configured_budget,
++        events_read=events_read,
++        patch=None,
++        patch_observed=False,
++    )
++
++
++def _composed(  # noqa: PLR0913 — kw-only composer; each input is an independent observation.
++    *,
++    node: str | None,
++    error: str,
++    tail: str | None,
++    targets: tuple[str, ...],
++    hooks: tuple[str, ...],
++    budget_expiry: bool,
++    operation: str | None,
++    elapsed: str | None,
++    configured_budget: int | str | None,
++    events_read: str,
++    patch: TerminalPatch | None,
++    patch_observed: bool,
++) -> CheckpointFailure:
++    """Run the ladder once, from whichever surface supplied the observations."""
++    budget = configured_budget if budget_expiry else None
++    named = bool(targets or hooks)
++    return CheckpointFailure(
++        node=node,
++        checkpoint_error=error,
++        attribution=_attribution(budget_expiry=budget_expiry, named=named, tail=tail),
++        failed_targets=targets,
++        failed_hook_commands=hooks,
++        events_read=events_read,
++        observation_excerpt=_excerpt(budget_expiry=budget_expiry, named=named, tail=tail),
++        configured_budget_seconds=budget if isinstance(budget, int) else None,
++        configured_budget_unavailable=budget if isinstance(budget, str) else None,
++        timed_out_operation=operation if budget_expiry else None,
++        engine_reported_elapsed=elapsed if budget_expiry else None,
++        terminal_patch_state=_patch_state(patch=patch, patch_observed=patch_observed),
++        terminal_patch_bytes=None if patch is None else patch.byte_size,
++        terminal_patch_sha256=None if patch is None else patch.sha256,
++    )
++
++
++def _attribution(*, budget_expiry: bool, named: bool, tail: str | None) -> str:
++    """Which of the four arms the evidence in hand earned."""
++    if budget_expiry:
++        return ATTRIBUTION_BUDGET_EXPIRY
++    if named:
++        return ATTRIBUTION_FAILED_TARGETS
++    if tail is None:
++        return ATTRIBUTION_ENGINE_ERROR
++    return ATTRIBUTION_OBSERVATION
++
++
++def _excerpt(*, budget_expiry: bool, named: bool, tail: str | None) -> str | None:
++    """The bounded suffix the observation arm carries, and no other arm does."""
++    if budget_expiry or named or tail is None:
++        return None
++    return tail[-OBSERVATION_EXCERPT_MAX_CHARS:]
++
++
++def _patch_state(*, patch: TerminalPatch | None, patch_observed: bool) -> str:
++    """Recorded, absent, or unavailable — the three-way state, never two."""
++    if patch is not None:
++        return TERMINAL_PATCH_RECORDED
++    return TERMINAL_PATCH_ABSENT if patch_observed else TERMINAL_PATCH_UNAVAILABLE
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_comment.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_comment.py
+new file mode 100644
+index 00000000..d29d9d7a
+--- /dev/null
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_comment.py
+@@ -0,0 +1,256 @@
++"""The DURABLE ledger record of a failed engine checkpoint.
++
++`_dispatcher_checkpoint_detail` renders this ending for the dispatch RESULT and
++`_dispatcher_checkpoint_journal` writes the row the dispatch journal carries.
++Both are transient in the way that matters: the result is read once and the
++journal belongs to one dispatch's own file. The only thing on this tenant that
++outlives the run is a COMMENT, so the attribution is written once, here, before
++the item's blocked transition — the clause requires that order, and it is the
++right one: a record explaining a block that a failed lifecycle write never
++applied is worse than no record.
++
++NAMES AND FIGURES ONLY, NEVER AN EXCERPT. The clause says so outright, and the
++reason is that this record cannot be repaired: `bd comments` offers add and list,
++with no edit and no delete. A pasted hook tail is thousands of bytes of
++engine-authored text on an append-only record, and every byte of it is a hazard
++(see the two below) for no gain the journal row does not already provide.
++
++EVERY NAME IS IDENTIFIER-SHAPED OR LEFT OUT, AND THE OMISSIONS ARE COUNTED. The
++shape test is the one the dispatch's own run labels are admitted by, reused
++rather than restated. A name that fails it did not come from an aggregate
++runner's summary in any form we recognize, so writing it would put arbitrary
++captured text into the record under the heading of a target name — which is the
++excerpt prohibition reached by another route. The COUNT is written because a
++silently shorter list reads as a complete attribution.
++
++TWO HAZARDS COME FROM THE ENGINE'S CHECKPOINT ERROR BEING ENGINE-AUTHORED, and
++both are closed by the primitives the needs-human causal record already uses
++rather than by local copies. A MiniJinja opener anywhere in a ledger comment
++makes every later dispatch of that item refuse at the goal preflight,
++permanently; and a checkpoint error can quote a push against a tokenized origin
++URL, which would put a live credential into an append-only record. So the error
++goes through the same neutralizer the preserve-by-reference pointer uses and the
++credential-shaped value is replaced WHOLESALE.
++
++THE OPENER DETECTOR IS A SEPARATE GATE ON THE WHOLE BODY, not a second check on
++the error. The neutralizer only reaches the fields routed through it; the rest of
++the body is assembled from the work-item id, the run id and the CONFIGURED
++FACTORY NAME, and the last of those is adopter-supplied text that nothing here
++rewrites. So the assembled body is put to the shared detector before it is
++written, and a body that fails is journaled with its reason and NOT written —
++because the blocked transition must happen either way, and an unwritten record
++costs an operator an account while a written opener costs the item every later
++dispatch it will ever have.
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++from typing import TYPE_CHECKING
++
++from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_record import (
++    NODE_NOT_REPORTED,
++    TERMINAL_PATCH_ABSENT,
++    TERMINAL_PATCH_RECORDED,
++    CheckpointFailure,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import (
++    is_identifier_shaped,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_goal import (
++    minijinja_openers_in_text,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
++from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
++    comment_safe_external_text,
++)
++from livespec_orchestrator_beads_fabro.commands._otel_scrub import (
++    CREDENTIAL_URL_RE,
++    REDACTION_MARKER,
++)
++from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
++from livespec_orchestrator_beads_fabro.errors import (
++    BeadsCommandError,
++    BeadsConnectionError,
++    BeadsCredentialMissingError,
++    BeadsMappingError,
++    BeadsTenantMissingError,
++    ConnectionPrefixMissingError,
++    LivespecConfigUnreadableError,
++    WorkItemNotFoundError,
++)
++
++if TYPE_CHECKING:
++    from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
++
++__all__: list[str] = [
++    "CHECKPOINT_FAILURE_COMMENT_MARKER",
++    "checkpoint_failure_comment_body",
++    "record_checkpoint_failure_comment",
++]
++
++CHECKPOINT_FAILURE_COMMENT_MARKER = "livespec-checkpoint-failure"
++
++_COMMENT_STAGE = "checkpoint-failure-comment"
++_COMMENT_ERROR_STAGE = "checkpoint-failure-comment-error"
++_NONE_NAMED = "(none named)"
++
++# The write's whole absorbed set, which includes RESOLVING the store as well as
++# reaching it. `store_config` is inside the attempt for that reason: a repository
++# whose connection block cannot be read is a fact about the configuration, and
++# raising it here would convert a lost durable record into a dispatch-ending
++# traceback AFTER the run had already ended — while the lifecycle write that
++# matters is `_dispatcher_blocked`'s and has its own error arm.
++_LEDGER_WRITE_ERRORS = (
++    OSError,
++    WorkItemNotFoundError,
++    BeadsCommandError,
++    BeadsConnectionError,
++    BeadsCredentialMissingError,
++    BeadsMappingError,
++    BeadsTenantMissingError,
++    ConnectionPrefixMissingError,
++    LivespecConfigUnreadableError,
++)
++
++_EXCERPT_NOTICE = (
++    "this record carries names and figures only: no excerpt of the captured hook "
++    "output is included, and the engine's checkpoint error above is sanitized by "
++    "the writer (MiniJinja openers are rewritten to bracket forms, because a "
++    "ledger comment carrying one refuses every later dispatch of this item, and a "
++    f"credential-shaped value is replaced wholesale with `{REDACTION_MARKER}`)."
++)
++
++
++def record_checkpoint_failure_comment(
++    *,
++    repo: Path,
++    work_item_id: str,
++    run_id: str | None,
++    factory: str,
++    failure: CheckpointFailure,
++    journal: JournalWriter,
++) -> None:
++    """Append the attribution to the item, once, and journal what happened.
++
++    A ledger write failure is JOURNALED and never raised. The run has already
++    ended and the lifecycle write that matters is `_dispatcher_blocked`'s, which
++    has its own error arm; losing this record costs an operator the durable
++    account, which is worth a journal row and is not worth converting into a
++    dispatch failure after the fact.
++    """
++    body = checkpoint_failure_comment_body(
++        work_item_id=work_item_id, run_id=run_id, factory=factory, failure=failure
++    )
++    openers = minijinja_openers_in_text(source=CHECKPOINT_FAILURE_COMMENT_MARKER, text=body)
++    if openers:
++        journal.append(
++            record={
++                "stage": _COMMENT_ERROR_STAGE,
++                "work_item_id": work_item_id,
++                "reason": f"template-opener-present: {openers[0].opener}",
++            }
++        )
++        return
++    written = attempt(
++        action=lambda: append_work_item_comment(
++            path=store_config(repo=repo), work_item_id=work_item_id, body=body
++        ),
++        exceptions=_LEDGER_WRITE_ERRORS,
++    )
++    record: dict[str, object] = {
++        "stage": _COMMENT_ERROR_STAGE if isinstance(written, AttemptFailure) else _COMMENT_STAGE,
++        "work_item_id": work_item_id,
++    }
++    if isinstance(written, AttemptFailure):
++        record["reason"] = type(written.error).__name__
++    journal.append(record=record)
++
++
++def checkpoint_failure_comment_body(
++    *,
++    work_item_id: str,
++    run_id: str | None,
++    factory: str,
++    failure: CheckpointFailure,
++) -> str:
++    """Render the record. PURE, so every claim it makes is testable in isolation."""
++    hooks = _shaped(names=failure.failed_hook_commands)
++    targets = _shaped(names=failure.failed_targets)
++    omitted = len(failure.failed_hook_commands) + len(failure.failed_targets)
++    omitted -= len(hooks) + len(targets)
++    lines = [
++        CHECKPOINT_FAILURE_COMMENT_MARKER,
++        "",
++        f"work-item: {work_item_id}",
++        f"run id: {run_id or '(not parsed from the launch output)'}",
++        f"factory: {factory}",
++        f"node: {failure.node or NODE_NOT_REPORTED}",
++        f"checkpoint error: {_safe(text=failure.checkpoint_error)}",
++        f"attribution: {failure.attribution}",
++        f"failed hook commands: {', '.join(hooks) or _NONE_NAMED}",
++        f"failed targets: {', '.join(targets) or _NONE_NAMED}",
++        f"names left out as not identifier-shaped: {omitted}",
++        *_budget_lines(failure=failure),
++        *_patch_lines(failure=failure),
++        "",
++        (
++            "decision: the engine's own checkpoint commit failed outside every "
++            "workflow node, so no agent asked anything and no answer is owed; "
++            "triage the attribution above, then release the item with "
++            f"`resolve-blocked:{work_item_id}:ready` to re-dispatch, or leave it "
++            "blocked"
++        ),
++        "",
++        _EXCERPT_NOTICE,
++    ]
++    return "\n".join(lines)
++
++
++def _budget_lines(*, failure: CheckpointFailure) -> tuple[str, ...]:
++    """The two budget figures, kept apart, and only on the arm that earned them."""
++    if failure.engine_reported_elapsed is None:
++        return ()
++    configured = (
++        f"{failure.configured_budget_seconds}s"
++        if failure.configured_budget_seconds is not None
++        else f"unavailable: {failure.configured_budget_unavailable}"
++    )
++    return (
++        f"timed-out git operation: {failure.timed_out_operation or NODE_NOT_REPORTED}",
++        f"configured checkpoint commit budget: {configured}",
++        f"engine-reported elapsed (the engine's measurement): {failure.engine_reported_elapsed}",
++    )
++
++
++def _patch_lines(*, failure: CheckpointFailure) -> tuple[str, ...]:
++    """The terminal patch by SIZE and DIGEST, so a pointer naming no stage
++    artifact is not read as a run that held no work. The unavailable state says
++    so and names the reason rather than reporting an absence nobody measured.
++    """
++    if failure.terminal_patch_state == TERMINAL_PATCH_RECORDED:
++        return (
++            f"terminal patch bytes: {failure.terminal_patch_bytes}",
++            f"terminal patch sha256: {failure.terminal_patch_sha256}",
++        )
++    if failure.terminal_patch_state == TERMINAL_PATCH_ABSENT:
++        return ("terminal patch: the run's terminal event was read and carried none",)
++    return (
++        (
++            "terminal patch: UNAVAILABLE rather than absent — this run's events "
++            f"could not be read ({failure.events_read})"
++        ),
++    )
++
++
++def _shaped(*, names: tuple[str, ...]) -> tuple[str, ...]:
++    """The names this record may carry, which are the identifier-shaped ones."""
++    return tuple(name for name in names if is_identifier_shaped(value=name))
++
++
++def _safe(*, text: str) -> str:
++    """Engine text made safe for an append-only comment. See the module docstring."""
++    if CREDENTIAL_URL_RE.search(text) is not None:
++        return REDACTION_MARKER
++    return comment_safe_external_text(text=text)
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_detail.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_detail.py
+new file mode 100644
+index 00000000..c8d9713c
+--- /dev/null
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_detail.py
+@@ -0,0 +1,155 @@
++"""The operator-facing detail a failed engine checkpoint reports.
++
++Split from the routing that produces it for the same reason
++`_dispatcher_needs_human_detail` is: the routing decides WHICH outcome a run
++reached, while this is the pure rendering of one of them, and keeping the render
++here is what lets it name every attributed target without the routing module
++growing a second concern.
++
++THE DETAIL'S OWN BOUND MAY NOT DROP A NAMED TARGET. `contracts.md` section
++"Failed engine checkpoint commit attribution" says so outright, and the reason is
++the measurement behind this whole clause: reading the summary is what separated
++fifteen per-file-coverage failures from five `check-master-ci-green` ones from two
++Red-Green-Replay refusals, and a detail that truncated the list would hand the
++operator back the same undifferentiated failure the clause exists to retire.
++
++THE VALVE IS NAMED BECAUSE THE LIFECYCLE DOES NOT BRANCH. The item rests at
++`blocked` with `needs-human` and `resolve-blocked:<id>:ready` is its only exit, so
++a detail that described the state without naming the exit would describe a state
++with no way out — the same rule `_dispatcher_needs_human_detail` holds to.
++"""
++
++from __future__ import annotations
++
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_record import (
++    NODE_NOT_REPORTED,
++    TERMINAL_PATCH_ABSENT,
++    TERMINAL_PATCH_RECORDED,
++    CheckpointFailure,
++)
++
++__all__: list[str] = [
++    "checkpoint_failure_detail",
++]
++
++_UNKNOWN_RUN = "unknown-run"
++
++# The label the unrecognized-tail excerpt is carried under. It says in as many
++# words that the excerpt is an OBSERVATION and not a cause, because the clause
++# forbids asserting that any hook, target or recipe in it caused the failure —
++# and an unlabelled excerpt reads as exactly that assertion.
++_OBSERVATION_LABEL = (
++    " ".join(
++        (
++            "no structured failure summary was recognized in the checkpoint's output tail,",
++            "so the following is an OBSERVATION of that tail and NOT a claim that any",
++            "hook, target or recipe in it caused the failure:",
++        )
++    )
++    + " "
++)
++
++
++def checkpoint_failure_detail(
++    *,
++    work_item_id: str,
++    run_id: str | None,
++    failure: CheckpointFailure,
++) -> str:
++    """Render one failed engine checkpoint for the operator who has to triage it."""
++    run_label = _UNKNOWN_RUN if run_id is None else run_id
++    node = NODE_NOT_REPORTED if failure.node is None else failure.node
++    clauses = (
++        (
++            f"run {run_label} ended because the engine's own checkpoint commit of "
++            f"node {node} failed, outside every workflow node — the graph has no "
++            "edge for an engine error, so no agent asked anything and there is no "
++            "question to answer"
++        ),
++        f"the engine's checkpoint error: {failure.checkpoint_error}",
++        *_attribution(failure=failure),
++        _preservation(failure=failure),
++        (
++            "no run is waiting and the decision lives in the ledger: triage the "
++            f"attribution above, then release the item with "
++            f"`resolve-blocked:{work_item_id}:ready` to re-dispatch, or leave it "
++            "blocked"
++        ),
++    )
++    return "; ".join(clauses)
++
++
++def _attribution(*, failure: CheckpointFailure) -> tuple[str, ...]:
++    """The evidence clauses, each rendered only by the arm that earned it.
++
++    THE TWO NAME LISTS GET THEIR OWN CLAUSES rather than one merged list, because
++    they come from different tools and the triage differs: a failed target is a
++    check to fix, while a failed hook command says WHICH gate refused — and for a
++    `commit-msg` refusal, which runs no aggregate at all, the hook command is the
++    only name there is.
++    """
++    if failure.engine_reported_elapsed is not None:
++        return _budget(failure=failure)
++    if failure.observation_excerpt is not None:
++        return (f"{_OBSERVATION_LABEL}{failure.observation_excerpt}",)
++    clauses: list[str] = []
++    if failure.failed_hook_commands:
++        clauses.append(f"failed hook commands: {', '.join(failure.failed_hook_commands)}")
++    if failure.failed_targets:
++        clauses.append(f"failed targets: {', '.join(failure.failed_targets)}")
++    if clauses:
++        return tuple(clauses)
++    return ("the engine's checkpoint error is the whole attribution: no output tail",)
++
++
++def _budget(*, failure: CheckpointFailure) -> tuple[str, ...]:
++    """The budget arm, which keeps the configured figure and the engine's apart.
++
++    THE ENGINE'S FIGURE IS LABELLED AS THE ENGINE'S MEASUREMENT, because the two
++    numbers answer different questions and the clause forbids presenting one as
++    the other: a reader told that 900004ms is "the budget" goes looking for a
++    configuration key holding that value, and there is none.
++
++    A CONFIGURED BUDGET THAT COULD NOT BE READ SAYS SO AND NAMES THE REASON. The
++    engine's stock budget is NOT substituted — that would grade the failure
++    against less time than the configuration asks for, silently, because the
++    smaller figure is just as well-formed a number.
++    """
++    operation = failure.timed_out_operation or "the checkpoint's git operation"
++    if failure.configured_budget_seconds is not None:
++        budget = f"{failure.configured_budget_seconds}s, from the submitted run configuration"
++    else:
++        budget = (
++            "NOT AVAILABLE and deliberately not replaced by the engine's stock "
++            f"budget: {failure.configured_budget_unavailable}"
++        )
++    return (
++        f"the checkpoint operation budget was exceeded by {operation}",
++        f"configured checkpoint commit budget: {budget}",
++        (
++            "the engine's own measurement of the elapsed time: "
++            f"{failure.engine_reported_elapsed} (the engine's figure, NOT the configured budget)"
++        ),
++    )
++
++
++def _preservation(*, failure: CheckpointFailure) -> str:
++    """What a rework can start FROM, in the three states the evidence admits.
++
++    A failed checkpoint leaves the node's uncommitted work outside every stage
++    diff artifact, so the terminal patch is the only record that the run held any.
++    UNAVAILABLE is kept apart from ABSENT because a run whose work was never
++    observed must not be reported as a run that produced none.
++    """
++    if failure.terminal_patch_state == TERMINAL_PATCH_RECORDED:
++        return (
++            f"the run's terminal patch carries {failure.terminal_patch_bytes} bytes "
++            f"of uncommitted work, sha256 {failure.terminal_patch_sha256}; the "
++            "preserve-by-reference pointer on the item is the retrieval route"
++        )
++    if failure.terminal_patch_state == TERMINAL_PATCH_ABSENT:
++        return "the run's terminal event was read and carried no terminal patch"
++    return (
++        "whether the run held uncommitted work is UNAVAILABLE rather than absent: "
++        f"its events could not be read ({failure.events_read})"
++    )
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_events.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_events.py
+new file mode 100644
+index 00000000..519eb881
+--- /dev/null
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_events.py
+@@ -0,0 +1,97 @@
++"""Reading ONE run's events for the checkpoint arm, or saying why it could not.
++
++Split from the arm that consumes it because the two change for different reasons:
++this answers "what did the dispatch's own factory say about this run", while the
++arm decides what to do about it. Keeping them apart is also what makes every
++unread REASON exercisable — each arm below is a different measurement failing,
++and the clause requires `events_read` to name which.
++
++AN UNREAD STREAM IS A NAMED REASON, NEVER AN EMPTY ONE. "Read failure is not
++absence" is the governing rule for every consumer of these streams: a run whose
++probe errored and a run that emitted nothing support opposite conclusions, and
++collapsing them would let a probe outage read as a healthy, silent run. Here the
++cost is sharper still, because the reason is what the clause requires the journal
++row to carry.
++
++THE FACTORY IS THE DISPATCH'S OWN. A factory declaring no server url is reported
++UNREAD rather than surveyed through whatever a bare client would default to: on
++this fleet that default is loopback, and it answers for a run living on `hp` with
++a clean, plausible, empty result.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import TYPE_CHECKING
++
++from livespec_orchestrator_beads_fabro.commands._fabro_checkpoint_event import (
++    CheckpointFailedEvent,
++    TerminalPatch,
++    checkpoint_failed_event,
++    terminal_patch,
++)
++from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
++from livespec_orchestrator_beads_fabro.commands._fabro_port_events import (
++    fabro_event_records_from_stdout,
++)
++
++if TYPE_CHECKING:
++    from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
++    from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroRunner
++
++__all__: list[str] = [
++    "CHECKPOINT_EVENTS_TIMEOUT_SECONDS",
++    "NO_SERVER_URL_REASON",
++    "CheckpointEventsReading",
++    "read_checkpoint_events",
++]
++
++# The events read is one short JSON fetch against a factory the dispatch has
++# already been talking to, so it is bounded well below the `ps` survey's minute:
++# a slow answer is better reported as an unread stream than waited on while a
++# terminal dispatch holds its caller open.
++CHECKPOINT_EVENTS_TIMEOUT_SECONDS = 30.0
++
++NO_SERVER_URL_REASON = "the dispatch's resolved factory declares no server url"
++_UNREADABLE_REASON = "the run's event stream was not a readable event payload"
++
++
++@dataclass(frozen=True, kw_only=True)
++class CheckpointEventsReading:
++    """One run's events as this dispatch could read them.
++
++    `unread_reason` is None exactly when the stream WAS read, so a consumer never
++    has to ask a second question to tell a successful read from an explanation of
++    a failed one. `event` is None on a read stream that carried no checkpoint
++    failure, which is the ordinary case for most failed runs.
++    """
++
++    unread_reason: str | None
++    event: CheckpointFailedEvent | None = None
++    patch: TerminalPatch | None = None
++
++
++def read_checkpoint_events(
++    *,
++    plan: DispatchPlan,
++    run_id: str,
++    runner: FabroRunner,
++) -> CheckpointEventsReading:
++    """Read this run's events from the dispatch's own factory, or say why not."""
++    if plan.fabro_factory_server is None:
++        return CheckpointEventsReading(unread_reason=NO_SERVER_URL_REASON)
++    events = fabro_port_for_plan(plan=plan, runner=runner).events(
++        run_id=run_id, timeout_seconds=CHECKPOINT_EVENTS_TIMEOUT_SECONDS
++    )
++    if events.command.exit_code != 0:
++        return CheckpointEventsReading(
++            unread_reason=f"fabro events exited {events.command.exit_code}"
++        )
++    records = fabro_event_records_from_stdout(stdout=events.command.stdout)
++    if records is None:
++        return CheckpointEventsReading(unread_reason=_UNREADABLE_REASON)
++    return CheckpointEventsReading(
++        unread_reason=None,
++        event=checkpoint_failed_event(records=records),
++        patch=terminal_patch(records=records),
++    )
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_journal.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_journal.py
+new file mode 100644
+index 00000000..85bd985f
+--- /dev/null
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_journal.py
+@@ -0,0 +1,48 @@
++"""The `checkpoint-failure` journal row one failed engine checkpoint writes.
++
++EVERY KEY THE CLAUSE NAMES IS WRITTEN ON EVERY ROW, nulls included. An omitted
++key is what a row from a build predating this attribution looks like, so a reader
++could not tell "this arm reported nothing here" from "this build never asked" —
++and the arm-specific keys are exactly the ones a triager filters on.
++"""
++
++from __future__ import annotations
++
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_record import (
++    CheckpointFailure,
++)
++
++__all__: list[str] = [
++    "CHECKPOINT_FAILURE_STAGE",
++    "checkpoint_failure_record",
++]
++
++CHECKPOINT_FAILURE_STAGE = "checkpoint-failure"
++
++
++def checkpoint_failure_record(
++    *,
++    work_item_id: str,
++    fabro_run_id: str | None,
++    failure: CheckpointFailure,
++) -> dict[str, object]:
++    """Render the journal row for one failed engine checkpoint."""
++    return {
++        "stage": CHECKPOINT_FAILURE_STAGE,
++        "work_item_id": work_item_id,
++        "fabro_run_id": fabro_run_id,
++        "node": failure.node,
++        "checkpoint_error": failure.checkpoint_error,
++        "attribution": failure.attribution,
++        "failed_targets": list(failure.failed_targets),
++        "failed_hook_commands": list(failure.failed_hook_commands),
++        "observation_excerpt": failure.observation_excerpt,
++        "configured_budget_seconds": failure.configured_budget_seconds,
++        "configured_budget_unavailable": failure.configured_budget_unavailable,
++        "timed_out_operation": failure.timed_out_operation,
++        "engine_reported_elapsed": failure.engine_reported_elapsed,
++        "events_read": failure.events_read,
++        "terminal_patch_state": failure.terminal_patch_state,
++        "terminal_patch_bytes": failure.terminal_patch_bytes,
++        "terminal_patch_sha256": failure.terminal_patch_sha256,
++    }
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_outcome.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_outcome.py
+new file mode 100644
+index 00000000..9c2bfcff
+--- /dev/null
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_outcome.py
+@@ -0,0 +1,182 @@
++"""Recognizing a run that ended on a failed ENGINE checkpoint, and reporting it.
++
++A Fabro run ENDS ON A FAILED ENGINE CHECKPOINT when its terminal failure is the
++engine's own checkpoint of a node: the `git add` and `git commit` it performs on
++the run branch after a node finishes, outside every workflow node. The fault is
++an engine error rather than a node outcome, so the workflow graph cannot route it
++and the `needs_human` terminal never fires — which is why the dispatch outcome
++for twenty-seven measured hp runs carried only `git commit failed (exit 1)` and
++named neither the node nor one failed target.
++
++THE RECOGNITION SURFACE IS THE RUN'S EVENT STREAM, read from the DISPATCH'S OWN
++resolved factory, and the engine's terminal failure MESSAGE only when that stream
++cannot be read. The order is the clause's and it is not a preference: the event
++carries the node, the error AND the output tail, while the message carries the
++first two and nothing else — so a message-first reading would discard every
++target the whole attribution exists to name, on runs whose events were perfectly
++readable.
++
++THE DISPOSITION IS `blocked` AT `fabro-run`, WHICH IS EXIT CODE 4. The decision
++this failure leaves — retry, re-implement from the preserved work, or abandon —
++is one only the ledger's valves express, and nothing outside the factory clears
++it on its own. So the item rests at `blocked` with `needs-human` through the same
++transition a needs-human terminal produces, and the claim is never released to
++`ready`: a run left `active` with no reason is what twenty-seven measured hp
++dispatches did, and four of them were re-dispatched unchanged.
++
++THE ARM RUNS AFTER EVERY CLASSIFICATION THAT ALREADY OWNS A RUN. The clause says
++recognition "MUST NOT pre-empt an outcome that the Dispatcher already classifies
++otherwise": a run parked at a human gate and a run carrying the needs-human
++terminal's sentinel are routed before this arm is reached at all, and a run
++classified as provider-limit is declined here, because a vendor ceiling is a fact
++about the credential rather than about a checkpoint and its remedy is the
++dispatcher-owned hold.
++
++THE CONFIGURED BUDGET IS READ FROM THE RUN CONFIGURATION THIS DISPATCH SUBMITTED,
++which is `plan.workflow_toml` — the MATERIALIZED path, not the committed file —
++and it reaches the record only on a budget expiry. An unreadable configuration
++yields the REASON rather than the engine's stock budget, because substituting the
++stock figure would grade the failure against less time than the configuration
++asks for and nothing in the result would say so.
++"""
++
++from __future__ import annotations
++
++from dataclasses import replace
++from typing import TYPE_CHECKING
++
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_attribution import (
++    checkpoint_failure_from_event,
++    checkpoint_failure_from_message,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_comment import (
++    record_checkpoint_failure_comment,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_detail import (
++    checkpoint_failure_detail,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_events import (
++    read_checkpoint_events,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_journal import (
++    checkpoint_failure_record,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_probe import (
++    CheckpointProbe,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_record import (
++    CHECKPOINT_FAILURE_ENDING,
++    EVENTS_READ,
++    CheckpointFailure,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_allowance import (
++    commit_timeout_seconds,
++)
++from livespec_orchestrator_beads_fabro.commands._fabro_checkpoint_message import (
++    checkpoint_message,
++)
++from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
++
++if TYPE_CHECKING:
++    from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
++    from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
++
++__all__: list[str] = [
++    "checkpoint_failure_outcome",
++]
++
++
++def checkpoint_failure_outcome(
++    *,
++    plan: DispatchPlan,
++    run_id: str | None,
++    probe: CheckpointProbe | None,
++    terminal: DispatchOutcome,
++) -> DispatchOutcome | None:
++    """Report a run that ended on a failed engine checkpoint, or `None`.
++
++    `terminal` is the generic `failed` outcome the routing has already built, and
++    a recognized checkpoint failure REPLACES it rather than being assembled
++    beside it: every structured failure field the engine reported — the cause,
++    the category, the signature, the provider verdict — is already on it, and
++    rebuilding the outcome here is how one of them comes to be dropped.
++
++    EXACTLY ONE journal row per recognized dispatch, written here because this is
++    the one routing position that owns the generic `failed` ending and because the
++    attribution is computed here: a later surface writing it would have to
++    re-derive the attribution from the rendered prose.
++    """
++    if terminal.provider_usage_limit or probe is None or run_id is None:
++        return None
++    failure = _attributed(plan=plan, run_id=run_id, probe=probe, terminal=terminal)
++    if failure is None:
++        return None
++    probe.journal.append(
++        record=checkpoint_failure_record(
++            work_item_id=terminal.work_item_id, fabro_run_id=run_id, failure=failure
++        )
++    )
++    # BEFORE the outcome is returned, and therefore before the item's blocked
++    # transition, which the clause requires: a record explaining a block that a
++    # later failed lifecycle write never applied is worse than no record.
++    record_checkpoint_failure_comment(
++        repo=plan.repo,
++        work_item_id=terminal.work_item_id,
++        run_id=run_id,
++        factory=plan.fabro_factory_name,
++        failure=failure,
++        journal=probe.journal,
++    )
++    return replace(
++        terminal,
++        status="blocked",
++        detail=checkpoint_failure_detail(
++            work_item_id=terminal.work_item_id, run_id=run_id, failure=failure
++        ),
++        needs_human_kind=CHECKPOINT_FAILURE_ENDING,
++    )
++
++
++def _attributed(
++    *,
++    plan: DispatchPlan,
++    run_id: str,
++    probe: CheckpointProbe,
++    terminal: DispatchOutcome,
++) -> CheckpointFailure | None:
++    """This run's checkpoint failure, from the events or from the message."""
++    reading = read_checkpoint_events(plan=plan, run_id=run_id, runner=probe.runner)
++    if reading.unread_reason is None:
++        if reading.event is None:
++            return None
++        return checkpoint_failure_from_event(
++            event=reading.event,
++            events_read=EVENTS_READ,
++            patch=reading.patch,
++            patch_observed=True,
++            configured_budget=_configured_budget(plan=plan),
++        )
++    message = checkpoint_message(text=f"{terminal.fabro_failure_cause or ''}\n{terminal.detail}")
++    if message is None:
++        return None
++    return checkpoint_failure_from_message(
++        message=message,
++        events_read=reading.unread_reason,
++        configured_budget=_configured_budget(plan=plan),
++    )
++
++
++def _configured_budget(*, plan: DispatchPlan) -> int | str:
++    """The submitted run configuration's checkpoint commit budget, or the reason."""
++    read = attempt(
++        action=lambda: plan.workflow_toml.read_text(encoding="utf-8"),
++        exceptions=(OSError, UnicodeDecodeError),
++    )
++    if isinstance(read, AttemptFailure):
++        return (
++            f"the submitted run configuration at {plan.workflow_toml} could not be "
++            f"read ({type(read.error).__name__}), so the checkpoint commit budget it "
++            "declares is unknown; the engine's stock budget is deliberately NOT used "
++            "in its place"
++        )
++    return commit_timeout_seconds(committed_text=read)
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_probe.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_probe.py
+new file mode 100644
+index 00000000..b33debbd
+--- /dev/null
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_probe.py
+@@ -0,0 +1,42 @@
++"""The IO seams the engine-checkpoint attribution needs, carried as one value.
++
++A failed engine checkpoint is recognized from the run's EVENT STREAM, read from
++the dispatch's resolved factory, and the attribution it earns is journaled. So
++the arm needs a command runner and a journal writer, and it needs them in a
++module that `_dispatcher_fabro_terminal`'s routing can name without importing the
++engine it is itself imported by.
++
++THE PAIR TRAVELS AS ONE OPTIONAL VALUE rather than as two parameters, because the
++arm's whole behaviour turns on whether it has them BOTH: with no runner it cannot
++read the events the recognition requires, and with no journal it could recognize
++a checkpoint failure and leave no record of it. One optional value makes "this
++caller wired the probe" a single question with a single answer, and the absent
++case fail-closed in one place rather than once per seam.
++
++A CALLER THAT WIRES NO PROBE KEEPS ITS PRIOR OUTCOME. The hermetic callers of
++`fabro_run_terminal_outcome` that predate this arm supply none, so they read no
++events, write no record and get exactly the outcome they got before. That is the
++honest direction for an absent measurement: nothing is claimed about a
++checkpoint, rather than a checkpoint failure asserted from a stream nobody read.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import TYPE_CHECKING
++
++if TYPE_CHECKING:
++    from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
++    from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroRunner
++
++__all__: list[str] = [
++    "CheckpointProbe",
++]
++
++
++@dataclass(frozen=True, kw_only=True)
++class CheckpointProbe:
++    """One dispatch's event-stream reader and journal writer."""
++
++    runner: FabroRunner
++    journal: JournalWriter
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_record.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_record.py
+new file mode 100644
+index 00000000..0cd475b3
+--- /dev/null
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_checkpoint_record.py
+@@ -0,0 +1,112 @@
++"""What one failed engine checkpoint is attributed to, as one typed value.
++
++Every surface a checkpoint failure reaches — the dispatch outcome detail, the
++`checkpoint-failure` journal row, the durable ledger comment — renders FROM this
++record and none of them re-derives a field of it. That is the same
++resolve-once-project-everywhere rule the integration contract is held to, and for
++the same reason: several readings of one tail cannot be proven to agree, and a
++disagreement between an outcome detail and the journal row beside it is invisible
++because both are well-formed.
++
++THE ATTRIBUTION IS A CLOSED SET OF FOUR, and each member names the EVIDENCE that
++earned it rather than the severity of the failure:
++
++- `failed-targets` — a structured summary was recognized in the output tail, so
++  the targets and failed hook commands it named ARE the attribution.
++- `observation` — a tail was recorded and no summary in it was recognized. A
++  bounded excerpt is carried, labelled as an observation, and NOTHING in it is
++  asserted to be the cause.
++- `budget-expiry` — the engine reported that the checkpoint operation budget was
++  exceeded. The configured budget and the engine's own measurement are the
++  attribution, and they are kept apart.
++- `engine-error` — no tail was recorded at all, as with `git add failed`. The
++  engine's checkpoint error is the whole attribution.
++
++`observation_excerpt` is non-null only under `observation`, and the budget fields
++only under `budget-expiry`, because each is a claim its own arm earned and no
++other arm holds the evidence for it.
++
++THE CONFIGURED BUDGET AND THE ENGINE'S MEASUREMENT ARE SEPARATE FIELDS AND MUST
++STAY SO. One is what the submitted run configuration asked for and the other is
++what the engine says it spent; presenting the second as the first tells an
++operator the budget is a figure they never configured, which sends them editing
++the wrong thing. And a budget that could not be READ is its own field —
++`configured_budget_unavailable` names the reason — because the clause forbids
++substituting the engine's stock budget for one this derivation could not
++establish.
++
++THE TERMINAL PATCH HAS THREE STATES AND NOT TWO. A failed checkpoint leaves the
++node's uncommitted work outside every stage diff artifact, so the run's terminal
++`run.failed` event carrying it as a patch is the only record that the run held
++work at all. `absent` says the event WAS read and carried none; `unavailable`
++says the stream could not be read, so nothing is known either way. Collapsing the
++second into the first would report a run whose work was never observed as a run
++that produced none, which is the one reading the clause forbids outright.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++
++__all__: list[str] = [
++    "ATTRIBUTION_BUDGET_EXPIRY",
++    "ATTRIBUTION_ENGINE_ERROR",
++    "ATTRIBUTION_FAILED_TARGETS",
++    "ATTRIBUTION_OBSERVATION",
++    "CHECKPOINT_FAILURE_ENDING",
++    "EVENTS_READ",
++    "NODE_NOT_REPORTED",
++    "TERMINAL_PATCH_ABSENT",
++    "TERMINAL_PATCH_RECORDED",
++    "TERMINAL_PATCH_UNAVAILABLE",
++    "CheckpointFailure",
++]
++
++ATTRIBUTION_FAILED_TARGETS = "failed-targets"
++ATTRIBUTION_OBSERVATION = "observation"
++ATTRIBUTION_BUDGET_EXPIRY = "budget-expiry"
++ATTRIBUTION_ENGINE_ERROR = "engine-error"
++
++TERMINAL_PATCH_RECORDED = "recorded"
++TERMINAL_PATCH_ABSENT = "absent"
++TERMINAL_PATCH_UNAVAILABLE = "unavailable"
++
++# What `events_read` carries when the stream WAS read. Every other value it can
++# hold is the reason a read did not happen, so a reader never has to ask a second
++# question to tell a successful read from an explanation of a failed one.
++EVENTS_READ = "read"
++
++# What the node field renders as when the engine named none. The clause requires
++# saying the node was not reported rather than inferring one, and this is that
++# sentence rather than an empty string, which every rendering surface would
++# silently absorb into its own prose.
++NODE_NOT_REPORTED = "not reported by the engine"
++
++# The ending this attribution IS, named for the `needs_human_kind` field the
++# blocked surfaces read. It is deliberately NOT one of `_fabro_causal_stage`'s
++# three verdicts: those grade which of the needs-human TERMINAL's endings a run
++# reached, and this run never reached that terminal — the engine's checkpoint
++# failed outside every node, so the graph had no edge to route it along. A
++# surface handed this value must therefore describe neither a human gate, nor a
++# pending question, nor an unreadable record.
++CHECKPOINT_FAILURE_ENDING = "checkpoint-failure"
++
++
++@dataclass(frozen=True, kw_only=True)
++class CheckpointFailure:
++    """One run's failed engine checkpoint, attributed once."""
++
++    node: str | None
++    checkpoint_error: str
++    attribution: str
++    failed_targets: tuple[str, ...]
++    failed_hook_commands: tuple[str, ...]
++    events_read: str
++    observation_excerpt: str | None = None
++    configured_budget_seconds: int | None = None
++    configured_budget_unavailable: str | None = None
++    timed_out_operation: str | None = None
++    engine_reported_elapsed: str | None = None
++    terminal_patch_state: str = TERMINAL_PATCH_UNAVAILABLE
++    terminal_patch_bytes: int | None = None
++    terminal_patch_sha256: str | None = None
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_engine.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_engine.py
+index 2f470860..f5167766 100644
+--- a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_engine.py
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_engine.py
+@@ -56,6 +56,7 @@ from dataclasses import dataclass, replace
+ from pathlib import Path
+ from typing import Protocol, cast
+ 
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_probe import CheckpointProbe
+ from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import (
+     dispatch_correlation,
+ )
+@@ -420,6 +421,7 @@ def run_dispatch(
+         inspect=inspect,
+         exit_code=fabro.exit_code,
+         stderr=fabro.stderr,
++        probe=CheckpointProbe(runner=runner, journal=journal),
+     )
+     if terminal is not None:
+         return terminal
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_fabro_terminal.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_fabro_terminal.py
+index 7862330a..694a4331 100644
+--- a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_fabro_terminal.py
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_fabro_terminal.py
+@@ -4,6 +4,12 @@ from __future__ import annotations
+ 
+ from typing import TYPE_CHECKING, cast
+ 
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_outcome import (
++    checkpoint_failure_outcome,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_probe import (
++    CheckpointProbe,
++)
+ from livespec_orchestrator_beads_fabro.commands._dispatcher_dead_implementer import (
+     dead_implementer_condition_from_text,
+ )
+@@ -73,7 +79,7 @@ def inspect_run(
+     return inspect
+ 
+ 
+-def fabro_run_terminal_outcome(
++def fabro_run_terminal_outcome(  # noqa: PLR0913 — kw-only terminal router; each input is an independent observation of the same run.
+     *,
+     outcome_type: type[DispatchOutcome],
+     plan: DispatchPlan,
+@@ -81,8 +87,16 @@ def fabro_run_terminal_outcome(
+     inspect: FabroInspectResult | None,
+     exit_code: int,
+     stderr: str,
++    probe: CheckpointProbe | None = None,
+ ) -> DispatchOutcome | None:
+-    """Return blocked/failed Fabro-run outcome, or None for green routing."""
++    """Return blocked/failed Fabro-run outcome, or None for green routing.
++
++    `probe` carries the two IO seams the failed-engine-checkpoint arm needs — the
++    event-stream reader and the journal — and a caller that wires none keeps the
++    outcome it got before that arm existed, because recognition is read from the
++    run's event stream and nothing here may assert a checkpoint failure from a
++    stream nobody read.
++    """
+     blocked = _blocked_outcome(
+         outcome_type=outcome_type,
+         plan=plan,
+@@ -105,7 +119,7 @@ def fabro_run_terminal_outcome(
+     )
+     if terminated is not None:
+         return terminated
+-    return outcome_type(
++    failed = outcome_type(
+         work_item_id=plan.work_item_id,
+         status="failed",
+         stage="fabro-run",
+@@ -127,6 +141,11 @@ def fabro_run_terminal_outcome(
+         # "no truncation" for a truncation carried on the other.
+         dead_implementer_condition=dead_implementer_condition_from_text(text=f"{stderr}\n{detail}"),
+     )
++    # LAST, so the arm pre-empts no outcome already classified above: the human
++    # gate, the needs-human sentinel and the provider ceiling each keep their
++    # existing route, and only the generic `failed` ending is re-read.
++    checkpoint = checkpoint_failure_outcome(plan=plan, run_id=run_id, probe=probe, terminal=failed)
++    return failed if checkpoint is None else checkpoint
+ 
+ 
+ def _needs_human_terminal_outcome(
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_needs_human_cause.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_needs_human_cause.py
+index 3c32f883..3a57ca01 100644
+--- a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_needs_human_cause.py
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_needs_human_cause.py
+@@ -55,6 +55,9 @@ from __future__ import annotations
+ from pathlib import Path
+ 
+ from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_record import (
++    CHECKPOINT_FAILURE_ENDING,
++)
+ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+@@ -135,6 +138,15 @@ def record_needs_human_cause(
+         return
+     if outcome.needs_human_kind is None:
+         return
++    # A FAILED ENGINE CHECKPOINT HAS ITS OWN DURABLE RECORD, written before the
++    # blocked transition by `_dispatcher_checkpoint_comment`. Every line this
++    # writer would add about it is one it cannot support: no causal stage was
++    # attributed, the engine classified no node failure, and `_decision`'s
++    # fallthrough arm would say the ending is unexplained when it is fully
++    # attributed. Two records of one ending, one of them wrong, is worse than
++    # one — and neither could be repaired afterwards.
++    if outcome.needs_human_kind == CHECKPOINT_FAILURE_ENDING:
++        return
+     written = attempt(
+         action=lambda: append_work_item_comment(
+             path=store_config(repo=repo),
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_fabro_checkpoint_event.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_fabro_checkpoint_event.py
+new file mode 100644
+index 00000000..c065fcb9
+--- /dev/null
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_fabro_checkpoint_event.py
+@@ -0,0 +1,137 @@
++"""The `checkpoint.failed` event one run's stream carries, as the engine writes it.
++
++The engine's checkpoint of a node is the `git add` and `git commit` it performs on
++the run branch after that node finishes, outside every workflow node. When it
++fails the engine emits this event and the run ends: the fault is an engine error
++rather than a node outcome, so the graph has no edge to route it along. That is
++why the EVENT is the recognition surface — `contracts.md` section "Failed engine
++checkpoint commit attribution" admits the engine's terminal failure message only
++when this stream cannot be read.
++
++A LEAF, reading nothing but the already-normalized record mappings its caller
++hands it, for the reason `_fabro_port_checkpoints` gives for the same posture.
++
++EVERY FIELD IS READ THROUGH A CANDIDATE KEY LIST, and the lists are short and
++measured rather than hopeful. The streams this fleet reads come from two engine
++generations with different envelope shapes (`_fabro_port_events` records all
++three containers), so one key per field would make the reader correct for one
++generation and silently empty for the other — and an empty reading here is
++exactly the attribution-free outcome this whole clause exists to retire.
++"""
++
++from __future__ import annotations
++
++import hashlib
++from dataclasses import dataclass
++from typing import Any
++
++from livespec_orchestrator_beads_fabro.commands._fabro_port_events import (
++    event_name,
++    event_properties,
++)
++
++__all__: list[str] = [
++    "CHECKPOINT_FAILED_EVENT",
++    "RUN_FAILED_EVENT",
++    "CheckpointFailedEvent",
++    "TerminalPatch",
++    "checkpoint_failed_event",
++    "terminal_patch",
++]
++
++CHECKPOINT_FAILED_EVENT = "checkpoint.failed"
++RUN_FAILED_EVENT = "run.failed"
++
++# The node the checkpoint belonged to, and the engine's own error text for it.
++# `error` is the engine's field name for the checkpoint fault; `message` and
++# `reason` are the two further names the failure families in these streams have
++# been observed using for the same text.
++_NODE_KEYS: tuple[str, ...] = ("node", "node_id")
++_ERROR_KEYS: tuple[str, ...] = ("error", "message", "reason")
++
++# The captured hook output the engine records with the failure. It is a bounded
++# SUFFIX of that output — 8192 bytes on every one of the 27 failures measured on
++# hp since 2026-10-09 — which is why its consumers may not reconstruct a summary
++# whose header the bound cut away.
++_TAIL_KEYS: tuple[str, ...] = ("output", "output_tail", "stderr", "stderr_tail")
++
++# The uncommitted work the terminal `run.failed` event carries. A failed
++# checkpoint is exactly the case where that work reached no stage diff artifact,
++# so this is the only record that the run held any.
++_PATCH_KEYS: tuple[str, ...] = ("terminal_patch", "patch", "diff")
++
++
++@dataclass(frozen=True, kw_only=True)
++class TerminalPatch:
++    """The uncommitted work a terminal `run.failed` event carried, measured."""
++
++    byte_size: int
++    sha256: str
++
++
++@dataclass(frozen=True, kw_only=True)
++class CheckpointFailedEvent:
++    """One `checkpoint.failed` event, with each field absent rather than guessed."""
++
++    node: str | None
++    checkpoint_error: str | None
++    output_tail: str | None
++
++
++def checkpoint_failed_event(
++    *,
++    records: tuple[dict[str, Any], ...],
++) -> CheckpointFailedEvent | None:
++    """The run's terminal checkpoint failure, or `None` when it carried none.
++
++    THE LAST such event is the terminal one. A failed checkpoint is an engine
++    error that ends the run, so a healthy stream carries at most one; taking the
++    last rather than the first is what keeps the reading correct on a stream that
++    somehow carried an earlier one the run survived.
++    """
++    found = [record for record in records if event_name(record=record) == CHECKPOINT_FAILED_EVENT]
++    if not found:
++        return None
++    properties = event_properties(record=found[-1])
++    return CheckpointFailedEvent(
++        node=_text(properties=properties, keys=_NODE_KEYS),
++        checkpoint_error=_text(properties=properties, keys=_ERROR_KEYS),
++        output_tail=_text(properties=properties, keys=_TAIL_KEYS),
++    )
++
++
++def _text(*, properties: dict[str, Any], keys: tuple[str, ...]) -> str | None:
++    """The first non-empty string one of `keys` holds, or `None`.
++
++    An EMPTY string is treated as absent rather than as a value, because a field
++    the engine renders empty says nothing and an empty tail reported as present
++    would route a `git add` failure that carries no output into the observation
++    arm with nothing to observe.
++    """
++    for key in keys:
++        value: object = properties.get(key)
++        if isinstance(value, str) and value != "":
++            return value
++    return None
++
++
++def terminal_patch(*, records: tuple[dict[str, Any], ...]) -> TerminalPatch | None:
++    """The terminal patch the run's `run.failed` event carried, or `None`.
++
++    `None` means the event WAS read and carried no patch, which is a different
++    fact from a stream nobody could read — the caller keeps those apart, because
++    a run whose work was never observed must not be reported as a run that
++    produced none.
++
++    The digest is taken over the patch's UTF-8 BYTES and the size is that byte
++    count, so the two figures describe the same thing a `sha256sum` of a
++    recovered file would.
++    """
++    found = [record for record in records if event_name(record=record) == RUN_FAILED_EVENT]
++    if not found:
++        return None
++    patch = _text(properties=event_properties(record=found[-1]), keys=_PATCH_KEYS)
++    if patch is None:
++        return None
++    raw = patch.encode("utf-8", "surrogatepass")
++    return TerminalPatch(byte_size=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_fabro_checkpoint_message.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_fabro_checkpoint_message.py
+new file mode 100644
+index 00000000..de25fcd7
+--- /dev/null
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_fabro_checkpoint_message.py
+@@ -0,0 +1,83 @@
++"""The engine's own terminal failure message for a checkpoint fault, as it reads.
++
++The SECOND recognition surface, and the narrower one. `contracts.md` section
++"Failed engine checkpoint commit attribution" admits it "Only when that stream
++cannot be read", because the event carries the node identifier and the output
++tail while this carries neither — so a reading taken here can name the node and
++the error and must then stop, rather than inferring a target nobody reported.
++
++TWO MEASURED WORDINGS, and the module reads both because the engine uses both.
++The commit refusal reads `git checkpoint commit failed for node 'publish_draft':
++git commit failed (exit 1)` (measured on hp run 01M4RN8BTXSJZRJNQQQ0HWFYC7); the
++budget expiry reads `Checkpoint error: checkpoint operation budget exceeded on
++node "slow_hook": git commit timed out after 5003ms` (measured on probe run
++01M1VNZNRX31A6FD7FY9STWD96). The node is quoted with single or double quotes
++depending on which, so the quote is optional in the pattern rather than assumed.
++
++THE FIGURES PARSE IS PUBLIC AND SEPARATE, because the same `timed out after
++<n>ms` text arrives on the EVENT's own error field too. Reading it in one place
++is what keeps a budget expiry recognized identically whichever surface supplied
++the error — two parsers of one sentence cannot be proven to agree, and each
++would return a well-formed figure.
++"""
++
++from __future__ import annotations
++
++import re
++from dataclasses import dataclass
++
++__all__: list[str] = [
++    "CheckpointMessage",
++    "checkpoint_error_figures",
++    "checkpoint_message",
++]
++
++# The two wordings, as one pattern: either names a node and then, after a colon,
++# the engine's own error for it.
++_MESSAGE_RE = re.compile(
++    r"""checkpoint\ (?:commit\ failed\ for|operation\ budget\ exceeded\ on)\ node\s+
++        ['"]?(?P<node>[^'"\s:]+)['"]?\s*:\s*(?P<error>[^\r\n]+)""",
++    re.VERBOSE,
++)
++
++# The operation that ran out of budget and the elapsed figure the engine reports
++# for it. The operation is named as the engine names it, which is why the pattern
++# captures the engine's own words rather than mapping them onto ours.
++_TIMED_OUT_RE = re.compile(r"(?P<operation>git [a-z][a-z-]*) timed out after (?P<elapsed>\d+ms)")
++
++_BUDGET_MARKER = "checkpoint operation budget exceeded"
++
++
++@dataclass(frozen=True, kw_only=True)
++class CheckpointMessage:
++    """One engine checkpoint fault as its terminal failure message reports it."""
++
++    node: str | None
++    checkpoint_error: str
++    budget_expiry: bool
++    timed_out_operation: str | None
++    engine_reported_elapsed: str | None
++
++
++def checkpoint_message(*, text: str) -> CheckpointMessage | None:
++    """The checkpoint fault `text` reports, or `None` when it reports none."""
++    match = _MESSAGE_RE.search(text)
++    if match is None:
++        return None
++    error = match.group("error").strip()
++    operation, elapsed = checkpoint_error_figures(checkpoint_error=error)
++    return CheckpointMessage(
++        node=match.group("node"),
++        checkpoint_error=error,
++        budget_expiry=_BUDGET_MARKER in text or elapsed is not None,
++        timed_out_operation=operation,
++        engine_reported_elapsed=elapsed,
++    )
++
++
++def checkpoint_error_figures(*, checkpoint_error: str) -> tuple[str | None, str | None]:
++    """The timed-out git operation and the engine's elapsed figure, or two Nones."""
++    match = _TIMED_OUT_RE.search(checkpoint_error)
++    if match is None:
++        return (None, None)
++    return (match.group("operation"), match.group("elapsed"))
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_fabro_failed_targets.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_fabro_failed_targets.py
+new file mode 100644
+index 00000000..cf1cad91
+--- /dev/null
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_fabro_failed_targets.py
+@@ -0,0 +1,137 @@
++"""The structured failure summary a refused commit's captured output carries.
++
++ONE recognizer for the whole repository, because two readers of the same bytes
++cannot be proven to agree and the disagreement would be invisible: each would
++return a well-formed list of names. The post-merge janitor's aggregate output and
++the engine checkpoint's own hook output are the same bytes in two places, and
++`contracts.md` section "Failed engine checkpoint commit attribution" says in as
++many words that the checkpoint applies "the structured-summary rule of the
++preceding subsection".
++
++WHAT A SUMMARY IS, AND WHY NOTHING ELSE COUNTS. The aggregate runner prints a
++`Failed targets (N):` header followed by one `  - <name>` line per failed target,
++and that header is the ONLY thing that makes the names below it an attribution.
++Recipe banners and a failing recipe's own error lines sit in the same stream and
++say nothing about which target the runner judged failed — a reading that took the
++last recipe it saw would name a passing one as the cause, which is the misreading
++the structured summary exists to prevent.
++
++A CUT HEADER IS AN ABSENCE, NOT A PARTIAL SUMMARY. The engine records a bounded
++SUFFIX of the hook output, so a summary whose header the bound cut away arrives
++as a list of orphan bullet lines. This recognizer returns nothing for them rather
++than reconstructing a summary from bullets it never saw introduced: the orphans
++are indistinguishable from any other dashed list in the output, and the contract
++requires that such a tail fall back to the labelled observation instead.
++
++LINE ENDINGS ARE NORMALIZED BEFORE ANYTHING IS MATCHED. The measured tails end
++their lines in carriage-return line-feed pairs, because the hook runner reframes
++its children's output that way, and a doubled carriage return has been observed
++on a child that already emitted its own. So the normalization collapses both into
++line feeds and the collector passes over the blank lines that leaves, rather than
++treating one as the end of the list — a summary read through a `splitlines` that
++split on the stray carriage return yielded its FIRST target and silently dropped
++the other twenty-three.
++"""
++
++from __future__ import annotations
++
++import re
++
++__all__: list[str] = [
++    "failed_hook_commands",
++    "failed_targets",
++]
++
++_HEADER_RE = re.compile(r"^\s*Failed targets \(\d+\):\s*$")
++_BULLET_RE = re.compile(r"^\s*-\s+(?P<name>\S+)\s*$")
++
++# The hook runner's own per-command run summary: a header naming how long the
++# whole hook took, then one row per command that RAN, each opening with a glyph
++# that says whether it passed. The row's trailing parenthesis carries that
++# command's own duration, and requiring it is what keeps an ordinary two-word
++# output line from reading as a summary row.
++_SUMMARY_HEADER = "summary: (done in "
++_SUMMARY_ROW_RE = re.compile(r"^\s*(?P<marker>\S+)\s+(?P<name>\S+)\s+\([^()]*\)\s*$")
++
++# The glyphs that mark a command failed and passed. Measured 2026-10-13 against
++# the runner this repository pins: the colour-capable form uses U+1F94A for a
++# failure and U+2714 for a pass, while the `--no-colors` form uses U+2717 and
++# U+2713. All four are recognized because the runner chooses its set from its
++# COLOUR setting rather than from whether its output is a terminal, so a commit
++# inside a sandbox can produce either.
++_FAILED_MARKERS = frozenset(("✗", "\U0001f94a"))
++_PASSED_MARKERS = frozenset(("✓", "✔"))
++
++# The variation selector the colour-capable form appends to its pass glyph. It is
++# stripped before the marker is compared, so one glyph does not need two
++# spellings in the sets above.
++_PRESENTATION_SELECTOR = "️"
++
++
++def failed_targets(*, output: str) -> tuple[str, ...]:
++    """Every target named by a structured summary in `output`, in order.
++
++    EVERY summary in the output contributes, not only the last one: one commit
++    can run several aggregates, and naming the targets of whichever ran last
++    would report a complete-looking attribution that omits the rest. Repeats are
++    collapsed so a target named by two summaries is named once.
++    """
++    names: list[str] = []
++    collecting = False
++    for line in _normalized_lines(output=output):
++        if _HEADER_RE.match(line) is not None:
++            collecting = True
++            continue
++        if not collecting or line.strip() == "":
++            continue
++        bullet = _BULLET_RE.match(line)
++        if bullet is None:
++            collecting = False
++            continue
++        names.append(bullet.group("name"))
++    return tuple(dict.fromkeys(names))
++
++
++def failed_hook_commands(*, output: str) -> tuple[str, ...]:
++    """Every hook command a run summary in `output` marks failed, in order.
++
++    EVERY summary contributes, for the same reason the target recognizer's do: a
++    `git commit` runs a pre-commit hook and then a commit-msg hook, so a tail can
++    carry two, and naming only one reports a complete-looking attribution.
++
++    A ROW WHOSE GLYPH IS NEITHER KNOWN MARKER ENDS THE SUMMARY. The runner prints
++    nothing after its rows, so an unrecognized row means this is not the summary
++    any more — and reading on would let the next line's first word stand in for a
++    marker and its second for a command name.
++    """
++    names: list[str] = []
++    collecting = False
++    for line in _normalized_lines(output=output):
++        if _SUMMARY_HEADER in line:
++            collecting = True
++            continue
++        if not collecting or line.strip() == "":
++            continue
++        marker = _row_marker(line=line)
++        if marker is None:
++            collecting = False
++            continue
++        if marker[0] in _FAILED_MARKERS:
++            names.append(marker[1])
++    return tuple(dict.fromkeys(names))
++
++
++def _row_marker(*, line: str) -> tuple[str, str] | None:
++    """One summary row's glyph and command name, or `None` when it is not a row."""
++    row = _SUMMARY_ROW_RE.match(line)
++    if row is None:
++        return None
++    marker = row.group("marker").replace(_PRESENTATION_SELECTOR, "")
++    if marker not in _FAILED_MARKERS and marker not in _PASSED_MARKERS:
++        return None
++    return (marker, row.group("name"))
++
++
++def _normalized_lines(*, output: str) -> tuple[str, ...]:
++    """`output` split into lines with every carriage return collapsed first."""
++    return tuple(output.replace("\r\n", "\n").replace("\r", "\n").split("\n"))
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_fabro_port_events.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_fabro_port_events.py
+index ea12af0d..e6b5ee9b 100644
+--- a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_fabro_port_events.py
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_fabro_port_events.py
+@@ -28,9 +28,43 @@ from typing import Any, cast
+ from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
+ 
+ __all__: list[str] = [
++    "event_name",
++    "event_properties",
+     "fabro_event_records_from_stdout",
+ ]
+ 
++# The keys an event's own NAME has been observed under, newest shape last. The
++# dump's `events.jsonl` keys it `type`; a server payload has been observed
++# keying it `event`, `name` and `event_name` in turn, which is why the walk is a
++# candidate list rather than one key. The same list the review-gate telemetry
++# parser walks, for the same reason.
++_NAME_KEYS: tuple[str, ...] = ("event", "name", "event_name", "type")
++
++
++def event_name(*, record: dict[str, Any]) -> str | None:
++    """One event record's own name, or `None` when it carries none."""
++    for key in _NAME_KEYS:
++        value: object = record.get(key)
++        if isinstance(value, str):
++            return value
++    return None
++
++
++def event_properties(*, record: dict[str, Any]) -> dict[str, Any]:
++    """One event record's payload mapping, falling back to the record itself.
++
++    The engine nests an event's own fields under `properties`, and the measured
++    streams carry some of them at the top level as well. Falling back to the
++    RECORD rather than to an empty mapping is what keeps a top-level-only shape
++    readable; a reader that insisted on the nesting would report every field of
++    such a record absent, which is indistinguishable from an event that genuinely
++    carried none.
++    """
++    nested: object = record.get("properties")
++    if isinstance(nested, dict):
++        return cast("dict[str, Any]", nested)
++    return record
++
+ 
+ def fabro_event_records_from_stdout(*, stdout: str) -> tuple[dict[str, Any], ...] | None:
+     """The stream's event records, or None when nothing in it was readable."""
+diff --git a/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failed_hook_command.py b/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failed_hook_command.py
+new file mode 100644
+index 00000000..3d106b30
+--- /dev/null
++++ b/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failed_hook_command.py
+@@ -0,0 +1,90 @@
++"""A commit-msg refusal with no Failed targets summary names its failed hook command.
++
++Scenario 170's second scenario. Two of the twenty-seven measured hp checkpoint
++failures were the Red-Green-Replay gate refusing the engine's checkpoint commit
++at `commit-msg`, where there is no aggregate runner and therefore no `Failed
++targets` summary at all — the only thing in the tail that says which gate refused
++is the hook runner's own per-command run summary.
++
++THE MARKERS ARE MEASURED, NOT GUESSED. Measured 2026-10-13 against the hook
++runner this repository pins: its colour-capable form marks a failed command with
++U+1F94A and a passing one with U+2714 followed by the U+FE0F presentation
++selector, and that is the form a sandbox commit produces, because the runner
++chooses its glyph set from its colour setting rather than from whether its output
++is a terminal. The fixture carries a PASSING command beside the failing one, so a
++recognizer that read every summary row as a failure would be caught.
++
++THE JOURNAL ROW IS ASSERTED BESIDE THE DETAIL, from ONE attribution. The detail
++is read once and scrolls away; the row is what a later triage reads. Rendering
++both from the same `CheckpointFailure` is what makes them agree, and asserting
++only one of them would let a second derivation drift — neither surface announces
++a disagreement, because both are well-formed.
++"""
++
++from __future__ import annotations
++
++from typing import Any
++
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_attribution import (
++    checkpoint_failure_from_event,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_detail import (
++    checkpoint_failure_detail,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_journal import (
++    checkpoint_failure_record,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_record import (
++    EVENTS_READ,
++)
++from livespec_orchestrator_beads_fabro.commands._fabro_checkpoint_event import (
++    checkpoint_failed_event,
++)
++
++_RUN_ID = "01M4PEXR2PY808VPN0807FTF5Y"
++_WORK_ITEM_ID = "bd-ib-6jkjzm"
++_NODE = "fix"
++_CHECKPOINT_ERROR = "git commit failed (exit 1)"
++_FAILED_HOOK = "01-red-green-replay"
++_PASSING_HOOK = "00-no-commit-on-master"
++
++# The hook runner's failure and success glyphs, spelled by code point so the
++# fixture cannot be silently normalized by an editor.
++_FAILED_MARKER = "\U0001f94a"
++_PASSED_MARKER = "✔️"
++
++_TAIL = (
++    f"\r\nrunning {_FAILED_HOOK}\r\n"
++    "\r\n"
++    "red-green-replay: staged test file bytes differ from the Red commit's\r\n"
++    f"error: Recipe `check-{_FAILED_HOOK}` failed with exit code 1\r\n"
++    "\r\n"
++    "summary: (done in 41.20 seconds)\r\n"
++    f"{_PASSED_MARKER} {_PASSING_HOOK} (0.01 seconds)\r\n"
++    f"{_FAILED_MARKER} {_FAILED_HOOK} (41.19 seconds)\r\n"
++)
++
++_EVENTS: tuple[dict[str, Any], ...] = (
++    {
++        "type": "checkpoint.failed",
++        "properties": {"node": _NODE, "error": _CHECKPOINT_ERROR, "output": _TAIL},
++    },
++)
++
++
++def test_the_journal_row_and_the_detail_name_the_failed_hook_command() -> None:
++    """With no aggregate summary, the hook runner's own summary is the attribution."""
++    event = checkpoint_failed_event(records=_EVENTS)
++
++    assert event is not None
++    failure = checkpoint_failure_from_event(event=event, events_read=EVENTS_READ)
++    record = checkpoint_failure_record(
++        work_item_id=_WORK_ITEM_ID, fabro_run_id=_RUN_ID, failure=failure
++    )
++
++    assert record["failed_hook_commands"] == [_FAILED_HOOK]
++    assert record["failed_targets"] == []
++    assert record["node"] == _NODE
++    detail = checkpoint_failure_detail(work_item_id=_WORK_ITEM_ID, run_id=_RUN_ID, failure=failure)
++    assert _FAILED_HOOK in detail
++    assert _PASSING_HOOK not in detail
+diff --git a/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failure_arms.py b/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failure_arms.py
+new file mode 100644
+index 00000000..c271f1a5
+--- /dev/null
++++ b/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failure_arms.py
+@@ -0,0 +1,382 @@
++"""The four attribution arms, the row's whole key set, and the terminal patch.
++
++Scenario 170's remaining scenarios, each asserted on the ONE record every surface
++renders from.
++
++THE OBSERVATION ARM ASSERTS NOTHING. A tail carrying neither a `Failed targets`
++summary nor a recognized hook-runner summary is an observation, and the clause
++says the Dispatcher "MUST NOT assert that any hook, target or recipe in that
++excerpt caused the failure" — so the fixture tail NAMES a recipe and the case
++asserts that the detail labels the excerpt rather than blaming it.
++
++THE TWO BUDGET FIGURES MUST STAY APART. One is the `[run.checkpoint]
++commit_timeout` the Dispatcher submitted and the other is what the engine says it
++spent; the case asserts the configured figure in seconds AND that the engine's
++figure is labelled as the engine's measurement, because a reader told that
++900004ms is "the budget" goes hunting for a configuration key holding it.
++
++THE EXCERPT'S OWN LINES MAY NOT REACH THE COMMENT. A budget expiry and an
++observation both carry engine-authored text on the detail; the ledger comment
++carries names and figures only, so its case asserts the absence of the excerpt.
++
++RECIPE OUTPUT OUTSIDE THE SUMMARY AND A CARRIAGE-RETURN TAIL are asserted here
++too, on the live record rather than on the recognizer alone: the recognizer's own
++module proves the parse, and these prove that what the parse produced is what the
++OUTCOME says.
++"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import Any
++
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_comment import (
++    checkpoint_failure_comment_body,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_outcome import (
++    checkpoint_failure_outcome,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_probe import (
++    CheckpointProbe,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_record import (
++    ATTRIBUTION_BUDGET_EXPIRY,
++    ATTRIBUTION_ENGINE_ERROR,
++    ATTRIBUTION_FAILED_TARGETS,
++    ATTRIBUTION_OBSERVATION,
++    EVENTS_READ,
++    TERMINAL_PATCH_ABSENT,
++    TERMINAL_PATCH_RECORDED,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
++from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
++from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroCommand
++
++_ITEM = "bd-ib-ckpt03"
++_RUN_ID = "01M4T131B9YQQQ34PS8VQDVBE2"
++_SERVER_URL = "https://hp-xubuntu.perch-rudd.ts.net:32276"
++_PATCH = "diff --git a/x.py b/x.py\n+print(1)\n"
++
++# The run configuration this dispatch submits, in the measured form: the
++# fork-only `[run.checkpoint] commit_timeout` key this repository declares.
++_RUN_CONFIG = '[run.checkpoint]\ncommit_timeout = "15m"\n'
++
++# A tail with no recognized summary of either kind. It NAMES a recipe, which is
++# what makes "labelled as an observation" a different assertion from "mentions a
++# recipe".
++_UNRECOGNIZED_TAIL = (
++    "\r\n::: just check-heading-coverage\r\n"
++    "Traceback (most recent call last):\r\n"
++    '  File "heading_coverage.py", line 1, in <module>\r\n'
++    "RuntimeError: the register could not be parsed\r\n"
++)
++
++
++@dataclass(frozen=True, kw_only=True)
++class _Command:
++    exit_code: int
++    stdout: str
++    stderr: str
++
++
++@dataclass(kw_only=True)
++class _Runner:
++    stdout: str
++
++    def run(
++        self,
++        *,
++        argv: list[str],
++        cwd: Path,
++        timeout_seconds: float,
++        env: dict[str, str] | None = None,
++        stdin: int | None = None,
++    ) -> FabroCommand:
++        _ = (argv, cwd, timeout_seconds, env, stdin)
++        return _Command(exit_code=0, stdout=self.stdout, stderr="")
++
++
++@dataclass(kw_only=True)
++class _Journal:
++    records: list[dict[str, object]] = field(default_factory=list)
++
++    def append(self, *, record: dict[str, object]) -> None:
++        self.records.append(record)
++
++
++def _events(
++    *,
++    error: str,
++    tail: str | None = None,
++    patch: str | None = None,
++    node: str = "implement",
++) -> str:
++    properties: dict[str, Any] = {"node": node, "error": error}
++    if tail is not None:
++        properties["output"] = tail
++    stream: list[dict[str, Any]] = [{"type": "checkpoint.failed", "properties": properties}]
++    failed: dict[str, Any] = {"type": "run.failed", "properties": {"reason": "workflow_error"}}
++    if patch is not None:
++        failed["properties"]["terminal_patch"] = patch
++    stream.append(failed)
++    return json.dumps(stream)
++
++
++def _plan(*, tmp_path: Path, config: str | None = _RUN_CONFIG) -> DispatchPlan:
++    workflow = tmp_path / "workflow.toml"
++    if config is not None:
++        _ = workflow.write_text(config, encoding="utf-8")
++    return DispatchPlan(
++        repo=tmp_path,
++        work_item_id=_ITEM,
++        branch=f"feat/{_ITEM}",
++        workflow_toml=workflow,
++        goal_file=tmp_path / "goal.txt",
++        fabro_bin="fabro",
++        fabro_factory_name="hp",
++        fabro_factory_server=_SERVER_URL,
++        fabro_factory_dev_token=None,
++        janitor=("check",),
++        janitor_checkout=tmp_path / ".janitor",
++        janitor_core_checkout=tmp_path / ".janitor" / ".core",
++        janitor_core_repo_url="https://github.com/thewoolleyman/livespec.git",
++        janitor_core_ref="trunk",
++        review_fix_visit_cap=3,
++        merge_on_review_cap_outcome="succeeded",
++    )
++
++
++def _terminal(*, detail: str) -> DispatchOutcome:
++    return DispatchOutcome(
++        work_item_id=_ITEM,
++        status="failed",
++        stage="fabro-run",
++        pr_number=None,
++        merge_sha=None,
++        detail=detail,
++        fabro_run_id=_RUN_ID,
++        fabro_failure_cause=detail,
++        fabro_failure_category="deterministic",
++    )
++
++
++def _drive(
++    *,
++    tmp_path: Path,
++    events: str,
++    detail: str = "git checkpoint commit failed for node 'implement': git commit failed (exit 1)",
++    config: str | None = _RUN_CONFIG,
++) -> tuple[DispatchOutcome, dict[str, object]]:
++    journal = _Journal()
++    outcome = checkpoint_failure_outcome(
++        plan=_plan(tmp_path=tmp_path, config=config),
++        run_id=_RUN_ID,
++        probe=CheckpointProbe(runner=_Runner(stdout=events), journal=journal),
++        terminal=_terminal(detail=detail),
++    )
++    assert outcome is not None
++    rows = [row for row in journal.records if row.get("stage") == "checkpoint-failure"]
++    assert len(rows) == 1
++    return (outcome, rows[0])
++
++
++def test_a_tail_with_no_recognized_summary_is_labelled_an_observation(
++    tmp_path: Path,
++) -> None:
++    """The excerpt is reported as an observation, and nothing in it is blamed."""
++    outcome, row = _drive(
++        tmp_path=tmp_path,
++        events=_events(error="git commit failed (exit 1)", tail=_UNRECOGNIZED_TAIL),
++    )
++
++    assert row["attribution"] == ATTRIBUTION_OBSERVATION
++    assert "the register could not be parsed" in str(row["observation_excerpt"])
++    assert row["failed_targets"] == []
++    assert row["failed_hook_commands"] == []
++    assert "OBSERVATION" in outcome.detail
++    assert "NOT a claim" in outcome.detail
++    assert "failed targets" not in outcome.detail
++
++
++def test_a_budget_expiry_names_the_operation_the_budget_and_the_engines_figure(
++    tmp_path: Path,
++) -> None:
++    """The configured budget and the engine's measurement are kept apart."""
++    outcome, row = _drive(
++        tmp_path=tmp_path,
++        events=_events(error="git commit timed out after 900004ms", node="fix"),
++        detail=(
++            'Checkpoint error: checkpoint operation budget exceeded on node "fix": '
++            "git commit timed out after 900004ms"
++        ),
++    )
++
++    assert row["attribution"] == ATTRIBUTION_BUDGET_EXPIRY
++    assert row["node"] == "fix"
++    assert row["timed_out_operation"] == "git commit"
++    assert row["configured_budget_seconds"] == 900
++    assert row["engine_reported_elapsed"] == "900004ms"
++    assert "900s" in outcome.detail
++    assert "the engine's figure, NOT the configured budget" in outcome.detail
++
++
++def test_an_unreadable_run_configuration_names_the_reason_rather_than_the_stock_budget(
++    tmp_path: Path,
++) -> None:
++    """A figure this derivation could not establish is not a bound, however plausible."""
++    _, row = _drive(
++        tmp_path=tmp_path,
++        events=_events(error="git commit timed out after 900004ms"),
++        config=None,
++    )
++
++    assert row["configured_budget_seconds"] is None
++    assert "could not be read" in str(row["configured_budget_unavailable"])
++
++
++def test_a_git_add_failure_with_no_output_tail_is_the_engine_error_alone(
++    tmp_path: Path,
++) -> None:
++    """No tail means no summary to recognize and nothing to observe."""
++    outcome, row = _drive(
++        tmp_path=tmp_path, events=_events(error="git add failed", node="dod_gate")
++    )
++
++    assert row["attribution"] == ATTRIBUTION_ENGINE_ERROR
++    assert row["node"] == "dod_gate"
++    assert row["checkpoint_error"] == "git add failed"
++    assert row["failed_targets"] == []
++    assert row["failed_hook_commands"] == []
++    assert row["observation_excerpt"] is None
++    assert "no output tail" in outcome.detail
++
++
++def test_the_row_carries_every_key_the_clause_names(tmp_path: Path) -> None:
++    """One row per dispatch, and a reader never meets an omitted key."""
++    _, row = _drive(
++        tmp_path=tmp_path,
++        events=_events(
++            error="git commit failed (exit 1)",
++            tail="Failed targets (1):\r\n  - check-lint\r\n",
++            patch=_PATCH,
++        ),
++    )
++
++    assert set(row) == {
++        "stage",
++        "work_item_id",
++        "fabro_run_id",
++        "node",
++        "checkpoint_error",
++        "attribution",
++        "failed_targets",
++        "failed_hook_commands",
++        "observation_excerpt",
++        "configured_budget_seconds",
++        "configured_budget_unavailable",
++        "timed_out_operation",
++        "engine_reported_elapsed",
++        "events_read",
++        "terminal_patch_state",
++        "terminal_patch_bytes",
++        "terminal_patch_sha256",
++    }
++    assert row["work_item_id"] == _ITEM
++    assert row["fabro_run_id"] == _RUN_ID
++    assert row["events_read"] == EVENTS_READ
++    assert row["attribution"] == ATTRIBUTION_FAILED_TARGETS
++
++
++def test_a_terminal_patch_is_recorded_by_byte_size_and_digest(tmp_path: Path) -> None:
++    """A pointer naming no stage artifact must not read as a run that held no work."""
++    raw = _PATCH.encode("utf-8")
++    outcome, row = _drive(
++        tmp_path=tmp_path,
++        events=_events(
++            error="git commit failed (exit 1)",
++            tail="Failed targets (1):\r\n  - check-lint\r\n",
++            patch=_PATCH,
++        ),
++    )
++
++    assert row["terminal_patch_state"] == TERMINAL_PATCH_RECORDED
++    assert row["terminal_patch_bytes"] == len(raw)
++    assert row["terminal_patch_sha256"] == hashlib.sha256(raw).hexdigest()
++    assert str(len(raw)) in outcome.detail
++    body = checkpoint_failure_comment_body(
++        work_item_id=_ITEM, run_id=_RUN_ID, factory="hp", failure=_failure_of(row=row)
++    )
++    assert hashlib.sha256(raw).hexdigest() in body
++
++
++def test_a_terminal_event_carrying_no_patch_says_so_rather_than_nothing(
++    tmp_path: Path,
++) -> None:
++    """Read-and-empty is a different fact from never-read, and says which."""
++    _, row = _drive(
++        tmp_path=tmp_path,
++        events=_events(
++            error="git commit failed (exit 1)", tail="Failed targets (1):\r\n  - check-lint\r\n"
++        ),
++    )
++
++    assert row["terminal_patch_state"] == TERMINAL_PATCH_ABSENT
++    assert row["terminal_patch_bytes"] is None
++
++
++def test_a_carriage_return_tail_names_what_a_line_feed_tail_names(tmp_path: Path) -> None:
++    """The two framings reach the same attribution through the live record."""
++    crlf = "Failed targets (2):\r\n  - check-lint\r\n  - check-types\r\n"
++    feed = "Failed targets (2):\n  - check-lint\n  - check-types\n"
++
++    _, crlf_row = _drive(
++        tmp_path=tmp_path, events=_events(error="git commit failed (exit 1)", tail=crlf)
++    )
++    _, feed_row = _drive(
++        tmp_path=tmp_path, events=_events(error="git commit failed (exit 1)", tail=feed)
++    )
++
++    assert crlf_row["failed_targets"] == ["check-lint", "check-types"]
++    assert crlf_row["failed_targets"] == feed_row["failed_targets"]
++
++
++def test_a_recipe_printed_outside_the_summary_is_not_the_reported_cause(
++    tmp_path: Path,
++) -> None:
++    """A passing recipe's banner sits in the same tail and must not be blamed."""
++    tail = (
++        "\r\n::: just check-lint\r\n"
++        "All checks passed!\r\n"
++        "\r\n::: just check-master-ci-green\r\n"
++        "ERROR: the default branch's aggregate job is red\r\n"
++        "\r\nFailed targets (1):\r\n  - check-master-ci-green\r\n"
++    )
++
++    outcome, row = _drive(
++        tmp_path=tmp_path, events=_events(error="git commit failed (exit 1)", tail=tail)
++    )
++
++    assert row["failed_targets"] == ["check-master-ci-green"]
++    assert "check-lint" not in outcome.detail
++
++
++def _failure_of(*, row: dict[str, object]) -> Any:
++    """Rebuild the record from the row, which is what a later reader has."""
++    from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_record import (
++        CheckpointFailure,
++    )
++
++    return CheckpointFailure(
++        node=str(row["node"]),
++        checkpoint_error=str(row["checkpoint_error"]),
++        attribution=str(row["attribution"]),
++        failed_targets=tuple(str(name) for name in list(row["failed_targets"] or [])),
++        failed_hook_commands=(),
++        events_read=str(row["events_read"]),
++        terminal_patch_state=str(row["terminal_patch_state"]),
++        terminal_patch_bytes=int(str(row["terminal_patch_bytes"])),
++        terminal_patch_sha256=str(row["terminal_patch_sha256"]),
++    )
+diff --git a/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failure_declines.py b/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failure_declines.py
+new file mode 100644
+index 00000000..6dca13e4
+--- /dev/null
++++ b/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failure_declines.py
+@@ -0,0 +1,397 @@
++"""Every reading the checkpoint arm declines to make, and the one it is wired into.
++
++`contracts.md` section "Failed engine checkpoint commit attribution" requires
++that recognition "MUST NOT pre-empt an outcome that the Dispatcher already
++classifies otherwise" and that the events be read from "the dispatch's resolved
++factory target", "never ... a local default target". Both are claims about reads
++that must NOT happen, so each case below asserts the arm returned the generic
++outcome untouched AND, where the point is the read itself, that no command was
++spent at all — a stub that answers whatever it is asked cannot tell a declined
++read from a read that happened to find nothing.
++
++THE WIRING CASE IS THE POSITIVE CONTROL. Without a run that reaches the arm
++through `fabro_run_terminal_outcome` itself, an arm wired to nothing would
++satisfy every declining case in this module.
++"""
++
++from __future__ import annotations
++
++import json
++from dataclasses import dataclass, field, replace
++from pathlib import Path
++from typing import Any
++
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_events import (
++    NO_SERVER_URL_REASON,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_outcome import (
++    checkpoint_failure_outcome,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_probe import (
++    CheckpointProbe,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_record import (
++    EVENTS_READ,
++    NODE_NOT_REPORTED,
++    TERMINAL_PATCH_UNAVAILABLE,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
++from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal import (
++    fabro_run_terminal_outcome,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
++from livespec_orchestrator_beads_fabro.commands._fabro_port import (
++    FabroInspectResult,
++    FabroPort,
++    FabroTarget,
++)
++from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroCommand
++
++_RUN_ID = "01M4T28A9B79A7B971N9A5J3NW"
++_NODE = "publish_draft"
++_CHECKPOINT_ERROR = "git commit failed (exit 1)"
++_FAILURE_MESSAGE = f"git checkpoint commit failed for node '{_NODE}': {_CHECKPOINT_ERROR}"
++_SERVER_URL = "https://hp-xubuntu.perch-rudd.ts.net:32276"
++
++_FAILED_EVENT: list[dict[str, Any]] = [
++    {
++        "type": "checkpoint.failed",
++        "properties": {
++            "node": _NODE,
++            "error": _CHECKPOINT_ERROR,
++            "output": "Failed targets (1):\r\n  - check-coverage\r\n",
++        },
++    }
++]
++
++# The same failure with NOTHING named: no node, no error text, no output tail.
++# This is what `git add failed` on a stream that keys its fields under names this
++# reader does not know looks like, and the arm has to report the absence rather
++# than infer a node or a cause.
++_BARE_EVENT: list[dict[str, Any]] = [{"type": "checkpoint.failed", "properties": {}}]
++
++# A stream carrying no checkpoint failure at all, with its event name at the TOP
++# level and no `properties` nesting — the other envelope shape the one event
++# reader tolerates.
++_NO_CHECKPOINT: list[dict[str, Any]] = [{"type": "stage.failed", "node": "implement"}]
++
++# A record with no name key under any of the four the reader walks. It must read
++# as an event with no name rather than as a checkpoint failure.
++_UNNAMED: list[dict[str, Any]] = [{"node": "implement", "error": _CHECKPOINT_ERROR}]
++
++# The SAME checkpoint failure with its fields at the top level and no
++# `properties` nesting, which is the shape a run export's `events.jsonl` carries.
++# A reader that insisted on the nesting would report every field of this record
++# absent — indistinguishable from an event that genuinely carried none.
++_FLAT_EVENT: list[dict[str, Any]] = [
++    {
++        "type": "checkpoint.failed",
++        "node_id": _NODE,
++        "message": _CHECKPOINT_ERROR,
++        "stderr": "Failed targets (1):\r\n  - check-per-file-coverage\r\n",
++    }
++]
++
++
++@dataclass(frozen=True, kw_only=True)
++class _Command:
++    exit_code: int
++    stdout: str
++    stderr: str
++
++
++@dataclass(kw_only=True)
++class _Runner:
++    stdout: str
++    exit_code: int = 0
++    calls: list[list[str]] = field(default_factory=list)
++
++    def run(
++        self,
++        *,
++        argv: list[str],
++        cwd: Path,
++        timeout_seconds: float,
++        env: dict[str, str] | None = None,
++        stdin: int | None = None,
++    ) -> FabroCommand:
++        _ = (cwd, timeout_seconds, env, stdin)
++        self.calls.append(argv)
++        return _Command(exit_code=self.exit_code, stdout=self.stdout, stderr="")
++
++
++@dataclass(kw_only=True)
++class _Journal:
++    records: list[dict[str, object]] = field(default_factory=list)
++
++    def append(self, *, record: dict[str, object]) -> None:
++        self.records.append(record)
++
++
++def _plan(*, tmp_path: Path, server: str | None = _SERVER_URL) -> DispatchPlan:
++    return DispatchPlan(
++        repo=tmp_path,
++        work_item_id="bd-ib-6jkjzm",
++        branch="feat/bd-ib-6jkjzm",
++        workflow_toml=tmp_path / "workflow.toml",
++        goal_file=tmp_path / "goal.txt",
++        fabro_bin="fabro",
++        fabro_factory_name="hp",
++        fabro_factory_server=server,
++        fabro_factory_dev_token=None,
++        janitor=("check",),
++        janitor_checkout=tmp_path / ".janitor",
++        janitor_core_checkout=tmp_path / ".janitor" / ".core",
++        janitor_core_repo_url="https://github.com/thewoolleyman/livespec.git",
++        janitor_core_ref="trunk",
++        review_fix_visit_cap=3,
++        merge_on_review_cap_outcome="succeeded",
++    )
++
++
++def _terminal() -> DispatchOutcome:
++    return DispatchOutcome(
++        work_item_id="bd-ib-6jkjzm",
++        status="failed",
++        stage="fabro-run",
++        pr_number=None,
++        merge_sha=None,
++        detail=_FAILURE_MESSAGE,
++        fabro_run_id=_RUN_ID,
++        fabro_failure_cause=_FAILURE_MESSAGE,
++        fabro_failure_category="deterministic",
++    )
++
++
++def test_a_provider_ceiling_keeps_its_route_and_spends_no_read(tmp_path: Path) -> None:
++    """A vendor ceiling is a fact about the credential, not about a checkpoint."""
++    runner = _Runner(stdout=json.dumps(_FAILED_EVENT))
++
++    outcome = checkpoint_failure_outcome(
++        plan=_plan(tmp_path=tmp_path),
++        run_id=_RUN_ID,
++        probe=CheckpointProbe(runner=runner, journal=_Journal()),
++        terminal=replace(
++            _terminal(), provider_usage_limit=True, provider_usage_limit_provider="anthropic"
++        ),
++    )
++
++    assert outcome is None
++    assert runner.calls == []
++
++
++def test_a_caller_wiring_no_probe_reads_nothing(tmp_path: Path) -> None:
++    """The arm cannot assert a checkpoint failure from a stream nobody read."""
++    assert (
++        checkpoint_failure_outcome(
++            plan=_plan(tmp_path=tmp_path), run_id=_RUN_ID, probe=None, terminal=_terminal()
++        )
++        is None
++    )
++
++
++def test_an_unparsed_run_id_reads_nothing(tmp_path: Path) -> None:
++    """There is no run whose events could be asked for."""
++    runner = _Runner(stdout=json.dumps(_FAILED_EVENT))
++
++    outcome = checkpoint_failure_outcome(
++        plan=_plan(tmp_path=tmp_path),
++        run_id=None,
++        probe=CheckpointProbe(runner=runner, journal=_Journal()),
++        terminal=_terminal(),
++    )
++
++    assert outcome is None
++    assert runner.calls == []
++
++
++def test_a_factory_declaring_no_server_is_not_surveyed_through_a_local_default(
++    tmp_path: Path,
++) -> None:
++    """A bare client answers for loopback: a clean, plausible, wrong answer.
++
++    The arm still RESTS the item, from the engine's own terminal message, and
++    records why the events went unread — which is Scenario 170's unreadable-events
++    scenario reached through the one failure mode that spends no round trip.
++    """
++    runner = _Runner(stdout=json.dumps(_FAILED_EVENT))
++    journal = _Journal()
++
++    outcome = checkpoint_failure_outcome(
++        plan=_plan(tmp_path=tmp_path, server=None),
++        run_id=_RUN_ID,
++        probe=CheckpointProbe(runner=runner, journal=journal),
++        terminal=_terminal(),
++    )
++
++    assert runner.calls == []
++    assert outcome is not None
++    assert outcome.status == "blocked"
++    row = _row(journal=journal)
++    assert row["events_read"] == NO_SERVER_URL_REASON
++    assert row["node"] == _NODE
++    assert row["failed_targets"] == []
++    assert row["failed_hook_commands"] == []
++    assert row["terminal_patch_bytes"] is None
++    assert row["terminal_patch_sha256"] is None
++    assert row["terminal_patch_state"] == TERMINAL_PATCH_UNAVAILABLE
++
++
++def test_a_refused_events_read_is_not_an_empty_stream(tmp_path: Path) -> None:
++    """A non-zero exit says nothing about what the run emitted, and names itself."""
++    journal = _Journal()
++
++    outcome = checkpoint_failure_outcome(
++        plan=_plan(tmp_path=tmp_path),
++        run_id=_RUN_ID,
++        probe=CheckpointProbe(
++            runner=_Runner(stdout="error: no such run", exit_code=1), journal=journal
++        ),
++        terminal=_terminal(),
++    )
++
++    assert outcome is not None
++    assert "1" in str(_row(journal=journal)["events_read"])
++    assert "unavailable" in outcome.detail.lower()
++
++
++def test_an_unreadable_stream_is_not_an_empty_stream(tmp_path: Path) -> None:
++    """Output nothing could be read from is unmeasured, not measured and quiet."""
++    journal = _Journal()
++
++    outcome = checkpoint_failure_outcome(
++        plan=_plan(tmp_path=tmp_path),
++        run_id=_RUN_ID,
++        probe=CheckpointProbe(runner=_Runner(stdout="not json at all"), journal=journal),
++        terminal=_terminal(),
++    )
++
++    assert outcome is not None
++    assert _row(journal=journal)["events_read"] != EVENTS_READ
++
++
++def test_an_unreadable_stream_whose_message_names_no_checkpoint_claims_nothing(
++    tmp_path: Path,
++) -> None:
++    """With neither surface readable, no checkpoint failure may be asserted."""
++    outcome = checkpoint_failure_outcome(
++        plan=_plan(tmp_path=tmp_path),
++        run_id=_RUN_ID,
++        probe=CheckpointProbe(runner=_Runner(stdout="not json at all"), journal=_Journal()),
++        terminal=replace(
++            _terminal(), detail="ACP turn failed", fabro_failure_cause="ACP protocol error"
++        ),
++    )
++
++    assert outcome is None
++
++
++def _row(*, journal: _Journal) -> dict[str, object]:
++    """The one checkpoint-failure row the dispatch wrote."""
++    rows = [row for row in journal.records if row.get("stage") == "checkpoint-failure"]
++    assert len(rows) == 1
++    return rows[0]
++
++
++def test_a_stream_with_no_checkpoint_failure_keeps_the_generic_outcome(
++    tmp_path: Path,
++) -> None:
++    """Most failed runs are not checkpoint failures, and nothing may claim they are."""
++    outcome = checkpoint_failure_outcome(
++        plan=_plan(tmp_path=tmp_path),
++        run_id=_RUN_ID,
++        probe=CheckpointProbe(
++            runner=_Runner(stdout=json.dumps(_NO_CHECKPOINT)), journal=_Journal()
++        ),
++        terminal=_terminal(),
++    )
++
++    assert outcome is None
++
++
++def test_a_record_with_no_name_key_is_not_read_as_a_checkpoint_failure(
++    tmp_path: Path,
++) -> None:
++    """An event whose name none of the four keys carries names nothing."""
++    outcome = checkpoint_failure_outcome(
++        plan=_plan(tmp_path=tmp_path),
++        run_id=_RUN_ID,
++        probe=CheckpointProbe(runner=_Runner(stdout=json.dumps(_UNNAMED)), journal=_Journal()),
++        terminal=_terminal(),
++    )
++
++    assert outcome is None
++
++
++def test_a_failure_naming_nothing_reports_the_absence_rather_than_inferring(
++    tmp_path: Path,
++) -> None:
++    """No node, no error text and no tail: each said to be unreported."""
++    outcome = checkpoint_failure_outcome(
++        plan=_plan(tmp_path=tmp_path),
++        run_id=_RUN_ID,
++        probe=CheckpointProbe(runner=_Runner(stdout=json.dumps(_BARE_EVENT)), journal=_Journal()),
++        terminal=_terminal(),
++    )
++
++    assert outcome is not None
++    assert NODE_NOT_REPORTED in outcome.detail
++    assert "no output tail" in outcome.detail
++
++
++def test_a_top_level_event_shape_is_read_exactly_as_a_nested_one(tmp_path: Path) -> None:
++    """Both measured envelope shapes yield the same node, error and targets."""
++    outcome = checkpoint_failure_outcome(
++        plan=_plan(tmp_path=tmp_path),
++        run_id=_RUN_ID,
++        probe=CheckpointProbe(runner=_Runner(stdout=json.dumps(_FLAT_EVENT)), journal=_Journal()),
++        terminal=_terminal(),
++    )
++
++    assert outcome is not None
++    assert f"node {_NODE}" in outcome.detail
++    assert _CHECKPOINT_ERROR in outcome.detail
++    assert "check-per-file-coverage" in outcome.detail
++
++
++def test_the_terminal_router_reaches_the_arm_with_a_probe(tmp_path: Path) -> None:
++    """The positive control: the arm is wired into the routing that owns the ending."""
++    runner = _Runner(stdout=json.dumps(_FAILED_EVENT))
++    inspect = _inspect(tmp_path=tmp_path)
++
++    outcome = fabro_run_terminal_outcome(
++        outcome_type=DispatchOutcome,
++        plan=_plan(tmp_path=tmp_path),
++        run_id=_RUN_ID,
++        inspect=inspect,
++        exit_code=1,
++        stderr="",
++        probe=CheckpointProbe(runner=runner, journal=_Journal()),
++    )
++
++    assert outcome is not None
++    assert f"node {_NODE}" in outcome.detail
++    assert "check-coverage" in outcome.detail
++
++
++def _inspect(*, tmp_path: Path) -> FabroInspectResult:
++    """The engine's terminal record for a run whose checkpoint commit was refused."""
++    payload = [
++        {
++            "run_id": _RUN_ID,
++            "status": {"kind": "failed", "reason": "workflow_error"},
++            "conclusion": {
++                "status": "failed",
++                "failure": {
++                    "reason": "workflow_error",
++                    "detail": {"message": _FAILURE_MESSAGE, "category": "deterministic"},
++                },
++            },
++        }
++    ]
++    return FabroPort(
++        fabro_bin="fabro",
++        target=FabroTarget(),
++        runner=_Runner(stdout=json.dumps(payload)),
++        cwd=tmp_path,
++    ).inspect(run_id=_RUN_ID, timeout_seconds=1)
+diff --git a/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failure_detail.py b/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failure_detail.py
+new file mode 100644
+index 00000000..490bd542
+--- /dev/null
++++ b/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failure_detail.py
+@@ -0,0 +1,159 @@
++"""A failed engine checkpoint commit names its run, its node, its error and its targets.
++
++`SPECIFICATION/contracts.md` section "Failed engine checkpoint commit
++attribution", and Scenario 170's first outline: the engine's own checkpoint of a
++node is the `git add` and `git commit` it performs on the run branch after a node
++finishes, outside every workflow node. When that commit is refused by the
++repository's commit hooks the failure is an ENGINE error rather than a node
++outcome, so the workflow graph cannot route it and the `needs_human` terminal
++never fires — which is why the dispatch outcome carried only `git commit failed
++(exit 1)` and named neither the node nor one failed target.
++
++The tail fixture is the measured shape rather than an invented one. Measured
++2026-10-12 across all 27 checkpoint-commit failures on hp since 2026-10-09
++(`plan/checkpoint-commit-hook-failures/research/001-measured-checkpoint-failures-2026-10-12.md`):
++each run's `checkpoint.failed` event held an 8192-byte stderr tail ending in the
++aggregate runner's structured `Failed targets` list, and reading that list is
++what separated per-file coverage from `check-master-ci-green` from the
++Red-Green-Replay gate. The lines end in carriage-return line-feed pairs because
++the measured tails do.
++
++RECIPE OUTPUT OUTSIDE THE SUMMARY IS IN THE FIXTURE ON PURPOSE. The tail carries
++a PASSING recipe's banner and a failing recipe's own error line before the
++summary, so a reading that took the last recipe it saw would name
++`check-master-ci-green`'s neighbour instead of the summary's own member.
++"""
++
++from __future__ import annotations
++
++import json
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import Any
++
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_outcome import (
++    checkpoint_failure_outcome,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_probe import (
++    CheckpointProbe,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
++from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
++from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroCommand
++
++_RUN_ID = "01M4RN8BTXSJZRJNQQQ0HWFYC7"
++_NODE = "implement"
++_CHECKPOINT_ERROR = "git commit failed (exit 1)"
++_FAILURE_MESSAGE = f"git checkpoint commit failed for node '{_NODE}': {_CHECKPOINT_ERROR}"
++_FAILED_TARGET = "check-master-ci-green"
++_PASSING_RECIPE = "check-lint"
++_SERVER_URL = "https://hp-xubuntu.perch-rudd.ts.net:32276"
++
++_TAIL = (
++    f"\r\n::: just {_PASSING_RECIPE}\r\n"
++    "All checks passed!\r\n"
++    f"\r\n::: just {_FAILED_TARGET}\r\n"
++    "ERROR: the default branch's aggregate job is red\r\n"
++    "\r\n"
++    "Failed targets (1):\r\n"
++    f"  - {_FAILED_TARGET}\r\n"
++)
++
++_EVENTS: list[dict[str, Any]] = [
++    {"type": "checkpoint.completed", "properties": {"node": "dod_gate"}},
++    {
++        "type": "checkpoint.failed",
++        "properties": {"node": _NODE, "error": _CHECKPOINT_ERROR, "output": _TAIL},
++    },
++    {"type": "run.failed", "properties": {"reason": "workflow_error"}},
++]
++
++
++@dataclass(frozen=True, kw_only=True)
++class _Command:
++    exit_code: int
++    stdout: str
++    stderr: str
++
++
++@dataclass(kw_only=True)
++class _EventsRunner:
++    """A runner that answers the port's `events` verb and nothing else."""
++
++    stdout: str
++    argv_seen: list[list[str]] = field(default_factory=list)
++
++    def run(
++        self,
++        *,
++        argv: list[str],
++        cwd: Path,
++        timeout_seconds: float,
++        env: dict[str, str] | None = None,
++        stdin: int | None = None,
++    ) -> FabroCommand:
++        _ = (cwd, timeout_seconds, env, stdin)
++        self.argv_seen.append(argv)
++        return _Command(exit_code=0, stdout=self.stdout, stderr="")
++
++
++@dataclass(kw_only=True)
++class _Journal:
++    records: list[dict[str, object]] = field(default_factory=list)
++
++    def append(self, *, record: dict[str, object]) -> None:
++        self.records.append(record)
++
++
++def _plan(*, tmp_path: Path) -> DispatchPlan:
++    return DispatchPlan(
++        repo=tmp_path,
++        work_item_id="bd-ib-6jkjzm",
++        branch="feat/bd-ib-6jkjzm",
++        workflow_toml=tmp_path / "workflow.toml",
++        goal_file=tmp_path / "goal.txt",
++        fabro_bin="fabro",
++        fabro_factory_name="hp",
++        fabro_factory_server=_SERVER_URL,
++        fabro_factory_dev_token=None,
++        janitor=("check",),
++        janitor_checkout=tmp_path / ".janitor",
++        janitor_core_checkout=tmp_path / ".janitor" / ".core",
++        janitor_core_repo_url="https://github.com/thewoolleyman/livespec.git",
++        janitor_core_ref="trunk",
++        review_fix_visit_cap=3,
++        merge_on_review_cap_outcome="succeeded",
++    )
++
++
++def _terminal() -> DispatchOutcome:
++    """The generic `failed` outcome this arm is handed, as the mapper builds it."""
++    return DispatchOutcome(
++        work_item_id="bd-ib-6jkjzm",
++        status="failed",
++        stage="fabro-run",
++        pr_number=None,
++        merge_sha=None,
++        detail=_FAILURE_MESSAGE,
++        fabro_run_id=_RUN_ID,
++        fabro_failure_cause=_FAILURE_MESSAGE,
++        fabro_failure_category="deterministic",
++    )
++
++
++def test_a_hook_refused_checkpoint_commit_names_its_node_error_and_every_target(
++    tmp_path: Path,
++) -> None:
++    """The one assertion: the detail names the run, the node, the error, the target."""
++    outcome = checkpoint_failure_outcome(
++        plan=_plan(tmp_path=tmp_path),
++        run_id=_RUN_ID,
++        probe=CheckpointProbe(runner=_EventsRunner(stdout=json.dumps(_EVENTS)), journal=_Journal()),
++        terminal=_terminal(),
++    )
++
++    assert outcome is not None
++    assert _RUN_ID in outcome.detail
++    assert f"node {_NODE}" in outcome.detail
++    assert _CHECKPOINT_ERROR in outcome.detail
++    assert _FAILED_TARGET in outcome.detail
+diff --git a/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failure_disposition.py b/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failure_disposition.py
+new file mode 100644
+index 00000000..b1de958f
+--- /dev/null
++++ b/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failure_disposition.py
+@@ -0,0 +1,238 @@
++"""A failed engine checkpoint rests its item at needs-human with a durable record.
++
++Scenario 170's first outline, its closing clauses: the dispatch outcome is
++`blocked` at stage `fabro-run`, the dispatch reports exit code 4, the item rests
++at `blocked` with `blocked_reason` `needs-human`, and the item carries a
++`livespec-checkpoint-failure` comment naming the same node, hook command and
++targets the outcome named.
++
++THE COMMENT IS READ BACK OFF THE ITEM rather than asserted as a return value.
++`bd show --json` carries no comments at all and a comment body lives under the
++beads-native `text` key, so the write this clause asks for is only durable if a
++read through the store seam finds it — a record that rendered perfectly and did
++not land is the failure mode, and it is invisible to any assertion on the render.
++
++THE EXCERPT PROHIBITION IS ASSERTED AS AN ABSENCE OF THE TAIL'S OWN LINES. The
++clause says the comment carries "names and figures only, and never an excerpt of
++captured output", so the fixture tail carries a distinctive line that appears
++nowhere in any name — a recognizer that pasted the tail in would be caught, while
++asserting only that the names ARE present could not tell the two apart.
++"""
++
++from __future__ import annotations
++
++import json
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import Any
++
++from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
++from livespec_orchestrator_beads_fabro.commands._dispatcher_blocked import (
++    escalate_needs_human_block,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_comment import (
++    CHECKPOINT_FAILURE_COMMENT_MARKER,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_outcome import (
++    checkpoint_failure_outcome,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_probe import (
++    CheckpointProbe,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
++    EXIT_BLOCKED,
++    dispatch_exit_code,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
++from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
++from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroCommand
++from livespec_orchestrator_beads_fabro.store import append_work_item, read_work_items
++from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
++
++_ITEM = "bd-ib-ckpt01"
++_RUN_ID = "01M4RGVVFBVM0Y11CHG9DV0QS2"
++_FACTORY = "hp"
++_NODE = "implement"
++_CHECKPOINT_ERROR = "git commit failed (exit 1)"
++_FAILURE_MESSAGE = f"git checkpoint commit failed for node '{_NODE}': {_CHECKPOINT_ERROR}"
++_FAILED_TARGET = "check-per-file-coverage"
++_FAILED_HOOK = "03-check-pre-commit"
++_SERVER_URL = "https://hp-xubuntu.perch-rudd.ts.net:32276"
++
++# A line of captured output that is not part of any name. It is what tells an
++# excerpt-free record apart from one that pasted the tail in beside the names.
++_OUTPUT_LINE = "coverage: 2 lines of _dispatcher_engine.py are not covered"
++
++_TAIL = (
++    f"\r\n::: just {_FAILED_TARGET}\r\n"
++    f"{_OUTPUT_LINE}\r\n"
++    "\r\n"
++    "Failed targets (1):\r\n"
++    f"  - {_FAILED_TARGET}\r\n"
++    "\r\n"
++    "summary: (done in 407.57 seconds)\r\n"
++    f"\U0001f94a {_FAILED_HOOK} (407.57 seconds)\r\n"
++)
++
++_EVENTS: list[dict[str, Any]] = [
++    {
++        "type": "checkpoint.failed",
++        "properties": {"node": _NODE, "error": _CHECKPOINT_ERROR, "output": _TAIL},
++    }
++]
++
++
++@dataclass(frozen=True, kw_only=True)
++class _Command:
++    exit_code: int
++    stdout: str
++    stderr: str
++
++
++@dataclass(kw_only=True)
++class _Runner:
++    stdout: str
++
++    def run(
++        self,
++        *,
++        argv: list[str],
++        cwd: Path,
++        timeout_seconds: float,
++        env: dict[str, str] | None = None,
++        stdin: int | None = None,
++    ) -> FabroCommand:
++        _ = (argv, cwd, timeout_seconds, env, stdin)
++        return _Command(exit_code=0, stdout=self.stdout, stderr="")
++
++
++@dataclass(kw_only=True)
++class _Journal:
++    records: list[dict[str, object]] = field(default_factory=list)
++
++    def append(self, *, record: dict[str, object]) -> None:
++        self.records.append(record)
++
++
++def _config() -> StoreConfig:
++    return StoreConfig(
++        tenant="livespec-impl-beads",
++        prefix="livespec-impl-beads",
++        server_user="livespec-impl-beads",
++        database="livespec-impl-beads",
++        bd_path="bd",
++        fake=True,
++    )
++
++
++def _write_config(project_root: Path) -> None:
++    _ = (project_root / ".livespec.jsonc").write_text(
++        """{
++  "livespec-orchestrator-beads-fabro": {
++    "connection": {
++      "tenant": "livespec-impl-beads",
++      "prefix": "bd",
++      "server_user": "livespec-impl-beads",
++      "database": "livespec-impl-beads",
++      "bd_path": "bd",
++      "fake": true
++    }
++  }
++}
++""",
++        encoding="utf-8",
++    )
++
++
++def _item() -> WorkItem:
++    return WorkItem(
++        id=_ITEM,
++        type="bug",
++        status="active",
++        title="A failed engine checkpoint commit names its node and cause",
++        description="The engine's checkpoint is not a node outcome.",
++        origin="freeform",
++        gap_id=None,
++        rank="a0",
++        assignee="fabro",
++        depends_on=(),
++        captured_at="2026-10-13T00:00:00Z",
++        resolution=None,
++        reason=None,
++        audit=None,
++        superseded_by=None,
++        blocked_reason=None,
++    )
++
++
++def _plan(*, tmp_path: Path) -> DispatchPlan:
++    return DispatchPlan(
++        repo=tmp_path,
++        work_item_id=_ITEM,
++        branch=f"feat/{_ITEM}",
++        workflow_toml=tmp_path / "workflow.toml",
++        goal_file=tmp_path / "goal.txt",
++        fabro_bin="fabro",
++        fabro_factory_name=_FACTORY,
++        fabro_factory_server=_SERVER_URL,
++        fabro_factory_dev_token=None,
++        janitor=("check",),
++        janitor_checkout=tmp_path / ".janitor",
++        janitor_core_checkout=tmp_path / ".janitor" / ".core",
++        janitor_core_repo_url="https://github.com/thewoolleyman/livespec.git",
++        janitor_core_ref="trunk",
++        review_fix_visit_cap=3,
++        merge_on_review_cap_outcome="succeeded",
++    )
++
++
++def _terminal() -> DispatchOutcome:
++    return DispatchOutcome(
++        work_item_id=_ITEM,
++        status="failed",
++        stage="fabro-run",
++        pr_number=None,
++        merge_sha=None,
++        detail=_FAILURE_MESSAGE,
++        fabro_run_id=_RUN_ID,
++        fabro_failure_cause=_FAILURE_MESSAGE,
++        fabro_failure_category="deterministic",
++    )
++
++
++def test_the_item_rests_blocked_at_needs_human_with_its_durable_record(
++    tmp_path: Path,
++) -> None:
++    """Blocked at fabro-run, exit code 4, blocked_reason needs-human, one comment."""
++    _write_config(tmp_path)
++    append_work_item(path=_config(), item=_item())
++    journal = _Journal()
++
++    outcome = checkpoint_failure_outcome(
++        plan=_plan(tmp_path=tmp_path),
++        run_id=_RUN_ID,
++        probe=CheckpointProbe(runner=_Runner(stdout=json.dumps(_EVENTS)), journal=journal),
++        terminal=_terminal(),
++    )
++
++    assert outcome is not None
++    assert outcome.status == "blocked"
++    assert outcome.stage == "fabro-run"
++    assert dispatch_exit_code(outcomes=[outcome]) == EXIT_BLOCKED
++
++    bodies = [
++        comment.text
++        for comment in read_work_item_comments(path=_config(), work_item_id=_ITEM)
++        if CHECKPOINT_FAILURE_COMMENT_MARKER in comment.text
++    ]
++    assert len(bodies) == 1
++    for named in (_RUN_ID, _FACTORY, _NODE, _CHECKPOINT_ERROR, _FAILED_TARGET, _FAILED_HOOK):
++        assert named in bodies[0]
++    assert _OUTPUT_LINE not in bodies[0]
++
++    escalate_needs_human_block(repo=tmp_path, item=_item(), outcome=outcome, journal=journal)
++    rested = next(stored for stored in read_work_items(path=_config()) if stored.id == _ITEM)
++
++    assert rested.status == "blocked"
++    assert rested.blocked_reason == "needs-human"
++    assert [row for row in journal.records if row.get("stage") == "needs-human-blocked"]
+diff --git a/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failure_record_edges.py b/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failure_record_edges.py
+new file mode 100644
+index 00000000..48e620d6
+--- /dev/null
++++ b/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_checkpoint_failure_record_edges.py
+@@ -0,0 +1,354 @@
++"""What the durable checkpoint record refuses to write, and what it never claims.
++
++Three claims the clause makes that a happy-path record cannot exercise, plus the
++pre-emption rule the arm is bound by.
++
++A NAME THAT IS NOT IDENTIFIER-SHAPED IS LEFT OUT AND COUNTED. The shape test is
++the engine's own run-label rule, and a name failing it did not come from a
++summary in any form this fleet recognizes — so writing it would put arbitrary
++captured text onto an append-only record under the heading of a target name.
++Asserting the COUNT beside the omission is what tells a filtered record apart
++from one that silently reported a shorter attribution as complete.
++
++A TEMPLATE OPENER IS REFUSED BEFORE THE WRITE, NOT AFTER. A MiniJinja opener
++anywhere in a ledger comment makes every later dispatch of that item refuse at
++the goal preflight, permanently, because `bd comments` offers add and list with
++no edit and no delete. The opener in the fixture reaches the body through the
++CONFIGURED FACTORY NAME rather than through the engine's checkpoint error, and
++that is the whole point of the case: the error is already neutralized on its way
++in, so the detector's own arm is only reachable through a field that is not —
++which is exactly why the clause asks for the detector as a separate gate rather
++than trusting the neutralizer.
++
++A CREDENTIAL-SHAPED VALUE IS REPLACED WHOLESALE. A checkpoint error can quote a
++push against a tokenized origin URL; the fleet's policy for that shape is a
++whole-value replacement rather than a partial mask.
++
++AND THE needs_human TERMINAL'S OWN SENTINEL KEEPS ITS ROUTE. Scenario 170's last
++scenario: a run carrying it is already classified, so the checkpoint arm must not
++re-read it — and the needs-human causal record, which owns that ending, must not
++write a second account of a checkpoint ending it cannot describe.
++"""
++
++from __future__ import annotations
++
++import json
++from dataclasses import dataclass, field, replace
++from pathlib import Path
++from typing import Any
++
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_comment import (
++    CHECKPOINT_FAILURE_COMMENT_MARKER,
++    checkpoint_failure_comment_body,
++    record_checkpoint_failure_comment,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_outcome import (
++    checkpoint_failure_outcome,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_probe import (
++    CheckpointProbe,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_checkpoint_record import (
++    ATTRIBUTION_FAILED_TARGETS,
++    CHECKPOINT_FAILURE_ENDING,
++    EVENTS_READ,
++    NODE_NOT_REPORTED,
++    CheckpointFailure,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
++from livespec_orchestrator_beads_fabro.commands._dispatcher_goal import (
++    minijinja_openers_in_text,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_cause import (
++    record_needs_human_cause,
++)
++from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
++    NEEDS_HUMAN_MARKER,
++    DispatchPlan,
++)
++from livespec_orchestrator_beads_fabro.commands._fabro_port import (
++    FabroInspectResult,
++    FabroPort,
++    FabroTarget,
++)
++from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroCommand
++from livespec_orchestrator_beads_fabro.commands._otel_scrub import REDACTION_MARKER
++
++_ITEM = "bd-ib-ckpt02"
++_RUN_ID = "01M4T28A9B79A7B971N9A5J3NW"
++_SERVER_URL = "https://hp-xubuntu.perch-rudd.ts.net:32276"
++
++# The literal open-interpolation pair, assembled rather than written, so this
++# module's own source carries no opener for a scanner to find.
++_OPENER = "{" + "{"
++
++
++@dataclass(frozen=True, kw_only=True)
++class _Command:
++    exit_code: int
++    stdout: str
++    stderr: str
++
++
++@dataclass(kw_only=True)
++class _Runner:
++    stdout: str
++
++    def run(
++        self,
++        *,
++        argv: list[str],
++        cwd: Path,
++        timeout_seconds: float,
++        env: dict[str, str] | None = None,
++        stdin: int | None = None,
++    ) -> FabroCommand:
++        _ = (argv, cwd, timeout_seconds, env, stdin)
++        return _Command(exit_code=0, stdout=self.stdout, stderr="")
++
++
++@dataclass(kw_only=True)
++class _Journal:
++    records: list[dict[str, object]] = field(default_factory=list)
++
++    def append(self, *, record: dict[str, object]) -> None:
++        self.records.append(record)
++
++
++def _failure(
++    *,
++    checkpoint_error: str = "git commit failed (exit 1)",
++    node: str | None = "implement",
++    targets: tuple[str, ...] = ("check-lint",),
++) -> CheckpointFailure:
++    return CheckpointFailure(
++        node=node,
++        checkpoint_error=checkpoint_error,
++        attribution=ATTRIBUTION_FAILED_TARGETS,
++        failed_targets=targets,
++        failed_hook_commands=(),
++        events_read=EVENTS_READ,
++    )
++
++
++def _body(*, failure: CheckpointFailure, run_id: str | None = _RUN_ID) -> str:
++    return checkpoint_failure_comment_body(
++        work_item_id=_ITEM, run_id=run_id, factory="hp", failure=failure
++    )
++
++
++def test_a_name_that_is_not_identifier_shaped_is_left_out_and_counted() -> None:
++    """Arbitrary captured text may not reach the record as a target name."""
++    body = _body(failure=_failure(targets=("check-lint", "error: could not read 24 files")))
++
++    assert "check-lint" in body
++    assert "could not read" not in body
++    assert "names left out as not identifier-shaped: 1" in body
++
++
++def test_an_unreported_node_and_an_unparsed_run_are_said_rather_than_left_blank() -> None:
++    """An absence a rendering surface would absorb is stated instead."""
++    body = _body(failure=_failure(node=None), run_id=None)
++
++    assert NODE_NOT_REPORTED in body
++    assert "not parsed from the launch output" in body
++
++
++def test_a_credential_shaped_checkpoint_error_is_replaced_wholesale(
++    tmp_path: Path,
++) -> None:
++    """A tokenized origin URL must not land on an append-only record."""
++    tokenized = (
++        "git commit failed (exit 1): remote https://x-access-token:"
++        "ghs_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA@github.com/thewoolleyman/x.git"
++    )
++    body = _body(failure=_failure(checkpoint_error=tokenized))
++
++    assert "ghs_" not in body
++    assert REDACTION_MARKER in body
++    _ = tmp_path
++
++
++def test_a_body_carrying_a_template_opener_is_journaled_and_not_written(
++    tmp_path: Path,
++) -> None:
++    """One opener on this item's timeline refuses every later dispatch of it."""
++    journal = _Journal()
++    poisoned_factory = f"hp{_OPENER} factory.name }}}}"
++
++    assert minijinja_openers_in_text(
++        source="probe",
++        text=checkpoint_failure_comment_body(
++            work_item_id=_ITEM, run_id=_RUN_ID, factory=poisoned_factory, failure=_failure()
++        ),
++    )
++    record_checkpoint_failure_comment(
++        repo=tmp_path,
++        work_item_id=_ITEM,
++        run_id=_RUN_ID,
++        factory=poisoned_factory,
++        failure=_failure(),
++        journal=journal,
++    )
++
++    rows = [
++        row for row in journal.records if row.get("stage") == "checkpoint-failure-comment-error"
++    ]
++    assert len(rows) == 1
++    assert "template-opener-present" in str(rows[0]["reason"])
++
++
++def test_the_needs_human_causal_record_writes_nothing_for_a_checkpoint_ending(
++    tmp_path: Path,
++) -> None:
++    """One ending, one record: the checkpoint comment is this ending's account."""
++    journal = _Journal()
++
++    record_needs_human_cause(
++        repo=tmp_path,
++        item=_stub_item(),
++        outcome=_blocked_checkpoint_outcome(),
++        journal=journal,
++    )
++
++    assert journal.records == []
++
++
++def test_a_run_carrying_the_needs_human_sentinel_is_not_re_read_as_a_checkpoint(
++    tmp_path: Path,
++) -> None:
++    """An already-classified ending keeps its route and writes no checkpoint row."""
++    journal = _Journal()
++    events: list[dict[str, Any]] = [
++        {
++            "type": "checkpoint.failed",
++            "properties": {"node": "implement", "error": "git commit failed (exit 1)"},
++        }
++    ]
++    terminated = replace(
++        _blocked_checkpoint_outcome(),
++        needs_human_kind="stage-failure",
++        detail=f"{NEEDS_HUMAN_MARKER}: the acceptance criteria name a scenario heading",
++    )
++
++    outcome = checkpoint_failure_outcome(
++        plan=_plan(tmp_path=tmp_path),
++        run_id=_RUN_ID,
++        probe=CheckpointProbe(runner=_Runner(stdout=json.dumps(events)), journal=journal),
++        terminal=replace(terminated, provider_usage_limit=True),
++    )
++
++    assert outcome is None
++    assert journal.records == []
++
++
++def test_the_terminal_router_routes_the_sentinel_before_the_checkpoint_arm(
++    tmp_path: Path,
++) -> None:
++    """The positive control for the pre-emption: the sentinel's own outcome stands."""
++    journal = _Journal()
++    events: list[dict[str, Any]] = [
++        {
++            "type": "checkpoint.failed",
++            "properties": {"node": "implement", "error": "git commit failed (exit 1)"},
++        }
++    ]
++    marker = f"{NEEDS_HUMAN_MARKER}: the acceptance criteria name a scenario heading"
++    payload = [
++        {
++            "run_id": _RUN_ID,
++            "status": {"kind": "failed", "reason": "workflow_error"},
++            "conclusion": {
++                "status": "failed",
++                "failure": {
++                    "reason": "workflow_error",
++                    "detail": {"message": marker, "category": "deterministic"},
++                },
++            },
++        }
++    ]
++    from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal import (
++        fabro_run_terminal_outcome,
++    )
++
++    outcome = fabro_run_terminal_outcome(
++        outcome_type=DispatchOutcome,
++        plan=_plan(tmp_path=tmp_path),
++        run_id=_RUN_ID,
++        inspect=_inspect(tmp_path=tmp_path, payload=payload),
++        exit_code=1,
++        stderr=marker,
++        probe=CheckpointProbe(runner=_Runner(stdout=json.dumps(events)), journal=journal),
++    )
++
++    assert outcome is not None
++    assert outcome.needs_human_kind != CHECKPOINT_FAILURE_ENDING
++    assert CHECKPOINT_FAILURE_COMMENT_MARKER not in outcome.detail
++    assert [row for row in journal.records if row.get("stage") == "checkpoint-failure"] == []
++
++
++def _blocked_checkpoint_outcome() -> DispatchOutcome:
++    return DispatchOutcome(
++        work_item_id=_ITEM,
++        status="blocked",
++        stage="fabro-run",
++        pr_number=None,
++        merge_sha=None,
++        detail="rendered elsewhere; this case is about the records",
++        fabro_run_id=_RUN_ID,
++        needs_human_kind=CHECKPOINT_FAILURE_ENDING,
++    )
++
++
++def _stub_item() -> Any:
++    """The item the causal writer is handed; only its id is read before the guard."""
++    from livespec_orchestrator_beads_fabro.types import WorkItem
++
++    return WorkItem(
++        id=_ITEM,
++        type="bug",
++        status="active",
++        title="A failed engine checkpoint commit names its node and cause",
++        description="The engine's checkpoint is not a node outcome.",
++        origin="freeform",
++        gap_id=None,
++        rank="a0",
++        assignee="fabro",
++        depends_on=(),
++        captured_at="2026-10-13T00:00:00Z",
++        resolution=None,
++        reason=None,
++        audit=None,
++        superseded_by=None,
++        blocked_reason=None,
++    )
++
++
++def _plan(*, tmp_path: Path) -> DispatchPlan:
++    return DispatchPlan(
++        repo=tmp_path,
++        work_item_id=_ITEM,
++        branch=f"feat/{_ITEM}",
++        workflow_toml=tmp_path / "workflow.toml",
++        goal_file=tmp_path / "goal.txt",
++        fabro_bin="fabro",
++        fabro_factory_name="hp",
++        fabro_factory_server=_SERVER_URL,
++        fabro_factory_dev_token=None,
++        janitor=("check",),
++        janitor_checkout=tmp_path / ".janitor",
++        janitor_core_checkout=tmp_path / ".janitor" / ".core",
++        janitor_core_repo_url="https://github.com/thewoolleyman/livespec.git",
++        janitor_core_ref="trunk",
++        review_fix_visit_cap=3,
++        merge_on_review_cap_outcome="succeeded",
++    )
++
++
++def _inspect(*, tmp_path: Path, payload: list[dict[str, Any]]) -> FabroInspectResult:
++    return FabroPort(
++        fabro_bin="fabro",
++        target=FabroTarget(),
++        runner=_Runner(stdout=json.dumps(payload)),
++        cwd=tmp_path,
++    ).inspect(run_id=_RUN_ID, timeout_seconds=1)
+diff --git a/tests/livespec_orchestrator_beads_fabro/commands/test_fabro_failed_targets.py b/tests/livespec_orchestrator_beads_fabro/commands/test_fabro_failed_targets.py
+new file mode 100644
+index 00000000..5bca8746
+--- /dev/null
++++ b/tests/livespec_orchestrator_beads_fabro/commands/test_fabro_failed_targets.py
+@@ -0,0 +1,101 @@
++"""What the structured-summary recognizer reads, and what it refuses to read.
++
++The cases a real tail cannot all carry at once, kept here so the attribution
++tests stay about the attribution. Three of them are worth knowing about before
++editing.
++
++A CUT HEADER MUST YIELD NOTHING. The engine records a bounded SUFFIX of the hook
++output, so a summary whose header the bound removed arrives as orphan bullet
++lines. `contracts.md` section "Failed engine checkpoint commit attribution" says
++such a summary is "absent rather than partial" and the Dispatcher "MUST NOT
++reconstruct it"; without this case a recognizer that keyed on the bullets alone
++would pass every other case in the suite while inventing an attribution from any
++dashed list the tail happened to contain.
++
++A SECOND SUMMARY MUST CONTRIBUTE. One commit can run several aggregates, and a
++recognizer that stopped at the first — or kept only the last — would report a
++complete-looking attribution that omits the rest.
++
++A NON-BULLET LINE MUST CLOSE THE LIST. Recipe output resumes after the summary on
++a failing commit, and a collector that stayed open would read the next recipe's
++own output as a target name.
++"""
++
++from __future__ import annotations
++
++from livespec_orchestrator_beads_fabro.commands._fabro_failed_targets import (
++    failed_hook_commands,
++    failed_targets,
++)
++
++
++def test_orphan_bullets_with_no_header_name_no_targets() -> None:
++    """A summary whose header the engine's bound cut away is absent, not partial."""
++    cut = "  - check-per-file-coverage\r\n  - check-coverage\r\n"
++
++    assert failed_targets(output=cut) == ()
++
++
++def test_every_summary_contributes_and_a_repeat_is_named_once() -> None:
++    """Two aggregates in one commit, with one target named by both."""
++    two = (
++        "Failed targets (2):\r\n"
++        "  - check-lint\r\n"
++        "  - check-types\r\n"
++        "::: just check-pre-push\r\n"
++        "Failed targets (2):\r\n"
++        "  - check-types\r\n"
++        "  - check-coverage\r\n"
++    )
++
++    assert failed_targets(output=two) == ("check-lint", "check-types", "check-coverage")
++
++
++def test_output_resuming_after_the_summary_is_not_read_as_a_target() -> None:
++    """A non-blank line that is not a bullet ends the list it follows."""
++    resumed = (
++        "Failed targets (1):\r\n"
++        "  - check-lint\r\n"
++        "error: Recipe `check-lint` failed on line 468 with exit code 1\r\n"
++        "  - this-dash-line-is-not-in-the-summary\r\n"
++    )
++
++    assert failed_targets(output=resumed) == ("check-lint",)
++
++
++def test_a_line_feed_tail_yields_what_a_carriage_return_tail_yields() -> None:
++    """The normalization is the same for both framings, which A4 then binds."""
++    bullets = "Failed targets (1):\n  - check-coverage\n"
++
++    assert failed_targets(output=bullets) == ("check-coverage",)
++
++
++def test_output_resuming_after_the_hook_summary_is_not_read_as_a_command() -> None:
++    """The runner prints nothing after its rows, so a non-row line ends the summary."""
++    resumed = (
++        "summary: (done in 2.00 seconds)\r\n"
++        "\u2717 03-check-pre-commit (1.99 seconds)\r\n"
++        "husky - pre-commit script failed (code 1)\r\n"
++        "\u2717 this-row-is-after-the-summary (0.01 seconds)\r\n"
++    )
++
++    assert failed_hook_commands(output=resumed) == ("03-check-pre-commit",)
++
++
++def test_a_row_whose_glyph_is_not_a_known_marker_ends_the_summary() -> None:
++    """An unrecognized glyph means this is no longer the summary, so reading stops."""
++    unknown = (
++        "summary: (done in 2.00 seconds)\r\n"
++        "\u2717 01-red-green-replay (1.00 seconds)\r\n"
++        "\u2022 02-commit-pairs-source-and-test (0.50 seconds)\r\n"
++        "\u2717 03-check-pre-commit (0.50 seconds)\r\n"
++    )
++
++    assert failed_hook_commands(output=unknown) == ("01-red-green-replay",)
++
++
++def test_a_tail_with_no_run_summary_names_no_hook_command() -> None:
++    """An aggregate refusal with no hook-runner summary names targets only."""
++    aggregate = "Failed targets (1):\r\n  - check-types\r\n"
++
++    assert failed_hook_commands(output=aggregate) == ()
