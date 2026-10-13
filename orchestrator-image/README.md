@@ -521,7 +521,7 @@ the production unit except the host, the service account and the GitHub App:
 | HOME, storage, settings | `/home/cwoolley/.fabro-candidate/{storage,settings.toml,environments}`; the unit sets `HOME` to that directory |
 | Bind, console | `127.0.0.1:32278`; `https://hp-xubuntu.perch-rudd.ts.net:32278` via `tailscale serve` (beside 32276 and 32277) |
 | Auth | `dev-token`, its OWN `server.env` (mode 600) with a fresh `SESSION_SECRET` and a fresh `FABRO_DEV_TOKEN` |
-| Scheduler | `max_concurrent_runs = 3`, deliberately small beside production's 15 |
+| Scheduler | `max_concurrent_runs = 3`, deliberately small beside production's 10 |
 | Storage engine | SQLite (`storage/db/fabro.sqlite3`); the legacy build used SlateDB objects. Nothing is migrated from production storage |
 
 Three Petri-era start-up refusals, each silent until the previous one is fixed:
@@ -547,6 +547,87 @@ Measurements, payload shapes and the pinned-versus-candidate Enemy Unit Test
 table live in `plan/fabro-currency/research/006-hp-candidate-first-measurements-2026-10-08.md`.
 The rollout and rollback design — cut over by one `dispatcher.default_factory`
 change, never an in-place migration — is in research note 005 of the same plan.
+
+#### The sandbox host envelope (`fabro-sandbox.slice`; interim bridge, `bd-ib-otyq6l`)
+
+The Petri-era candidate engine starts its Docker sandboxes with `CpuQuota 0`
+and `Memory 0`: it drops the `cpu`/`memory` a run's environment declares
+(probe p4 in `plan/fabro-currency/research/007-petri-semantic-probes-2026-10-08.md`).
+Until the Kubernetes sandbox backend (plan `kubernetes-sandbox-backend`)
+restores per-run limits, hp protects itself with an AGGREGATE ceiling around
+every container its Docker daemon starts. This ceiling stops one run from
+taking down the host or the Fabro servers. It does NOT stop one run from
+starving its neighbours inside the budget, and that trade-off is accepted.
+
+It is provisioned by the `docker_sandbox_slice` role in `livespec-dev-tooling`
+(`ansible/roles/docker_sandbox_slice/`). It was applied to hp in the
+2026-10-12 drained restart.
+
+| Property | Value on hp |
+| --- | --- |
+| Slice | `fabro-sandbox.slice`, written as the Docker daemon's default `cgroup-parent` in `/etc/docker/daemon.json` |
+| `MemoryHigh` | `22G`: the throttling watermark, so reclaim pressure arrives before the OOM killer does |
+| `MemoryMax` | `24G` (24 GiB): the hard ceiling. It leaves about 6 GB of the host's 30 GB for the host itself, the Fabro servers and the page cache |
+| `CPUQuota` | `1400%`: 14 of the 16 cores. It leaves two cores for the Fabro servers, `sshd` and the janitor steps |
+| Verify | `systemctl show fabro-sandbox.slice -p MemoryMax -p CPUQuotaPerSecUSec` reports `25769803776` and `14s`. A sandbox container's cgroup is `0::/fabro.slice/fabro-sandbox.slice/docker-<id>.scope` |
+
+**The scheduler ceilings it covers, and why it is an aggregate cap.** Two
+Fabro schedulers start containers on this daemon:
+- the production fleet instance (`fabro-server`, `:32276`), with
+  `max_concurrent_runs = 10` since 2026-10-13T07:11:52Z;
+- the candidate (`fabro-server-candidate`, `:32278`), with
+  `max_concurrent_runs = 3`.
+
+At the 8 GB per sandbox that the pinned engine applies, the sum of the
+ceilings is 13 × 8 GB = 104 GB. Candidate sandboxes carry no per-run limit at
+all. The 24 GiB slice is therefore far below the sum. When many sandboxes are
+busy at once, the slice throttles them and then OOM-kills inside the slice,
+before any per-run limit would bind. That is the design: the slice protects
+the host, not the individual run.
+
+**Every container on the hp Docker daemon, and where it sits** (measured
+2026-10-13 at about 08:25Z):
+
+| Container | Kind | Slice membership |
+| --- | --- | --- |
+| `fabro-run-<run id>` | Fabro sandbox, from either instance | INSIDE `fabro-sandbox.slice` |
+| `sccache-redis` (`redis:8.8.2-alpine`, 5 GB limit) | the one non-Fabro container on the daemon: the shared compiler cache | INSIDE `fabro-sandbox.slice`. The default `cgroup-parent` applies to every container on the daemon, so the cache shares the ceiling with the sandboxes, deliberately. Give its unit its own `--cgroup-parent` if it ever needs to sit outside; do not narrow the role |
+
+These run OUTSIDE the slice, in `system.slice`:
+- `fabro-server.service` and `fabro-server-candidate.service`, the two Fabro
+  servers;
+- `tailscaled.service`, which serves both consoles.
+
+k3s pods run under containerd, not this Docker daemon, so the slice does not
+cover them.
+
+**The drained restart, the rollback and the expiry.** The authoritative
+procedure is `ansible/roles/docker_sandbox_slice/HOST_VARS.md` in
+`livespec-dev-tooling`. It is summarized here, not restated:
+- **Restart:** `cgroup-parent` is not a reloadable daemon option, so a
+  converge (`just ansible-apply ansible/fabro-hosts.yml --tags
+  docker_sandbox_slice`) only installs the slice and records a pending restart.
+  Restarting `dockerd` kills every running sandbox and the warm
+  `sccache-redis` cache. So the restart is taken only inside a drained window:
+  stop dispatching to both instances, wait for their runs to finish, then run
+  `--tags docker_sandbox_slice_drained_restart`. Existing containers never move
+  when the default changes.
+- **Rollback:** remove the `cgroup-parent` key from `/etc/docker/daemon.json`,
+  leaving the other keys, and restart `docker.service` inside a drained window.
+  This returns hp to no per-container and no aggregate limits at all, so raise
+  the budgets in `host_vars` in preference to rolling back.
+- **Expiry:** the slice is retired when the Kubernetes sandbox backend
+  enforces per-run CPU and memory limits. At that point, remove the role from
+  `ansible/fabro-hosts.yml`, perform the rollback and delete the role. When the
+  slice retires, also remove the expected-failure marker described below.
+
+**The accepted regression.** The Enemy Unit Test
+`test_docker_resource_limits_reach_the_sandbox`
+(`fabro-enemy-unit-tests/test_tier1_preserved_behaviours.py`) asserts the
+per-run Docker limits. It passes on the pinned engine and fails on the Petri
+candidate. It is marked `xfail` with reason `bd-ib-otyq6l` as this bridge's
+accepted regression, not deleted, so the pinned-versus-candidate comparison
+keeps reporting the delta.
 
 ### Enabling fabro span export (O1 Lever A — opt-in)
 
