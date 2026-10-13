@@ -3,10 +3,15 @@
 ABSENCE OF PROOF REFUSES. The three fail-open cases this preflight used to
 document -- no `gh` binary, no stored `gh` credential, no runs yet -- are
 RETIRED: each is now an unprovable refusal naming its remedy and the committed
-step-waiver escape, and a still-pending latest run refuses too rather than
-proceeding on a run nobody has read yet. A host that cannot check is a host that
-cannot prove the default branch green, and proceeding on that was the whole
-defect (`SPECIFICATION/contracts.md`, the master-CI pipeline resolution clause).
+step-waiver escape. A host that cannot check is a host that cannot prove the
+default branch green, and proceeding on that was the whole defect
+(`SPECIFICATION/contracts.md`, the master-CI pipeline resolution clause).
+
+A STILL-RUNNING RUN IS NOT A FAILURE, and it is not an unprovable host either.
+It does not proceed -- nobody has read a verdict for it -- but it is DEFERRED
+under its own reason and a `deferred` status rather than sharing the red run's
+`failed`, because reporting healthy work as a failure is what pushed a retry
+loop onto every caller.
 
 THE BRANCH IS NEVER HARD-CODED. It is resolved per the ratified
 default-branch-resolution rule, because under the retired branch literal an
@@ -57,6 +62,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_refusal
     PIPELINE_REMEDY,
     MasterCiOutcome,
     pass_outcome,
+    pending_outcome,
     red_outcome,
     unprovable_outcome,
 )
@@ -194,12 +200,12 @@ def _classify_run(
     run_id = run_id_of(run=run)
     status = run.get("status")
     if isinstance(status, str) and status in _PENDING_STATUSES:
-        return _unprovable(
+        return pending_outcome(
             pipeline=pipeline,
             branch=branch,
             run_id=run_id,
-            cause=f"the latest run {run_id} is still {status}",
-            remedy=PENDING_REMEDY,
+            status=status,
+            waited_seconds=0.0,
         )
     return _classify_job(repo=repo, runner=runner, pipeline=pipeline, branch=branch, run_id=run_id)
 
@@ -248,12 +254,12 @@ def _classify_conclusion(
     job_status = job.get("status")
     conclusion = job.get("conclusion")
     if isinstance(job_status, str) and job_status in _PENDING_STATUSES:
-        return _unprovable(
+        return pending_outcome(
             pipeline=pipeline,
             branch=branch,
             run_id=run_id,
-            cause=f"aggregate job `{pipeline.job}` is still {job_status}",
-            remedy=PENDING_REMEDY,
+            status=job_status,
+            waited_seconds=0.0,
         )
     if conclusion in _RED_CONCLUSIONS:
         return red_outcome(

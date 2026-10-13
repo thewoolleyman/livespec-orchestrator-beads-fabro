@@ -419,23 +419,58 @@ def test_a_repository_with_no_runs_yet_refuses_with_the_waiver_escape(tmp_path: 
 
 
 @pytest.mark.parametrize("status", _PENDING_STATUSES)
-def test_a_still_pending_latest_run_refuses_naming_the_retry(tmp_path: Path, status: str) -> None:
+def test_a_still_pending_latest_run_defers_rather_than_failing(tmp_path: Path, status: str) -> None:
+    """A run that has not concluded has not failed: `deferred`, never `failed`."""
     runner = _Runner(results=_results(run_list=_result(stdout=_run_list_payload(status=status))))
 
     outcome = _outcome(repo=tmp_path, runner=runner)
 
     assert outcome.refusal is not None
-    assert f"is still {status}" in outcome.refusal.detail
+    assert outcome.record["reason"] == "master-ci-pending"
+    assert outcome.record["status"] == "deferred"
+    assert outcome.record["pending_status"] == status
+    assert outcome.record["run_database_id"] == "303"
     assert "retry the dispatch when the run concludes" in outcome.refusal.detail
 
 
-def test_a_still_pending_aggregate_job_refuses_naming_the_retry(tmp_path: Path) -> None:
+def test_a_still_pending_aggregate_job_defers_rather_than_failing(tmp_path: Path) -> None:
     runner = _Runner(results=_results(jobs=_result(stdout=_jobs_payload(job_status="in_progress"))))
 
     outcome = _outcome(repo=tmp_path, runner=runner)
 
     assert outcome.refusal is not None
-    assert "retry the dispatch when the run concludes" in outcome.refusal.detail
+    assert outcome.record["reason"] == "master-ci-pending"
+    assert outcome.record["status"] == "deferred"
+    assert outcome.record["pending_status"] == "in_progress"
+
+
+def test_a_deferred_preflight_does_not_start_the_dispatch_and_journals_deferred(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The deferral exits 3 and claims nothing, exactly like any other refusal.
+
+    The discriminating pair is the exit code AND the journaled status: a
+    deferral that exited 0 would start a dispatch against an unread default
+    branch, and one journaled `failed` would report healthy work as a failure.
+    """
+    assert _MODULE_PATH.is_file()
+    journal = tmp_path / "journal.jsonl"
+    args = argparse.Namespace(fabro_bin=str(tmp_path / "fabro"), janitor=None, journal=str(journal))
+    runner = _Runner(results=_results(jobs=_result(stdout=_jobs_payload(job_status="queued"))))
+    _ = (tmp_path / "fabro").write_text("#!/bin/sh\n", encoding="utf-8")
+    (tmp_path / "fabro").chmod(0o755)
+    monkeypatch.setattr(_dispatcher_step_gate, "ShellCommandRunner", lambda: runner)
+
+    assert _dispatcher_run_checks.dispatch_preamble(args=args, repo=tmp_path) == (
+        None,
+        _EXIT_PRECONDITION_ERROR,
+    )
+    records = [
+        json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines() if line
+    ]
+    assert records[-1]["step"] == "master-ci"
+    assert records[-1]["reason"] == "master-ci-pending"
+    assert records[-1]["status"] == "deferred"
 
 
 def test_an_unrecognized_aggregate_conclusion_refuses(tmp_path: Path) -> None:

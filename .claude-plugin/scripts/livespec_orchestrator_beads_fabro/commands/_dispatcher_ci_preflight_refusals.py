@@ -39,6 +39,7 @@ __all__: list[str] = [
     "MasterCiOutcome",
     "MasterCiRefusal",
     "pass_outcome",
+    "pending_outcome",
     "red_outcome",
     "unprovable_outcome",
 ]
@@ -48,6 +49,7 @@ STEP = "master-ci"
 
 _REASON_GREEN = "master-ci-green"
 _REASON_RED = "master-ci-red"
+_REASON_PENDING = "master-ci-pending"
 _REASON_UNPROVABLE = "master-ci-unprovable"
 
 _WAIVER_ESCAPE = (
@@ -145,6 +147,42 @@ def red_outcome(
         cause=f"aggregate job `{pipeline.job}` concluded {conclusion} on run {run_id}",
         remedy=PENDING_REMEDY,
     )
+
+
+def pending_outcome(
+    *,
+    pipeline: MasterCiPipeline,
+    branch: str,
+    run_id: str,
+    status: str,
+    waited_seconds: float,
+) -> MasterCiOutcome:
+    """The still-running outcome: DEFERRED, never failed.
+
+    A run that has not concluded has not failed, so this outcome is journaled
+    under its own reason and a `deferred` status rather than sharing the red
+    run's `failed`. It still carries a refusal: the dispatch must not start on
+    a default branch nobody has read a verdict for, so nothing is claimed.
+    """
+    cause = (
+        f"the latest run {run_id} of `{branch}` is still {status} "
+        f"after {int(waited_seconds)}s of waiting"
+    )
+    record: dict[str, object] = {
+        **_identity(pipeline=pipeline, branch=branch, run_id=run_id),
+        "terminal": True,
+        "status": "deferred",
+        "reason": _REASON_PENDING,
+        "detail": cause,
+        "remedy": PENDING_REMEDY,
+        "recovery": _RECOVERY,
+        "pending_status": status,
+        "waited_seconds": int(waited_seconds),
+    }
+    detail = _detail(
+        pipeline=pipeline, branch=branch, run_id=run_id, cause=cause, remedy=PENDING_REMEDY
+    )
+    return MasterCiOutcome(refusal=MasterCiRefusal(detail=detail, record=record), record=record)
 
 
 def unprovable_outcome(
