@@ -712,6 +712,28 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   pushes are one line apart in intent and only the measured difference keeps
   them apart.
 
+- `test_needs_human_push_failure_is_reported.py` — binds work-item bd-ib-s6bowj
+  against the same Scenario 103 rule, one layer on: when the preservation push
+  FAILS, the terminal's output after `LIVESPEC_NEEDS_HUMAN_PUSH_FAILED` must
+  carry the push's own error text, bounded and with any credential embedded in a
+  remote URL redacted, and the ending must be unchanged. The node's own script is
+  extracted from the committed graph, unescaped and run by `sh` in a throwaway
+  repository, as in the sibling module. Every fixture is a REAL `git push`
+  failure rather than a stand-in for one, because the text under test is the
+  push's OWN output and a fixture that fed the node a string would assert only
+  that the node can echo a string: an origin path that does not exist, the same
+  with a ~3 kB path whose diagnosis overruns the bound, and a `git://` origin
+  carrying userinfo, which git echoes verbatim (git 2.43 anonymizes its own
+  `unable to access` line, so an https URL cannot produce the shape under test).
+  Each case runs a CONTROL push of the same kind in the same repository first and
+  compares the report against what that control actually printed — which is what
+  makes the token's absence evidence of REDACTION rather than of the whole-text
+  discard this node used to perform, and the bound's assertion a byte comparison
+  against the control's leading bytes rather than an encoding of this git
+  version's message lengths. The successful-push case is the control for all of
+  them: "the failure arm reports an error" is otherwise satisfied by a node that
+  prints a diagnosis on every ending.
+
 - `test_fix_stage_failure_routes_to_needs_human.py`,
   `test_open_red_needs_human_reason.py` and
   `test_completed_red_green_pair_still_proceeds.py` — bind the three
