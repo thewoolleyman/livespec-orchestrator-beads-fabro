@@ -1720,8 +1720,8 @@
     "heading": "## Scenario 169 \u2014 A dispatch naming a catalog environment runs the catalog's image, and the journal names the image source",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for catalog-image precedence over dispatcher.fabro_sandbox_image and the journaled image source; bd-ib-jy7fuh implements the behaviour and owns the binding.",
+    "test": "tests.integration.test_sandbox_image_source_scenario169.test_a_catalog_environment_dispatch_leaves_the_sandbox_image_to_the_catalog",
+    "reason": "Integration-tier acceptance delivered by bd-ib-jy7fuh drives the real dispatcher.main(argv=[\"dispatch\", ...]) over a seeded tenant and reads the launch overlay off the file the production materializer wrote: a factory declaring catalog environment livespec-ci withholds the image declaration so the catalog's image governs, the same repository with the declaration removed still carries dispatcher.fabro_sandbox_image, and the dispatch-id journal record names the supplying source in both arms.",
     "work_item": "bd-ib-jy7fuh"
   },
   {

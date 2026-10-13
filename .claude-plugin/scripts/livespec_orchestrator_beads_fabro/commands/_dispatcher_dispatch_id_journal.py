@@ -26,6 +26,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projecti
     integration_contract_journal_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
+    SandboxImageSource,
+    sandbox_image_source_journal_record,
+)
 
 __all__: list[str] = [
     "DispatchJournalIdentity",
@@ -50,6 +54,7 @@ def append_dispatch_id_record(  # noqa: PLR0913 — kw-only record writer; each 
     workflow_name: str,
     integration: ResolvedIntegrationContract,
     merge_hold: bool,
+    sandbox_image: SandboxImageSource,
 ) -> None:
     # `workflow_name` rides BESIDE `workflow_toml` rather than replacing it:
     # the path says which file won the target-local-then-bundle resolution,
@@ -70,6 +75,12 @@ def append_dispatch_id_record(  # noqa: PLR0913 — kw-only record writer; each 
     # engines, and a record that omitted the fields when they matched the
     # global would make "which engine was this?" answerable only for the
     # dispatches that already looked unusual.
+    # `sandbox_image` is the launch's IMAGE SOURCE, as the plan resolved it once.
+    # It is REQUIRED rather than defaulted, because the clause asks for the source
+    # "for each launch" and a defaulted argument is how one dispatch's record
+    # silently reports the no-declaration answer for a dispatch that had a
+    # declaration. The same resolution renders the overlay, so this record and
+    # the launch cannot disagree.
     record: dict[str, object] = {
         "stage": "dispatch-id",
         "work_item_id": work_item_id,
@@ -81,6 +92,7 @@ def append_dispatch_id_record(  # noqa: PLR0913 — kw-only record writer; each 
         "fabro_bin": engine.path,
         "fabro_version": engine.version,
         **integration_contract_journal_record(resolved=integration),
+        **sandbox_image_source_journal_record(source=sandbox_image),
     }
     if identity.dispatch_factory is not None:
         record["dispatch_factory"] = identity.dispatch_factory

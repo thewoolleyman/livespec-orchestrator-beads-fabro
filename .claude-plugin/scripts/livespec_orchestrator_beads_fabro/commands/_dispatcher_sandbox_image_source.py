@@ -18,6 +18,13 @@ on the catalog arm and why `catalog_governs` is a question the renderer has to
 ask separately: "render no image" and "withhold the committed declaration" are
 different acts, and only the second leaves the catalog's image standing.
 
+WHY THE RECORD CANNOT NAME THE CATALOG'S IMAGE EITHER, for the same reason.
+The record carries the source and the environment id, and `sandbox_image` is
+null on the catalog arm. A record that filled that field in would be inventing
+a value nothing measured — and the only values available to invent are the
+committed and configured ones, which are precisely the images the clause exists
+to keep out of that launch.
+
 THE THIRD SOURCE IS NOT A WIDENING. A target that declares no catalog
 environment and sets no `dispatcher.fabro_sandbox_image` launches from the
 image its committed run config declares, which is a real launch the record must
@@ -37,6 +44,7 @@ __all__: list[str] = [
     "CONFIGURED_IMAGE_SOURCE",
     "SandboxImageSource",
     "sandbox_image_source",
+    "sandbox_image_source_journal_record",
 ]
 
 # The three sources, each NAMING what it is rather than ranking it. Two are the
@@ -45,6 +53,12 @@ __all__: list[str] = [
 CATALOG_ENVIRONMENT_SOURCE = "catalog_environment"
 CONFIGURED_IMAGE_SOURCE = "dispatcher.fabro_sandbox_image"
 COMMITTED_RUN_CONFIG_SOURCE = "committed_run_config"
+
+# The journal keys the recorded source lands on, named here so the record
+# builder and every reader share one spelling.
+_SOURCE_KEY = "sandbox_image_source"
+_ENVIRONMENT_KEY = "sandbox_image_environment"
+_IMAGE_KEY = "sandbox_image"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -118,3 +132,19 @@ def sandbox_image_source(
             overlay_image=configured_image,
         )
     return COMMITTED_RUN_CONFIG_IMAGE
+
+
+def sandbox_image_source_journal_record(*, source: SandboxImageSource) -> dict[str, object]:
+    """The recorded source, as the three fields the dispatch record carries.
+
+    All three keys are written on every launch, with nulls where the arm has
+    nothing to say, rather than omitted. An omitted key is what a record written
+    by a build that predates this decision looks like, so a reader asking which
+    source supplied an image could not tell "this dispatch named no environment"
+    from "this dispatch was never asked".
+    """
+    return {
+        _SOURCE_KEY: source.source,
+        _ENVIRONMENT_KEY: source.environment_id,
+        _IMAGE_KEY: source.overlay_image,
+    }

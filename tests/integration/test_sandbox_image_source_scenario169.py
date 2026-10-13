@@ -294,6 +294,22 @@ def _dispatch(*, repo: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[int, list
     return exit_code, overlays
 
 
+def _dispatch_record(*, repo: Path) -> dict[str, object]:
+    """The ONE `dispatch-id` record this dispatch journaled.
+
+    Read with no missing-file tolerance and asserted to be exactly one row: every
+    case here drives a real dispatch that reaches the launch, so a tolerant read
+    would turn "the dispatch never got far enough to journal anything" into the
+    same observation as "it journaled no image source", which is the distinction
+    these cases are asserting.
+    """
+    path = repo / "tmp" / "fabro-dispatch-journal.jsonl"
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    dispatch_ids = [record for record in records if record.get("stage") == "dispatch-id"]
+    assert len(dispatch_ids) == 1
+    return dispatch_ids[0]
+
+
 def test_a_catalog_environment_dispatch_leaves_the_sandbox_image_to_the_catalog(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -354,3 +370,58 @@ def test_a_dispatch_naming_no_catalog_environment_still_carries_the_committed_ov
     assert f"[environments.{_CATALOG_ENV}.image]" in rendered
     assert f'docker = "{_CONFIGURED_IMAGE}"\n' in rendered
     assert _COMMITTED_IMAGE not in rendered
+
+
+def test_the_journal_names_the_catalog_environment_as_the_image_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scenario 169, first arm's record: the source and the environment it named.
+
+    All three keys are asserted together, nulls included, because an OMITTED key
+    is what a record written by a build predating this decision looks like — so a
+    reader asking which source supplied an image could not tell "this dispatch
+    named no environment" from "this dispatch was never asked".
+
+    `sandbox_image` is asserted NULL rather than filled in. The catalog lives on
+    the factory server and the Dispatcher reads it at no point, so any value here
+    would be the committed or configured image — precisely the one this arm keeps
+    out of the launch — recorded as though it were the catalog's.
+    """
+    _seed_item()
+    repo = _repo(tmp_path=tmp_path, environment=_CATALOG_ENV)
+
+    exit_code, overlays = _dispatch(repo=repo, monkeypatch=monkeypatch)
+
+    assert (exit_code, len(overlays)) == (0, 1)
+    record = _dispatch_record(repo=repo)
+    assert (record[_SOURCE_KEY], record[_ENVIRONMENT_KEY], record[_IMAGE_KEY]) == (
+        _CATALOG_SOURCE,
+        _CATALOG_ENV,
+        None,
+    )
+
+
+def test_the_journal_names_the_configured_key_as_the_image_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scenario 169, second arm's record: the configured key and the image it supplied.
+
+    The CONTROL for the record above: the two legs differ in one committed key, so
+    a build recording `catalog_environment` for every launch fails here while
+    satisfying the case above. The recorded image is compared against the overlay
+    this same dispatch wrote, not against the constant, because the clause's claim
+    is that the record names the source that SUPPLIED the launch — and a record
+    agreeing with a configuration key it re-read on its own would pass against the
+    very divergence this decision exists to close.
+    """
+    _seed_item()
+    repo = _repo(tmp_path=tmp_path, environment=None)
+
+    exit_code, overlays = _dispatch(repo=repo, monkeypatch=monkeypatch)
+
+    assert (exit_code, len(overlays)) == (0, 1)
+    record = _dispatch_record(repo=repo)
+    assert (record[_SOURCE_KEY], record[_ENVIRONMENT_KEY]) == (_CONFIGURED_SOURCE, None)
+    assert f'docker = "{record[_IMAGE_KEY]}"\n' in overlays[0]

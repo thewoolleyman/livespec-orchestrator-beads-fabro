@@ -250,8 +250,9 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   dispatch's sandbox image (`bd-ib-jy7fuh`, Scenario 169). PURE and a leaf; the
   decision is resolved ONCE in `_dispatcher_loop_plan`, rides
   `DispatchPlan.sandbox_image`, and is read from there by both consumers — the
-  launch overlay renders from it and the dispatch record names it — for the same
-  resolve-once reason the integration contract gives. Three properties an editor
+  launch overlay renders from it and the `dispatch-id` record names it through
+  `sandbox_image_source_journal_record` — for the same resolve-once reason the
+  integration contract gives. Four properties an editor
   must not invert. The CATALOG arm wins over `dispatcher.fabro_sandbox_image`
   unconditionally, because the configured key is a repository-wide pin and the
   catalog environment is the placement this dispatch was ROUTED to. It wins by
@@ -266,7 +267,16 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   a question about the SOURCE rather than an inference from an absent
   `overlay_image`, which the committed-run-config arm also carries: those two
   arms need opposite handling, and collapsing them would make a repository that
-  configures nothing withhold a declaration nothing is competing with.
+  configures nothing withhold a declaration nothing is competing with. And the
+  journaled `sandbox_image` is NULL on the catalog arm rather than filled in:
+  the only values available to fill it with are the committed and configured
+  images, which are exactly the ones that arm keeps out of the launch — while
+  all three keys are written on EVERY launch, nulls included, because an
+  omitted key is what a record from a build predating this decision looks
+  like, so a reader could not tell "named no environment" from "was never
+  asked". The record's `sandbox_image` argument is REQUIRED for the mirror
+  reason: a default is how one dispatch's record silently reports the
+  no-declaration answer for a dispatch that had a declaration.
 - `_dispatcher_proof_budget.py` — the declared size budget every proof record is
   measured against before it is posted (`bd-ib-555xcd`). PURE, and the ONE place
   the three figures are named: the MEASURED forge comment ceiling, the record
