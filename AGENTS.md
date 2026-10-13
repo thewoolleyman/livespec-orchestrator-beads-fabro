@@ -878,6 +878,10 @@ the SESSION onto the current build and dispatches on the NORMAL path: restart
 the session, or issue a human-typed `/reload-plugins` — either rebinds it
 afresh (confirm the rebind by lease ownership per
 `.ai/plugin-cache-lease-and-rebind.md`, not by the reload's confirmation line).
+"Human-typed" means typed at the session's own prompt, so a session in a herdr
+pane does this ITSELF and never asks the maintainer to; follow that file's
+detached-waiter form exactly, because typing into your own pane mid-turn
+stalls the session.
 Do NOT keep your own work moving by invoking the registered build's
 `scripts/bin/` entry point by explicit path, or otherwise routing a live
 session around the stale build: that normalizes the outage and validates only
@@ -1536,7 +1540,13 @@ references passes with its guidance orphaned.
   session binds its plugin root once at session start; and the OLD build's lease
   file survives a rebind, so a stale lease file's presence is NOT evidence of
   current binding. The file also records that the plugin prune verb is not an
-  eviction verb.
+  eviction verb. Read it also BEFORE reloading plugins in your own herdr pane,
+  or before telling the maintainer a reload is theirs to do: a session rebinds
+  itself through a detached waiter that sends `/reload-plugins` only once the
+  pane is idle and then submits the follow-up prompt separately with
+  `herdr agent prompt`. Text typed into your own pane while your turn is
+  running joins into one unsubmitted line, and a reload with no follow-up
+  prompt leaves the session idle; every herdr call still exits 0.
 - Read `.ai/fabro-fork-hand-build.md` BEFORE starting a work-item whose
   implementation lands in the Fabro fork (`thewoolleyman/fabro`,
   `factory-integration`). The fork has no ledger tenant, so neither the
