@@ -54,8 +54,45 @@ __all__: list[str] = [
 
 _TERMINAL_SOURCE = "process.terminal_diagnostic"
 _MESSAGE_SOURCE = "protocol.message"
+_MACHINE_CODE_SOURCE = "protocol.machine_code"
 _CANDIDATE_SCOPE = "candidate"
 _DOMAIN_SCOPE = "availability-domain"
+
+
+def _quota_message(*, literals: tuple[str, ...]) -> AcpAvailabilitySignature:
+    """One measured provider-limit SENTENCE mapping.
+
+    Every provider-limit mapping exists in this form, because it is the one
+    that survives an engine keeping only the failure message text -- which is
+    what the Petri-era block carries, and what a run routed through
+    `needs_human` can be left with. Quota is DOMAIN-scoped without exception:
+    the spent allowance belongs to the account, so holding one candidate would
+    leave every sibling on the same provider dispatching into the same refusal.
+    """
+    return AcpAvailabilitySignature(
+        source=_MESSAGE_SOURCE,
+        cause="quota",
+        scope=_DOMAIN_SCOPE,
+        all_literals=literals,
+    )
+
+
+def _quota_machine_code(*, machine_code: str) -> AcpAvailabilitySignature:
+    """One measured provider-limit structured TOKEN mapping.
+
+    The mirror of the sentence form, for the engine that preserved the
+    provider's structured payload. It is declared in ADDITION to the sentence
+    rather than instead of it: a payload can arrive carrying either one
+    without the other, and each spelling is an exact code rather than a
+    pattern, so a vendor's second spelling needs its own entry here.
+    """
+    return AcpAvailabilitySignature(
+        source=_MACHINE_CODE_SOURCE,
+        cause="quota",
+        scope=_DOMAIN_SCOPE,
+        machine_code=machine_code,
+    )
+
 
 # MEASURED 2026-09-09, the `pr`-node outage that motivated this contract:
 # the pinned Codex adapter returned HTTP 400 naming the requested model as
@@ -83,36 +120,67 @@ _CODEX_MODEL_NOT_FOUND = AcpAvailabilitySignature(
     all_literals=("the model", "does not exist or you do not have access to it"),
 )
 
-# MEASURED 2026-08-22 across the 53 failed hp-factory runs recorded in
-# `_fabro_port_records`: ten Codex refusals read "You've hit your usage
-# limit. Visit .../codex/settings/usage ... or try again at <date>".
-# Domain-scoped -- the allowance belongs to the account, not the model.
-_CODEX_USAGE_LIMIT = AcpAvailabilitySignature(
-    source=_MESSAGE_SOURCE,
-    cause="quota",
-    scope=_DOMAIN_SCOPE,
-    all_literals=("hit your usage limit",),
-)
-
-# MEASURED in the same sweep: the eleventh refusal was the Anthropic form,
-# "You've hit your org's monthly spend limit". The narrower "monthly spend
-# limit" is used rather than the bare "spend limit" that
-# `_fabro_port_records` also accepts, because this table mints a TYPED
-# hold keyed on an entitlement, and the broader hint was written for a
-# cause-text heuristic that only had to name a vendor.
-_ANTHROPIC_SPEND_LIMIT = AcpAvailabilitySignature(
-    source=_MESSAGE_SOURCE,
-    cause="quota",
-    scope=_DOMAIN_SCOPE,
-    all_literals=("monthly spend limit",),
-)
+# THE MEASURED PROVIDER-LIMIT SET, transcribed from the same contract
+# section's measured minimum list rather than invented from a provider's
+# documentation. Each form below is a refusal somebody observed, and a
+# newly measured form is added by a committed change HERE, never by
+# loosening one of these literals into a broader match.
+#
+# `claude-acp`:
+#
+# - the SESSION ceiling, "You've hit your session limit - resets 3:40am
+#   (UTC)". Measured 2026-08-23, 2026-09-09 (twice) and 2026-10-09; every
+#   one arrived with a structured `errorKind` of `rate_limit` and was
+#   classified transient with no provider attributed, because this table
+#   carried no mapping for it.
+# - the GENERIC limit, "You've hit your limit - resets Jul 31, 5am (UTC)",
+#   measured on the Petri-era engine where only the message text survives
+#   (`plan/fabro-currency/research/004-acp-spend-limit-evidence.json`,
+#   mode `usage-cap`). `resets` is the second literal rather than a nicety:
+#   "hit your limit" alone is the prefix of sentences that are not ceilings.
+# - the USAGE limit, which Claude emits with the same wording Codex does.
+#   It belongs in BOTH tables: the contract attributes a shared sentence to
+#   "the candidate that actually ran", and a candidate only ever consults
+#   its own domain's table, so carrying it twice is what makes each
+#   attribution come out right.
+# - the ORGANISATION spend ceiling, "You've hit your org's monthly spend
+#   limit - ask your admin to raise it at claude.ai/settings/usage"
+#   (same evidence file, mode `monthly-cap`), as the measured `org` plus
+#   `spend limit` conjunction. That conjunction REPLACES the earlier
+#   `monthly spend limit` entry rather than sitting beside it: it is the
+#   spelling the contract ratifies, it matches the same measured sentence,
+#   and two mappings for one observed refusal is a second place for the
+#   measured form to drift from the recorded evidence.
+#
+# `codex-acp`: the usage-limit sentence measured 2026-08-22 across the 53
+# failed hp-factory runs -- ten refusals read "You've hit your usage limit.
+# Visit .../codex/settings/usage ... or try again at <date>" -- its
+# `usage limit exceeded` prose form, and its structured token in BOTH
+# spellings the pinned adapters emit: the August payload carried
+# `usage_limit_exceeded` and the October one carries `usageLimitExceeded`.
+_ANTHROPIC_SESSION_LIMIT = _quota_message(literals=("hit your session limit",))
+_ANTHROPIC_GENERIC_LIMIT = _quota_message(literals=("hit your limit", "resets"))
+_ANTHROPIC_USAGE_LIMIT = _quota_message(literals=("hit your usage limit",))
+_ANTHROPIC_ORG_SPEND_LIMIT = _quota_message(literals=("org", "spend limit"))
+_CODEX_USAGE_LIMIT = _quota_message(literals=("hit your usage limit",))
+_CODEX_USAGE_LIMIT_EXCEEDED = _quota_message(literals=("usage limit exceeded",))
+_CODEX_USAGE_LIMIT_CAMEL_TOKEN = _quota_machine_code(machine_code="usageLimitExceeded")
+_CODEX_USAGE_LIMIT_SNAKE_TOKEN = _quota_machine_code(machine_code="usage_limit_exceeded")
 
 _BUILTIN_SIGNATURES: dict[str, tuple[AcpAvailabilitySignature, ...]] = {
-    ANTHROPIC_DOMAIN: (_ANTHROPIC_SPEND_LIMIT,),
+    ANTHROPIC_DOMAIN: (
+        _ANTHROPIC_SESSION_LIMIT,
+        _ANTHROPIC_GENERIC_LIMIT,
+        _ANTHROPIC_USAGE_LIMIT,
+        _ANTHROPIC_ORG_SPEND_LIMIT,
+    ),
     CODEX_DOMAIN: (
         _CODEX_MODEL_UNSUPPORTED,
         _CODEX_MODEL_NOT_FOUND,
         _CODEX_USAGE_LIMIT,
+        _CODEX_USAGE_LIMIT_EXCEEDED,
+        _CODEX_USAGE_LIMIT_CAMEL_TOKEN,
+        _CODEX_USAGE_LIMIT_SNAKE_TOKEN,
     ),
 }
 
