@@ -2,19 +2,30 @@
 
 `SPECIFICATION/contracts.md` section "Factory-configurable ACP fallback
 priority": "The workflow MUST expose the ACP nodes that dominate every green
-terminal path. Those success-critical nodes are admission-required; for the
-current graph they are `implement`, `review`, and `pr`. ... An unsupported or
+terminal path. Those are the success-critical nodes; for the reserved workflow
+they are `dod_gate`, `implement`, `proof_capture`, `review`, `proof_verify`,
+each of which dominates every green terminal path. ... An unsupported or
 ambiguous workflow graph MUST refuse fallback-enabled dispatch instead of
 guessing."
 
 DOMINANCE IS THE DEFINITION, AND IT IS NOT REACHABILITY. A node that merely
 appears on SOME green path is not success-critical: `fix` and `review_fix` sit
 on real green paths and a run that never goes Red reaches `exit` without
-either. The admission-required set is the set of nodes on EVERY green path,
+either. The success-critical set is the set of nodes on EVERY green path,
 which is exactly the classical dominator set of the green terminal. Computing
 it as a dominator set rather than enumerating paths also terminates on a cyclic
 graph, which this one is -- `janitor -> fix -> janitor` and
 `review -> disposition -> review_fix -> janitor -> review` are both live loops.
+
+THIS IS NO LONGER THE ADMISSION-REQUIRED SET, and the distinction is the whole
+reason the two derivations are separate modules. v127 widened admission to
+every ACP node POTENTIALLY REACHABLE in the submitted graph, which is
+`_acp_admission_required`'s question and is strictly wider than this one. The
+dominator set still has its own consumers -- the reached-node termination and
+the attention surfaces -- so it is computed and carried unchanged rather than
+replaced. `reachable_from` is public because both derivations need it: the
+reachable subgraph is the domain the dominator iteration is restricted to, and
+it is the admission-required set's entire definition.
 
 WHY THE REFUSALS ARE SHAPED AROUND COUNTING. Every fault this can meet is a
 graph that does not have exactly one entry and exactly one green exit, and the
@@ -45,12 +56,13 @@ __all__: list[str] = [
     "SuccessCriticalNodes",
     "derive_success_critical",
     "dominators",
+    "reachable_from",
 ]
 
 
 @dataclass(frozen=True, kw_only=True)
 class SuccessCriticalNodes:
-    """The admission-required ACP nodes, and the two graph ends they came from."""
+    """The success-critical ACP nodes, and the two graph ends they came from."""
 
     start: str
     green_terminal: str
@@ -100,7 +112,7 @@ def dominators(*, graph: WorkflowGraph, start: str) -> Mapping[str, frozenset[st
     in the working set other than the start has at least one predecessor that
     is itself in the set, which is what makes the intersection below total.
     """
-    reachable = _reachable(graph=graph, start=start)
+    reachable = reachable_from(graph=graph, start=start)
     everything = frozenset(reachable)
     sets: dict[str, frozenset[str]] = {name: everything for name in reachable}
     sets[start] = frozenset({start})
@@ -121,8 +133,15 @@ def dominators(*, graph: WorkflowGraph, start: str) -> Mapping[str, frozenset[st
     return sets
 
 
-def _reachable(*, graph: WorkflowGraph, start: str) -> tuple[str, ...]:
-    """Every node reachable from the start, in first-discovery order."""
+def reachable_from(*, graph: WorkflowGraph, start: str) -> tuple[str, ...]:
+    """Every node reachable from the start, in first-discovery order.
+
+    Public because the admission-required derivation in
+    `_acp_admission_required` is defined on exactly this set, and a second
+    traversal there could disagree with this one about which nodes a submitted
+    graph can reach -- a disagreement neither answer would announce, because
+    each is a well-formed node list.
+    """
     order: list[str] = [start]
     seen = {start}
     cursor = 0

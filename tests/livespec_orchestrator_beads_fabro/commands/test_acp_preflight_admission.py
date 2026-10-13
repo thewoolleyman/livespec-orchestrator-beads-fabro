@@ -12,9 +12,13 @@ FIVE CONTROLS CARRY MOST OF THE WEIGHT, because each is a claim an
 almost-correct implementation gets backwards:
 
 - The success-critical set is the DOMINATORS of the green terminal, not the
-  nodes on some green path. `fix` and `review_fix` sit on real green paths and
-  must NOT be admission-required; a derivation that walked one path would
-  include them and would then park healthy work on a conditional node's outage.
+  nodes on some green path. `fix` and `review_fix` sit on real green paths, so
+  a derivation that walked one path would report them as dominators. They ARE
+  admission-required under v127 -- the wider reachable set `admission_required`
+  carries -- and the two sets are asserted apart, because collapsing them in
+  either direction is silently wrong: grading the dominators admits a dispatch
+  whose `fix` chain is held, and reporting the reachable set as the dominators
+  misinforms the reached-node termination.
 - A locally unusable PRIMARY with a viable fallback leaves the chain viable. A
   preflight that refused on the primary alone passes every single-candidate
   test and defeats the entire feature.
@@ -200,8 +204,10 @@ def test_the_committed_graph_resolves_exactly_the_nodes_dominating_every_green_p
 
     This is the one control that ties the derivation to the real workflow. It
     also proves the negative half that matters: `fix`, `review_fix` and
-    `disposition` are ACP nodes on green paths and are NOT admission-required,
-    because a run that never goes Red reaches `exit` without any of them.
+    `disposition` are ACP nodes on green paths and dominate NONE of them,
+    because a run that never goes Red reaches `exit` without any of them. They
+    are nevertheless admission-required, which is the wider v127 set asserted
+    in `test_acp_admission_required_wait.py`.
 
     `dod_gate` joins the set for the opposite reason, and it is the sharpest
     case in the graph: it sits on the ONLY edge out of `start`, so no green path
@@ -547,7 +553,7 @@ def test_a_locally_unusable_primary_with_a_viable_fallback_stays_viable() -> Non
     ) is (False)
 
 
-def test_an_exhausted_success_critical_chain_makes_the_verdict_refuse() -> None:
+def test_an_exhausted_admission_required_chain_makes_the_verdict_refuse() -> None:
     modules = _modules()
     verdict = modules["_acp_preflight_verdict"].build_acp_preflight_verdict(
         chains={
@@ -560,12 +566,21 @@ def test_an_exhausted_success_critical_chain_makes_the_verdict_refuse() -> None:
 
     assert verdict.viable is False
     assert verdict.exhausted == ("implement",)
-    assert verdict.detail == "no candidate remains for success-critical ACP node implement"
+    assert verdict.detail == "no candidate remains for admission-required ACP node implement"
     assert modules["_dispatcher_acp_preflight"].credential_reprobe_wait_applies(verdict=verdict)
 
 
-def test_an_exhausted_conditional_chain_alone_still_admits() -> None:
-    """Scenario 127: a conditional node with no candidate does not refuse admission."""
+def test_an_exhausted_conditional_chain_alone_refuses_admission() -> None:
+    """v127: a REACHABLE conditional node with no candidate refuses admission.
+
+    `fix` dominates no green path, so it stays out of `success_critical`, and
+    the verdict still refuses: the engine has to start its adapter the moment
+    the node is reached, and a held chain there loses the whole visit after the
+    first Red. The two sets are asserted apart on one verdict, because an
+    implementation that widened the dominators instead of carrying a second
+    set would satisfy the refusal and then misreport the dominator set to the
+    reached-node termination.
+    """
     modules = _modules()
     held = (_hold(scope="availability-domain", hold_key="codex"),)
     verdict = modules["_acp_preflight_verdict"].build_acp_preflight_verdict(
@@ -581,7 +596,10 @@ def test_an_exhausted_conditional_chain_alone_still_admits() -> None:
         inputs=_inputs(holds=held),
     )
 
-    assert verdict.viable is True
+    assert verdict.viable is False
+    assert verdict.exhausted == ("fix",)
+    assert verdict.success_critical == ("implement",)
+    assert verdict.admission_required == ("implement", "fix")
     assert verdict.node_preflight(node="fix").exhausted is True
     assert verdict.node_preflight(node="missing") is None
 
@@ -702,7 +720,7 @@ def test_two_exhausted_nodes_render_a_plural_deterministic_explanation() -> None
         inputs=_inputs(holds=held),
     )
 
-    assert verdict.detail.startswith("no candidate remains for success-critical ACP nodes ")
+    assert verdict.detail.startswith("no candidate remains for admission-required ACP nodes ")
     assert set(verdict.exhausted) == {"implement", "review"}
 
 
