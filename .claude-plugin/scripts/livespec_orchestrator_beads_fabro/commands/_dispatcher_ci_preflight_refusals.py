@@ -164,10 +164,8 @@ def pending_outcome(
     run's `failed`. It still carries a refusal: the dispatch must not start on
     a default branch nobody has read a verdict for, so nothing is claimed.
     """
-    cause = (
-        f"the latest run {run_id} of `{branch}` is still {status} "
-        f"after {int(waited_seconds)}s of waiting"
-    )
+    waited = int(waited_seconds)
+    cause = f"the latest run {run_id} of `{branch}` is still {status} after {waited}s of waiting"
     record: dict[str, object] = {
         **_identity(pipeline=pipeline, branch=branch, run_id=run_id),
         "terminal": True,
@@ -175,12 +173,11 @@ def pending_outcome(
         "reason": _REASON_PENDING,
         "detail": cause,
         "remedy": PENDING_REMEDY,
-        "recovery": _RECOVERY,
         "pending_status": status,
-        "waited_seconds": int(waited_seconds),
+        "waited_seconds": waited,
     }
-    detail = _detail(
-        pipeline=pipeline, branch=branch, run_id=run_id, cause=cause, remedy=PENDING_REMEDY
+    detail = _pending_detail(
+        pipeline=pipeline, branch=branch, run_id=run_id, status=status, waited=waited, cause=cause
     )
     return MasterCiOutcome(refusal=MasterCiRefusal(detail=detail, record=record), record=record)
 
@@ -236,6 +233,35 @@ def _identity(*, pipeline: MasterCiPipeline, branch: str, run_id: str) -> dict[s
         "declaring_key": MASTER_CI_KEY,
         "run_database_id": run_id,
     }
+
+
+def _pending_detail(
+    *,
+    pipeline: MasterCiPipeline,
+    branch: str,
+    run_id: str,
+    status: str,
+    waited: int,
+    cause: str,
+) -> str:
+    """The deferral's own words -- NOT `_detail`'s, deliberately.
+
+    Three things are absent by requirement rather than by omission: the
+    `ERROR:` prefix, the words "not proven green", and the
+    master-health-restoration recovery. Each of them is a statement about a
+    RED default branch, and reusing the refusal text would make a run that is
+    simply unfinished read as one that failed. The first line carries the whole
+    signal, because it is the line an operator watching a dispatch sees.
+    """
+    return (
+        f"master-ci: run {run_id} on `{branch}` is still running ({status}) and "
+        f"has not failed; the preflight waited {waited}s for it to conclude.\n"
+        f"Resolved default branch: {branch}\n"
+        f"{pipeline_resolution_sentence(pipeline=pipeline)}\n"
+        f"Run databaseId: {run_id}\n"
+        f"Reason: {cause}\n"
+        f"Remedy: {PENDING_REMEDY}\n"
+    )
 
 
 def _detail(

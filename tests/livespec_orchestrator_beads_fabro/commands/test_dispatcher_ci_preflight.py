@@ -473,6 +473,43 @@ def test_a_deferred_preflight_does_not_start_the_dispatch_and_journals_deferred(
     assert records[-1]["status"] == "deferred"
 
 
+def test_the_deferred_text_reads_as_still_running_and_carries_no_red_recovery(
+    tmp_path: Path,
+) -> None:
+    """The deferral's own words, which are the half an operator actually reads.
+
+    A journal status nobody is looking at cannot stop a deferral from being
+    read as a failure: the first line is the whole signal, so it has to say
+    the run is still running and has not failed, and the red-default-branch
+    escape hatch has to be ABSENT rather than merely de-emphasised — that
+    recovery applies to a red default branch and nothing else, so offering it
+    here points the operator at a worktree -> PR -> merge detour for work that
+    is simply not finished yet.
+    """
+    runner = _Runner(
+        results=_results(run_list=_result(stdout=_run_list_payload(status="in_progress")))
+    )
+
+    outcome = _outcome(repo=tmp_path, runner=runner)
+
+    assert outcome.refusal is not None
+    detail = outcome.refusal.detail
+    first_line = detail.splitlines()[0]
+    assert "still running" in first_line
+    assert "has not failed" in first_line
+    assert "303" in first_line
+    assert "in_progress" in first_line
+    assert _DEFAULT_BRANCH in first_line
+    assert "waited" in first_line
+    assert "ERROR" not in detail
+    assert "not proven green" not in detail
+    assert "master-health-restoration" not in detail
+    assert "repeat-flakes" not in detail
+    assert "PR CI is independent" not in detail
+    assert "recovery" not in outcome.record
+    assert "retry the dispatch when the run concludes" in detail
+
+
 def test_an_unrecognized_aggregate_conclusion_refuses(tmp_path: Path) -> None:
     runner = _Runner(results=_results(jobs=_result(stdout=_jobs_payload(job_conclusion="neutral"))))
 
