@@ -22,7 +22,12 @@ siblings and never the project itself, so a reference to the repository the
 reader is running in would otherwise be unresolvable — and the delivery and
 deadline callers' commonest result is a target in their own repository. The name
 is matched against the project root's directory name, which is the same slug the
-manifest keys siblings by.
+manifest keys siblings by, and against the basename of the checkout's
+`livespec.primaryPath`. A worktree under `~/.worktrees/<repo>/<branch>` is named
+after its BRANCH, so the directory name alone made every same-repository result
+unobservable there (bd-ib-bqmrvq); the primary checkout's path lives in the
+shared git config every worktree of it reads, and an unset value leaves the
+directory name as the only identity, which is the CI and factory-sandbox case.
 
 WHY AN UNRESOLVABLE NAME IS A VALUE AND NOT AN EXCEPTION. The clause puts
 "missing repository-resolution failures" in the `unobservable` set, so the
@@ -43,6 +48,9 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._session_wait_gate import (
+    resolve_primary_repository,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCredentialMissingError,
@@ -79,11 +87,12 @@ class ResultRepository:
 def resolve_result_repository(*, project_root: Path, name: str) -> ResultRepository | None:
     """Resolve one canonical repository identity, or `None` when it does not resolve.
 
-    The project's own directory name resolves to the project root. Every other
+    The project's own directory name, or the basename of its `livespec.primaryPath`,
+    resolves to the project root. Every other
     name must be a key in the project's configured `cross_repo_targets` block AND
     resolve to a directory that exists on this host.
     """
-    if name == project_root.name:
+    if name in (project_root.name, resolve_primary_repository(repository=project_root).name):
         return ResultRepository(name=name, clone=project_root)
     target = load_manifest(project_root=project_root).targets.get(name)
     if target is None:
