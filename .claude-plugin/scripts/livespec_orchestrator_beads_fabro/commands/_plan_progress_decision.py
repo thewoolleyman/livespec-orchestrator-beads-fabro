@@ -50,7 +50,13 @@ from livespec_orchestrator_beads_fabro.commands._plan_obligation import (
     CandidateBudget,
     Obligation,
     candidate_budget,
+    obligation_expiry,
     obligation_of,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_recovery import (
+    CausalRecovery,
+    recovery_record,
+    validate_causal_recovery,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
@@ -72,6 +78,7 @@ __all__: list[str] = [
     "EVENT_HANDOFF",
     "EVENT_PICKER",
     "EVENT_POINTER",
+    "EVENT_RECOVERY",
     "TrackedDecision",
     "TrackedRefusal",
     "decide_tracked_write",
@@ -80,6 +87,7 @@ __all__: list[str] = [
 EVENT_HANDOFF = "handoff"
 EVENT_POINTER = "pointer"
 EVENT_PICKER = "picker"
+EVENT_RECOVERY = "recovery"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -98,13 +106,15 @@ class TrackedRefusal:
     detail: str
 
 
-def decide_tracked_write(
+def decide_tracked_write(  # noqa: PLR0911, PLR0913 -- one refusal ladder; a merged arm would report the wrong cause.
     *,
+    epic_id: str,
     head: ChainHead,
     candidate: NextAction,
     now: str,
     is_handoff: bool,
     observation: ResultObservation | None,
+    recovery: CausalRecovery | None = None,
 ) -> TrackedDecision | TrackedRefusal:
     """Decide what one write may do, preserving an unmet obligation's budget.
 
@@ -112,24 +122,38 @@ def decide_tracked_write(
     caller because it is the one input here that needs a store. It is `None`
     exactly when there is no prior obligation to read.
     """
-    _ = now
     prior = obligation_of(authority=head.authority)
     consumed = int(is_handoff)
+    if prior is None and recovery is not None:
+        return TrackedRefusal(detail="causal recovery is invalid: no obligation is not expired")
     if candidate.required_result is None:
-        return _picker_decision(candidate=candidate, prior=prior, consumed=consumed)
+        return _picker_decision(
+            candidate=candidate,
+            prior=prior,
+            consumed=consumed,
+            attempt=head.authority.last_recovery_attempt,
+        )
     proposed = candidate_budget(budget=candidate.budget)
     if proposed is None:
         return TrackedRefusal(detail="budget must carry a deadline and positive max_handoffs")
     if prior is None:
         return _fresh_decision(candidate=candidate, proposed=proposed, consumed=consumed)
     if observation is None or observation.status == OBSERVATION_SATISFIED:
+        if recovery is not None:
+            return TrackedRefusal(
+                detail="causal recovery is invalid: a satisfied obligation is not expired"
+            )
         return _fresh_decision(candidate=candidate, proposed=proposed, consumed=consumed)
     return _continuation_decision(
+        epic_id=epic_id,
+        head=head,
         candidate=candidate,
         prior=prior,
         consumed=consumed,
         unobservable=observation.status == OBSERVATION_UNOBSERVABLE,
         is_handoff=is_handoff,
+        recovery=recovery,
+        now=now,
     )
 
 
@@ -138,6 +162,7 @@ def _picker_decision(
     candidate: NextAction,
     prior: Obligation | None,
     consumed: int,
+    attempt: object = None,
 ) -> TrackedDecision:
     """A `human` or `none` pointer: null tracking, obligation retained."""
     if prior is None:
@@ -148,7 +173,7 @@ def _picker_decision(
         )
     return TrackedDecision(
         action=candidate,
-        authority=_retained(prior=prior, consumed=consumed),
+        authority=_retained(prior=prior, consumed=consumed, attempt=attempt),
         event_kind=EVENT_PICKER,
     )
 
@@ -172,23 +197,67 @@ def _fresh_decision(
     )
 
 
-def _continuation_decision(
+def _continuation_decision(  # noqa: PLR0913 -- continuation needs every prior and candidate fact.
     *,
+    epic_id: str,
+    head: ChainHead,
     candidate: NextAction,
     prior: Obligation,
     consumed: int,
     unobservable: bool,
     is_handoff: bool,
+    recovery: CausalRecovery | None,
+    now: str,
 ) -> TrackedDecision | TrackedRefusal:
-    """Continue an unmet obligation, preserving both of its original limits."""
-    refusal = _same_result_refusal(candidate=candidate, prior=prior, unobservable=unobservable)
-    if refusal is not None:
-        return refusal
+    """Continue an unmet obligation, preserving both of its original limits.
+
+    THE EXPIRY GATE RUNS HERE, before the decision returns anything a caller
+    could write: "After expiry, same-obligation continuation MUST be refused
+    before appending a handoff or updating the pointer unless a fresh typed
+    causal recovery attempt is supplied."
+    """
+    same_result = _same_result_refusal(candidate=candidate, prior=prior, unobservable=unobservable)
+    if isinstance(same_result, TrackedRefusal):
+        return same_result
+    expiry = obligation_expiry(obligation=prior, now=now)
+    if expiry is None and recovery is not None:
+        return TrackedRefusal(detail="causal recovery is invalid: the obligation is not expired")
+    if expiry is not None and recovery is None:
+        return TrackedRefusal(
+            detail=(
+                f"the obligation {prior.original_deadline} is expired at its {expiry} limit;"
+                " a fresh typed causal recovery attempt or a recorded human decision is"
+                " required to continue"
+            )
+        )
+    attempt = None
+    if recovery is not None:
+        recovery_refusal = validate_causal_recovery(
+            recovery=recovery,
+            action=candidate,
+            epic_id=epic_id,
+            current_epoch=head.epoch,
+            current_result_identity=same_result,
+            now=now,
+        )
+        if recovery_refusal is not None:
+            return TrackedRefusal(detail=recovery_refusal.detail)
+        attempt = recovery_record(recovery=recovery, prior=head.authority, now=now)
     return TrackedDecision(
         action=replace(candidate, required_result=prior.required_result),
-        authority=_retained(prior=prior, consumed=consumed),
-        event_kind=EVENT_HANDOFF if is_handoff else EVENT_POINTER,
+        authority=_retained(
+            prior=prior,
+            consumed=consumed,
+            attempt=head.authority.last_recovery_attempt if attempt is None else attempt,
+        ),
+        event_kind=_event_kind(recovery=recovery, is_handoff=is_handoff),
     )
+
+
+def _event_kind(*, recovery: CausalRecovery | None, is_handoff: bool) -> str:
+    if recovery is not None:
+        return EVENT_RECOVERY
+    return EVENT_HANDOFF if is_handoff else EVENT_POINTER
 
 
 def _same_result_refusal(
@@ -196,8 +265,15 @@ def _same_result_refusal(
     candidate: NextAction,
     prior: Obligation,
     unobservable: bool,
-) -> TrackedRefusal | None:
-    """Refuse a rewrite that renames the unmet target it is continuing."""
+) -> TrackedRefusal | str:
+    """Refuse a rewrite that renames the unmet target, or return that target.
+
+    The PRIOR IDENTITY is returned rather than merely validated, because the
+    recovery check downstream needs exactly the identity this arm has already
+    parsed. Re-deriving it there would mean a second parse whose failure arm is
+    unreachable — and an unreachable arm is either dead code or a lie about
+    which of the two readings is authoritative.
+    """
     candidate_parsed = parse_result_reference(value=candidate.required_result)
     prior_parsed = parse_result_reference(value=prior.required_result)
     if not isinstance(candidate_parsed, ResultReference):
@@ -207,7 +283,7 @@ def _same_result_refusal(
             detail="the prior obligation's required_result is unreadable; reconcile it first"
         )
     if candidate_parsed.identity == prior_parsed.identity:
-        return None
+        return prior_parsed.identity
     if unobservable:
         return TrackedRefusal(
             detail=(
@@ -223,11 +299,17 @@ def _same_result_refusal(
     )
 
 
-def _retained(*, prior: Obligation, consumed: int) -> AuthorityState:
-    """The prior obligation, with only its accepted-handoff count advanced."""
+def _retained(*, prior: Obligation, consumed: int, attempt: object = None) -> AuthorityState:
+    """The prior obligation, with only its accepted-handoff count advanced.
+
+    `attempt` is CARRIED FORWARD rather than defaulted away on an ordinary
+    continuation: the item-attributable repetition count lives inside it, so
+    dropping it would reset that count on every handoff that followed a recovery.
+    """
     return AuthorityState(
         required_result=prior.required_result,
         original_deadline=prior.original_deadline,
         max_handoffs=prior.max_handoffs,
         consumed_handoffs=prior.consumed_handoffs + consumed,
+        last_recovery_attempt=attempt,
     )

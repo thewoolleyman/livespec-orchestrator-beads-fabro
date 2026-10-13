@@ -52,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
 from livespec_orchestrator_beads_fabro.commands._plan_next_action_validation import (
     NextActionRefusal,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_recovery import CausalRecovery
 from livespec_orchestrator_beads_fabro.commands._plan_tracked_write import (
     TrackedWrite,
     TrackedWriteRequest,
@@ -490,3 +491,40 @@ def test_no_prior_obligation_means_no_target_read_is_attempted(
         )
         is None
     )
+
+
+def test_recovery_on_an_epic_with_no_authority_chain_is_refused(tmp_path: Path) -> None:
+    """The legacy arm holds no obligation, so none of it can have expired.
+
+    Without this the attempt would be silently DROPPED on the legacy path: the
+    write would succeed, nothing would record the attempt, and the caller would
+    have no way to tell that from a recovery that was admitted.
+    """
+    config = _seed(tmp_path=tmp_path, with_chain=False)
+    recovery = CausalRecovery(
+        required_result=_RESULT,
+        previous_epoch=1,
+        failure_evidence="the provider returned usageLimitExceeded",
+        cause="host",
+        next_operation=f"impl:{_TARGET_ID}",
+        attempt_id="attempt-0001",
+        attempt_deadline="2026-10-20T12:00:00Z",
+    )
+
+    refusal = _refusal(
+        commit_tracked_write(
+            request=TrackedWriteRequest(
+                config=config,
+                epic_id=_EPIC_ID,
+                action=_action(),
+                author="relay-session",
+                now=_NOW,
+                is_handoff=True,
+                body="A handoff entry.",
+                recovery=recovery,
+            )
+        )
+    )
+
+    assert "no authority chain" in refusal.detail
+    assert _handoff_comments(config=config) == []

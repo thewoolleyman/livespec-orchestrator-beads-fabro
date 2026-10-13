@@ -28,6 +28,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_progress_decision import (
     TrackedRefusal,
     decide_tracked_write,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_recovery import CausalRecovery
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     ResultObservation,
     satisfied,
@@ -35,6 +36,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_observation import 
     unsatisfied,
 )
 
+_EPIC_ID = "bd-ib-decisionepic"
 _TOKEN = "chain-record-current"
 _NOW = "2026-10-13T09:00:00Z"
 _ORIGINAL_DEADLINE = "2026-10-20T09:00:00Z"
@@ -132,6 +134,7 @@ def test_with_no_prior_obligation_the_candidate_budget_becomes_the_original(
     """Nothing is being preserved yet, so the candidate's own budget is adopted."""
     decision = _decision(
         decide_tracked_write(
+            epic_id=_EPIC_ID,
             head=_head(),
             candidate=_candidate(),
             now=_NOW,
@@ -150,6 +153,7 @@ def test_a_satisfied_result_permits_advancing_to_a_new_result_and_budget() -> No
     """ "Satisfied results permit advancing to a new result and budget"."""
     decision = _decision(
         decide_tracked_write(
+            epic_id=_EPIC_ID,
             head=_head(authority=_prior_authority()),
             candidate=_candidate(required_result=_RENAMED_RESULT),
             now=_NOW,
@@ -171,6 +175,7 @@ def test_an_unobservable_result_preserves_the_original_budget_instead() -> None:
     """
     decision = _decision(
         decide_tracked_write(
+            epic_id=_EPIC_ID,
             head=_head(authority=_prior_authority()),
             candidate=_candidate(),
             now=_NOW,
@@ -196,6 +201,7 @@ def test_an_unsatisfied_result_preserves_both_limits_and_counts_only_handoffs(
 ) -> None:
     decision = _decision(
         decide_tracked_write(
+            epic_id=_EPIC_ID,
             head=_head(authority=_prior_authority()),
             candidate=_candidate(),
             now=_NOW,
@@ -215,6 +221,7 @@ def test_renaming_an_unmet_target_is_refused_rather_than_read_as_new_work() -> N
     """The one rewrite that would otherwise look like legitimate advancement."""
     refusal = _refusal(
         decide_tracked_write(
+            epic_id=_EPIC_ID,
             head=_head(authority=_prior_authority()),
             candidate=_candidate(required_result=_RENAMED_RESULT),
             now=_NOW,
@@ -235,6 +242,7 @@ def test_renaming_an_unobservable_target_is_refused_naming_the_measurement() -> 
     """
     refusal = _refusal(
         decide_tracked_write(
+            epic_id=_EPIC_ID,
             head=_head(authority=_prior_authority()),
             candidate=_candidate(required_result=_RENAMED_RESULT),
             now=_NOW,
@@ -263,6 +271,7 @@ def test_a_picker_pointer_keeps_null_tracking_while_retaining_the_obligation(
 
     decision = _decision(
         decide_tracked_write(
+            epic_id=_EPIC_ID,
             head=_head(authority=_prior_authority()),
             candidate=candidate,
             now=_NOW,
@@ -284,6 +293,7 @@ def test_a_picker_pointer_with_no_prior_obligation_records_no_obligation() -> No
 
     decision = _decision(
         decide_tracked_write(
+            epic_id=_EPIC_ID,
             head=_head(),
             candidate=candidate,
             now=_NOW,
@@ -307,6 +317,7 @@ def test_a_candidate_whose_budget_is_unusable_is_refused_before_any_decision() -
 
     refusal = _refusal(
         decide_tracked_write(
+            epic_id=_EPIC_ID,
             head=_head(),
             candidate=candidate,
             now=_NOW,
@@ -330,6 +341,7 @@ def test_a_candidate_whose_required_result_is_not_a_reference_is_refused() -> No
 
     refusal = _refusal(
         decide_tracked_write(
+            epic_id=_EPIC_ID,
             head=_head(authority=_prior_authority()),
             candidate=candidate,
             now=_NOW,
@@ -354,6 +366,7 @@ def test_an_unreadable_prior_obligation_is_reconciled_rather_than_continued() ->
 
     refusal = _refusal(
         decide_tracked_write(
+            epic_id=_EPIC_ID,
             head=_head(authority=authority),
             candidate=_candidate(),
             now=_NOW,
@@ -377,6 +390,7 @@ def test_a_prior_obligation_with_no_observation_advances_rather_than_guessing() 
     """
     decision = _decision(
         decide_tracked_write(
+            epic_id=_EPIC_ID,
             head=_head(authority=_prior_authority()),
             candidate=_candidate(required_result=_RENAMED_RESULT),
             now=_NOW,
@@ -386,3 +400,58 @@ def test_a_prior_obligation_with_no_observation_advances_rather_than_guessing() 
     )
 
     assert decision.authority.required_result == _RENAMED_RESULT
+
+
+def _recovery() -> CausalRecovery:
+    """A WELL-FORMED attempt, so each case below refuses for its own reason.
+
+    A malformed attempt would be refused by the validator regardless, which
+    would make these two cases pass without the not-expired guards existing.
+    """
+    return CausalRecovery(
+        required_result=_PRIOR_RESULT,
+        previous_epoch=3,
+        failure_evidence="the provider returned usageLimitExceeded",
+        cause="host",
+        next_operation="impl:bd-ib-prior",
+        attempt_id="attempt-0001",
+        attempt_deadline="2026-10-20T12:00:00Z",
+    )
+
+
+def test_recovery_against_an_epic_with_no_obligation_at_all_is_refused() -> None:
+    """There is nothing expired, so there is nothing to recover.
+
+    Admitting one would let a session bank attempts before any obligation
+    exists and spend them against whatever obligation arrived later.
+    """
+    refusal = _refusal(
+        decide_tracked_write(
+            epic_id=_EPIC_ID,
+            head=_head(),
+            candidate=_candidate(),
+            now=_NOW,
+            is_handoff=False,
+            observation=None,
+            recovery=_recovery(),
+        )
+    )
+
+    assert "not expired" in refusal.detail
+
+
+def test_recovery_against_a_satisfied_obligation_is_refused() -> None:
+    """A met obligation advances on its own; it does not recover."""
+    refusal = _refusal(
+        decide_tracked_write(
+            epic_id=_EPIC_ID,
+            head=_head(authority=_prior_authority()),
+            candidate=_candidate(),
+            now=_NOW,
+            is_handoff=False,
+            observation=_observation(status="satisfied"),
+            recovery=_recovery(),
+        )
+    )
+
+    assert "not expired" in refusal.detail
