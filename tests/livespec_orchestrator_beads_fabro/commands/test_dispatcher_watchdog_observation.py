@@ -35,10 +35,11 @@ _INSPECT_RECORD = '[{"run_id": "01BOUND", "status": {"kind": "running"}}]'
 # `fabro dump` printed for run 01M4R5S6GST6XNQA10SGJ9TA2H against
 # hp-xubuntu:32276 on 2026-10-12 (recorded on this work-item's own ledger).
 _NOT_FOUND_STDERR = "\u00d7 No run found matching '01BOUND' (tried run ID prefix and workflow name)"
-# Spelled as a LITERAL and bound to the exported name by the case below,
-# because this module's Red predates the constant and a top-level import of a
+# Spelled as LITERALS and bound to the exported names by the cases below,
+# because each one's Red predates its constant and a top-level import of a
 # name that does not exist yet would make the Red a collection error.
 _RUN_NOT_HELD = "run-not-held"
+_UNOBSERVABLE = "run-read-unobservable"
 
 
 @dataclass(kw_only=True)
@@ -379,3 +380,99 @@ def test_a_bound_poll_whose_factory_holds_no_such_run_reports_it_through_the_por
     assert run is None
     assert runner.verbs == ["inspect"]
     assert [record["reason"] for record in journal.records] == [_RUN_NOT_HELD]
+
+
+def test_the_unobservable_reason_is_the_exported_constant() -> None:
+    """Bind the literal above to the name the module exports."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_observation"
+    )
+
+    assert getattr(module, "BOUND_POLL_REASON_UNOBSERVABLE", None) == _UNOBSERVABLE
+
+
+def test_a_failed_per_run_read_is_unobservable_and_never_a_disappearance() -> None:
+    """A read that FAILED observed nothing, so it says nothing about the run.
+
+    The two outcomes it must not be mistaken for are both asserted, because
+    each is a confident claim this reading cannot support: `run-not-held`
+    says the factory stopped holding the run, and `status-kind-not-running`
+    says it answered with a status. Neither happened — the read did.
+    """
+    outcome = classify_bound_poll(
+        work_item_id="bd-ib-mine",
+        run_id="01BOUND",
+        inspect_exit_code=1,
+        status_kind=None,
+        output="error: connection refused",
+    )
+
+    assert outcome.reason == _UNOBSERVABLE
+    assert outcome.reason != _RUN_NOT_HELD
+    assert outcome.reason != DISCOVERY_REASON_STATUS_KIND_NOT_RUNNING
+    assert outcome.run is None
+    assert outcome.run_id == "01BOUND"
+
+
+def test_an_answer_the_watchdog_cannot_interpret_is_unobservable() -> None:
+    """A read that SUCCEEDED but yielded no readable status is still no reading.
+
+    This is the half a nonzero-exit test cannot reach: the command was fine
+    and the payload was not, which is what a shape change in the engine looks
+    like. Treating it as a status would let an unparseable answer decide a
+    cancel.
+    """
+    outcome = classify_bound_poll(
+        work_item_id="bd-ib-mine",
+        run_id="01BOUND",
+        inspect_exit_code=0,
+        status_kind=None,
+        output='{"unexpected": "shape"}',
+    )
+
+    assert outcome.reason == _UNOBSERVABLE
+    assert outcome.run is None
+
+
+def test_journaled_bound_poll_records_an_unobservable_read() -> None:
+    journal = _Journal(records=[])
+
+    run = journaled_bound_poll(
+        work_item_id="bd-ib-mine",
+        run_id="01BOUND",
+        inspect=_inspect(exit_code=1, status_kind=None, stderr="error: connection refused"),
+        journal=journal,
+    )
+
+    assert run is None
+    assert journal.records == [
+        {
+            "work_item_id": "bd-ib-mine",
+            "stage": BOUND_POLL_JOURNAL_STAGE,
+            "matched": False,
+            "reason": _UNOBSERVABLE,
+            "run_id": "01BOUND",
+            "inspect_exit_code": 1,
+            "status_kind": None,
+        }
+    ]
+
+
+def test_an_unreachable_factory_reports_unobservable_through_the_port() -> None:
+    """End to end: a factory that cannot be reached has not lost the run."""
+    runner = _runner(
+        stderr_by_verb={"inspect": "error: connection refused"},
+        exit_code_by_verb={"inspect": 1},
+    )
+    journal = _Journal(records=[])
+
+    run = observed_run(
+        work_item_id="bd-ib-mine",
+        port=_port(runner=runner),
+        journal=journal,
+        attribution=GOAL_TEXT_ONLY,
+        bound_run_id="01BOUND",
+    )
+
+    assert run is None
+    assert [record["reason"] for record in journal.records] == [_UNOBSERVABLE]

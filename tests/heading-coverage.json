@@ -1752,8 +1752,8 @@
     "heading": "## Scenario 173 \u2014 The progress watchdog observes its bound run by id and never lists the factory's run history",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified 2026-10-13 by the watchdog-observes-its-run-by-id revision (plan stall-watchdog-false-kills, epic bd-ib-laf735). An integration-tier test is owed showing the watchdog reads a bound run by id, never lists the factory's run history once bound, and still detects terminal, stalled and disappeared runs; bd-ib-6pdigz owns it.",
+    "test": "tests.integration.test_watchdog_bound_run_poll_scenario173.test_scenario173_a_bound_run_is_polled_by_id_and_the_history_is_never_listed_again",
+    "reason": "Integration-tier acceptance for the Dispatcher progress watchdog's run-observation rule (contracts.md, the \u201cObserving the run\u201d paragraph), implemented by bd-ib-6pdigz. The journey is driven through the PRODUCTION launcher \u2014 real WatchedFabroLauncher, real FabroPort, real per-poll observation seam, real threading \u2014 against a scripted CommandRunner and the in-memory FakeBeadsClient; only the fabro subprocess is stood in, and it is stood in at the ARGV, because the rule is about which call each poll ISSUES and no returned run distinguishes a per-run read from a listing that contained the same row. The bound node id is the listing-then-read case, which carries BOTH halves of the clause on one dispatch: the listing is permitted before the bind and forbidden after it, and a fixture showing only the second half could not tell a correct build from one that never discovered its run. The terminal-run, no-longer-held and failed-read cases are sibling tests in the same module; the last two are asserted against each other because a vanished run, a run the factory still holds, and a read that observed nothing all report matched: False and would satisfy a boolean-only assertion identically.",
     "work_item": "bd-ib-6pdigz"
   },
   {
