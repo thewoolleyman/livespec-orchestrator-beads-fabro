@@ -98,6 +98,32 @@ _OPENAI_MODELS: tuple[tuple[str, str], ...] = (
 
 _ZAI_MODELS: tuple[tuple[str, str], ...] = (("glm-5.2", "GLM 5.2"),)
 
+# The DECORATED spellings a provider answers to for a model already catalogued
+# above, keyed by that model's own id. An alias is the whole mechanism by which
+# a decorated identity reaches a price, and it has to be EXPLICIT: the
+# exact-identity rule strips one trailing `-YYYYMMDD` and nothing else, so
+# `claude-opus-4-8[1m]` does not reach `claude-opus-4-8` and a rule that made it
+# would be the broader prefix match `_acp_model_identity` exists to refuse.
+#
+# `claude-opus-4-8[1m]` is the 1M-context variant marker the `implement-work-item`
+# workflow's review, dod_gate and proof_verify adapter defaults render into
+# `ANTHROPIC_MODEL`. It is an ALIAS rather than a catalog entry of its own
+# because the provider publishes ONE rate table for Opus 4.8 -- the context
+# window is not priced separately -- and a second entry would be that one
+# published fact written twice, drifting silently in the worst available
+# direction: two entries answering to one model, pricing an attempt two ways.
+#
+# KNOWN LIMIT, recorded rather than left to be rediscovered. An alias resolves
+# through `_acp_structured_render._lookup_model`, which renders the entry's
+# `canonical_id`, so a STRUCTURED entry written as `{"model":
+# "claude-opus-4-8[1m]"}` would reach the adapter as bare `claude-opus-4-8` --
+# the standard-context model. Nothing configures that spelling today; a
+# structured entry wanting the 1M window names it in the manual form, exactly as
+# the workflow's own defaults do.
+_MODEL_ALIASES: Mapping[str, tuple[str, ...]] = {
+    "claude-opus-4-8": ("claude-opus-4-8[1m]",),
+}
+
 _PROVIDER_MODELS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (ANTHROPIC_PROVIDER, _ANTHROPIC_MODELS),
     (OPENAI_PROVIDER, _OPENAI_MODELS),
@@ -114,6 +140,11 @@ def builtin_model_catalog() -> Mapping[str, AcpModelEntry]:
     pricing, and that absence is the honest value: the cost paragraph's
     no-default rule turns it into an explicit unobservable cost rather than a
     guess summed into an observation.
+
+    `aliases` comes from `_MODEL_ALIASES`, and an entry with no decorated
+    spelling carries the empty tuple rather than being absent from that table in
+    a way a reader has to interpret -- which is also what keeps the alias an
+    exact identity a lookup can match instead of a rule a normalizer applies.
     """
     entries = [
         AcpModelEntry(
@@ -121,6 +152,7 @@ def builtin_model_catalog() -> Mapping[str, AcpModelEntry]:
             model=model,
             display_name=display_name,
             canonical_id=model,
+            aliases=_MODEL_ALIASES.get(model, ()),
             pricing=builtin_model_pricing(model=model),
         )
         for provider, models in _PROVIDER_MODELS

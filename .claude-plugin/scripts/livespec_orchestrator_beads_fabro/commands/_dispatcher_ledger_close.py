@@ -262,6 +262,12 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # rather than empty when no verdict was taken, so dropping it keeps "no
     # verdict" distinguishable from "a verdict that found no failed stage".
     "needs_human_stages",
+    # The terminal's own reason line, dropped on the same terms. The sharper
+    # reason here is that its absence is AMBIGUOUS in a way a reader must not
+    # resolve: a terminal that printed no reason and a run whose output never
+    # reached the parser are both None, so an explicit null would read as a
+    # positive finding about a terminal nobody observed.
+    "needs_human_reason",
     "provider_usage_limit_provider",
     "remedy",
     "step",

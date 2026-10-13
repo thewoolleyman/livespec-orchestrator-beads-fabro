@@ -206,7 +206,7 @@ Sandbox sibling clones: the same overlay appends one depth-1
 prepare-step clone per fleet member (from livespec master's
 .livespec-fleet-manifest.jsonc, fetched host-side via `gh api` at run-config
 generation; the dispatch target is excluded) and projects the
-non-secret LIVESPEC_SIBLING_CLONES_ROOT=/workspace/siblings into the
+non-secret LIVESPEC_SIBLING_CLONES_ROOT=/livespec-siblings into the
 sandbox env table, so cross-repo checks under `just check` resolve
 family siblings inside the sandbox — mirroring livespec CI. An
 unreachable or malformed manifest fails the dispatch fast at the

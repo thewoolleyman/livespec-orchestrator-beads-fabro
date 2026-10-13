@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.194.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.194.3...v0.194.4) (2026-10-13)
+
+
+### Bug Fixes
+
+* **factory:** name the open Red commit in a timed-out stage's needs-human reason ([3a0afe2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3a0afe2c89be2e5b02e9b044da7f4cca4ebb123e))
+
+## [0.194.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.194.2...v0.194.3) (2026-10-13)
+
+
+### Bug Fixes
+
+* **dispatcher:** root the sandbox's sibling clones outside the target clone ([5d0f6ed](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5d0f6ed389afb062d5086b5c9a367189f2ab2469))
+
+## [0.194.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.194.1...v0.194.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* **acp:** price every model identity this repository renders ([27812a9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/27812a9a77386c06551b7d8b30249f84438f0070))
+
+## [0.194.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.194.0...v0.194.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **plan-epoch:** discard the predecessor a reconciled partial write leaks ([07694e2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/07694e29767968fb7733bff45cebc00f7743308a))
+
 ## [0.194.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.193.0...v0.194.0) (2026-10-13)
 
 

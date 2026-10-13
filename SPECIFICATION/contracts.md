@@ -1475,6 +1475,96 @@ These clauses are stated in the lifecycle vocabulary: the prior
 `admission_policy == manual` (resting at `pending-approval` until a human explicitly approves it into `ready`), and the prior `needs-regroom` disposition is the
 lifecycle `bounce` back to the `backlog` state (re-decomposition). The authoritative gate + valve contract is §"Dispatcher admission, WIP cap, and post-merge acceptance"; Scenarios 9–11 express the same vocabulary.
 
+### Dispatcher progress watchdog
+
+The Dispatcher's wall-clock progress watchdog cancels a run that makes no
+progress for the configured stall window and reports the distinct
+`stalled-no-progress` outcome. This subsection governs what counts as
+progress and how a cancel is routed. It does not govern the Fabro engine's
+own run-level `stall_timeout` of §"ACP node timeouts".
+
+**Progress.** A liveness sample MUST report the NEWEST progress instant
+among every source it reads: the agent heartbeat keyed on the dispatch, and
+the run's own Fabro event stream. A source that carries an older instant
+MUST NOT mask a source that carries a newer one. While the run's event
+stream shows a command node started and not completed, the watchdog MUST
+NOT cancel the run before that node's resolved timeout (§"ACP node
+timeouts") has elapsed since the node started. A command node emits only
+its start and completion events, so the stall window alone cannot bound it.
+A run whose every source stays unchanged for the full stall window, with no
+command node open, MUST still be cancelled as `stalled-no-progress`.
+
+**Observing the run.** Until the Dispatcher has bound the dispatched run's
+id, the watchdog MAY discover the run by listing the runs the factory
+holds. Once the run's id is bound, every later watchdog poll MUST observe
+that run by its id through a per-run read of the factory, and MUST NOT list
+the runs the factory holds; the cost of a poll MUST NOT grow with the
+factory's run history. A per-run read MUST still let the watchdog detect
+each outcome it detects today: the run reaching a terminal state, the run
+making no progress under the rule above, and the run no longer being held
+by the factory. A per-run read that fails, or whose answer cannot be
+interpreted, MUST NOT be read as the run having disappeared; it is an
+unobservable poll, and the watchdog MUST treat it no differently from a
+listing that could not be read. Scenario 173 in `scenarios.md` exercises
+this paragraph.
+
+**The cancel record.** On a cancel the Dispatcher MUST journal one
+`watchdog-stall-cancel` record naming the work-item, the dispatch id, the
+run id, the factory, and the stage the run was executing. That stage is the
+node whose start event has no completion event or, between nodes, the
+target of the edge its last succeeded node's outcome selected. When the
+run's event stream records a completed `publish_draft`, the record MUST
+also name the pull request and the head that the LAST completed
+`publish_draft` of the run pushed, read from the run's own record. It MUST
+NOT be read from origin at cancel time, because origin's branch may have
+moved since. When that head cannot be read, the record MUST say so rather
+than omit it.
+
+**Not non-convergence.** A `stalled-no-progress` outcome is NOT factory
+non-convergence (§"Dispatcher grooming behavior"). The Dispatcher MUST NOT
+bounce the item to `backlog` for it and MUST NOT journal a
+`non-convergence-bounce` record for it. The calibration analysis pass MUST
+NOT count it as a non-convergence observation, while a fix-loop-cap
+non-convergence still counts.
+
+**A first stall cancel is released and recovered.** When the item's
+immediately preceding dispatch did not also end `stalled-no-progress`, the
+Dispatcher MUST, without a human:
+1. Journal the cancel record above.
+2. Write a ledger comment on the item naming the cancelled run id, its
+   factory, its stage and, when the record names one, the pull request and
+   the published head.
+3. Release the item's dispatch claim and return it to `ready`, with no
+   `blocked_reason`.
+4. Leave it to the ordinary admission valve.
+
+That valve's next dispatch of the item applies §"Factory-configurable ACP
+fallback priority" → "Recovery from the failed run's preserved work"
+unchanged. Before any stale publish-branch reclaim, it evaluates the resume
+preconditions, which the cancel record can now anchor (§"Resume from a
+published pull request (`resume --item`)"). It invokes resume under its own
+invoker identity when they pass, and otherwise makes a dispatch seeded from
+preserved work. The release MUST be idempotent and replayable by
+reconciliation, keyed by factory and run, exactly as a provider-limit
+release is. A released stall cancel MUST NOT consume any budget of §"The
+three rework caps", and it neither increments nor resets the item's count
+under §"Across-dispatch required-result progress".
+
+**A second consecutive stall cancel rests for a human.** When the item's
+immediately preceding dispatch also ended `stalled-no-progress`, the
+Dispatcher MUST journal the cancel record, MUST NOT release the item, and
+MUST rest it at `blocked` with `blocked_reason` `needs-human`
+(§"A factory run never awaits a human"). It counts as one item-attributable
+terminal under §"Across-dispatch required-result progress". Its ledger
+comment MUST name both cancelled runs, their factories and their stages,
+and the remedy the resume refusal ladder computes for the item's current
+state. The comment MUST preserve every applicable remedy from the resume refusal
+ladder, including `resolve-blocked:<id>:ready` for the item's needs-human
+rest. It MUST name a plain dispatch only for refusals whose specified
+remedy is a plain dispatch; it MUST NOT substitute dispatch for a human
+decision, reconciliation, or a required wait.
+Scenario 172 in `scenarios.md` exercises this subsection.
+
 ### Calibration telemetry and the single Fabro tweak
 
 Breakdown is entirely UPSTREAM of Fabro (ledger + Dispatcher +
@@ -3009,8 +3099,11 @@ question and `resolve-blocked:<id>:ready` as the remedy after the human
 edits the section. No new state transition, exit code or claim-release
 path is introduced. The mechanical half of this check (section present,
 references resolve, modes parse) MUST also run in the host-side wall so a
-malformed item never spends a sandbox; the semantic half runs only in the
-node.
+malformed item never spends a sandbox. The semantic half MUST run in the
+node on every run, and MUST also run once before admission per
+§"Effective acceptance criteria" → "Authoring at filing time"
+("Judged before admission"); that earlier judgement never removes or
+replaces the node.
 
 **`proof_capture`.** For every `factory_captured` assertion the node MUST
 author the reproduction steps, execute them verbatim inside the sandbox,
@@ -3776,9 +3869,10 @@ full sandbox rebuilding, re-capturing and re-verifying work that already
 exists on the pull request; the resume FINISHES the earlier run instead.
 It is a published state-changing entry point and inherits `--invoker`
 (§"Journal invoker attribution"). `drive` gains no new action for it;
-the `impl:<id>` action remains a plain dispatch. The one exception to both
-statements is an item released under §"Factory-configurable ACP fallback
-priority" → "Provider-limit release and re-dispatch": for it the Dispatcher
+the `impl:<id>` action remains a plain dispatch. The exceptions to both
+statements are an item released under §"Factory-configurable ACP fallback
+priority" → "Provider-limit release and re-dispatch" and an item released
+after a first stall cancel under §"Dispatcher progress watchdog": for each the Dispatcher
 itself invokes this resume, under its own invoker identity, when every
 precondition below passes, and otherwise dispatches a plain run seeded from
 the failed run's preserved work rather than from the default branch, as that
@@ -3791,6 +3885,23 @@ record (§"Post-merge acceptance (`acceptance → done`)" → "The proof
 evidence leg"); a record published before this clause was ratified names
 no head and cannot anchor a resume. The *published head* is the full
 commit sha that record names (§"Proof of Done record" → "The record").
+When no proof record on the pull request carries the identifier of the
+item's latest journaled dispatch, and that dispatch's journal carries a
+`watchdog-stall-cancel` record (§"Dispatcher progress watchdog") naming a
+published head, the cancel record anchors the resume instead. A proof
+record that carries the dispatch's identifier always takes precedence over
+a cancel record. The cancel record anchors only when its stage is
+`proof_capture`, or when the run was between its last completed
+`publish_draft` and `proof_capture`. A cancel in any other stage, including
+a later `janitor`, `fix` or `publish_draft` of a rework loop, does not
+anchor, because its head would not carry the rework. Under this anchor the
+earlier run is that dispatch, the published head is the head the record
+names, and the resumed-at stage is `proof_capture`. The factory's own record
+of the run, when the factory still holds it, takes precedence for the stage.
+The resume record MUST name the factory record as the source that decided
+the stage when that record is available; when the factory authoritatively
+reports that it no longer holds the run, the cancel record decides the
+stage and the resume record MUST name it as the source.
 The *resumed-at stage* is the node the earlier run was executing when it
 terminated (an earlier `pr` entry MUST normalize to `pr_refresh`), or, when it terminated between nodes, the target of the edge
 its last succeeded node's outcome selected. The Dispatcher MUST read it
@@ -3872,7 +3983,8 @@ remedy, when:
   needs-human`, or `reconcile-runs` for a stranded claim) — a resume
   never steps around the ledger's human decision;
 - the item's publish branch carries no open pull request, or no proof
-  record on it names a head (remedy: a plain dispatch);
+  record on it names a head and no `watchdog-stall-cancel` record anchors
+  one as above (remedy: a plain dispatch);
 - the pull request's current head does not equal the published head,
   naming both shas (remedy: a plain dispatch, which reclaims the
   branch). A `pr_refresh` node that rebased and pushed before terminating leaves
@@ -5291,6 +5403,29 @@ SHOULD surface, as hygiene facts, each `ready` item carrying an advisory
 Definition-of-Done finding, so that it is repaired before a sandbox is
 spent on it. The implement prompt MUST state the kept-current rule
 below. Scenario 140 in `scenarios.md` exercises this clause.
+
+**Judged before admission.** Before intake routes an implement-kind
+item to `ready` — from `backlog` or `pending-approval`, whether through
+intake, the approve valve, or groom — the Dispatcher MUST run the same
+Definition-of-Done judgement the `dod_gate` node applies (its prompt,
+against the item's effective criteria, the referenced specification
+headings and the resolved sandbox capabilities). When that judgement
+would end a run through the structured needs-human ending, the item
+MUST NOT be routed to `ready`: it rests where a mechanical finding
+would hold it, and the verdict, with each remedy, MUST be appended to
+the item as a ledger comment. When that judgement admits the item,
+intake MUST route it exactly as it would without the judgement. When
+the judgement cannot be run (no eligible model, a timeout, or an
+unparseable verdict), intake MUST record on the item that the
+pre-admission judgement did not run and why, and MUST route the item as
+it would without the judgement; the in-run `dod_gate` node remains the
+backstop, so an unrun judgement never admits anything the gate would
+not have seen. A wall finding the judgement did not grade stays
+ADVISORY as above. `needs-attention` MUST list, as hygiene facts, each
+item held by the pre-admission judgement with its verdict's first
+remedy; the ready-item advisory hygiene fact above still applies to
+items the judgement admitted or could not judge. Scenario 174 in
+`scenarios.md` exercises this paragraph.
 
 **Kept current.** The Definition of Done is the statement the proof
 stages capture against and the acceptance pass grades against, read from

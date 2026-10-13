@@ -314,6 +314,18 @@ class DispatchOutcome:
     no attribution, so the same null-drop that hides the verdict hides it too;
     an empty list would assert that the verdict found no stages, which is a
     different claim from the verdict never having been taken at all.
+
+    `needs_human_reason` is the REASON the terminal node itself printed, and it
+    is the other half of `needs_human_stages` rather than a duplicate of it: the
+    stage comes from the ENGINE's outcome map and the reason from the SANDBOX,
+    so neither can supply the other and an operator triaging the ending reads
+    both. It rides here because the durable ledger record is appended long after
+    the run's output has scrolled away — it has the outcome and not the text —
+    and because a second parse of that text would be a second implementation of
+    the one rule `needs_human_terminal_reason` owns. It is None for a terminal
+    that printed no reason, which is a different fact from a terminal that
+    printed an empty one; both arrive here as None because the distinction is
+    not one any reader of this field acts on.
     """
 
     work_item_id: str
@@ -335,6 +347,7 @@ class DispatchOutcome:
     dead_implementer_condition: str | None = None
     needs_human_kind: str | None = None
     needs_human_stages: tuple[str, ...] | None = None
+    needs_human_reason: str | None = None
 
 
 def run_dispatch(

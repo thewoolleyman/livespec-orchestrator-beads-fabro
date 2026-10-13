@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_detail import (
     needs_human_terminal_detail,
+    needs_human_terminal_reason,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import (
     STAGE_FAILURE,
@@ -268,3 +269,40 @@ def test_an_unparsed_run_id_renders_the_unknown_run_label_and_offers_no_ref() ->
     assert "refs/heads/needs-human/" not in detail
     assert "whether the tree reached a run-scoped ref is UNKNOWN" in detail
     assert "the tree was not pushed" not in detail
+
+
+def test_the_shared_reason_parse_answers_none_for_every_absence() -> None:
+    """The parse both surfaces read, on the three ways a reason can fail to arrive.
+
+    PUBLIC and shared because the DURABLE ledger record reads the same line from
+    the same text (work-item bd-ib-qhv7qs), and it reaches that record as an
+    already-parsed field: the writer runs long after the run's output is gone.
+    So the three absences are asserted here, at the one implementation, rather
+    than twice at two renderings that could come to disagree.
+
+    Each absence is a DIFFERENT shape of the same answer, and the middle one is
+    the one a naive partition crashes on rather than returns: a sentinel sitting
+    at the very end of the captured output leaves NO line after it at all, which
+    is exactly what a truncated stream produces.
+    """
+    assert needs_human_terminal_reason(text="") is None
+    assert needs_human_terminal_reason(text="ordinary output with no sentinel\n") is None
+    assert needs_human_terminal_reason(text="LIVESPEC_NEEDS_HUMAN: ") is None
+    assert needs_human_terminal_reason(text="LIVESPEC_NEEDS_HUMAN:    \nmore output\n") is None
+
+
+def test_the_shared_reason_parse_strips_the_routing_suffix_and_stops_at_the_line() -> None:
+    """The recorded reason, without the suffix every ending carries and without the rest.
+
+    The suffix is the terminal's own routing sentence, which is identical on
+    every ending and therefore carries nothing an operator reads; the line bound
+    is what keeps a later log line out of a reason the record cannot be edited
+    to remove.
+    """
+    text = (
+        "LIVESPEC_NEEDS_HUMAN: open Red commit a1b2c3d at the branch head; run "
+        "terminated, work preserved by reference, decision routed to the ledger "
+        "(blocked / needs-human)\nsome later line\n"
+    )
+
+    assert needs_human_terminal_reason(text=text) == "open Red commit a1b2c3d at the branch head"

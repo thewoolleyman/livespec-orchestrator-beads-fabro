@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from _tier0_support import TIMEOUT_SECONDS, _assert_success, _inspect_record
 from _tier1_support import _failure_block, _write_goal, _write_workflow
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
@@ -138,6 +139,16 @@ def _run_status(*, port: FabroPort, tmp_path: Path, name: str, body: str) -> tup
     return (str(kind), str(message or ""))
 
 
+# The Petri-era engine drops a run's Docker cpu and memory (research note 007,
+# probe p4), so this fails on the candidate and passes on the pinned engine.
+# The hp host bridges the gap with the aggregate `fabro-sandbox.slice`
+# envelope until the Kubernetes sandbox backend restores per-run limits; this
+# marker is that bridge's accepted regression and retires with the slice
+# (orchestrator-image/README.md, "The sandbox host envelope").
+@pytest.mark.xfail(
+    reason="bd-ib-otyq6l: accepted regression of the sandbox host envelope bridge",
+    strict=False,
+)
 def test_docker_resource_limits_reach_the_sandbox(*, tmp_path: Path, port: FabroPort) -> None:
     kind, message = _run_status(
         port=port, tmp_path=tmp_path, name="resource-limits", body=_RESOURCE_LIMITS_WORKFLOW
