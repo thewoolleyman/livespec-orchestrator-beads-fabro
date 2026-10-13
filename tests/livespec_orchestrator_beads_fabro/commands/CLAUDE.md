@@ -106,7 +106,7 @@ Tests for the thin-transport command modules under
   single fleet-global surrogate returns one verdict for both, and both a
   both-current and a both-stale fixture would agree with it.
 
-- The `test_plan_epoch_*.py` family covers the plan-authority epoch chain. Four
+- The `test_plan_epoch_*.py` family covers the plan-authority epoch chain. Five
   of them are worth knowing about before editing. `test_plan_epoch_chain_
   serialization.py` injects the WINNER's whole transition at the one instant
   that reproduces a genuine race — after the loser has read the token and found
@@ -125,8 +125,17 @@ Tests for the thin-transport command modules under
   primitives, which is what a stopped writer actually leaves behind, and its
   first case is the positive control: without a healthy chain reporting
   NOTHING, a verifier that called every chain a partial write would satisfy
-  every other case in the module. And two modules
-  (`test_plan_epoch_chain_retry.py`, `test_plan_epoch_genesis.py`) spell their
+  every other case in the module. `test_plan_epoch_chain_close_readback.py`
+  fails ONLY the read-back and lets the close itself land, which is the single
+  interleaving that separates a won close from a lost one — its helper reads
+  the head BEFORE installing the failure, because a patch covering the writer's
+  own stale check refuses it before any close is attempted and the test then
+  proves nothing about a read-back; and its second case is the positive
+  control, since a guard returning the unknown outcome for EVERY unadmitted
+  close would satisfy the first case while leaking a token on every lost race.
+  And three modules
+  (`test_plan_epoch_chain_retry.py`, `test_plan_epoch_genesis.py`,
+  `test_plan_epoch_chain_close_readback.py`) spell their
   expected constants as LITERALS and bind them to the exported names with one
   `getattr` assertion, because each module's Red predates the constants it
   binds and a Red's test bytes are fixed across its Red-to-Green pair.

@@ -933,10 +933,20 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   here may acquire a lock, open a socket, touch a host directory or reach past
   `bd` into SQL — a fence on any of those is wrong for this fleet however well
   it tests on one host.
-  SIX PROPERTIES AN EDITOR MUST NOT INVERT. The winner of a close is READ from
+  SEVEN PROPERTIES AN EDITOR MUST NOT INVERT. The winner of a close is READ from
   `close_reason`, never inferred from the exit code: a loser exits 0 when its
   conditional update matched no row, or 1 with Dolt `Error 1213`, and 22 of 80
-  closer exits were non-zero across relay research note 005's 20 trials. A
+  closer exits were non-zero across relay research note 005's 20 trials. That
+  read-back has THREE answers and not two — this writer's reason, a rival's, or
+  no reading at all — and the third is reported as
+  `close_outcome_unknown_finding` with the candidate LEFT STANDING. `token_reading`
+  renders an unreadable record as `present=False` with no close reason, which
+  compares unequal exactly as a rival's reason does, so a winner whose read-back
+  failed would otherwise delete the candidate its own committed payload names as
+  `next_token_id` — severing the chain permanently, since every later walk reaches
+  that id and reports it unreadable. The `present` test therefore runs BEFORE the
+  candidate delete and before any projection: a leaked token is recoverable and a
+  severed chain is not. A
   token is created ONLY with a server-assigned id and never re-created,
   because a duplicate explicit-id create is an upsert that reopens a closed
   record and erases its close reason (note 007) — which would admit a second

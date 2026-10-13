@@ -7,7 +7,7 @@ compare-and-swap, so exactly one writer's transition is admitted from any one
 epoch however many are racing and whatever hosts they run on
 (`.ai/ledger-writers-are-multi-host.md`; relay research note 005).
 
-FOUR PROPERTIES AN EDITOR MUST NOT INVERT.
+FIVE PROPERTIES AN EDITOR MUST NOT INVERT.
 
 THE WINNER IS READ, NEVER INFERRED. `attempt_close` learns nothing: a losing
 writer exits 0 when its conditional update matched no row, or exits 1 with
@@ -16,6 +16,16 @@ research note 005's 20 trials. So a non-zero close is "outcome unknown until
 read back" and the `close_reason` comparison is the whole verdict. Treating
 either exit as a verdict would hand two writers the same epoch, or make a
 winner discard its own committed transition.
+
+A CLOSE NOBODY COULD READ IS NEITHER OUTCOME, and it keeps its candidate. The
+read-back has three answers, not two: the reason this writer rendered, a
+different reason, or no reading at all — and `token_reading` reports the third
+as `present=False` with no close reason, which compares unequal exactly as a
+rival's reason does. A winner whose read-back failed would therefore delete
+the candidate its OWN COMMITTED PAYLOAD names as `next_token_id`, leaving the
+chain pointing at a token that no longer exists and no walk able to repair it.
+So an absent reading is reported and the candidate is left standing, because
+a leaked token is recoverable and a severed chain is not.
 
 THE LOSER CHANGES NO AUTHORITY AND TAKES ITS CANDIDATE WITH IT. Its only write
 was a candidate token nothing links to, which it deletes; the projections it
@@ -50,6 +60,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain_head import (
 )
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import (
     ChainFinding,
+    close_outcome_unknown_finding,
     receipt_without_event_finding,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_payload import (
@@ -179,7 +190,7 @@ def _close_and_project(
     client: BeadsClient,
     epic_id: str,
     request: TransitionRequest,
-) -> CommittedTransition | StaleEpochRefusal:
+) -> CommittedTransition | StaleEpochRefusal | ChainFinding:
     """Create the candidate, attempt the close, and read back who won."""
     head = request.observed_head
     candidate = create_token(client=client)
@@ -205,6 +216,13 @@ def _close_and_project(
     rendered = render_payload(payload=payload)
     attempt_close(client=client, token_id=head.current_token_id, reason=rendered)
     settled = token_reading(client=client, token_id=head.current_token_id)
+    if not settled.present:
+        return close_outcome_unknown_finding(
+            epic_id=epic_id,
+            token_id=head.current_token_id,
+            candidate_token_id=candidate,
+            operation_id=request.operation_id,
+        )
     if settled.close_reason != rendered:
         discard_token(client=client, token_id=candidate)
         return _refusal_from_reason(

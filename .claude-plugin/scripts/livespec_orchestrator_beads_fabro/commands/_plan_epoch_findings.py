@@ -19,6 +19,7 @@ from dataclasses import dataclass
 __all__: list[str] = [
     "CHAIN_FORK",
     "CHAIN_UNREADABLE",
+    "CLOSE_OUTCOME_UNKNOWN",
     "GENESIS_ALREADY_NAMED",
     "GENESIS_UNCONFIRMED",
     "MISSING_TRACKING",
@@ -27,6 +28,7 @@ __all__: list[str] = [
     "ChainFinding",
     "chain_fork_finding",
     "chain_unreadable_finding",
+    "close_outcome_unknown_finding",
     "genesis_already_named_finding",
     "genesis_unconfirmed_finding",
     "missing_tracking_finding",
@@ -41,6 +43,7 @@ PARTIAL_WRITE = "plan-epoch-chain: partial-write"
 RECEIPT_WITHOUT_EVENT = "plan-epoch-chain: receipt-without-event"
 GENESIS_ALREADY_NAMED = "plan-epoch-chain: genesis-already-named"
 GENESIS_UNCONFIRMED = "plan-epoch-chain: genesis-unconfirmed"
+CLOSE_OUTCOME_UNKNOWN = "plan-epoch-chain: close-outcome-unknown"
 
 # The sanctioned operation that creates a live epic's genesis token. Named in
 # the missing-tracking finding because that is the ONE write permitted to
@@ -120,6 +123,37 @@ def partial_write_finding(*, epic_id: str, detail: str) -> ChainFinding:
         code=PARTIAL_WRITE,
         detail=f"{epic_id}: {detail}",
         remedy="reconcile the epic's projections from the chain before authorizing a dispatch",
+    )
+
+
+def close_outcome_unknown_finding(
+    *, epic_id: str, token_id: str, candidate_token_id: str, operation_id: str
+) -> ChainFinding:
+    """Report a close whose own read-back failed, and the candidate kept standing.
+
+    `token_reading` collapses every unreadable record into
+    `present=False, close_reason=None`, so a writer that WON this close sees
+    exactly what a loser sees. The two owe opposite treatments: a loser's
+    candidate is linked to nothing and is deleted, while a winner's candidate
+    is the successor its own committed payload names — so deleting it on this
+    evidence leaves the chain pointing at a token that no longer exists, which
+    no later walk can repair.
+
+    The remedy therefore names BOTH dispositions rather than choosing one: the
+    close reason nobody could read is the only thing that says which happened,
+    and this finding is raised precisely because it was not read.
+    """
+    return ChainFinding(
+        code=CLOSE_OUTCOME_UNKNOWN,
+        detail=(
+            f"{epic_id}: the close of token {token_id} by operation {operation_id} "
+            f"could not be read back, so its candidate {candidate_token_id} was left standing"
+        ),
+        remedy=(
+            f"read token {token_id} directly, then either reconcile the epic's projections "
+            f"(its close reason names {operation_id}, so the transition committed) or delete "
+            f"the unused candidate {candidate_token_id} (it does not)"
+        ),
     )
 
 
