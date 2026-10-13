@@ -712,6 +712,32 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   pushes are one line apart in intent and only the measured difference keeps
   them apart.
 
+- `test_needs_human_push_failure_reporting.py` — binds work-item bd-ib-s6bowj
+  against the same Scenario 103 preservation duty, one layer on: when the
+  preservation push FAILS, the node's own output is the only witness to why.
+  `LIVESPEC_NEEDS_HUMAN_PUSH_FAILED` was a LABEL rather than a finding — the
+  push output was captured and then discarded — so hp-candidate canaries 5 (run
+  01M4NWARSD8T) and 6 (run 01M4PBFW4MP8) both ended on that marker with no
+  cause, and the hook-gated-push lead had to be chased through a THIRD run's
+  timings instead of read off the second one's output. The node's own script is
+  extracted from the committed graph, unescaped, and run in a throwaway checkout
+  whose BARE ORIGIN carries a refusing `pre-receive` hook: the hook belongs on
+  the origin because the node's git writes run hookless, so a local hook cannot
+  refuse this push at all, while a receiving-end refusal is the shape legacy run
+  01M4PPN7RX2M actually produced. Every absence is controlled first through a
+  plain `git push` in the same fixture — the error text must be in that output
+  for the node to have reported it, the raw output must exceed the cap for a
+  bound to have bitten, and the credential must be in that output for a
+  redaction to have removed anything — since otherwise "the secret is absent"
+  and "the detail is short" are equally consistent with a fixture that produced
+  neither. The cap is read off the node's OWN `head -c` rather than restated
+  here, because a literal keeps agreeing with itself after the node's cap moves;
+  the secret is asserted absent from the WHOLE of stderr, because a credential
+  escaping into the marker line is just as published as one inside the detail;
+  and the terminate-non-green case drives BOTH arms in one body, since either
+  alone passes for a node that ends correctly down one and falls out of the
+  other.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

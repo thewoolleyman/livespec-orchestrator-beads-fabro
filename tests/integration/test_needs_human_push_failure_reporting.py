@@ -52,6 +52,8 @@ _REASON = "loop cannot auto-resolve this work-item"
 _REFUSAL = "livespec-check-suite refuses the preserved tree: three files below the coverage floor"
 _SECRET = "not-a-real-credential-9f3a2b"
 _CREDENTIAL_URL = f"https://x-access-token:{_SECRET}@github.com/owner/repo.git"
+_REDACTED_URL = "https://REDACTED@github.com/owner/repo.git"
+_BYTE_CAP = re.compile(r"head -c (?P<cap>[0-9]+)")
 _FILLER_LINES = 120
 _WIP = "in-progress.txt"
 _WIP_BODY = "the unfinished work the preservation node exists to save\n"
@@ -69,6 +71,36 @@ def test_a_failed_preservation_push_reports_the_push_command_error_text(
     completed = _run_needs_human(work=work, run_id=_RUN_ID)
 
     assert _REFUSAL in _reported_push_detail(stderr=completed.stderr)
+
+
+def test_the_reported_push_error_is_bounded_and_redacts_a_remote_url_credential(
+    tmp_path: Path,
+) -> None:
+    """Assertion 2: a cap the raw output exceeds, and a credential it carries.
+
+    Both halves are controlled against the SAME raw push output, because each
+    absence asserted here is otherwise indistinguishable from a fixture that
+    produced nothing to remove: a short report is evidence of a bound only
+    beside an output that exceeded it, and a secret-free report is evidence of a
+    redaction only beside an output that carried the secret.
+
+    The secret is asserted absent from the WHOLE of stderr rather than from the
+    reported region, because a credential that escaped into the marker line or
+    past the sentinel would be just as published as one inside the detail.
+    """
+    work, _origin = _refusing_checkout(tmp_path=tmp_path)
+    control = _control_push_output(work=work)
+    assert _SECRET in control
+
+    completed = _run_needs_human(work=work, run_id=_RUN_ID)
+
+    detail = _reported_push_detail(stderr=completed.stderr)
+    assert _SECRET not in completed.stderr
+    assert _REDACTED_URL in detail
+    cap = _declared_byte_cap()
+    assert len(control) > cap
+    assert len(detail.strip("\n")) <= cap
+    assert str(cap) in _marker_line(stderr=completed.stderr)
 
 
 def test_a_successful_preservation_push_names_the_ref_it_pushed(
@@ -223,6 +255,24 @@ def _reported_push_detail(*, stderr: str) -> str:
     before_sentinel = after_marker.split(_SENTINEL, 1)[0]
     assert "\n" in before_sentinel, before_sentinel
     return before_sentinel.split("\n", 1)[1]
+
+
+def _marker_line(*, stderr: str) -> str:
+    """The push-failed marker's own line, which must declare the cap it applied."""
+    assert _PUSH_FAILED in stderr, stderr
+    return stderr.split(_PUSH_FAILED, 1)[1].split("\n", 1)[0]
+
+
+def _declared_byte_cap() -> int:
+    """The node's OWN cap, read off its script — never a figure restated here.
+
+    A literal written in this module would keep agreeing with itself after the
+    node's cap moved underneath it, and the claim is that the node bounds what
+    it reports, not that it bounds it at some number this module remembers.
+    """
+    match = _BYTE_CAP.search(_node_script())
+    assert match is not None, "the needs_human script declares no `head -c <cap>` byte cap"
+    return int(match.group("cap"))
 
 
 def _pushed_refs(*, origin: Path) -> list[str]:
