@@ -47,12 +47,14 @@ _RECORDED_AT = "2026-10-11T09:00:00Z"
 _LATER = "2026-10-12T09:00:00Z"
 
 _AUTHORIZED = "plan-continuation: authorized"
+_REVOKED = "plan-continuation: revoked"
 _UNTIL = "until: archive"
 _BY = "by: Chad Woolley"
 _DIRECTIVE = "directive: continue to the archive without asking"
 _ATTENDED = "recorded-attended: true"
 
 _COMPLETE_AUTHORIZATION = "\n".join((_AUTHORIZED, _UNTIL, _BY, _DIRECTIVE, _ATTENDED))
+_COMPLETE_REVOCATION = "\n".join((_REVOKED, _BY))
 _ORDINARY_SCOPE_EVENT = "Requirement carriers:\n- one\n\nExplicit deferrals:\n- none"
 _HANDOFF = "Next action: dispatch bd-ib-onemore"
 
@@ -63,20 +65,23 @@ def _entry(
     return PlanTimelineEntry(kind=kind, body=body, author=_AUTHOR, created_at=created_at)
 
 
+def _timeline_findings(
+    *, entries: tuple[PlanTimelineEntry, ...]
+) -> tuple[PlanContinuationRulingFinding, ...]:
+    """Every finding over one plan epic carrying exactly `entries`."""
+    return plan_continuation_ruling_findings(
+        epics=(OpenPlanEpic(epic_id=_EPIC, plan_slug=_SLUG, entries=entries),)
+    )
+
+
 def _findings(*, malformed: str) -> tuple[PlanContinuationRulingFinding, ...]:
     """Every finding over one plan epic whose timeline holds `malformed` plus controls."""
-    return plan_continuation_ruling_findings(
-        epics=(
-            OpenPlanEpic(
-                epic_id=_EPIC,
-                plan_slug=_SLUG,
-                entries=(
-                    _entry(body=malformed),
-                    _entry(body=_COMPLETE_AUTHORIZATION, created_at=_LATER),
-                    _entry(body=_ORDINARY_SCOPE_EVENT, created_at=_LATER),
-                    _entry(body=_HANDOFF, kind=HANDOFF_KIND, created_at=_LATER),
-                ),
-            ),
+    return _timeline_findings(
+        entries=(
+            _entry(body=malformed),
+            _entry(body=_COMPLETE_AUTHORIZATION, created_at=_LATER),
+            _entry(body=_ORDINARY_SCOPE_EVENT, created_at=_LATER),
+            _entry(body=_HANDOFF, kind=HANDOFF_KIND, created_at=_LATER),
         )
     )
 
@@ -195,4 +200,84 @@ def test_every_missing_line_of_one_ruling_is_named_in_one_finding() -> None:
 
     assert [one.missing for one in findings] == [
         ("until:", "by:", "directive:", "recorded-attended: true")
+    ]
+
+
+def test_a_revocation_lacking_its_by_line_is_reported() -> None:
+    findings = _findings(malformed=_REVOKED)
+
+    assert [one.missing for one in findings] == [("by:",)]
+    [reported] = findings
+    assert _REVOKED in reported.event
+
+
+def test_a_revocation_whose_by_line_carries_no_value_is_reported() -> None:
+    findings = _findings(malformed="\n".join((_REVOKED, "by: ")))
+
+    assert [one.missing for one in findings] == [("by:",)]
+
+
+def test_a_complete_revocation_is_silent() -> None:
+    """A revocation owes its `by:` line and nothing else.
+
+    It is two lines by construction, so neither the attended marker nor the
+    five-line count is a condition on it — a verdict that applied the
+    authorization's arms here would report every well-formed revocation ever
+    written.
+    """
+    assert _timeline_findings(entries=(_entry(body=_COMPLETE_REVOCATION),)) == ()
+
+
+def test_a_complete_authorization_is_silent() -> None:
+    assert _timeline_findings(entries=(_entry(body=_COMPLETE_AUTHORIZATION),)) == ()
+
+
+def test_a_timeline_carrying_no_ruling_is_silent() -> None:
+    """Neither an ordinary scope event nor a handoff is a ruling.
+
+    The handoff body is ruling-SHAPED — its first line is the authorization
+    prefix — so this also pins the kind test: a verdict keyed on the first line
+    alone would report a handoff comment nobody can record a ruling in.
+    """
+    assert (
+        _timeline_findings(
+            entries=(
+                _entry(body=_ORDINARY_SCOPE_EVENT),
+                _entry(body=_HANDOFF, kind=HANDOFF_KIND),
+                _entry(body=_AUTHORIZED, kind=HANDOFF_KIND),
+            )
+        )
+        == ()
+    )
+
+
+def test_each_epic_handed_in_reports_its_own_rulings_under_its_own_id() -> None:
+    """The verdict is over a SET of epics, and each finding names the epic it came from.
+
+    Two epics rather than one, each with a different malformed ruling: a verdict
+    that reported the right count while attributing both to the first epic would
+    satisfy every single-epic case above.
+    """
+    second = "bd-ib-otherplan"
+    findings = plan_continuation_ruling_findings(
+        epics=(
+            OpenPlanEpic(
+                epic_id=_EPIC,
+                plan_slug=_SLUG,
+                entries=(_entry(body="\n".join((_AUTHORIZED, _UNTIL, _BY, _ATTENDED))),),
+            ),
+            OpenPlanEpic(
+                epic_id=second,
+                plan_slug="another-live-plan",
+                entries=(
+                    _entry(body=_COMPLETE_AUTHORIZATION),
+                    _entry(body=_REVOKED, created_at=_LATER),
+                ),
+            ),
+        )
+    )
+
+    assert [(one.subject, one.created_at, one.missing) for one in findings] == [
+        (_EPIC, _RECORDED_AT, ("directive:",)),
+        (second, _LATER, ("by:",)),
     ]
