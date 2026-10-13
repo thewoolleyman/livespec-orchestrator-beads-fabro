@@ -506,6 +506,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 172 — A stall-watchdog cancel is never non-convergence: a first cancel is released and recovered, a second rests for a human",
+    "work_item": "bd-ib-3snvbf",
+    "first_seen": "2026-10-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 26 — list-work-items emits lane and lane_reason",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-29"

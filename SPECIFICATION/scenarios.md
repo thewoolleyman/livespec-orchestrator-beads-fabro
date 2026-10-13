@@ -4497,6 +4497,14 @@ Feature: A published run is finished, not rebuilt
     Given a ready item whose earlier run's factory no longer holds the run, and whose pull request's latest proof record is a not_captured record
     When the operator drives resume for the item
     Then the new run enters the workflow at the fix stage and no implement stage runs
+  Scenario: A stall-cancelled run with no proof record resumes from its cancel record
+    Given a ready item whose latest dispatch's run completed publish_draft and was cancelled by the watchdog while executing proof_capture, leaving no proof record on its pull request
+    And that dispatch's watchdog-stall-cancel record names a head equal to the pull request's current head
+    And the factory authoritatively reports that it no longer holds that run
+    When resume runs for the item
+    Then the new run enters the workflow at proof_capture on that head and no dod_gate, implement or janitor stage precedes it
+    And the resume record names the cancel record as the source that decided the stage
+    And the dispatch journal carries neither a publish-branch-reclaim record nor a publish-branch-reclaim-held record for the resume
   Scenario: The earlier run's records are attributed to the resumed run and the pointer names both
     Given an item resumed from a pull request whose verified record carries the earlier run's identifier
     When the resumed run merges the pull request and the acceptance pass runs
@@ -4570,7 +4578,7 @@ Feature: A resume never continues from a state the records do not describe
     Then the resume refuses with exit code 3 before any run exists, naming the pull request state and reconcile-merged as the remedy
     And reconcile-merged for the item still requires that real merge
   Scenario: Nothing to resume from
-    Given a ready item whose publish branch carries no open pull request, or whose pull request carries no proof record naming a head
+    Given a ready item whose publish branch carries no open pull request, or whose pull request carries no proof record naming a head and whose latest dispatch left no watchdog-stall-cancel record that anchors one
     When the operator drives resume for the item
     Then the resume refuses with exit code 3 before any run exists, naming what is missing and a plain dispatch as the remedy
   Scenario: A third resume from the same pull request is refused
@@ -5544,4 +5552,113 @@ Feature: Master-CI preflight waits on a pending run instead of treating it as fa
     Then the dispatch does not start and the work item is not claimed
       And the journal records reason master-ci-pending with status deferred
       And the operator text says the run is still running and has not failed, without the ERROR prefix or the red-default-branch recovery text
+```
+
+## Scenario 172 — A stall-watchdog cancel is never non-convergence: a first cancel is released and recovered, a second rests for a human
+
+```gherkin
+Feature: A stall-watchdog cancel keeps the work it can and asks a human only on a repeat
+  Scenario: The watchdog does not cancel a run inside an open command node
+    Given a dispatched run whose last agent stage completed and whose event stream shows the janitor command node started and not completed
+    And the heartbeat has not advanced for longer than the stall window
+    When the watchdog samples the run before the janitor node's resolved timeout has elapsed
+    Then it does not cancel the run
+  Scenario: A newer event is not masked by an older heartbeat
+    Given a dispatched run whose heartbeat's newest beat is older than the newest event in its event stream
+    When the watchdog samples the run
+    Then the sample reports the newer event's instant as the run's progress
+  Scenario: A run with no progress and no open command node is still cancelled
+    Given a dispatched run whose heartbeat and event stream both stay unchanged for the full stall window with no command node open
+    When the watchdog samples it
+    Then it cancels the run as stalled-no-progress
+  Scenario: A first stall cancel after publishing is released and resumed
+    Given a dispatched item whose run completed publish_draft, pushing a head to an open draft pull request
+    And the watchdog cancels the run as stalled-no-progress while it executes proof_capture
+    And the item's preceding dispatch did not end stalled-no-progress
+    When the Dispatcher records the outcome
+    Then the journal carries a watchdog-stall-cancel record naming the run id, the factory, proof_capture as the stage, the pull request and that head
+    And a ledger comment on the item names the run id, the factory, the stage, the pull request and the head
+    And the item is returned to ready with no blocked_reason, is not moved to backlog, and no non-convergence-bounce record is journaled
+    And the next dispatch of the item invokes resume and journals neither a publish-branch-reclaim record nor a publish-branch-reclaim-held record
+    And when the resumed run's review approves, its record shows no visit to dod_gate, implement or janitor
+  Scenario: A first stall cancel before publishing is released and recovered from preserved work
+    Given a dispatched item whose run the watchdog cancels as stalled-no-progress while it executes implement
+    And the item's preceding dispatch did not end stalled-no-progress
+    And the failed run has verified preserved work at an immutable commit SHA
+    When the Dispatcher records the outcome and the ordinary admission valve next admits the item
+    Then a ledger comment on the item names the run id, the factory and implement as the stage
+    And the dispatch claim is released and the item returns to ready with no blocked_reason before admission
+    And the item is not moved to backlog and no non-convergence-bounce record is journaled
+    And the next run is a plain dispatch seeded from that preserved commit
+    And its seed record names the source run, remote, immutable commit SHA and preservation reference
+
+  Scenario: A first stall release is replayable without affecting a newer claim
+    Given an interrupted first-stall release for a recorded factory and run
+    When reconciliation completes that release and later replays it after a newer dispatch has claimed the item
+    Then the original release is completed without duplicate cancel records
+    And the newer dispatch claim is not released
+    And the released stall consumes no budget of the three rework caps
+    And it neither increments nor resets the across-dispatch non-progress count
+
+  Scenario: A second stall is an item-attributable terminal
+    Given an item whose preceding dispatch ended stalled-no-progress
+    And the current attempt ends stalled-no-progress without advancing beyond its established progress high-water mark
+    When the Dispatcher records the terminal
+    Then the item rests at blocked with blocked_reason needs-human
+    And the terminal increments the across-dispatch non-progress count once
+    And replaying the same observation does not increment it again
+
+  Scenario: The cancel record uses the run's last published head
+    Given a run that completed publish_draft twice and is cancelled between its last completed publish_draft and proof_capture
+    And origin has since moved to a different head
+    When the Dispatcher journals watchdog-stall-cancel
+    Then the record names the work-item, dispatch id, run id, factory and proof_capture as the selected next stage
+    And it names the pull request and the head pushed by the run's last completed publish_draft
+    And it does not substitute origin's current head
+
+  Scenario: An unreadable published head is explicit
+    Given a cancelled run whose event stream records a completed publish_draft
+    And the head pushed by that node cannot be read from the run's record
+    When the Dispatcher journals watchdog-stall-cancel
+    Then the record explicitly states that the published head could not be read
+    And that record cannot anchor a resume
+
+  Scenario: A cancel between publication and capture can anchor resume
+    Given a ready item whose latest dispatch was cancelled between its last completed publish_draft and proof_capture
+    And no proof record carries that dispatch's identifier
+    And its cancel record names the unchanged published head
+    And all other resume preconditions pass
+    When resume runs for the item
+    Then the cancel record anchors the published head and the new run enters at proof_capture
+
+  Scenario: A proof record takes precedence over a cancel anchor
+    Given a ready item whose latest dispatch has both a proof record and a watchdog-stall-cancel record
+    And the proof record carries that dispatch's identifier and names a head
+    And all other resume preconditions pass
+    When resume selects its anchor
+    Then it uses the proof record rather than the cancel record
+
+  Scenario Outline: A cancel during rework cannot anchor resume
+    Given a ready item whose latest dispatch was cancelled at <stage> after an earlier completed publish_draft
+    And no proof record on the pull request names a head
+    And its cancel record names the earlier published head
+    When resume runs for the item
+    Then it refuses before any run exists and names a plain dispatch as the remedy
+
+    Examples:
+      | stage         |
+      | janitor       |
+      | fix           |
+      | publish_draft |
+  Scenario: A second consecutive stall cancel rests for a human
+    Given an item whose preceding dispatch ended stalled-no-progress
+    When the watchdog cancels the item's current run as stalled-no-progress
+    Then the item rests at blocked with blocked_reason needs-human
+    And its ledger comment names both cancelled runs, their factories and stages, and the remedy the resume refusal ladder computes
+    And no further dispatch or resume is invoked automatically
+  Scenario: Calibration does not read a stall cancel as non-convergence
+    Given a journal holding a stall-cancelled dispatch and a fix-loop-cap non-convergence
+    When the calibration analysis pass runs
+    Then it counts the fix-loop-cap dispatch as a non-convergence observation
+    And it does not count the stall-cancelled dispatch as one
 ```
