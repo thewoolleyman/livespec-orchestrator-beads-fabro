@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.194.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.193.0...v0.194.0) (2026-10-13)
+
+
+### Features
+
+* carry the event kind in the transition payload, not only in the comment ([c6c779d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c6c779db62e339ad88a70ec685af3e88f09f6642))
+* keep a long-lived chain at two live tokens and a constant-size payload ([a345b38](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a345b381b28a120bdd695ee211a18c32ecaaf43f))
+* let only the sanctioned genesis write start an epic's authority chain ([3d0d923](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3d0d9234379098849c59ddf9c918ae2ed9f27f43))
+* model the server's token verbs faithfully in the beads seam ([7fd3f89](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7fd3f8961329bb4c3efa91708cb38ba20c8e12bf))
+* recover a retried operation's original transition instead of repeating it ([876a49c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/876a49ceb1baf88b16500e2ebc7cec32847f2ed8))
+* report and reconcile a partial write before authorizing a dispatch ([0de96cb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0de96cb522500e82d1f48df59cb67631b16779e4))
+* serialize plan authority transitions on the server's conditional close ([93af88b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/93af88b3438f5f3c1bc59884ac8a5747badd16d7))
+
+
+### Bug Fixes
+
+* give a pane probe a read budget that outlasts its wait ([d006c9d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d006c9dc0fc0cc3b671ec479719557b2fa453d83))
+* keep a candidate standing when a won close could not be read back ([2e2d1bc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2e2d1bc3b17a6a9543509bda7d2036bc089aa38a))
+* **provider-limits:** carry every measured provider-limit built-in signature ([a5d10e6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a5d10e6afb136cc4bc154c5c13018e3bbe379ca9))
+* **provider-limits:** detect every measured Claude provider-limit sentence ([7e33da2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7e33da23af517b870a273b21b8f18616ca8714ab))
+* **provider-limits:** parse the Codex usage-limit token as a JSON field ([d759c5a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d759c5a81805ef14f28ed2d0702e0434ddff9c82))
+* return the deadline outcome for a lone hung pane wait ([adc45f4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/adc45f473fe02583ed9ba03c297b1b1d524c6eec))
+
 ## [0.193.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.192.0...v0.193.0) (2026-10-13)
 
 
