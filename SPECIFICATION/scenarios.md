@@ -4424,6 +4424,7 @@ Feature: The Definition of Done rules are applied where the item is filed
     When the filer confirms
     Then the item is filed and carries the advisory finding as a ledger comment
     And intake does not withhold ready on that finding
+    And the wall's advisory finding alone does not withhold ready; the pre-admission judgement of Scenario 174 still applies
   Scenario: A mechanical finding withholds ready
     Given a filer confirms an implement-kind item whose Definition of Done references a heading that does not exist
     When intake routes the filed item
@@ -5689,4 +5690,29 @@ Feature: The watchdog's poll cost does not grow with the factory's run history
     When a per-run read of the run fails or returns an answer the watchdog cannot interpret
     Then the watchdog does not report the run as disappeared
     And it treats the poll as unobservable
+```
+
+## Scenario 174 — The Definition-of-Done judgement runs before admission and holds an item it would rest at needs-human
+
+```gherkin
+Feature: A judged Definition-of-Done defect is found before a dispatch is spent on it
+  Scenario: An item the judgement would rest at needs-human is held out of ready
+    Given an implement-kind item whose References line omits the scenario that governs its assertion
+    When intake routes the item toward ready
+    Then the pre-admission judgement runs against its effective criteria and referenced headings
+    And the item is not routed to ready
+    And its verdict, with each remedy, is appended to the item as a ledger comment
+  Scenario: An item the judgement admits moves to ready as before
+    Given an implement-kind item whose Definition of Done the judgement admits
+    When intake routes the item toward ready
+    Then the item moves to ready exactly as it would without the judgement
+  Scenario: A judgement that cannot run does not hold the item
+    Given the pre-admission judgement cannot run for an item
+    When intake routes the item toward ready
+    Then the item is routed as it would be without the judgement
+    And a ledger comment records that the pre-admission judgement did not run and why
+  Scenario: Held items are surfaced
+    Given an item held by the pre-admission judgement
+    When needs-attention composes hygiene facts
+    Then a hygiene fact names the item and its verdict's first remedy
 ```
