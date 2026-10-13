@@ -234,8 +234,16 @@ def resolve_dispatch_candidates(*, repo: Path) -> tuple[RenderedCandidate, ...] 
     circuiting here would hand the gate `None` for the common case and refuse
     every dispatch any live record happened to find, which is the behaviour
     being retired.
+
+    The block is the WORKFLOW-SCOPED one, exactly as its two siblings read it.
+    A repository-level `pr` entry is compatibility configuration for a
+    groom-kind variant, so on an implementation workflow it must reach none of
+    the reads below: left in, `_resolve_chains` refuses for naming a node the
+    implementation workflow declares no adapter input for, and every refusal
+    here becomes `None` -- which withholds a verdict for every dispatch in a
+    repository carrying the ratified entry, and says nothing on any surface.
     """
-    block = dispatcher_block(cwd=repo)
+    block = _workflow_scoped_block(repo=repo)
     catalogs = resolve_acp_catalogs(block=block)
     if isinstance(catalogs, str):
         return None

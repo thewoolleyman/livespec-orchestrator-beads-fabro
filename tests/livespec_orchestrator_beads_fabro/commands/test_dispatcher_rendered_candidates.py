@@ -33,6 +33,10 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
+    PUBLICATION_ACP_NODE,
+)
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _PREFLIGHT = "livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight"
 _WORKFLOW_SUBPATH = (".fabro", "workflows", "implement-work-item")
@@ -101,3 +105,40 @@ def test_this_repository_renders_one_candidate_for_every_resolved_node() -> None
         entry.candidate.identity is None or entry.candidate.identity.availability_key
         for entry in rendered
     )
+
+
+def test_a_repository_level_publication_entry_is_scoped_out_not_refused() -> None:
+    """This resolver reads the WORKFLOW-SCOPED block, like its two siblings.
+
+    A repository-level `pr` entry is compatibility configuration for a
+    groom-kind variant, and the ratified clause says an implementation dispatch
+    must IGNORE it and journal it as not-applied -- never refuse for it. The
+    implementation workflow declares no `pr_adapter` input, so an UNSCOPED read
+    of the repository block makes the chain resolution refuse with "configures
+    ACP node 'pr', but the workflow declares no adapter input for it", and this
+    resolver converts every refusal into `None`.
+
+    `None` is the fail-closed answer the legacy provider gate treats as "this
+    dispatch's adapters were never observed", so the leak does not surface as
+    an error anywhere -- it silently withholds a verdict for EVERY dispatch in
+    a repository carrying the compatibility entry, which is the fail-open-shaped
+    record this repository's verification discipline rates worse than a refusal.
+
+    THE TWO CONTROLS ARE WHAT MAKE THE MIDDLE ASSERTION MEAN "SCOPED", and
+    without them it is just the positive control above restated. The first reads
+    the entry off the RAW block, so a repository that stopped carrying it would
+    fail here rather than pass this test vacuously. The last reads a sibling
+    resolver that ALREADY scopes, pinning that the scoped view genuinely drops
+    the node rather than that the entry was harmless all along.
+    """
+    preflight = import_module(_PREFLIGHT)
+    raw_block = preflight.dispatcher_block(cwd=_REPO_ROOT)
+    declared = preflight.repository_acp_chains(
+        block=raw_block, catalogs=preflight.resolve_acp_catalogs(block=raw_block)
+    )
+    assert PUBLICATION_ACP_NODE in declared, "this repository must carry the entry under test"
+
+    assert _resolve(repo=_REPO_ROOT) is not None
+
+    generations = preflight.resolve_acp_primary_generations(repo=_REPO_ROOT)
+    assert PUBLICATION_ACP_NODE not in generations
