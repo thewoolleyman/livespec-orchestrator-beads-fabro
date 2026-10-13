@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.190.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.190.1...v0.190.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* **plan:** resolve the project's own repository from livespec.primaryPath in a worktree (bd-ib-bqmrvq) ([e833f5b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e833f5b0cf83e5b1d63e08321d022ba13fc8509c))
+
 ## [0.190.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.190.0...v0.190.1) (2026-10-13)
 
 
