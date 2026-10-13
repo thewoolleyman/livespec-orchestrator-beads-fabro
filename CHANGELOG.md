@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.190.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.189.0...v0.190.0) (2026-10-13)
+
+
+### Features
+
+* **dispatcher:** derive the gate's providers from the resolved adapters ([b1a21d5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b1a21d558e524275273f6406a74928931a0694f0))
+* **dispatcher:** refuse admission only on a covered rendered candidate ([4b39c48](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4b39c48f790003d794b97177252b25c669bee0d0))
+* **dispatcher:** resolve the dispatch's rendered candidates once per pass ([b823477](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b823477a8721c348c2f16383cf342dad517db952))
+* **dispatcher:** scope the legacy provider gate to rendered candidates ([85776f5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/85776f5c46eda527b36378c1ff69a1e3b6325c67))
+
+
+### Bug Fixes
+
+* commit the needs-human preserved tree without the pre-commit check suite ([c62fbf7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c62fbf7ff70170a4c8b7e5f1381d8137e83b3d54))
+* push the needs-human preservation ref without the pre-push check suite ([bb6ea6b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bb6ea6b6e0ffbe1e454d4ac7fa461031928a7387))
+
 ## [0.189.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.188.3...v0.189.0) (2026-10-12)
 
 
