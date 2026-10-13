@@ -68,13 +68,20 @@ set -uo pipefail
 # they are collecting (the off-PATH probe exits 127, and a refusing gate exits
 # 7), so an errexit shell would abort on its own proof.
 
-readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Assigned BEFORE being made readonly, so the subshell's exit status is the
+# one tested. A `readonly X="$(...)"` reports the assignment's status, not the
+# command's, so a failed `cd` there would leave REPO_ROOT empty at exit 0 -
+# and an empty REPO_ROOT puts the gate store at `/tmp/gate-runs`, which is
+# precisely the expansion the `${var:?}` guards in cleanup() defend against.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 1
+readonly REPO_ROOT
 cd "$REPO_ROOT" || exit 1
 
 # One fresh token per invocation. The nanoseconds field is what makes two
 # invocations in the same second distinct, and the pid covers two shells that
 # somehow read the same nanosecond.
-readonly TOKEN="$(date -u +%Y%m%dT%H%M%SZ)-$$-$(date +%N)"
+TOKEN="$(date -u +%Y%m%dT%H%M%SZ)-$$-$(date +%N)" || exit 1
+readonly TOKEN
 readonly SCRATCH="${TMPDIR:-/tmp}/bd-ib-jqvqlf-proof/$TOKEN"
 readonly SHIM_BIN="$SCRATCH/shim-bin"
 readonly MARKER="$SCRATCH/first-probe-slow.marker"
@@ -249,7 +256,10 @@ cleanup() {
             say "  gate $run_id STILL HAS $survivors live process(es) after kill -9"
             failures=$((failures + 1))
         fi
-        rm -rf "$GATE_STORE/$run_id"
+        # `:?` on BOTH halves: this is an `rm -rf` of a composed path, so an
+        # empty variable either side would widen it to the store root or to
+        # `/`. The guard aborts the expansion instead.
+        rm -rf "${GATE_STORE:?}/${run_id:?}"
     done
     local wait_id
     for wait_id in "${CREATED_WAIT_IDS[@]+"${CREATED_WAIT_IDS[@]}"}"; do
