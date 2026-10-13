@@ -1,12 +1,12 @@
 # Workflow-edit exemption - one exemption binds to one reviewed change.
 #
-# The change: add `just check-fabro-port-seam` to the check-metadata-batch
-# job's run block in .github/workflows/ci.yml, beside the other repo-local
-# slugs, so the CI-matrix completeness check sees the new `just check`
-# aggregate member that bd-ib-sbg3ze introduces (the executable guard that
-# refuses a Fabro engine call outside the FabroPort family). No product code
-# changes in this commit; the check and its tests landed in the same pull
-# request (2692) through the factory. Human authorization: the maintainer
-# wrote "I authorize the CI job" in the fabro-currency session on 2026-10-09.
-work_item=bd-ib-sbg3ze
-reason=CI must run the repo-local check-fabro-port-seam slug that pull request 2692 adds to the check aggregate; the maintainer authorized this workflow edit on 2026-10-09.
+# The change: add `just check-plan-continuation-ruling` to the
+# check-metadata-batch job's run block in .github/workflows/ci.yml, beside
+# check-plan-close-proof, so CI runs the repo-local plan_continuation_ruling
+# conformance verdict that SPECIFICATION/contracts.md v124 requires and this
+# pull request adds to the check aggregate (dev-tooling/checks script over the
+# package primitive bd-ib-63bgy7 landed). Human authorization: the maintainer
+# answered "Yes, land it under the label" in the definition-and-proof-of-done
+# session on 2026-10-13.
+work_item=bd-ib-7iyfo5
+reason=Add one line to the ci.yml metadata batch, just check-plan-continuation-ruling beside check-plan-close-proof, wiring the v124 plan_continuation_ruling conformance verdict; authorized per-case by the maintainer on 2026-10-13 in the definition-and-proof-of-done session.
