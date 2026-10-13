@@ -26,7 +26,11 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
+    "AUTHORIZED_LINE_COUNT",
     "AUTHORIZED_PREFIX",
+    "BY_PREFIX",
+    "DIRECTIVE_PREFIX",
+    "RECORDED_ATTENDED_LINE",
     "REVOKED_PREFIX",
     "UNTIL_PREFIX",
     "ContinuationRuling",
@@ -40,12 +44,16 @@ __all__: list[str] = [
 AUTHORIZED_PREFIX = "plan-continuation: authorized"
 REVOKED_PREFIX = "plan-continuation: revoked"
 
+# The ruling-line vocabulary is PUBLIC so the `plan_continuation_ruling`
+# conformance verdict reports against the same literals this parser reads. A
+# second copy would read identically on the day it was written and silently stop
+# agreeing on the day either side changed, and the verdict's whole guarantee is
+# that a ruling it reports is one this parser declines to treat as current.
 UNTIL_PREFIX = "until: "
-
-_BY_PREFIX = "by: "
-_DIRECTIVE_PREFIX = "directive: "
-_RECORDED_ATTENDED_LINE = "recorded-attended: true"
-_AUTHORIZED_LINE_COUNT = 5
+BY_PREFIX = "by: "
+DIRECTIVE_PREFIX = "directive: "
+RECORDED_ATTENDED_LINE = "recorded-attended: true"
+AUTHORIZED_LINE_COUNT = 5
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -88,12 +96,12 @@ def current_continuation_ruling_from_entries(
     # LAST line of a ruling the primitive wrote. A body carrying a sixth line is
     # one a caller appended to by hand, and an index read of line five would
     # treat it as current anyway.
-    if len(lines) != _AUTHORIZED_LINE_COUNT:
+    if len(lines) != AUTHORIZED_LINE_COUNT:
         return None
     until = ruling_line_value(line=lines[1], prefix=UNTIL_PREFIX)
-    by = ruling_line_value(line=lines[2], prefix=_BY_PREFIX)
-    directive = ruling_line_value(line=lines[3], prefix=_DIRECTIVE_PREFIX)
-    if until is None or by is None or directive is None or lines[4] != _RECORDED_ATTENDED_LINE:
+    by = ruling_line_value(line=lines[2], prefix=BY_PREFIX)
+    directive = ruling_line_value(line=lines[3], prefix=DIRECTIVE_PREFIX)
+    if until is None or by is None or directive is None or lines[4] != RECORDED_ATTENDED_LINE:
         return None
     if until != "archive" and instant_expired(until=until, now=now):
         return None

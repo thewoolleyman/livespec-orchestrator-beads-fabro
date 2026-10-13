@@ -137,3 +137,62 @@ def test_a_body_too_short_to_carry_its_until_line_is_reported() -> None:
 
     assert len(findings) == 1
     assert "until:" in findings[0].missing
+
+
+def test_a_ruling_lacking_its_by_line_is_reported() -> None:
+    findings = _findings(malformed="\n".join((_AUTHORIZED, _UNTIL, _DIRECTIVE, _ATTENDED)))
+
+    assert [one.missing for one in findings] == [("by:",)]
+
+
+def test_a_ruling_lacking_its_directive_line_is_reported() -> None:
+    findings = _findings(malformed="\n".join((_AUTHORIZED, _UNTIL, _BY, _ATTENDED)))
+
+    assert [one.missing for one in findings] == [("directive:",)]
+
+
+def test_a_ruling_whose_last_line_is_not_the_attended_marker_is_reported() -> None:
+    """The hand-written ruling of Scenario 168, which is this verdict's whole point.
+
+    The marker is the one line a caller cannot supply — the scope-event primitive
+    writes it after every caller-provided field — so a body carrying everything
+    else is exactly what a hand-authored comment looks like.
+    """
+    findings = _findings(
+        malformed="\n".join((_AUTHORIZED, _UNTIL, _BY, _DIRECTIVE, "recorded-attended: false"))
+    )
+
+    assert [one.missing for one in findings] == [("recorded-attended: true",)]
+
+
+def test_a_ruling_carrying_a_sixth_line_is_reported_though_no_line_is_missing() -> None:
+    """The one malformed shape that passes every line test.
+
+    The extra line sits in the MIDDLE rather than at the end, so `until:`, `by:`
+    and `directive:` are each still at their own position and the attended marker
+    is still last. Appending it instead would also break the last-line arm, and the
+    case would then pass against a verdict that never counted the lines at all.
+    """
+    findings = _findings(
+        malformed="\n".join(
+            (_AUTHORIZED, _UNTIL, _BY, _DIRECTIVE, "note: appended by hand", _ATTENDED)
+        )
+    )
+
+    assert [one.missing for one in findings] == [()]
+    [reported] = findings
+    assert "more than 5 lines" in reported.event
+
+
+def test_every_missing_line_of_one_ruling_is_named_in_one_finding() -> None:
+    """One ruling yields ONE finding naming all of its missing lines, never several.
+
+    A verdict emitting one finding per missing line would satisfy every case above
+    and report four offenders for one comment, which is four remediations for one
+    act.
+    """
+    findings = _findings(malformed="\n".join((_AUTHORIZED, "stray prose")))
+
+    assert [one.missing for one in findings] == [
+        ("until:", "by:", "directive:", "recorded-attended: true")
+    ]

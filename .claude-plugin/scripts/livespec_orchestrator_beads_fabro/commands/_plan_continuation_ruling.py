@@ -16,23 +16,29 @@ rulings does a human have to look at. A stale malformed ruling is exactly as
 hand-written as a current one, and it is the one nothing else surfaces, so the
 whole timeline is in scope.
 
-WHY THE LINES ARE READ AT THE POSITIONS A RULING CARRIES THEM. The clause's
-guarantee runs one way — a ruling this check reports is not current — and the
-cheapest way to hold it is to ask the same question the parser asks, which is an
-INDEXED read: the attended marker is written after every caller-provided field,
-so the primitive's own output has `until:`, `by:` and `directive:` at the
-second, third and fourth lines and nothing else does. A presence-anywhere scan
-would certify the five permutations of those three lines that the parser refuses,
-and a hand-written ruling — which is the whole population this check exists to
-surface — is precisely where a reordering comes from. The cost is that a line
-present out of position reports as missing, which is why the finding says the
-ruling lacks the line rather than that the line appears nowhere.
+WHY THE THREE PREFIXED LINES ARE SOUGHT ANYWHERE IN THE BODY, WHERE THE PARSER
+READS THEM BY INDEX. The parser's indexed read is right for the question it
+asks — is this the body the primitive wrote — and wrong for this one. Omitting
+one line SHIFTS every later line up, so an indexed reader handed a body that
+genuinely lacks only its `until:` line reports all three as missing, two of them
+while they sit in plain view one line above where it looked. A finding naming a
+line an operator can see is a finding an operator stops trusting, and the whole
+value of this verdict is that each finding names an act. So each prefix is sought
+across the body and the attended marker is read as the LAST line, which is how
+the clause words it.
+
+WHAT THAT GIVES UP, stated because the gap is invisible from either side. A
+five-line body carrying the three lines in the WRONG ORDER satisfies every arm
+here and is still refused by the parser's indexed read, so it is not current and
+is not reported. That costs nothing the clause promises — its guarantee runs one
+way, that a ruling this check reports is not current — and nothing here may be
+read as asserting the converse.
 
 WHY A SIXTH LINE IS REPORTED THOUGH NOTHING IS MISSING. The parser requires
 EXACTLY five lines for the reason its own comment gives: a body carrying a sixth
-is one a caller appended to by hand, and an indexed read would treat it as
-current anyway. So an over-long ruling is not current, and a verdict keyed only
-on absent lines would leave the one shape that passes every line test
+is one a caller appended to by hand, and an indexed read of the fifth line would
+treat it as current anyway. So an over-long ruling is not current, and a verdict
+keyed only on absent lines would leave the one shape that passes every line test
 unreported.
 """
 
@@ -42,6 +48,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._plan_continuation import (
+    AUTHORIZED_LINE_COUNT,
+    BY_PREFIX,
+    DIRECTIVE_PREFIX,
+    RECORDED_ATTENDED_LINE,
     UNTIL_PREFIX,
     is_continuation_ruling,
     ruling_line_value,
@@ -69,7 +79,10 @@ PLAN_CONTINUATION_RULING_REMEDIATION = (
 )
 
 _ERROR_VERDICT = "error"
-_UNTIL_INDEX = 1
+# The three caller-provided lines of an authorization. The attended marker is not
+# among them because it is read as the LAST line rather than as a fourth prefix:
+# that is how the clause words it, and it is the one line a caller cannot supply.
+_AUTHORIZED_LINE_PREFIXES = (UNTIL_PREFIX, BY_PREFIX, DIRECTIVE_PREFIX)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -138,7 +151,8 @@ def _finding(*, epic_id: str, entry: PlanTimelineEntry) -> PlanContinuationRulin
         return None
     lines = entry.body.splitlines()
     missing = _missing_lines(lines=lines)
-    if not missing:
+    over_length = len(lines) > AUTHORIZED_LINE_COUNT
+    if not missing and not over_length:
         return None
     return PlanContinuationRulingFinding(
         check_id=PLAN_CONTINUATION_RULING_CHECK_ID,
@@ -146,31 +160,51 @@ def _finding(*, epic_id: str, entry: PlanTimelineEntry) -> PlanContinuationRulin
         verdict=_ERROR_VERDICT,
         created_at=entry.created_at,
         missing=missing,
-        event=_event(prefix=lines[0], created_at=entry.created_at, missing=missing),
+        event=_event(
+            prefix=lines[0],
+            created_at=entry.created_at,
+            missing=missing,
+            over_length=over_length,
+        ),
         remediation=PLAN_CONTINUATION_RULING_REMEDIATION,
     )
 
 
 def _missing_lines(*, lines: Sequence[str]) -> tuple[str, ...]:
-    """Every line this ruling does not carry where a ruling carries it."""
-    if _line_at(lines=lines, index=_UNTIL_INDEX, prefix=UNTIL_PREFIX) is None:
-        return (UNTIL_PREFIX.strip(),)
-    return ()
+    """Every required line this ruling body does not carry, in the clause's order.
 
-
-def _line_at(*, lines: Sequence[str], index: int, prefix: str) -> str | None:
-    """One ruling line's value by position, `None` when the body is that short.
-
-    A short body is the one shape an indexed read cannot be handed directly: the
-    parser reaches its own index reads only after a length test, and this verdict
-    has no length to test because reporting a short ruling is its job.
+    `lines[-1]` is safe without a length test because `is_continuation_ruling`
+    has already matched the first line, so the body is never empty here.
     """
-    if index >= len(lines):
-        return None
-    return ruling_line_value(line=lines[index], prefix=prefix)
+    missing = [
+        prefix.strip()
+        for prefix in _AUTHORIZED_LINE_PREFIXES
+        if not _carries_line(lines=lines, prefix=prefix)
+    ]
+    if lines[-1] != RECORDED_ATTENDED_LINE:
+        missing.append(RECORDED_ATTENDED_LINE)
+    return tuple(missing)
 
 
-def _event(*, prefix: str, created_at: str, missing: Sequence[str]) -> str:
-    """What was observed, as one sentence naming the ruling and every missing line."""
-    clauses = "; ".join(f"lacks its `{one}` line" for one in missing)
-    return f"malformed `{prefix}` ruling recorded at {created_at}: {clauses}"
+def _carries_line(*, lines: Sequence[str], prefix: str) -> bool:
+    """Whether any line of this body is a non-empty line of `prefix`.
+
+    The value is sought through the parser's own `ruling_line_value`, so a line
+    whose value is blank counts as ABSENT here exactly as it does there — which
+    is the whole reason this asks for the value rather than for the prefix.
+    """
+    return any(ruling_line_value(line=one, prefix=prefix) is not None for one in lines)
+
+
+def _event(*, prefix: str, created_at: str, missing: Sequence[str], over_length: bool) -> str:
+    """What was observed, as one sentence naming the ruling and every missing line.
+
+    The over-length clause is rendered BESIDE the missing ones rather than instead
+    of them, because a hand-appended body is routinely both: the appended line
+    displaces the attended marker from the last position, so the operator needs to
+    read both faults off one finding.
+    """
+    clauses = [f"lacks its `{one}` line" for one in missing]
+    if over_length:
+        clauses.append(f"carries more than {AUTHORIZED_LINE_COUNT} lines")
+    return f"malformed `{prefix}` ruling recorded at {created_at}: {'; '.join(clauses)}"
