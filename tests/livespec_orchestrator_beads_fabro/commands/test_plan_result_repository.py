@@ -9,6 +9,7 @@ pins the directory `bd` itself runs in.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._plan_result_repository import (
@@ -153,3 +154,44 @@ def test_an_unreadable_target_configuration_yields_no_connection(tmp_path: Path)
     broken.mkdir()
     _ = (broken / ".livespec.jsonc").write_text("{}", encoding="utf-8")
     assert result_store_config(repository=ResultRepository(name="broken", clone=broken)) is None
+
+
+def _checkout_with_primary_path(*, tmp_path: Path, checkout_name: str, primary: Path) -> Path:
+    checkout = tmp_path / checkout_name
+    checkout.mkdir()
+    _ = subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+    _ = subprocess.run(
+        ["git", "-C", str(checkout), "config", "livespec.primaryPath", str(primary)], check=True
+    )
+    return checkout
+
+
+def test_a_worktree_named_after_its_branch_resolves_its_repository_by_primary_path(
+    tmp_path: Path,
+) -> None:
+    """A worktree under `~/.worktrees/<repo>/<branch>` is named after its branch.
+
+    Matching only the checkout directory's name made every same-repository result
+    unobservable from such a worktree, which turned bd-ib-qnmxzm's post-merge
+    janitor and every worktree pre-push red on 2026-10-12. The primary checkout's
+    path is in the shared git config every worktree of it reads.
+    """
+    checkout = _checkout_with_primary_path(
+        tmp_path=tmp_path,
+        checkout_name="janitor-bd-ib-qnmxzm",
+        primary=tmp_path / "livespec-orchestrator-beads-fabro",
+    )
+    assert resolve_result_repository(
+        project_root=checkout, name="livespec-orchestrator-beads-fabro"
+    ) == ResultRepository(name="livespec-orchestrator-beads-fabro", clone=checkout)
+
+
+def test_a_name_matching_neither_the_checkout_nor_the_primary_path_does_not_resolve(
+    tmp_path: Path,
+) -> None:
+    checkout = _checkout_with_primary_path(
+        tmp_path=tmp_path,
+        checkout_name="janitor-bd-ib-qnmxzm",
+        primary=tmp_path / "livespec-orchestrator-beads-fabro",
+    )
+    assert resolve_result_repository(project_root=checkout, name="livespec-overseer") is None
