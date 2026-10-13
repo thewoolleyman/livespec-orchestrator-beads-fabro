@@ -112,6 +112,20 @@ _MERGE_SHA = "3333333333333333333333333333333333333333"
 # the head, establishes proof, then edits and readies before arming, so naming
 # a later subcommand moves the branch strictly BETWEEN the observation and the
 # arming. That is the window the exact-head requirement exists to close.
+#
+# HOW A NULL FIELD IS RENDERED, WHICH IS A MEASURED FACT AND NOT A CONVENIENCE.
+# `gh` runs its OWN `--jq` and prints each result through the scalar rule that
+# maps a JSON null to the EMPTY STRING -- never to the four characters `null` --
+# while JSON-encoding a non-scalar. Measured first-hand with gh 2.102.0 against
+# this repository's pull request 2902, whose `--json autoMergeRequest` is
+# `{"autoMergeRequest":null}`: `--jq '.autoMergeRequest'` printed ZERO bytes at
+# exit 0, and the same filter over an object field printed that object as
+# compact JSON. A stub that answered the literal `null` is what let a
+# comparison against that literal pass here for weeks while EVERY merge-held
+# item failed closed on the live forge, so `absentAutoMergeRender` carries the
+# measured empty string by default. One control overrides it with `null`,
+# standing in for a later gh that renders the absence that way, because the
+# comparison owes both spellings the same unarmed reading.
 _GH_STUB = r"""#!%(python)s
 import json, os, sys
 
@@ -154,7 +168,11 @@ if verb == "view":
         "state": state["state"],
         "headRefOid": state["head"],
         "isDraft": "true" if state["isDraft"] else "false",
-        "autoMergeRequest": "null" if state["autoMergeRequest"] is None else "{}",
+        "autoMergeRequest": (
+            state["absentAutoMergeRender"]
+            if state["autoMergeRequest"] is None
+            else json.dumps(state["autoMergeRequest"])
+        ),
         "mergeCommit": state["mergeCommit"] or "",
     }
     save(state)
@@ -267,6 +285,7 @@ def _sandbox(
     head: str = _HEAD,
     is_draft: bool = True,
     auto_merge: object = None,
+    absent_auto_merge_render: str = "",
     merge_commit: str | None = None,
     advance_head_on: str | None = None,
     advance_head_to: str = _MOVED_HEAD,
@@ -308,6 +327,7 @@ def _sandbox(
                 "head": head,
                 "isDraft": is_draft,
                 "autoMergeRequest": auto_merge,
+                "absentAutoMergeRender": absent_auto_merge_render,
                 "mergeCommit": merge_commit,
                 "comments": _proven(head=_HEAD) if comments is None else comments,
                 "advance_head_on": advance_head_on,
@@ -406,29 +426,69 @@ def test_a_head_moving_between_observation_and_arming_is_refused(tmp_path: Path)
 
 
 def test_a_merge_hold_readies_the_pull_request_and_arms_nothing(tmp_path: Path) -> None:
-    """A held item publishes a ready pull request and issues no merge at all."""
+    """A held item publishes a ready pull request and issues no merge at all.
+
+    The absent-request reading is asserted on THREE instruments, because the
+    defect this control now covers left the first two intact. A hold over an
+    unarmed pull request readied it and reached no arming command exactly as
+    before, and failed on the step after -- so `LIVESPEC_PR_HOLD_ARMED` must be
+    asserted ABSENT rather than inferred from a merge that never issued, and
+    the forge must still hold no request, since `MERGE_HOLD=held` beside a
+    request would describe a hold that is not held.
+    """
     box = _sandbox(root=tmp_path)
 
     result = _run(box=box, merge_hold="true")
 
     assert result.returncode == 0, result.stderr
     assert "LIVESPEC_PR_HELD" in result.stderr
+    assert "LIVESPEC_PR_HOLD_ARMED" not in result.stderr
     assert "MERGE_HOLD=held" in result.stdout
     assert box.merge_argv() is None, "a held item must not reach the arming command"
     assert box.issued(verb="ready")
+    assert box.forge()["autoMergeRequest"] is None
+
+
+def test_a_merge_hold_reads_a_literal_null_rendering_as_unarmed_too(
+    tmp_path: Path,
+) -> None:
+    """The other spelling of an absent request is equally unarmed.
+
+    gh 2.102.0 prints the empty string, which the sibling control above pins.
+    Nothing in this stage's contract turns on which spelling arrives, so the
+    comparison owes a `null` the same reading -- and without this control that
+    arm of it has no test at all, which is how the empty-string arm came to be
+    wrong in the first place.
+    """
+    box = _sandbox(root=tmp_path, absent_auto_merge_render="null")
+
+    result = _run(box=box, merge_hold="true")
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_HELD" in result.stderr
+    assert "LIVESPEC_PR_HOLD_ARMED" not in result.stderr
+    assert box.merge_argv() is None
+    assert box.forge()["autoMergeRequest"] is None
 
 
 def test_a_hold_standing_over_an_already_armed_pull_request_fails_closed(
     tmp_path: Path,
 ) -> None:
-    """A script must not disarm what something else armed; it stops for a human."""
-    box = _sandbox(root=tmp_path, auto_merge={"enabledAt": "earlier"})
+    """A script must not disarm what something else armed; it stops for a human.
+
+    The surviving request is asserted, not just the refusal: a stage that
+    failed closed AFTER cancelling the arming would satisfy the exit code and
+    the sentinel while doing the one thing the hold forbids a script to do.
+    """
+    armed = {"enabledAt": "earlier"}
+    box = _sandbox(root=tmp_path, auto_merge=armed)
 
     result = _run(box=box, merge_hold="true")
 
     assert result.returncode == 1, result.stdout
     assert "LIVESPEC_PR_HOLD_ARMED" in result.stderr
     assert box.merge_argv() is None
+    assert box.forge()["autoMergeRequest"] == armed
 
 
 def test_an_already_merged_pull_request_is_idempotent(tmp_path: Path) -> None:
