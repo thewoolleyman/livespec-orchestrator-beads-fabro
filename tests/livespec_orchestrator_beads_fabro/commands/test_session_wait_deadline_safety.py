@@ -11,6 +11,7 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
@@ -19,8 +20,13 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_herdr import (
     DIAGNOSTIC_UNAVAILABLE,
     herdr_socket_generation,
 )
+from livespec_orchestrator_beads_fabro.commands._session_wait_pane import (
+    HerdrPaneProbe,
+    _PaneTask,
+)
 from livespec_orchestrator_beads_fabro.commands._session_wait_types import ProbeLauncher
 from livespec_orchestrator_beads_fabro.commands.session_wait import (
+    GateObservation,
     GateStatusLauncher,
     GateTarget,
     HerdrPaneLauncher,
@@ -61,6 +67,11 @@ _POLL_OVERSHOOT_SECONDS = 0.8
 # rather than a wrong one: the same wait reported `target-ended` and then
 # `deadline` on two consecutive runs.
 _LONE_RUNS = 2
+# How long a cancelled worker is given to exit once its wait has returned. It
+# has to be well SHORT of what is left of that worker's own read budget, or a
+# worker released by its timeout rather than by the cancellation would satisfy
+# it too.
+_RELEASE_SECONDS = 0.3
 
 
 def _hung_pane(*, socket_path: Path, terminal_id: str) -> PaneTarget:
@@ -92,6 +103,43 @@ def _overshooting_sleeper(*, seconds: float) -> None:
     it here every time instead of half the time.
     """
     time.sleep(seconds + _POLL_OVERSHOOT_SECONDS)
+
+
+@dataclass(kw_only=True)
+class _WatchedPaneProbe:
+    """One real pane probe, keeping the task each of its polls was serving.
+
+    The task is what carries the read budget the observation is bounded by and
+    the worker thread that observation runs on, and a probe RELEASES its task
+    on cancellation — so neither survives the wait that used them. Recording
+    them as the wait polls is the only way to read a wait's OWN probe rather
+    than a reconstruction of it.
+    """
+
+    inner: HerdrPaneProbe
+    tasks: list[_PaneTask | None] = field(default_factory=list)
+
+    def poll(self, *, now: float) -> GateObservation | None:
+        observation = self.inner.poll(now=now)
+        self.tasks.append(self.inner.task)
+        return observation
+
+    def cancel(self, *, timeout_seconds: float) -> None:
+        self.inner.cancel(timeout_seconds=timeout_seconds)
+
+
+@dataclass(kw_only=True)
+class _WatchingPaneLauncher:
+    """The real pane launcher, keeping every probe it hands a wait."""
+
+    probes: list[_WatchedPaneProbe] = field(default_factory=list)
+
+    def launch(self, *, target: PaneTarget, timeout_seconds: float) -> _WatchedPaneProbe:
+        probe = _WatchedPaneProbe(
+            inner=HerdrPaneLauncher().launch(target=target, timeout_seconds=timeout_seconds),
+        )
+        self.probes.append(probe)
+        return probe
 
 
 def _written_pid(*, path: Path, timeout_seconds: float) -> int:
@@ -299,6 +347,73 @@ def test_a_lone_hung_pane_wait_returns_the_deadline_outcome_on_every_run(
     assert stale_readings == [(DIAGNOSTIC_UNAVAILABLE, False, True)] * _LONE_RUNS
     # The hung target was READ and never written to, so the work that got
     # cancelled at expiry was this wait's own and nothing belonging to the pane.
+    assert received, "the wait never reached the hung peer at all"
+    for request in received:
+        assert json.loads(request.decode("utf-8"))["method"] == "agent.get"
+
+
+def test_a_lone_hung_pane_wait_is_ended_by_cancellation_not_by_its_own_timeout(
+    *,
+    tmp_path: Path,
+) -> None:
+    """Scenario 156: expiry CANCELS the hung probe; its own timeout never runs.
+
+    The budget a hung observation's read blocks in used to BE the remaining
+    deadline, so the probe's timeout and the wait's expiry fell on the same
+    instant. That coincidence is what put the sibling assertion's outcome
+    label up for grabs, and it also left `the wait returns without waiting for
+    the probe's own socket timeout` with nothing to assert: there was no
+    interval between the two to return inside of.
+
+    The budget is therefore read off the wait's OWN probe and asserted to
+    outlast the deadline, the return is asserted to land inside it, and the
+    worker is asserted to exit on a bound far shorter than what remained of
+    that budget — which is what tells a worker released by the cancellation
+    apart from one released by the timeout it was supposed to pre-empt.
+    """
+    wait_store_root = tmp_path / "session-waits"
+    wait_store_root.mkdir()
+    socket_path = tmp_path / "budget-hung.sock"
+    watcher = _WatchingPaneLauncher()
+
+    with _hung_peer(socket_path=socket_path) as received:
+        pane = _hung_pane(socket_path=socket_path, terminal_id="term_budget")
+        started = time.monotonic()
+        result = run_wait(
+            request=WaitRequest(
+                wait_id="lone-hung-pane-budget",
+                session_id="deadline-safety",
+                repository=tmp_path,
+                deadline_seconds=_LONE_DEADLINE_SECONDS,
+                targets=(pane,),
+            ),
+            launcher=RoutingLauncher(
+                gate=GateStatusLauncher(repository=tmp_path),
+                pane=watcher,
+            ),
+            wait_store_root=wait_store_root,
+        )
+        elapsed = time.monotonic() - started
+        task = watcher.probes[0].tasks[0]
+        assert task is not None
+        read_budget = task.channel.timeout_seconds
+        assert read_budget > _LONE_DEADLINE_SECONDS, (
+            f"a {read_budget}s read budget cannot outlast a " f"{_LONE_DEADLINE_SECONDS}s deadline"
+        )
+        assert result.command_outcome == "deadline"
+        assert elapsed < read_budget, f"the wait waited out its probe's budget in {elapsed:.2f}s"
+        # The probe was CANCELLED, and its worker is GONE rather than merely
+        # unreported: a thread that has exited cannot still be holding the
+        # socket, and a thread cannot exit this soon on its own budget.
+        assert task.cancel_requested is True
+        assert task.thread is not None
+        task.thread.join(timeout=_RELEASE_SECONDS)
+        assert task.thread.is_alive() is False, "the hung observation outlived its cancellation"
+        # A cancelled read measured nothing, so whatever it returned is not an
+        # observation of the pane and is discarded rather than reported.
+        assert task.result is None
+        assert watcher.probes[0].inner.active is False
+
     assert received, "the wait never reached the hung peer at all"
     for request in received:
         assert json.loads(request.decode("utf-8"))["method"] == "agent.get"
