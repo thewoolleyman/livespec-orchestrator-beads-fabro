@@ -34,3 +34,40 @@ of any behavior.
 
 Re-implement from this through ordinary Red/Green on current master, on top
 of the token-chain foundation `bd-ib-wdl577`. Never commit it wholesale.
+
+## `lhzpam-run-01M4V41PFPB6Q3YZN4WDXSMQM9-implement.diff`
+
+- **Source:** `stages/003-implement@1/diff.patch` of Fabro run
+  `01M4V41PFPB6Q3YZN4WDXSMQM9` for `bd-ib-lhzpam`. It was retrieved on
+  2026-10-13 with `fabro dump 01M4V41PFPB6Q3YZN4WDXSMQM9 --server
+  https://hp-xubuntu.perch-rudd.ts.net:32276`.
+- **Integrity:** SHA256
+  `01ab825ae6c8dc27ea6e3432be72f70057242f15523831571ec5be4369b1932d`.
+- **Base:** commit `3083427c08456539603778fdfd67d28546944347` (v0.196.0). It
+  applies cleanly to master `26523727`.
+- **How the run ended:** the implement stage hit the Claude subscription
+  session limit at 2026-10-13T20:44Z and the run was routed to needs-human.
+  Nothing was pushed. Only this tree diff survives; no Red and Green commit
+  structure was preserved.
+- **Contents:** a new `_plan_record_genesis.py`, genesis calls from
+  `create_thread` in `plan.py` and from the plan-record migration, and unit
+  and integration tests for both paths.
+
+## `22yfvh-run-01M4V41PD6GSQ01PQ7XJ0ATZH7-implement.diff`
+
+- **Source:** `stages/003-implement@1/diff.patch` of Fabro run
+  `01M4V41PD6GSQ01PQ7XJ0ATZH7` for `bd-ib-22yfvh`, retrieved the same way on
+  2026-10-13.
+- **Integrity:** SHA256
+  `183664864c5bbf75df1af4c2c92d282b956dd64f9a635aaa5145623e1467373c`.
+- **Base:** commit `3083427c08456539603778fdfd67d28546944347` (v0.196.0). It
+  applies cleanly to master `26523727`.
+- **How the run ended:** the same session limit, at 2026-10-13T20:50Z. Nothing
+  was pushed.
+- **Contents:** new `_plan_recovery_receipts.py` and
+  `_plan_recovery_receipt_write.py` modules and one test file. The diff does
+  not yet wire the receipt writes into the executed recovery path, so the
+  re-run must finish that wiring.
+
+Neither diff was reviewed or checked by `just check`. Re-implement from them
+through ordinary Red/Green; never commit either wholesale.
