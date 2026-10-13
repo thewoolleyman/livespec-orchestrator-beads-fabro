@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.192.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.191.0...v0.192.0) (2026-10-13)
+
+
+### Features
+
+* report a plan-continuation ruling lacking its until: line ([748137a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/748137aa420f0f892953cad0bc1c0b31069faad8))
+* report a revocation lacking its by: line and stay silent otherwise ([8ba8b48](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8ba8b4815c962033b6ce9149207919b05a2c1599))
+* report every missing line and a sixth line on an authorized ruling ([8ab54cd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8ab54cd90fa3ae681762a30ccdb444ec1b939516))
+
 ## [0.191.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.190.3...v0.191.0) (2026-10-13)
 
 
