@@ -1654,6 +1654,21 @@ it there; the bullets below are what this repo was missing.
   not what the specification REQUIRES, so it is not a spec-change decision.
   Only a spec-change-tier child routes to `propose-change`; escalating the rest
   deadlocks the archive gate, which refuses while any child sits undisposed.
+- **Never re-attempt a failed dispatch without naming what changed.** Before
+  any retry, state in ONE sentence the specific difference that addresses the
+  recorded failure: a code change in the failing check you can point to, a
+  changed item text, or a recovered external condition. A newer registered
+  build EXISTING is not a reason to re-dispatch — build drift is permanent in
+  this continuous-deployment fleet, so the build-drift warning is ambient
+  information, not a diagnosis. If you cannot name the difference, read the
+  refusal, find the code that produced it, and diff that code across builds
+  before launching anything; if there is still no difference, stop and report
+  it as a defect rather than retrying. Re-dispatch is cheap for the agent that
+  launches it and expensive for the maintainer, which is why the bar is a
+  named difference rather than a plausible hope. Fleet source: the livespec
+  repository's `agent-disciplines.md`, in that repository's `.ai/` tree,
+  §"Never re-attempt a failed dispatch without naming what changed" (incident
+  2026-10-11/12, plan epic `bd-ib-jjb4mt`).
 
 ## Working with the maintainer (repo-additive)
 
