@@ -435,6 +435,7 @@ check:
         check-status-conformance
         check-closed-item-integrity
         check-plan-close-proof
+        check-plan-continuation-ruling
         check-needs-attention-surface-ownership
         check-spec-id-presence-discipline
         check-no-fleet-toolchain-literals
@@ -652,6 +653,16 @@ check-closed-item-integrity:
 # arming the family arms all twelve and the aggregate's hermetic tier self-skips.
 check-plan-close-proof:
     uv run python dev-tooling/checks/plan_close_proof.py
+
+# `check-plan-continuation-ruling` — the plan-record conformance verdict v124
+# added (SPECIFICATION/contracts.md, the plan-record conformance clause): a
+# `plan-continuation: authorized` ruling on an open live plan epic lacking any of
+# its until:, by:, directive: or recorded-attended: true lines, or a revoked one
+# lacking its by: line. The decision is the package primitive
+# commands/_plan_continuation_ruling.py; this is its wiring, ARMED-ONLY under the
+# same lever and credential as check-plan-close-proof.
+check-plan-continuation-ruling:
+    uv run python dev-tooling/checks/plan_continuation_ruling.py
 
 # `check-needs-attention-surface-ownership` — v079 ownership-boundary guard.
 # Scans only `commands/needs_attention.py` and `commands/_needs_attention*.py`
