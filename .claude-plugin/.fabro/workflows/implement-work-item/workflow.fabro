@@ -809,9 +809,25 @@ digraph ImplementWorkItem {
     // edge is GONE on purpose — leaving it in place would let every run reach the
     // reviewer with no draft and no captured record while both new nodes still
     // existed, and the graph would still look correct.
+    //
+    // THE FAILURE EDGE BELOW IS THE ONE `fix` NEVER HAD, and its absence is
+    // work-item bd-ib-qhv7qs. Every other ACP node here names its failure route
+    // with a `condition="outcome=failed"` edge to the terminal, so a failed
+    // `fix` turn was the only one with NO failure-handling edge: measured on hp,
+    // a stage whose agent turn timed out ended the run `workflow_error` /
+    // `deterministic`, pushed no needs-human ref, and left the item `active`
+    // with no blocked reason — with whatever the half-finished turn had
+    // authored (in both measured incidents a Red commit awaiting its Green)
+    // unreachable from the ledger. The terminal preserves that tree on a
+    // run-scoped ref and routes the decision to the item, which is the ending
+    // this node owes a timed-out turn. `fix -> janitor` stays as the
+    // UNCONDITIONAL fallthrough, both because conditional edges outrank it and
+    // because fabro rejects a node whose every outgoing edge carries a
+    // condition (`all_conditional_edges`).
     janitor -> publish_draft [label="Green", condition="outcome=succeeded"]
     janitor -> fix [label="Red", condition="outcome!=succeeded"]
     janitor -> non_converged [label="Exhausted (fix-loop cap)"]
+    fix -> needs_human [label="Blocked", condition="outcome=failed"]
     fix -> janitor
 
     // Draft-publication routing. A publish that could not reach origin parks the
@@ -906,6 +922,14 @@ digraph ImplementWorkItem {
     disposition -> review_fix [label="fix accepted", condition="preferred_label=fix"]
     disposition -> review     [label="all rejected", condition="preferred_label=all_rejected"]
     disposition -> needs_human [label="unmatched disposition outcome"]
+    // `review_fix` carries the same failure edge `fix` does, and for the same
+    // measured reason (work-item bd-ib-qhv7qs): both measured incidents were
+    // review_fix turns that timed out mid Red-Green pair, and with no
+    // `outcome=failed` edge the run died as a deterministic workflow error
+    // instead of ending through the terminal that preserves the tree. The
+    // unconditional `-> janitor` fallthrough stays for the
+    // `all_conditional_edges` reason above.
+    review_fix -> needs_human [label="Blocked", condition="outcome=failed"]
     review_fix -> janitor
 
     // Proof-replay routing (S6 / bd-ib-msnlnv). The replay node emits a routing
