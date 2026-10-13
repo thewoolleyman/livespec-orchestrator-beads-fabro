@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.194.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.194.2...v0.194.3) (2026-10-13)
+
+
+### Bug Fixes
+
+* **dispatcher:** root the sandbox's sibling clones outside the target clone ([5d0f6ed](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5d0f6ed389afb062d5086b5c9a367189f2ab2469))
+
 ## [0.194.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.194.1...v0.194.2) (2026-10-13)
 
 
