@@ -28,18 +28,49 @@ substitution points are spelled `@@…@@` and are plain string replacement.
 
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from livespec_runtime.work_items.rank import key_between
+from returns.io import IOResult
+from returns.pipeline import is_successful
+from returns.unsafe import unsafe_perform_io
+
+from livespec_orchestrator_beads_fabro._ids import new_work_item_id
+from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import utc_now_iso
+from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
+    PolicySettingUnreadable,
+)
+from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
+from livespec_orchestrator_beads_fabro.intake_dor import (
+    DefinitionOfReadyChecklist,
+    file_captured_work_item,
+)
+from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
+from livespec_orchestrator_beads_fabro.types import WorkItem
+
+if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "CANARY_MARKER_RELPATH",
+    "CANARY_TEMPLATE_RELPATH",
+    "CanaryFiling",
     "CanaryFixture",
+    "file_candidate_canary",
+    "main",
     "marker_entry_findings",
     "render_canary_fixture",
 ]
 
-# The dedicated marker file the fixture's one assertion names. The canary's
-# WHOLE change is one appended line here, which is what keeps a canary's diff
-# incapable of failing for a reason of its own.
+# The committed fixture the brief is rendered from, and the dedicated marker file
+# the fixture's one assertion names. The canary's WHOLE change is one appended
+# line in the latter, which is what keeps a canary's diff incapable of failing
+# for a reason of its own.
+CANARY_TEMPLATE_RELPATH = "orchestrator-image/candidate-canary-work-item-template.md"
 CANARY_MARKER_RELPATH = "orchestrator-image/candidate-canary-log.md"
 
 # The two field markers of the committed template, each matched as a line of its
@@ -57,6 +88,29 @@ _NEWLINE = "\n"
 _MARKER_ENTRIES_HEADING = "## Entries"
 _MARKER_ENTRY_PREFIX = "- "
 
+# What the filed fixture IS, as ledger fields. A canary is instrumentation, so
+# it is admitted without a human valve (`auto`) -- waiting for an approval would
+# make the canary's latency a property of whoever is awake -- and it is a plain
+# `task` of freeform origin, tied to no gap and to no plan epic.
+_FIXTURE_TYPE = "task"
+_FIXTURE_ORIGIN = "freeform"
+_FIXTURE_FILED_STATUS = "backlog"
+_ADMISSION_AUTO = "auto"
+# The intake Definition-of-Ready answers, affirmed HERE rather than asked. Each
+# is a property of the committed fixture, settled when the fixture was reviewed:
+# one coherent done, verifiable by the suite without a human, factory-eligible,
+# dependency-free, repo-targeted, and above the triage floor. A canary that
+# stopped to ask them would be asking about a file nobody edited.
+_FIXTURE_CHECKLIST = DefinitionOfReadyChecklist(
+    single_coherent_done=True,
+    autonomously_verifiable=True,
+    autonomy_tiered=True,
+    dependency_linked=True,
+    repo_targeted=True,
+    above_floor=True,
+)
+_EXIT_FILING_REFUSED = 3
+
 
 @dataclass(frozen=True, kw_only=True)
 class CanaryFixture:
@@ -70,6 +124,21 @@ class CanaryFixture:
 
     title: str
     description: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class CanaryFiling:
+    """One filed canary: the minted work-item id and the status intake routed it to.
+
+    The status is carried rather than asserted here because routing belongs to
+    the shared intake gate, not to this door. An operator who sees anything but
+    `ready` is looking at a fixture the gate declined, and the dispatch that
+    follows will refuse on its own terms with its own reason — which is better
+    than this module inventing a verdict about a decision it did not make.
+    """
+
+    item_id: str
+    status: str
 
 
 def render_canary_fixture(*, template_text: str, item_id: str, factory: str) -> CanaryFixture:
@@ -131,6 +200,95 @@ def marker_entry_findings(*, marker_text: str) -> tuple[str, ...]:
         _malformed_entry_finding(line=line)
         for line in entries
         if not line.startswith(_MARKER_ENTRY_PREFIX)
+    )
+
+
+def file_candidate_canary(
+    *, path: StoreConfig, repo_root: Path, factory: str, now_iso: str
+) -> IOResult[CanaryFiling, WorkItemNotFoundError | PolicySettingUnreadable]:
+    """File one FRESH canary work-item rendered from the committed fixture template.
+
+    Fresh every time, never reused: a canary's record carries the run it belongs
+    to, and a reused item would accumulate the comments, claims and audit of
+    every canary before it — so the brief the next dispatch renders would grow
+    with each one, which is the opposite of a fixture.
+
+    Filed through the shared capture seam rather than through a store write of
+    its own. That seam validates the committed ceilings before its first ledger
+    mutation and then routes the record through the one intake gate every other
+    filing door uses, so a canary cannot enter the ledger by a path with
+    different rules. `factory` is the name the DISPATCH will be routed to; it
+    reaches the record only as text in the brief, because routing is the
+    dispatcher's argument and not a property of the item.
+    """
+    fixture_template = (repo_root / CANARY_TEMPLATE_RELPATH).read_text(encoding="utf-8")
+    item_id = new_work_item_id(prefix=path.prefix)
+    fixture = render_canary_fixture(
+        template_text=fixture_template, item_id=item_id, factory=factory
+    )
+    routed = file_captured_work_item(
+        path=path,
+        item=WorkItem(
+            id=item_id,
+            type=_FIXTURE_TYPE,
+            status=_FIXTURE_FILED_STATUS,
+            title=fixture.title,
+            description=fixture.description,
+            origin=_FIXTURE_ORIGIN,
+            gap_id=None,
+            rank=key_between(a=None, b=None),
+            assignee=None,
+            depends_on=(),
+            captured_at=now_iso,
+            resolution=None,
+            reason=None,
+            audit=None,
+            superseded_by=None,
+            admission_policy=_ADMISSION_AUTO,
+        ),
+        checklist=_FIXTURE_CHECKLIST,
+    )
+    return routed.map(lambda status: CanaryFiling(item_id=item_id, status=status))
+
+
+def main(*, argv: list[str] | None = None) -> int:
+    """File one canary and print its id, for the recipe's dispatch leg to consume.
+
+    stdout carries EXACTLY the minted id and nothing else, because the recipe
+    passes it straight to the dispatcher's `--item`; everything a human wants to
+    read goes to stderr. Dispatch is deliberately NOT performed here: the
+    dispatcher owns every pre-dispatch refusal, the journal and the claim, and a
+    second door into it would be a second place those could drift.
+    """
+    parser = argparse.ArgumentParser(prog="take-candidate-canary")
+    _ = parser.add_argument(
+        "--factory",
+        dest="factory",
+        required=True,
+        help="the configured factory name this canary will be dispatched to",
+    )
+    _ = parser.add_argument("--project-root", dest="project_root", default=None)
+    args = parser.parse_args(argv)
+    repo_root = Path(args.project_root) if args.project_root is not None else Path.cwd()
+    filed = file_candidate_canary(
+        path=resolve_store_config(cwd=repo_root, work_items_arg=None),
+        repo_root=repo_root,
+        factory=args.factory,
+        now_iso=utc_now_iso(),
+    )
+    if not is_successful(filed):
+        _ = write_stderr(text=f"ERROR: {unsafe_perform_io(filed.failure())}\n")
+        return _EXIT_FILING_REFUSED
+    record = unsafe_perform_io(filed.unwrap())
+    _ = write_stderr(text=_filed_narration(record=record, factory=args.factory))
+    _ = write_stdout(text=f"{record.item_id}\n")
+    return 0
+
+
+def _filed_narration(*, record: CanaryFiling, factory: str) -> str:
+    return (
+        f"filed candidate canary {record.item_id} at {record.status}"
+        f" for factory {factory}{_NEWLINE}"
     )
 
 

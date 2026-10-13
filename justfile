@@ -1176,6 +1176,22 @@ w7-real-work-dispatch *ARGS:
 reap-e2e-repos *ARGS:
     bash orchestrator-image/reap-e2e-repos.sh "$@"
 
+# Take ONE candidate canary: file a FRESH fixture work-item from the committed
+# template at orchestrator-image/candidate-canary-work-item-template.md, then
+# dispatch it to the factory NAMED on the command line. This is the sanctioned
+# way to take a canary; filing one by hand is how a canary acquires an
+# unreviewed brief, which is what made canaries 5 and 6 of plan `fabro-currency`
+# die at the Definition-of-Done gate on an item-quality fault that read like an
+# engine fault. `--factory` is required and never defaulted — a canary is
+# evidence about ONE engine, and the configured factories can carry different
+# Fabro builds. Run under the project's credential wrapper. Pass script args
+# after `--`, e.g.:
+#   just take-candidate-canary -- --factory hp
+#   just take-candidate-canary -- --factory hp-candidate --dry-run
+[positional-arguments]
+take-candidate-canary *ARGS:
+    bash orchestrator-image/take-candidate-canary.sh "$@"
+
 # ---------------------------------------------------------------
 # Pre-commit aggregate — Red-mode-aware. Classifies the staged
 # tree shape; in Red mode it passes a self-contained `skip=...` recipe
