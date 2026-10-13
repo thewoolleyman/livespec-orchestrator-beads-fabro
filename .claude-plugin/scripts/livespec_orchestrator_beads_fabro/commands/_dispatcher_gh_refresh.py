@@ -182,12 +182,22 @@ def _worktree_exclude_script(*, bundle_root: str, payload_path: str) -> str:
     own checkpoint commits that file. Excluding the unpacked tree alone leaves
     the same defect one path over.
 
+    Both sides of the inside-the-worktree comparison are reduced to their
+    PHYSICAL spelling first, and that normalization is load-bearing rather
+    than tidy: `git rev-parse --show-toplevel` answers the physical path and
+    DISCARDS the spelling it was handed, while the configured root reaches
+    this sandbox family as `/workspace/<repo>`, which is a symlink to the
+    clone's real path. Comparing the two as given therefore sent a path
+    squarely INSIDE the worktree down the outside-any-worktree arm, writing
+    no entry at all -- the whole defect, intact, behind a step that exits 0.
+
     Every arm that cannot MEASURE where a path sits is passed over without
-    writing: a prepare step that fails kills the run at launch, before any work
-    is driven, and a path outside any worktree is one git was never going to
-    stage. Each pattern is anchored with a leading `/` because `info/exclude`
-    patterns resolve against the worktree top, which is what `--show-toplevel`
-    returns.
+    writing, and SAYS SO on stderr: a prepare step that fails kills the run
+    at launch, before any work is driven, and a path outside any worktree is
+    one git was never going to stage -- but a silent pass-over is
+    indistinguishable from a successful exclusion until `publish_draft`
+    refuses at the end of a full run. Each pattern is anchored with a leading
+    `/` because `info/exclude` patterns resolve against the worktree top.
     """
     return (
         "set -eu\n"
@@ -196,7 +206,14 @@ def _worktree_exclude_script(*, bundle_root: str, payload_path: str) -> str:
         'parent="$(dirname "$bundle_root")"\n'
         'mkdir -p "$parent"\n'
         'toplevel="$(git -C "$parent" rev-parse --show-toplevel 2>/dev/null || true)"\n'
-        'if [ -z "$toplevel" ]; then exit 0; fi\n'
+        'if [ -n "$toplevel" ]; then\n'
+        '  toplevel="$(cd "$toplevel" 2>/dev/null && pwd -P || true)"\n'
+        "fi\n"
+        'if [ -z "$toplevel" ]; then\n'
+        "  echo \"livespec-gh-refresh: no git worktree top resolved for '$parent',"
+        ' so no exclude entry was written" >&2\n'
+        "  exit 0\n"
+        "fi\n"
         'common_dir="$(cd "$toplevel" && git rev-parse --git-common-dir)"\n'
         'case "$common_dir" in\n'
         "  /*) ;;\n"
@@ -205,9 +222,15 @@ def _worktree_exclude_script(*, bundle_root: str, payload_path: str) -> str:
         'exclude_file="$common_dir/info/exclude"\n'
         'mkdir -p "$common_dir/info"\n'
         'for path in "$bundle_root" "$payload_path"; do\n'
+        '  path_dir="$(cd "$(dirname "$path")" 2>/dev/null && pwd -P || true)"\n'
+        '  if [ -n "$path_dir" ]; then path="$path_dir/$(basename "$path")"; fi\n'
         '  case "$path" in\n'
         '    "$toplevel"/*) entry="/${path#"$toplevel"/}" ;;\n'
-        "    *) continue ;;\n"
+        "    *)\n"
+        "      echo \"livespec-gh-refresh: '$path' did not resolve inside the worktree"
+        " at '$toplevel', so no exclude entry was written for it\" >&2\n"
+        "      continue\n"
+        "      ;;\n"
         "  esac\n"
         '  if ! grep -qxF "$entry" "$exclude_file" 2>/dev/null; then\n'
         '    printf \'%s\\n\' "$entry" >> "$exclude_file"\n'

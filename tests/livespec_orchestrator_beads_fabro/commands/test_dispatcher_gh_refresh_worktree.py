@@ -123,6 +123,43 @@ def test_no_checkpoint_of_the_prepare_chain_can_stage_a_bundle_file(
     assert _bundle_paths(_git_stdout("ls-files", repo=repo)) == []
 
 
+def test_a_symlinked_bundle_spelling_still_hides_the_bundle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The configured spelling need not be the one git answers with.
+
+    `/workspace/<repo>` is a SYMLINK to the clone's real path in this
+    sandbox family, and `git rev-parse --show-toplevel` answers the
+    PHYSICAL path -- discarding the spelling it was handed. A comparison
+    between the configured spelling and that answer therefore takes the
+    outside-any-worktree arm for a path that is squarely INSIDE one, and
+    writes no exclude entry at all: the step exits 0 having printed
+    nothing while the defect is fully intact.
+
+    This is the fixture the other cases in this file structurally cannot
+    be, because each normalizes its root before rendering, which makes
+    the two spellings equal by construction.
+    """
+    repo = _git_repo(root=tmp_path / "real" / "clone")
+    link = tmp_path / "workspace"
+    link.symlink_to(repo)
+    bundle_root = link / _BUNDLE_DIRNAME
+    scripts = _rendered_prepare_scripts(monkeypatch=monkeypatch, bundle_root=bundle_root)
+    bin_dir = _stub_path_dir(root=tmp_path / "bin", capture=tmp_path / "gh-calls.txt")
+    _git("checkout", "-b", _RUN_BRANCH, repo=repo)
+    # The condition under test: git discards the spelling it was handed.
+    assert _git_stdout("rev-parse", "--show-toplevel", repo=link).strip() != str(link)
+
+    _run_prepare_chain(scripts=scripts, repo=link, bin_dir=bin_dir, tmp_path=tmp_path)
+    _git("add", "-A", repo=repo)
+
+    assert _bundle_paths(_git_stdout("diff", "--cached", "--name-only", repo=repo)) == []
+    # Positive control: the bundle really was written, so the empty
+    # staging result above is a measurement and not a vacuous fixture.
+    assert (repo / _BUNDLE_DIRNAME / "bin" / "mint_app_token.py").is_file()
+
+
 def test_the_installed_gh_wrapper_still_runs_the_bundles_mint_helper(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
