@@ -899,3 +899,121 @@ def _journal_records(*, path: Path) -> list[dict[str, Any]]:
     return [
         json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
+
+
+def _rework_pass(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    verdict: Any,
+) -> tuple[Any, list[dict[str, object]]]:
+    """One admission pass whose only candidate is a parked rework row.
+
+    The row is `active` with its assignee already set and holds no live
+    dispatch lock, which is exactly what the claim accounting classifies as a
+    sanctioned rework park. `candidates` is empty so the row rides the rework
+    leg alone, as the targeted-dispatch path drives it.
+    """
+    admission = importlib.import_module(f"{_PACKAGE}._dispatcher_admission")
+    eligibility = importlib.import_module(f"{_PACKAGE}._dispatcher_admission_eligibility")
+    io_module = importlib.import_module(f"{_PACKAGE}._dispatcher_io")
+    status_writes: list[dict[str, object]] = []
+    monkeypatch.setattr(admission, "store_config", lambda **_: tmp_path)
+    monkeypatch.setattr(
+        admission, "update_work_item_status", lambda **kwargs: status_writes.append(kwargs)
+    )
+    monkeypatch.setattr(eligibility, "read_dispatch_labels", lambda **_: ())
+    monkeypatch.setattr(
+        admission,
+        "claimed_active_accounting",
+        lambda **_: _Accounting(rework_pending_active_ids=("bd-ib-parked",)),
+    )
+    monkeypatch.setattr(admission, "resolve_acp_preflight", lambda **_: verdict)
+    return (
+        admission.admit_and_select(
+            repo=tmp_path,
+            items=[_item(id="bd-ib-parked", status="active", assignee="fabro")],
+            candidates=[],
+            journal=io_module.JournalFile(path=tmp_path / "journal.jsonl"),
+            enforce_cap=False,
+        ),
+        status_writes,
+    )
+
+
+def test_a_parked_rework_row_stays_parked_on_a_held_conditional_node(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rework re-dispatch reads the SAME admission-required predicate.
+
+    "The same predicate governs rework admission, where the parked item stays
+    parked without a claim." The emptied chain is the CONDITIONAL repair node,
+    which is the only shape that can tell the predicates apart: under the
+    pre-v127 dominator-only grade `fix` was not admission-required, so this
+    parked row would have been re-dispatched straight into the outage.
+
+    "Without a claim" is asserted as the two writes a rework claim consists
+    of, both absent: no dispatch lock and no status write. The marker is left
+    stamped, which is what makes the row re-selectable by a later drain rather
+    than stranded.
+    """
+    lock = importlib.import_module(f"{_PACKAGE}._dispatcher_dispatch_lock")
+    composer = importlib.import_module(f"{_PACKAGE}._dispatcher_acp_preflight")
+    waits = _waits()
+
+    admission, status_writes = _rework_pass(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, verdict=_held_conditional_verdict()
+    )
+
+    assert admission.rework == []
+    assert admission.admitted == []
+    assert [outcome.stage for outcome in admission.refused] == [
+        composer.ACP_PREFLIGHT_REFUSAL_STAGE
+    ]
+    assert [outcome.work_item_id for outcome in admission.refused] == ["bd-ib-parked"]
+    assert status_writes == []
+    assert not lock.dispatch_lock_path(repo=tmp_path, work_item_id="bd-ib-parked").exists()
+    [record] = [
+        entry
+        for entry in _journal_records(path=tmp_path / "journal.jsonl")
+        if entry.get("stage") == composer.ACP_PREFLIGHT_REFUSAL_STAGE
+    ]
+    assert record["admission_required"] == ["implement", "fix"]
+    assert record["exhausted"] == ["fix"]
+    assert record["governing_condition"] == waits.LIVE_HOLD_CONDITION
+    assert record[waits.SCHEDULED_AT_KEY] == _EXPIRY
+
+
+def test_the_same_parked_rework_row_is_re_dispatched_under_a_viable_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The positive control, and it is what makes its sibling mean anything.
+
+    Identical fixture, identical pass, one difference: nothing is held. The
+    row is admitted and takes its dispatch lock. Without this, a rework leg
+    that refused every marked row for any reason at all -- a broken
+    accounting stub, a selection bug -- would satisfy the refusal assertions
+    above while proving nothing about the admission-required predicate.
+    """
+    lock = importlib.import_module(f"{_PACKAGE}._dispatcher_dispatch_lock")
+    rework = importlib.import_module(f"{_PACKAGE}._dispatcher_rework_admission")
+    viable = _minimal_verdict(
+        chains={"implement": _single(node="implement"), "fix": _single(node="fix")}
+    )
+
+    admission, status_writes = _rework_pass(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, verdict=viable
+    )
+
+    assert viable.viable is True
+    assert [item.id for item in admission.rework] == ["bd-ib-parked"]
+    assert admission.refused == []
+    # The rework leg re-occupies a slot its own `active` row already holds, so
+    # it writes no status -- the claim it DOES take is the dispatch lock.
+    assert status_writes == []
+    assert lock.dispatch_lock_path(repo=tmp_path, work_item_id="bd-ib-parked").exists()
+    assert [
+        entry
+        for entry in _journal_records(path=tmp_path / "journal.jsonl")
+        if entry.get("stage") == rework.REWORK_ADMIT_STAGE
+    ] != []
