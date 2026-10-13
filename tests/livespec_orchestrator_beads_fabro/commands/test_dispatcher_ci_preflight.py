@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, cast
@@ -13,11 +14,15 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_run_checks, _dispatcher_step_gate
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 
-_MODULE_PATH = (
-    Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
-    / "_dispatcher_ci_preflight.py"
-)
+_COMMANDS = Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
+_MODULE_PATH = _COMMANDS / "_dispatcher_ci_preflight.py"
 _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight"
+# The bounded wait lives in its own module, so it is imported INSIDE a test body
+# rather than at module scope: at the Red moment the file does not exist, and a
+# top-level import would make that Red a collection error instead of a genuine
+# failing assertion on the path below.
+_WAIT_MODULE_PATH = _COMMANDS / "_dispatcher_ci_preflight_wait.py"
+_WAIT_MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_wait"
 _EXIT_PRECONDITION_ERROR = 3
 _RED_CONCLUSIONS = (
     "failure",
@@ -60,15 +65,29 @@ class _MasterCiOutcome(Protocol):
 
 
 class _PreflightModule(Protocol):
-    def master_ci_preflight(self, *, repo: Path, runner: _Runner) -> _MasterCiOutcome:
+    def master_ci_preflight(
+        self,
+        *,
+        repo: Path,
+        runner: _Runner,
+        sleep: Callable[[float], None] | None = None,
+        clock: Callable[[], float] | None = None,
+    ) -> _MasterCiOutcome:
         """Return the master-CI preflight outcome."""
 
 
 @dataclass(kw_only=True)
 class _Runner:
-    """Argv-keyed command stand-in; an unscripted argv answers a plain failure."""
+    """Argv-keyed command stand-in; an unscripted argv answers a plain failure.
+
+    `sequences` is what makes a WAIT observable: a forge read taken twice is
+    the whole mechanism under test, so one argv has to be able to answer
+    differently on the second call. A runner that answered identically every
+    time could not tell a preflight that re-read from one that cached.
+    """
 
     results: dict[tuple[str, ...], CommandResult]
+    sequences: dict[tuple[str, ...], list[CommandResult]] = field(default_factory=dict)
     calls: list[tuple[str, ...]] = field(default_factory=list)
 
     def run(
@@ -83,7 +102,30 @@ class _Runner:
         _ = (cwd, timeout_seconds, env, stdin)
         key = tuple(argv)
         self.calls.append(key)
+        queued = self.sequences.get(key)
+        if queued:
+            return queued.pop(0)
         return self.results.get(key, CommandResult(exit_code=1, stdout="", stderr="unscripted"))
+
+
+@dataclass(kw_only=True)
+class _Waits:
+    """A clock whose ONLY advance is the sleeps the preflight asked for.
+
+    Deterministic by construction: a real clock would make "how long did it
+    wait" a reading of this machine's load rather than of the preflight's own
+    bound, and the bound is the thing being asserted.
+    """
+
+    now: float = 0.0
+    slept: list[float] = field(default_factory=list)
+
+    def clock(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.now += seconds
 
 
 def _module() -> _PreflightModule:
@@ -161,7 +203,33 @@ def _results(
 
 
 def _outcome(*, repo: Path, runner: _Runner) -> _MasterCiOutcome:
+    """The preflight on its PRODUCTION seam: the real clock and the real sleep.
+
+    Every case that never reaches a pending reading goes through here, which is
+    what keeps the shipped default exercised rather than only the injected
+    double. A case that DOES wait uses `_waited` instead.
+    """
     return _module().master_ci_preflight(repo=repo, runner=runner)
+
+
+def _waited(*, repo: Path, runner: _Runner, waits: _Waits) -> _MasterCiOutcome:
+    return _module().master_ci_preflight(
+        repo=repo, runner=runner, sleep=waits.sleep, clock=waits.clock
+    )
+
+
+def _bounded(*, monkeypatch: pytest.MonkeyPatch, bound: float) -> None:
+    """Shrink the wait module's bound for a case that drives the REAL seam.
+
+    A case reaching the preflight through the pre-dispatch gate cannot inject a
+    clock -- the gate builds its own runner and passes no seam -- so the bound
+    itself is shortened instead. Without this, such a case would sit through
+    the full ratified window.
+    """
+    assert _WAIT_MODULE_PATH.is_file()
+    wait_module = importlib.import_module(_WAIT_MODULE_NAME)
+    monkeypatch.setattr(wait_module, "WAIT_BOUND_SECONDS", bound)
+    monkeypatch.setattr(wait_module, "POLL_INTERVAL_SECONDS", 0.0)
 
 
 def _declare(*, repo: Path, workflow: str, job: str) -> None:
@@ -423,7 +491,7 @@ def test_a_still_pending_latest_run_defers_rather_than_failing(tmp_path: Path, s
     """A run that has not concluded has not failed: `deferred`, never `failed`."""
     runner = _Runner(results=_results(run_list=_result(stdout=_run_list_payload(status=status))))
 
-    outcome = _outcome(repo=tmp_path, runner=runner)
+    outcome = _waited(repo=tmp_path, runner=runner, waits=_Waits())
 
     assert outcome.refusal is not None
     assert outcome.record["reason"] == "master-ci-pending"
@@ -436,12 +504,160 @@ def test_a_still_pending_latest_run_defers_rather_than_failing(tmp_path: Path, s
 def test_a_still_pending_aggregate_job_defers_rather_than_failing(tmp_path: Path) -> None:
     runner = _Runner(results=_results(jobs=_result(stdout=_jobs_payload(job_status="in_progress"))))
 
-    outcome = _outcome(repo=tmp_path, runner=runner)
+    outcome = _waited(repo=tmp_path, runner=runner, waits=_Waits())
 
     assert outcome.refusal is not None
     assert outcome.record["reason"] == "master-ci-pending"
     assert outcome.record["status"] == "deferred"
     assert outcome.record["pending_status"] == "in_progress"
+
+
+def test_an_in_progress_run_whose_job_concludes_green_within_the_bound_passes(
+    tmp_path: Path,
+) -> None:
+    """The wait's whole point: a verdict that arrives late is still a verdict.
+
+    `waits.slept` is read because the pass alone cannot distinguish a preflight
+    that waited from one that happened to read the second payload first: a
+    recorded sleep is the only evidence a poll was taken.
+    """
+    assert _WAIT_MODULE_PATH.is_file()
+    waits = _Waits()
+    runner = _Runner(
+        results=_results(view_run_id="404", jobs=_result(stdout=_jobs_payload())),
+        sequences={
+            _run_list_argv(): [
+                _result(stdout=_run_list_payload(status="in_progress", database_id=404)),
+                _result(stdout=_run_list_payload(database_id=404)),
+            ]
+        },
+    )
+
+    outcome = _waited(repo=tmp_path, runner=runner, waits=waits)
+
+    assert outcome.refusal is None
+    assert outcome.record["status"] == "passed"
+    assert outcome.record["reason"] == "master-ci-green"
+    assert outcome.record["run_database_id"] == "404"
+    assert waits.slept == [60.0]
+
+
+def test_an_in_progress_run_whose_job_concludes_red_within_the_bound_refuses_as_red(
+    tmp_path: Path,
+) -> None:
+    """A late red is a red, not a deferral: the same refusal a first-read red earns."""
+    assert _WAIT_MODULE_PATH.is_file()
+    waits = _Waits()
+    runner = _Runner(
+        results=_results(
+            view_run_id="404", jobs=_result(stdout=_jobs_payload(job_conclusion="failure"))
+        ),
+        sequences={
+            _run_list_argv(): [
+                _result(stdout=_run_list_payload(status="queued", database_id=404)),
+                _result(stdout=_run_list_payload(database_id=404)),
+            ]
+        },
+    )
+
+    outcome = _waited(repo=tmp_path, runner=runner, waits=waits)
+
+    assert outcome.refusal is not None
+    assert outcome.record["reason"] == "master-ci-red"
+    assert outcome.record["status"] == "failed"
+    assert outcome.record["run_database_id"] == "404"
+    assert "404" in outcome.refusal.detail
+    assert waits.slept == [60.0]
+
+
+def test_a_newer_run_started_during_the_wait_replaces_the_one_being_waited_on(
+    tmp_path: Path,
+) -> None:
+    """Each poll re-reads the LATEST run, because the default branch moves.
+
+    The fixture is deliberately shaped so a cheaper implementation fails it:
+    the first reading pends on run 404's own aggregate JOB, so a wait that
+    polled only that job would conclude about 404 and never look at 505. The
+    discriminating assertions are the journaled run id and the presence of
+    505's job lookup among the calls.
+    """
+    assert _WAIT_MODULE_PATH.is_file()
+    waits = _Waits()
+    runner = _Runner(
+        results={
+            **_results(view_run_id="505", jobs=_result(stdout=_jobs_payload())),
+            ("gh", "run", "view", "404", "--json", "jobs"): _result(
+                stdout=_jobs_payload(job_status="in_progress")
+            ),
+        },
+        sequences={
+            _run_list_argv(): [
+                _result(stdout=_run_list_payload(database_id=404)),
+                _result(stdout=_run_list_payload(database_id=505)),
+            ]
+        },
+    )
+
+    outcome = _waited(repo=tmp_path, runner=runner, waits=waits)
+
+    assert outcome.refusal is None
+    assert outcome.record["run_database_id"] == "505"
+    assert ("gh", "run", "view", "505", "--json", "jobs") in runner.calls
+    assert waits.slept == [60.0]
+
+
+def test_a_run_still_pending_at_the_bound_defers_after_the_whole_window(
+    tmp_path: Path,
+) -> None:
+    """The ratified figures, read off the wait itself: 1800 seconds, polled at <= 60.
+
+    Asserting the TOTAL and the per-poll ceiling separately is what makes this
+    a reading of both figures: a wait that polled once for 1800 seconds would
+    satisfy the sum, and one that polled every second for 30 seconds would
+    satisfy the ceiling.
+    """
+    assert _WAIT_MODULE_PATH.is_file()
+    waits = _Waits()
+    runner = _Runner(results=_results(run_list=_result(stdout=_run_list_payload(status="queued"))))
+
+    outcome = _waited(repo=tmp_path, runner=runner, waits=waits)
+
+    assert outcome.refusal is not None
+    assert outcome.record["reason"] == "master-ci-pending"
+    assert outcome.record["status"] == "deferred"
+    assert outcome.record["waited_seconds"] == 1800
+    assert sum(waits.slept) == 1800.0
+    assert max(waits.slept) <= 60.0
+    assert "waited 1800s" in outcome.refusal.detail
+
+
+@pytest.mark.parametrize(
+    ("run_list", "jobs"),
+    [
+        (_result(exit_code=1, stderr="HTTP 401\n"), None),
+        (_result(stdout="[]"), None),
+        (None, _result(stdout=_jobs_payload(job_conclusion="neutral"))),
+        (None, _result(stdout=_jobs_payload(job_conclusion=None))),
+    ],
+)
+def test_every_unprovable_condition_still_refuses_without_waiting(
+    tmp_path: Path, run_list: CommandResult | None, jobs: CommandResult | None
+) -> None:
+    """No amount of waiting repairs an unprovable host, so none is spent on one.
+
+    `waits.slept == []` is the load-bearing assertion: each of these refuses
+    today as well, so a wait that polled them would still refuse in the end --
+    half an hour later, on every dispatch, for a condition that cannot change.
+    """
+    assert _WAIT_MODULE_PATH.is_file()
+    waits = _Waits()
+    runner = _Runner(results=_results(run_list=run_list, jobs=jobs))
+
+    outcome = _waited(repo=tmp_path, runner=runner, waits=waits)
+
+    assert outcome.refusal is not None
+    assert outcome.record["reason"] == "master-ci-unprovable"
+    assert waits.slept == []
 
 
 def test_a_deferred_preflight_does_not_start_the_dispatch_and_journals_deferred(
@@ -453,7 +669,7 @@ def test_a_deferred_preflight_does_not_start_the_dispatch_and_journals_deferred(
     deferral that exited 0 would start a dispatch against an unread default
     branch, and one journaled `failed` would report healthy work as a failure.
     """
-    assert _MODULE_PATH.is_file()
+    _bounded(monkeypatch=monkeypatch, bound=0.0)
     journal = tmp_path / "journal.jsonl"
     args = argparse.Namespace(fabro_bin=str(tmp_path / "fabro"), janitor=None, journal=str(journal))
     runner = _Runner(results=_results(jobs=_result(stdout=_jobs_payload(job_status="queued"))))
@@ -490,7 +706,7 @@ def test_the_deferred_text_reads_as_still_running_and_carries_no_red_recovery(
         results=_results(run_list=_result(stdout=_run_list_payload(status="in_progress")))
     )
 
-    outcome = _outcome(repo=tmp_path, runner=runner)
+    outcome = _waited(repo=tmp_path, runner=runner, waits=_Waits())
 
     assert outcome.refusal is not None
     detail = outcome.refusal.detail

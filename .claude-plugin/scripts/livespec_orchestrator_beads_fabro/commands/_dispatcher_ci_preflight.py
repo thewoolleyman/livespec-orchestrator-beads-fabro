@@ -8,10 +8,14 @@ default branch green, and proceeding on that was the whole defect
 (`SPECIFICATION/contracts.md`, the master-CI pipeline resolution clause).
 
 A STILL-RUNNING RUN IS NOT A FAILURE, and it is not an unprovable host either.
-It does not proceed -- nobody has read a verdict for it -- but it is DEFERRED
-under its own reason and a `deferred` status rather than sharing the red run's
-`failed`, because reporting healthy work as a failure is what pushed a retry
-loop onto every caller.
+It earns a bounded WAIT -- `_dispatcher_ci_preflight_wait` owns it -- and only
+the expiry of that window ends the preflight without a verdict, DEFERRED under
+its own reason and a `deferred` status rather than sharing the red run's
+`failed`. Reporting healthy work as a failure is what pushed a retry loop onto
+every caller, and that loop then raced the newer runs the merges kept starting.
+So this module returns a PENDING READING for the two unconcluded conditions
+(the run itself, and its aggregate job) instead of an outcome: it is the wait
+that decides whether a pending reading becomes a verdict or a deferral.
 
 THE BRANCH IS NEVER HARD-CODED. It is resolved per the ratified
 default-branch-resolution rule, because under the retired branch literal an
@@ -28,13 +32,16 @@ WHAT is looked up comes from `_dispatcher_ci_pipeline_view`; the branch comes
 from the shared `_dispatcher_default_branch` resolution every dispatch-path
 stage uses; the forge reads come from `_dispatcher_ci_preflight_lookups`; HOW an
 outcome reads comes from
-`_dispatcher_ci_preflight_refusals`. This module is the classifier between them.
-WHERE an outcome is journaled is none of the four: the pre-dispatch step gate
-owns one journal handle and appends every step's record through it.
+`_dispatcher_ci_preflight_refusals`; HOW LONG an unconcluded reading is given
+comes from `_dispatcher_ci_preflight_wait`. This module is the classifier
+between them. WHERE an outcome is journaled is none of the five: the
+pre-dispatch step gate owns one journal handle and appends every step's record
+through it.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
@@ -62,9 +69,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_refusal
     PIPELINE_REMEDY,
     MasterCiOutcome,
     pass_outcome,
-    pending_outcome,
     red_outcome,
     unprovable_outcome,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_wait import (
+    PendingRun,
+    awaited_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_default_branch import (
     resolve_default_branch,
@@ -89,13 +99,26 @@ _RED_CONCLUSIONS: frozenset[str] = frozenset(
 )
 
 
-def master_ci_preflight(*, repo: Path, runner: CommandRunner) -> MasterCiOutcome:
+def master_ci_preflight(
+    *,
+    repo: Path,
+    runner: CommandRunner,
+    sleep: Callable[[float], None] | None = None,
+    clock: Callable[[], float] | None = None,
+) -> MasterCiOutcome:
     """Prove the resolved default branch green at the resolved aggregate job.
 
     Returns the step's journaled outcome either way: a pass when the latest run
     of the resolved workflow on the resolved branch concluded green at the
-    resolved aggregate job, and a refusal for every other reading -- red, still
-    pending, or unprovable.
+    resolved aggregate job, a refusal for every proven-red or unprovable
+    reading, and the deferral when the bounded wait expires with the latest run
+    still unconcluded.
+
+    `sleep` and `clock` are the bounded wait's two impure seams, absent on the
+    production path. They are here rather than on `awaited_outcome` alone
+    because this is the entry point a caller holds, and a wait whose cadence
+    could only be observed by actually waiting is a wait nothing can assert a
+    bound on.
     """
     pipeline = resolve_master_ci_pipeline(cwd=repo)
     if pipeline.defect is not None:
@@ -119,12 +142,37 @@ def master_ci_preflight(*, repo: Path, runner: CommandRunner) -> MasterCiOutcome
             cause="the target's default branch could not be resolved",
             remedy=BRANCH_REMEDY,
         )
-    return _classify_branch(repo=repo, runner=runner, pipeline=pipeline, branch=branch)
+    return _awaited(
+        repo=repo, runner=runner, pipeline=pipeline, branch=branch, sleep=sleep, clock=clock
+    )
+
+
+def _awaited(
+    *,
+    repo: Path,
+    runner: CommandRunner,
+    pipeline: MasterCiPipeline,
+    branch: str,
+    sleep: Callable[[float], None] | None,
+    clock: Callable[[], float] | None,
+) -> MasterCiOutcome:
+    """Hand the WHOLE default-branch reading to the bounded wait as its poll.
+
+    The closure is built here, after `branch` has been resolved, so the wait
+    holds no opinion about what it is re-reading: each poll repeats the entire
+    classification, which is what makes a newer run that starts mid-wait the
+    run being waited on.
+    """
+
+    def read() -> MasterCiOutcome | PendingRun:
+        return _classify_branch(repo=repo, runner=runner, pipeline=pipeline, branch=branch)
+
+    return awaited_outcome(pipeline=pipeline, branch=branch, read=read, sleep=sleep, clock=clock)
 
 
 def _classify_branch(
     *, repo: Path, runner: CommandRunner, pipeline: MasterCiPipeline, branch: str
-) -> MasterCiOutcome:
+) -> MasterCiOutcome | PendingRun:
     result = list_runs(repo=repo, runner=runner, workflow=pipeline.workflow, branch=branch)
     if result.exit_code != 0:
         return _lookup_failure(
@@ -188,7 +236,7 @@ def _classify_run(
     pipeline: MasterCiPipeline,
     branch: str,
     first: object,
-) -> MasterCiOutcome:
+) -> MasterCiOutcome | PendingRun:
     if not isinstance(first, dict):
         return _unprovable(
             pipeline=pipeline,
@@ -200,13 +248,7 @@ def _classify_run(
     run_id = run_id_of(run=run)
     status = run.get("status")
     if isinstance(status, str) and status in _PENDING_STATUSES:
-        return pending_outcome(
-            pipeline=pipeline,
-            branch=branch,
-            run_id=run_id,
-            status=status,
-            waited_seconds=0.0,
-        )
+        return PendingRun(run_id=run_id, status=status)
     return _classify_job(repo=repo, runner=runner, pipeline=pipeline, branch=branch, run_id=run_id)
 
 
@@ -217,7 +259,7 @@ def _classify_job(
     pipeline: MasterCiPipeline,
     branch: str,
     run_id: str,
-) -> MasterCiOutcome:
+) -> MasterCiOutcome | PendingRun:
     result = view_run_jobs(repo=repo, runner=runner, run_id=run_id)
     if result.exit_code != 0:
         return _unprovable(
@@ -250,17 +292,11 @@ def _classify_job(
 
 def _classify_conclusion(
     *, pipeline: MasterCiPipeline, branch: str, run_id: str, job: CiJob
-) -> MasterCiOutcome:
+) -> MasterCiOutcome | PendingRun:
     job_status = job.get("status")
     conclusion = job.get("conclusion")
     if isinstance(job_status, str) and job_status in _PENDING_STATUSES:
-        return pending_outcome(
-            pipeline=pipeline,
-            branch=branch,
-            run_id=run_id,
-            status=job_status,
-            waited_seconds=0.0,
-        )
+        return PendingRun(run_id=run_id, status=job_status)
     if conclusion in _RED_CONCLUSIONS:
         return red_outcome(
             pipeline=pipeline, branch=branch, run_id=run_id, conclusion=str(conclusion)

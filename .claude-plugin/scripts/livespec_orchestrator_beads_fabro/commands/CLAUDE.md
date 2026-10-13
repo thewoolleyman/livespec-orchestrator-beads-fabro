@@ -520,6 +520,32 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `_dispatcher_plan_build.build_plan`, and rides `DispatchPlan.integration`;
   every seam reads it from there. A seam that resolves an integration point of
   its own is the defect the resolve-once-project-everywhere clause retires.
+- `_dispatcher_ci_preflight_wait.py` — the BOUNDED WAIT a still-running default
+  branch earns before the master-CI preflight reports anything
+  (`contracts.md`'s "A still-running master CI run is not a failure" rule,
+  Scenario 171). Split out of `_dispatcher_ci_preflight` along the seam between
+  CLASSIFYING one reading and REPEATING it until it yields a verdict; the
+  classifier returns a `PendingRun` for the two unconcluded conditions (the
+  latest run itself, and its aggregate job) and this module decides whether
+  that becomes a verdict or a deferral. Four properties an editor must not
+  invert. The reading is re-taken WHOLE — `read` is the caller's entire
+  default-branch classification — because this repository's default branch
+  re-runs CI on every merge, so a newer run that starts mid-wait must BECOME
+  the run being waited on; polling only the first run's aggregate job would be
+  cheaper and would answer confidently about a run nobody is waiting for any
+  more. Only a PENDING reading waits: every other unprovable condition (no
+  usable credential, an unresolvable pipeline, no runs yet, a conclusion that
+  is neither green nor red) is returned the instant it is read, because no
+  amount of waiting repairs any of them and the bound would turn each into a
+  half-hour stall on every dispatch. The expiry is a DEFERRAL and never a
+  failure — `pending_outcome` journals `deferred` with reason
+  `master-ci-pending` and words its first line as still running, with neither
+  the `ERROR:` prefix nor the red-default-branch recovery, because that
+  recovery is a statement about a RED default branch and offering it for
+  unfinished work points the operator at a detour. And `POLL_INTERVAL_SECONDS`
+  is a CEILING rather than a cadence (the last poll sleeps only the remaining
+  window), so the deferral lands AT the 1800-second bound instead of past it;
+  both figures are ratified rather than tuned.
 - The ACP **agent and model catalogs**, and the STRUCTURED candidate form that
   resolves through them (`contracts.md` §"Agent and model catalogs" and §"ACP
   node adapter configuration"). The dependency direction is load-bearing and
