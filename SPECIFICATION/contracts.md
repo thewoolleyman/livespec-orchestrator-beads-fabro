@@ -1494,6 +1494,20 @@ its start and completion events, so the stall window alone cannot bound it.
 A run whose every source stays unchanged for the full stall window, with no
 command node open, MUST still be cancelled as `stalled-no-progress`.
 
+**Observing the run.** Until the Dispatcher has bound the dispatched run's
+id, the watchdog MAY discover the run by listing the runs the factory
+holds. Once the run's id is bound, every later watchdog poll MUST observe
+that run by its id through a per-run read of the factory, and MUST NOT list
+the runs the factory holds; the cost of a poll MUST NOT grow with the
+factory's run history. A per-run read MUST still let the watchdog detect
+each outcome it detects today: the run reaching a terminal state, the run
+making no progress under the rule above, and the run no longer being held
+by the factory. A per-run read that fails, or whose answer cannot be
+interpreted, MUST NOT be read as the run having disappeared; it is an
+unobservable poll, and the watchdog MUST treat it no differently from a
+listing that could not be read. Scenario 173 in `scenarios.md` exercises
+this paragraph.
+
 **The cancel record.** On a cancel the Dispatcher MUST journal one
 `watchdog-stall-cancel` record naming the work-item, the dispatch id, the
 run id, the factory, and the stage the run was executing. That stage is the

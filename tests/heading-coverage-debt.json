@@ -513,6 +513,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 173 — The progress watchdog observes its bound run by id and never lists the factory's run history",
+    "work_item": "bd-ib-6pdigz",
+    "first_seen": "2026-10-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 26 — list-work-items emits lane and lane_reason",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-29"
