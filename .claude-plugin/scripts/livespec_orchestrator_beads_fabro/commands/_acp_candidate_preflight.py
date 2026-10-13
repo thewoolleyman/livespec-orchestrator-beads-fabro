@@ -42,8 +42,8 @@ containment path, which is the whole reason it is allowed to carry no identity.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import ResolvedAcpChain
@@ -92,6 +92,17 @@ class SkippedCandidate:
     availability causes an observed provider outage carries. Writing it into
     `cause` would make a credential that is merely rate-limited on this host
     indistinguishable, downstream, from an entitlement the provider revoked.
+
+    `expires_at` is the BOUNDED EXPIRY of the durable record that removed this
+    candidate -- typed or legacy -- and it is recorded here for the same reason
+    `cause` is: the availability wait falls at "the earliest expiry among the
+    holds that empty a chain", and the moment the skip was decided is the only
+    moment at which the record responsible for it is known. Re-deriving it
+    later from a ledger that has since moved would schedule the wait off a
+    different record than the one that refused. It is `None` for an ephemeral
+    probe skip, which carries no expiry because it mints no record -- the
+    discriminator the "otherwise" arm of that clause reads, and the reason a
+    probe condition must never be given a borrowed instant.
     """
 
     availability_key: str | None
@@ -101,6 +112,7 @@ class SkippedCandidate:
     scope: str | None = None
     hold_key: str | None = None
     condition: str | None = None
+    expires_at: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -126,10 +138,18 @@ class PreflightInputs:
     contract's "at one fixed evaluation time" a property of the type: two nodes
     filtered from one `PreflightInputs` cannot see a ledger that moved between
     them.
+
+    `legacy_provider_expiries` maps each vendor still carrying a live LEGACY
+    provider record to that record's bounded expiry. It is a mapping rather
+    than the vendor set it used to be because a legacy record is a hold like
+    any other: it empties a chain, so the availability wait falls at ITS expiry
+    too, and a name alone cannot say when. The names are still the authority
+    for coverage -- the expiry is carried alongside, never consulted to decide
+    whether a record covers anything.
     """
 
     holds: tuple[AcpAvailabilityHold, ...] = ()
-    legacy_providers: frozenset[str] = frozenset()
+    legacy_provider_expiries: Mapping[str, str] = field(default_factory=dict)
     builtin_pairs: frozenset[tuple[str, str]] = frozenset()
     probe: Callable[[str], str] | None = None
 
@@ -180,10 +200,16 @@ def _skip_for(
                 cause=hold.cause,
                 scope=hold.scope,
                 hold_key=hold.hold_key,
+                expires_at=hold.expires_at,
             )
     legacy = _legacy_provider(candidate=candidate, inputs=inputs)
     if legacy is not None:
-        return _skipped(candidate=candidate, reason=LEGACY_HOLD_SKIP, hold_key=legacy)
+        return _skipped(
+            candidate=candidate,
+            reason=LEGACY_HOLD_SKIP,
+            hold_key=legacy,
+            expires_at=inputs.legacy_provider_expiries[legacy],
+        )
     return _probe_skip(candidate=candidate, probe=inputs.probe, assessed=assessed)
 
 
@@ -191,7 +217,7 @@ def _legacy_provider(*, candidate: AcpCandidate, inputs: PreflightInputs) -> str
     """The live legacy provider record covering this candidate, if one still does."""
     identity = candidate.identity
     builtin = identity is not None and identity.pair in inputs.builtin_pairs
-    for provider in sorted(inputs.legacy_providers):
+    for provider in sorted(inputs.legacy_provider_expiries):
         if legacy_record_covers_candidate(provider=provider, candidate=candidate, builtin=builtin):
             return provider
     return None
@@ -216,7 +242,7 @@ def _probe_skip(
     return _skipped(candidate=candidate, reason=PROBE_SKIP, condition=condition)
 
 
-def _skipped(
+def _skipped(  # noqa: PLR0913 — one keyword per recorded field of the skip it builds.
     *,
     candidate: AcpCandidate,
     reason: str,
@@ -224,6 +250,7 @@ def _skipped(
     scope: str | None = None,
     hold_key: str | None = None,
     condition: str | None = None,
+    expires_at: str | None = None,
 ) -> SkippedCandidate:
     identity = candidate.identity
     return SkippedCandidate(
@@ -234,4 +261,5 @@ def _skipped(
         scope=scope,
         hold_key=hold_key,
         condition=condition,
+        expires_at=expires_at,
     )

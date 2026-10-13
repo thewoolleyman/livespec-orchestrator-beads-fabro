@@ -159,7 +159,9 @@ def resolve_acp_preflight(
         ledger=ledger,
         inputs=PreflightInputs(
             holds=ledger.holds,
-            legacy_providers=_legacy_providers(journal_path=journal_path, now_iso=now_iso),
+            legacy_provider_expiries=_legacy_provider_expiries(
+                journal_path=journal_path, now_iso=now_iso
+            ),
             builtin_pairs=builtin_pairs,
             probe=probe,
         ),
@@ -291,18 +293,25 @@ def credential_reprobe_wait_applies(*, verdict: AcpPreflightVerdict) -> bool:
     return not verdict.fallback_enabled or not verdict.viable
 
 
-def _legacy_providers(*, journal_path: Path | None, now_iso: str) -> frozenset[str]:
-    """The vendors still carrying an unexpired LEGACY provider-exhaustion record.
+def _legacy_provider_expiries(*, journal_path: Path | None, now_iso: str) -> Mapping[str, str]:
+    """Each vendor still carrying an unexpired LEGACY record, and when it lapses.
 
     Read off the journal's own live records rather than by asking about a list
     of vendor names, so the per-candidate filter below sees a record naming a
     provider this build never anticipated. Asking name by name could only ever
     return the names it already held.
+
+    The EXPIRY rides along because a legacy record is a hold like any other:
+    when it empties an admission-required chain the availability wait falls at
+    its expiry, and carrying only the vendor name would route that wait onto
+    the reprobe dial instead -- the "otherwise" arm reached while a hold does
+    in fact govern. `live_provider_exhaustions` already returns the newest live
+    record per provider, so one expiry per name is the whole answer.
     """
-    return frozenset(
-        record.provider
+    return {
+        record.provider: record.record_expires_at
         for record in live_provider_exhaustions(journal_path=journal_path, now_iso=now_iso)
-    )
+    }
 
 
 def _resolve_chains(

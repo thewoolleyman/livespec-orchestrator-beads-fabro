@@ -70,6 +70,11 @@ _NEW_MODULES = (
 
 _NOW = "2026-09-12T12:00:00Z"
 
+# The bounded expiry a live LEGACY provider record carries. The preflight
+# inputs take the expiry alongside the vendor name because a legacy record is
+# a hold that empties a chain, so the availability wait falls at its instant.
+_LEGACY_EXPIRY = "2026-09-12T12:15:00Z"
+
 # A minimal graph carrying every shape the derivation reads: one start, one
 # green terminal, one ACP node dominating it, and one ACP node that does not.
 _MINIMAL_GRAPH = """
@@ -400,7 +405,7 @@ def test_a_live_legacy_provider_record_covers_a_matching_builtin_candidate() -> 
     result = _filter(
         chain=chain,
         inputs=_inputs(
-            legacy_providers=frozenset({"codex"}),
+            legacy_provider_expiries={"codex": _LEGACY_EXPIRY},
             builtin_pairs=frozenset({("codex", "builtin")}),
         ),
     )
@@ -415,7 +420,9 @@ def test_a_live_legacy_record_covers_an_identity_less_legacy_candidate() -> None
         node="implement",
         candidates=(_candidate(availability_key=None), _candidate(availability_key="anthropic")),
     )
-    result = _filter(chain=chain, inputs=_inputs(legacy_providers=frozenset({"codex"})))
+    result = _filter(
+        chain=chain, inputs=_inputs(legacy_provider_expiries={"codex": _LEGACY_EXPIRY})
+    )
 
     assert _keys(preflight=result) == ["gpt-5-5"]
     assert result.skipped[0].availability_key is None
@@ -447,7 +454,7 @@ def test_typed_candidate_evidence_outranks_legacy_attribution_of_the_same_candid
                     cause="model_not_entitled",
                 ),
             ),
-            legacy_providers=frozenset({"codex"}),
+            legacy_provider_expiries={"codex": _LEGACY_EXPIRY},
             builtin_pairs=frozenset({("codex", "builtin")}),
         ),
     )

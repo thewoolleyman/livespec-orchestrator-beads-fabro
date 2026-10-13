@@ -36,6 +36,7 @@ import importlib
 from pathlib import Path
 from typing import Any
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import (
     build_acp_preflight_verdict,
 )
@@ -64,6 +65,26 @@ _COMMITTED_DOMINATORS = frozenset(
 
 _NOW = "2026-10-13T12:00:00Z"
 _EXPIRY = "2026-10-13T12:15:00Z"
+_EARLIER_EXPIRY = "2026-10-13T12:05:00Z"
+_REPROBE_SECONDS = 300
+_NOW_PLUS_REPROBE = "2026-10-13T12:05:00Z"
+
+# A graph carrying exactly the two shapes the wait derivation needs: one ACP
+# node that dominates the green terminal and one that only sits on a Red path.
+# Both are reachable, so both are admission-required.
+_MINIMAL_GRAPH = """
+    graph [stall_timeout="7200s"]
+    start [shape=Mdiamond, label="Start"]
+    exit  [shape=Msquare, label="Exit"]
+    implement [backend="acp", acp.command="a", timeout="60s"]
+    fix [backend="acp", acp.command="b", timeout="60s"]
+    gate [shape=parallelogram, timeout="60s"]
+    start -> implement
+    implement -> gate
+    gate -> exit [label="green", condition="outcome=succeeded"]
+    gate -> fix [label="red"]
+    fix -> gate
+"""
 
 # Every ACP node the committed graph declares. All nine are reachable from
 # `start`, so all nine are admission-required under v127.
@@ -138,6 +159,35 @@ def _inputs(**overrides: Any) -> Any:
     return preflight.PreflightInputs(**overrides)
 
 
+def _waits() -> Any:
+    """The wait module, proving its file exists first.
+
+    The existence assertion runs BEFORE the import so an unimplemented slice
+    fails on a genuine assertion rather than on a `ModuleNotFoundError`, which
+    proves only unimportability and says nothing about the behaviour.
+    """
+    module_path = _COMMANDS / "_acp_availability_wait.py"
+    assert module_path.is_file(), "_acp_availability_wait.py is not implemented yet"
+    return importlib.import_module(f"{_PACKAGE}._acp_availability_wait")
+
+
+def _minimal_verdict(*, chains: dict[str, Any], holds: tuple[Any, ...] = (), **inputs: Any) -> Any:
+    """A verdict over `_MINIMAL_GRAPH`, whose ACP nodes are `implement` and `fix`."""
+    return build_acp_preflight_verdict(
+        chains=chains,
+        graph_text=_MINIMAL_GRAPH,
+        ledger=_ledger(holds=holds),
+        inputs=_inputs(holds=holds, **inputs),
+    )
+
+
+def _single(*, node: str, availability_key: str = "codex") -> Any:
+    return _chain(
+        node=node,
+        candidates=(_candidate(availability_key=availability_key, candidate_key=node),),
+    )
+
+
 def _committed_chains(*, availability_key: str = "codex") -> dict[str, Any]:
     """One single-candidate chain per ACP node of the committed graph."""
     return {
@@ -210,3 +260,175 @@ def test_the_dominator_derivation_still_returns_the_narrower_success_critical_se
     assert set(verdict.success_critical) == _COMMITTED_DOMINATORS
     assert _COMMITTED_DOMINATORS < _COMMITTED_ACP_NODES
     assert {"fix", "review_fix", "disposition"} == _COMMITTED_ACP_NODES - _COMMITTED_DOMINATORS
+
+
+def test_the_scheduled_instant_is_the_earliest_expiry_among_the_emptying_holds() -> None:
+    """Earliest, across EVERY emptied chain -- not the first one encountered.
+
+    The two holds are deliberately ordered against the graph: `implement` is
+    declared first and is held until 12:15, while `fix` is declared second and
+    is held only until 12:05. A derivation that took the first exhausted node's
+    own expiry would schedule 12:15 and leave the item waiting ten minutes past
+    the moment it became dispatchable again -- a plausible instant, in the
+    right format, that no reader could tell from the correct one.
+    """
+    waits = _waits()
+    held = (
+        _hold(hold_key="codex", expires_at=_EXPIRY),
+        _hold(hold_key="anthropic", expires_at=_EARLIER_EXPIRY),
+    )
+    verdict = _minimal_verdict(
+        chains={
+            "implement": _single(node="implement", availability_key="codex"),
+            "fix": _single(node="fix", availability_key="anthropic"),
+        },
+        holds=held,
+    )
+
+    wait = waits.schedule_availability_wait(
+        verdict=verdict, now_iso=_NOW, reprobe_interval_seconds=_REPROBE_SECONDS
+    )
+
+    assert verdict.exhausted == ("implement", "fix")
+    assert wait.nodes == ("implement", "fix")
+    assert wait.governing_condition == waits.LIVE_HOLD_CONDITION
+    assert wait.scheduled_at == _EARLIER_EXPIRY
+    assert wait.hold_expiries == (_EARLIER_EXPIRY, _EXPIRY)
+
+
+def test_a_healthy_fallback_nodes_own_skips_do_not_schedule_the_wait() -> None:
+    """Only the holds that EMPTIED a chain decide when the item is next looked at.
+
+    `implement` keeps an eligible fallback, so it is holding nothing back, and
+    its held primary carries the EARLIER expiry; `fix` is wholly held and
+    lapses later. A derivation that collected every skip in the verdict would
+    schedule the wait at `implement`'s primary expiry -- an instant at which
+    `fix` is still held, so the next pass refuses again and the schedule the
+    record reported was never true. The ordering is deliberate: with the
+    expiries the other way round the wrong derivation returns the right answer.
+    """
+    waits = _waits()
+    held = (
+        _hold(hold_key="codex", expires_at=_EARLIER_EXPIRY),
+        _hold(hold_key="anthropic", expires_at=_EXPIRY),
+    )
+    verdict = _minimal_verdict(
+        chains={
+            "implement": _chain(
+                node="implement",
+                candidates=(
+                    _candidate(availability_key="codex", candidate_key="primary"),
+                    _candidate(availability_key="openrouter", candidate_key="fallback"),
+                ),
+            ),
+            "fix": _single(node="fix", availability_key="anthropic"),
+        },
+        holds=held,
+    )
+
+    wait = waits.schedule_availability_wait(
+        verdict=verdict, now_iso=_NOW, reprobe_interval_seconds=_REPROBE_SECONDS
+    )
+
+    assert verdict.exhausted == ("fix",)
+    assert wait.nodes == ("fix",)
+    assert wait.governing_condition == waits.LIVE_HOLD_CONDITION
+    assert wait.scheduled_at == _EXPIRY
+    assert wait.hold_expiries == (_EXPIRY,)
+
+
+def test_a_chain_emptied_with_no_governing_hold_waits_the_reprobe_interval() -> None:
+    """The "otherwise" arm: no hold governs, so the committed dial does.
+
+    An ephemeral credential-probe skip mints no record and carries no expiry,
+    so there is no hold instant to wait for. The record must still name a
+    condition and an instant without INVENTING a hold identity or expiry --
+    Scenario 60's "when no hold governs the refusal, the record names the
+    outstanding confirmation, unavailable evidence source, or admission-time
+    credential-probe skip without inventing a hold identity or expiry".
+    """
+    waits = _waits()
+    candidate_preflight = importlib.import_module(f"{_PACKAGE}._acp_candidate_preflight")
+    verdict = _minimal_verdict(
+        chains={"implement": _single(node="implement"), "fix": _single(node="fix")},
+        probe=lambda _key: "exhausted",
+    )
+
+    wait = waits.schedule_availability_wait(
+        verdict=verdict, now_iso=_NOW, reprobe_interval_seconds=_REPROBE_SECONDS
+    )
+
+    assert wait.governing_condition == candidate_preflight.PROBE_SKIP
+    assert wait.scheduled_at == _NOW_PLUS_REPROBE
+    assert wait.hold_expiries == ()
+
+
+def test_a_legacy_provider_record_that_empties_a_chain_supplies_its_own_expiry() -> None:
+    """A legacy record is a hold too, so its expiry schedules the wait.
+
+    Scenario 60's "A legacy provider record remains effective during migration"
+    makes the legacy blanket exhaust an admission-required chain, and its
+    sibling "A chain exhausted by live holds waits until scheduled
+    reevaluation" says the wait falls at "the earliest expiry among the
+    covering holds" -- current or legacy. Reading only TYPED expiries would
+    quietly route every legacy-governed wait onto the reprobe interval, which
+    is the "otherwise" arm reached while a hold does in fact govern.
+    """
+    waits = _waits()
+    verdict = _minimal_verdict(
+        chains={"implement": _single(node="implement"), "fix": _single(node="fix")},
+        legacy_provider_expiries={"codex": _EARLIER_EXPIRY},
+        builtin_pairs=frozenset({("codex", "implement"), ("codex", "fix")}),
+    )
+
+    wait = waits.schedule_availability_wait(
+        verdict=verdict, now_iso=_NOW, reprobe_interval_seconds=_REPROBE_SECONDS
+    )
+
+    assert verdict.exhausted == ("implement", "fix")
+    assert wait.governing_condition == waits.LIVE_HOLD_CONDITION
+    assert wait.scheduled_at == _EARLIER_EXPIRY
+    assert wait.hold_expiries == (_EARLIER_EXPIRY,)
+
+
+def test_a_viable_verdict_schedules_no_wait_at_all() -> None:
+    """Nothing is waiting, so there is no instant to name.
+
+    The positive control for the three cases above: a derivation that always
+    returned a wait would satisfy every one of them while parking a healthy
+    repository on a schedule nothing asked for.
+    """
+    waits = _waits()
+    verdict = _minimal_verdict(
+        chains={"implement": _single(node="implement"), "fix": _single(node="fix")}
+    )
+
+    assert verdict.viable is True
+    assert (
+        waits.schedule_availability_wait(
+            verdict=verdict, now_iso=_NOW, reprobe_interval_seconds=_REPROBE_SECONDS
+        )
+        is None
+    )
+
+
+def test_an_unreadable_evaluation_clock_raises_rather_than_naming_an_instant() -> None:
+    """A bug, raised -- never an invented instant and never `now` itself.
+
+    The clock is the Dispatcher's own `utc_now_iso()`, so an unparseable value
+    is a bug rather than an expected error. Both soft alternatives are worse
+    than raising: falling back to `now` schedules an immediate retry, which is
+    the busy loop the clause forbids, and omitting the instant leaves the
+    refusal record without the one field an operator reads to learn when the
+    item moves again.
+    """
+    waits = _waits()
+    verdict = _minimal_verdict(
+        chains={"implement": _single(node="implement"), "fix": _single(node="fix")},
+        probe=lambda _key: "exhausted",
+    )
+
+    with pytest.raises(ValueError, match="not an ISO-8601 instant"):
+        _ = waits.schedule_availability_wait(
+            verdict=verdict, now_iso="not-an-instant", reprobe_interval_seconds=_REPROBE_SECONDS
+        )
