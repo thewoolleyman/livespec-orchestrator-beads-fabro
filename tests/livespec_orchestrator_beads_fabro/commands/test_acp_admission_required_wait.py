@@ -33,6 +33,7 @@ provider.
 from __future__ import annotations
 
 import importlib
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -528,13 +529,13 @@ def test_the_pass_resolver_reads_the_committed_reprobe_interval(tmp_path: Path) 
     assert policy.DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS != 900
     assert (
         pass_wait.resolve_availability_wait(
-            repo=declared, verdict=verdict, now_iso=_NOW
+            repo=declared, verdict=verdict, now_iso=_NOW, journal_path=None
         ).scheduled_at
         == "2026-10-13T12:15:00Z"
     )
     assert (
         pass_wait.resolve_availability_wait(
-            repo=undeclared, verdict=verdict, now_iso=_NOW
+            repo=undeclared, verdict=verdict, now_iso=_NOW, journal_path=None
         ).scheduled_at
         == _NOW_PLUS_REPROBE
     )
@@ -555,7 +556,12 @@ def test_a_viable_pass_resolves_no_wait_and_reads_no_configuration(tmp_path: Pat
     )
 
     assert verdict.viable is True
-    assert pass_wait.resolve_availability_wait(repo=tmp_path, verdict=verdict, now_iso=_NOW) is None
+    assert (
+        pass_wait.resolve_availability_wait(
+            repo=tmp_path, verdict=verdict, now_iso=_NOW, journal_path=None
+        )
+        is None
+    )
 
 
 def test_the_containment_refusal_names_the_condition_the_node_and_the_instant() -> None:
@@ -679,3 +685,217 @@ def test_a_waiting_item_keeps_its_ready_row_with_no_claim_and_no_blocked_reason(
     assert record["governing_condition"] == waits.LIVE_HOLD_CONDITION
     assert record["nodes"] == ["fix"]
     assert record[waits.SCHEDULED_AT_KEY] == _EXPIRY
+
+
+_LONG_PAST = "2020-01-01T00:00:00Z"
+
+
+def _recorded_refusal_line(*, scheduled_at: str, nodes: list[str]) -> str:
+    """One prior pass's journaled containment refusal, as a JSON line."""
+    waits = _waits()
+    composer = importlib.import_module(f"{_PACKAGE}._dispatcher_acp_preflight")
+    candidate_preflight = importlib.import_module(f"{_PACKAGE}._acp_candidate_preflight")
+    return json.dumps(
+        {
+            "at": scheduled_at,
+            "stage": composer.ACP_PREFLIGHT_REFUSAL_STAGE,
+            "work_item_id": "bd-ib-waiting",
+            "governing_condition": candidate_preflight.PROBE_SKIP,
+            "nodes": nodes,
+            waits.SCHEDULED_AT_KEY: scheduled_at,
+            "hold_expiries": [],
+        }
+    )
+
+
+def _probe_emptied_verdict() -> Any:
+    """A verdict whose chains are emptied by an EPHEMERAL probe refusal.
+
+    Used wherever the freshly scheduled instant has to be in the future
+    relative to the real wall clock: the reprobe arm derives its instant from
+    the evaluation time, so it cannot go stale the way a fixture hold expiry
+    would.
+    """
+    return _minimal_verdict(
+        chains={"implement": _single(node="implement"), "fix": _single(node="fix")},
+        probe=lambda _key: "exhausted",
+    )
+
+
+def test_the_scheduled_wait_is_reconstructed_from_the_journal_alone(tmp_path: Path) -> None:
+    """A restarted Dispatcher reads the schedule its predecessor recorded.
+
+    The reconstruction is proved from the JOURNAL FILE ALONE, copied into a
+    directory that shares nothing else with the pass that wrote it: no process
+    state, no repository, no configuration. An implementation that remembered
+    the instant in memory -- the natural way to "schedule" something -- cannot
+    answer in the second directory at all.
+
+    The newest record wins, because a later pass's schedule supersedes an
+    earlier one, and the journal's own order IS the chronology.
+    """
+    pass_wait = _pass_wait()
+    first = tmp_path / "first"
+    first.mkdir()
+    journal = first / "journal.jsonl"
+    journal.write_text(
+        "\n".join(
+            (
+                json.dumps({"stage": "loop-pick", "picked": ["bd-ib-other"]}),
+                _recorded_refusal_line(scheduled_at=_EARLIER_EXPIRY, nodes=["implement"]),
+                _recorded_refusal_line(scheduled_at=_EXPIRY, nodes=["fix"]),
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    restarted = tmp_path / "restarted"
+    restarted.mkdir()
+    _ = (restarted / "journal.jsonl").write_text(
+        journal.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    reconstructed = pass_wait.reconstructed_availability_wait(
+        journal_path=restarted / "journal.jsonl"
+    )
+
+    assert reconstructed is not None
+    assert reconstructed.scheduled_at == _EXPIRY
+    assert reconstructed.nodes == ("fix",)
+
+
+def test_a_journal_carrying_no_recorded_schedule_reconstructs_nothing(tmp_path: Path) -> None:
+    """Absence is reported as absence, never as an invented schedule.
+
+    The two fixtures are the ones a reader could mistake for a schedule: a
+    journal full of OTHER stages' records, and a record that carries the
+    scheduled instant but none of the other fields a schedule needs. Reading
+    the second would invent a wait out of a field that means something else on
+    somebody else's line.
+    """
+    pass_wait = _pass_wait()
+    waits = _waits()
+    (tmp_path / "other-stages.jsonl").write_text(
+        json.dumps({"stage": "outcome", "outcome": {"work_item_id": "bd-ib-x"}}) + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "half.jsonl").write_text(
+        json.dumps({"stage": "acp-preflight-refusal", waits.SCHEDULED_AT_KEY: _EXPIRY}) + "\n",
+        encoding="utf-8",
+    )
+
+    assert pass_wait.reconstructed_availability_wait(journal_path=None) is None
+    assert pass_wait.reconstructed_availability_wait(journal_path=tmp_path / "absent.jsonl") is None
+    assert (
+        pass_wait.reconstructed_availability_wait(journal_path=tmp_path / "other-stages.jsonl")
+        is None
+    )
+    assert pass_wait.reconstructed_availability_wait(journal_path=tmp_path / "half.jsonl") is None
+
+
+def test_an_elapsed_instant_is_reported_as_due_and_a_live_one_is_not() -> None:
+    """`elapsed` decides on the instants, and an unreadable one holds the wait.
+
+    The unreadable arm reports NOT elapsed deliberately: "due" is the
+    direction that spends work, so one malformed record must not read as a
+    wait that is due on every pass forever.
+    """
+    waits = _waits()
+    wait = waits.AvailabilityWait(
+        nodes=("fix",), governing_condition=waits.LIVE_HOLD_CONDITION, scheduled_at=_EXPIRY
+    )
+
+    assert wait.elapsed(now_iso=_EXPIRY) is True
+    assert wait.elapsed(now_iso="2026-10-13T12:20:00Z") is True
+    assert wait.elapsed(now_iso=_NOW) is False
+    assert wait.elapsed(now_iso="not-an-instant") is False
+    assert (
+        waits.AvailabilityWait(
+            nodes=("fix",), governing_condition=waits.LIVE_HOLD_CONDITION, scheduled_at="unreadable"
+        ).elapsed(now_iso=_NOW)
+        is False
+    )
+
+
+def test_an_elapsed_schedule_is_reevaluated_once_per_pass_and_rescheduled_forward(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One pass, one refusal per item, and a FRESH future instant each time.
+
+    The seeded schedule lapsed in 2020, so it is elapsed against any real
+    clock. Three observables separate "reevaluated once per loop pass" from
+    the two ways of getting it wrong, and each would pass the other's
+    assertions:
+
+    - a BUSY LOOP appends more than one refusal per item in the single pass;
+    - a RETRY AGAINST A DEAD DEADLINE re-reports the elapsed instant as this
+      pass's schedule, rather than superseding it with a fresh one;
+    - and the superseded instant is carried alongside, so the journal shows
+      WHICH schedule this pass reevaluated rather than leaving a reader to
+      infer it from two rows' timestamps.
+    """
+    admission = importlib.import_module(f"{_PACKAGE}._dispatcher_admission")
+    eligibility = importlib.import_module(f"{_PACKAGE}._dispatcher_admission_eligibility")
+    composer = importlib.import_module(f"{_PACKAGE}._dispatcher_acp_preflight")
+    io_module = importlib.import_module(f"{_PACKAGE}._dispatcher_io")
+    waits = _waits()
+    journal_path = tmp_path / "journal.jsonl"
+    journal_path.write_text(
+        _recorded_refusal_line(scheduled_at=_LONG_PAST, nodes=["implement", "fix"]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(admission, "store_config", lambda **_: tmp_path)
+    monkeypatch.setattr(admission, "update_work_item_status", lambda **_: None)
+    monkeypatch.setattr(eligibility, "read_dispatch_labels", lambda **_: ())
+    monkeypatch.setattr(admission, "resolve_acp_preflight", lambda **_: _probe_emptied_verdict())
+
+    verdict = admission.admit_and_select(
+        repo=tmp_path,
+        items=[],
+        candidates=[_item(id="bd-ib-waiting"), _item(id="bd-ib-also-waiting")],
+        journal=io_module.JournalFile(path=journal_path),
+        enforce_cap=False,
+    )
+
+    refusals = [
+        record
+        for record in _journal_records(path=journal_path)
+        if record.get("stage") == composer.ACP_PREFLIGHT_REFUSAL_STAGE
+        and record.get("superseded_scheduled_reevaluation_at") is not None
+    ]
+    assert verdict.admitted == []
+    assert [record["work_item_id"] for record in refusals] == [
+        "bd-ib-waiting",
+        "bd-ib-also-waiting",
+    ]
+    for record in refusals:
+        assert record["superseded_scheduled_reevaluation_at"] == _LONG_PAST
+        assert record["reevaluation_was_due"] is True
+        assert record[waits.SCHEDULED_AT_KEY] > _LONG_PAST
+
+
+def test_a_first_pass_with_no_recorded_schedule_supersedes_nothing(tmp_path: Path) -> None:
+    """The keys are written as nulls rather than omitted on a first pass.
+
+    An omitted key is indistinguishable from a record written by a build that
+    predates the supersession fields, so a reader could not tell "no prior
+    schedule existed" from "this pass never asked". Writing them as nulls is
+    what makes the first pass say so.
+    """
+    pass_wait = _pass_wait()
+
+    wait = pass_wait.resolve_availability_wait(
+        repo=tmp_path, verdict=_probe_emptied_verdict(), now_iso=_NOW, journal_path=None
+    )
+
+    assert wait is not None
+    assert wait.superseded_at is None
+    assert wait.reevaluation_was_due is False
+    assert wait.record["superseded_scheduled_reevaluation_at"] is None
+    assert wait.record["reevaluation_was_due"] is False
+
+
+def _journal_records(*, path: Path) -> list[dict[str, Any]]:
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]

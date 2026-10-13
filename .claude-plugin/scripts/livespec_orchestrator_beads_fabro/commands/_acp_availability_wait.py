@@ -46,8 +46,10 @@ know an uninterpreted record exists even when it governs nothing.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, replace
 from datetime import timedelta
+from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import (
     PROBE_SKIP,
@@ -59,7 +61,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import Ac
 __all__: list[str] = [
     "LIVE_HOLD_CONDITION",
     "SCHEDULED_AT_KEY",
+    "SUPERSEDED_AT_KEY",
     "AvailabilityWait",
+    "recorded_availability_wait",
     "schedule_availability_wait",
 ]
 
@@ -73,6 +77,11 @@ LIVE_HOLD_CONDITION = "live-availability-hold"
 # the value, so the refusal that writes it and anything that later reads a
 # recorded schedule back agree on one spelling rather than on two literals.
 SCHEDULED_AT_KEY = "scheduled_reevaluation_at"
+
+# The record key the PRIOR pass's instant is journaled under, so a reader can
+# see which schedule this pass reevaluated instead of inferring it from two
+# rows' timestamps.
+SUPERSEDED_AT_KEY = "superseded_scheduled_reevaluation_at"
 
 _ISO_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
@@ -93,12 +102,36 @@ class AvailabilityWait:
     carrying a borrowed instant, because "no hold governs the refusal" is a
     fact the record has to be able to state "without inventing a hold identity
     or expiry".
+
+    `superseded_at` and `reevaluation_was_due` describe the schedule a PRIOR
+    pass recorded, as reconstructed from the journal. They are what makes
+    "reevaluated once per loop pass" legible rather than inferred: a pass that
+    met an elapsed instant says so and names it, and the fresh `scheduled_at`
+    beside it is the forward reschedule. A retry against a dead deadline would
+    report the elapsed instant as its own schedule, and a busy loop would
+    append several rows within one pass; neither can produce this shape.
     """
 
     nodes: tuple[str, ...]
     governing_condition: str
     scheduled_at: str
     hold_expiries: tuple[str, ...] = ()
+    superseded_at: str | None = None
+    reevaluation_was_due: bool = False
+
+    def elapsed(self, *, now_iso: str) -> bool:
+        """Whether this scheduled instant has already passed.
+
+        An unreadable instant on either side reports NOT elapsed, which leaves
+        the schedule standing. The opposite default would make one malformed
+        record read as a wait that is due on every pass forever, and "due" is
+        the direction that spends work.
+        """
+        scheduled = parse_hold_instant(text=self.scheduled_at)
+        now = parse_hold_instant(text=now_iso)
+        if scheduled is None or now is None:
+            return False
+        return scheduled <= now
 
     @property
     def record(self) -> dict[str, object]:
@@ -115,6 +148,8 @@ class AvailabilityWait:
             "nodes": list(self.nodes),
             SCHEDULED_AT_KEY: self.scheduled_at,
             "hold_expiries": list(self.hold_expiries),
+            SUPERSEDED_AT_KEY: self.superseded_at,
+            "reevaluation_was_due": self.reevaluation_was_due,
         }
 
 
@@ -123,6 +158,7 @@ def schedule_availability_wait(
     verdict: AcpPreflightVerdict,
     now_iso: str,
     reprobe_interval_seconds: int,
+    recorded: AvailabilityWait | None = None,
 ) -> AvailabilityWait | None:
     """The reevaluation this verdict owes, or `None` when nothing is waiting.
 
@@ -130,9 +166,31 @@ def schedule_availability_wait(
     verdict a repository with no fallback configuration can produce, and every
     graph-shape or configuration refusal, which names no node and is not a
     wait but a fault whose remedy is a committed change.
+
+    `recorded` is the schedule a PRIOR pass journaled, as reconstructed from
+    the journal, and it is carried onto the result so the refusal can say
+    which instant this evaluation superseded and whether it had lapsed. Its
+    `None` default means exactly "no prior schedule was recorded", which is
+    the honest answer for a first pass and for a journal that records none.
     """
     if not verdict.exhausted:
         return None
+    return _superseding(
+        wait=_scheduled(
+            verdict=verdict, now_iso=now_iso, reprobe_interval_seconds=reprobe_interval_seconds
+        ),
+        recorded=recorded,
+        now_iso=now_iso,
+    )
+
+
+def _scheduled(
+    *,
+    verdict: AcpPreflightVerdict,
+    now_iso: str,
+    reprobe_interval_seconds: int,
+) -> AvailabilityWait:
+    """The instant and condition this evaluation owes, before supersession."""
     expiries = _emptying_hold_expiries(verdict=verdict)
     if expiries:
         return AvailabilityWait(
@@ -145,6 +203,81 @@ def schedule_availability_wait(
         nodes=verdict.exhausted,
         governing_condition=PROBE_SKIP,
         scheduled_at=_advanced(now_iso=now_iso, seconds=reprobe_interval_seconds),
+    )
+
+
+def _superseding(
+    *,
+    wait: AvailabilityWait,
+    recorded: AvailabilityWait | None,
+    now_iso: str,
+) -> AvailabilityWait:
+    """`wait`, carrying the recorded schedule this evaluation supersedes.
+
+    A first pass supersedes nothing and the two fields stay at their
+    unanswered defaults, which `record` still writes as a null and a false
+    rather than omitting: an omitted key is indistinguishable from a record
+    written by a build predating these fields, so a reader could not tell "no
+    prior schedule existed" from "this pass never asked".
+    """
+    if recorded is None:
+        return wait
+    return replace(
+        wait,
+        superseded_at=recorded.scheduled_at,
+        reevaluation_was_due=recorded.elapsed(now_iso=now_iso),
+    )
+
+
+def recorded_availability_wait(*, records: Iterable[Mapping[str, Any]]) -> AvailabilityWait | None:
+    """The NEWEST schedule a prior pass journaled, or `None` when none did.
+
+    This is how a scheduled wait survives a Dispatcher restart: the schedule
+    is reconstructed from the append-only journal rather than from process
+    state, so a restarted Dispatcher reads the same instant the pass before it
+    recorded. The walk is newest-last, so a later pass's schedule supersedes
+    an earlier one for the same reason the hold ledger's clearance walk does
+    -- the journal's order IS the chronology.
+
+    WHAT IT DOES NOT DO IS GATE A PASS, and that is a correctness requirement
+    rather than a simplification. Admission is decided from LIVE evidence on
+    every pass, so an operator clearance "MUST make the affected wait eligible
+    for immediate reevaluation"; a reconstruction that suppressed evaluation
+    until its recorded instant would hold the item past that clearance and
+    would also outlive the hold that justified it.
+
+    A record missing or mistyping ANY field a schedule carries is SKIPPED
+    rather than partially read. Every other dispatcher stage writes to this
+    same journal, so a half-matching record is some other stage's line, and
+    reading one would invent a schedule out of a field that means something
+    else.
+    """
+    latest: AvailabilityWait | None = None
+    for record in records:
+        parsed = _parse_recorded_wait(record=record)
+        if parsed is not None:
+            latest = parsed
+    return latest
+
+
+def _parse_recorded_wait(*, record: Mapping[str, Any]) -> AvailabilityWait | None:
+    """One journaled schedule, or `None` when this record is not one."""
+    scheduled_at = record.get(SCHEDULED_AT_KEY)
+    condition = record.get("governing_condition")
+    nodes = record.get("nodes")
+    expiries = record.get("hold_expiries")
+    if (
+        not isinstance(scheduled_at, str)
+        or not isinstance(condition, str)
+        or not isinstance(nodes, list)
+        or not isinstance(expiries, list)
+    ):
+        return None
+    return AvailabilityWait(
+        nodes=tuple(str(node) for node in cast("list[object]", nodes)),
+        governing_condition=condition,
+        scheduled_at=scheduled_at,
+        hold_expiries=tuple(str(expiry) for expiry in cast("list[object]", expiries)),
     )
 
 

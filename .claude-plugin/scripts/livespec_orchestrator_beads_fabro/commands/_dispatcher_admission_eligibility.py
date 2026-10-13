@@ -123,7 +123,12 @@ def filter_eligible_candidates(
     # resolved ONCE for the whole wave. It is `None` on every viable verdict,
     # which is the common case, and the resolution reads no configuration
     # there.
-    wait = resolve_availability_wait(repo=repo, verdict=preflight, now_iso=utc_now_iso())
+    wait = resolve_availability_wait(
+        repo=repo,
+        verdict=preflight,
+        now_iso=utc_now_iso(),
+        journal_path=getattr(journal, "path", None),
+    )
     # The candidates this repository's ACP nodes render are committed
     # configuration too, and the legacy provider gate is scoped to them. They
     # are resolved ONCE here for the same reason the ceiling above is: the

@@ -23,6 +23,17 @@ re-read one file per candidate to reach the identical answer, and two rows of
 one wave could then report two different instants if the file changed between
 them.
 
+THE RECORDED SCHEDULE IS READ FROM THE JOURNAL, WHICH IS WHAT SURVIVES A
+RESTART. Nothing is kept between passes: the instant a prior pass scheduled is
+recovered from the append-only journal on disk, so a Dispatcher started afresh
+reads the same instant its predecessor recorded. An unreadable or absent
+journal reconstructs NOTHING rather than a plausible schedule, and this pass
+then simply supersedes nothing -- the item is refused and rescheduled either
+way, because admission is decided from live evidence, never from the recorded
+instant. That is why the reconstruction cannot gate a pass: an operator
+clearance "MUST make the affected wait eligible for immediate reevaluation",
+and a gate keyed on a recorded instant would hold the item past it.
+
 AN UNREADABLE DIAL FALLS BACK TO THE RATIFIED DEFAULT rather than refusing.
 This is NOT the fail-open direction: the wait is a schedule, not a gate -- the
 dispatch is already refused by the empty chain, and the only thing at stake is
@@ -42,8 +53,10 @@ from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro.commands._acp_availability_wait import (
     AvailabilityWait,
+    recorded_availability_wait,
     schedule_availability_wait,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_journal_records import journal_records
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS,
@@ -51,6 +64,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
 )
 
 __all__: list[str] = [
+    "reconstructed_availability_wait",
     "resolve_availability_wait",
 ]
 
@@ -60,8 +74,14 @@ def resolve_availability_wait(
     repo: Path,
     verdict: AcpPreflightVerdict,
     now_iso: str,
+    journal_path: Path | None,
 ) -> AvailabilityWait | None:
-    """This pass's scheduled reevaluation, or `None` when nothing is waiting."""
+    """This pass's scheduled reevaluation, or `None` when nothing is waiting.
+
+    The returned wait carries the schedule a prior pass recorded, so the
+    refusal can say which instant this evaluation superseded and whether it
+    had already lapsed.
+    """
     if not verdict.exhausted:
         return None
     interval = unsafe_perform_io(
@@ -70,5 +90,25 @@ def resolve_availability_wait(
         )
     )
     return schedule_availability_wait(
-        verdict=verdict, now_iso=now_iso, reprobe_interval_seconds=interval
+        verdict=verdict,
+        now_iso=now_iso,
+        reprobe_interval_seconds=interval,
+        recorded=reconstructed_availability_wait(journal_path=journal_path),
     )
+
+
+def reconstructed_availability_wait(*, journal_path: Path | None) -> AvailabilityWait | None:
+    """The schedule the journal on disk records, or `None` when it records none.
+
+    The read goes through the ACP feature's SHARED journal reader rather than
+    a fourth private copy of it, for the reason that module's own docstring
+    gives: the three existing ledgers in this one file are each a forward fold
+    over it, and separate copies drift -- the first divergence anyone notices
+    being one ledger tolerating a truncated line another had started raising
+    on. It also supplies the two postures this read needs unchanged: an absent
+    or unreadable journal yields no records rather than an error, and a line
+    that does not parse is skipped, because the journal is shared with every
+    other dispatcher stage and one crash mid-append must not make a recorded
+    schedule unreadable.
+    """
+    return recorded_availability_wait(records=journal_records(journal_path=journal_path))
