@@ -38,6 +38,7 @@ from returns.io import IOResult
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._ids import new_work_item_id
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import utc_now_iso
@@ -56,6 +57,7 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
+    "CANARY_FIXTURE_LABEL",
     "CANARY_MARKER_RELPATH",
     "CANARY_TEMPLATE_RELPATH",
     "CanaryFiling",
@@ -72,6 +74,14 @@ __all__: list[str] = [
 # for a reason of its own.
 CANARY_TEMPLATE_RELPATH = "orchestrator-image/candidate-canary-work-item-template.md"
 CANARY_MARKER_RELPATH = "orchestrator-image/candidate-canary-log.md"
+# The marker every filed canary carries, so that what the item IS is readable
+# from the ledger rather than only from its description. Nothing else about a
+# canary distinguishes it from real work: it is a plain task of freeform origin,
+# auto-admitted and factory-safe, so a survey, a stranded-claim sweep or a
+# backlog census without this label counts instrumentation as work somebody
+# wanted. Self-describing per the repository rule that a marker value names what
+# it is rather than carrying an opaque code.
+CANARY_FIXTURE_LABEL = "canary:fixture"
 
 # The two field markers of the committed template, each matched as a line of its
 # own. The template's own prose refers to them in backticks for exactly that
@@ -248,7 +258,27 @@ def file_candidate_canary(
         ),
         checklist=_FIXTURE_CHECKLIST,
     )
-    return routed.map(lambda status: CanaryFiling(item_id=item_id, status=status))
+    return routed.map(
+        lambda status: _marked_filing(path=path, item_id=item_id, status=status),
+    )
+
+
+def _marked_filing(*, path: StoreConfig, item_id: str, status: str) -> CanaryFiling:
+    """Mark the filed canary as a fixture dispatch, then describe what landed.
+
+    On the SUCCESS track only, which is why it rides inside the railway's `map`
+    rather than sitting after an `is_successful` branch: a refused filing has no
+    record to mark, and marking one that intake declined would leave a labelled
+    item in a state the label claims it is not.
+
+    The marker is applied as a follow-up label write rather than at create time
+    because the shared capture seam derives a record's create-time labels from
+    the work-item's own modelled fields, and a fixture marker has no field to be
+    derived from. Adding one to the domain type for a marker only this door sets
+    would impose it on every other filing path.
+    """
+    make_beads_client(config=path).update_issue(issue_id=item_id, add_labels=[CANARY_FIXTURE_LABEL])
+    return CanaryFiling(item_id=item_id, status=status)
 
 
 def main(*, argv: list[str] | None = None) -> int:
