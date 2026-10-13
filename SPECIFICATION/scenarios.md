@@ -5662,3 +5662,31 @@ Feature: A stall-watchdog cancel keeps the work it can and asks a human only on 
     Then it counts the fix-loop-cap dispatch as a non-convergence observation
     And it does not count the stall-cancelled dispatch as one
 ```
+
+## Scenario 173 — The progress watchdog observes its bound run by id and never lists the factory's run history
+
+```gherkin
+Feature: The watchdog's poll cost does not grow with the factory's run history
+  Scenario: A bound run is polled by id
+    Given a dispatch whose run id the Dispatcher has bound
+    When the watchdog polls the run
+    Then the poll reads that run by its id from the factory
+    And the poll does not list the runs the factory holds
+  Scenario: Discovery before the id is bound is unchanged
+    Given a dispatch whose run id the Dispatcher has not yet bound
+    When the watchdog polls for the run
+    Then it may list the runs the factory holds to discover the run
+  Scenario: A terminal run is still detected
+    Given a dispatch whose bound run reaches a terminal state
+    When the watchdog polls the run by its id
+    Then it reports the run's terminal state exactly as it does when it lists runs
+  Scenario: A disappeared run is still detected
+    Given a dispatch whose bound run the factory no longer holds
+    When the watchdog polls the run by its id and the factory reports no such run
+    Then it reports the run as disappeared from the server
+  Scenario: A failed per-run read is not a disappearance
+    Given a dispatch whose bound run is still held by the factory
+    When a per-run read of the run fails or returns an answer the watchdog cannot interpret
+    Then the watchdog does not report the run as disappeared
+    And it treats the poll as unobservable
+```
