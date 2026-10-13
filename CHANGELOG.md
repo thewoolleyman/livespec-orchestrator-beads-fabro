@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.193.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.192.0...v0.193.0) (2026-10-13)
+
+
+### Features
+
+* **plan-records:** report a malformed plan-continuation ruling on an open live plan (bd-ib-7iyfo5) ([3d51ded](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3d51ded515de28dc94ccb40427f7dcf4506832ab))
+
 ## [0.192.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.191.0...v0.192.0) (2026-10-13)
 
 
