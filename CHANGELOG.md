@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.190.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.190.2...v0.190.3) (2026-10-13)
+
+
+### Bug Fixes
+
+* journal which source supplied each dispatch's sandbox image ([708a2be](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/708a2be6572dd6593a26c6d5690b64e29b751be0))
+* make the environment catalog the one source of the sandbox image ([9d15f96](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9d15f968a45451b308dd7df752a98537e8090c11))
+
 ## [0.190.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.190.1...v0.190.2) (2026-10-13)
 
 
