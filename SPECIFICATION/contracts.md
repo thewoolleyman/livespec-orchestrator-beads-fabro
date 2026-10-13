@@ -4337,7 +4337,12 @@ A PRE-DISPATCH step has exactly THREE sanctioned outcomes:
    exists to verify, MUST refuse the dispatch as a precondition error
    (exit `3`), journaled with the step's identifier, naming the missing
    piece and its remedy. Absence of proof is refusal, never
-   proceed-and-hope.
+   proceed-and-hope. The master-CI step's bounded-wait expiry on a
+   still-running default-branch run is the one DEFERRAL form of this
+   refusal (the "Master-CI pipeline resolution" rule): it exits `3` and does
+   not proceed, exactly like any refusal, but it is journaled with
+   status `deferred` and reason `master-ci-pending` and worded as not
+   yet concluded, never as a failure.
 3. **Waived proceed**: a step covered by an explicit committed waiver
    proceeds, and the waived failure is journaled AS waived — visible,
    never silent.
@@ -4440,10 +4445,53 @@ preflight documents ("no `gh` binary, no stored `gh` credential, or no
 master CI runs yet" proceed unchecked today): each becomes an unprovable
 refusal naming its remedy (install or authenticate `gh`; or commit a
 `master-ci` step waiver, the sanctioned escape for a repository that
-genuinely cannot verify). A still-pending latest run remains an
-unprovable refusal (retry when the run concludes). `dispatcher.master_ci`
+genuinely cannot verify). A still-pending latest run is governed by
+the waiting rule below, not refused as unprovable. `dispatcher.master_ci`
 describes the repository's CI topology, has no per-item override, and
 joins the ratified committed-configuration-only class.
+
+**A still-running master CI run is not a failure.** Rationale: a run that
+has not concluded has not failed, and this repository's default branch
+re-runs CI on every merge, so treating a pending run as a refusal reported
+healthy work as a failure and pushed a retry loop onto every caller
+(design record: repository `thewoolleyman/livespec-orchestrator-beads-fabro`,
+ledger epic `bd-ib-jnpvh4`, the maintainer-ruling scope event of
+2026-10-13, and proposal `master-ci-pending-is-not-failure` as archived
+under `SPECIFICATION/history/v129/proposed_changes/`). A committed
+`master-ci` entry under `dispatcher.step_waivers` still waives the step
+before any waiting, exactly as before. When the latest run
+of the resolved pipeline on the resolved default branch, or its aggregate
+job, is still pending (queued, in progress, waiting, pending or
+requested), the master-CI preflight MUST NOT refuse on that observation.
+It MUST instead wait, polling at an interval of no more than 60 seconds,
+for a bounded window of 1800 seconds measured from the start of the
+preflight. On each poll it MUST re-read the LATEST run of the resolved
+pipeline on the resolved default branch, so a newer run that starts
+during the wait (because the default branch moved) replaces the one
+being waited on. When the latest run's aggregate job concludes green,
+the preflight MUST pass exactly as for a run that was green on first
+read, journaling the pass with the run it finally read. When it
+concludes red, the preflight MUST refuse exactly as for a run that was
+red on first read. Every other unprovable condition (no usable `gh`
+credential, an unresolvable pipeline, no runs yet, an unresolvable
+default branch, an aggregate conclusion that is neither green nor red)
+MUST still refuse immediately, without waiting. Only when the bound
+expires with the latest run still pending does the preflight end
+without a verdict, and it MUST then return a distinct PENDING outcome,
+which MUST NOT start the dispatch or claim the work item, exactly like
+a refusal; MUST carry its own journal reason `master-ci-pending`,
+distinct from `master-ci-red` and `master-ci-unprovable`, with a journal
+`status` of `deferred`, never `failed`; MUST state on the first line of
+its operator text that the run is still running and has not failed,
+naming the run, its pending status, the branch and how long the
+preflight waited, without the `ERROR:` prefix or the words "not proven
+green"; MUST name the remedy as retrying the dispatch when the run
+concludes; and MUST NOT carry the red-default-branch recovery text (the
+master-health-restoration worktree -> PR -> merge escape and the
+repeat-flake caveat), which applies only to a red default branch. Each
+poll that observes a pending run SHOULD emit one progress line naming
+the run and its status, so an operator watching a dispatch can tell a
+wait from a hang.
 
 **Janitor check-suite resolution.** The janitor's check-suite invocation
 — the command the post-merge janitor runs in its fresh checkout (host
@@ -5436,7 +5484,9 @@ refusing an empty diff, never toward accepting one).
 any terminal failed dispatch, or any dispatched item parked in
 `acceptance` on a NEEDS_ATTENTION verdict (§"Post-merge acceptance
 (`acceptance → done`)" → "A parking verdict is recorded"). `2` — usage error. `3` — precondition
-error (missing repo / workflow / item not ready). `4` — dispatch
+error (missing repo / workflow / item not ready), including the master-CI
+deferral of a still-running default-branch run, which is journaled
+`deferred` rather than `failed` (the "Master-CI pipeline resolution" rule). `4` — dispatch
 completed with the work-item routed to the ledger's human gate
 (`blocked / needs-human`) and no terminal failures; the run itself has
 terminated (§"A factory run never awaits a human").

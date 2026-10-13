@@ -5514,3 +5514,34 @@ Feature: attribute a failed engine checkpoint commit and route its decision to t
     Then no checkpoint-failure journal row is written
       And the needs_human terminal's existing outcome stands
 ```
+
+## Scenario 171 — A still-running master CI run makes the preflight wait, not refuse
+
+```gherkin
+Feature: Master-CI preflight waits on a pending run instead of treating it as failed
+  As an operator dispatching work while the default branch's CI is still running
+  I want the preflight to wait for that run's verdict
+  So that a run that has not failed is never reported as a failure
+
+  Scenario: a pending run that concludes green lets the dispatch proceed
+    Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+    When that job concludes green within the bounded wait
+    Then the dispatch proceeds and the journaled pass names the run that concluded green
+
+  Scenario: a pending run that concludes red refuses as red
+    Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+    When that job concludes red within the bounded wait
+    Then the dispatch is refused naming the red run with the reason master-ci-red
+
+  Scenario: a newer run replaces the one being waited on
+    Given the preflight is waiting on an in-progress run
+    When a newer run starts on the default branch and concludes green within the original bounded wait
+    Then the preflight waits on the newer run and the journaled pass names the newer run
+
+  Scenario: a run still pending at the bound is deferred, not failed
+    Given the latest default-branch run stays in progress for the whole bounded wait
+    When the bound expires
+    Then the dispatch does not start and the work item is not claimed
+      And the journal records reason master-ci-pending with status deferred
+      And the operator text says the run is still running and has not failed, without the ERROR prefix or the red-default-branch recovery text
+```

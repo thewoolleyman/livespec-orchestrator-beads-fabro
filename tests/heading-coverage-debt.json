@@ -817,5 +817,12 @@
     "heading": "## What this spec is not",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 171 — A still-running master CI run makes the preflight wait, not refuse",
+    "work_item": "bd-ib-ex35cb",
+    "first_seen": "2026-10-13"
   }
 ]
