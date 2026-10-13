@@ -106,6 +106,31 @@ Tests for the thin-transport command modules under
   single fleet-global surrogate returns one verdict for both, and both a
   both-current and a both-stale fixture would agree with it.
 
+- The `test_plan_epoch_*.py` family covers the plan-authority epoch chain. Four
+  of them are worth knowing about before editing. `test_plan_epoch_chain_
+  serialization.py` injects the WINNER's whole transition at the one instant
+  that reproduces a genuine race — after the loser has read the token and found
+  it open, before its own close reaches the server — because that is the only
+  interleaving that exercises the SERVER's conditional close rather than this
+  plugin's own pre-check; a sequential second writer is refused earlier, by its
+  own stale read, and a test that only did that would pass against a chain with
+  no exclusion at all. `test_plan_epoch_chain_scaling.py` measures the live
+  token count at EVERY step rather than at the end, since a chain that
+  accumulated tokens and swept them at the close would satisfy an end-state
+  assertion while holding an unbounded set in between; and it compares payload
+  sizes only across transitions whose ring entries share one decimal width,
+  because the width of the epoch counter is the one quantity that does grow and
+  a window straddling a digit boundary reads that widening as unbounded growth.
+  `test_plan_epoch_reconcile.py` produces each partial write through the TOKEN
+  primitives, which is what a stopped writer actually leaves behind, and its
+  first case is the positive control: without a healthy chain reporting
+  NOTHING, a verifier that called every chain a partial write would satisfy
+  every other case in the module. And two modules
+  (`test_plan_epoch_chain_retry.py`, `test_plan_epoch_genesis.py`) spell their
+  expected constants as LITERALS and bind them to the exported names with one
+  `getattr` assertion, because each module's Red predates the constants it
+  binds and a Red's test bytes are fixed across its Red-to-Green pair.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr

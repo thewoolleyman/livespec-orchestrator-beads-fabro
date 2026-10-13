@@ -911,6 +911,49 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `unsatisfied`-versus-`unobservable` reasoning catches because the verdict is
   neither of them.
 
+- The PLAN-AUTHORITY EPOCH CHAIN of `contracts.md`'s "Required result, budget
+  and progress epoch" clause (`bd-ib-wdl577`, Scenario 147) — how a plan epic's
+  authority transitions serialize when several writers commit from one epoch at
+  once. Seven cohesive modules, and the dependency direction reads bottom-up:
+  `_plan_epoch_payload` (PURE: the receipt ring, the authority state, the
+  transition payload and its canonical JSON) and `_plan_epoch_findings` (PURE:
+  every reportable condition plus the remedy each names) → `_plan_epoch_tokens`
+  (the single-use token records, through the public `bd` surface only) and
+  `_plan_epoch_projection` (the metadata cache and the `plan-progress-event`
+  comment, with their reads) → `_plan_epoch_chain_head` (the forward walk) →
+  `_plan_epoch_chain` (the ONE surface a plan writer calls: commit, recover a
+  retry, or refuse as stale), `_plan_epoch_reconcile` (grade the projections,
+  repair them, withhold a dispatch) and `_plan_epoch_genesis` (the one write
+  that may start a chain).
+  THE EXCLUSION IS NOT IN THIS PLUGIN, and that is the whole design. Writers
+  may run on different hosts, containers or cloud instances that share nothing
+  but the Beads server (maintainer ruling 2026-10-12,
+  `.ai/ledger-writers-are-multi-host.md`), so serialization comes from `bd
+  close`'s own `UPDATE … WHERE status != 'closed'` compare-and-swap. Nothing
+  here may acquire a lock, open a socket, touch a host directory or reach past
+  `bd` into SQL — a fence on any of those is wrong for this fleet however well
+  it tests on one host.
+  SIX PROPERTIES AN EDITOR MUST NOT INVERT. The winner of a close is READ from
+  `close_reason`, never inferred from the exit code: a loser exits 0 when its
+  conditional update matched no row, or 1 with Dolt `Error 1213`, and 22 of 80
+  closer exits were non-zero across relay research note 005's 20 trials. A
+  token is created ONLY with a server-assigned id and never re-created,
+  because a duplicate explicit-id create is an upsert that reopens a closed
+  record and erases its close reason (note 007) — which would admit a second
+  winner for a committed transition. The payload carries the FULL resulting
+  state and never a delta, which is affordable only because the receipt ring is
+  bounded, and safe only because the predecessor of the latest closed token is
+  deleted (note 006 measured both over 60 transitions). The RING IS CHAIN
+  HISTORY and no writer supplies it: `carrying_receipts` exists because taking
+  the receipts from the requesting writer left a 24-transition chain holding
+  one receipt. The progress event is projected BEFORE the cache, since a
+  missing cache is reconciled by walking forward while a missing event is the
+  only record a retry recovers its original transition from. And the
+  projections are repaired FROM the chain, never the chain from a projection.
+  `authorized_head` is the call a dispatch gate makes, rather than a convention
+  each caller remembers: a caller that forgot to verify would still get a
+  perfectly good head.
+
 Rules an agent editing this tree must follow:
 
 - `main()` is the only place `sys.stdout.write` / `sys.stderr.write`
