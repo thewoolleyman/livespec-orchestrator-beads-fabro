@@ -49,6 +49,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_observation import 
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord
+    from livespec_orchestrator_beads_fabro.commands._plan_recovery import CausalRecovery
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
@@ -247,7 +248,7 @@ def read_next_action(*, config: StoreConfig, epic_id: str) -> NextAction | None:
     )
 
 
-def set_next_action(
+def set_next_action(  # noqa: PLR0913 -- kw-only writer; `operation_id` and `recovery` are independent transport inputs.
     *,
     config: StoreConfig,
     epic_id: str,
@@ -255,6 +256,7 @@ def set_next_action(
     session: str,
     now: str,
     operation_id: str | None = None,
+    recovery: CausalRecovery | None = None,
 ) -> NextActionRefusal | None:
     """Update one epic's `next_action` and `last_session` metadata in place.
 
@@ -277,6 +279,7 @@ def set_next_action(
             author=session,
             now=now,
             operation_id=operation_id,
+            recovery=recovery,
         )
     )
     return outcome if isinstance(outcome, NextActionRefusal) else None

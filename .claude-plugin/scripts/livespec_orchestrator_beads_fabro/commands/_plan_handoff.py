@@ -14,6 +14,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_tracked_write import (
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._plan_next_action import NextAction
+    from livespec_orchestrator_beads_fabro.commands._plan_recovery import CausalRecovery
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
@@ -31,6 +32,7 @@ def append_handoff(  # noqa: PLR0913 -- kw-only writer; `operation_id` is the re
     now: str,
     next_action: NextAction,
     operation_id: str | None = None,
+    recovery: CausalRecovery | None = None,
 ) -> NextActionRefusal | None:
     """Append one handoff entry AND update the epic's typed next_action.
 
@@ -58,6 +60,7 @@ def append_handoff(  # noqa: PLR0913 -- kw-only writer; `operation_id` is the re
             is_handoff=True,
             body=body,
             operation_id=operation_id,
+            recovery=recovery,
         )
     )
     return outcome if isinstance(outcome, NextActionRefusal) else None
@@ -72,6 +75,7 @@ def append_supervisor_handoff(  # noqa: PLR0913 -- kw-only writer; `operation_id
     now: str,
     next_action: NextAction,
     operation_id: str | None = None,
+    recovery: CausalRecovery | None = None,
 ) -> NextActionRefusal | None:
     """Append one handoff entry authored as the plan's reserved supervisor literal.
 
@@ -88,4 +92,5 @@ def append_supervisor_handoff(  # noqa: PLR0913 -- kw-only writer; `operation_id
         now=now,
         next_action=next_action,
         operation_id=operation_id,
+        recovery=recovery,
     )

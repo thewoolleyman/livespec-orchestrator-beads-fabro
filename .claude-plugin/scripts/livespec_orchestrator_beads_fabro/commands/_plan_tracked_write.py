@@ -85,6 +85,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_progress_decision import (
     TrackedRefusal,
     decide_tracked_write,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_recovery import CausalRecovery
 from livespec_orchestrator_beads_fabro.commands._plan_result_reader import read_result
 from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
     PLAN_HANDOFF_PREFIX,
@@ -112,6 +113,8 @@ class TrackedWriteRequest:
     `body` is the handoff entry's prose and is present exactly when `is_handoff`
     is true. `operation_id` is the identity a retry is recognised by; a caller
     that supplies none gets `derived_operation_id`'s deterministic value.
+    `recovery` is the typed causal attempt an EXPIRED obligation needs before it
+    will accept any continuation at all.
     """
 
     config: StoreConfig
@@ -122,6 +125,7 @@ class TrackedWriteRequest:
     is_handoff: bool = False
     body: str | None = None
     operation_id: str | None = None
+    recovery: CausalRecovery | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -185,6 +189,13 @@ def commit_tracked_write(*, request: TrackedWriteRequest) -> TrackedWrite | Next
     head = read_chain_head(config=request.config, epic_id=request.epic_id)
     if isinstance(head, ChainFinding):
         if head.code == MISSING_TRACKING:
+            if request.recovery is not None:
+                return NextActionRefusal(
+                    detail=(
+                        "causal recovery is invalid: this epic carries no authority chain,"
+                        " so it holds no obligation that could have expired"
+                    )
+                )
             return _legacy_write(request=request)
         return NextActionRefusal(detail=f"{head.code}: {head.detail} — {head.remedy}")
     return _tracked_write(request=request, head=head)
@@ -197,11 +208,13 @@ def _tracked_write(
 ) -> TrackedWrite | NextActionRefusal:
     """Decide against the observed head, then commit and project the result."""
     decision = decide_tracked_write(
+        epic_id=request.epic_id,
         head=head,
         candidate=request.action,
         now=request.now,
         is_handoff=request.is_handoff,
         observation=_prior_observation(request=request, head=head),
+        recovery=request.recovery,
     )
     if isinstance(decision, TrackedRefusal):
         return NextActionRefusal(detail=decision.detail)
