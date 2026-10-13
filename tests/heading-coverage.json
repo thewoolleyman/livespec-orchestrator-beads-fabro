@@ -1755,5 +1755,13 @@
     "test": "TODO",
     "reason": "Ratified 2026-10-13 by the watchdog-observes-its-run-by-id revision (plan stall-watchdog-false-kills, epic bd-ib-laf735). An integration-tier test is owed showing the watchdog reads a bound run by id, never lists the factory's run history once bound, and still detects terminal, stalled and disappeared runs; bd-ib-6pdigz owns it.",
     "work_item": "bd-ib-6pdigz"
+  },
+  {
+    "heading": "## Scenario 174 \u2014 The Definition-of-Done judgement runs before admission and holds an item it would rest at needs-human",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified 2026-10-13 by the pre-admission-dod-judgement revision (plan hp-factory-failure-follow-ups, epic bd-ib-qieqc6). The pre-admission Definition-of-Done judgement is not implemented yet; an integration-tier test is owed for the four sub-scenarios (held, admitted, judgement unavailable, held items surfaced), and work-item bd-ib-7f66ar implements the judgement and owns that binding.",
+    "work_item": "bd-ib-7f66ar"
   }
 ]

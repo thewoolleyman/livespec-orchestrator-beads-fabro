@@ -3099,8 +3099,11 @@ question and `resolve-blocked:<id>:ready` as the remedy after the human
 edits the section. No new state transition, exit code or claim-release
 path is introduced. The mechanical half of this check (section present,
 references resolve, modes parse) MUST also run in the host-side wall so a
-malformed item never spends a sandbox; the semantic half runs only in the
-node.
+malformed item never spends a sandbox. The semantic half MUST run in the
+node on every run, and MUST also run once before admission per
+§"Effective acceptance criteria" → "Authoring at filing time"
+("Judged before admission"); that earlier judgement never removes or
+replaces the node.
 
 **`proof_capture`.** For every `factory_captured` assertion the node MUST
 author the reproduction steps, execute them verbatim inside the sandbox,
@@ -5400,6 +5403,29 @@ SHOULD surface, as hygiene facts, each `ready` item carrying an advisory
 Definition-of-Done finding, so that it is repaired before a sandbox is
 spent on it. The implement prompt MUST state the kept-current rule
 below. Scenario 140 in `scenarios.md` exercises this clause.
+
+**Judged before admission.** Before intake routes an implement-kind
+item to `ready` — from `backlog` or `pending-approval`, whether through
+intake, the approve valve, or groom — the Dispatcher MUST run the same
+Definition-of-Done judgement the `dod_gate` node applies (its prompt,
+against the item's effective criteria, the referenced specification
+headings and the resolved sandbox capabilities). When that judgement
+would end a run through the structured needs-human ending, the item
+MUST NOT be routed to `ready`: it rests where a mechanical finding
+would hold it, and the verdict, with each remedy, MUST be appended to
+the item as a ledger comment. When that judgement admits the item,
+intake MUST route it exactly as it would without the judgement. When
+the judgement cannot be run (no eligible model, a timeout, or an
+unparseable verdict), intake MUST record on the item that the
+pre-admission judgement did not run and why, and MUST route the item as
+it would without the judgement; the in-run `dod_gate` node remains the
+backstop, so an unrun judgement never admits anything the gate would
+not have seen. A wall finding the judgement did not grade stays
+ADVISORY as above. `needs-attention` MUST list, as hygiene facts, each
+item held by the pre-admission judgement with its verdict's first
+remedy; the ready-item advisory hygiene fact above still applies to
+items the judgement admitted or could not judge. Scenario 174 in
+`scenarios.md` exercises this paragraph.
 
 **Kept current.** The Definition of Done is the statement the proof
 stages capture against and the acceptance pass grades against, read from
