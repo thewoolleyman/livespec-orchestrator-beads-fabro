@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.196.12](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.11...v0.196.12) (2026-10-14)
+
+
+### Bug Fixes
+
+* resolve the project's own repository identity from its origin remote ([a9e4b35](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a9e4b35fd2794f8551934febf432640e1699997c))
+
 ## [0.196.11](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.10...v0.196.11) (2026-10-14)
 
 
