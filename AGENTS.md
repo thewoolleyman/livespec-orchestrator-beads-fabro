@@ -1593,7 +1593,10 @@ references passes with its guidance orphaned.
   second opinion). It records that a helper is a SPLIT of your own pane in the
   current tab and never a new tab, that `herdr pane run` word-splits a prompt so
   the agent never starts, and that the pane is closed in the same turn its
-  output is consumed — each from a maintainer correction on 2026-10-10.
+  output is consumed — each from a maintainer correction on 2026-10-10. Read it
+  also BEFORE messaging any other session: inter-session messages go through
+  Claude's `SendMessage`, never `herdr agent prompt` into another session's
+  pane (maintainer ruling 2026-10-14).
 
 ## Decision authority — when to ask, proceed, or self-resolve
 

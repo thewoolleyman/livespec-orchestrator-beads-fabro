@@ -69,11 +69,17 @@ comment. A duplicate that must be closed can then go through
 
 ```bash
 herdr pane split --current --direction right --cwd <repo> --no-focus   # returns pane_id, e.g. w6:p3
-herdr agent start <name> --kind codex --pane w6:p3 --timeout 90000 -- -m gpt-6-astra --dangerously-bypass-approvals-and-sandbox
-herdr agent prompt w6:p3 "$(cat brief.txt)"
+herdr agent start <name> --kind codex --pane w6:p3 --timeout 90000 -- -m gpt-6-astra --dangerously-bypass-approvals-and-sandbox \
+  'Read tmp/<brief>.md in this repository and do exactly what it says.'   # the job rides the launch, nothing is typed in later
 herdr agent wait w6:p3 --until idle --timeout 2400000   # background it; returns when the agent is idle
 herdr pane close w6:p3                                  # close the pane when its job is done
 ```
+
+The 2026-10-10 run submitted the brief with `herdr agent prompt w6:p3 "$(cat brief.txt)"`
+after the start; that form is retired by the 2026-10-14 ruling in
+`.ai/herdr-helper-sessions.md` (another session's pane is never typed into), and the
+launch-argument form above has not yet been re-measured on this Codex build, so confirm the
+agent picked up the brief before waiting on it.
 
 Give the reviewer a read-only brief with the exact source paths, ask for a
 ranked critique written to a file plus a sentinel line, and close the pane

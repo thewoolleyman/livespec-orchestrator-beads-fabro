@@ -16,9 +16,16 @@ The recipe that worked on 2026-10-10, run from inside herdr (`HERDR_ENV=1`):
 out=$(herdr tab create --workspace <ws-id> --cwd /data/projects/<repo> --label <slug> --no-focus)
 pane=$(echo "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["root_pane"]["pane_id"])')
 herdr agent start <slug> --kind claude --pane "$pane" --timeout 240000 -- \
-  --dangerously-skip-permissions --model 'fable[1m]' --effort high -n <slug>
-herdr agent prompt <slug> "/livespec-orchestrator-beads-fabro:plan <slug>"
+  --dangerously-skip-permissions --model 'fable[1m]' --effort high -n <slug> \
+  "/livespec-orchestrator-beads-fabro:plan <slug>"
 ```
+
+The resume prompt rides the launch as Claude's trailing prompt argument. The 2026-10-10 run
+typed it in afterwards with `herdr agent prompt <slug> ...`; that form is retired by the
+2026-10-14 ruling in `.ai/herdr-helper-sessions.md`, because another session's pane is never
+typed into, and later messages to the new session go through `SendMessage`. The
+launch-argument form has not yet been re-measured through `herdr agent start`, so confirm
+the session reached the plan picker before leaving it.
 
 Three rules from that run:
 
