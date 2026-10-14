@@ -558,9 +558,20 @@
       // load), and the second left an open Red the engine checkpoint could not
       // commit (bd-ib-qhv7qs). Two hours covers the pair, the coverage rerun
       // and the full gate with the same headroom `implement` has.
+      //
+      // `janitor` runs the full check aggregate, which slows with factory
+      // load. Measured 2026-10-14 on run 01M4WVQ7E9N6 (bd-ib-jtl5ir): janitor
+      // timed out at 3600 s about two thirds of the way through `just check`
+      // with hp at load 15-23 and at its concurrency cap of 10. 4340 is an
+      // INTERIM partial mitigation (bd-ib-qieqc6.2): every node timeout feeds
+      // the Codex credential-lifetime floor, and 4340 is the largest janitor
+      // value that keeps that floor under the bound
+      // tests/test_factory_checkpoint_declaration.py guards. The full raise to
+      // 7200 follows once the Codex freshness gate applies only to dispatches
+      // that route a node to Codex.
       "node_timeouts": {
         "implement": 14400,
-        "janitor": 3600,
+        "janitor": 4340,
         "fix": 3600,
         "review_fix": 7200
       },

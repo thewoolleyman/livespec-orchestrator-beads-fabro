@@ -35,7 +35,10 @@ measured against the single-`pr` graph to 801525, and the shipped 5m figure from
 519630 to 522525. Neither move is a regression and neither is this case's
 subject; re-measure both against the payload in the tree when a node timeout,
 visit cap or retry budget changes, and re-check the shipped figure against the
-bound while doing it.
+bound while doing it. Raising the `janitor` node timeout from 3600 to 4340
+(`bd-ib-qieqc6.2`) moved the 15m control to 808925 and the shipped 5m figure to
+529925, which is still under the bound; 4340 is the largest janitor value that
+stays under it.
 """
 
 from __future__ import annotations
@@ -56,12 +59,12 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 
 # The bound the freshness requirement has to sit under, and the figure the
 # RETIRED `"15m"` resolved. The bound is deliberately looser than the measured
-# 522525 seconds this budget yields: the requirement also sums the resolved node
+# 529925 seconds this budget yields: the requirement also sums the resolved node
 # timeouts, so pinning it exactly would make every unrelated timeout edit fail
 # this case. The control below pins the 15m figure exactly, because that one is
 # the thing being moved away from and a drifting comparand would hide the move.
 _FRESHNESS_BOUND_SECONDS = 530_000
-_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 801_525
+_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 808_925
 
 
 def _checkpoint() -> dict[str, Any]:
@@ -124,7 +127,7 @@ def test_the_checkpoint_budget_holds_the_credential_freshness_floor_under_the_bo
     that happened to shrink -- a pass earned by something this item never
     touched. The control re-resolves the SAME payload with only the checkpoint
     budget restored to the retired `"15m"` and requires it to land ABOVE the
-    bound at exactly the measured 801525 seconds, which is what makes the first
+    bound at exactly the measured 808925 seconds, which is what makes the first
     assertion evidence about this declaration rather than about the graph.
 
     The replacement is asserted to match exactly once before it is applied: a
