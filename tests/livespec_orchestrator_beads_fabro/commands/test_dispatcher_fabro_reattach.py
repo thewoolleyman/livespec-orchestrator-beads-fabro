@@ -75,3 +75,8 @@ def test_stream_drop_keeps_polling_bound_run_until_terminal(*, tmp_path: Path) -
     assert all(delay > 0 for delay in sleeps)
     assert [argv[1:3] for argv in runner.calls[1:]] == [["inspect", "01DROPPED"]] * 3
     assert not runner.replies
+
+    attempts = [row for row in journal.records if row["stage"] == "fabro-reattach"]
+    assert [row["attempt"] for row in attempts] == [1, 2, 3]
+    assert [row["status"] for row in attempts] == ["running", "running", "blocked"]
+    assert all(row["run_id"] == "01DROPPED" for row in attempts)

@@ -160,6 +160,7 @@ def test_failed_dispatch_reinspects_when_terminal_inspect_has_no_failure_yet(
     assert [record["stage"] for record in journal.records] == [
         "fabro-run",
         "fabro-inspect",
+        "fabro-reattach",
         "fabro-inspect",
     ]
 
@@ -177,7 +178,7 @@ def test_failed_terminal_outcome_carries_category_when_failure_has_no_cause(
         plan=_plan(tmp_path=tmp_path),
         run_id="01RUNFAILED",
         inspect=FabroInspectResult(
-            command=CommandResult(exit_code=1, stdout="{}", stderr="wrapped inspect failure"),
+            command=CommandResult(exit_code=0, stdout="{}", stderr=""),
             payload={},
             status_kind="failed",
             failure=failure,

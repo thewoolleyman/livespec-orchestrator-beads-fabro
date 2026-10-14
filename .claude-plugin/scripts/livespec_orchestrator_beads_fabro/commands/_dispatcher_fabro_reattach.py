@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
         CommandResult,
         CommandRunner,
+        DispatchOutcome,
         JournalWriter,
     )
 
@@ -26,6 +27,7 @@ __all__: list[str] = [
     "ReattachTiming",
     "inspect_after_run",
     "inspect_run",
+    "unobservable_run_outcome",
 ]
 
 _FABRO_INSPECT_TIMEOUT_SECONDS = 300.0
@@ -70,6 +72,7 @@ def inspect_run(
     if run_id is None:
         return None
     unanswered = 0
+    attempt = 0
     deadline = timing.clock() + _REATTACH_WINDOW_SECONDS
     while True:
         timeout = (
@@ -87,6 +90,19 @@ def inspect_run(
             stage="fabro-inspect",
             result=cast("CommandResult", inspect.command),
         )
+        if follow_live:
+            attempt += 1
+            journal.append(
+                record={
+                    "stage": "fabro-reattach",
+                    "work_item_id": plan.work_item_id,
+                    "run_id": run_id,
+                    "attempt": attempt,
+                    "exit_code": inspect.command.exit_code,
+                    "status": inspect.status_kind,
+                    "server_url": plan.fabro_factory_server,
+                }
+            )
         if not follow_live or (
             inspect.command.exit_code == 0 and inspect.status_kind in TERMINAL_STATUS_KINDS
         ):
@@ -137,3 +153,40 @@ def inspect_after_run(
         if refreshed is not None and refreshed.failure is not None:
             inspect = refreshed
     return inspect
+
+
+def unobservable_run_outcome(
+    *,
+    outcome_type: type[DispatchOutcome],
+    plan: DispatchPlan,
+    run_id: str | None,
+    inspect: FabroInspectResult | None,
+) -> DispatchOutcome | None:
+    """Retain ownership when a failed client leaves its bound run unobservable.
+
+    The caller has already handled a clean client exit. An unanswered or
+    unrecognized observation cannot establish failure, release a claim or
+    authorize another launch of this item. The run id and factory remain
+    visible for continued observation after this supervision budget expires.
+    """
+    # No inspection result means re-attachment was never attempted, as in
+    # legacy callers reporting explicit terminal sentinels from the client.
+    if (
+        run_id is None
+        or inspect is None
+        or (inspect.command.exit_code == 0 and inspect.status_kind in TERMINAL_STATUS_KINDS)
+    ):
+        return None
+    return outcome_type(
+        work_item_id=plan.work_item_id,
+        status="run-unobservable",
+        stage="fabro-reattach",
+        pr_number=None,
+        merge_sha=None,
+        fabro_run_id=run_id,
+        detail=(
+            f"run {run_id} on {plan.fabro_factory_server or 'the local factory'} "
+            "is possibly still alive; re-attach observation budget exhausted; "
+            "work-item claim retained"
+        ),
+    )
