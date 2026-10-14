@@ -258,3 +258,26 @@ def test_divergent_prior_run_branch_is_refused_without_mutating_this_run(
     assert remote.split()[0] == prior_tip
     assert refused.calls == ()
     assert refused.draft_created is False
+
+
+def test_conflicted_draft_refresh_restores_the_janitor_head_for_fix(*, tmp_path: Path) -> None:
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+    before = _git(run, "rev-parse", "HEAD").stdout.strip()
+    default = tmp_path / "default"
+    _commit(repo=default, path="src/change.txt", content="default work\n", message="conflict")
+    _git(default, "push", "origin", "master")
+
+    result = _publish(tmp_path=tmp_path, run=run)
+
+    assert result.result.returncode != 0
+    assert _git(run, "rev-parse", "HEAD").stdout.strip() == before
+    assert not (run / ".git/rebase-merge").exists()
+    assert (run / "src/change.txt").read_text() == "run work\n"
+    assert (run / ".git/livespec-publication/livespec-refresh-repair-pending").is_file()
+    graph = _WORKFLOW.read_text()
+    assert (
+        'publish_draft -> publish_draft_repair [label="Blocked", condition="outcome=failed"]'
+        in graph
+    )
+    assert 'publish_draft_repair -> fix [condition="outcome=succeeded"]' in graph
+    assert result.calls == ()
