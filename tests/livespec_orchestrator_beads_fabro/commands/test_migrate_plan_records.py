@@ -316,6 +316,39 @@ def test_a_live_plan_epic_carrying_no_chain_gains_a_genesis_token(tmp_path: Path
         assert finding.code == MISSING_TRACKING
 
 
+def test_an_epic_whose_chain_already_stands_is_reported_as_skipped(tmp_path: Path) -> None:
+    """A second migration of a migrated epic REPORTS it, rather than refusing it.
+
+    Running this migration twice is an ordinary operator act, and the second
+    run's whole claim is that it changed nothing — so the already-named outcome
+    belongs in `skipped` beside "already carries next_action", never in
+    `refused`, which is where an operator looks for state they must resolve by
+    hand. Silence is the third option and the wrong one: an epic the leg passed
+    over for a good reason and one it never considered owe opposite conclusions,
+    and only the entry distinguishes them.
+
+    The entry names the standing TOKEN because that is the value an operator
+    compares the epic's own cache against when a walk reports trouble.
+    """
+    _seed_epic(epic_id="bd-ib-standing", plan_slug="standing", pointer=True)
+    _ = _plan_dir(project_root=tmp_path, slug="standing")
+    standing = create_genesis_token(config=_config(), epic_id="bd-ib-standing")
+    assert isinstance(standing, str)
+
+    report = _run(project_root=tmp_path)
+
+    assert report.genesis_written == ()
+    assert report.refused == ()
+    assert (
+        f"bd-ib-standing already names chain token {standing}, so no genesis was created"
+        in report.skipped
+    )
+    assert _fake().no_history_issue_ids() == (standing,)
+    assert _chain_cache(epic_id="bd-ib-standing") == ChainCache(
+        latest_closed=None, current=standing
+    )
+
+
 def test_a_second_run_writes_nothing_and_leaves_every_record_identical(
     tmp_path: Path,
 ) -> None:
@@ -328,12 +361,14 @@ def test_a_second_run_writes_nothing_and_leaves_every_record_identical(
     first = _run(project_root=tmp_path)
     first_anchor = _anchor(directory=alpha)
     first_records = _fake().list_issues()
+    first_tokens = _fake().no_history_issue_ids()
 
     second = _run(project_root=tmp_path)
 
     # One slug, two anchors, two seeded pointers — then nothing left to do.
     assert total_writes(report=first) == 5
     assert total_writes(report=second) == 0
+    [alpha_token, kappa_token] = first_tokens
     assert second.skipped == (
         "bd-ib-alpha already carries plan_slug=alpha",
         "bd-ib-kappa already carries plan_slug=kappa",
@@ -341,6 +376,8 @@ def test_a_second_run_writes_nothing_and_leaves_every_record_identical(
         "plan/kappa/associated_work_item_id already anchored",
         "bd-ib-alpha already carries next_action",
         "bd-ib-kappa already carries next_action",
+        f"bd-ib-alpha already names chain token {alpha_token}, so no genesis was created",
+        f"bd-ib-kappa already names chain token {kappa_token}, so no genesis was created",
     )
     assert second.slugs_written == ()
     assert second.anchors_written == ()

@@ -170,6 +170,11 @@ def _written(*, lines: Sequence[str]) -> list[str]:
     return [line for line in lines if line.startswith("wrote: ")]
 
 
+def _already_chained(*, epic_id: str, token: str) -> str:
+    """The rendered skip line one already-migrated epic's genesis leg reports."""
+    return f"skipped: {epic_id} already names chain token {token}, so no genesis was created"
+
+
 def test_scenario112_the_first_run_writes_every_missing_slug_anchor_and_pointer(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -218,10 +223,14 @@ def test_scenario112_a_second_run_writes_nothing_and_leaves_every_record_identic
     first = _run(project_root=tmp_path, capsys=capsys)
     anchors_after_first = _anchors(project_root=tmp_path)
     records_after_first = _records()
+    tokens_after_first = _client().no_history_issue_ids()
 
     second = _run(project_root=tmp_path, capsys=capsys)
 
     assert len(_written(lines=first)) == 7
+    # The two live plan epics gained a genesis token on the first run, in
+    # epic-id order, so the second run reports each of them as already chained.
+    [alpha_token, kappa_token] = tokens_after_first
     assert second == [
         "migrate-plan-records: 0 write(s)",
         f"skipped: {_ALPHA} already carries plan_slug=alpha",
@@ -234,8 +243,11 @@ def test_scenario112_a_second_run_writes_nothing_and_leaves_every_record_identic
         f"skipped: plan/archive/gamma/{_ANCHOR_FILENAME} already anchored",
         f"skipped: {_ALPHA} already carries next_action",
         f"skipped: {_KAPPA} already carries next_action",
+        _already_chained(epic_id=_ALPHA, token=alpha_token),
+        _already_chained(epic_id=_KAPPA, token=kappa_token),
         f"refused: {_COLLIDES} derives plan_slug=shared-topic, already carried by {_HOLDER}",
     ]
     assert _written(lines=second) == []
     assert _anchors(project_root=tmp_path) == anchors_after_first
     assert _records() == records_after_first
+    assert _client().no_history_issue_ids() == tokens_after_first

@@ -114,7 +114,9 @@ def migrate_plan_records(
         anchors_written=tuple(anchors_written),
         next_actions_seeded=tuple(seeded),
         genesis_written=genesis.written,
-        skipped=tuple([*_slug_skips(epics=epics), *anchors_skipped, *seeds_skipped]),
+        skipped=tuple(
+            [*_slug_skips(epics=epics), *anchors_skipped, *seeds_skipped, *genesis.skipped]
+        ),
         refused=tuple(_slug_refusals(decisions=decisions)),
     )
 
