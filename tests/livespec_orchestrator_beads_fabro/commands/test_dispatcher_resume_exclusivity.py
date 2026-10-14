@@ -16,12 +16,21 @@ would delete the branch its own prepare step is about to fetch, so the run would
 die in prepare — and the journal would carry a healthy-looking reclaim record
 saying the recovery had worked.
 
-WHY BOTH DIRECTIONS ARE ASSERTED. A wall that reclaimed for nobody would satisfy
-the resume half perfectly well, so the plain-dispatch half is its control; and a
-wall that reclaimed for everybody would satisfy the plain-dispatch half, so the
-resume half is that one's control. The parameter default is asserted too, because
-every existing caller relies on it and a flipped default would silently stop
-reclaiming for the whole fleet.
+HOW THE EXCLUSIVITY IS NOW STRUCTURED, which is what this file asserts. The
+reclaim used to close `pre_dispatch_wall_exit`, so a resume had to decline it
+through a `reclaim_publish_branches=False` parameter — and the resume was the only
+caller that passed anything but the default. Under `bd-ib-huoyk7` the reclaim moved
+PAST the capacity decision, to `post_admission_publish_branch_reclaim`, which each
+LAUNCH path calls for the items it is about to launch. So the shared wall reclaims
+for nobody at all, and a path reaches the reclaim only by calling it itself. The
+resume does not; the two dispatch paths do.
+
+WHY THIS FILE NEEDS A CONTROL ELSEWHERE. A structure in which NOBODY could reach
+the reclaim satisfies every STRUCTURAL assertion here, because holding an entry
+point is not performing the act. So the behavioural control is the launched-item
+half of `test_dispatcher_publish_branch_reclaim_after_capacity.py`, which drives
+both dispatch paths and reads the reclaim they actually perform; this file asserts
+only which routes can reach it at all.
 """
 
 from __future__ import annotations
@@ -30,38 +39,44 @@ import argparse
 import inspect
 from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop_wave as loop_wave
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_pre_dispatch_wall
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_resume_command as resume_command,
+)
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_run_commands as run_commands
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
     pre_dispatch_wall_exit,
 )
 
+_RECLAIM = "post_admission_publish_branch_reclaim"
 
-def test_the_wall_takes_a_reclaim_opt_out() -> None:
-    """The parameter exists at all — the resume has no other way to decline it."""
+
+def test_the_wall_carries_no_reclaim_opt_out_because_it_reclaims_for_nobody() -> None:
+    """The parameter is gone: there is nothing left for a resume to decline.
+
+    Its absence is asserted rather than merely unused, because a parameter that
+    still existed would leave the destructive pre-admission call one argument
+    away from returning.
+    """
     signature = inspect.signature(pre_dispatch_wall_exit)
-    assert "reclaim_publish_branches" in signature.parameters
+    assert "reclaim_publish_branches" not in signature.parameters
 
 
-def test_the_reclaim_runs_by_default() -> None:
-    """A plain dispatch still reclaims; a flipped default would stop the fleet's."""
-    signature = inspect.signature(pre_dispatch_wall_exit)
-    assert signature.parameters["reclaim_publish_branches"].default is True
-
-
-def test_a_resume_declines_the_reclaim_and_a_plain_dispatch_does_not(
-    monkeypatch: Any,
-) -> None:
-    """The one act that mutates a remote ref, taken for one route and not the other."""
+def test_the_shared_wall_reclaims_for_nobody(monkeypatch: Any) -> None:
+    """The one act that mutates a remote ref is not taken by the wall, for anyone."""
     calls: list[str] = []
-
-    def _record(**kwargs: Any) -> None:
-        calls.append("reclaimed")
-        _ = kwargs
-
-    monkeypatch.setattr(_dispatcher_pre_dispatch_wall, "reclaim_stale_publish_branches", _record)
-    # Every refusing arm above the reclaim is stubbed to pass, so this exercises
-    # the reclaim decision and nothing else: a refusal returning early would make
-    # the absent call prove the wrong thing.
+    # A lambda rather than a `def`, because this stub must NEVER be entered: a
+    # function body nothing reaches is an uncovered line, and "nothing reaches
+    # it" is precisely what this case asserts.
+    monkeypatch.setattr(
+        _dispatcher_pre_dispatch_wall,
+        "reclaim_stale_publish_branches",
+        lambda **kwargs: calls.append(str(kwargs)),
+    )
+    # Every refusing arm is stubbed to pass, so this exercises the wall's own
+    # reclaim decision and nothing else: a refusal returning early would make the
+    # absent call prove the wrong thing.
     monkeypatch.setattr(
         _dispatcher_pre_dispatch_wall, "pre_dispatch_criteria_refusal", lambda **_: None
     )
@@ -81,21 +96,28 @@ def test_a_resume_declines_the_reclaim_and_a_plain_dispatch_does_not(
     )
     args = argparse.Namespace(workflow_name=None)
 
-    resumed = pre_dispatch_wall_exit(
-        args=args,
-        repo=_dispatcher_pre_dispatch_wall.Path("."),
-        items=[],
-        journal=None,
-        reclaim_publish_branches=False,
-    )
-    assert resumed is None
-    assert calls == []
-
     plain = pre_dispatch_wall_exit(
         args=args,
         repo=_dispatcher_pre_dispatch_wall.Path("."),
         items=[],
         journal=None,
     )
+
     assert plain is None
-    assert calls == ["reclaimed"]
+    assert calls == []
+
+
+def test_only_the_two_launch_paths_can_reach_the_reclaim() -> None:
+    """Both dispatch paths hold the entry point; the resume module does not.
+
+    A module's namespace holds an imported name only if that module uses it, so
+    this is the structural form of "which routes can reach the reclaim at all" —
+    and it is the whole of the resume's exclusivity now that the shared wall
+    reclaims for nobody. The two launch paths are named individually because
+    they are two separate call sites: a reclaim wired into only one of them would
+    satisfy a weaker assertion while leaving the other path's recovery stuck.
+    """
+    assert hasattr(_dispatcher_pre_dispatch_wall, _RECLAIM)
+    assert hasattr(loop_wave, _RECLAIM)
+    assert hasattr(run_commands, _RECLAIM)
+    assert not hasattr(resume_command, _RECLAIM)

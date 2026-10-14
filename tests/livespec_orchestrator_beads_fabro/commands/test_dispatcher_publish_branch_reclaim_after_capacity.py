@@ -17,11 +17,14 @@ second. At 13:29:43Z that same dispatch ended `capacity-deferred` with detail
 no Fabro run at all. The reviewed work survived only because the preservation ref
 exists; the branch had to be recreated by hand and the pull request reopened.
 
-WHAT THIS FILE ASSERTS FIRST, AND WHY IT IS THIS HALF. Moving a destructive act
-later is only safe if it still HAPPENS, so the launched half comes first: each
-launch path reclaims for exactly the item it is about to launch, between the
-valve's claim and the run. Both paths are driven, because they are two separate
-call sites and a fix wired into one of them leaves the other's recovery stuck.
+WHAT IS ASSERTED, AND WHY EACH HALF NEEDS THE OTHER. A valve that reclaimed for
+NOBODY would satisfy the capacity-deferred half perfectly well, so the LAUNCHED
+half is its control; and the valve as it stood — reclaiming for every selected
+candidate before the capacity decision — satisfied the launched half, so the
+deferred half is that one's control. Between them sits the ORDER, which is what
+makes a destructive act safe at all: the reclaim lands after admission, once, and
+before any run is launched. Both launch paths are driven, because they are two
+separate call sites and a fix wired into one leaves the other's recovery stuck.
 
 EVERY CASE HERE IS SCRIPTED AGAINST A SURVIVING BRANCH ON ORIGIN AND A JOURNAL
 THAT ALREADY RECORDS AN EARLIER DISPATCH, because without both the reclaim
@@ -32,6 +35,13 @@ did, which is the instrument-that-cannot-hit trap.
 THE JOURNAL ALSO RECORDS AN EARLIER DISPATCH OF A SECOND ITEM, whose branch
 origin carries too. That is the per-item control: a reclaim that walked the
 journal rather than the selection it was handed would ask about both.
+
+WHY THE WALL AND THE WAVE ARE COMPOSED BY HAND RATHER THAN DRIVEN THROUGH
+`run_loop_command`. Those two calls, in that order, ARE the loop command's
+pre-launch sequence; everything else it does is the post-verdict tail, which
+cannot reach a decision taken before a run exists. Composing the pair keeps each
+case on the seam that decides, and the tail's own ordering is pinned by
+`test_dispatcher_dispatch_tail.py`.
 """
 
 from __future__ import annotations
@@ -45,6 +55,7 @@ from typing import Any
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop_wave as loop_wave
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_pre_dispatch_wall as wall
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_publish_branch_reclaim as reclaim,
 )
@@ -77,6 +88,10 @@ _ASK_ORIGIN = "asked origin for the publish branch"
 _PRESERVE = "created the preservation ref"
 _DELETE = "deleted the publish branch"
 _LAUNCH = "launched the run"
+
+# What a launched item's whole timeline must be: claimed, then reclaimed for
+# exactly once, then run.
+_LAUNCHED_TIMELINE = [_ADMIT, _ASK_ORIGIN, _PRESERVE, _DELETE, _LAUNCH]
 
 
 @dataclass(kw_only=True)
@@ -234,6 +249,96 @@ def _admitted_one(*, item: WorkItem) -> Admission:
     return Admission(admitted=[item], deferred=[], refused=[])
 
 
+def _capacity_deferred() -> Admission:
+    """The valve's answer when a full cap left this pass's one candidate behind.
+
+    The detail is the production one, abridged from the 2026-10-14 dispatch this
+    file is written around, so the fixture carries the measured shape rather than
+    a plausible invention.
+    """
+    return Admission(
+        admitted=[],
+        deferred=[
+            DispatchOutcome(
+                work_item_id=_ITEM_ID,
+                status="capacity-deferred",
+                stage="capacity-deferred",
+                pr_number=None,
+                merge_sha=None,
+                detail="capacity deferred: active_count=11 wip_cap=10 free_slots=0",
+            )
+        ],
+        refused=[],
+    )
+
+
+@dataclass(kw_only=True)
+class _Fixture:
+    """One item whose publish branch survives on origin, plus the live seams."""
+
+    item: WorkItem
+    journal: JournalFile
+    runner: _Runner
+    events: list[str]
+    args: argparse.Namespace
+
+
+def _fixture(*, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _Fixture:
+    """Everything a reclaim needs in order to be POSSIBLE, with nothing stubbed out.
+
+    The subprocess seam is monkeypatched rather than injected because the reclaim
+    constructs the production one itself — it is handed no runner — so a drive
+    that could not reach that construction would leave the whole remote half of
+    this decision unexercised.
+    """
+    events: list[str] = []
+    journal = _journal_after_a_previous_dispatch(
+        tmp_path=tmp_path, item_ids=(_ITEM_ID, _OTHER_ITEM_ID)
+    )
+    runner = _runner(events=events)
+    monkeypatch.setattr(reclaim, "ShellCommandRunner", lambda: runner)
+    return _Fixture(
+        item=_work_item(item_id=_ITEM_ID),
+        journal=journal,
+        runner=runner,
+        events=events,
+        args=_args(repo=tmp_path, journal=journal),
+    )
+
+
+def _stub_wall_refusals(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Neutralize every refusing row of the wall, leaving its own position live.
+
+    Each row reaches the forge, the engine, the ledger or committed
+    configuration for its own reasons, and any one of them answering first would
+    return before the position these cases are about.
+    """
+    monkeypatch.setattr(wall, "implementation_pr_override_refusal", lambda **_kwargs: None)
+    monkeypatch.setattr(wall, "fabro_currency_refusal", lambda **_kwargs: None)
+    monkeypatch.setattr(wall, "pre_dispatch_criteria_refusal", lambda **_kwargs: None)
+    monkeypatch.setattr(wall, "proof_assets_refusal_for_items", lambda **_kwargs: None)
+    monkeypatch.setattr(wall, "proof_credentials_refusal_for_items", lambda **_kwargs: None)
+    monkeypatch.setattr(wall, "credential_wrapper_text", lambda **_kwargs: "")
+    monkeypatch.setattr(
+        wall,
+        "selection_credential_requirement",
+        lambda **_kwargs: wall.WorkflowFaultDeferral(
+            message="stubbed: the credential gate is not the decision under test here"
+        ),
+    )
+
+
+def _run_the_wall(*, monkeypatch: pytest.MonkeyPatch, fixture: _Fixture, repo: Path) -> None:
+    """The shared pre-dispatch wall, over this pass's selection, refusing nothing."""
+    _stub_wall_refusals(monkeypatch=monkeypatch)
+    assert (
+        wall.pre_dispatch_wall_exit(
+            args=fixture.args, repo=repo, items=[fixture.item], journal=fixture.journal
+        )
+        is None
+    )
+
+
 def _stub_wave_seams(
     *, monkeypatch: pytest.MonkeyPatch, admission: Admission, events: list[str]
 ) -> None:
@@ -260,47 +365,31 @@ def _stub_wave_seams(
     monkeypatch.setattr(loop_wave, "dispatch_one", _launch)
 
 
-def _drive_loop_wave(
+def _run_the_wave(
     *,
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+    fixture: _Fixture,
+    repo: Path,
     admission: Admission,
-    events: list[str],
-) -> tuple[JournalFile, _Runner]:
-    """One drain wave, with the reclaim live and its subprocess seam scripted.
-
-    The seam is monkeypatched rather than injected because the reclaim constructs
-    the production one itself — it is handed no runner — so a drive that could not
-    reach that construction would leave the whole remote half of this decision
-    unexercised.
-    """
-    item = _work_item(item_id=_ITEM_ID)
-    journal = _journal_after_a_previous_dispatch(
-        tmp_path=tmp_path, item_ids=(_ITEM_ID, _OTHER_ITEM_ID)
-    )
-    runner = _runner(events=events)
-    monkeypatch.setattr(reclaim, "ShellCommandRunner", lambda: runner)
-    _stub_wave_seams(monkeypatch=monkeypatch, admission=admission, events=events)
-
+) -> None:
+    """One drain wave over that selection, with the reclaim live."""
+    _stub_wave_seams(monkeypatch=monkeypatch, admission=admission, events=fixture.events)
     _ = loop_wave.dispatch_loop_wave(
-        args=_args(repo=tmp_path, journal=journal),
-        repo=tmp_path,
-        items=[item],
-        selected_candidates=[item],
-        journal=journal,
+        args=fixture.args,
+        repo=repo,
+        items=[fixture.item],
+        selected_candidates=[fixture.item],
+        journal=fixture.journal,
         janitor=None,
         rework=ReworkPass(),
     )
-    return journal, runner
 
 
 def _stub_single_dispatch(
     *,
     monkeypatch: pytest.MonkeyPatch,
-    item: WorkItem,
-    journal: JournalFile,
+    fixture: _Fixture,
     admission: Admission,
-    events: list[str],
 ) -> None:
     """Stand in every `dispatch --item` seam around the launch this case is about.
 
@@ -310,15 +399,17 @@ def _stub_single_dispatch(
     """
     monkeypatch.setattr(run_commands, "dispatch_preamble", lambda **_kwargs: (None, None))
     monkeypatch.setattr(run_commands, "arm_otel_egress", lambda **_kwargs: None)
-    monkeypatch.setattr(run_commands, "prepare", lambda **_kwargs: ([item], journal))
+    monkeypatch.setattr(
+        run_commands, "prepare", lambda **_kwargs: ([fixture.item], fixture.journal)
+    )
     monkeypatch.setattr(
         run_commands, "apply_factory_size_dispatch_entry", lambda **_kwargs: IOSuccess(())
     )
-    monkeypatch.setattr(run_commands, "ready_items", lambda **_kwargs: [item])
+    monkeypatch.setattr(run_commands, "ready_items", lambda **_kwargs: [fixture.item])
     monkeypatch.setattr(run_commands, "pre_dispatch_wall_exit", lambda **_kwargs: None)
 
     def _admit(**_kwargs: Any) -> Admission:
-        events.append(_ADMIT)
+        fixture.events.append(_ADMIT)
         return admission
 
     monkeypatch.setattr(run_commands, "admit_and_select", _admit)
@@ -330,7 +421,7 @@ def _stub_single_dispatch(
     )
 
     def _launch(**kwargs: Any) -> DispatchOutcome:
-        events.append(_LAUNCH)
+        fixture.events.append(_LAUNCH)
         return _green_outcome(item_id=str(kwargs["item"].id))
 
     monkeypatch.setattr(run_commands, "dispatch_one", _launch)
@@ -347,25 +438,24 @@ def test_an_item_selected_to_launch_is_reclaimed_for_before_its_run_starts(
     launch, because clearing the branch is what lets the new run's
     `publish_draft` push a plain fast-forward at all.
     """
-    events: list[str] = []
-    item = _work_item(item_id=_ITEM_ID)
+    fixture = _fixture(monkeypatch=monkeypatch, tmp_path=tmp_path)
 
-    journal, runner = _drive_loop_wave(
+    _run_the_wave(
         monkeypatch=monkeypatch,
-        tmp_path=tmp_path,
-        admission=_admitted_one(item=item),
-        events=events,
+        fixture=fixture,
+        repo=tmp_path,
+        admission=_admitted_one(item=fixture.item),
     )
 
-    assert _timeline(events=events) == [_ADMIT, _ASK_ORIGIN, _PRESERVE, _DELETE, _LAUNCH]
+    assert _timeline(events=fixture.events) == _LAUNCHED_TIMELINE
     # Exactly this item's branch was asked about, though the journal records an
     # earlier dispatch of another item whose branch origin also carries.
-    assert [argv for argv in runner.argvs if "ls-remote" in " ".join(argv)] == [
+    assert [argv for argv in fixture.runner.argvs if "ls-remote" in " ".join(argv)] == [
         ["git", "ls-remote", "origin", f"refs/heads/{_BRANCH}"]
     ]
     assert [
         {key: record[key] for key in ("stage", "work_item_id", "branch", "head")}
-        for record in _reclaim_rows(journal=journal)
+        for record in _reclaim_rows(journal=fixture.journal)
     ] == [
         {
             "stage": reclaim.PUBLISH_BRANCH_RECLAIM_STAGE,
@@ -385,23 +475,102 @@ def test_the_single_dispatch_path_reclaims_for_the_item_it_launches(
     exactly why it needs its own case: a fix wired only into the drain would leave
     this path with no reclaim at all, and its recovery stuck at `publish_draft`.
     """
-    events: list[str] = []
-    item = _work_item(item_id=_ITEM_ID)
-    journal = _journal_after_a_previous_dispatch(
-        tmp_path=tmp_path, item_ids=(_ITEM_ID, _OTHER_ITEM_ID)
-    )
-    runner = _runner(events=events)
-    monkeypatch.setattr(reclaim, "ShellCommandRunner", lambda: runner)
+    fixture = _fixture(monkeypatch=monkeypatch, tmp_path=tmp_path)
     _stub_single_dispatch(
-        monkeypatch=monkeypatch,
-        item=item,
-        journal=journal,
-        admission=_admitted_one(item=item),
-        events=events,
+        monkeypatch=monkeypatch, fixture=fixture, admission=_admitted_one(item=fixture.item)
     )
 
-    exit_code = run_commands.run_dispatch_command(args=_args(repo=tmp_path, journal=journal))
+    exit_code = run_commands.run_dispatch_command(args=fixture.args)
 
     assert exit_code == 0
-    assert _timeline(events=events) == [_ADMIT, _ASK_ORIGIN, _PRESERVE, _DELETE, _LAUNCH]
-    assert [record["work_item_id"] for record in _reclaim_rows(journal=journal)] == [_ITEM_ID]
+    assert _timeline(events=fixture.events) == _LAUNCHED_TIMELINE
+    assert [record["work_item_id"] for record in _reclaim_rows(journal=fixture.journal)] == [
+        _ITEM_ID
+    ]
+
+
+def test_a_capacity_deferred_item_is_never_reclaimed_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The defect, directly: a deferral must cost the item nothing on origin.
+
+    The whole loop-command pre-launch sequence runs — the shared wall, then the
+    wave whose valve defers — and the timeline is the measurement. Admission
+    decides, and NOTHING else happens: origin is never asked whether the publish
+    branch survives, no preservation ref is created, the branch is not deleted,
+    and no run is launched. Origin IS carrying that branch and the journal DOES
+    record an earlier dispatch, so every one of those acts was available.
+    """
+    fixture = _fixture(monkeypatch=monkeypatch, tmp_path=tmp_path)
+
+    _run_the_wall(monkeypatch=monkeypatch, fixture=fixture, repo=tmp_path)
+    _run_the_wave(
+        monkeypatch=monkeypatch, fixture=fixture, repo=tmp_path, admission=_capacity_deferred()
+    )
+
+    assert _timeline(events=fixture.events) == [_ADMIT]
+    assert fixture.runner.argvs == []
+
+
+def test_a_capacity_deferred_loop_dispatch_journals_no_reclaim_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Neither record is written for a deferred item — not the act, not a hold.
+
+    A `publish-branch-reclaim-held` row would be just as wrong as the completed
+    one: a hold says a reclaim was attempted and names the measurement that
+    stopped it, and no reclaim is owed for an item this pass never launched.
+    """
+    fixture = _fixture(monkeypatch=monkeypatch, tmp_path=tmp_path)
+
+    _run_the_wall(monkeypatch=monkeypatch, fixture=fixture, repo=tmp_path)
+    _run_the_wave(
+        monkeypatch=monkeypatch, fixture=fixture, repo=tmp_path, admission=_capacity_deferred()
+    )
+
+    assert _reclaim_rows(journal=fixture.journal) == ()
+
+
+def test_a_loop_dispatch_reclaims_once_after_admission_and_never_before_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The launched item, through the WHOLE sequence: one reclaim, after the valve.
+
+    The two halves above can each be satisfied by a build that reclaims twice —
+    once in the wall for the selection and once in the wave for the launch —
+    because the deferred cases observe a wave that launches nothing and the
+    launched cases drive the wave alone. This case is the one that cannot: it
+    composes the wall with a wave that DOES launch, and asserts the timeline
+    exactly, so a surviving pre-admission reclaim shows up as the ask, preserve
+    and delete it performs before the valve ever ran.
+    """
+    fixture = _fixture(monkeypatch=monkeypatch, tmp_path=tmp_path)
+
+    _run_the_wall(monkeypatch=monkeypatch, fixture=fixture, repo=tmp_path)
+    _run_the_wave(
+        monkeypatch=monkeypatch,
+        fixture=fixture,
+        repo=tmp_path,
+        admission=_admitted_one(item=fixture.item),
+    )
+
+    assert _timeline(events=fixture.events) == _LAUNCHED_TIMELINE
+    assert len(_reclaim_rows(journal=fixture.journal)) == 1
+
+
+def test_the_pre_dispatch_wall_reclaims_nothing_at_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The wall alone: it must mutate no remote ref, for any selection.
+
+    The wall runs before admission has decided anything, so whatever it reclaims
+    for it reclaims for a selection that may never launch. Asserted on the wall
+    by itself rather than only through a dispatch, because this is the POSITION
+    that was wrong rather than any one caller's use of it.
+    """
+    fixture = _fixture(monkeypatch=monkeypatch, tmp_path=tmp_path)
+
+    _run_the_wall(monkeypatch=monkeypatch, fixture=fixture, repo=tmp_path)
+
+    assert fixture.runner.argvs == []
+    assert _reclaim_rows(journal=fixture.journal) == ()

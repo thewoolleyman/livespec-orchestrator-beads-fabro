@@ -32,11 +32,15 @@ that carry a resume (`resume_entry_node`, `resume_head`) are defensive by design
 so a resume that failed to set them would dispatch as an ordinary one and
 re-implement from `start` with nothing in the output to say so.
 
-WHY THE RECLAIM IS ASSERTED AS A PASSED ARGUMENT. The clause says the resume
-"MUST NOT run the stale publish-branch reclaim": the surviving publish branch is
-the branch the run resumes on. Running both would preserve the head to a ref and
-delete the very branch the resumed run was about to check out, and the journal
-would then read like a healthy reclaim.
+WHY THE RECLAIM IS ASSERTED AS A SEAM NOBODY ON THIS PATH TOUCHES. The clause says
+the resume "MUST NOT run the stale publish-branch reclaim": the surviving publish
+branch is the branch the run resumes on. Running both would preserve the head to a
+ref and delete the very branch the resumed run was about to check out, and the
+journal would then read like a healthy reclaim. The resume used to say so by
+passing `reclaim_publish_branches=False` to the shared wall; under `bd-ib-huoyk7`
+the reclaim moved PAST the capacity decision, so the wall reclaims for nobody and
+this path simply never calls it. The assertion therefore records the reclaim seam
+across a whole resume rather than inspecting one argument.
 """
 
 from __future__ import annotations
@@ -49,6 +53,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_pre_dispatch_wall as wall
 from livespec_orchestrator_beads_fabro.commands import dispatcher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import Admission
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
@@ -93,7 +98,6 @@ class _Log:
     """What the resume did, in the order it did it."""
 
     events: list[str] = field(default_factory=list)
-    wall_reclaim: list[bool] = field(default_factory=list)
     dispatched_args: list[argparse.Namespace] = field(default_factory=list)
 
 
@@ -196,9 +200,8 @@ def _stub_resume(
     monkeypatch.setattr(module, "resume_refusals", lambda **_kwargs: refusals)
     monkeypatch.setattr(module, "ShellCommandRunner", lambda: None)
 
-    def _wall(**kwargs: Any) -> int | None:
+    def _wall(**_kwargs: Any) -> int | None:
         log.events.append("wall")
-        log.wall_reclaim.append(bool(kwargs["reclaim_publish_branches"]))
         return wall_exit
 
     monkeypatch.setattr(module, "pre_dispatch_wall_exit", _wall)
@@ -315,16 +318,30 @@ def test_a_clean_resume_journals_its_record_before_the_claim(
 def test_the_resume_never_runs_the_stale_publish_branch_reclaim(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The surviving branch is the one the run resumes on; reclaiming it destroys it."""
+    """The surviving branch is the one the run resumes on; reclaiming it destroys it.
+
+    Recorded at the reclaim SEAM across a whole clean resume rather than read off
+    one argument, because the reclaim is no longer something the wall can be asked
+    to skip: it sits past the capacity decision, and a path reaches it only by
+    calling `post_admission_publish_branch_reclaim` itself. Its control lives in
+    `test_dispatcher_publish_branch_reclaim_after_capacity.py`, which drives both
+    dispatch paths and reads the reclaim they DO perform — without it, a build
+    where nobody could reclaim would satisfy this case.
+    """
     assert _module_path().is_file()
     module = importlib.import_module(_MODULE)
-    log = _Log()
+    reclaimed: list[str] = []
+    monkeypatch.setattr(
+        wall,
+        "reclaim_stale_publish_branches",
+        lambda **kwargs: reclaimed.append(str(kwargs["items"])),
+    )
     _stub_resume(
         module=module,
         monkeypatch=monkeypatch,
         journal=_RecordingJournal(),
         item=_item(),
-        log=log,
+        log=_Log(),
         anchor=_anchor(),
         observation=_observation(),
         refusals=(),
@@ -332,7 +349,7 @@ def test_the_resume_never_runs_the_stale_publish_branch_reclaim(
 
     _ = module.run_resume_command(args=_args(repo=tmp_path))
 
-    assert log.wall_reclaim == [False]
+    assert reclaimed == []
 
 
 def test_every_applicable_refusal_is_named_and_nothing_is_claimed(
