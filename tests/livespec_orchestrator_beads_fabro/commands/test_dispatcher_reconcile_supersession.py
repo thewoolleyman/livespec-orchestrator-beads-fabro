@@ -60,6 +60,12 @@ _ANSWER_PATH = f"{_QUESTIONS_PATH}/q-abandon/answer"
 _CANCEL_PATH = f"/api/v1/runs/{_SECOND_RUN}/cancel"
 
 
+# Every stage the container lane of a reconciliation pass writes shares this
+# prefix. Spelled out rather than imported so this file keeps naming the
+# records it means to separate.
+_SWEEP_STAGE_PREFIX = "sandbox-container-"
+
+
 @dataclass(kw_only=True)
 class _Runner:
     """One fake `fabro` CLI; every verb other than `ps` succeeds silently.
@@ -143,9 +149,21 @@ class _Transport:
 
 @dataclass(kw_only=True)
 class _Journal:
+    """Records the RUN lane in `written` and the CONTAINER lane in `swept`.
+
+    The same pass sweeps this host's sandbox containers and journals what it
+    swept, so one journal now carries two lanes. Splitting them in the fake is
+    what keeps every position-based assertion in this file — a `[-1]`, an
+    exact stage list, an empty-journal claim — about the lane it names.
+    """
+
     written: list[dict[str, object]] = field(default_factory=list)
+    swept: list[dict[str, object]] = field(default_factory=list)
 
     def append(self, *, record: dict[str, object]) -> None:
+        if str(record["stage"]).startswith(_SWEEP_STAGE_PREFIX):
+            self.swept.append(record)
+            return
         self.written.append(record)
 
 

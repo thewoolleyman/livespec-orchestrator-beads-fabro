@@ -49,6 +49,12 @@ _ORPHAN_RUN = "01M4S5MKW3JHX4T8VB8ZMJE9VV"
 _LIMIT = 4294967296
 
 
+# Every stage the container lane of a reconciliation pass writes shares this
+# prefix. Spelled out rather than imported so this file keeps naming the
+# records it means to separate.
+_SWEEP_STAGE_PREFIX = "sandbox-container-"
+
+
 @dataclass(kw_only=True)
 class _Runner:
     """One fake CLI for BOTH binaries, keyed on argv[0] before the verb.
@@ -116,9 +122,21 @@ class _Transport:
 
 @dataclass(kw_only=True)
 class _Journal:
+    """Records the RUN lane in `written` and the CONTAINER lane in `swept`.
+
+    The same pass sweeps this host's sandbox containers and journals what it
+    swept, so one journal now carries two lanes. Splitting them in the fake is
+    what keeps every position-based assertion in this file — a `[-1]`, an
+    exact stage list, an empty-journal claim — about the lane it names.
+    """
+
     written: list[dict[str, object]] = field(default_factory=list)
+    swept: list[dict[str, object]] = field(default_factory=list)
 
     def append(self, *, record: dict[str, object]) -> None:
+        if str(record["stage"]).startswith(_SWEEP_STAGE_PREFIX):
+            self.swept.append(record)
+            return
         self.written.append(record)
 
 
@@ -352,6 +370,12 @@ def test_the_run_lane_and_the_container_lane_both_act_in_one_pass(tmp_path: Path
     assert transport.calls[-1].endswith(f"/runs/{_ORPHAN_RUN}/cancel")
     assert [record["stage"] for record in journal.written] == ["orphan-run-reconciled"]
     assert _removed(runner=runner) == [f"fabro-run-{_FAILED_RUN}"]
+    # Both lanes journaled, through the one journal the pass was handed.
+    assert [record["stage"] for record in journal.swept] == [
+        "sandbox-container-reclaimed",
+        "sandbox-container-held",
+        "sandbox-container-sweep",
+    ]
     assert [(run.run_id, run.hold_reason) for run in summary.containers.held] == [
         (_ORPHAN_RUN, "run-live")
     ]

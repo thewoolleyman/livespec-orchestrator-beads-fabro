@@ -32,6 +32,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_container_po
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_container_reclaim import (
     SandboxContainerSweep,
+    journal_container_sweep,
     reclaim_terminal_run_containers,
 )
 
@@ -45,11 +46,20 @@ def pass_container_sweep(
     run_statuses: Mapping[str, str | None],
     dry_run: bool,
 ) -> SandboxContainerSweep:
-    """Sweep the host's sandbox containers, for a pass that surveyed something."""
+    """Sweep the host's sandbox containers, and record what the sweep did.
+
+    The ACT and its RECORD are composed here rather than inside the reclaim
+    driver, which keeps the one decision a dry run turns on — write nothing —
+    beside the one the survey turns on, instead of splitting them across two
+    modules that each hold half of it.
+    """
     if not surveyed:
         return SandboxContainerSweep()
-    return reclaim_terminal_run_containers(
+    sweep = reclaim_terminal_run_containers(
         port=SandboxContainerPort(runner=inputs.runner, cwd=inputs.repo),
         status_by_run=run_statuses,
         dry_run=dry_run,
     )
+    if not dry_run:
+        journal_container_sweep(journal=inputs.journal, sweep=sweep)
+    return sweep
