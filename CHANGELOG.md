@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.196.20](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.19...v0.196.20) (2026-10-14)
+
+
+### Bug Fixes
+
+* fetch the dispatch base into every source-staged sandbox clone ([dddf8ce](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dddf8ce3854e96a4c015ea377b37e480b194c0af))
+
 ## [0.196.19](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.18...v0.196.19) (2026-10-14)
 
 
