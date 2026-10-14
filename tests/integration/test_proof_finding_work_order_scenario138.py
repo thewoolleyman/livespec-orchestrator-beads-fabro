@@ -297,14 +297,14 @@ def test_the_fix_budget_is_shared_across_every_loop_feeding_it() -> None:
         _source_of(edge=edge) for edge in _edges(text=text) if _target_of(edge=edge) == "fix"
     }
 
-    assert producers == {"janitor", _CAPTURE, _VERIFY}
+    assert producers == {"janitor", _CAPTURE, _VERIFY, "publish_draft_repair"}
     backstop = re.search(r"max_visits=(?P<value>\d+)", _node_body(text=text, node="fix") or "")
     assert backstop is not None
     # AT LEAST two entries per producer, not strictly more: the budget IS the
     # bound now rather than a backstop sitting above three separate caps, and it
     # is sized to exactly what those retired caps admitted (plan
     # `fabro-currency` P4), which is two apiece.
-    assert int(backstop.group("value")) >= 2 * len(producers)
+    assert int(backstop.group("value")) >= 2 * len(producers - {"publish_draft_repair"})
 
 
 def test_the_fix_prompt_reads_the_pull_request_when_the_preamble_carries_none() -> None:

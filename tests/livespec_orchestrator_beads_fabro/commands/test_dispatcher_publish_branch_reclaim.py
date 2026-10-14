@@ -621,7 +621,11 @@ def test_a_publish_branch_whose_run_is_still_live_is_not_reclaimed(tmp_path: Pat
     # push sentinel, and the arm that routes it to a human rather than onward.
     graph = _WORKFLOW_PATH.read_text(encoding="utf-8")
     assert "LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED" in graph
-    assert 'publish_draft -> needs_human [label="Blocked", condition="outcome=failed"]' in graph
+    assert "publish_draft_repair -> needs_human" in graph
+    assert (
+        'publish_draft -> publish_draft_repair [label="Blocked", condition="outcome=failed"]'
+        in graph
+    )
 
 
 def test_an_unaskable_factory_holds_the_reclaim_rather_than_assuming_death(

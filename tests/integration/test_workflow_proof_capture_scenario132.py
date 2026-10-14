@@ -183,9 +183,10 @@ def test_publish_draft_fails_closed_to_needs_human_and_falls_through_to_capture(
     """
     edges = _edges_from(text=_dot(payload=_BUNDLE), node=_PUBLISH)
 
+    assert "publish_draft_repair -> needs_human" in _dot(payload=_BUNDLE)
     assert edges, "publish_draft declares no outgoing edges"
     assert [edge for edge in edges if "condition=" not in edge] == [f"{_PUBLISH} -> {_CAPTURE}"]
-    blocked = [edge for edge in edges if edge.startswith(f"{_PUBLISH} -> needs_human")]
+    blocked = [edge for edge in edges if edge.startswith(f"{_PUBLISH} -> publish_draft_repair")]
     assert len(blocked) == 1
     assert 'condition="outcome=failed"' in blocked[0]
 

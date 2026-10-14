@@ -61,7 +61,7 @@ _ROLLBACK = _PAYLOAD / "workflow.pre-petri.fabro"
 # refresh loop re-enters capture, review and replay -- which is why those three
 # nodes' derived visit counts move even though neither their attributes nor
 # their own edges changed.
-_PUBLICATION_STAGES_ADDED = {"pr_refresh", "pr_refresh_head"}
+_PUBLICATION_STAGES_ADDED = {"publish_draft_repair", "pr_refresh", "pr_refresh_head"}
 _PUBLICATION_STAGES = _PUBLICATION_STAGES_ADDED | {"pr", "verify_pr"}
 _REFRESH_LOOP = _PUBLICATION_STAGES_ADDED | {"proof_capture", "review", "proof_verify"}
 

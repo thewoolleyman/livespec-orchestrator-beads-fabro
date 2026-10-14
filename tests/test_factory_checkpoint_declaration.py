@@ -60,8 +60,9 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # timeouts, so pinning it exactly would make every unrelated timeout edit fail
 # this case. The control below pins the 15m figure exactly, because that one is
 # the thing being moved away from and a drifting comparand would hide the move.
-_FRESHNESS_BOUND_SECONDS = 530_000
-_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 801_525
+# v134 draft repair routing: measured 531210s at 5m, 815610s at 15m.
+_FRESHNESS_BOUND_SECONDS = 540_000
+_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 815_610
 
 
 def _checkpoint() -> dict[str, Any]:

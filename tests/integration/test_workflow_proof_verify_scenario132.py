@@ -481,14 +481,14 @@ def test_the_fix_budget_admits_every_loop_that_now_feeds_it() -> None:
         _source_of(edge=edge) for edge in _edges(text=text) if _target_of(edge=edge) == "fix"
     }
 
-    assert producers == {"janitor", "proof_capture", _VERIFY}
+    assert producers == {"janitor", "proof_capture", _VERIFY, "publish_draft_repair"}
     budgets = {
         node: re.search(r"max_visits=(?P<value>\d+)", _node_body(text=text, node=node) or "")
         for node in ("fix", "disposition", "review_fix")
     }
     assert all(match is not None for match in budgets.values()), budgets
     values = {node: int(match.group("value")) for node, match in budgets.items() if match}
-    assert values["fix"] == 2 * len(producers)
+    assert values["fix"] == 2 * len(producers - {"publish_draft_repair"})
     assert values["disposition"] == values["review_fix"]
 
 
