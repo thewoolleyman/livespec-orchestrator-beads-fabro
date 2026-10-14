@@ -24,15 +24,12 @@ This module adds two seams, both feeding the EXISTING `decide_stall`
   corrupt / unreadable file reads as empty), so a malformed heartbeat
   NEVER crashes the watchdog — it degrades to no signal.
 
-* `LayeredLivenessProbe` — composes the heartbeat probe as the
-  deferred-PRIMARY with the coarse wall-clock `fabro events` probe as
-  the PERMANENT fallback. It samples the primary first; when the primary
-  yields a real signal that wins (the finer heartbeat reading); when the
-  primary is "no signal" (pipeline outage / not-yet-started / malformed)
-  it falls THROUGH to the wall-clock backstop. This is the load-bearing
-  degrade rule: an observability-pipeline outage degrades the watchdog to
-  coarse event-stream detection — NEVER to NO detection. The wall-clock
-  layer STAYS regardless.
+* `LayeredLivenessProbe` — reads BOTH the heartbeat and the permanent
+  wall-clock `fabro events` backstop on every poll and reports the newest
+  available timestamp. A heartbeat may stop when a Claude-adapter node
+  ends while a command or Codex-agent node continues to emit events. Its
+  presence must never mask those events. An outage of either layer leaves
+  the other available; only an outage of both yields no signal.
 
 Keying (§4.4 + the 29f.7 sink): the `HeartbeatSink` stores keys AFTER the
 shared fail-closed `scrub` (so a credential-shaped id lands as the
@@ -133,25 +130,24 @@ class HeartbeatLivenessProbe:
 
 @dataclass(frozen=True, kw_only=True)
 class LayeredLivenessProbe:
-    """Heartbeat-PRIMARY probe with the wall-clock backstop as the fallback.
+    """Compose independent liveness sources without letting either mask progress.
 
-    Samples the deferred-PRIMARY `primary` (the heartbeat) first: when it
-    yields a real signal (`last_event_epoch is not None`) that finer
-    reading wins. When the primary is "no signal" (a pipeline outage, a
-    not-yet-started run, or a malformed heartbeat file) it falls THROUGH
-    to the coarse `fallback` (the wall-clock `fabro events` probe) — so
-    an observability-pipeline outage degrades the watchdog to coarse
-    event-stream detection, NEVER to NO detection. Either reading feeds
-    the SAME `decide_stall` unchanged; this composition only chooses which
-    layer supplies the sample, never the stall policy itself.
+    Heartbeats offer finer activity readings while Claude is running;
+    events also cover command nodes and other agent adapters. Sample both
+    even when a heartbeat exists, since it may belong to a finished node.
     """
 
     primary: LivenessProbe
     fallback: LivenessProbe
 
     def sample(self, *, observed_at: float) -> LivenessSample:
-        """Prefer the heartbeat; degrade to the wall-clock backstop on no signal."""
+        """Report the freshest available reading, or no signal if both are blind."""
         primary_sample = self.primary.sample(observed_at=observed_at)
-        if primary_sample.last_event_epoch is not None:
+        fallback_sample = self.fallback.sample(observed_at=observed_at)
+        if primary_sample.last_event_epoch is None:
+            return fallback_sample
+        if fallback_sample.last_event_epoch is None:
             return primary_sample
-        return self.fallback.sample(observed_at=observed_at)
+        if fallback_sample.last_event_epoch > primary_sample.last_event_epoch:
+            return fallback_sample
+        return primary_sample

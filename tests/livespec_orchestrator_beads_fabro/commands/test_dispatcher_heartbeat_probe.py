@@ -398,18 +398,9 @@ def test_scripted_runner_rejects_unknown_verb(tmp_path: Path) -> None:
     assert out.exit_code == 1
 
 
-def test_launcher_cancels_on_a_frozen_heartbeat_even_when_events_advance(tmp_path: Path) -> None:
-    # The heartbeat is the PRIMARY signal: even though the coarse
-    # `fabro events` stream ADVANCES every poll (which the wall-clock
-    # backstop alone would read as healthy), a FROZEN heartbeat for this
-    # run confirms the finer 7us.6 stall and the watchdog `fabro rm -f`-es
-    # the run. Proves the heartbeat wins over the wall-clock layer.
-    #
-    # The beat is keyed by the DISPATCH id, exactly as the live sink keys
-    # it, and the launcher is given that id — so this also proves the
-    # launcher threads it through to `heartbeat_lookup_keys`. Keyed this
-    # way before the fix, the probe found nothing and the advancing events
-    # would have carried the run past the stall window uncancelled.
+def test_launcher_cancels_after_events_and_heartbeat_both_stop(tmp_path: Path) -> None:
+    # Events advance for three polls, then freeze. The watchdog must still
+    # cancel once BOTH sources stop, regardless of which source was newer.
     heartbeat_path = tmp_path / "j-otel-heartbeat.json"
     _ = _sink_with(path=heartbeat_path, beats={_HEARTBEAT_DISPATCH_ID: 1_750_000_000.0})
     advancing = [
@@ -456,7 +447,7 @@ def test_launcher_with_fresh_advancing_heartbeat_never_cancels(tmp_path: Path) -
     # frozen wall-clock events would (the heartbeat is the finer truth).
     heartbeat_path = tmp_path / "j-otel-heartbeat.json"
     sink = HeartbeatSink(path=heartbeat_path)
-    sink.beat(key=_HEARTBEAT_WORK_ITEM_ID, at=1_750_000_000.0)
+    sink.beat(key=_HEARTBEAT_WORK_ITEM_ID, at=1_800_000_000.0)
     runner = _ScriptedFabroRunner(events_jsons=['[{"timestamp": "2026-06-13T08:00:00Z"}]'])
     polls = {"n": 0}
 
@@ -464,7 +455,7 @@ def test_launcher_with_fresh_advancing_heartbeat_never_cancels(tmp_path: Path) -
         # Each poll the live run exports a fresh metric -> the heartbeat
         # advances; after a few polls end the run so launch() returns.
         polls["n"] += 1
-        sink.beat(key=_HEARTBEAT_WORK_ITEM_ID, at=1_750_000_000.0 + polls["n"] * 600.0)
+        sink.beat(key=_HEARTBEAT_WORK_ITEM_ID, at=1_800_000_000.0 + polls["n"] * 600.0)
         if polls["n"] >= 4:
             runner.run_done.set()
 
@@ -477,3 +468,22 @@ def test_launcher_with_fresh_advancing_heartbeat_never_cancels(tmp_path: Path) -
     result = launcher.launch(plan=_watchdog_plan(repo=tmp_path), runner=runner, journal=journal)
     assert result.stalled_run_id is None
     assert runner.rm_calls == []
+
+
+@pytest.mark.parametrize(
+    ("heartbeat", "event", "expected"),
+    [(100.0, 200.0, 200.0), (200.0, 100.0, 200.0), (100.0, None, 100.0), (100.0, 100.0, 100.0)],
+)
+def test_layered_reports_the_newest_available_signal(
+    *,
+    heartbeat: float,
+    event: float | None,
+    expected: float,
+) -> None:
+    layered = LayeredLivenessProbe(
+        primary=_ScriptedProbe(epoch=heartbeat),
+        fallback=_ScriptedProbe(epoch=event),
+    )
+    sample = layered.sample(observed_at=300.0)
+    assert sample.last_event_epoch == expected
+    assert sample.observed_at == 300.0
