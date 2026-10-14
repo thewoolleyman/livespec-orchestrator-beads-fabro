@@ -472,23 +472,32 @@ def test_the_fix_budget_admits_every_loop_that_now_feeds_it() -> None:
     with a different number of rounds; asserting the three equal would now be
     asserting a coincidence.
 
-    The PRODUCER COUNT is asserted as the tripwire: a fourth node routing into
+    The PRODUCER COUNT is asserted as the tripwire: a fifth node routing into
     `fix` would silently halve somebody's share, and this is the assertion that
     notices.
+
+    THE FOURTH PRODUCER IS NOT AN AGENT FINDING and is excluded from the
+    two-apiece arithmetic deliberately. v134's "Refresh-repair accounting"
+    paragraph grants the refresh-repair route a budget of its OWN — two rounds
+    across both refreshing stages, in addition to what the other entry paths
+    already allow — rather than a share of the per-finding allowance. So the
+    floor here is over the three agent-finding producers, and the EXACT total
+    that grant produces is asserted where the grant itself is, in
+    `tests/integration/test_workflow_refresh_repair_scenario176.py`.
     """
     text = _dot(payload=_BUNDLE)
     producers = {
         _source_of(edge=edge) for edge in _edges(text=text) if _target_of(edge=edge) == "fix"
     }
 
-    assert producers == {"janitor", "proof_capture", _VERIFY}
+    assert producers == {"janitor", "proof_capture", _VERIFY, "refresh_repair"}
     budgets = {
         node: re.search(r"max_visits=(?P<value>\d+)", _node_body(text=text, node=node) or "")
         for node in ("fix", "disposition", "review_fix")
     }
     assert all(match is not None for match in budgets.values()), budgets
     values = {node: int(match.group("value")) for node, match in budgets.items() if match}
-    assert values["fix"] == 2 * len(producers)
+    assert values["fix"] >= 2 * len(producers - {"refresh_repair"})
     assert values["disposition"] == values["review_fix"]
 
 

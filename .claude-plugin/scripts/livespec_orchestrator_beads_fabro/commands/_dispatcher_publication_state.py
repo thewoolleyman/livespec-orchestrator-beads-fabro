@@ -1,4 +1,4 @@
-"""Where a run's publication stages keep the three facts they hand each other.
+"""Where a run's publication stages keep the facts they hand each other.
 
 WHAT THE STATE IS. `SPECIFICATION/contracts.md` section
 "Definition-of-Done and Proof-of-Done stages" -> "Scripted publication and
@@ -50,6 +50,8 @@ __all__: list[str] = [
     "PUBLISH_HEAD_STATE_FILENAME",
     "REFRESH_CHANGED_STATE_FILENAME",
     "REFRESH_COUNT_STATE_FILENAME",
+    "REFRESH_REPAIR_BRIEF_STATE_FILENAME",
+    "REFRESH_REPAIR_COUNT_STATE_FILENAME",
     "publication_state_filenames",
     "publication_state_root_command",
 ]
@@ -63,6 +65,27 @@ PUBLICATION_STATE_GIT_PATH = "livespec-publication"
 PUBLISH_HEAD_STATE_FILENAME = "livespec-publish-head"
 REFRESH_COUNT_STATE_FILENAME = "livespec-pr-refresh-count"
 REFRESH_CHANGED_STATE_FILENAME = "livespec-pr-refresh-changed"
+
+# The two REFRESH-REPAIR facts (v134 "Refresh repair" and "Refresh-repair
+# accounting"), which are the same kind of hand-off as the three above: each is
+# written by one stage and read by another.
+#
+# The BRIEF is written by whichever refreshing stage restored its pre-refresh
+# head, and read by the `refresh_repair` classifier that routes on its presence
+# and by the `fix` turn that works from its contents. Its PRESENCE is the signal
+# and not merely its contents, which is why the writing stages delete it on
+# entry: a brief left behind by an earlier round would route a later
+# unrepairable failure — an authentication refusal, an unreachable origin — into
+# the fix loop instead of to the human it belongs to.
+#
+# The COUNT is read and written by both refreshing stages, which is what makes
+# the two-round budget a measured fact rather than a hope. It is deliberately
+# SEPARATE from `REFRESH_COUNT_STATE_FILENAME`: that one bounds `pr_refresh`'s
+# non-convergence at three refreshes of its own, while this one bounds repair
+# rounds across BOTH stages at two, and the accounting paragraph moves them
+# independently.
+REFRESH_REPAIR_BRIEF_STATE_FILENAME = "livespec-refresh-repair-brief"
+REFRESH_REPAIR_COUNT_STATE_FILENAME = "livespec-refresh-repair-count"
 
 
 def publication_state_root_command() -> str:
@@ -89,4 +112,6 @@ def publication_state_filenames() -> tuple[str, ...]:
         PUBLISH_HEAD_STATE_FILENAME,
         REFRESH_COUNT_STATE_FILENAME,
         REFRESH_CHANGED_STATE_FILENAME,
+        REFRESH_REPAIR_BRIEF_STATE_FILENAME,
+        REFRESH_REPAIR_COUNT_STATE_FILENAME,
     )

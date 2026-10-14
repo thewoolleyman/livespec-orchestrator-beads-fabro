@@ -816,6 +816,34 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   Every case asserts a poll-count FLOOR and the shape of the tail rather than an
   exact count, because a poll can still land while the launch thread unwinds.
 
+- `test_workflow_refresh_repair_scenario176.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 176 and the two `contracts.md`
+  paragraphs it exercises, v134's "Refresh repair" and "Refresh-repair
+  accounting": a `publish_draft` or `pr_refresh` stage that cannot refresh the
+  run onto an advanced default branch restores its pre-refresh head, records a
+  brief and routes to the existing `fix` node instead of ending the run at
+  `needs_human`. Every behavioural case EXECUTES the shipped script bytes —
+  taken through `parse_dot_graph`, never retyped — against a real throwaway
+  origin, because every guard in both stages is shell and a substring assertion
+  cannot tell a restoration arm that RUNS from one sitting behind an earlier
+  `exit`. Only the two engine template tokens are bound, and the
+  `sandbox_check_suite` substitution stands in for a per-repository
+  DECLARATION rather than for the stage. Two claims are read off the graph
+  instead, because no execution can establish them: the ROUTE (every acyclic
+  path from the classifier to `pr` visits janitor, then publish_draft, then
+  proof_capture — reachability alone would be satisfied by a repair routed
+  straight back to publication) and the BUDGET the accounting paragraph grants.
+  Three controls are load-bearing. The authentication-failure case is what
+  forces the push-failure classification to be a POSITIVE reading rather than a
+  residual category: without it, "a failed push enters the fix node" passes for
+  a build that repairs an unreachable origin, which is the one cause v134
+  forbids this route. The exhaustion case asserts the brief is ABSENT as well as
+  the reason file present, since the classifier routes on the brief and a third
+  round that wrote one would re-enter `fix` while reporting exhaustion. And the
+  `review_fix`/`disposition` budgets are asserted UNCHANGED beside the widened
+  `fix` budget, because "the repair took nothing from review-fix" is otherwise
+  equally consistent with a graph that widened nothing at all.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

@@ -180,14 +180,27 @@ def test_publish_draft_fails_closed_to_needs_human_and_falls_through_to_capture(
     cannot be reached — a capture posted onto no pull request is not a proof — and
     the fallthrough has to be unconditional or the engine rejects the whole graph
     before any node runs.
+
+    SINCE v134 THE FAILURE ARM REACHES needs_human THROUGH `refresh_repair`, and
+    the fail-closed claim is therefore asserted along the whole arm rather than
+    on one edge: the classifier's own UNCONDITIONAL route is the terminal, so a
+    cause it cannot account for still parks the item. Asserting only
+    `publish_draft -> refresh_repair` would be satisfied by a classifier that
+    routed every failure into the fix loop, which is the one thing v134's
+    distinguish-the-causes rule forbids.
     """
     edges = _edges_from(text=_dot(payload=_BUNDLE), node=_PUBLISH)
 
     assert edges, "publish_draft declares no outgoing edges"
     assert [edge for edge in edges if "condition=" not in edge] == [f"{_PUBLISH} -> {_CAPTURE}"]
-    blocked = [edge for edge in edges if edge.startswith(f"{_PUBLISH} -> needs_human")]
+    blocked = [edge for edge in edges if edge.startswith(f"{_PUBLISH} -> refresh_repair")]
     assert len(blocked) == 1
     assert 'condition="outcome=failed"' in blocked[0]
+
+    classifier = _edges_from(text=_dot(payload=_BUNDLE), node="refresh_repair")
+    assert [edge for edge in classifier if "condition=" not in edge] == [
+        "refresh_repair -> needs_human"
+    ]
 
 
 def test_a_green_janitor_reaches_review_only_through_publish_draft_and_capture() -> None:

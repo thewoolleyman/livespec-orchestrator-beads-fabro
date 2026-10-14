@@ -65,6 +65,26 @@ _PUBLICATION_STAGES_ADDED = {"pr_refresh", "pr_refresh_head"}
 _PUBLICATION_STAGES = _PUBLICATION_STAGES_ADDED | {"pr", "verify_pr"}
 _REFRESH_LOOP = _PUBLICATION_STAGES_ADDED | {"proof_capture", "review", "proof_verify"}
 
+# The refresh-repair classifier (v134), kept as its own constant rather than
+# folded into the port-era set above. The subject of this module is the PORT, so
+# "which nodes the port added" has to stay the port's own answer; a later
+# addition merged into that set would make a future port regression read as part
+# of the v134 route. The nodes it moves are the fix loop's, which is every node
+# the repair round re-earns.
+_REFRESH_REPAIR_ADDED = {"refresh_repair"}
+_REFRESH_REPAIR_LOOP = _REFRESH_REPAIR_ADDED | {
+    "fix",
+    "janitor",
+    "publish_draft",
+    "proof_capture",
+    "review",
+    "disposition",
+    "review_fix",
+    "proof_verify",
+    "non_converged",
+    "needs_human",
+}
+
 # Every edge statement's `condition` attribute value, which is the ONLY place
 # the two refused shapes matter. Anchored on an identifier followed by `->` so a
 # `//` DOT comment containing an arrow -- of which this graph has several --
@@ -225,10 +245,13 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
     ported = budget(text=_graph_text())
     pre_port = budget(text=_ROLLBACK.read_text(encoding="utf-8"))
 
-    # The two new stages are the ONLY nodes added, and nothing was dropped: a
-    # node the ported graph lost would be an executable path missing from a
-    # figure still presented as an allowance.
-    assert set(ported.node_visits) - set(pre_port.node_visits) == _PUBLICATION_STAGES_ADDED
+    # The two new stages plus the v134 refresh-repair classifier are the ONLY
+    # nodes added, and nothing was dropped: a node the ported graph lost would be
+    # an executable path missing from a figure still presented as an allowance.
+    assert (
+        set(ported.node_visits) - set(pre_port.node_visits)
+        == _PUBLICATION_STAGES_ADDED | _REFRESH_REPAIR_ADDED
+    )
     assert set(pre_port.node_visits) - set(ported.node_visits) == set()
 
     # The visit TABLE, not just its sum: two different tables can total the same
@@ -241,9 +264,8 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         if (ported.node_visits.get(node), ported.node_attempts.get(node))
         != (pre_port.node_visits.get(node), pre_port.node_attempts.get(node))
     }
-    assert moved <= _PUBLICATION_STAGES | _REFRESH_LOOP, sorted(
-        moved - (_PUBLICATION_STAGES | _REFRESH_LOOP)
-    )
+    reachable = _PUBLICATION_STAGES | _REFRESH_LOOP | _REFRESH_REPAIR_LOOP
+    assert moved <= reachable, sorted(moved - reachable)
     # And the direction is the honest one: the graph grew, so the allowance grew.
     # Asserted rather than left implicit, because an allowance that SHRANK after
     # nodes were added would mean the derivation stopped seeing one of them.

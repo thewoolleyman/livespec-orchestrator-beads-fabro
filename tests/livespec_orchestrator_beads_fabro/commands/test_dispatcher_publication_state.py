@@ -1,6 +1,6 @@
-"""Where the publication stages keep the three facts they hand each other.
+"""Where the publication stages keep the facts they hand each other.
 
-The module is three small pure values, so the cases below grade the two
+The module is a handful of small pure values, so the cases below grade the two
 properties that actually decide behaviour: that the directory is resolved BY GIT
 rather than joined onto a guessed path, and that the filename set is COMPLETE.
 
@@ -23,6 +23,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state im
     PUBLISH_HEAD_STATE_FILENAME,
     REFRESH_CHANGED_STATE_FILENAME,
     REFRESH_COUNT_STATE_FILENAME,
+    REFRESH_REPAIR_BRIEF_STATE_FILENAME,
+    REFRESH_REPAIR_COUNT_STATE_FILENAME,
     publication_state_filenames,
     publication_state_root_command,
 )
@@ -93,12 +95,19 @@ def test_a_second_repository_resolves_a_disjoint_directory(tmp_path: Path) -> No
 
 
 def test_the_filename_set_is_complete_and_distinct() -> None:
-    """All three facts, each under its own name.
+    """Every fact, each under its own name.
 
-    Completeness is asserted against the module's own three constants rather
-    than against a list repeated here: a fourth fact added without extending
+    Completeness is asserted against the module's own constants rather than
+    against a list repeated here: a further fact added without extending
     `publication_state_filenames` is exactly the omission this case exists to
     catch, and a literal copy would have to be edited to notice it.
+
+    The two REFRESH-REPAIR names are asserted DISTINCT from
+    `REFRESH_COUNT_STATE_FILENAME` by the same set comparison, which is the
+    property that keeps the two counters apart: one bounds `pr_refresh`'s
+    non-convergence at three refreshes, the other bounds repair rounds across
+    both refreshing stages at two, and a shared file would make each budget
+    spend the other's.
     """
     filenames = publication_state_filenames()
 
@@ -106,6 +115,8 @@ def test_the_filename_set_is_complete_and_distinct() -> None:
         PUBLISH_HEAD_STATE_FILENAME,
         REFRESH_COUNT_STATE_FILENAME,
         REFRESH_CHANGED_STATE_FILENAME,
+        REFRESH_REPAIR_BRIEF_STATE_FILENAME,
+        REFRESH_REPAIR_COUNT_STATE_FILENAME,
     }
     assert len(filenames) == len(set(filenames))
     assert all(re.fullmatch(r"livespec-[a-z-]+", name) for name in filenames), filenames
