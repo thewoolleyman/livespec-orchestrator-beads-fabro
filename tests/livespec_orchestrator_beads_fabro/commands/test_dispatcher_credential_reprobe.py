@@ -29,6 +29,13 @@ precisely that the second probe asked about the FIRST credential. Keying on the
 token means the wait can only resume by having observed the rotated value, and
 the launch-time value is left provider-limited for the whole wait so no other
 route to `usable` exists.
+
+THE RECORDED-IDENTITY CASES COME AS A PAIR, and the stale one is what gives the
+rotated one meaning. Taken alone, "two rows carry different identities" is
+satisfied by anything that varies per row — a timestamp, a counter, a random
+value — so the sibling case holds the wrapper's value STILL and asserts the two
+rows carry ONE identity. Both are taken with the same probe verdict on every
+round, so nothing about the refusal itself can be doing the distinguishing.
 """
 
 from __future__ import annotations
@@ -49,6 +56,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential im
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_rotation import (
     WRAPPER_RESOLVED,
+    credential_identity,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
@@ -267,6 +275,84 @@ def test_a_rotation_in_the_wrapper_retires_a_parked_wait(
     refused = _refusals(journal=journal, reprobe=reprobe)
     assert len(refused) == 1
     assert refused[0]["credential_source"] == WRAPPER_RESOLVED
+
+
+def test_two_consecutive_rows_show_a_rotation_by_their_recorded_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each refused row names the credential it probed, and the names differ.
+
+    The two rows are taken with the SAME probe verdict, so nothing about the
+    refusal itself distinguishes them: the recorded identity is the only thing
+    that says a rotation reached the wait between them.
+    """
+    reprobe = _reprobe()
+    monkeypatch.setenv(CLAUDE_OAUTH_TOKEN_ENV, _STALE_TOKEN)
+    repo = _repo(tmp_path=tmp_path, cadence=3, wrapper=_WRAPPER)
+    journal = _journal(repo=repo)
+    probe = _Probe(
+        statuses=[
+            _status(condition="exhausted", usable=False),
+            _status(condition="exhausted", usable=False),
+            _status(condition="usable", usable=True),
+        ]
+    )
+
+    reprobe.await_usable_credential(
+        repo=repo,
+        journal=journal,
+        budget=3,
+        probe=probe,
+        sleep=lambda _seconds: None,
+        runner=_wrapper_printing(tokens=[_STALE_TOKEN, _ROTATED_TOKEN]),
+    )
+
+    rows = _refusals(journal=journal, reprobe=reprobe)
+    assert [row for row in rows if "credential_identity" in row] == rows
+    identities = [row["credential_identity"] for row in rows]
+    assert identities == [
+        credential_identity(token=_STALE_TOKEN),
+        credential_identity(token=_ROTATED_TOKEN),
+    ]
+    assert identities[0] != identities[1]
+    assert _STALE_TOKEN not in json.dumps(_records(journal=journal))
+    assert _ROTATED_TOKEN not in json.dumps(_records(journal=journal))
+
+
+def test_two_consecutive_rows_show_a_stale_credential_by_one_repeated_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other direction, and the one the incident needed: an unchanged value.
+
+    Without this case a recorded identity could be anything that varies per row
+    — a timestamp, a counter — and the rotation case above would still pass.
+    """
+    reprobe = _reprobe()
+    monkeypatch.setenv(CLAUDE_OAUTH_TOKEN_ENV, _STALE_TOKEN)
+    repo = _repo(tmp_path=tmp_path, cadence=3, wrapper=_WRAPPER)
+    journal = _journal(repo=repo)
+    probe = _Probe(
+        statuses=[
+            _status(condition="exhausted", usable=False),
+            _status(condition="exhausted", usable=False),
+            _status(condition="usable", usable=True),
+        ]
+    )
+
+    reprobe.await_usable_credential(
+        repo=repo,
+        journal=journal,
+        budget=3,
+        probe=probe,
+        sleep=lambda _seconds: None,
+        runner=_wrapper_printing(tokens=[_STALE_TOKEN]),
+    )
+
+    rows = _refusals(journal=journal, reprobe=reprobe)
+    assert [row for row in rows if "credential_identity" in row] == rows
+    assert [row["credential_identity"] for row in rows] == [
+        credential_identity(token=_STALE_TOKEN)
+    ] * 2
 
 
 def test_the_default_cadence_is_three_hundred_seconds(tmp_path: Path) -> None:
