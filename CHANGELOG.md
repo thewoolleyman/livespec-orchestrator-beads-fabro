@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.196.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.1...v0.196.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* **needs-human:** name the preservation ref by the dispatch's own correlation id on both engines ([1ed7882](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1ed7882142c751fdcb02241e83d6cd453578552d))
+
 ## [0.196.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.0...v0.196.1) (2026-10-13)
 
 
