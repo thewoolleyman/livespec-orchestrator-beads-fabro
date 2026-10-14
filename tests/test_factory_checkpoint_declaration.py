@@ -43,7 +43,8 @@ stayed under the bound as it then stood.
 The v134 refresh-repair route (`bd-ib-5guqmt`) moved both again, and by more
 than any earlier edit: it adds the `refresh_repair` classifier AND widens
 `fix.max_visits`, and `fix` is the node three other loops re-enter, so every
-node a repair round re-earns gains visits with it. The bound moved to 650000 to
+node a repair round re-earns gains visits with it. The 15m control moved to
+958455 and the shipped 5m figure to 625455, so the bound moved to 650000 to
 stay between the two measured figures, which is the relation this case asserts.
 The ceiling that matters is unchanged: the shipped figure stays well inside a
 ten-day token's life, and only the 15m control does not.
@@ -72,7 +73,7 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # this case. The control below pins the 15m figure exactly, because that one is
 # the thing being moved away from and a drifting comparand would hide the move.
 _FRESHNESS_BOUND_SECONDS = 650_000
-_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 855_875
+_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 958_455
 
 
 def _checkpoint() -> dict[str, Any]:
@@ -135,7 +136,7 @@ def test_the_checkpoint_budget_holds_the_credential_freshness_floor_under_the_bo
     that happened to shrink -- a pass earned by something this item never
     touched. The control re-resolves the SAME payload with only the checkpoint
     budget restored to the retired `"15m"` and requires it to land ABOVE the
-    bound at exactly the measured 808925 seconds, which is what makes the first
+    bound at exactly the measured 958455 seconds, which is what makes the first
     assertion evidence about this declaration rather than about the graph.
 
     The replacement is asserted to match exactly once before it is applied: a
