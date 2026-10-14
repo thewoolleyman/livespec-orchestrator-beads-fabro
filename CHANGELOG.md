@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.196.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.4...v0.196.5) (2026-10-14)
+
+
+### Bug Fixes
+
+* make GitHub auth support archives deterministic ([720709a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/720709a88ec67c86fb6ad7eccd59b0c6f1668367))
+
+## [0.196.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.3...v0.196.4) (2026-10-14)
+
+
+### Bug Fixes
+
+* **watchdog:** a stale heartbeat no longer masks the Fabro event stream ([317a94d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/317a94d1270349c8346d593f2ec8019dddd051d0))
+
 ## [0.196.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.2...v0.196.3) (2026-10-14)
 
 

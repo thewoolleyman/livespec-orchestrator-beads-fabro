@@ -62,6 +62,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import 
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     DEFAULT_FABRO_TIMEOUT_SECONDS,
+    DEFAULT_NODE_TIMEOUTS,
+    NodeTimeouts,
 )
 
 __all__: list[str] = [
@@ -203,6 +205,17 @@ class DispatchPlan:
     # ceiling that must outlive it was budgeted against another — and neither
     # record would show the disagreement.
     stall_window: StallWindow = DEFAULT_STALL_WINDOW
+    # The WHOLE node-timeout resolution this dispatch took, beside the stall
+    # window projected out of it. The host watchdog needs both: when a poll
+    # finds the run inside a COMMAND node it grades that quiet stretch against
+    # THAT node's timeout rather than the stall window, because a command node
+    # emits only a start and a completion event, so both liveness layers are
+    # flat for its whole duration however healthy the run is (bd-ib-qsk4o5).
+    # It rides the plan for the reason the stall window does: the node values
+    # were already written into the rendered graph and journaled with the
+    # dispatch record, so a watchdog re-reading the file could bound a node
+    # against one reading while the node ran under another.
+    node_timeouts: NodeTimeouts = DEFAULT_NODE_TIMEOUTS
     # WHERE this invocation retains a FAILED post-merge janitor command's
     # complete captured output, and under which identity. It rides the plan
     # because the venue is per-INVOCATION state resolved up front -- the
@@ -247,6 +260,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
     fabro_version: str | None = None,
     fabro_timeout_seconds: float = DEFAULT_FABRO_TIMEOUT_SECONDS,
     stall_window: StallWindow = DEFAULT_STALL_WINDOW,
+    node_timeouts: NodeTimeouts = DEFAULT_NODE_TIMEOUTS,
     acp_nodes: AcpNodeResolution | None = None,
 ) -> DispatchPlan:
     """Resolve the per-item dispatch plan (publish branch, argv config, contract)."""
@@ -285,6 +299,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
         fabro_version=fabro_version,
         fabro_timeout_seconds=fabro_timeout_seconds,
         stall_window=stall_window,
+        node_timeouts=node_timeouts,
         acp_nodes=acp_nodes,
         integration=integration,
         integration_inputs=contract_run_inputs(

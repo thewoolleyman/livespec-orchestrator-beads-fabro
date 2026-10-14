@@ -246,6 +246,38 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   construction and its value is one the Dispatcher itself supplies. The
   projection is fail-closed in both arms: a declaration the parse refuses, or a
   name whose value is absent, renders NO overlay line.
+- `_dispatcher_open_command_node.py` — which COMMAND node of the phase graph a run
+  is inside, read off one `fabro events` output (`bd-ib-qsk4o5`). PURE, and the
+  repair of a measured false-kill: a command node (`janitor`, `publish_draft`,
+  `implementation_diff`, `verify_pr`, and the three terminal sentinels) emits a
+  start event and a completion event and nothing between them, so BOTH liveness
+  layers are flat for its whole duration however healthy the run is — the
+  heartbeat because it beats only while an agent turn runs, the event stream
+  because there is no further event. Three of the six stall cancels on hp between
+  2026-10-08 and 2026-10-12 killed healthy runs that way, one of them inside
+  `publish_draft` seven minutes after its janitor went green.
+  Four properties an editor must not invert. The open set is COUNTED (starts
+  against endings) rather than sequenced, because `parse_last_event_epoch` records
+  that events may arrive out of order, so a reader keying on the last lifecycle
+  event it saw would answer differently for one reordering of the same stream —
+  and counting is also what reads a RETRY correctly. A tie is broken by the
+  LONGEST bound, because no two command nodes run at once in this graph, so a tie
+  is a reading artifact and the bound has to cover whichever node is genuinely
+  still running. The ACP nodes are deliberately OUT of `COMMAND_NODES`: a healthy
+  run inside one emits agent events throughout, so widening every node's bound to
+  its own timeout would retire the backstop rather than relax it — and the tuple
+  is asserted against the committed graph's `script` nodes, because a set that
+  drifted away from the graph would report "nothing open" for a node that is
+  open, which is exactly the cancellation this module prevents. And the reading
+  is taken from the SAME `fabro events` output as the wall-clock timestamp, in
+  `_dispatcher_io_liveness_probe`, so the two cannot disagree about the stream
+  they describe and no dispatch pays a second probe per poll.
+  `decide_stall` applies it as the MAXIMUM of the configured stall window and the
+  open node's timeout, taken across the WHOLE quiet window rather than the newest
+  reading — a command node cannot complete without emitting a completion event,
+  and that event would open a new window, so within one window a node once
+  observed open is still open and a later reading that misses it has failed to
+  observe it (the events reader tolerates a stream truncated mid-record).
 - `_dispatcher_sandbox_image_source.py` — WHICH of the three sources supplies one
   dispatch's sandbox image (`bd-ib-jy7fuh`, Scenario 169). PURE and a leaf; the
   decision is resolved ONCE in `_dispatcher_loop_plan`, rides

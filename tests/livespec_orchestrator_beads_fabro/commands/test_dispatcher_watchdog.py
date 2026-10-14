@@ -52,9 +52,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
     LivenessSample,
+    OpenCommandNode,
     StallVerdict,
     decide_stall,
     parse_last_event_epoch,
+    quiet_window_seconds,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroRunSummary,
@@ -294,8 +296,23 @@ def _watchable_run(*, ps_json: str, work_item_id: str) -> FabroRunSummary | None
 # ---------------------------------------------------------------------------
 
 
-def _sample(*, epoch: float | None, observed_at: float) -> LivenessSample:
-    return LivenessSample(last_event_epoch=epoch, observed_at=observed_at)
+def _sample(
+    *,
+    epoch: float | None,
+    observed_at: float,
+    open_command_node: OpenCommandNode | None = None,
+) -> LivenessSample:
+    return LivenessSample(
+        last_event_epoch=epoch,
+        observed_at=observed_at,
+        open_command_node=open_command_node,
+    )
+
+
+# The janitor as the graph's own `dispatcher.node_timeouts` default resolves
+# it: 1800 seconds, longer than the tight 1500-second window these tests
+# declare, which is what makes the two bounds distinguishable.
+_OPEN_JANITOR = OpenCommandNode(node="janitor", timeout_seconds=1800.0)
 
 
 def test_decide_stall_continues_when_progress_is_made() -> None:
@@ -316,6 +333,127 @@ def test_decide_stall_confirms_stall_on_full_window_of_frozen_timestamp() -> Non
         _sample(epoch=100.0, observed_at=900.0),
         _sample(epoch=100.0, observed_at=1500.0),
     )
+    assert decide_stall(samples=samples, stall_seconds=1500.0) is StallVerdict.STALLED
+
+
+def test_quiet_window_seconds_is_unmeasured_without_two_timestamped_readings() -> None:
+    # The window the cancellation record carries is UNMEASURED, not zero,
+    # when fewer than two readings carried a timestamp: a zero would read as
+    # a window that was measured and found empty, which is what would let a
+    # probe outage look like a run that had just reported progress. Asserted
+    # on the public surface the launcher journals from, because the number in
+    # that record is the only evidence a cancellation leaves behind.
+    assert quiet_window_seconds(samples=()) is None
+    assert quiet_window_seconds(samples=(_sample(epoch=100.0, observed_at=0.0),)) is None
+    assert (
+        quiet_window_seconds(
+            samples=(
+                _sample(epoch=None, observed_at=0.0),
+                _sample(epoch=100.0, observed_at=900.0),
+            )
+        )
+        is None
+    )
+    # And it IS a measurement once two readings agree, so the None above is
+    # a measurement that could not be taken rather than one this function
+    # never takes.
+    measured = (
+        _sample(epoch=100.0, observed_at=0.0),
+        _sample(epoch=100.0, observed_at=900.0),
+    )
+    assert quiet_window_seconds(samples=measured) == 900.0
+
+
+def test_decide_stall_waits_for_an_open_command_nodes_own_timeout() -> None:
+    """An open COMMAND node is graded against ITS timeout, not the window (bd-ib-qsk4o5).
+
+    A command node emits a start event and a completion event and nothing
+    between them, so BOTH liveness layers are flat for its whole duration
+    however healthy the run is — the heartbeat because it beats only while an
+    agent turn runs, the event stream because there is no further event. A
+    sandbox `just check` measured 21 minutes on 2026-10-12, so the stall
+    window is routinely the SHORTER of the two bounds, and grading against it
+    cancelled runs whose work was already green.
+
+    The bound is the MAXIMUM of the two rather than the node's alone, so a
+    repository that shortens `dispatcher.stall_timeout_seconds` below a node's
+    timeout does not thereby make the watchdog cancel inside that node.
+    """
+    opened = (
+        _sample(epoch=100.0, observed_at=0.0, open_command_node=_OPEN_JANITOR),
+        _sample(epoch=100.0, observed_at=900.0, open_command_node=_OPEN_JANITOR),
+        _sample(epoch=100.0, observed_at=1500.0, open_command_node=_OPEN_JANITOR),
+    )
+    # Past the 1500s window but inside the janitor's own 1800s timeout.
+    assert decide_stall(samples=opened, stall_seconds=1500.0) is StallVerdict.CONTINUE
+    # And once that node's own timeout HAS elapsed, the stall is confirmed:
+    # the node's bound relaxes the watchdog, it does not disarm it.
+    elapsed = (*opened, _sample(epoch=100.0, observed_at=1800.0, open_command_node=_OPEN_JANITOR))
+    assert decide_stall(samples=elapsed, stall_seconds=1500.0) is StallVerdict.STALLED
+
+
+def test_decide_stall_keeps_an_open_command_nodes_bound_across_the_whole_window() -> None:
+    """The bound is taken across the quiet window, not from the newest reading.
+
+    A command node cannot complete without emitting a completion event, and
+    that event advances the last-event timestamp — which opens a NEW quiet
+    window. So WITHIN one quiet window, a node once observed open is still
+    open, and a later reading that does not report it has failed to observe
+    it rather than watched it finish: the `fabro events` reader tolerates a
+    stream truncated mid-record by a probe timeout, so it can parse a
+    timestamp from the records before the cut while missing the start event
+    behind it.
+
+    Reading the bound off the newest sample alone would therefore let one
+    truncated read collapse the window back to the shorter bound and cancel
+    the run — the failure this watchdog must never commit.
+    """
+    window = (
+        _sample(epoch=100.0, observed_at=0.0, open_command_node=_OPEN_JANITOR),
+        _sample(epoch=100.0, observed_at=900.0),
+        _sample(epoch=100.0, observed_at=1500.0),
+    )
+    assert decide_stall(samples=window, stall_seconds=1500.0) is StallVerdict.CONTINUE
+
+
+def test_decide_stall_drops_an_open_command_nodes_bound_once_the_window_restarts() -> None:
+    """A node open in an EARLIER window does not widen the current one.
+
+    The launcher retains every sample for the life of the run, so a bound
+    taken over the whole sample list would be inherited by every later window
+    — one long janitor early in a run would widen the watchdog for the rest of
+    it, which is the standing-relaxation failure the window scoping exists to
+    prevent. Fresh progress ends the window and the bound with it.
+    """
+    samples = (
+        _sample(epoch=100.0, observed_at=0.0, open_command_node=_OPEN_JANITOR),
+        _sample(epoch=200.0, observed_at=100.0),
+        _sample(epoch=200.0, observed_at=1600.0),
+    )
+    assert decide_stall(samples=samples, stall_seconds=1500.0) is StallVerdict.STALLED
+
+
+def test_decide_stall_confirms_a_stall_when_no_command_node_is_open() -> None:
+    """A full frozen window with NO command node open is still a stall (bd-ib-qsk4o5).
+
+    Every observation records which COMMAND node of the phase graph the run
+    was inside when it was taken, so that a run genuinely sitting inside
+    `janitor` or `publish_draft` is graded against that node's own timeout
+    rather than against the shorter stall window. This is the arm that keeps
+    the relaxation honest: when NO observation in the quiet window reports an
+    open command node, the configured stall window governs alone and the run
+    is still cancelled as `stalled-no-progress`.
+
+    The default is what makes that arm the common one, so it is asserted here
+    rather than assumed: a sample built with no observation of its own carries
+    None, not a bound that would quietly widen every window in the fleet.
+    """
+    samples = (
+        _sample(epoch=100.0, observed_at=0.0),
+        _sample(epoch=100.0, observed_at=900.0),
+        _sample(epoch=100.0, observed_at=1500.0),
+    )
+    assert [sample.open_command_node for sample in samples] == [None, None, None]
     assert decide_stall(samples=samples, stall_seconds=1500.0) is StallVerdict.STALLED
 
 
@@ -574,6 +712,20 @@ _PS_RUNNING = (
     ' "status": {"kind": "running"}}]'
 )
 
+# The janitor's own start and completion events, in the shape the engine
+# emits them (`node_id` at the top level beside the envelope's timestamp),
+# so a frozen stream can model a run INSIDE that command node and a run
+# that has already left it. Both carry the SAME timestamp, so the quiet
+# window the two fixtures produce is identical and the only thing that
+# differs between them is whether a command node is open.
+_JANITOR_STARTED_EVENT = (
+    '{"event": "stage.started", "node_id": "janitor", "timestamp": "2026-06-13T08:00:00Z"}'
+)
+_JANITOR_COMPLETED_EVENT = (
+    '{"event": "stage.completed", "node_id": "janitor", "timestamp": "2026-06-13T08:00:00Z"}'
+)
+_JANITOR_STARTED_JSON = f"[{_JANITOR_STARTED_EVENT}]"
+
 
 @dataclass(kw_only=True)
 class _ScriptedFabroRunner:
@@ -724,6 +876,58 @@ def test_watched_launcher_cancels_after_progress_then_a_confirmed_quiet_window(
     cancels = [r for r in journal.records if r.get("stage") == "watchdog-stall-cancel"]
     assert [record.get("stall_seconds") for record in cancels] == [1000.0]
     assert [record.get("quiet_seconds") for record in cancels] == [1200.0]
+
+
+def test_watched_launcher_does_not_cancel_while_a_command_node_is_open(tmp_path: Path) -> None:
+    """End to end: a run inside `janitor` survives past the stall window.
+
+    The event stream carries ONE record — the janitor's own start event — so
+    both liveness layers are flat from the moment that node began, which is
+    exactly what a healthy long `just check` looks like from the host. The
+    quiet window reaches 1200 seconds here, past the 1000-second window this
+    plan declares, and the run must still not be cancelled because the
+    janitor's own resolved timeout (1800 seconds, the graph default) has not
+    elapsed.
+
+    The negative control is the sibling below: the SAME frozen stream with the
+    janitor's completion event in it carries no open node, so the window
+    governs alone and the run IS cancelled.
+    """
+    runner = _ScriptedFabroRunner(events_jsons=[_JANITOR_STARTED_JSON])
+    polls = {"n": 0}
+
+    def _sleep_then_finish(_seconds: float) -> None:
+        polls["n"] += 1
+        if polls["n"] >= 4:
+            runner.run_done.set()
+            assert runner.run_returned.wait(timeout=1.0)
+
+    journal = _RecordingJournal()
+    launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
+    )
+    assert result.stalled_run_id is None
+    assert runner.rm_calls == []
+
+
+def test_watched_launcher_cancels_once_the_open_command_node_has_completed(
+    tmp_path: Path,
+) -> None:
+    # The negative control for the test above. The same frozen stream, plus
+    # the janitor's completion event: nothing is open, so the configured
+    # stall window governs alone and the silent run is cancelled. Without
+    # this, a watchdog that simply stopped cancelling whenever the stream
+    # mentioned a command node would satisfy the test above.
+    frozen_and_completed = [f"[{_JANITOR_STARTED_EVENT}, {_JANITOR_COMPLETED_EVENT}]"]
+    runner = _ScriptedFabroRunner(events_jsons=frozen_and_completed)
+    journal = _RecordingJournal()
+    launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
+    )
+    assert result.stalled_run_id == "01RUN"
+    assert runner.rm_calls == ["01RUN"]
 
 
 def test_watched_launcher_lets_a_healthy_run_complete(tmp_path: Path) -> None:

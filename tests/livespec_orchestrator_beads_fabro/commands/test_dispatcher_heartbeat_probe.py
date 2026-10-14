@@ -26,8 +26,12 @@ Covered:
   feeds `decide_stall`).
 * a frozen heartbeat across the full window -> `decide_stall` confirms a
   STALL from the probe's samples (the finer 7us.6 detection).
-* stale/absent heartbeat -> the layered probe falls through to the
-  wall-clock backstop (degrade, never to no detection).
+* stale/absent heartbeat -> the layered probe reports the wall-clock
+  backstop's reading instead (degrade, never to no detection). A heartbeat
+  that is merely STALE, rather than absent, is the bd-ib-qsk4o5 case: the
+  beat stops the instant the graph enters a COMMAND node, so the layered
+  probe must report whichever layer is NEWER rather than letting a frozen
+  beat mask an advancing event stream.
 * malformed/missing file -> the probe is fail-safe: it returns no signal
   rather than crashing the watchdog, so the backstop still runs.
 """
@@ -262,19 +266,40 @@ def test_advancing_heartbeat_is_continue_through_decide_stall(tmp_path: Path) ->
 
 
 # ---------------------------------------------------------------------------
-# LayeredLivenessProbe — heartbeat PRIMARY, wall-clock FALLBACK
+# LayeredLivenessProbe — the NEWER of the heartbeat and the event stream
 # ---------------------------------------------------------------------------
 
 
 def test_layered_prefers_the_heartbeat_when_present(tmp_path: Path) -> None:
-    # The deferred-PRIMARY signal wins when the heartbeat is present: the
-    # finer heartbeat epoch is reported, NOT the coarse fallback.
+    # The finer heartbeat reading wins when it is the NEWER of the two: it
+    # advances on a short export interval while the event stream records
+    # only node transitions, so on a run inside an agent turn the heartbeat
+    # is the earlier signal.
     path = tmp_path / "j-otel-heartbeat.json"
     sink = _sink_with(path=path, beats={"oyg-1": 1_750_000_500.0})
     primary = HeartbeatLivenessProbe(sink=sink, keys=("oyg-1",))
     fallback = _ScriptedProbe(epoch=111.0)
     layered = LayeredLivenessProbe(primary=primary, fallback=fallback)
     assert layered.sample(observed_at=5.0).last_event_epoch == 1_750_000_500.0
+
+
+def test_layered_reports_the_newer_event_when_the_heartbeat_is_stale(tmp_path: Path) -> None:
+    # bd-ib-qsk4o5, at the seam that caused it. The heartbeat is present —
+    # so the old "primary wins whenever it carried ANY timestamp" rule
+    # returned it and the event stream was never read — but it is OLDER
+    # than the newest event, because the beat stops the instant the graph
+    # enters a COMMAND node (`janitor`, `publish_draft`) and the event
+    # stream is the only layer that records that node starting. Reporting
+    # the stale beat is what made a healthy run inside a command node look
+    # silent: on hp run 01M4QKN0R3N3 the last beat for dispatch
+    # f655b8d1f9b8423ab0e4009ee37d29dc was 09:30:53Z while the janitor went
+    # green at 09:52:05Z, and the run was cancelled at 09:57:54Z.
+    path = tmp_path / "j-otel-heartbeat.json"
+    sink = _sink_with(path=path, beats={"oyg-1": 1_750_000_100.0})
+    primary = HeartbeatLivenessProbe(sink=sink, keys=("oyg-1",))
+    fallback = _ScriptedProbe(epoch=1_750_000_900.0)
+    layered = LayeredLivenessProbe(primary=primary, fallback=fallback)
+    assert layered.sample(observed_at=5.0).last_event_epoch == 1_750_000_900.0
 
 
 def test_layered_falls_through_to_wall_clock_when_heartbeat_absent(tmp_path: Path) -> None:
@@ -316,6 +341,14 @@ _PS_RUNNING = (
 _HEARTBEAT_WORK_ITEM_ID = "livespec-impl-beads-oyg"
 _HEARTBEAT_DISPATCH_ID = "ba06d4268df24488a01beb352a6d0e7f"
 
+# The one frozen `fabro events` reading the launcher fixtures below share,
+# with its epoch spelled beside it so a heartbeat fixture can be stamped on
+# the SAME clock. Two layers stamped in different eras cannot model a run:
+# the layered probe reports whichever reading is newer, so the era decides
+# the outcome rather than the behaviour under test.
+_FROZEN_EVENT_JSON = '[{"timestamp": "2026-06-13T08:00:00Z"}]'
+_FROZEN_EVENT_EPOCH = 1_781_337_600.0
+
 
 def _watchdog_plan(*, repo: Path) -> DispatchPlan:
     """A dispatch plan carrying a window tight enough for the injected clock.
@@ -355,6 +388,7 @@ class _ScriptedFabroRunner:
 
     events_jsons: list[str]
     run_done: threading.Event = field(default_factory=threading.Event)
+    run_returned: threading.Event = field(default_factory=threading.Event)
     rm_calls: list[str] = field(default_factory=list)
     _poll: int = 0
 
@@ -370,6 +404,7 @@ class _ScriptedFabroRunner:
         verb = argv[1] if len(argv) > 1 else ""
         if verb == "run":
             _ = self.run_done.wait(timeout=10.0)
+            self.run_returned.set()
             return CommandResult(exit_code=0, stdout="    Run: 01RUN\n", stderr="")
         if verb == "ps":
             return CommandResult(exit_code=0, stdout=_PS_RUNNING, stderr="")
@@ -398,17 +433,75 @@ def test_scripted_runner_rejects_unknown_verb(tmp_path: Path) -> None:
     assert out.exit_code == 1
 
 
+<<<<<<< HEAD
 def test_launcher_cancels_after_events_and_heartbeat_both_stop(tmp_path: Path) -> None:
     # Events advance for three polls, then freeze. The watchdog must still
     # cancel once BOTH sources stop, regardless of which source was newer.
+=======
+def test_launcher_never_cancels_while_events_advance_past_a_frozen_heartbeat(
+    tmp_path: Path,
+) -> None:
+    # bd-ib-qsk4o5 at the launcher seam. The heartbeat for this run is
+    # FROZEN — which is what a run inside a COMMAND node looks like, since
+    # the beat only advances while an agent turn is running — while the
+    # coarse `fabro events` stream ADVANCES every poll. The layered probe
+    # must report the NEWER reading, so the run is sampled as making
+    # progress and is never cancelled.
+    #
+    # This test asserted the OPPOSITE until bd-ib-qsk4o5: the heartbeat was
+    # preferred whenever it carried any timestamp, so a frozen beat masked
+    # an advancing event stream and the watchdog `fabro rm -f`-ed healthy
+    # runs inside `janitor` and `publish_draft` — three of the six stall
+    # cancels on hp since 2026-10-08.
+    #
+    # The beat is keyed by the DISPATCH id, exactly as the live sink keys
+    # it, and the launcher is given that id — so this still proves the
+    # launcher threads it through to `heartbeat_lookup_keys`: keyed that
+    # way with no threading, the probe would find nothing and this would
+    # pass for the wrong reason, which is why the frozen-heartbeat STALL is
+    # pinned separately by the both-layers-frozen case below.
+>>>>>>> origin/master
     heartbeat_path = tmp_path / "j-otel-heartbeat.json"
-    _ = _sink_with(path=heartbeat_path, beats={_HEARTBEAT_DISPATCH_ID: 1_750_000_000.0})
+    _ = _sink_with(path=heartbeat_path, beats={_HEARTBEAT_DISPATCH_ID: _FROZEN_EVENT_EPOCH})
     advancing = [
-        '[{"timestamp": "2026-06-13T08:00:00Z"}]',
-        '[{"timestamp": "2026-06-13T08:10:00Z"}]',
-        '[{"timestamp": "2026-06-13T08:20:00Z"}]',
+        f'[{{"timestamp": "2026-06-13T08:{minute:02d}:00Z"}}]' for minute in range(0, 40, 5)
     ]
     runner = _ScriptedFabroRunner(events_jsons=advancing)
+    polls = {"n": 0}
+
+    def _sleep_then_finish(_seconds: float) -> None:
+        # End the run from the (single-threaded under test) sleep hook once
+        # enough polls have confirmed CONTINUE, and WAIT for the background
+        # run to return so the loop stops at a known poll count rather than
+        # spinning extra polls while the OS schedules the run thread.
+        polls["n"] += 1
+        if polls["n"] >= 4:
+            runner.run_done.set()
+            assert runner.run_returned.wait(timeout=1.0)
+
+    journal = _RecordingJournal()
+    launcher = WatchedFabroLauncher(
+        sleep=_sleep_then_finish,
+        clock=_advancing_clock(),
+        heartbeat_path=heartbeat_path,
+        dispatch_id=_HEARTBEAT_DISPATCH_ID,
+    )
+    result = launcher.launch(plan=_watchdog_plan(repo=tmp_path), runner=runner, journal=journal)
+    assert result.stalled_run_id is None
+    assert runner.rm_calls == []
+
+
+def test_launcher_cancels_when_both_the_heartbeat_and_the_events_are_frozen(
+    tmp_path: Path,
+) -> None:
+    # The positive control for the test above, and the property that makes
+    # it safe: reporting the NEWER of the two layers must not disarm the
+    # watchdog. With the heartbeat keyed by the DISPATCH id and frozen, AND
+    # the event stream frozen, both readings stay unchanged across the full
+    # window and the run is still cancelled as `stalled-no-progress`.
+    heartbeat_path = tmp_path / "j-otel-heartbeat.json"
+    _ = _sink_with(path=heartbeat_path, beats={_HEARTBEAT_DISPATCH_ID: _FROZEN_EVENT_EPOCH - 600.0})
+    runner = _ScriptedFabroRunner(events_jsons=[_FROZEN_EVENT_JSON])
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(
         sleep=lambda _s: None,
@@ -427,9 +520,8 @@ def test_launcher_falls_through_to_wall_clock_when_heartbeat_absent(tmp_path: Pa
     # the wall-clock backstop, which still confirms the stall and cancels.
     # Degrade to coarse detection — never to NO detection.
     heartbeat_path = tmp_path / "j-otel-heartbeat.json"
-    _ = _sink_with(path=heartbeat_path, beats={"some-other-run": 1_750_000_000.0})
-    frozen = ['[{"timestamp": "2026-06-13T08:00:00Z"}]']
-    runner = _ScriptedFabroRunner(events_jsons=frozen)
+    _ = _sink_with(path=heartbeat_path, beats={"some-other-run": _FROZEN_EVENT_EPOCH})
+    runner = _ScriptedFabroRunner(events_jsons=[_FROZEN_EVENT_JSON])
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(
         sleep=lambda _s: None,
@@ -442,20 +534,37 @@ def test_launcher_falls_through_to_wall_clock_when_heartbeat_absent(tmp_path: Pa
 
 
 def test_launcher_with_fresh_advancing_heartbeat_never_cancels(tmp_path: Path) -> None:
-    # A live run whose heartbeat ADVANCES each poll -> the PRIMARY layer
+    # A live run whose heartbeat ADVANCES each poll -> the finer layer
     # reports progress -> the watchdog never stalls even though the same
     # frozen wall-clock events would (the heartbeat is the finer truth).
+    #
+    # The two layers share ONE clock in this fixture, and that is
+    # load-bearing rather than tidy. Since bd-ib-qsk4o5 the layered probe
+    # reports whichever reading is NEWER, so a heartbeat stamped in a
+    # different era from the events is not a stale heartbeat beside fresh
+    # events — it is an incoherent run that can only test whichever era
+    # happens to be larger. `_FROZEN_EVENT_EPOCH` is the epoch of the one
+    # frozen event below, and the beats advance from it.
     heartbeat_path = tmp_path / "j-otel-heartbeat.json"
     sink = HeartbeatSink(path=heartbeat_path)
+<<<<<<< HEAD
     sink.beat(key=_HEARTBEAT_WORK_ITEM_ID, at=1_800_000_000.0)
     runner = _ScriptedFabroRunner(events_jsons=['[{"timestamp": "2026-06-13T08:00:00Z"}]'])
+=======
+    sink.beat(key=_HEARTBEAT_WORK_ITEM_ID, at=_FROZEN_EVENT_EPOCH)
+    runner = _ScriptedFabroRunner(events_jsons=[_FROZEN_EVENT_JSON])
+>>>>>>> origin/master
     polls = {"n": 0}
 
     def _advance_heartbeat_then_finish(_seconds: float) -> None:
         # Each poll the live run exports a fresh metric -> the heartbeat
         # advances; after a few polls end the run so launch() returns.
         polls["n"] += 1
+<<<<<<< HEAD
         sink.beat(key=_HEARTBEAT_WORK_ITEM_ID, at=1_800_000_000.0 + polls["n"] * 600.0)
+=======
+        sink.beat(key=_HEARTBEAT_WORK_ITEM_ID, at=_FROZEN_EVENT_EPOCH + polls["n"] * 600.0)
+>>>>>>> origin/master
         if polls["n"] >= 4:
             runner.run_done.set()
 

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import base64
+import gzip
 import io
 import json
 import os
 import tarfile
 from collections.abc import Mapping
 from pathlib import Path
+
+from livespec_orchestrator_beads_fabro.commands._dispatcher_git_push import PUSH_ORIGIN_SOURCE
 
 __all__: list[str] = [
     "DEFAULT_SANDBOX_GH_REFRESH_ROOT",
@@ -259,6 +262,7 @@ def _payload_chunk_scripts(*, payload_path: str) -> list[str]:
 def _unpack_script(*, bundle_root: str, mint_helper: str, payload_path: str) -> str:
     """Unpack the streamed bundle and install the refreshing `gh` wrapper."""
     helper_source_literal = json.dumps(_MINT_HELPER_SOURCE)
+    push_helper = f"{bundle_root}/bin/push_origin"
     return (
         "set -eu\n"
         f'bundle_root="{bundle_root}"\n'
@@ -280,6 +284,11 @@ def _unpack_script(*, bundle_root: str, mint_helper: str, payload_path: str) -> 
         "from pathlib import Path\n"
         f"Path({mint_helper!r}).write_text({helper_source_literal}, encoding='utf-8')\n"
         "PY\n"
+        "python3 - <<'PY'\n"
+        "from pathlib import Path\n"
+        f"Path({push_helper!r}).write_text({json.dumps(PUSH_ORIGIN_SOURCE)}, encoding='utf-8')\n"
+        "PY\n"
+        f'chmod 755 "{push_helper}"\n'
         'chmod 755 "$mint"\n'
         'real_gh="$(command -v gh)"\n'
         'case "$real_gh" in\n'
@@ -324,7 +333,11 @@ def github_auth_support_archive_b64(*, scripts_root: Path | None = None) -> str:
     """Return the dispatching plugin build's minimal GitHub auth support bundle."""
     root = scripts_root if scripts_root is not None else Path(__file__).resolve().parents[2]
     buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+    # Fix only the gzip header clock; tar members retain their source metadata.
+    with (
+        gzip.GzipFile(fileobj=buffer, mode="wb", mtime=0) as compressed,
+        tarfile.open(fileobj=compressed, mode="w") as archive,
+    ):
         for relpath in _SUPPORT_ARCHIVE_RELPATHS:
             source = root / relpath
             if source.is_dir():
