@@ -9,6 +9,15 @@ implementation-side triage step.
 
 The complete work-item goal is in the Fabro-injected `Goal:` preamble above.
 
+This node uses `summary:medium` fidelity, so that preamble is a BOUNDED
+per-stage summary rather than the review stage's transcript — deliberately,
+because a review turn's context can outgrow this node's own context window
+and then no disposition decision is reachable at all. The review stage's
+verdict and findings do not arrive through the preamble: they arrive in the
+run-context key named below, which Fabro merges whatever the fidelity. So a
+preamble that does not quote the review is NORMAL and is not a reason to fail
+closed; an absent or malformed `review_findings_r<N>` key is.
+
 ## What to do
 
 1. Read the current review stage findings from the highest-numbered

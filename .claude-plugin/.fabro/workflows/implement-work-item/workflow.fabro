@@ -756,10 +756,48 @@ digraph ImplementWorkItem {
     // credential carries. Consequence, recorded on the routing comment below:
     // `dispatcher.review_fix_cap` and its per-item label no longer move this
     // bound, so an item asking for more or fewer rounds gets three.
+    //
+    // `fidelity="summary:medium"` IS WHAT KEEPS THIS NODE'S PROMPT INSIDE ITS OWN
+    // ADAPTER'S WINDOW (bd-ib-7zxqyl). Without it the node took Fabro's DEFAULT
+    // `compact` fidelity, and `compact` is the one carry mode that is neither a
+    // continuation nor a bounded summary: it is a nested-bullet report with
+    // handler-specific detail per stage and it declares NO size target, so it
+    // grows with the volume of the stages behind it. Measured 2026-10-14 on the
+    // Petri-era hp-candidate engine, run 01M4XNM4BBMYFPQDA6X5JCBDYM: review
+    // succeeded with findings after reporting about 361000 tokens of context, and
+    // disposition's ACP prompt was then refused with `Internal error: Prompt is
+    // too long` (`errorKind invalid_request`) against the 200000-token window of
+    // its configured `claude-sonnet-4-6`, so the run fell to needs_human having
+    // decided nothing. The remedy is STRUCTURAL rather than a bigger model: every
+    // Petri-era run whose review context outgrows the adjudicator's window hits
+    // this, and a window is a number a configuration change can only move once.
+    //
+    // `summary:medium` targets about 1500 tokens, which is the property that
+    // matters here — the preamble's size stops tracking the review's. The
+    // documented ladder is `full` (no preamble, the SAME thread continued with
+    // complete prior context), `compact`, then `summary:high` / `summary:medium`
+    // (~1500) / `summary:low` (~600), then `truncate` (goal and run id only).
+    // Medium rather than low because the medium report carries per-stage outcomes
+    // and notable findings, which is what makes an adjudicator's preamble worth
+    // reading at all; medium rather than high because high is a detailed
+    // per-stage report with no stated target.
+    //
+    // THIS DOES NOT COST DISPOSITION THE REVIEW'S VERDICT OR FINDINGS, because
+    // those never travelled in the preamble. `review` persists them into the
+    // run-context key `review_findings_r<N>` through its routing JSON's
+    // `context_updates`, this node's prompt is required to read that key and to
+    // fail closed when it is absent, and context updates are merged into the
+    // shared run context REGARDLESS of fidelity mode. Narrowing the preamble
+    // therefore narrows what this node is told ABOUT the prior stages and leaves
+    // the dataflow it adjudicates from untouched. Do NOT put a `fidelity` on any
+    // edge into this node: an edge-level value outranks the node's, so one there
+    // silently restores the unbounded carry this attribute exists to prevent
+    // (the same trap the `fix` node's `summary:high` carries).
     disposition [
         label="Disposition review findings"
         backend="acp"
         acp.command="{{ inputs.disposition_adapter }}"
+        fidelity="summary:medium"
         timeout="1800s"
         max_retries=1
         max_visits=3
