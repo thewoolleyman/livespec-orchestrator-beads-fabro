@@ -33,6 +33,14 @@ else evidences the second. And ONE pass record carries `inventory_observed`,
 which is what tells a daemon that refused the listing apart from a host with
 nothing on it — both leave zero per-container records.
 
+EVERY ONE OF THE THREE NAMES THE DAEMON IT WAS READ FROM, because one pass
+writes one set of them per surveyed factory host and each field in them is a
+measurement of that host alone. Unattributed, two hosts' records are
+indistinguishable, so a leaking factory and a clean one average into a
+reading about neither — and a container name cannot stand in for the
+attribution, since it is unique to its daemon only by convention and a
+re-dispatched work-item routinely puts one run id on two hosts.
+
 TWO AGGREGATES THAT COULD HAVE BEEN ONE, deliberately kept apart in each
 case. A refused removal is counted under `containers_remove_failed` and not
 under `containers_removed`, because the second reads as reclaimed capacity.
@@ -101,14 +109,24 @@ class HeldContainer:
 class SandboxContainerSweep:
     """One sweep over ONE factory host's running sandbox containers.
 
-    `detail` carries no default: it is what tells a sweep that looked and
-    found nothing apart from one that could not look, and a default would
+    `docker_host` and `factory_names` are WHOSE inventory this is, and they
+    are not interchangeable: the daemon is what the sweep was addressed to,
+    while the factory names are what an operator configured and can act on.
+    Neither has a default, because every other field here is a measurement of
+    ONE host and an unattributed measurement of one host reads as a
+    measurement of the fleet — the empty tuple of factory names is a
+    deliberate "none named" that a caller states, not one it can omit.
+
+    `detail` carries no default either: it is what tells a sweep that looked
+    and found nothing apart from one that could not look, and a default would
     make the second borrow the first's words. `observed` defaults to False
     for the matching reason — a value built without asserting a reading must
     not claim one. A pass that surveyed no factory performs no sweep at all,
     which is the empty TUPLE of sweeps rather than any value of this type.
     """
 
+    docker_host: str
+    factory_names: tuple[str, ...]
     detail: str
     reclaimed: tuple[ReclaimedContainer, ...] = ()
     held: tuple[HeldContainer, ...] = ()
@@ -120,15 +138,25 @@ def reclaim_terminal_run_containers(
     *,
     port: SandboxContainerPort,
     status_by_run: Mapping[str, str | None],
+    factory_names: Sequence[str] = (),
     dry_run: bool = False,
 ) -> SandboxContainerSweep:
-    """Remove every observed container whose run the servers report terminal."""
+    """Remove every observed container whose run the servers report terminal.
+
+    The daemon is read off the PORT rather than passed beside it, so the
+    address this sweep records is necessarily the one its own calls went to —
+    which is why that attribution has no default and this one does: the
+    factory names are a mapping back to configuration that a caller holding
+    only a daemon address genuinely does not have.
+    """
     inventory = port.inventory()
     plan = sandbox_container_plan(
         containers=inventory.containers,
         status_by_run=status_by_run,
     )
     return SandboxContainerSweep(
+        docker_host=port.docker_host,
+        factory_names=tuple(factory_names),
         reclaimed=tuple(
             _reclaimed(port=port, removal=removal, dry_run=dry_run) for removal in plan.removals
         ),
@@ -191,6 +219,7 @@ def journal_container_sweep(*, journal: JournalWriter, sweep: SandboxContainerSw
         journal.append(
             record={
                 "stage": JOURNAL_STAGE_CONTAINER_RECLAIMED,
+                "docker_host": sweep.docker_host,
                 "container_name": run.container_name,
                 "run_id": run.run_id,
                 "run_status_kind": run.run_status_kind,
@@ -203,6 +232,7 @@ def journal_container_sweep(*, journal: JournalWriter, sweep: SandboxContainerSw
         journal.append(
             record={
                 "stage": JOURNAL_STAGE_CONTAINER_HELD,
+                "docker_host": sweep.docker_host,
                 "container_name": hold.container_name,
                 "run_id": hold.run_id,
                 "run_status_kind": hold.run_status_kind,
@@ -217,6 +247,8 @@ def _pass_record(*, sweep: SandboxContainerSweep) -> dict[str, object]:
     removed = tuple(run for run in sweep.reclaimed if run.removed)
     return {
         "stage": JOURNAL_STAGE_CONTAINER_SWEEP,
+        "docker_host": sweep.docker_host,
+        "factory_names": list(sweep.factory_names),
         "inventory_observed": sweep.observed,
         "detail": sweep.detail,
         "containers_observed": len(sweep.reclaimed) + len(sweep.held),
