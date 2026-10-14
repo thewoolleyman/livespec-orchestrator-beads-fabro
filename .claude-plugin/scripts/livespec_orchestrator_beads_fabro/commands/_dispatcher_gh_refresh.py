@@ -12,6 +12,9 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_push import PUSH_ORIGIN_SOURCE
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_exclude import (
+    worktree_exclude_script,
+)
 
 __all__: list[str] = [
     "DEFAULT_SANDBOX_GH_REFRESH_ROOT",
@@ -116,6 +119,12 @@ def refreshing_gh_prepare_steps_block() -> str:
     graph node and checkpoints after it, so a step that writes a byte of the
     bundle before the exclusion is in place is a step whose checkpoint commits
     it (bd-ib-dud2ww).
+
+    BOTH bundle paths are excluded, and the payload is not an afterthought: the
+    chunk steps stream the base64 archive to `<bundle_root>.b64` and only the
+    unpack step deletes it, so on a per-node-checkpointing engine every chunk
+    step's own checkpoint commits that file. Excluding the unpacked tree alone
+    leaves the same defect one path over.
     """
     if not github_app_env_present():
         return ""
@@ -123,7 +132,10 @@ def refreshing_gh_prepare_steps_block() -> str:
     mint_helper = f"{bundle_root}/bin/mint_app_token.py"
     payload_path = f"{bundle_root}.b64"
     scripts = [
-        _worktree_exclude_script(bundle_root=bundle_root, payload_path=payload_path),
+        worktree_exclude_script(
+            paths=(bundle_root, payload_path),
+            label="livespec-gh-refresh",
+        ),
         *_payload_chunk_scripts(payload_path=payload_path),
         _unpack_script(bundle_root=bundle_root, mint_helper=mint_helper, payload_path=payload_path),
     ]
@@ -156,90 +168,6 @@ def _assert_step_within_limit(*, script: str) -> None:
             "with 'argument list too long' and destroy the run"
         )
         raise ValueError(msg)
-
-
-def _worktree_exclude_script(*, bundle_root: str, payload_path: str) -> str:
-    """Make the bundle invisible to git BEFORE a byte of it is written.
-
-    The bundle root is inside the run's own git worktree (`/workspace` is the
-    sandbox clone's top level), and nothing ignored it. The Petri-era engine
-    checkpoints after every graph node, prepare steps included, so each
-    checkpoint staged the bundle into the run branch -- and `publish_draft`'s
-    `git rebase origin/$default_branch` then met its own committed copy as an
-    untracked file on disk and refused at that checkpoint's pick (measured on
-    hp-candidate run 01M4Q45S5AGK, bd-ib-dud2ww).
-
-    The exclusion is written to the clone's OWN exclude file rather than to a
-    tracked `.gitignore`: the bundle is an artifact of how this Dispatcher
-    projects credentials into one sandbox, so a governed repository must not
-    have to carry a rule about it, and a rule this step added to a tracked file
-    would itself be a change every checkpoint commits.
-
-    `--git-common-dir` and not `--git-dir`, because that is the directory whose
-    `info/exclude` git actually reads in a linked worktree; it answers the same
-    path in an ordinary clone, which is what the sandbox has.
-
-    BOTH paths are excluded, and the payload is not an afterthought: the chunk
-    steps stream the base64 archive to `<bundle_root>.b64` and only the unpack
-    step deletes it, so on a per-node-checkpointing engine every chunk step's
-    own checkpoint commits that file. Excluding the unpacked tree alone leaves
-    the same defect one path over.
-
-    Both sides of the inside-the-worktree comparison are reduced to their
-    PHYSICAL spelling first, and that normalization is load-bearing rather
-    than tidy: `git rev-parse --show-toplevel` answers the physical path and
-    DISCARDS the spelling it was handed, while the configured root reaches
-    this sandbox family as `/workspace/<repo>`, which is a symlink to the
-    clone's real path. Comparing the two as given therefore sent a path
-    squarely INSIDE the worktree down the outside-any-worktree arm, writing
-    no entry at all -- the whole defect, intact, behind a step that exits 0.
-
-    Every arm that cannot MEASURE where a path sits is passed over without
-    writing, and SAYS SO on stderr: a prepare step that fails kills the run
-    at launch, before any work is driven, and a path outside any worktree is
-    one git was never going to stage -- but a silent pass-over is
-    indistinguishable from a successful exclusion until `publish_draft`
-    refuses at the end of a full run. Each pattern is anchored with a leading
-    `/` because `info/exclude` patterns resolve against the worktree top.
-    """
-    return (
-        "set -eu\n"
-        f'bundle_root="{bundle_root}"\n'
-        f'payload_path="{payload_path}"\n'
-        'parent="$(dirname "$bundle_root")"\n'
-        'mkdir -p "$parent"\n'
-        'toplevel="$(git -C "$parent" rev-parse --show-toplevel 2>/dev/null || true)"\n'
-        'if [ -n "$toplevel" ]; then\n'
-        '  toplevel="$(cd "$toplevel" 2>/dev/null && pwd -P || true)"\n'
-        "fi\n"
-        'if [ -z "$toplevel" ]; then\n'
-        "  echo \"livespec-gh-refresh: no git worktree top resolved for '$parent',"
-        ' so no exclude entry was written" >&2\n'
-        "  exit 0\n"
-        "fi\n"
-        'common_dir="$(cd "$toplevel" && git rev-parse --git-common-dir)"\n'
-        'case "$common_dir" in\n'
-        "  /*) ;;\n"
-        '  *) common_dir="$toplevel/$common_dir" ;;\n'
-        "esac\n"
-        'exclude_file="$common_dir/info/exclude"\n'
-        'mkdir -p "$common_dir/info"\n'
-        'for path in "$bundle_root" "$payload_path"; do\n'
-        '  path_dir="$(cd "$(dirname "$path")" 2>/dev/null && pwd -P || true)"\n'
-        '  if [ -n "$path_dir" ]; then path="$path_dir/$(basename "$path")"; fi\n'
-        '  case "$path" in\n'
-        '    "$toplevel"/*) entry="/${path#"$toplevel"/}" ;;\n'
-        "    *)\n"
-        "      echo \"livespec-gh-refresh: '$path' did not resolve inside the worktree"
-        " at '$toplevel', so no exclude entry was written for it\" >&2\n"
-        "      continue\n"
-        "      ;;\n"
-        "  esac\n"
-        '  if ! grep -qxF "$entry" "$exclude_file" 2>/dev/null; then\n'
-        '    printf \'%s\\n\' "$entry" >> "$exclude_file"\n'
-        "  fi\n"
-        "done"
-    )
 
 
 def _payload_chunk_scripts(*, payload_path: str) -> list[str]:

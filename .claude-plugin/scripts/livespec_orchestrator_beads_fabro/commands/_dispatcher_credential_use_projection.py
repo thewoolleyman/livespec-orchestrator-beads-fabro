@@ -76,6 +76,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
     codex_freshness_required_seconds,
     decode_codex_access_token_exp,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_exclude import (
+    worktree_exclude_script,
+)
 
 __all__: list[str] = [
     "CredentialUseProjection",
@@ -142,21 +145,41 @@ def credential_use_env_lines(*, projection: CredentialUseProjection | None) -> s
 
 
 def credential_use_guard_prepare_steps_block(*, projection: CredentialUseProjection | None) -> str:
-    """Render the install + startup-check `[[run.prepare.steps]]` blocks.
+    """Render the exclude + install + startup-check `[[run.prepare.steps]]` blocks.
 
-    Empty string when `projection` is None. Two steps, in this order:
+    Empty string when `projection` is None. Three steps, in this order:
 
-    1. INSTALL -- write the guard from its env value, make it executable, and read
+    1. EXCLUDE -- hide the guard's own path from the run's git worktree, and its
+       position is load-bearing. `GUARD_SCRIPT_PATH` is fixed at
+       `/workspace/.livespec/...`, which sits OUTSIDE the clone on the pinned
+       engine but INSIDE it on the Petri-era engine, where the clone is
+       `/workspace` itself; that engine runs each prepare step as a graph node
+       and checkpoints after it, so a step that writes the guard before the
+       exclusion is in place is a step whose checkpoint commits it into the run
+       branch (`bd-ib-ccywva`, hp-candidate run 01M4XNM4BBMYFPQDA6X5JCBDYM).
+       Only the guard's own FILE is named, never the `.livespec` directory
+       holding it: the entry lands in a governed repository's clone, and
+       excluding a directory a repository could legitimately track would hide
+       that repository's own content from git.
+    2. INSTALL -- write the guard from its env value, make it executable, and read
        it back with `test -s` so an empty projection aborts the sandbox here
        rather than surfacing as an unexplained node refusal later.
-    2. CHECK -- run the guard's `--check-start`, which grades BOTH the absolute
+    3. CHECK -- run the guard's `--check-start`, which grades BOTH the absolute
        deadline and the credential's remaining lifetime against the sandbox's own
        clock, and exits non-zero on either shortfall. A prepare step exiting
        non-zero means no coding-agent node ever runs, which is the whole point:
        the refusal lands BEFORE any credential use, not mid-turn.
+
+    The exclusion changes nothing about the LAUNCH: the guard is installed at the
+    same path, and `guarded_acp_command` still execs it there. Hiding it from git
+    is not hiding it from the sandbox.
     """
     if projection is None:
         return ""
+    exclude = worktree_exclude_script(
+        paths=(GUARD_SCRIPT_PATH,),
+        label="livespec-credential-use-guard",
+    )
     install = (
         f'mkdir -p "$(dirname {GUARD_SCRIPT_PATH})"'
         f' && printf %s "${_GUARD_SCRIPT_ENV_VAR}" > {GUARD_SCRIPT_PATH}'
@@ -166,10 +189,13 @@ def credential_use_guard_prepare_steps_block(*, projection: CredentialUseProject
     check = f"/bin/sh {GUARD_SCRIPT_PATH} --check-start"
     lines = [
         "",
-        "# --- Dispatcher-materialized credential-use enforcement: install the",
-        "# --- absolute-deadline guard, then refuse at startup if queueing or",
-        "# --- preparation consumed the budget or aged the credential below the",
-        "# --- lifetime this dispatch requires ---",
+        "# --- Dispatcher-materialized credential-use enforcement: hide the guard",
+        "# --- from the run's worktree, install the absolute-deadline guard, then",
+        "# --- refuse at startup if queueing or preparation consumed the budget or",
+        "# --- aged the credential below the lifetime this dispatch requires ---",
+        "[[run.prepare.steps]]",
+        f"script = {json.dumps(exclude)}",
+        "",
         "[[run.prepare.steps]]",
         f"script = {json.dumps(install)}",
         "",
