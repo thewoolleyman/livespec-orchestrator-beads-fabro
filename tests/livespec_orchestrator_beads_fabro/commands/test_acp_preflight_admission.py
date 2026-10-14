@@ -900,8 +900,16 @@ def test_the_loop_wave_hands_its_resolved_verdict_to_the_reprobe_wait(
     monkeypatch.setattr(wave, "resolve_acp_preflight", fake_resolve, raising=False)
     monkeypatch.setattr(
         reprobe,
-        "assess_credential_status",
+        "assess_resolved_credential",
         lambda **_: pytest.fail("a viable fallback chain must not be assessed"),
+    )
+    # The wait now RESOLVES before it assesses, so the suppressed observable is
+    # a pair: a gate that let the resolution run would spawn a `sudo` re-exec
+    # per round for a chain it then declined to wait on.
+    monkeypatch.setattr(
+        reprobe,
+        "resolve_rotated_credential",
+        lambda **_: pytest.fail("a viable fallback chain must not re-resolve the credential"),
     )
     monkeypatch.setattr(
         wave,
