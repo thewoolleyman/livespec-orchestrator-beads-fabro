@@ -72,8 +72,15 @@ def test_held_candidate_leaves_the_slot_for_existing_ready_work(
         )
 
     monkeypatch.setattr(judgement, "judge_before_admission", judge)
-    monkeypatch.setattr(admission, "store_config", lambda **_: config)
-    monkeypatch.setattr(eligibility, "read_dispatch_labels", lambda **_: ())
+
+    def connection(**_: object) -> StoreConfig:
+        return config
+
+    def labels(**_: object) -> tuple[str, ...]:
+        return ()
+
+    monkeypatch.setattr(admission, "store_config", connection)
+    monkeypatch.setattr(eligibility, "read_dispatch_labels", labels)
     journal = JournalFile(path=tmp_path / "journal.jsonl")
     result = admission.admit_and_select(
         repo=tmp_path,

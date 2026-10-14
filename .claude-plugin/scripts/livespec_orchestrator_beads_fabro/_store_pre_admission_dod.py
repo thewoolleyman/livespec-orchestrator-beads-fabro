@@ -2,16 +2,27 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._pre_admission_dod import judge_before_admission
-from livespec_orchestrator_beads_fabro._pre_admission_verdict import parse_judgement
+from livespec_orchestrator_beads_fabro._pre_admission_verdict import DodVerdict, parse_judgement
+from livespec_orchestrator_beads_fabro.commands._otel_scrub import (
+    CREDENTIAL_URL_RE,
+    REDACTION_MARKER,
+)
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = [
+    "PRE_ADMISSION_DOD_KEY",
     "pre_admission_hold",
 ]
+
+
+PRE_ADMISSION_DOD_KEY = "pre_admission_dod"
 
 
 def pre_admission_hold(*, path: StoreConfig, item: WorkItem) -> str | None:
@@ -25,4 +36,55 @@ def pre_admission_hold(*, path: StoreConfig, item: WorkItem) -> str | None:
     )
     if not is_successful(result):
         return None
-    return unsafe_perform_io(result.unwrap()).failure_reason
+    verdict = unsafe_perform_io(result.unwrap())
+    if verdict.failure_reason is not None:
+        _record_hold(path=path, item=item, verdict=verdict)
+    return verdict.failure_reason
+
+
+def _record_hold(*, path: StoreConfig, item: WorkItem, verdict: DodVerdict) -> None:
+    """Keep the current hold separately from the append-only explanation.
+
+    Only our top-level metadata key is replaced; unrelated metadata and nested
+    audit provenance are carried verbatim from the raw record, never rebuilt
+    from the narrower WorkItem projection.
+    """
+    reason = _ledger_text(text=str(verdict.failure_reason))
+    remedies = [_ledger_text(text=remedy) for remedy in verdict.remedies]
+    client = make_beads_client(config=path)
+    metadata = dict(
+        cast("dict[str, object]", client.show_issue(issue_id=item.id).get("metadata") or {})
+    )
+    metadata[PRE_ADMISSION_DOD_KEY] = {
+        "verdict": "needs-human",
+        "failure_reason": reason,
+        "remedies": remedies,
+    }
+    client.update_issue(issue_id=item.id, metadata=metadata)
+    client.add_comment(
+        issue_id=item.id,
+        body="\n".join(
+            [
+                "livespec-pre-admission-dod",
+                "",
+                "verdict: needs-human",
+                "",
+                reason,
+                "",
+                "Remedies:",
+                *(f"- {remedy}" for remedy in remedies),
+            ]
+        ),
+    )
+
+
+def _ledger_text(*, text: str) -> str:
+    """Keep every remedy without letting external text poison a later dispatch.
+
+    Unlike bounded stderr summaries, verdicts must not be truncated. Credential
+    shapes are redacted and template openers are rendered as literal brackets,
+    following the existing needs-human comment writer's safety convention.
+    """
+    if CREDENTIAL_URL_RE.search(text) is not None:
+        return REDACTION_MARKER
+    return text.replace("{{", "[[").replace("{%", "[%").replace("{#", "[#")

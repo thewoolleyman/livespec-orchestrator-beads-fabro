@@ -83,7 +83,7 @@ def test_codex_uses_the_last_completed_agent_message_not_tool_output() -> None:
     verdict = json.dumps(
         {"outcome": "failed", "failure_reason": "Reference the governing heading."}
     )
-    events = [
+    events: list[dict[str, object]] = [
         {"type": "thread.started"},
         {"type": "item.completed", "item": []},
         {"type": "item.completed", "item": {"type": "agent_message", "text": "Thinking."}},
