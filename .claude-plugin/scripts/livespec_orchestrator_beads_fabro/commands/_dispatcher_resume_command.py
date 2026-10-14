@@ -25,12 +25,16 @@ the wall then refused would consume one of the two resumes the chain allows and
 silently lower the bound for the next attempt, with the journal reading as though
 a resume had happened.
 
-The reclaim is passed OFF explicitly. The clause: a resume "MUST NOT run the
-stale publish-branch reclaim above: the surviving publish branch is the branch the
-run resumes on, and no preservation ref is created." The two routes are exclusive
-per dispatch — one keeps the dead run's work by finishing it, the other makes a
-fresh start possible by clearing it — and running both would preserve the head to
-a ref and delete the very branch the resumed run was about to check out.
+The reclaim is never REACHED. The clause: a resume "MUST NOT run the stale
+publish-branch reclaim above: the surviving publish branch is the branch the run
+resumes on, and no preservation ref is created." The two routes are exclusive per
+dispatch — one keeps the dead run's work by finishing it, the other makes a fresh
+start possible by clearing it — and running both would preserve the head to a ref
+and delete the very branch the resumed run was about to check out. This module
+used to say so by passing the shared wall an opt-out; under `bd-ib-huoyk7` the
+reclaim moved past the capacity decision, so the wall reclaims for nobody and the
+only route left is `post_admission_publish_branch_reclaim`, which the two LAUNCH
+paths call and this one deliberately neither imports nor names.
 
 TWO DEPARTURES FROM `dispatch --item`, each the clause's own wording.
 
@@ -206,14 +210,15 @@ def run_resume_command(*, args: argparse.Namespace) -> int:
         )
         return EXIT_PRECONDITION_ERROR
     # Every refusal that must land after selection and before the claim, as ONE
-    # decision -- the SAME wall the dispatch and the drain run, minus the publish
-    # branch reclaim, which is the one act a resume must never perform.
+    # decision -- the SAME wall the dispatch and the drain run. The publish-branch
+    # reclaim is not in it: that act is the one a resume must never perform, and
+    # it now sits past the capacity decision, so this path declines it by simply
+    # never calling it rather than by asking the wall to skip it.
     wall_exit = pre_dispatch_wall_exit(
         args=args,
         repo=repo,
         items=[item],
         journal=journal,
-        reclaim_publish_branches=False,
     )
     if wall_exit is not None:
         return wall_exit

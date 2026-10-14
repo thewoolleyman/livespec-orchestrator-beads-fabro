@@ -8,16 +8,26 @@ what required every new refusal to be wired twice. It moved out when the Codex
 credential gate became the fourth refusal in each and pushed the single-dispatch
 command module past its file LLOC ceiling — the seam was already there.
 
-WHAT THE WALL IS. Five refusals plus one mutation, sharing one POSITION and one
-guarantee: each runs after selection and BEFORE admission, so a refused item is
-never claimed, no `active` row is left behind, and no factory run exists to reap.
-Reading them as one decision is also what keeps each command entry point's return
-count honest — the alternative was suppressing the too-many-returns rule, which
-would have hidden the fact that the entry point had grown another exit.
+WHAT THE WALL IS. Five refusals sharing one POSITION and one guarantee: each runs
+after selection and BEFORE admission, so a refused item is never claimed, no
+`active` row is left behind, and no factory run exists to reap. Reading them as one
+decision is also what keeps each command entry point's return count honest — the
+alternative was suppressing the too-many-returns rule, which would have hidden the
+fact that the entry point had grown another exit.
 
 The DRAIN reaches it after its `--dry-run` return, deliberately: a dry run creates
 no run, so it stays a reporting surface that shows the operator exactly which
 candidate needs criteria.
+
+THIS MODULE ALSO OWNS THE ONE PRE-RUN MUTATION, and it sits on the OTHER side of
+admission. `post_admission_publish_branch_reclaim` is the publish-branch reclaim,
+which each LAUNCH path calls for exactly the items admission selected to launch. It
+used to close this wall, and that position was the defect `bd-ib-huoyk7` repairs:
+the reclaim deletes a remote ref, and the wall cannot yet know whether the
+selection will get a slot. Its own docstring carries the measurement. What matters
+here is that NOTHING in the wall below mutates anything, so "a refused selection
+leaves the world exactly as it found it" is a property of the wall rather than of
+the order its rows happen to be in.
 """
 
 from __future__ import annotations
@@ -99,7 +109,6 @@ def pre_dispatch_wall_exit(
     repo: Path,
     items: Sequence[WorkItem],
     journal: JournalFile,
-    reclaim_publish_branches: bool = True,
 ) -> int | None:
     """The whole wall, as ONE decision: an exit code, or None to proceed.
 
@@ -158,13 +167,9 @@ def pre_dispatch_wall_exit(
     proof-credential declaration it is a HOST-level fact, so one refusal covers
     the whole selection rather than reading as one fault per item.
 
-    The publish-branch reclaim closes the wall and refuses NOTHING
-    (bd-ib-yebrb7): a dead run's surviving publish branch is what makes a
-    re-dispatch's `publish_draft` push non-fast-forward, and clearing it here --
-    once its head is preserved by reference -- is what lets the recovery publish
-    and reach proof capture. It is per ITEM, because a publish branch is per
-    item, and it runs last because it MUTATES a remote ref: a selection this wall
-    is about to refuse must leave the remote exactly as it found it.
+    AND THAT IS THE WHOLE WALL: every row above is a refusal, and none of them
+    mutates anything. The publish-branch reclaim used to close this sequence and
+    now sits past admission, in `post_admission_publish_branch_reclaim` below.
     """
     work_item_ids = [item.id for item in items]
     refusing = _refusing_sequence(
@@ -202,19 +207,6 @@ def pre_dispatch_wall_exit(
         if codex_refusal is not None:
             _ = write_stderr(text=f"{codex_refusal}\n")
             return EXIT_PRECONDITION_ERROR
-    # A RESUME passes False, and the clause requires it: "It MUST NOT run the
-    # stale publish-branch reclaim above: the surviving publish branch is the
-    # branch the run resumes on, and no preservation ref is created." The two
-    # routes are exclusive per dispatch — one KEEPS the dead run's work by
-    # finishing it, the other makes a fresh start possible by clearing it — and
-    # running both would preserve the head to a ref and delete the very branch
-    # the resumed run was about to check out.
-    #
-    # It is a parameter rather than a second wall because every OTHER refusal
-    # here applies to a resume unchanged, and a resume-specific copy of this
-    # sequence is exactly the drift the one-wall consolidation retired.
-    if reclaim_publish_branches:
-        reclaim_stale_publish_branches(args=args, repo=repo, items=items, journal=journal)
     return None
 
 
