@@ -53,13 +53,17 @@ regression control for that property.
 
 from __future__ import annotations
 
+import argparse
 import os
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
+import tomli
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import render_run_config_overlay
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
     PLUGIN_GATE_PROGRAM_FILENAME,
     plugin_cache_gate_script,
@@ -75,6 +79,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state im
     REFRESH_COUNT_STATE_FILENAME,
     publication_state_filenames,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import resume_checkout_for
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
 )
@@ -433,24 +438,64 @@ def test_a_run_with_no_recorded_provenance_refuses_before_touching_any_ref(
     assert box.remote_head(ref=_BRANCH) == before
 
 
+@pytest.mark.parametrize("advance_default", [False, True])
 def test_a_validated_resume_head_supplies_the_provenance_the_record_lacks(
+    *,
     tmp_path: Path,
+    advance_default: bool,
 ) -> None:
-    """The resume arm of the same read, which the refusal above would also satisfy.
+    """Resume through the Dispatcher's checkout and environment, with no saved head.
 
-    Without this control, "no record means refuse" is equally consistent with a
-    build that ignores the resume provenance entirely -- and a resumed run never
-    visits `publish_draft`, so that is every resume.
+    The old control supplied the fallback variable by hand, so it passed while
+    every real resume failed. Start this clone on the default branch instead,
+    execute the rendered prepare step, and give the stage only the environment
+    the overlay actually emits. Both refresh outcomes must accept that provenance.
     """
     box = _build(root=tmp_path)
     recorded = box.local_head()
     (box.state_dir() / PUBLISH_HEAD_STATE_FILENAME).unlink()
-    _ = _advance_default(box=box)
+    if advance_default:
+        _ = _advance_default(box=box)
+    _ = _git("checkout", "--detach", "origin/master", cwd=box.clone)
+    assert box.local_head() != recorded
+    overlay = render_run_config_overlay(
+        committed_text='[workflow]\ngraph = "workflow.fabro"\n[run.environment]\nid = "sandbox"\n',
+        workflow_dir=tmp_path,
+        token="",
+        github_token="",
+        siblings=None,
+        resume_checkout=resume_checkout_for(
+            args=argparse.Namespace(resume_head=recorded),
+            branch=_BRANCH,
+        ),
+    )
+    assert overlay is not None
+    parsed = tomli.loads(overlay)
+    overlay_env = parsed["environments"]["sandbox"]["env"]
+    [checkout_step] = [
+        step["script"]
+        for step in parsed["run"]["prepare"]["steps"]
+        if "git checkout --detach" in step["script"]
+    ]
+    prepared = subprocess.run(
+        ["bash", "-c", checkout_step],
+        cwd=box.clone,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_env(box=box, extra=overlay_env),
+    )
+    assert prepared.returncode == 0, prepared.stderr
+    assert box.local_head() == recorded
+    assert box.state(name=PUBLISH_HEAD_STATE_FILENAME) is None
+    assert box.remote_head(ref=_BRANCH) == recorded
 
-    result = _run(box=box, extra_env={"LIVESPEC_RESUME_PUBLISHED_HEAD": recorded})
+    result = _run(box=box, extra_env=overlay_env)
 
     assert result.returncode == 0, result.stderr
-    assert "LIVESPEC_PR_REFRESH_CHANGED" in result.stderr
+    outcome = "CHANGED" if advance_default else "UNCHANGED"
+    assert f"LIVESPEC_PR_REFRESH_{outcome}" in result.stderr
+    assert "LIVESPEC_PR_REFRESH_NO_PROVENANCE" not in result.stderr
     assert box.remote_head(ref=_BRANCH) == box.local_head()
 
 
