@@ -14,6 +14,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal impor
     fabro_run_terminal_outcome,
     inspect_run,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_cause import (
+    needs_human_cause_body,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 
 _RUN = "01M4WSZ0B50B9QKMEEMNEYPQJC"
@@ -132,3 +135,37 @@ def test_preserved_ref_is_read_from_the_terminal_stage_event(*, tmp_path: Path) 
     assert _REF in outcome.detail
     assert outcome.status == "blocked"
     assert ["fabro", "events", _RUN, "--json", "--server", _SERVER] in runner.calls
+
+
+def test_routing_stage_message_replaces_the_terminal_routing_failure(*, tmp_path: Path) -> None:
+    cause = "Deliberate stop: the Fabro-fork prerequisite must land before implementation."
+    runner = EventRunner(
+        events=[
+            {
+                "event": "stage.failed",
+                "node_id": "implement",
+                "properties": {
+                    "failure": {
+                        "message": cause,
+                        "category": "deterministic",
+                        "signature": "implement|deterministic|prerequisite missing",
+                    }
+                },
+            },
+            {
+                "event": "stage.failed",
+                "node_id": "needs_human",
+                "properties": {"failure": {"message": _TERMINAL_FAILURE}},
+            },
+        ]
+    )
+    outcome = terminal_outcome(tmp_path=tmp_path, runner=runner)
+
+    assert cause in outcome.detail
+    assert "stage implement" in outcome.detail
+    assert _TERMINAL_FAILURE not in outcome.detail
+    assert outcome.fabro_failure_cause == cause
+    body = needs_human_cause_body(outcome=outcome)
+    assert cause in body
+    assert "failed stage: implement" in body
+    assert _TERMINAL_FAILURE not in body
