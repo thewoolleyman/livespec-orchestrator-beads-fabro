@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.196.10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.9...v0.196.10) (2026-10-14)
+
+
+### Bug Fixes
+
+* observe running session gates without status subprocesses ([a607c59](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a607c5957beb13466ca61cf25ec6bb0353435f31))
+* report unreaped gate exits without a verdict ([af0a9ac](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/af0a9acd180ac40841367b2c932fc7b48af76889))
+* retain gate verdicts published during process exit ([7901cc8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7901cc83be2ddbb8a3db1f101f26bc6a55759fea))
+* stop gate observations at the shared wait deadline ([13ec6c4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/13ec6c4e70ae984022b8e5ddacaf9a98c7b07296))
+
 ## [0.196.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.8...v0.196.9) (2026-10-14)
 
 
