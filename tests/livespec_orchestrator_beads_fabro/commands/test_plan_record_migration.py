@@ -255,6 +255,7 @@ def test_the_report_renders_writes_skips_and_refusals() -> None:
         slugs_written=("bd-ib-kappa plan_slug=kappa",),
         anchors_written=("plan/kappa/associated_work_item_id -> bd-ib-kappa",),
         next_actions_seeded=("bd-ib-kappa kind=none ref=''",),
+        genesis_written=(),
         skipped=("bd-ib-tagged already carries plan_slug=tagged",),
         refused=("bd-ib-collides derives plan_slug=shared, already carried by bd-ib-holder",),
     )
@@ -279,6 +280,7 @@ def test_an_empty_report_counts_zero_writes() -> None:
         slugs_written=(),
         anchors_written=(),
         next_actions_seeded=(),
+        genesis_written=(),
         skipped=(),
         refused=(),
     )

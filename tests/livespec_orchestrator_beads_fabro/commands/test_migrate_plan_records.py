@@ -4,6 +4,14 @@ Scenario 112, end to end against the hermetic fake tenant and a `tmp_path`
 repository: anchors from existing slugs, derived slugs with a refused
 collision, `next_action` seeded from the newest handoff, and a second run that
 writes nothing.
+
+Scenario 147's GENESIS leg is covered here too, because it is the second of the
+two writes relay research note 007 permits to start a plan epic's authority
+chain and it is only observable against a tenant. Its cases read the CHAIN
+rather than the report alone: a leg that reported a write it did not record
+would satisfy every report assertion and leave the epic chain-less, which is
+the state the missing-tracking finding names this very migration as the remedy
+for.
 """
 
 from __future__ import annotations
@@ -18,6 +26,19 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 )
 from livespec_orchestrator_beads_fabro.commands import _plan_identity
 from livespec_orchestrator_beads_fabro.commands import migrate_plan_records as module
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain import (
+    ChainHead,
+    read_chain_head,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import (
+    MISSING_TRACKING,
+    ChainFinding,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_genesis import create_genesis_token
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
+    ChainCache,
+    read_chain_cache,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_record_migration import (
     PlanRecordMigrationReport,
     total_writes,
@@ -69,10 +90,23 @@ def _seed_epic(
     spec_id: str | None = None,
     notes: str | None = None,
     closed: bool = False,
+    pointer: bool = False,
 ) -> None:
     metadata: dict[str, Any] = {"rank": "a1"}
     if plan_slug is not None:
         metadata["plan_slug"] = plan_slug
+    if pointer:
+        # A typed pointer already standing, so the seeding leg SKIPS this epic.
+        # That matters whenever a case is about the chain: the seed is itself a
+        # sanctioned write, so on an epic whose chain stands it would commit a
+        # transition and move the very cache the case is measuring.
+        metadata["next_action"] = {
+            "kind": "human",
+            "ref": "",
+            "text": "Ask the maintainer what this plan does next.",
+            "required_result": None,
+            "budget": None,
+        }
     client = _fake()
     _ = client.create_issue(
         draft=IssueDraft(
@@ -118,6 +152,12 @@ def _anchor(*, directory: Path) -> str:
 
 def _run(*, project_root: Path) -> PlanRecordMigrationReport:
     return migrate_plan_records(config=_config(), project_root=project_root, now=_NOW)
+
+
+def _chain_cache(*, epic_id: str) -> ChainCache | None:
+    metadata = _fake().show_issue(issue_id=epic_id)["metadata"]
+    assert isinstance(metadata, dict)
+    return read_chain_cache(metadata=metadata)
 
 
 def test_every_plan_directory_is_anchored_to_its_epic_or_to_unassigned(
@@ -231,6 +271,49 @@ def test_a_closed_or_archived_plan_epic_is_not_seeded(tmp_path: Path) -> None:
     assert report.next_actions_seeded == ()
     assert "next_action" not in _fake().show_issue(issue_id="bd-ib-closed")["metadata"]
     assert "next_action" not in _fake().show_issue(issue_id="bd-ib-archived")["metadata"]
+
+
+def test_a_live_plan_epic_carrying_no_chain_gains_a_genesis_token(tmp_path: Path) -> None:
+    """The remedy every chain-less reader names finally creates a chain.
+
+    Three controls, each ruling out a different way this could pass for the
+    wrong reason. The CLOSED and the ARCHIVED epic have no work left to
+    serialize, so a leg that started a chain for every epic it could see would
+    satisfy the alpha assertions on its own. And the epic whose chain ALREADY
+    STANDS is what tells "creates a chain where there is none" apart from
+    "creates a chain": a second chain on one epic admits two simultaneous
+    winners, which is the exact failure the design exists to prevent, so the
+    standing token has to be the one still there afterwards.
+    """
+    _seed_epic(epic_id="bd-ib-alpha", plan_slug="alpha")
+    _seed_epic(epic_id="bd-ib-standing", plan_slug="standing", pointer=True)
+    _seed_epic(epic_id="bd-ib-archived", plan_slug="archived-plan")
+    _seed_epic(epic_id="bd-ib-closed", plan_slug="closed-plan", closed=True)
+    for slug in ("alpha", "standing", "closed-plan"):
+        _ = _plan_dir(project_root=tmp_path, slug=slug)
+    _ = _archive_dir(project_root=tmp_path, slug="archived-plan")
+    standing = create_genesis_token(config=_config(), epic_id="bd-ib-standing")
+    assert isinstance(standing, str)
+
+    report = _run(project_root=tmp_path)
+
+    tokens = _fake().no_history_issue_ids()
+    assert len(tokens) == 2
+    [created] = [token for token in tokens if token != standing]
+    assert _chain_cache(epic_id="bd-ib-alpha") == ChainCache(latest_closed=None, current=created)
+    assert report.genesis_written == (f"bd-ib-alpha genesis token {created}",)
+    head = read_chain_head(config=_config(), epic_id="bd-ib-alpha")
+    assert isinstance(head, ChainHead)
+    assert head.current_token_id == created
+    assert head.epoch == 0
+    assert _chain_cache(epic_id="bd-ib-standing") == ChainCache(
+        latest_closed=None, current=standing
+    )
+    for epic_id in ("bd-ib-archived", "bd-ib-closed"):
+        assert _chain_cache(epic_id=epic_id) is None
+        finding = read_chain_head(config=_config(), epic_id=epic_id)
+        assert isinstance(finding, ChainFinding)
+        assert finding.code == MISSING_TRACKING
 
 
 def test_a_second_run_writes_nothing_and_leaves_every_record_identical(
