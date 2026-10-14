@@ -4018,11 +4018,16 @@ Feature: Proof of Done is captured and independently reproduced before publicati
     And the branch is pushed with an explicit lease on the recorded prior remote head
     And capture, review and replay run for the changed head before scripted pr marks it ready
     And the item's merge hold determines whether auto-merge is armed
-  Scenario: Publication refuses unverifiable provenance and conflicts
-    Given the remote publish head differs from the run's recorded publication head or the rebase conflicts
+  Scenario: Publication refuses unverifiable provenance
+    Given the remote publish head differs from the run's recorded publication head
     When pr_refresh runs
     Then it fails closed with a named cause and preserved recovery evidence
-    And it neither force-pushes an unknown head nor resolves the conflict by choosing one side
+    And it does not force-push an unknown head
+  Scenario: A conflicted refresh is never resolved by the script
+    Given the pr_refresh rebase onto the advanced default branch conflicts
+    When pr_refresh runs
+    Then it does not resolve the conflict by choosing one side
+    And it takes the refresh-repair route that Scenario 176 exercises
   Scenario: Refresh is idempotent and bounded
     Given a refresh already pushed a new head with durable run provenance
     When the same refresh is retried against the matching remote
@@ -5825,4 +5830,107 @@ Feature: One factory run holds a slot no longer than the whole-run wall budget
       | --run-wall-budget-seconds argument      | 0     | --run-wall-budget-seconds          |
       | --run-wall-budget-seconds argument      | -60   | --run-wall-budget-seconds          |
       | --run-wall-budget-seconds argument      | 90.5  | --run-wall-budget-seconds          |
+```
+
+## Scenario 176 — A green run whose refresh conflicts with a moved default branch is repaired and published instead of ending at needs-human
+
+```gherkin
+Feature: A janitor-green run survives a default branch that moved under it
+  As the maintainer of a repository dispatched to the factory
+  I want a refresh conflict or a post-refresh gate failure repaired inside the run
+  So that hours of finished, green work are not discarded at publication
+
+  Scenario: A conflicted publish_draft refresh routes to a repair turn
+    Given a run whose janitor stage succeeded at head H
+    And origin's default branch has advanced with a commit that conflicts with the run's work
+    When publish_draft refreshes the run onto the default branch
+    Then publish_draft aborts the rebase and the run's working branch is at H
+    And a refresh-repair brief names H, the conflicted paths and the run commit being applied
+    And the run enters the fix node rather than needs_human
+    And after the fix turn the run re-enters janitor, then publish_draft, then proof_capture
+
+  Scenario: A refreshed head that fails the gate is restored and repaired
+    Given a run whose janitor stage succeeded at head H
+    And the refresh onto the advanced default branch completes without conflict
+    And the repository-declared gate rejects the refreshed head
+    When publish_draft publishes
+    Then the run's working branch is reset to H
+    And the run enters the fix node with a brief naming each failed gate target
+    And the run does not end at needs_human
+
+  Scenario: A conflicted pr_refresh routes to a repair turn and counts as a refresh
+    Given a run whose proof was verified on its published head P
+    And origin's default branch has advanced with a commit that conflicts with the run's work
+    When pr_refresh refreshes the run
+    Then the run's working branch is at P and the run enters the fix node
+    And that pr_refresh visit counts as one of the run's three refreshes
+    And after the repair the run passes janitor, publish_draft, proof_capture, review and proof_verify before pr_refresh runs again
+
+  Scenario: A resumed run restores its resume provenance head
+    Given a run resumed from a published pull request whose validated resume provenance names head P
+    And the run has no janitor visit of its own
+    When its pr_refresh rebase conflicts
+    Then the run's working branch is at P and the brief names P as the pre-refresh head
+
+  Scenario: A repair round leaves the review-fix budget untouched
+    Given a run that has used one review-fix round
+    When a publish_draft refresh conflict routes the run to a refresh-repair round
+    Then the run still has the same number of review-fix rounds remaining as before the repair
+
+  Scenario: Repaired and clean refreshes share the non-convergence bound
+    Given a run whose pr_refresh has refreshed cleanly twice
+    And whose third pr_refresh refresh conflicted and was repaired
+    When the default branch advances again before pr
+    Then the run ends with the explicit non-convergence cause and preserved work
+
+  Scenario: The repair budget is bounded
+    Given a run that has already taken two refresh-repair rounds across publish_draft and pr_refresh
+    When its next refresh conflicts again
+    Then the stage fails closed to needs_human with the cause refresh-repair-exhausted
+    And the recovery artifact pointer names that stage's pre-refresh head
+
+  Scenario: A push origin refuses is not repaired
+    Given a run whose refresh applied cleanly and whose gate passed
+    When origin refuses the push with an authentication failure
+    Then publish_draft fails closed with its existing push-failure cause
+    And the run does not enter the fix node
+```
+
+## Scenario 177 — A repository hook that outlives its limit is reaped and named, and publish_draft's limit is configurable
+
+```gherkin
+Feature: Repository hooks inside a sandbox stay within, and are named against, their limits
+  As the maintainer of a repository whose full gate runs in its commit and push hooks
+  I want an over-limit hook reaped, recorded by name, and its stage limit configurable
+  So that a loaded factory host does not turn a green run into an unexplained needs-human
+
+  Scenario: publish_draft resolves its timeout from configuration
+    Given a dispatch target whose "dispatcher.node_timeouts" sets publish_draft to 3600
+    When the Dispatcher renders the dispatch payload's workflow graph
+    Then the publish_draft node's timeout attribute is the literal duration 3600s
+
+  Scenario: An over-limit commit hook is reaped before the next commit
+    Given an implement-stage agent whose git commit tool call is ended by its tool-call limit while the commit hook is still running
+    When the agent starts its next git commit in the same sandbox
+    Then no process of the earlier hook run is still running
+    And the dispatch journal carries a hook-over-limit row naming the implement node, the commit operation, the limit and the elapsed milliseconds
+
+  Scenario: A command node's over-limit push is named
+    Given a publish_draft push whose pre-push hook is still running when the node's resolved timeout ends it
+    When the run ends at needs-human
+    Then the dispatch journal carries a hook-over-limit row naming publish_draft, the push operation and the resolved timeout
+    And the needs-human cause recorded on the item names hook-over-limit, publish_draft and the push operation
+    And the run's work is preserved before it terminates
+
+  Scenario: A push that times out after its hook finished is not a hook-over-limit event
+    Given a publish_draft push whose pre-push hook has already finished when the node's resolved timeout ends it
+    When the run ends at needs-human
+    Then the dispatch journal carries no hook-over-limit row for that push
+    And the push keeps its existing failure classification
+
+  Scenario: A recovered hook-over-limit event is not the cause of a later stop
+    Given an implement-stage commit whose hook-over-limit event was recorded and whose retried commit then succeeded
+    When a later stage ends the run at needs-human for a different cause
+    Then the needs-human cause recorded on the item names that later cause
+    And the dispatch journal still carries the earlier hook-over-limit row
 ```
