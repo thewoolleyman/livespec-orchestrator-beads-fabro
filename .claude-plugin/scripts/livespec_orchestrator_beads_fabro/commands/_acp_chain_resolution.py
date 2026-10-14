@@ -144,6 +144,12 @@ def _attach_one(
     primary = AcpCandidate(
         adapter=resolved.adapter,
         identity=chain.identity or builtins.get(resolved.rendered),
+        # The agent entry a STRUCTURED entry resolved through, carried across for
+        # the same reason `config_options` is and with the same failure mode: a
+        # rebuilt primary that dropped it reports NO resolved agent, and the
+        # admission session-headroom clause -- whose coverage is keyed on exactly
+        # that id -- then assesses nothing a repository's own nodes actually run.
+        agent_id=chain.agent_id,
         signatures=chain.signatures,
         pricing=chain.pricing,
         # The requested session options the chain declared for its primary. A
