@@ -15,17 +15,33 @@ reader can join them.
 
 EVERY KEY IS WRITTEN ON EVERY READING, NULLS INCLUDED. An omitted key is what a
 record from a build predating this clause looks like, so a reader could not tell
-"this reading was unobservable" from "this record was never asked".
+"this reading was unobservable" from "this record was never asked". The same
+reason puts EVERY filtered node in `node_selections`, including the nodes
+headroom did not touch: an absent node is indistinguishable from a node that was
+never filtered, and "which nodes did headroom touch" is the question the record
+exists to answer.
+
+A SKIPPED ENTRY CARRIES NO HOLD FIELD OF ANY KIND, not even a null one. The
+clause says the selection record "MUST NOT represent that skip as an observed
+hold", and a `hold_key: null` would still invite a reader to join a headroom
+shortfall against the availability-hold ledger, where it matches nothing. So the
+projection names the candidate, its reading and the floor, and stops.
 """
 
 from __future__ import annotations
 
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import (
+    HEADROOM_SKIP,
+    NodePreflight,
+    SkippedCandidate,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import SessionHeadroomReading
 
 __all__: list[str] = [
     "SESSION_HEADROOM_STAGE",
     "session_headroom_assessment_record",
     "session_headroom_reading_fields",
+    "session_headroom_selection_fields",
 ]
 
 # The journal stage one admission evaluation's headroom readings are recorded
@@ -40,6 +56,7 @@ def session_headroom_assessment_record(
     work_item_id: str,
     floor_percent: int,
     assessments: tuple[SessionHeadroomReading, ...],
+    nodes: tuple[NodePreflight, ...] = (),
 ) -> dict[str, object]:
     """The per-work-item record one admission evaluation's readings produce.
 
@@ -55,6 +72,43 @@ def session_headroom_assessment_record(
         "assessments": [
             session_headroom_reading_fields(reading=reading) for reading in assessments
         ],
+        "node_selections": {
+            node.node: session_headroom_selection_fields(node=node) for node in nodes
+        },
+    }
+
+
+def session_headroom_selection_fields(*, node: NodePreflight) -> dict[str, object]:
+    """One node's selected candidate, and the candidates headroom skipped before it.
+
+    The selected candidate is the FIRST surviving one, which is the per-node
+    selection rule itself -- "the first candidate in configured order that ...
+    is eligible" -- read off the already-filtered chain rather than re-derived.
+    An exhausted node reports nulls, because there is no candidate to name and
+    an omitted key would read as a record that never asked.
+    """
+    selected = node.candidates[0] if node.candidates else None
+    identity = None if selected is None else selected.identity
+    return {
+        "selected_availability_key": None if identity is None else identity.availability_key,
+        "selected_candidate_key": None if identity is None else identity.candidate_key,
+        "headroom_skipped": [
+            _skipped_fields(skip=skip) for skip in node.skipped if skip.reason == HEADROOM_SKIP
+        ],
+    }
+
+
+def _skipped_fields(*, skip: SkippedCandidate) -> dict[str, object]:
+    """One headroom-skipped candidate: who it was, what was read, and the floor."""
+    return {
+        "availability_key": skip.availability_key,
+        "candidate_key": skip.candidate_key,
+        "session_headroom_floor_percent": skip.headroom_floor_percent,
+        "headroom": (
+            None
+            if skip.headroom is None
+            else session_headroom_reading_fields(reading=skip.headroom)
+        ),
     }
 
 
