@@ -39,6 +39,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     utc_now_iso,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch_one
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
+    post_admission_publish_branch_reclaim,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
 from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_ledger import (
     args_with_dispatch_workflow_name,
@@ -130,6 +133,15 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
             "rework_picked": [item.id for item in admission.rework],
         }
     )
+    # The stale publish-branch reclaim, for exactly what this wave is about to
+    # launch and no more. It DELETES `feat/<item>` on origin and closes any pull
+    # request open on it, so a candidate the valve DEFERRED must reach the next
+    # pass with its branch and that pull request intact (bd-ib-huoyk7) -- which
+    # is why it is here, past the capacity decision, rather than in the
+    # pre-dispatch wall every entry point runs before admission. It still
+    # precedes every launch below, which is what keeps each new run's
+    # `publish_draft` push a plain fast-forward.
+    post_admission_publish_branch_reclaim(args=args, repo=repo, items=picked, journal=journal)
     with ThreadPoolExecutor(max_workers=max(1, args.parallel)) as pool:
         futures = [
             pool.submit(
