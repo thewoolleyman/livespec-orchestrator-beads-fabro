@@ -225,6 +225,64 @@ def test_the_pass_record_totals_what_the_sweep_did_and_what_it_reclaimed(
     assert summary["reclaimed_limits_unmeasured"] == 0
 
 
+def test_the_pass_record_names_the_factory_host_whose_daemon_it_inventoried(
+    tmp_path: Path,
+) -> None:
+    """The acceptance assertion: whose inventory is this a record of?
+
+    One pass writes one sweep record per surveyed factory daemon, and every
+    field those records carry — the counts, the reclaimed bytes,
+    `inventory_observed` — is a measurement of ONE host. Without the daemon
+    named beside them, two records are indistinguishable, so a leaking factory
+    and a clean one average into a reading about neither; and a reader cannot
+    tell which host a reclaim gave its envelope back to.
+
+    The factories sharing that daemon are named too, because the daemon is
+    what a sweep is addressed to while a factory is what an operator
+    configures, and only the second is a name they can act on.
+    """
+    runner = _Docker(ps_stdout=_PS_STDOUT, inspect_stdout=_INSPECT_STDOUT)
+    journal = _Journal()
+
+    _ = pass_container_sweeps(
+        inputs=_inputs(tmp_path=tmp_path, runner=runner, journal=journal),
+        factories=(_HP,),
+        run_statuses=_STATUSES,
+        dry_run=False,
+    )
+
+    summary = _record(records=journal.written, stage=_SWEEP_STAGE)
+    assert summary.get("docker_host") == _DOCKER_HOST
+    assert summary.get("factory_names") == [_HP.name]
+
+
+def test_every_per_container_record_names_the_daemon_it_was_read_from(
+    tmp_path: Path,
+) -> None:
+    """A container name is unique to its daemon only by convention, not by fact.
+
+    Two factory hosts can each run a `fabro-run-<id>` container for the same
+    run id — a re-dispatch of one work-item is a routine way to get one — so a
+    reclaim or a hold that named only the container would be a record nobody
+    can place. Each is stamped with the daemon its reading came from.
+    """
+    runner = _Docker(ps_stdout=_PS_STDOUT, inspect_stdout=_INSPECT_STDOUT)
+    journal = _Journal()
+
+    _ = pass_container_sweeps(
+        inputs=_inputs(tmp_path=tmp_path, runner=runner, journal=journal),
+        factories=(_HP,),
+        run_statuses=_STATUSES,
+        dry_run=False,
+    )
+
+    assert [(record["stage"], record.get("docker_host")) for record in journal.written] == [
+        (_RECLAIMED_STAGE, _DOCKER_HOST),
+        (_HELD_STAGE, _DOCKER_HOST),
+        (_SWEEP_STAGE, _DOCKER_HOST),
+    ]
+
+
 def test_a_refused_removal_is_counted_as_refused_and_not_as_reclaimed(tmp_path: Path) -> None:
     """A daemon that would not remove the container gave no envelope back.
 
