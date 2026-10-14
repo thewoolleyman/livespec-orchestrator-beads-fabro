@@ -36,6 +36,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_disposition import (
     close_plan_child,
     reparent_plan_child,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_genesis import create_genesis_token
 from livespec_orchestrator_beads_fabro.commands._plan_handoff import (
     append_handoff,
     append_supervisor_handoff,
@@ -162,6 +163,14 @@ def create_thread(  # noqa: PLR0913 — package primitive mirrors the plan-creat
     )
     append_work_item(path=config, item=epic)
     _ = tag_epic_plan_slug(config=config, epic_id=epic.id, title=title, slug=slug)
+    # Genesis, and one of only the two places relay research note 007 permits
+    # it: the epic id above has not been seen by any other party until this call
+    # returns, so the create is single-writer by construction. The outcome is
+    # DISCARDED rather than branched on, because neither of
+    # `create_genesis_token`'s two findings is reachable from here — a fresh id
+    # names no chain to refuse, and no concurrent writer knows the id to
+    # overwrite the cache with.
+    _ = create_genesis_token(config=config, epic_id=epic.id)
     anchor_path = write_plan_anchor(project_root=project_root, slug=slug, epic_id=epic.id)
     return {
         "anchor_path": anchor_path.relative_to(project_root).as_posix(),
