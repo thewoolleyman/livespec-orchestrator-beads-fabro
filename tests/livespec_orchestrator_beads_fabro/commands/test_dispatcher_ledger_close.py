@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
     emit_outcomes,
+    ledger_blocked_after_normalization,
     plan_native_status_remaps,
 )
-from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_orchestrator_beads_fabro.store import (
+    append_work_item,
+    materialize_work_items,
+    read_work_items,
+)
+from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 from livespec_runtime.work_items.rank import BOTTOM_SENTINEL, key_between
 from returns.result import Success, safe
 
@@ -61,6 +69,56 @@ def test_native_adoptions_ignore_malformed_live_ranks(
         ("raw-claim", "active", key_between(a=first, b=None)),
     ]
     assert items[0].rank == malformed
+
+
+@pytest.mark.parametrize("native_status", [None, "open", "in_progress"])
+def test_preflight_reports_malformed_live_ranks_without_blocking(
+    *, tmp_path: Path, native_status: str | None
+) -> None:
+    config = StoreConfig(
+        tenant="rank-regression",
+        prefix="rank-regression",
+        server_user="rank-regression",
+        database="rank-regression",
+        bd_path="bd",
+        fake=True,
+    )
+    items = [
+        _item(item_id="bd-ib-hiduhs", status="pending-approval", rank="zz"),
+        _item(item_id="empty-rank", status="backlog", rank=""),
+        _item(item_id="anchor", status="ready", rank="a5"),
+        _item(item_id="unranked", status="backlog", rank=BOTTOM_SENTINEL),
+        _item(item_id="closed-fixture", status="done", rank="zzz"),
+    ]
+    if native_status is not None:
+        items.append(_item(item_id="raw-native", status=native_status, rank=BOTTOM_SENTINEL))
+    for item in items:
+        append_work_item(path=config, item=item)
+    journal_path = tmp_path / "journal.jsonl"
+
+    blocked = ledger_blocked_after_normalization(
+        items=items, config=config, journal=JournalFile(path=journal_path)
+    )
+
+    assert blocked is False
+    records = (
+        [json.loads(line) for line in journal_path.read_text(encoding="utf-8").splitlines()]
+        if journal_path.exists()
+        else []
+    )
+    warnings = [row for row in records if row["stage"] == "rank-normalization-warning"]
+    assert len(warnings) == 1
+    assert warnings[0]["malformed_ranks"] == [
+        {"item_id": "bd-ib-hiduhs", "rank": "zz"},
+        {"item_id": "empty-rank", "rank": ""},
+    ]
+    assert warnings[0]["at"]
+    assert warnings[0]["invoker"]
+    stored = materialize_work_items(records=read_work_items(path=config))
+    assert stored["bd-ib-hiduhs"].rank == "zz"
+    if native_status is not None:
+        assert stored["raw-native"].status == ("backlog" if native_status == "open" else "active")
+        assert stored["raw-native"].rank == key_between(a="a5", b=None)
 
 
 def test_emit_outcomes_json_includes_present_fabro_failure_fields(
