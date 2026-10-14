@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.196.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.7...v0.196.8) (2026-10-14)
+
+
+### Bug Fixes
+
+* preserve dispatch watch across transient ledger read failures ([327d596](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/327d59643d5d1fb4730b33015b0102ba16c5eade))
+
 ## [0.196.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.6...v0.196.7) (2026-10-14)
 
 
