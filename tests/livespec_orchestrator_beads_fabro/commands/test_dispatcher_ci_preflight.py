@@ -514,6 +514,45 @@ def test_a_still_pending_aggregate_job_is_deferred_at_the_bound(tmp_path: Path) 
     assert "retry the dispatch when the run concludes" in outcome.refusal.detail
 
 
+def test_the_deferred_text_leads_with_still_running_and_drops_the_red_recovery(
+    tmp_path: Path,
+) -> None:
+    """A deferral must not read as a failure, in either of the two ways it could.
+
+    The `ERROR:` prefix and the words "not proven green" say a run came back
+    bad when it is still running; the red-default-branch recovery text sends an
+    operator to restore master health that was never lost. Both belong to a RED
+    default branch and neither applies here.
+    """
+    runner = _Runner(
+        results=_results(run_list=_result(stdout=_run_list_payload(status="in_progress")))
+    )
+
+    outcome = _polled(
+        repo=tmp_path,
+        runner=runner,
+        readings=[0.0, 1800.0],
+        pauses=[],
+        progress=io.StringIO(),
+    )
+
+    assert outcome.refusal is not None
+    detail = outcome.refusal.detail
+    first_line = detail.splitlines()[0]
+    assert "still in_progress" in first_line
+    assert "has not failed" in first_line
+    assert "303" in first_line
+    assert _DEFAULT_BRANCH in first_line
+    assert "1800" in first_line
+    assert not detail.startswith("ERROR:")
+    assert "not proven green" not in detail
+    assert "master-health-restoration" not in detail
+    assert "PR CI is independent" not in detail
+    assert "repeat-flake" not in detail
+    assert "recovery" not in outcome.record
+    assert "retry the dispatch when the run concludes" in detail
+
+
 def test_a_pending_run_defers_the_dispatch_without_claiming_the_item(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

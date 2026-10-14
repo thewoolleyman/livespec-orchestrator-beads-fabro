@@ -160,22 +160,33 @@ def pending_outcome(
     `MasterCiRefusal`, the thing the step gate reads to return exit 3 before the
     work item is claimed -- while its journal record reads as a verdict that has
     not arrived rather than one that came back bad.
+
+    THREE THINGS IT DELIBERATELY DOES NOT BORROW from `_refusing`, each the
+    repair of a measured misreport. The `ERROR:` prefix and the words "not
+    proven green" announce a run that came back bad, which a still-running one
+    has not. And the red-default-branch recovery text sends the operator to
+    restore master health through worktree -> PR -> merge, which applies only to
+    a RED default branch and is work nobody owes here -- so the `recovery` key is
+    ABSENT from this record rather than present and empty, because an empty
+    recovery list reads as "no route out was found" instead of "none applies".
     """
     waited_seconds = int(waited)
-    cause = f"the latest `{branch}` run {run_id} is still {status} after {waited_seconds}s"
     record: dict[str, object] = {
         **_identity(pipeline=pipeline, branch=branch, run_id=run_id),
         "terminal": True,
         "status": _STATUS_DEFERRED,
         "reason": _REASON_PENDING,
-        "detail": cause,
+        "detail": f"the latest `{branch}` run {run_id} is still {status} after {waited_seconds}s",
         "remedy": PENDING_REMEDY,
-        "recovery": _RECOVERY,
         "run_status": status,
         "waited_seconds": waited_seconds,
     }
-    detail = _detail(
-        pipeline=pipeline, branch=branch, run_id=run_id, cause=cause, remedy=PENDING_REMEDY
+    detail = _pending_detail(
+        pipeline=pipeline,
+        branch=branch,
+        run_id=run_id,
+        status=status,
+        waited_seconds=waited_seconds,
     )
     return MasterCiOutcome(refusal=MasterCiRefusal(detail=detail, record=record), record=record)
 
@@ -231,6 +242,28 @@ def _identity(*, pipeline: MasterCiPipeline, branch: str, run_id: str) -> dict[s
         "declaring_key": MASTER_CI_KEY,
         "run_database_id": run_id,
     }
+
+
+def _pending_detail(
+    *, pipeline: MasterCiPipeline, branch: str, run_id: str, status: str, waited_seconds: int
+) -> str:
+    """The deferral's operator text, which leads with the fact it has not failed.
+
+    The ratified clause puts five things on the FIRST line -- the run, its
+    pending status, the branch, how long the preflight waited, and that it has
+    not failed -- because that line is what a scrolling operator reads, and a
+    first line that only said "deferred" would leave the failure reading intact.
+    """
+    return (
+        f"The latest `{branch}` run {run_id} of workflow `{pipeline.workflow}` is still "
+        f"{status} and has not failed; the master-CI preflight waited {waited_seconds}s "
+        "for its verdict and is deferring this dispatch.\n"
+        f"Resolved default branch: {branch}\n"
+        f"{pipeline_resolution_sentence(pipeline=pipeline)}\n"
+        f"Run databaseId: {run_id}\n"
+        f"Aggregate job: {pipeline.job}\n"
+        f"Remedy: {PENDING_REMEDY}\n"
+    )
 
 
 def _detail(
