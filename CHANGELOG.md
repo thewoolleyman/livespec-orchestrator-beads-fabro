@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.196.16](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.15...v0.196.16) (2026-10-14)
+
+
+### Bug Fixes
+
+* never reclaim a publish branch before the capacity decision ([9c0bcf4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9c0bcf41511de287cde6753b634c54dba3f105d9))
+* reclaim a stale publish branch from the launch, not the wall ([95bae46](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/95bae46e2d799ad48fd8adaf24d9536b7081e818))
+
 ## [0.196.15](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.14...v0.196.15) (2026-10-14)
 
 
