@@ -25,6 +25,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_proje
     credential_use_env_lines,
     credential_use_guard_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_default_branch_fetch import (
+    default_branch_fetch_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_provenance import (
     factory_run_id_prepare_steps_block,
 )
@@ -307,6 +310,12 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     codex_otel_env = codex_otel_env_lines(codex_otel_config=codex_otel_config)
     plugin_cache_steps = plugin_cache_gate_prepare_steps_block()
     factory_provenance_steps = factory_run_id_prepare_steps_block(dispatch_id=dispatch_id)
+    # Rendered FIRST among the Dispatcher-materialized steps, which puts it
+    # immediately after the committed `git fetch --unshallow` whose single-branch
+    # refspec it completes. Every later step and every graph node that diffs the
+    # dispatch base then sees the ref, rather than depending on which of them the
+    # agent happened to reach first.
+    dispatch_base_steps = default_branch_fetch_prepare_steps_block(prepare_inputs=prepare_inputs)
     author_env_lines = git_author_env_lines(author=git_author)
     # Rendered LAST among the prepare steps, so the startup check observes the
     # time preparation itself consumed. Placed earlier it would forgive exactly
@@ -326,6 +335,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # uses for the needs_human node's emergency commit (S5 / bd-ib-b4u6b7).
     return (
         rewritten
+        + dispatch_base_steps
         + factory_provenance_steps
         + sibling_steps
         + tmux_steps
