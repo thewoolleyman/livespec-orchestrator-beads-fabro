@@ -46,3 +46,15 @@ does not submit it, so successive sends pile up on one line. Measured 2026-10-12
 call exited 0. Wait for the pane to go idle (`herdr agent wait <pane> --until idle --until
 done`) and submit prompts with `herdr agent prompt`. For your own pane, run that wait in a
 detached waiter and end your turn; the recipe is in `.ai/plugin-cache-lease-and-rebind.md`.
+
+**Message another session with Claude's `SendMessage`, never with `herdr agent prompt`.**
+Maintainer ruling, relayed 2026-10-14 11:25Z: `herdr agent prompt` types into the target
+pane, so aimed at another session's pane it collides with the maintainer's own keyboard.
+Every inter-session message goes through the first-class `SendMessage` tool, addressed by
+the recipient's `ListAgents` name (to reply, copy the incoming message's `from`), which also
+survives the herdr name drift seen the same day, when a restarted coordinator's herdr name
+stopped resolving. `herdr agent prompt` stays correct in exactly one place: your OWN pane,
+as the self-wake follow-up in the reload waiter above. A helper or new plan session you
+start gets its whole job as the agent's launch argument instead (the brief-file command line
+in rule 2, or a trailing prompt after the agent's own flags), so nothing is typed into its
+pane afterwards; reach a Claude helper later by `SendMessage`.
