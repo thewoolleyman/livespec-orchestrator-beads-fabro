@@ -48,6 +48,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_poli
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_credential_gate import (
     codex_credential_refusal_for_items,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_routing import (
+    codex_routing_for_dispatch,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_PRECONDITION_ERROR,
     EXIT_UNGRADEABLE_CRITERIA,
@@ -202,6 +205,13 @@ def pre_dispatch_wall_exit(
         codex_refusal = codex_credential_refusal_for_items(
             work_item_ids=work_item_ids,
             requirement=requirement,
+            # WHICH DISPATCHES THE GATE COVERS, resolved here because the wall
+            # is the surface both dispatch paths run and the routing is a
+            # property of the dispatch rather than of any item in it. Handed
+            # down as a THUNK so the drain's common idle pass — an empty
+            # selection, which the gate returns on before anything else — pays
+            # neither this resolution's reads nor the credential's.
+            codex_routing=lambda: codex_routing_for_dispatch(repo=repo),
             journal=journal,
         )
         if codex_refusal is not None:

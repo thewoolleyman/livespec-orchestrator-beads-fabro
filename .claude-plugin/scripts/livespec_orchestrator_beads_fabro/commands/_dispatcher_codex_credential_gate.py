@@ -25,6 +25,16 @@ once the item IS claimed, therefore grades without renewing: a second renewal
 request would spend provider work on a question whose answer can no longer be
 reported before a claim.
 
+WHICH DISPATCHES IT COVERS, which is NOT all of them. The freshness clause
+applies to every credential the gate COVERS, and `contracts.md` leaves the
+covered set implementation-owned; a dispatch that routes no node to the
+`codex-acp` agent projects no Codex credential, so there is nothing here for
+the clause to be about. Such a dispatch is passed over before the credential is
+read at all -- no grade, no bounded renewal request, no refusal on a remaining
+lifetime no run would spend. That is not a relaxation of Scenario 19: it still
+binds every dispatch that does route a node to Codex, which is what
+`codex_routing` is consulted to establish.
+
 WHAT THIS MODULE DOES NOT DO. It never renders a refusal of its own. The
 freshness decision and its diagnostics belong to `_dispatcher_codex_auth`, which
 is where the post-renewal observations are kept apart -- whether the expiry
@@ -44,6 +54,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
     CodexProjectionRefusal,
     project_codex_auth,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_routing import CodexRouting
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_deadline import (
     CredentialLifetimeRequirement,
 )
@@ -77,6 +88,7 @@ def codex_credential_refusal_for_items(
     *,
     work_item_ids: Sequence[str],
     requirement: CredentialLifetimeRequirement | str,
+    codex_routing: Callable[[], CodexRouting] | None = None,
     clock: Callable[[], int] | None = None,
     journal: object = None,
 ) -> str | None:
@@ -93,6 +105,15 @@ def codex_credential_refusal_for_items(
     nobody could derive is graded against nothing. It is resolved by the caller
     because the caller holds the dispatch's workflow selection and the items whose
     effective policy the figure depends on.
+
+    `codex_routing` is a THUNK, for the reason the pre-dispatch wall's own
+    refusal table is one: resolving this dispatch's candidates reads committed
+    configuration and the selected graph, and the empty-selection arm below
+    must not pay for a question it has already decided not to ask. A caller
+    that wires NONE gets the full gate -- the fail-closed direction, and the
+    behaviour every caller had before this parameter existed, so forgetting to
+    wire it grades a credential that did not need grading rather than
+    admitting one that did.
 
     `clock` is resolved at CALL time rather than bound as a default, because the
     bounded renewal underneath can take up to two minutes and the re-grade after
@@ -124,6 +145,13 @@ def codex_credential_refusal_for_items(
     # empty-selection behaviour, including the proof-credential gate's grading of
     # a repository declaration that is broken whether or not work is queued.
     if not work_item_ids:
+        return None
+    # ROUTING DECIDES WHETHER THERE IS A CREDENTIAL TO GRADE, and it is asked
+    # before the requirement arm below for the same reason the empty-selection
+    # arm precedes both: an unresolvable requirement is a fault in the selected
+    # workflow's own configuration, and reporting it as a credential refusal on
+    # a dispatch that projects no credential names the wrong thing to fix.
+    if codex_routing is not None and not codex_routing().routes_codex:
         return None
     if isinstance(requirement, str):
         _journal(
