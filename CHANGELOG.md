@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.196.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.8...v0.196.9) (2026-10-14)
+
+
+### Bug Fixes
+
+* supply published-head provenance to resumed runs ([d8f0291](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d8f0291879b274f01eea29d7bf0df2d4fcb1c4b8))
+
 ## [0.196.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.7...v0.196.8) (2026-10-14)
 
 
