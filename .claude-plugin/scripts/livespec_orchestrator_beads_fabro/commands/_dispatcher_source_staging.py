@@ -139,6 +139,14 @@ class SourceStagingRunner:
                 "work_item_id": self.plan.work_item_id,
                 "worktree": str(checkout),
                 "branch": branch,
+                # BOTH heads, always. `head` (from the preflight record) is the
+                # dispatching checkout's; these two are the fetched
+                # default-branch head and the commit the branch was actually
+                # created at. A record carrying one of the three cannot say
+                # what the engine's pre-run push carried, which is the first
+                # question a refused push raises.
+                "default_branch_head": base.origin_head,
+                "staged_at": base.commit,
                 "status": "passed" if created.exit_code == 0 else "failed",
                 "reason": _stage_reason(base=base, created=created),
                 "terminal": created.exit_code != 0,
