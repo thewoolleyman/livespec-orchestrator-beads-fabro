@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.196.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.4...v0.196.5) (2026-10-14)
+
+
+### Bug Fixes
+
+* make GitHub auth support archives deterministic ([720709a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/720709a88ec67c86fb6ad7eccd59b0c6f1668367))
+
 ## [0.196.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.3...v0.196.4) (2026-10-14)
 
 
