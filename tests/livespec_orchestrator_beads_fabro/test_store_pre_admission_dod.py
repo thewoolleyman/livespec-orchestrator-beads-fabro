@@ -1,12 +1,14 @@
 """Admission's fail-open decision consumes the gate Result without inventing a hold."""
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro import _store_pre_admission_dod as admission
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client, reset_fake_singleton
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._drive_policy_valves import move_item
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 from returns.io import IOFailure, IOResult, IOSuccess
@@ -107,3 +109,41 @@ def test_held_verdict_and_every_remedy_are_appended_to_the_ledger(
     state = client.show_issue(issue_id=item.id)["metadata"]["pre_admission_dod"]
     assert state["failure_reason"] == reason
     assert state["remedies"] == remedies
+
+
+@pytest.mark.parametrize("source", ["backlog", "pending-approval"])
+def test_admitted_item_reaches_ready_without_a_lingering_hold(
+    *,
+    filed: tuple[StoreConfig, WorkItem],
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+) -> None:
+    config, original = filed
+    item = replace(original, status=source)
+    client = make_beads_client(config=config)
+    client.update_issue(issue_id=item.id, status=source)
+    responses = iter(
+        [
+            CommandResult(
+                exit_code=0,
+                stdout='{"outcome":"failed","failure_reason":"Correct the reference."}',
+                stderr="",
+            ),
+            CommandResult(exit_code=0, stdout='{"outcome":"passed"}', stderr=""),
+        ]
+    )
+
+    def judge(**_: object) -> IOResult[CommandResult, str]:
+        return IOSuccess(next(responses))
+
+    monkeypatch.setattr(admission, "judge_before_admission", judge)
+    assert admission.pre_admission_hold(path=config, item=item) == "Correct the reference."
+    history = client.list_comments(issue_id=item.id)
+    _ = move_item(config=config, item=item, aid=f"move:{item.id}:ready", target_status="ready")
+    record = client.show_issue(issue_id=item.id)
+    assert record["status"] == "ready"
+    assert (
+        record["metadata"].get("pre_admission_dod") is None
+    ), "an admitted item must no longer carry a semantic hold"
+    assert record["metadata"]["rank"] == original.rank
+    assert client.list_comments(issue_id=item.id) == history

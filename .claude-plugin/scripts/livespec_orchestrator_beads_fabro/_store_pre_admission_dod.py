@@ -39,6 +39,8 @@ def pre_admission_hold(*, path: StoreConfig, item: WorkItem) -> str | None:
     verdict = unsafe_perform_io(result.unwrap())
     if verdict.failure_reason is not None:
         _record_hold(path=path, item=item, verdict=verdict)
+    else:
+        _write_state(path=path, item_id=item.id, state=None)
     return verdict.failure_reason
 
 
@@ -51,16 +53,16 @@ def _record_hold(*, path: StoreConfig, item: WorkItem, verdict: DodVerdict) -> N
     """
     reason = _ledger_text(text=str(verdict.failure_reason))
     remedies = [_ledger_text(text=remedy) for remedy in verdict.remedies]
-    client = make_beads_client(config=path)
-    metadata = dict(
-        cast("dict[str, object]", client.show_issue(issue_id=item.id).get("metadata") or {})
+    _write_state(
+        path=path,
+        item_id=item.id,
+        state={
+            "verdict": "needs-human",
+            "failure_reason": reason,
+            "remedies": remedies,
+        },
     )
-    metadata[PRE_ADMISSION_DOD_KEY] = {
-        "verdict": "needs-human",
-        "failure_reason": reason,
-        "remedies": remedies,
-    }
-    client.update_issue(issue_id=item.id, metadata=metadata)
+    client = make_beads_client(config=path)
     client.add_comment(
         issue_id=item.id,
         body="\n".join(
@@ -76,6 +78,21 @@ def _record_hold(*, path: StoreConfig, item: WorkItem, verdict: DodVerdict) -> N
             ]
         ),
     )
+
+
+def _write_state(*, path: StoreConfig, item_id: str, state: dict[str, object] | None) -> None:
+    """Replace our current verdict while preserving the raw metadata snapshot.
+
+    A null value clears a resolved hold on both the fake store and beads:
+    omission cannot clear it because beads merges top-level metadata keys.
+    Historical comments remain append-only.
+    """
+    client = make_beads_client(config=path)
+    metadata = dict(
+        cast("dict[str, object]", client.show_issue(issue_id=item_id).get("metadata") or {})
+    )
+    metadata[PRE_ADMISSION_DOD_KEY] = state
+    client.update_issue(issue_id=item_id, metadata=metadata)
 
 
 def _ledger_text(*, text: str) -> str:
