@@ -509,6 +509,37 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   field. `CODEX_HOME_ENV` lives here, not beside
   `host_codex_auth_path`, because this module is the leaf and a constant
   imported upward would close a cycle.
+- `_dispatcher_codex_routing.py` — whether ONE dispatch routes any node to
+  Codex (`bd-ib-meejjz`). PURE, over the candidate set
+  `_dispatcher_acp_preflight.resolve_dispatch_candidates` reads off disk, and
+  the ONE predicate all three host-Codex-credential surfaces consult: the
+  pre-claim gate above, the post-claim overlay leg, and the sandbox
+  credential-use enforcement the launch wrap carries. Each of those applied to
+  EVERY dispatch, so a dispatch whose every resolved ACP node runs `claude-acp`
+  was refused as a Codex token aged although no run would have used it, and its
+  node timeouts were capped by a credential-lifetime floor nothing consumed.
+  Four properties an editor must not invert. Every arm that cannot establish
+  "no Codex" answers YES — an unresolvable resolution is the absence of a
+  measurement rather than an answer about candidates, an empty set is
+  unreadable rather than empty, and an identity-less candidate is the legacy
+  posture for an arbitrary adapter this build never rendered, so nothing about
+  it says which provider it spends. The affirmative arm reads BOTH identity
+  keys, which is not redundancy: a PINNED Codex adapter arrives as a structured
+  entry whose derived `candidate_key` opens with the agent id, while the
+  UN-PINNED bases are BUILT-IN and `_acp_builtin_candidates` keys those on a
+  DIGEST of their own rendered bytes — `builtin-codex-<digest>` names no agent
+  at all, and only its `availability_key` carries the Codex account domain, so
+  reading the candidate key alone leaves the opt-out postures unprotected. The
+  decision is ANY rather than EVERY, because one Codex launch is one credential
+  use. And `UNMEASURED_CODEX_ROUTING` is the default a caller wiring no routing
+  inherits, so forgetting to wire it is not indistinguishable from establishing
+  that no node routes to Codex. KNOWN LIMIT, recorded rather than hidden: a
+  candidate carrying an OPERATOR-CHOSEN identity that launches a Codex adapter
+  is not recognised and cannot be — identity is never inferred from command
+  text — so such a dispatch projects no Codex credential and its adapter fails
+  to authenticate in the sandbox instead of being refused before the claim. An
+  operator who wants the host credential graded for their own Codex candidate
+  declares the Codex account domain as its `availability_key`.
 - `_dispatcher_integration_schema.py` / `_dispatcher_integration_field.py` /
   `_dispatcher_integration_defaults.py` /
   `_dispatcher_integration_declaration.py` /
