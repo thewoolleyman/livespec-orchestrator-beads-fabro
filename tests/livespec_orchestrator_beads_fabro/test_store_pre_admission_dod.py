@@ -147,3 +147,64 @@ def test_admitted_item_reaches_ready_without_a_lingering_hold(
     ), "an admitted item must no longer carry a semantic hold"
     assert record["metadata"]["rank"] == original.rank
     assert client.list_comments(issue_id=item.id) == history
+
+
+@pytest.mark.parametrize("source", ["backlog", "pending-approval"])
+@pytest.mark.parametrize("fault", ["model", "timeout", "parse", "unavailable"])
+def test_unavailable_judgement_routes_normally_and_records_why(
+    *,
+    filed: tuple[StoreConfig, WorkItem],
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+    fault: str,
+) -> None:
+    config, original = filed
+    item = replace(original, status=source)
+    client = make_beads_client(config=config)
+    client.update_issue(issue_id=item.id, status=source)
+    failures: dict[str, IOResult[CommandResult, str]] = {
+        "model": IOFailure("no eligible model"),
+        "timeout": IOSuccess(CommandResult(exit_code=124, stdout="", stderr="timed out")),
+        "parse": IOSuccess(CommandResult(exit_code=0, stdout="not a verdict", stderr="")),
+        "unavailable": IOSuccess(
+            CommandResult(
+                exit_code=0,
+                stdout='{"outcome":"unavailable","reason":"specification unavailable"}',
+                stderr="",
+            )
+        ),
+    }
+    expected = {
+        "model": "no eligible model",
+        "timeout": "timed out",
+        "parse": "unparseable",
+        "unavailable": "specification unavailable",
+    }
+    responses: list[IOResult[CommandResult, str]] = [
+        IOSuccess(
+            CommandResult(
+                exit_code=0,
+                stdout='{"outcome":"failed","failure_reason":"Correct the reference."}',
+                stderr="",
+            )
+        ),
+        failures[fault],
+    ]
+
+    def judge(**_: object) -> IOResult[CommandResult, str]:
+        return responses.pop(0)
+
+    monkeypatch.setattr(admission, "judge_before_admission", judge)
+    assert admission.pre_admission_hold(path=config, item=item) is not None
+    history = client.list_comments(issue_id=item.id)
+    _ = move_item(config=config, item=item, aid=f"move:{item.id}:ready", target_status="ready")
+    record = client.show_issue(issue_id=item.id)
+    assert record["status"] == "ready"
+    comments = client.list_comments(issue_id=item.id)
+    assert (
+        len(comments) == len(history) + 1
+    ), "an unavailable judgement must explain why on the item"
+    assert comments[:-1] == history
+    assert "did not run" in comments[-1]["text"]
+    assert expected[fault] in comments[-1]["text"]
+    assert record["metadata"].get("pre_admission_dod") is None

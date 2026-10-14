@@ -8,6 +8,7 @@ import subprocess
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
+from unittest.mock import Mock
 
 import pytest
 from livespec_orchestrator_beads_fabro import _pre_admission_dod as judgement
@@ -457,3 +458,42 @@ def _route(
         monkeypatch.setattr(valves, "resolve_store_config", lambda **_: config)
         aid = f"{route}:{item.id}" + (":ready" if route == "move" else "")
         _ = valves.run_human_valve_action(repo=repo, action_id=aid)
+
+
+def test_unbalanced_adapter_command_is_an_unavailable_judgement(
+    *,
+    filed: tuple[StoreConfig, WorkItem],
+    tmp_path: Path,
+) -> None:
+    config, item = filed
+    _configure(repo=tmp_path, adapter="broken '")
+    result = _judged(path=config, item=item)
+    assert isinstance(result, str)
+    assert "invalid dod_gate adapter command" in result
+
+
+def test_invalid_capability_mirror_is_not_sent_to_the_judge(
+    *,
+    filed: tuple[StoreConfig, WorkItem],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, item = filed
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        json.dumps(
+            {
+                "livespec-orchestrator-beads-fabro": {
+                    "dispatcher": {
+                        "sandbox_capabilities": ["HeadlessBrowser"],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    runner = Mock()
+    monkeypatch.setattr(ShellCommandRunner, "run", runner)
+    result = _judged(path=config, item=item)
+    assert isinstance(result, str)
+    assert "lowercase snake_case" in result
+    runner.assert_not_called()

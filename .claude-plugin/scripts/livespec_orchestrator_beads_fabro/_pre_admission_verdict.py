@@ -50,13 +50,25 @@ def _decode(*, text: str) -> Result[DodVerdict, str]:
     reason = verdict.get("failure_reason")
     if outcome != "failed" or not isinstance(reason, str) or not reason.strip():
         return Failure("unparseable Definition-of-Done judgement verdict")
-    remedies = verdict.get("remedies", [reason])
-    if not isinstance(remedies, list):
-        return Failure("unparseable Definition-of-Done judgement remedies")
-    entries = cast("list[object]", remedies)
-    if not entries or any(not isinstance(entry, str) or not entry.strip() for entry in entries):
-        return Failure("unparseable Definition-of-Done judgement remedies")
-    return Success(DodVerdict(failure_reason=reason, remedies=tuple(cast("list[str]", entries))))
+    return Success(
+        DodVerdict(
+            failure_reason=reason,
+            remedies=_remedies(value=verdict.get("remedies"), reason=reason),
+        )
+    )
+
+
+def _remedies(*, value: object, reason: str) -> tuple[str, ...]:
+    """Optional transport fields cannot erase the canonical gate refusal.
+
+    The gate's failure_reason already carries every finding and remedy. Keep
+    that full text when a runner omits or mangles the additional ordered array.
+    """
+    if isinstance(value, list):
+        entries = cast("list[object]", value)
+        if entries and all(isinstance(entry, str) and entry.strip() for entry in entries):
+            return tuple(cast("list[str]", entries))
+    return (reason,)
 
 
 def _assistant_text(*, stdout: str, envelope: dict[str, object]) -> str:

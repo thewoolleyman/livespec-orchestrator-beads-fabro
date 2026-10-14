@@ -85,7 +85,10 @@ def _judge(
     adapter = _gate_adapter(repo=repo, workflow_name=workflow_name)
     if isinstance(adapter, str):
         return adapter
-    prompt = _prompt(path=path, item=item, repo=repo)
+    capabilities = mirrored_sandbox_capabilities(block=dispatcher_block(cwd=repo))
+    if isinstance(capabilities, str):
+        return capabilities
+    prompt = _prompt(path=path, item=item, repo=repo, capabilities=capabilities)
     argv = _headless_argv(adapter=adapter, prompt=prompt)
     if isinstance(argv, str):
         return argv
@@ -104,7 +107,10 @@ def _headless_argv(*, adapter: AcpAdapter, prompt: str) -> list[str] | str:
     Model and effort stay pinned to the gate's configuration. Tool permissions
     are narrowed for this host read, and every raw Codex call receives EOF.
     """
-    command = (*shlex.split(adapter.command), *adapter.args)
+    tokens = attempt(action=lambda: shlex.split(adapter.command), exceptions=(ValueError,))
+    if isinstance(tokens, AttemptFailure):
+        return f"invalid dod_gate adapter command: {tokens.error}"
+    command = (*tokens, *adapter.args)
     if command == ("npx", "-y", "@agentclientprotocol/claude-agent-acp"):
         return [
             "claude",
@@ -160,12 +166,11 @@ def _gate_adapter(*, repo: Path, workflow_name: str) -> AcpAdapter | str:
     return "workflow declares no dod_gate model" if node is None else node.adapter
 
 
-def _prompt(*, path: StoreConfig, item: WorkItem, repo: Path) -> str:
+def _prompt(*, path: StoreConfig, item: WorkItem, repo: Path, capabilities: tuple[str, ...]) -> str:
     gate = (executing_payload_root() / _WORKFLOW / "prompts/dod-gate.md").read_text(
         encoding="utf-8"
     )
     criteria = effective_criteria(item=item)
-    capabilities = mirrored_sandbox_capabilities(block=dispatcher_block(cwd=repo))
     comments = read_work_item_comments(path=path, work_item_id=item.id)
     goal = render_goal(item=item, repo=repo, branch=f"feat/{item.id}", comments=comments)
     return (

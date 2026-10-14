@@ -35,6 +35,7 @@ def pre_admission_hold(*, path: StoreConfig, item: WorkItem) -> str | None:
         lambda response: parse_judgement(response=response)
     )
     if not is_successful(result):
+        _record_unavailable(path=path, item=item, reason=unsafe_perform_io(result.failure()))
         return None
     verdict = unsafe_perform_io(result.unwrap())
     if verdict.failure_reason is not None:
@@ -76,6 +77,18 @@ def _record_hold(*, path: StoreConfig, item: WorkItem, verdict: DodVerdict) -> N
                 "Remedies:",
                 *(f"- {remedy}" for remedy in remedies),
             ]
+        ),
+    )
+
+
+def _record_unavailable(*, path: StoreConfig, item: WorkItem, reason: str) -> None:
+    """Explain a fail-open admission without retaining an earlier semantic hold."""
+    _write_state(path=path, item_id=item.id, state=None)
+    make_beads_client(config=path).add_comment(
+        issue_id=item.id,
+        body=(
+            "livespec-pre-admission-dod\n\nverdict: unavailable\n\n"
+            f"The pre-admission judgement did not run: {_ledger_text(text=reason)}"
         ),
     )
 

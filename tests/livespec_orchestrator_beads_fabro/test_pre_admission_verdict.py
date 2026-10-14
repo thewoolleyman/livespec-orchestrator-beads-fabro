@@ -18,10 +18,6 @@ from returns.pipeline import is_successful
         {"outcome": "failed"},
         {"outcome": "failed", "failure_reason": ""},
         {"outcome": "failed", "failure_reason": 1},
-        {"outcome": "failed", "failure_reason": "fix", "remedies": "fix"},
-        {"outcome": "failed", "failure_reason": "fix", "remedies": []},
-        {"outcome": "failed", "failure_reason": "fix", "remedies": [1]},
-        {"outcome": "failed", "failure_reason": "fix", "remedies": [""]},
         {"outcome": "unavailable"},
         {"outcome": "unavailable", "reason": "no spec"},
         {"is_error": True, "result": "provider unavailable"},
@@ -107,3 +103,23 @@ def test_codex_uses_the_last_completed_agent_message_not_tool_output() -> None:
 def test_arbitrary_output_is_data_not_a_parser_exception(*, text: str) -> None:
     result = parse_judgement(response=CommandResult(exit_code=0, stdout=text, stderr=""))
     assert is_successful(result) or isinstance(result.failure(), str)
+
+
+@pytest.mark.parametrize("remedies", [None, "fix", [], [1], [""], {}])
+def test_optional_remedy_transport_cannot_erase_a_canonical_refusal(*, remedies: object) -> None:
+    result = parse_judgement(
+        response=CommandResult(
+            exit_code=0,
+            stderr="",
+            stdout=json.dumps(
+                {
+                    "outcome": "failed",
+                    "failure_reason": "Name the governing scenario.",
+                    "remedies": remedies,
+                }
+            ),
+        )
+    )
+    assert is_successful(result)
+    assert result.unwrap().failure_reason == "Name the governing scenario."
+    assert result.unwrap().remedies == ("Name the governing scenario.",)

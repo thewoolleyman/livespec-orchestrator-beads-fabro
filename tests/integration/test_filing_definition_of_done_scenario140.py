@@ -295,9 +295,11 @@ def test_an_advisory_finding_is_recorded_as_a_comment_and_does_not_withhold_read
     assert verdict == "ready"
     assert _status(item_id="bd-advisory") == "ready"
     comments = _comments(item_id="bd-advisory")
-    assert len(comments) == 1
-    assert comments[0].startswith("definition-of-done finding (advisory):")
-    assert "tests prove" in comments[0]
+    assert len(comments) == 2
+    assert "judgement did not run" in comments[0]
+    assert "exited 127" in comments[0]
+    assert comments[1].startswith("definition-of-done finding (advisory):")
+    assert "tests prove" in comments[1]
 
 
 # --------------------------------------------------------------------------

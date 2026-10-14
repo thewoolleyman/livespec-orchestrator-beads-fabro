@@ -17,6 +17,7 @@ from livespec_orchestrator_beads_fabro.commands.drive import (
     main,
     run_action,
 )
+from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import AuditRecord, StoreConfig, WorkItem
 
 
@@ -105,6 +106,8 @@ def _install_valve_store(
 ) -> list[dict[str, Any]]:
     updates: list[dict[str, Any]] = []
     config = _store_config()
+    for item in items:
+        append_work_item(path=config, item=item)
 
     def fake_resolve_store_config(*, cwd: Path, work_items_arg: str | None) -> StoreConfig:
         _ = cwd

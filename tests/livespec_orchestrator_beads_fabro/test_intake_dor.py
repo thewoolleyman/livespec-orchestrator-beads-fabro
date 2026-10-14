@@ -197,13 +197,18 @@ def test_an_advisory_finding_is_recorded_and_does_not_withhold_ready(tmp_path: P
     assert verdict == "ready"
     assert _status(issue_id="li-advisory") == "ready"
     comments = _comments(issue_id="li-advisory")
-    assert len(comments) == 1
-    assert comments[0].startswith("definition-of-done finding (advisory):")
-    assert "regression tests" in comments[0]
+    assert len(comments) == 2
+    assert "judgement did not run" in comments[0]
+    assert "exited 127" in comments[0]
+    assert comments[1].startswith("definition-of-done finding (advisory):")
+    assert "regression tests" in comments[1]
 
 
-def test_a_conforming_filing_reaches_ready_and_records_no_comment(tmp_path: Path) -> None:
-    """The control for both cases above: a clean item is neither held nor annotated."""
+def test_a_conforming_filing_reaches_ready_and_records_the_unavailable_judgement(
+    *,
+    tmp_path: Path,
+) -> None:
+    """A clean wall grade still records why the semantic judgement could not run."""
     _seed_issue(
         issue_id="li-clean",
         description=_description(
@@ -215,7 +220,10 @@ def test_a_conforming_filing_reaches_ready_and_records_no_comment(tmp_path: Path
     verdict = _route(issue_id="li-clean", repo=_repo(tmp_path=tmp_path))
 
     assert verdict == "ready"
-    assert _comments(issue_id="li-clean") == ()
+    comments = _comments(issue_id="li-clean")
+    assert len(comments) == 1
+    assert "judgement did not run" in comments[0]
+    assert "exited 127" in comments[0]
 
 
 def test_an_item_with_no_section_is_held_out_of_ready_by_the_absent_section_finding(
