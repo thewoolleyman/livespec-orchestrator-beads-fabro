@@ -24,15 +24,17 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     IssueDraft,
     make_beads_client,
 )
-from livespec_orchestrator_beads_fabro.commands import _plan_identity
+from livespec_orchestrator_beads_fabro.commands import _plan_epoch_genesis, _plan_identity
 from livespec_orchestrator_beads_fabro.commands import migrate_plan_records as module
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain import (
     ChainHead,
     read_chain_head,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import (
+    GENESIS_UNCONFIRMED,
     MISSING_TRACKING,
     ChainFinding,
+    genesis_unconfirmed_finding,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_genesis import create_genesis_token
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
@@ -51,6 +53,8 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
 
 _NOW = "2026-09-04T18:00:00Z"
 
@@ -347,6 +351,61 @@ def test_an_epic_whose_chain_already_stands_is_reported_as_skipped(tmp_path: Pat
     assert _chain_cache(epic_id="bd-ib-standing") == ChainCache(
         latest_closed=None, current=standing
     )
+
+
+def test_a_genesis_the_read_back_cannot_confirm_is_refused_and_its_token_discarded(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An unconfirmed genesis is state a human resolves, so it RIDES `refused`.
+
+    This is the one genesis outcome whose remedy is an action — re-read the
+    epic, because another writer may have migrated it — so it cannot share the
+    `skipped` bucket with the already-chained outcome, whose remedy is to do
+    nothing. An operator reads `refused` for exactly this: what one run could
+    not settle. Both halves are asserted, because an entry appearing in `refused`
+    while ALSO appearing in `skipped` would satisfy the first half alone.
+
+    The entry carries the finding's code, detail AND remedy, as every other
+    refusal of a chain finding in this package does: the findings module's own
+    rule is that a diagnosis nobody can act on satisfies neither half of the
+    clause it serves.
+
+    The TOKEN is the second half of the assertion and it is not cosmetic. An
+    orphan token nothing names is worse than none — it is invisible to every
+    list surface, so nothing would ever reconcile it, and a later reader handed
+    its id would follow a chain the epic does not have.
+    """
+    _seed_epic(epic_id="bd-ib-alpha", plan_slug="alpha", pointer=True)
+    _ = _plan_dir(project_root=tmp_path, slug="alpha")
+    created: list[str] = []
+
+    def _write_nothing(
+        *,
+        client: BeadsClient,
+        epic_id: str,
+        latest_closed: str | None,
+        current: str,
+    ) -> None:
+        # The cache write that silently does nothing — the shape a lost
+        # read-modify-write leaves behind. The token id is recorded so the
+        # expected finding names the id the run actually created.
+        _ = (client, epic_id, latest_closed)
+        created.append(current)
+
+    monkeypatch.setattr(_plan_epoch_genesis, "write_chain_cache", _write_nothing)
+
+    report = _run(project_root=tmp_path)
+
+    [token] = created
+    expected = genesis_unconfirmed_finding(epic_id="bd-ib-alpha", token_id=token, observed=None)
+    entry = f"{expected.code}: {expected.detail} — {expected.remedy}"
+    assert expected.code == GENESIS_UNCONFIRMED
+    assert report.genesis_written == ()
+    assert entry in report.refused
+    assert entry not in report.skipped
+    assert _fake().no_history_issue_ids() == ()
+    assert _chain_cache(epic_id="bd-ib-alpha") is None
 
 
 def test_a_second_run_writes_nothing_and_leaves_every_record_identical(
