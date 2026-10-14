@@ -338,6 +338,9 @@ _PS_RUNNING = (
     '[{"run_id": "01RUN", "goal": "Work-item: livespec-impl-beads-oyg",'
     ' "status": {"kind": "running"}}]'
 )
+# The listing above answers only the FIRST poll; once the run id is bound the
+# watch loop reads it with `fabro inspect` instead (bd-ib-6pdigz).
+_INSPECT_RUNNING = '[{"run_id": "01RUN", "status": {"kind": "running"}}]'
 _HEARTBEAT_WORK_ITEM_ID = "livespec-impl-beads-oyg"
 _HEARTBEAT_DISPATCH_ID = "ba06d4268df24488a01beb352a6d0e7f"
 
@@ -378,7 +381,7 @@ class _RecordingJournal:
 
 @dataclass(kw_only=True)
 class _ScriptedFabroRunner:
-    """Scripts fabro run/ps/events/rm; `events_jsons` per-poll feed.
+    """Scripts fabro run/ps/inspect/events/rm; `events_jsons` per-poll feed.
 
     `fabro run` BLOCKS on `run_done` so the foreground watch loop runs;
     `fabro rm` sets `run_done`. The wall-clock event reading is whatever
@@ -408,6 +411,8 @@ class _ScriptedFabroRunner:
             return CommandResult(exit_code=0, stdout="    Run: 01RUN\n", stderr="")
         if verb == "ps":
             return CommandResult(exit_code=0, stdout=_PS_RUNNING, stderr="")
+        if verb == "inspect":
+            return CommandResult(exit_code=0, stdout=_INSPECT_RUNNING, stderr="")
         if verb == "events":
             index = min(self._poll, len(self.events_jsons) - 1)
             self._poll += 1
@@ -427,7 +432,7 @@ def _advancing_clock() -> object:
 
 def test_scripted_runner_rejects_unknown_verb(tmp_path: Path) -> None:
     # Exercise the fake's defensive fallback (the launcher only ever issues
-    # run/ps/events/rm).
+    # run/ps/inspect/events/rm).
     runner = _ScriptedFabroRunner(events_jsons=["[]"])
     out = runner.run(argv=["fabro", "bogus"], cwd=tmp_path, timeout_seconds=1.0)
     assert out.exit_code == 1
