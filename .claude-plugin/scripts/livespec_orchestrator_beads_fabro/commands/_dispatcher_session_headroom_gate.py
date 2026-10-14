@@ -164,5 +164,6 @@ def journal_session_headroom(
             work_item_id=work_item_id,
             floor_percent=floor,
             assessments=verdict.headroom_assessments,
+            nodes=verdict.nodes,
         )
     )
