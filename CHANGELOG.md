@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.196.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.5...v0.196.6) (2026-10-14)
+
+
+### Bug Fixes
+
+* **workflow:** mint the push credential at push time in every script push ([505beed](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/505beed479cbbce271905ab000fd4eaefe9caf95))
+
 ## [0.196.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.4...v0.196.5) (2026-10-14)
 
 
