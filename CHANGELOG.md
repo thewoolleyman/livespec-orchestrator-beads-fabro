@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.196.11](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.10...v0.196.11) (2026-10-14)
+
+
+### Bug Fixes
+
+* tolerate disappearing workflow payload files ([105ea43](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/105ea433edd3388fd17b8ebb55b796bb53420235))
+
 ## [0.196.10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.9...v0.196.10) (2026-10-14)
 
 
