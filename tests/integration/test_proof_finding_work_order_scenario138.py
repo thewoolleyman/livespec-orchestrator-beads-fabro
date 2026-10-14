@@ -287,24 +287,29 @@ def test_the_fix_budget_is_shared_across_every_loop_feeding_it() -> None:
     than a route.
 
     The arithmetic is kept as a floor rather than dropped: the budget must still
-    admit at least two entries per producer, or a single misbehaving loop could
-    starve the others of any attempt at all. The PRODUCER COUNT is the tripwire —
-    a fourth node routing into `fix` would re-open this silently, and this is the
-    assertion that notices.
+    admit at least two entries per AGENT-FINDING producer, or a single misbehaving
+    loop could starve the others of any attempt at all. The PRODUCER COUNT is the
+    tripwire — a fifth node routing into `fix` would re-open this silently, and
+    this is the assertion that notices.
+
+    `refresh_repair` is the fourth producer and is excluded from the arithmetic:
+    v134's "Refresh-repair accounting" paragraph grants the refresh-repair route
+    its own two rounds in addition to what the other entry paths allow, so it
+    takes no share of the per-finding allowance.
     """
     text = _dot()
     producers = {
         _source_of(edge=edge) for edge in _edges(text=text) if _target_of(edge=edge) == "fix"
     }
 
-    assert producers == {"janitor", _CAPTURE, _VERIFY}
+    assert producers == {"janitor", _CAPTURE, _VERIFY, "refresh_repair"}
     backstop = re.search(r"max_visits=(?P<value>\d+)", _node_body(text=text, node="fix") or "")
     assert backstop is not None
-    # AT LEAST two entries per producer, not strictly more: the budget IS the
-    # bound now rather than a backstop sitting above three separate caps, and it
-    # is sized to exactly what those retired caps admitted (plan
+    # AT LEAST two entries per agent-finding producer, not strictly more: the
+    # budget IS the bound now rather than a backstop sitting above three separate
+    # caps, and it is sized to exactly what those retired caps admitted (plan
     # `fabro-currency` P4), which is two apiece.
-    assert int(backstop.group("value")) >= 2 * len(producers)
+    assert int(backstop.group("value")) >= 2 * len(producers - {"refresh_repair"})
 
 
 def test_the_fix_prompt_reads_the_pull_request_when_the_preamble_carries_none() -> None:
