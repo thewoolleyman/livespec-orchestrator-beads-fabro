@@ -36,9 +36,20 @@ from dataclasses import dataclass
 from typing import TextIO
 
 __all__: list[str] = [
+    "POLL_INTERVAL_SECONDS",
+    "WAIT_BOUND_SECONDS",
     "MasterCiWait",
     "PendingReading",
+    "poll_pause",
 ]
+
+# Ratified in `SPECIFICATION/contracts.md`, "A still-running master CI run is
+# not a failure": poll at an interval of no more than 60 seconds, for a bounded
+# window of 1800 seconds measured from the START of the preflight -- not from
+# the first pending reading, so a slow lookup cannot buy itself a longer wait
+# than the one ratified.
+WAIT_BOUND_SECONDS = 1800.0
+POLL_INTERVAL_SECONDS = 60.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -62,3 +73,17 @@ class MasterCiWait:
     now: Callable[[], float] = time.monotonic
     sleep: Callable[[float], None] = time.sleep
     progress: TextIO | None = None
+
+
+def poll_pause(*, waited: float) -> float | None:
+    """How long to pause before the next poll, or None once the bound is spent.
+
+    The pause is CLAMPED to what is left of the bound rather than being a flat
+    cadence, so the last poll lands on the bound instead of overshooting it by
+    up to a full interval -- which would make the deferral report a wait longer
+    than the one the clause ratifies.
+    """
+    remaining = WAIT_BOUND_SECONDS - waited
+    if remaining <= 0:
+        return None
+    return min(POLL_INTERVAL_SECONDS, remaining)

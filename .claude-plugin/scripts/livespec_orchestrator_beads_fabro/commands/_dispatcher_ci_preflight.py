@@ -69,6 +69,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_refusal
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_wait import (
     MasterCiWait,
     PendingReading,
+    poll_pause,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_default_branch import (
     resolve_default_branch,
@@ -140,18 +141,31 @@ def _await_verdict(
     branch: str,
     wait: MasterCiWait,
 ) -> MasterCiOutcome:
-    """Read the latest run for a verdict, deferring while it has not concluded."""
+    """Poll the LATEST run for a verdict until one arrives or the bound is spent.
+
+    Each round re-takes the WHOLE lookup rather than re-checking the run it
+    first read, because the ratified rule is that a newer run REPLACES the one
+    being waited on -- this repository's default branch moves under a wait, and
+    a loop keyed on one run id would spend the whole bound on a run nobody
+    cares about any more. Only the bound expiring turns a pending reading into
+    an outcome, and that outcome is the deferral.
+    """
     start = wait.now()
-    reading = _read_latest(repo=repo, runner=runner, pipeline=pipeline, branch=branch)
-    if isinstance(reading, MasterCiOutcome):
-        return reading
-    return pending_outcome(
-        pipeline=pipeline,
-        branch=branch,
-        run_id=reading.run_id,
-        status=reading.status,
-        waited=wait.now() - start,
-    )
+    while True:
+        reading = _read_latest(repo=repo, runner=runner, pipeline=pipeline, branch=branch)
+        if isinstance(reading, MasterCiOutcome):
+            return reading
+        waited = wait.now() - start
+        pause = poll_pause(waited=waited)
+        if pause is None:
+            return pending_outcome(
+                pipeline=pipeline,
+                branch=branch,
+                run_id=reading.run_id,
+                status=reading.status,
+                waited=waited,
+            )
+        wait.sleep(pause)
 
 
 def _read_latest(
