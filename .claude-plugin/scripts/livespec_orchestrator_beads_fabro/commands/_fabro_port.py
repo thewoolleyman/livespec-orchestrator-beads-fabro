@@ -91,11 +91,16 @@ class FabroPort:
         inputs: tuple[str, ...],
         timeout_seconds: float,
         correlation: DispatchCorrelation | None = None,
+        runner: FabroRunner | None = None,
     ) -> FabroRunResult:
-        """Launch one `fabro run`, carrying this dispatch's correlation."""
+        """Launch one `fabro run`, carrying this dispatch's correlation.
+
+        An injected runner changes only this launch's source venue. Every other
+        verb retains the port's bound runner, including watchdog inspection.
+        """
         return launch_fabro_run(
             fabro_bin=self.fabro_bin,
-            runner=self.runner,
+            runner=runner if runner is not None else self.runner,
             cwd=self.cwd,
             fabro_version=self.fabro_version,
             server_url=self.target.server_url,

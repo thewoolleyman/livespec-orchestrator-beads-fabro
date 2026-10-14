@@ -298,3 +298,25 @@ def test_a_value_the_engine_would_refuse_is_left_out_and_the_run_still_launches(
         for entry in cast("list[dict[str, Any]]", span["attributes"])
     }
     assert attributes["livespec.dispatch.factory"] == "not a factory name"
+
+
+def test_source_runner_is_scoped_to_the_facades_run_verb(*, tmp_path: Path) -> None:
+    ordinary = _Runner()
+    source = _Runner()
+    port = FabroPort(
+        fabro_bin="fabro",
+        target=FabroTarget(),
+        runner=ordinary,
+        cwd=tmp_path,
+    )
+    port.run(
+        runner=source,
+        workflow_toml=tmp_path / "workflow.toml",
+        goal_file=tmp_path / "goal.md",
+        inputs=(),
+        timeout_seconds=90,
+    )
+    port.inspect(run_id="01LAUNCHED", timeout_seconds=30)
+    assert len(source.argvs) == 1
+    assert source.argvs[0][:2] == ["fabro", "run"]
+    assert ordinary.argvs == [["fabro", "inspect", "01LAUNCHED", "--json"]]

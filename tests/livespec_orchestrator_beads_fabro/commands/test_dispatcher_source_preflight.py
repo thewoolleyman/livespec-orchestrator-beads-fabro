@@ -38,7 +38,7 @@ def _result(*, exit_code: int = 0, stdout: str = "", stderr: str = "") -> Comman
 def _base_results() -> dict[tuple[str, ...], CommandResult]:
     return {
         ("rev-parse", "--is-inside-work-tree"): _result(stdout="true\n"),
-        ("rev-parse", "--short", "HEAD"): _result(stdout="abc123\n"),
+        ("rev-parse", "HEAD"): _result(stdout="abc123\n"),
         ("rev-parse", "--abbrev-ref", "HEAD"): _result(stdout="master\n"),
         ("push", "--dry-run", "origin", "HEAD:master"): _result(
             exit_code=1,
@@ -77,7 +77,7 @@ def test_source_preflight_names_unpushed_log_failure(tmp_path: Path) -> None:
         ("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"): _result(
             stdout="origin/master\n"
         ),
-        ("merge-base", "--is-ancestor", "HEAD", "origin/master"): _result(exit_code=1),
+        ("merge-base", "--is-ancestor", "abc123", "origin/master"): _result(exit_code=1),
         (
             "log",
             "--oneline",
@@ -106,7 +106,7 @@ def test_source_preflight_reports_no_unpushed_commits_when_the_log_is_empty(
         ("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"): _result(
             stdout="origin/HEAD\norigin/master\n"
         ),
-        ("merge-base", "--is-ancestor", "HEAD", "origin/master"): _result(exit_code=1),
+        ("merge-base", "--is-ancestor", "abc123", "origin/master"): _result(exit_code=1),
         (
             "log",
             "--oneline",
@@ -132,7 +132,7 @@ def test_source_preflight_journals_a_pass_carrying_the_step_identifier(tmp_path:
         ("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"): _result(
             stdout="origin/master\n"
         ),
-        ("merge-base", "--is-ancestor", "HEAD", "origin/master"): _result(),
+        ("merge-base", "--is-ancestor", "abc123", "origin/master"): _result(),
     }
 
     outcome = source_checkout_preflight(repo=tmp_path, runner=_Runner(results=results))
@@ -167,7 +167,7 @@ def test_source_preflight_refuses_a_target_that_is_not_a_git_worktree(tmp_path: 
 def test_source_preflight_head_is_unknown_when_rev_parse_fails(tmp_path: Path) -> None:
     """A HEAD the checkout will not name still refuses, rendering the unknown marker."""
     results = _base_results() | {
-        ("rev-parse", "--short", "HEAD"): _result(exit_code=128, stderr="no HEAD\n"),
+        ("rev-parse", "HEAD"): _result(exit_code=128, stderr="no HEAD\n"),
         ("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"): _result(stdout=""),
         (
             "log",
@@ -242,3 +242,36 @@ def _detached_head_results() -> dict[tuple[str, ...], CommandResult]:
             "--remotes=origin",
         ): _result(stdout="abc123 local commit\n"),
     }
+
+
+def test_preflight_records_the_ref_that_actually_contains_the_pinned_source_head(
+    *, tmp_path: Path
+) -> None:
+    results = _base_results() | {
+        ("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"): _result(
+            stdout="origin/unrelated\norigin/containing\n"
+        ),
+        ("merge-base", "--is-ancestor", "abc123", "origin/unrelated"): _result(exit_code=1),
+        ("merge-base", "--is-ancestor", "abc123", "origin/containing"): _result(),
+    }
+    runner = _Runner(results=results)
+    outcome = source_checkout_preflight(repo=tmp_path, runner=runner)
+    assert outcome.refusal is None
+    assert outcome.record["origin_ref"] == "origin/containing"
+    assert outcome.record["origin_refs"] == ["origin/unrelated", "origin/containing"]
+    assert ("merge-base", "--is-ancestor", "abc123", "origin/containing") in runner.calls
+
+
+def test_unreadable_head_cannot_produce_an_unpinned_containment_witness(*, tmp_path: Path) -> None:
+    results = _detached_head_results() | {
+        ("rev-parse", "HEAD"): _result(exit_code=128),
+        ("rev-parse", "--abbrev-ref", "HEAD"): _result(stdout="master\n"),
+        ("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"): _result(
+            stdout="origin/master\n"
+        ),
+    }
+    runner = _Runner(results=results)
+    outcome = source_checkout_preflight(repo=tmp_path, runner=runner)
+    assert outcome.refusal is not None
+    assert not any(call[0] == "merge-base" for call in runner.calls)
+    assert "HEAD: <unknown>" in outcome.refusal.detail

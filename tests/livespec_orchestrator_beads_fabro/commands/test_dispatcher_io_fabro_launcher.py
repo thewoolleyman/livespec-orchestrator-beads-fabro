@@ -17,7 +17,9 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_io,
     _dispatcher_io_fabro_launcher,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    CommandResult,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_fabro_launcher import (
     WatchedFabroLauncher,
 )
@@ -99,10 +101,12 @@ def test_watched_launcher_remains_the_dispatcher_io_public_entry_point() -> None
     assert _dispatcher_io.WatchedFabroLauncher is WatchedFabroLauncher
 
 
+@pytest.mark.parametrize("source_staging", [False, True])
 def test_watched_launcher_covers_finished_thread_watch_path(
     *,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    source_staging: bool,
 ) -> None:
     @dataclass(kw_only=True)
     class _SynchronousThread:
@@ -121,6 +125,8 @@ def test_watched_launcher_covers_finished_thread_watch_path(
 
     @dataclass(kw_only=True)
     class _Runner:
+        stdout: str = "done"
+
         def run(
             self,
             *,
@@ -131,7 +137,7 @@ def test_watched_launcher_covers_finished_thread_watch_path(
             stdin: int | None = None,
         ) -> CommandResult:
             _ = (argv, cwd, timeout_seconds, env, stdin)
-            return CommandResult(exit_code=0, stdout="done", stderr="")
+            return CommandResult(exit_code=0, stdout=self.stdout, stderr="")
 
     def _thread(*, target: Callable[[], None], name: str) -> _SynchronousThread:
         return _SynchronousThread(target=target, name=name)
@@ -147,14 +153,18 @@ def test_watched_launcher_covers_finished_thread_watch_path(
         janitor_checkout=tmp_path / "janitor",
     )
 
-    result = WatchedFabroLauncher(sleep=lambda _seconds: None, clock=lambda: 0.0).launch(
+    result = WatchedFabroLauncher(
+        sleep=lambda _seconds: None,
+        clock=lambda: 0.0,
+        run_runner=_Runner(stdout="staged") if source_staging else None,
+    ).launch(
         plan=plan,
         runner=_Runner(),
-        journal=object(),  # type: ignore[arg-type]
+        journal=_Journal(records=[]),
     )
 
     assert result.command.exit_code == 0
-    assert result.command.stdout == "done"
+    assert result.command.stdout == ("staged" if source_staging else "done")
     assert result.stalled_run_id is None
 
 
