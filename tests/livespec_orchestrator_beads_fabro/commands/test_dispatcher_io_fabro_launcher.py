@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import Mock
@@ -17,7 +18,10 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_io,
     _dispatcher_io_fabro_launcher,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    CommandResult,
+    FabroRunResult,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_fabro_launcher import (
     WatchedFabroLauncher,
 )
@@ -27,7 +31,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import LivenessSample
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroRunSummary
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import REPOSITORY_LAYER
-from livespec_orchestrator_beads_fabro.errors import BeadsConnectionError
+from livespec_orchestrator_beads_fabro.errors import BeadsCommandError, BeadsConnectionError
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 
@@ -629,6 +633,83 @@ def test_watched_launcher_continues_when_item_is_absent_from_configured_store(
 
     assert result.abandoned_run_id is None
     assert runner.rm_calls == []
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        BeadsCommandError(command="bd list", exit_code=1, stderr="invalid connection"),
+        BeadsConnectionError(detail="connection refused"),
+    ],
+)
+def test_watched_launcher_recovers_on_next_ledger_poll(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    error: BeadsCommandError | BeadsConnectionError,
+) -> None:
+    reads: list[Path | None] = []
+
+    def _recovering_store(*, path: StoreConfig) -> Iterator[WorkItem]:
+        # Like the real store, this does no IO until the caller iterates.
+        reads.append(path.repo_root)
+        if len(reads) == 1:
+            raise error
+        yield WorkItem(
+            id="bd-ib-queued",
+            type="task",
+            status="active",
+            title="queued",
+            description="queued",
+            origin="freeform",
+            gap_id=None,
+            rank="a0",
+            assignee=None,
+            depends_on=(),
+            captured_at="2026-08-16T00:00:00Z",
+            resolution=None,
+            reason=None,
+            audit=None,
+            superseded_by=None,
+        )
+
+    def _thread(*, target: Callable[[], None], name: str) -> _QueuedThread:
+        # Two complete watch polls before the simulated Fabro process returns.
+        return _QueuedThread(target=target, name=name, runner=runner, alive_checks=-2)
+
+    runner = _QueuedRunner(calls=[], rm_calls=[])
+    journal = _Journal(records=[])
+    _write_livespec_config(repo=tmp_path)
+    monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _thread)
+    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", _recovering_store)
+    plan = build_plan(
+        repo=tmp_path,
+        work_item_id="bd-ib-queued",
+        workflow_toml=tmp_path / "workflow.toml",
+        goal_file=tmp_path / "goal.md",
+        fabro_bin="fabro",
+        janitor=None,
+        janitor_checkout=tmp_path / "janitor",
+    )
+
+    result: object = None
+    # Turn an escaped domain error into an assertion failure at Red.
+    with suppress(BeadsCommandError, BeadsConnectionError):
+        result = WatchedFabroLauncher(sleep=lambda _seconds: None, clock=lambda: 0.0).launch(
+            plan=plan, runner=runner, journal=journal
+        )
+
+    assert reads == [tmp_path, tmp_path]
+    assert isinstance(result, FabroRunResult)
+    assert result.command.exit_code == 0
+    assert result.run_id == "01QUEUED"
+    assert result.abandoned_run_id is None
+    assert result.stalled_run_id is None
+    assert runner.calls.count("run") == 1
+    assert runner.rm_calls == []
+    polls = [record for record in journal.records if record["stage"] == "watchdog-discovery-poll"]
+    assert [record["run_id"] for record in polls] == ["01QUEUED", "01QUEUED"]
+    assert all(record["stage"] != "stale-run-reap" for record in journal.records)
 
 
 def _write_livespec_config(*, repo: Path) -> None:
