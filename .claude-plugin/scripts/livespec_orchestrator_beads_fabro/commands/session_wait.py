@@ -225,6 +225,10 @@ def _observe_until(
     whichever of the two the final round happened to see first. Once the
     deadline has passed the wait owes the deadline outcome, so nothing read
     afterwards may change it.
+
+    A synchronous gate read can also consume the remaining budget inside a
+    round. Check again after each probe, before accepting its observation or
+    reaching a sibling, so neither can extend the shared deadline.
     """
     observations: dict[str, GateObservation] = {}
     while True:
@@ -233,6 +237,9 @@ def _observe_until(
             return observations
         for handle in handles:
             observation = handle.poll(now=now)
+            now = monotonic()
+            if now >= deadline:
+                return observations
             if observation is not None:
                 observations[observation.target.identity] = observation
         if _first_terminal(observations=observations) is not None:
