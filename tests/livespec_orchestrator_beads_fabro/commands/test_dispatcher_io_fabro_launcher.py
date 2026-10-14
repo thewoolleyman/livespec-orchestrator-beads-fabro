@@ -119,15 +119,21 @@ def test_watched_launcher_covers_finished_thread_watch_path(
 ) -> None:
     @dataclass(kw_only=True)
     class _SynchronousThread:
+        """A thread whose target has already run by the time `start` returns.
+
+        It carries NO `is_alive`, which is the point rather than an omission:
+        the launcher reads this run's own `fabro run` RETURN, so a run that is
+        already over is never asked whether its thread is still alive, and a
+        build that asked anyway would fail loudly here instead of being handed
+        a quiet False (bd-ib-qhyxqs).
+        """
+
         target: Callable[[], None]
         name: str
         daemon: bool = False
 
         def start(self) -> None:
             self.target()
-
-        def is_alive(self) -> bool:
-            return False
 
         def join(self, timeout: float | None = None) -> None:
             _ = timeout

@@ -367,6 +367,11 @@ def test_launch_guard_releases_only_after_the_worker_reports_running(
         runner=cast("CommandRunner", object()),
         journal=cast("JournalWriter", object()),
         thread=cast("threading.Thread", _AliveSequence(alive=[True, True, True, True, False])),
+        # Never set: this run's `fabro run` call is still outstanding, so the
+        # watch is governed by the alive sequence above exactly as before the
+        # signal existed. The signal's own arm is covered in the watchdog
+        # tests, against the launcher rather than this release boundary.
+        run_returned=threading.Event(),
         port=cast("FabroPort", object()),
     )
 
