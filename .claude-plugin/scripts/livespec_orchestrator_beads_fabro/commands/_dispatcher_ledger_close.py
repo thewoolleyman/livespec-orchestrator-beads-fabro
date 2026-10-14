@@ -216,14 +216,60 @@ def _append_normalization_note(
     journal.append(record={"stage": "status-normalization", "normalized": normalized})
 
 
+def _malformed_live_ranks(*, items: list[WorkItem]) -> list[dict[str, str]]:
+    """One `{item_id, rank}` dict per live row whose stored rank is malformed (PURE).
+
+    `done` rows are out of scope because they are not part of the live order,
+    and the bottom-sentinel is NOT malformed: it is the adapter's sanctioned
+    stand-in for metadata carrying no key, so reporting it would name every
+    rank-less legacy row as needing a repair it does not need. What is left is
+    exactly the set of stored values that are neither a key nor the absence of
+    one, which is the set an operator has to repair.
+    """
+    return [
+        {"item_id": item.id, "rank": item.rank}
+        for item in items
+        if str(item.status) != _LIVESPEC_DONE
+        and item.rank != BOTTOM_SENTINEL
+        and not _valid_rank_key(rank=item.rank)
+    ]
+
+
 def ledger_blocked_after_normalization(
     *,
     items: list[WorkItem],
     config: StoreConfig,
     journal: JournalFile,
 ) -> bool:
+    _report_malformed_live_ranks(items=items, journal=journal)
     items[:] = _normalize_native_statuses(items=items, config=config, journal=journal)
     return _ledger_blocked(items=items, journal=journal)
+
+
+def _report_malformed_live_ranks(*, items: list[WorkItem], journal: JournalFile) -> None:
+    """Journal + surface each malformed live rank; REFUSE nothing.
+
+    Runs BEFORE normalization, because the normalization is what the malformed
+    key used to kill and a report emitted after it would be absent on exactly
+    the runs that most needed it. It reports rather than blocks: a rank the
+    insert can no longer be asked to extend makes no dispatch unsafe, and
+    refusing here would reinstate the tenant-wide stall under a tidier name.
+    Both surfaces carry the id AND the rank — the journal because it is the
+    durable record, stderr because it is what the operator driving the dispatch
+    reads.
+    """
+    malformed = _malformed_live_ranks(items=items)
+    if not malformed:
+        return
+    journal.append(record={"stage": "malformed-rank", "rows": malformed})
+    for row in malformed:
+        _ = write_stderr(
+            text=(
+                f"LEDGER: malformed-rank  {row['item_id']}  stored rank "
+                f"{row['rank']!r} is not a valid fractional-indexing key; "
+                "repair it through rebalance-ranks\n"
+            ),
+        )
 
 
 def _ledger_blocked(*, items: list[WorkItem], journal: JournalFile) -> bool:
