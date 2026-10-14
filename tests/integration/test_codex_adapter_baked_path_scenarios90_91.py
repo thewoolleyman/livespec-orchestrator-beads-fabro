@@ -38,7 +38,6 @@ from livespec_orchestrator_beads_fabro.commands._acp_agent_mechanism import (
     ENV_MECHANISM,
     JSON_ENV_MECHANISM,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_catalogs import builtin_catalogs
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
 from livespec_orchestrator_beads_fabro.commands._acp_node_repository import (
     repository_acp_overlays,
@@ -146,13 +145,15 @@ def _rendered_adapters(*, repo: Path) -> dict[str, str]:
     scoped, _not_applied = scoped_repository_block(
         block=dispatcher_block(cwd=repo), workflow_kind=WORKFLOW_KIND_IMPLEMENT
     )
-    overlays = repository_acp_overlays(block=scoped, catalogs=builtin_catalogs())
+    catalogs = resolve_acp_catalogs_for(cwd=repo)
+    assert not isinstance(catalogs, str), catalogs
+    overlays = repository_acp_overlays(block=scoped, catalogs=catalogs)
     assert not isinstance(overlays, str), overlays
     # Through `workflow_layer`, which is what a dispatch uses: the committed
     # defaults are STRUCTURED entries, so a raw `workflow_adapter_inputs` read
     # would hand the merge JSON text and every assertion below would grade the
     # wrong bytes.
-    workflow_inputs = workflow_layer(committed=_WORKFLOW_TOML, catalogs=builtin_catalogs())
+    workflow_inputs = workflow_layer(committed=_WORKFLOW_TOML, catalogs=catalogs)
     assert not isinstance(workflow_inputs, str), workflow_inputs
     resolution = resolve_acp_nodes(
         workflow_inputs=workflow_inputs,
