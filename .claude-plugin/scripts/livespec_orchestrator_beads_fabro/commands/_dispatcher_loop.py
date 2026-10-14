@@ -261,6 +261,13 @@ def _dispatch_one_locked(
         adapter_inputs=(
             frozenset() if plan.acp_nodes is None else frozenset(plan.acp_nodes.inputs.values())
         ),
+        # WHETHER any of this dispatch's resolved nodes runs the Codex agent,
+        # read off the plan's single resolution. A dispatch that routes none
+        # projects no Codex credential, stamps no credential-use deadline and
+        # declares no Codex telemetry table — and the launch wrap this same
+        # answer already governed left those adapters unguarded to match, which
+        # is why both seams have to read this one value (bd-ib-meejjz).
+        routes_codex=plan.routes_codex,
         # WHICH factory this dispatch launches at, and that factory's own vault.
         # Both read off the plan's already-resolved target rather than from a
         # second configuration read, for the resolve-once reason the integration

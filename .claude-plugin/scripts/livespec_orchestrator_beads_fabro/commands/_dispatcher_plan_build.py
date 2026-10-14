@@ -180,6 +180,19 @@ class DispatchPlan:
     # its job through fabro rather than through us, which is why no
     # adapter string survives anywhere in this package as a literal.
     acp_nodes: AcpNodeResolution | None = None
+    # WHETHER any of those resolved nodes runs the Codex agent (`bd-ib-meejjz`),
+    # decided ONCE where they were resolved and carried here rather than
+    # re-derived. It rides the plan because TWO seams read it once the plan
+    # exists -- the post-claim Codex credential projection, and the launch wrap
+    # that puts each adapter behind the credential-use guard -- and a seam
+    # answering it for itself is how one of them would project a credential the
+    # other declined to bound.
+    #
+    # True is the PROTECTED posture, and it is what every plan built for
+    # something other than a factory dispatch inherits: the host-record target
+    # and the reconcile-merged valve build plans carrying no ACP resolution at
+    # all, and a default of False would silently exempt any that later did.
+    routes_codex: bool = True
     # The repository integration contract, resolved ONCE for this dispatch and
     # journaled with the dispatch record. Every seam that needs an integration
     # value projects it off this object; none of them resolves one of its own.
@@ -262,6 +275,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
     stall_window: StallWindow = DEFAULT_STALL_WINDOW,
     node_timeouts: NodeTimeouts = DEFAULT_NODE_TIMEOUTS,
     acp_nodes: AcpNodeResolution | None = None,
+    routes_codex: bool = True,
 ) -> DispatchPlan:
     """Resolve the per-item dispatch plan (publish branch, argv config, contract)."""
     integration = resolve_repo_integration_contract(
@@ -301,6 +315,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
         stall_window=stall_window,
         node_timeouts=node_timeouts,
         acp_nodes=acp_nodes,
+        routes_codex=routes_codex,
         integration=integration,
         integration_inputs=contract_run_inputs(
             resolved=integration,

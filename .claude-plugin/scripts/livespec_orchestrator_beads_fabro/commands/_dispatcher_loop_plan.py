@@ -108,6 +108,7 @@ def dispatch_plan_for_item(  # noqa: PLR0913 — kw-only plan resolver; each fie
     runner: CommandRunner,
     committed_workflow: Path,
     acp_nodes: AcpNodeResolution | None = None,
+    routes_codex: bool = True,
 ) -> DispatchPlan:
     """Resolve one item's dispatch plan from its args, labels and timeouts.
 
@@ -185,4 +186,9 @@ def dispatch_plan_for_item(  # noqa: PLR0913 — kw-only plan resolver; each fie
         # Already resolved and journaled by the caller, so the run renders the
         # adapters the dispatch record names rather than a re-derivation.
         acp_nodes=acp_nodes,
+        # And whether any of those adapters runs the Codex agent, decided by the
+        # same materialization and forwarded for the same reason: the launch wrap
+        # it already rendered into the payload graph and the post-claim
+        # credential projection downstream of this plan must read ONE answer.
+        routes_codex=routes_codex,
     )

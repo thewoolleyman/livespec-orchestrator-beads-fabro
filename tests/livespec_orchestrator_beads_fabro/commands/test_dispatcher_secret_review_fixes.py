@@ -200,6 +200,12 @@ def test_factory_authentication_precedes_vault_materialization(
         # this case is about that order, not about which image the launch
         # carries, so the double carries the no-declaration answer.
         sandbox_image=COMMITTED_RUN_CONFIG_IMAGE,
+        # Whether this dispatch routes any node to Codex. The double carries
+        # `DispatchPlan`'s own default, the PROTECTED answer, for the same reason
+        # as the two fields above: this case measures the order of the factory
+        # login against the first vault store, and the Codex credential
+        # projection is not part of that order.
+        routes_codex=True,
     )
     recorded = SimpleNamespace(
         plan=plan,

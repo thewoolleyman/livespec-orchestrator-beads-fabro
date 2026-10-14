@@ -18,6 +18,16 @@ It renews NOTHING. The bounded in-place renewal belongs to the pre-claim gate,
 which has already run for the item by the time this leg is reached; a renewal
 here could only extend a credential whose shortfall can no longer be reported
 before a claim.
+
+AND IT RUNS ONLY FOR A DISPATCH THAT ROUTES A NODE TO CODEX (`bd-ib-meejjz`).
+The whole leg is about ONE credential, so a dispatch whose every resolved ACP
+node runs `claude-acp` has nothing here to size, grade, stamp or guard. It
+returns the unprotected value before the first step rather than grading and
+discarding, and the decision comes from the same predicate the pre-claim gate
+consults -- which is what makes the two agree. They HAVE to: this leg is
+downstream of the claim, so a refusal here on a credential the pre-claim gate
+was told to ignore would leave an `active` row nobody is working with no factory
+run to reap.
 """
 
 from __future__ import annotations
@@ -45,18 +55,36 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_route
     selected_graph_launch_refusal,
 )
 
-__all__: list[str] = ["CodexOverlayLeg", "project_codex_overlay_leg"]
+__all__: list[str] = [
+    "UNPROTECTED_CODEX_OVERLAY_LEG",
+    "CodexOverlayLeg",
+    "project_codex_overlay_leg",
+]
 
 
 @dataclass(frozen=True, kw_only=True)
 class CodexOverlayLeg:
-    """The two projection inputs this leg resolves for the overlay renderer."""
+    """The two projection inputs this leg resolves for the overlay renderer.
 
-    snapshot: str
-    credential_use: CredentialUseProjection
+    BOTH ARE `None` TOGETHER OR NEITHER IS, which is the only pairing the
+    renderer accepts: a credential projected with no enforcement is broken
+    protection and renders no overlay at all, while enforcement projected with
+    no credential installs a guard that can only refuse. `UNPROTECTED` below is
+    the one value carrying the first shape, so no caller assembles it by hand.
+    """
+
+    snapshot: str | None
+    credential_use: CredentialUseProjection | None
 
 
-def project_codex_overlay_leg(
+# What a dispatch routing NO node to Codex projects: no credential, and no
+# credential-use enforcement over it. It is a VALUE rather than a refusal
+# because nothing is wrong — there is simply no Codex credential in this
+# dispatch for anything to grade, bound or enforce.
+UNPROTECTED_CODEX_OVERLAY_LEG = CodexOverlayLeg(snapshot=None, credential_use=None)
+
+
+def project_codex_overlay_leg(  # noqa: PLR0913 — kw-only projection leg; each argument is an independent input to one of the four steps (the requirement's committed config and policy, the grade's clock, the route check's graph and wrapped inputs) plus the routing that decides whether any of them runs, and bundling them would hide which step consumes which.
     *,
     committed: Path,
     block: dict[str, Any],
@@ -64,8 +92,34 @@ def project_codex_overlay_leg(
     graph_override: Path | None,
     adapter_inputs: frozenset[str],
     clock: Callable[[], int],
+    routes_codex: bool = True,
 ) -> CodexOverlayLeg | str:
-    """Resolve this dispatch's Codex projection, or the FIRST refusal in the leg."""
+    """Resolve this dispatch's Codex projection, or the FIRST refusal in the leg.
+
+    `routes_codex` is whether ANY of this dispatch's resolved ACP nodes runs the
+    Codex agent, as `_dispatcher_codex_routing` decided it. It defaults to True,
+    which is the protected answer, for the reason the pre-claim gate's own
+    default is: a default that exempted an unwired caller would turn Scenario 18
+    and Scenario 19 off by omission.
+
+    A DISPATCH ROUTING NO NODE TO CODEX RETURNS BEFORE EVERY STEP IN THIS LEG,
+    including the requirement derivation at the top. That is not an
+    optimization and the order matters in both directions. The requirement is
+    the allowance a credential's LIFETIME is graded against, so with no
+    credential to grade there is nothing for it to size, and its own refusals --
+    an unreadable run config, a bound nobody could establish -- would otherwise
+    refuse a dispatch over a figure nothing was going to use. The grade is
+    skipped rather than taken and discarded, because this leg runs AFTER the
+    claim: a refusal here leaves an `active` row nobody is working and no
+    factory run to reap, which is exactly the stranded shape the pre-claim
+    position was adopted to retire. And the launch-route check is skipped
+    because its own rule is that protection is owed exactly when a Codex
+    credential is projected -- applied to an unprotected dispatch it would
+    refuse every graph whose nodes do not launch behind a guard this dispatch
+    never installs.
+    """
+    if not routes_codex:
+        return UNPROTECTED_CODEX_OVERLAY_LEG
     # The requirement for the workflow THIS dispatch resolved, derived from the
     # very file about to be overlaid and from the review-fix guard the plan
     # renders — not re-resolved from configuration, which would let the

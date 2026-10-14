@@ -146,6 +146,7 @@ def record_dispatch(
         runner=ShellCommandRunner(),
         committed_workflow=committed_workflow,
         acp_nodes=materialized.acp_nodes,
+        routes_codex=materialized.routes_codex,
     )
     warn_item_sizing(item=item, journal=journal)
     # Surfaced from the ONE contract the plan just resolved, on the same stderr

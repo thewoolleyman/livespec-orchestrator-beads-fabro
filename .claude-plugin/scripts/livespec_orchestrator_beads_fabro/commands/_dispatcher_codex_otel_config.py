@@ -73,6 +73,7 @@ import json
 
 __all__: list[str] = [
     "CODEX_OTEL_CONFIG_ENV_VAR",
+    "codex_otel_config_for_dispatch",
     "codex_otel_config_toml",
     "codex_otel_env_lines",
     "codex_otel_prepare_steps_block",
@@ -124,6 +125,40 @@ def codex_otel_config_toml(*, endpoint: str, work_item_id: str, dispatch_id: str
         "[otel.span_attributes]\n"
         f"{json.dumps(_WORK_ITEM_ATTR)} = {json.dumps(work_item_id)}\n"
         f"{json.dumps(_DISPATCH_ATTR)} = {json.dumps(dispatch_id)}\n"
+    )
+
+
+def codex_otel_config_for_dispatch(
+    *,
+    codex_auth_snapshot: str | None,
+    endpoint: str,
+    work_item_id: str,
+    dispatch_id: str,
+) -> str | None:
+    """The `[otel]` table one dispatch projects, keyed on its Codex credential.
+
+    THIS TABLE TRAVELS WITH THE CREDENTIAL, and the coupling is a correctness
+    requirement rather than a convention (`bd-ib-meejjz`). `$CODEX_HOME` reaches
+    the sandbox ONLY on the credential projection's own env lines, and the
+    prepare step below opens with `mkdir -p "$CODEX_HOME"` -- so a table
+    rendered for a dispatch that projects no credential expands to
+    `mkdir -p ""`, fails, and aborts the sandbox in a prepare step before any
+    node runs. Every such dispatch, not an edge case.
+
+    The condition is also the honest one on its own terms: a dispatch that
+    routes no node to Codex starts no `codex app-server`, so there is no Codex
+    span to export and nothing for an exporter to point at.
+
+    The decision lives HERE, beside the step whose expansion depends on it,
+    rather than at the caller that happens to hold both values. A caller
+    deciding it would put the invariant one module away from the hazard, which
+    is how the unconditional render survived the credential becoming
+    conditional.
+    """
+    if codex_auth_snapshot is None:
+        return None
+    return codex_otel_config_toml(
+        endpoint=endpoint, work_item_id=work_item_id, dispatch_id=dispatch_id
     )
 
 

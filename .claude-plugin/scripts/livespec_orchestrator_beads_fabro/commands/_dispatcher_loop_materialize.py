@@ -37,6 +37,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
     ACP_NODES_STAGE,
     prepare_acp_nodes,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
+    resolve_dispatch_candidates,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_routing import (
+    codex_routing_for,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import (
     GitAuthor,
@@ -103,6 +109,16 @@ class MaterializedDispatch:
     payload: WorkflowPayload
     acp_nodes: AcpNodeResolution
     git_author: GitAuthor
+    # WHETHER any of this dispatch's resolved ACP nodes runs the Codex agent
+    # (`bd-ib-meejjz`). Resolved HERE, once, because this is where the ACP
+    # resolution already happens and because TWO consumers on the dispatch path
+    # read it: the launch wrap rendered into the payload graph below, and the
+    # post-claim credential projection the plan carries it to. A consumer
+    # resolving its own copy is how the payload graph and the projection would
+    # come to disagree about whether a credential-use deadline exists — and
+    # neither surface would show the divergence, because both answers are
+    # well-formed.
+    routes_codex: bool
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -182,6 +198,13 @@ def materialize_dispatch(
     )
     if isinstance(acp_nodes, str):
         return MaterializationRefusal(stage=ACP_NODES_STAGE, detail=acp_nodes)
+    # WHETHER this dispatch routes any node to Codex, read through the ONE
+    # surface that resolves the rendered candidates off disk. `None` from that
+    # surface says the resolution could not be read, which the predicate treats
+    # as the absence of a measurement rather than as an answer — so an
+    # unobservable dispatch keeps the Codex credential projection and the
+    # credential-use deadline it had.
+    routes_codex = codex_routing_for(candidates=resolve_dispatch_candidates(repo=repo)).routes_codex
     payload = prepare_workflow_payload(
         repo=repo,
         committed=committed_workflow,
@@ -203,6 +226,7 @@ def materialize_dispatch(
         payload=payload,
         acp_nodes=acp_nodes,
         git_author=author,
+        routes_codex=routes_codex,
     )
 
 

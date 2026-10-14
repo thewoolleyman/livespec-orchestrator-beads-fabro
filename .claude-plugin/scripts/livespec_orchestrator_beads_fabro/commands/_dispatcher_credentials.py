@@ -16,7 +16,7 @@ from livespec_orchestrator_beads_fabro.commands._config import (
     dispatcher_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config import (
-    codex_otel_config_toml,
+    codex_otel_config_for_dispatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_overlay_leg import (
     project_codex_overlay_leg,
@@ -187,6 +187,11 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     # byte-for-byte — which is what a caller that wires nothing rendered before
     # this decision existed.
     sandbox_image: SandboxImageSource = COMMITTED_RUN_CONFIG_IMAGE,
+    # WHETHER any of this dispatch's resolved ACP nodes runs the Codex agent, as
+    # the plan already decided it. True is the protected posture — the one every
+    # dispatch had before this decision existed — so a caller that wires nothing
+    # projects and enforces the host Codex credential exactly as it always did.
+    routes_codex: bool = True,
 ) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
@@ -285,6 +290,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # The ONE wall-clock seam the leg reads, held here so the whole dispatch
         # path has a single place a test stands time still.
         clock=lambda: int(time.time()),
+        routes_codex=routes_codex,
     )
     if isinstance(codex_leg, str):
         return codex_leg
@@ -297,10 +303,12 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     # Codex honors no `OTEL_*` variable, so the overlay above reaches Claude
     # Code only. Codex resolves its exporters from `$CODEX_HOME/config.toml`
     # alone, and projecting that file is what makes Codex spend telemetry
-    # exist at all (work-item bd-ib-dbzp). Rendered unconditionally, exactly
-    # like the credential snapshot beside it: this path has already returned
-    # on a projection refusal, so `$CODEX_HOME` is always provisioned here.
-    codex_otel_config = codex_otel_config_toml(
+    # exist at all (work-item bd-ib-dbzp). It is handed the snapshot this
+    # dispatch projected because the table travels WITH the credential —
+    # `$CODEX_HOME` exists in the sandbox only on the credential's own env
+    # lines — and that invariant is owned where the dependent step is written.
+    codex_otel_config = codex_otel_config_for_dispatch(
+        codex_auth_snapshot=codex_leg.snapshot,
         endpoint=sandbox_otel_endpoint,
         work_item_id=work_item_id,
         dispatch_id=dispatch_id,
