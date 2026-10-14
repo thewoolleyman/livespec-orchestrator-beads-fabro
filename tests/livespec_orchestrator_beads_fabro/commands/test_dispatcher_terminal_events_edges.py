@@ -80,6 +80,85 @@ def test_terminal_output_reads_ref_bytes_from_nested_node_and_top_level_failure(
     )
 
 
+_PRESERVED_REF = "refs/heads/needs-human/c474ec1d4be34116aa647c59cc4354a3"
+_PRESERVED_LINE = f"LIVESPEC_NEEDS_HUMAN_PRESERVED: {_PRESERVED_REF}"
+_SCRIPT_OUTPUT = f"Script failed with exit code: 1\n\n## output\n{_PRESERVED_LINE}"
+
+
+def test_preserved_ref_is_read_from_the_pinned_engine_cause_chain() -> None:
+    """The pinned hp engine carries a stage's emitted output as a `causes` CHAIN.
+
+    `plan/pr-stage-backgrounded-push-fault/research/001-...-2026-10-08.md`
+    measured the `needs_human` script's own preservation line arriving there,
+    behind the fixed `ACP protocol error` wrapper, while the block's top-level
+    `message` says only `ACP turn failed`. A reader of `message` alone therefore
+    cannot return a hit on the engine this defect was measured on.
+    """
+    assert (
+        terminal_event_output(
+            payload=[
+                {
+                    "event": "stage.failed",
+                    "node_id": "needs_human",
+                    "properties": {
+                        "failure": {
+                            "message": "ACP turn failed",
+                            "causes": ["ACP protocol error", 7, _SCRIPT_OUTPUT],
+                        }
+                    },
+                }
+            ]
+        )
+        == _PRESERVED_LINE
+    )
+
+
+def test_preserved_ref_is_read_from_the_petri_detail_message() -> None:
+    """The Petri-era engine carries no chain — one `detail.message` instead."""
+    assert (
+        terminal_event_output(
+            payload=[
+                {
+                    "event": "stage.failed",
+                    "node_id": "needs_human",
+                    "properties": {
+                        "failure": {
+                            "reason": "ACP turn failed",
+                            "detail": {
+                                "message": _SCRIPT_OUTPUT,
+                                "category": "deterministic",
+                            },
+                        }
+                    },
+                }
+            ]
+        )
+        == _PRESERVED_LINE
+    )
+
+
+def test_one_sentinel_carried_on_every_channel_is_reported_once() -> None:
+    """A 0.254 block carries both channels, so the union must not double-report."""
+    assert (
+        terminal_event_output(
+            payload=[
+                {
+                    "event": "stage.failed",
+                    "node_id": "needs_human",
+                    "properties": {
+                        "failure": {
+                            "message": _SCRIPT_OUTPUT,
+                            "causes": [_SCRIPT_OUTPUT],
+                            "detail": {"message": _SCRIPT_OUTPUT},
+                        }
+                    },
+                }
+            ]
+        )
+        == _PRESERVED_LINE
+    )
+
+
 def test_latest_terminal_attempt_replaces_earlier_output() -> None:
     assert (
         terminal_event_output(
