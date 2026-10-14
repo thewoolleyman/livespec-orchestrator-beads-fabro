@@ -60,6 +60,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_deadline 
 )
 
 __all__: list[str] = [
+    "CODEX_CREDENTIAL_GATE_NOT_APPLIED_STAGE",
     "CODEX_CREDENTIAL_GATE_STAGE",
     "CODEX_CREDENTIAL_REQUIREMENT_STAGE",
     "codex_credential_refusal_for_items",
@@ -77,6 +78,16 @@ CODEX_CREDENTIAL_GATE_STAGE = "codex-credential-gate-refused"
 # the other says no allowance could be established, and an operator's remedy for
 # the second is a configuration change rather than a renewal.
 CODEX_CREDENTIAL_REQUIREMENT_STAGE = "codex-credential-requirement-unresolved"
+
+# The journal stage for a selection the gate was NOT APPLIED to, because the
+# dispatch routes no node to Codex. Its own stage rather than a field on
+# either stage above, because it is not a finding: nothing is wrong and nothing
+# needs fixing. It exists because a SKIPPED refusal is otherwise invisible --
+# the exit code, the operator's stderr and the item's status read identically
+# whether the gate ran and admitted or never ran at all -- and those two states
+# have different causes, so an operator reading a dispatch afterwards must be
+# able to tell them apart.
+CODEX_CREDENTIAL_GATE_NOT_APPLIED_STAGE = "codex-credential-gate-not-applied"
 
 
 def wall_clock_epoch() -> int:
@@ -123,9 +134,12 @@ def codex_credential_refusal_for_items(
 
     `journal` is optional and is reached through its own `append`, so the gate is
     callable from a hermetic test and from a caller holding none, without a
-    second serializer. Only the refusal is recorded: an admitted pass is followed
-    by the overlay's own projection record, and a line asserting that a
-    credential was admitted would duplicate it.
+    second serializer. Two outcomes are recorded and the third is not: a
+    REFUSAL, and a selection the gate was NOT APPLIED to. An admitted pass is
+    not, because it is followed by the overlay's own projection record and a
+    line asserting that a credential was admitted would duplicate it -- whereas
+    a selection that was passed over has no such successor, which is exactly
+    why it needs a line of its own.
     """
     # NOTHING TO CLAIM MEANS NOTHING TO GRADE, and the early return is the whole
     # point rather than an optimization. This gate answers one question -- can
@@ -151,8 +165,13 @@ def codex_credential_refusal_for_items(
     # arm precedes both: an unresolvable requirement is a fault in the selected
     # workflow's own configuration, and reporting it as a credential refusal on
     # a dispatch that projects no credential names the wrong thing to fix.
-    if codex_routing is not None and not codex_routing().routes_codex:
-        return None
+    if codex_routing is not None:
+        routing = codex_routing()
+        if not routing.routes_codex:
+            _journal_not_applied(
+                journal=journal, work_item_ids=work_item_ids, routing=routing.detail
+            )
+            return None
     if isinstance(requirement, str):
         _journal(
             journal=journal,
@@ -176,6 +195,35 @@ def codex_credential_refusal_for_items(
     return f"{projected.message} Requirement: {requirement.detail}."
 
 
+def _journal_not_applied(
+    *,
+    journal: object,
+    work_item_ids: Sequence[str],
+    routing: str,
+) -> None:
+    """Record that this selection was passed over, and WHAT decided that.
+
+    The routing's own `detail` is carried through rather than re-worded here,
+    which is what keeps the record and the decision descriptions of ONE
+    measurement. A line saying only that the gate was not applied cannot be
+    checked against the dispatch it describes: a correctly-scoped all-Claude
+    dispatch and a routing resolution that went wrong and happened to answer
+    "no Codex" would write the identical line.
+
+    The item ids are keyed `work_item_ids`, NOT the refusing stages'
+    `unclaimed_work_item_ids`: nothing was declined here, and these items go on
+    to be claimed.
+    """
+    _append(
+        journal=journal,
+        record={
+            "stage": CODEX_CREDENTIAL_GATE_NOT_APPLIED_STAGE,
+            "work_item_ids": list(work_item_ids),
+            "routing": routing,
+        },
+    )
+
+
 def _journal(
     *,
     journal: object,
@@ -185,17 +233,30 @@ def _journal(
 ) -> None:
     """Record one refusal, reached through `append` so a caller may hold none.
 
-    Only refusals are recorded. An admitted pass is followed by the overlay's own
-    projection record, and a line asserting that a credential was admitted would
-    duplicate it.
+    Refusals only. An admitted pass is followed by the overlay's own projection
+    record, and a line asserting that a credential was admitted would duplicate
+    it; a selection the gate was not applied to has its own writer above,
+    because it is not a refusal and is keyed differently.
     """
-    append = getattr(journal, "append", None)
-    if append is None:
-        return
-    append(
+    _append(
+        journal=journal,
         record={
             "stage": stage,
             "unclaimed_work_item_ids": list(work_item_ids),
             "refusal": refusal,
-        }
+        },
     )
+
+
+def _append(*, journal: object, record: dict[str, object]) -> None:
+    """Hand one record to the journal, if the caller holds one.
+
+    ONE `append` lookup for both writers above. Each spelling its own would be
+    two places that have to agree about what a journal-less caller means, and
+    the second copy is reached only by the arm a test has to remember to cover
+    -- so the duplicate's cost is paid in exactly the case nobody writes.
+    """
+    append = getattr(journal, "append", None)
+    if append is None:
+        return
+    append(record=record)
