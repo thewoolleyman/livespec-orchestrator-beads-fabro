@@ -619,9 +619,14 @@ def test_a_publish_branch_whose_run_is_still_live_is_not_reclaimed(tmp_path: Pat
 
     # The hold leaves the refusal in place, so the refusal must still exist: the
     # push sentinel, and the arm that routes it to a human rather than onward.
+    # Since v134 that arm passes through the refresh-repair classifier, whose own
+    # UNCONDITIONAL route is the terminal — so a push failure the classifier
+    # cannot account for as a restored refresh still reaches a human, which is
+    # the property this hold depends on.
     graph = _WORKFLOW_PATH.read_text(encoding="utf-8")
     assert "LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED" in graph
-    assert 'publish_draft -> needs_human [label="Blocked", condition="outcome=failed"]' in graph
+    assert 'publish_draft -> refresh_repair [label="Blocked", condition="outcome=failed"]' in graph
+    assert "refresh_repair -> needs_human" in graph
 
 
 def test_an_unaskable_factory_holds_the_reclaim_rather_than_assuming_death(
