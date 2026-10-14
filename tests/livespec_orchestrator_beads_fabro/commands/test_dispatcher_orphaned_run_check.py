@@ -24,6 +24,7 @@ _MODULE_PATH = Path(
     "/_dispatcher_orphaned_run_check.py"
 )
 _HP = "https://hp.example.test"
+_HP_DOCKER_HOST = "ssh://cwoolley@hp.example"
 
 
 @dataclass(kw_only=True)
@@ -183,7 +184,16 @@ def _repo(*, tmp_path: Path, declare_factories: bool = True) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir(exist_ok=True)
     dispatcher_block: dict[str, object] = (
-        {"default_factory": "hp", "factories": {"hp": {"server": _HP}}} if declare_factories else {}
+        {
+            "default_factory": "hp",
+            # The daemon running hp's sandbox containers, which the container
+            # lane of each pass addresses. Omit it and that factory is
+            # reported as unobserved rather than swept through the
+            # reconciling host's own daemon.
+            "factories": {"hp": {"server": _HP, "docker_host": _HP_DOCKER_HOST}},
+        }
+        if declare_factories
+        else {}
     )
     _ = (repo / ".livespec.jsonc").write_text(
         json.dumps(
