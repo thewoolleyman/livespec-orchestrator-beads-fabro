@@ -1473,7 +1473,7 @@ Feature: The Dispatcher skips observed-unavailable candidates and refuses only a
     And the item remains at status "ready" without a claim and is not marked "blocked"
     And the refusal is journaled with the work-item id, governing condition, admission-required node lacking an eligible candidate, and scheduled reevaluation instant
     And applicable hold observations and their expiries are included when present
-    And when no hold governs the refusal, the record names the outstanding confirmation, unavailable evidence source, or admission-time credential-probe skip without inventing a hold identity or expiry
+    And when no hold governs the refusal, the record names the outstanding confirmation, unavailable evidence source, admission-time credential-probe skip, or admission session-headroom skip without inventing a hold identity or expiry
 
   Scenario: A scoped record expires, a completed confirmation turn re-confirms the candidate, and admission resumes
     Given an observed availability record whose bounded expiry has passed
@@ -1503,6 +1503,65 @@ Feature: The Dispatcher skips observed-unavailable candidates and refuses only a
     When the Dispatcher evaluates that item
     Then the item is not auto-resolved
     And the item stays surfaced through the needs-attention awareness surface
+
+  Scenario: Low session headroom on the primary selects an uncovered fallback
+    Given an item whose implement node's primary is a covered candidate under the admission session-headroom clause
+    And dispatcher.session_headroom_floor_percent is 20
+    And that node lists an uncovered eligible fallback candidate
+    And every other admission-required node retains an eligible candidate
+    And every other admission-valve condition is satisfied
+    And the primary credential's remaining five-hour headroom reads below 20 percent
+    When the Dispatcher evaluates admission
+    Then the reading is journaled with the work-item id and the opaque credential identity
+    And the fallback candidate is selected for the implement node
+    And the selection record references the primary's headroom assessment and the governing floor
+    And the item is admitted
+
+  Scenario: Low or unobservable session headroom with no eligible candidate waits without a claim
+    Given a ready item whose every candidate on one admission-required node is a covered candidate under the admission session-headroom clause
+    And dispatcher.session_headroom_floor_percent is 20
+    And every other admission-required node retains an eligible candidate
+    And every other admission-valve condition is satisfied
+    And each of those credentials' remaining five-hour headroom reads below 20 percent or is unobservable
+    When the Dispatcher evaluates admission
+    Then the item stays ready with no dispatch claim and no blocked_reason
+    And its containment refusal record names the assessed credential identity, the reading or unobservable result, the observation time, the governing floor and the skipped candidates
+    And the refusal names the admission-required node and scheduled reevaluation instant
+    And no observed availability record is created
+    And no observed availability record is retired
+    And the unattended loop reevaluates automatically after the configured cadence
+    And wait attention exposes the recorded assessment without making a live usage request
+
+  Scenario: Unobservable headroom skips a covered primary without defeating a viable fallback
+    Given a ready item with a covered primary whose headroom reading is unobservable
+    And dispatcher.session_headroom_floor_percent is 20
+    And that node has an uncovered eligible fallback
+    And every other admission condition is satisfied
+    When admission is evaluated
+    Then the primary's unobservable result is journaled
+    And the fallback is selected and the item is admitted
+
+  Scenario: Equality passes the headroom filter without overriding another gate
+    Given a covered candidate with 20 percent remaining headroom
+    And dispatcher.session_headroom_floor_percent is 20
+    When admission is evaluated
+    Then the headroom filter does not skip that candidate
+    And all other admission conditions are still applied
+
+  Scenario: A disabled floor retains observation without refusing on unobservability
+    Given a covered candidate whose headroom reading is unobservable
+    And dispatcher.session_headroom_floor_percent is 0
+    When admission is evaluated
+    Then the unobservable result is journaled
+    And the headroom filter does not skip that candidate
+    And all other admission conditions are still applied
+
+  Scenario: A passing usage reading cannot clear observed availability evidence
+    Given a covered candidate with headroom above the positive floor
+    And a live observed hold covers that candidate
+    When admission is evaluated
+    Then that candidate remains ineligible under the hold
+    And no usage reading retires the hold
 
   Scenario: A hold on one provider does not refuse an item wholly on another
     Given an unexpired domain hold, current or legacy, on the codex availability domain
