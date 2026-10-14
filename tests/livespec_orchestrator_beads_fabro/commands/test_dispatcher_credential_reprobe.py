@@ -19,21 +19,38 @@ exhaustion-record case asserts the record SURVIVES a usable probe, because the
 clause's whole point is that this wait adds no retirement route: an
 implementation that helpfully cleared the record would satisfy "the loop
 resumed" perfectly and quietly delete a containment fact.
+
+THE ROTATION CASE KEYS ITS PROBE ON THE TOKEN RATHER THAN THE CALL INDEX, which
+is the one shape that can fail for the right reason. A probe scripted by call
+order returns `usable` on its second call whatever value it was handed, so it
+passes identically against a wait that re-reads the wrapper and against the
+launch-time-environment wait this slice repairs — the defect being closed is
+precisely that the second probe asked about the FIRST credential. Keying on the
+token means the wait can only resume by having observed the rotated value, and
+the launch-time value is left provider-limited for the whole wait so no other
+route to `usable` exists.
 """
 
 from __future__ import annotations
 
 import importlib
+import json
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_policy_settings
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
+    CLAUDE_OAUTH_TOKEN_ENV,
     ClaudeCredentialStatus,
     ClaudeProbeObservation,
     classify_claude_probe,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_rotation import (
+    WRAPPER_RESOLVED,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
     dispatch_provider_exhaustion,
@@ -49,6 +66,11 @@ _CADENCE_KEY = "credential_reprobe_interval_seconds"
 _RATE_LIMITED = ClaudeProbeObservation(
     http_status=429, error_type="rate_limit_error", input_tokens=None, output_tokens=None
 )
+_WRAPPER = ("/usr/local/bin/with-livespec-env.sh", "--")
+# The launch-time value stays provider-limited for every wait below, so the only
+# route to a usable probe is the wrapper's rotated value.
+_STALE_TOKEN = "stale-launch-time-token"
+_ROTATED_TOKEN = "rotated-wrapper-token"
 
 
 def _reprobe() -> Any:
@@ -84,15 +106,46 @@ class _Probe:
         return self.statuses[index]
 
 
-def _repo(*, tmp_path: Path, cadence: int | None = None) -> Path:
+@dataclass(kw_only=True)
+class _Runner:
+    """A CommandRunner double standing in for the wrapper re-resolution."""
+
+    results: list[CommandResult]
+    calls: list[list[str]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        _ = (cwd, timeout_seconds, env, stdin)
+        self.calls.append(list(argv))
+        return self.results[min(len(self.calls) - 1, len(self.results) - 1)]
+
+
+def _wrapper_printing(*, tokens: list[str]) -> _Runner:
+    """A wrapper that injects each token in turn, then repeats the last."""
+    return _Runner(
+        results=[CommandResult(exit_code=0, stdout=token, stderr="") for token in tokens]
+    )
+
+
+def _repo(
+    *, tmp_path: Path, cadence: int | None = None, wrapper: tuple[str, ...] | None = None
+) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir(exist_ok=True)
+    config: dict[str, Any] = {}
     if cadence is not None:
-        _ = (repo / ".livespec.jsonc").write_text(
-            '{"livespec-orchestrator-beads-fabro": {"dispatcher": '
-            f'{{"{_CADENCE_KEY}": {cadence}}}}}}}',
-            encoding="utf-8",
-        )
+        config["livespec-orchestrator-beads-fabro"] = {"dispatcher": {_CADENCE_KEY: cadence}}
+    if wrapper is not None:
+        config["credential_wrapper"] = list(wrapper)
+    if config:
+        _ = (repo / ".livespec.jsonc").write_text(json.dumps(config), encoding="utf-8")
     return repo
 
 
@@ -101,11 +154,30 @@ def _journal(*, repo: Path) -> JournalFile:
 
 
 def _records(*, journal: JournalFile) -> list[dict[str, Any]]:
-    import json
-
     if not journal.path.is_file():
         return []
     return [json.loads(line) for line in journal.path.read_text(encoding="utf-8").splitlines()]
+
+
+def _refusals(*, journal: JournalFile, reprobe: Any) -> list[dict[str, Any]]:
+    return [
+        record
+        for record in _records(journal=journal)
+        if record["stage"] == reprobe.CREDENTIAL_REPROBE_STAGE
+    ]
+
+
+def _token_keyed_probe(*, usable_token: str, probed: list[str]) -> Any:
+    """A probe whose verdict follows the TOKEN it was handed (see the docstring)."""
+
+    def probe(*, token: str) -> ClaudeCredentialStatus:
+        probed.append(token)
+        return _status(
+            condition="usable" if token == usable_token else "exhausted",
+            usable=token == usable_token,
+        )
+
+    return probe
 
 
 @pytest.fixture(autouse=True)
@@ -162,6 +234,39 @@ def test_a_refused_probe_waits_and_resumes_on_the_first_usable_result(tmp_path: 
     assert refused[0]["http_status"] == 429
     assert refused[0]["error_type"] == "rate_limit_error"
     assert refused[0]["reprobe_interval_seconds"] == 7
+
+
+def test_a_rotation_in_the_wrapper_retires_a_parked_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The defect this slice repairs: a rotation reaches the wait un-restarted.
+
+    `os.environ` keeps the stale value for the whole wait, exactly as a parked
+    loop's process does, so the resumption can only have come from the wrapper.
+    """
+    reprobe = _reprobe()
+    monkeypatch.setenv(CLAUDE_OAUTH_TOKEN_ENV, _STALE_TOKEN)
+    repo = _repo(tmp_path=tmp_path, cadence=11, wrapper=_WRAPPER)
+    journal = _journal(repo=repo)
+    probed: list[str] = []
+    runner = _wrapper_printing(tokens=[_STALE_TOKEN, _ROTATED_TOKEN])
+    slept: list[float] = []
+
+    reprobe.await_usable_credential(
+        repo=repo,
+        journal=journal,
+        budget=2,
+        probe=_token_keyed_probe(usable_token=_ROTATED_TOKEN, probed=probed),
+        sleep=slept.append,
+        runner=runner,
+    )
+
+    assert probed == [_STALE_TOKEN, _ROTATED_TOKEN]
+    assert slept == [11]
+    assert runner.calls == [[*_WRAPPER, "printenv", CLAUDE_OAUTH_TOKEN_ENV]] * 2
+    refused = _refusals(journal=journal, reprobe=reprobe)
+    assert len(refused) == 1
+    assert refused[0]["credential_source"] == WRAPPER_RESOLVED
 
 
 def test_the_default_cadence_is_three_hundred_seconds(tmp_path: Path) -> None:
