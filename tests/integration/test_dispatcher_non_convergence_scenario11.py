@@ -205,12 +205,6 @@ def _terminal(*, status: str, stage: str, detail: str = "") -> DispatchOutcome:
     )
 
 
-def test_non_convergence_true_for_stalled_no_progress() -> None:
-    assert is_non_convergence_outcome(
-        outcome=_terminal(status="stalled-no-progress", stage="fabro-run")
-    )
-
-
 def test_non_convergence_true_for_dot_marker_in_failed_detail() -> None:
     detail = f"some output\n{NON_CONVERGED_MARKER}: fix-loop cap hit without converging"
     assert is_non_convergence_outcome(
@@ -241,49 +235,8 @@ def test_non_convergence_false_for_green() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_dispatch_bounces_stalled_slice_to_backlog(
-    capsys: pytest.CaptureFixture[str],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    item = _item()
-    append_work_item(path=_config(), item=item)
-    stalled = DispatchOutcome(
-        work_item_id=item.id,
-        status="stalled-no-progress",
-        stage="fabro-run",
-        pr_number=None,
-        merge_sha=None,
-        detail="run made no progress for the full stall window",
-    )
-    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _outcome_returning(stalled))
-
-    exit_code = main(
-        argv=[
-            "dispatch",
-            "--repo",
-            str(repo),
-            "--item",
-            item.id,
-            "--workflow",
-            str(workflow),
-            "--json",
-        ]
-    )
-
-    # Non-green terminal -> non-zero exit (the maintainer's eyes are required).
-    assert exit_code == 1
-    # The slice was bounced out of the WIP to `backlog` — escalate-don't-drop,
-    # not infinite-retry.
-    assert _stored()[item.id].status == "backlog"
-    # And surfaced to stderr.
-    err = capsys.readouterr().err
-    assert "backlog" in err
-    assert item.id in err
-
-
 def test_dispatch_bounces_dot_non_converged_slice_to_backlog(
+    capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -310,6 +263,13 @@ def test_dispatch_bounces_dot_non_converged_slice_to_backlog(
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     stages = [json.loads(line).get("stage") for line in journal_text.splitlines()]
     assert "non-convergence-bounce" in stages
+    # And surfaced to stderr. The surface assertion moved here from the
+    # `stalled-no-progress` case `bd-ib-nfbyot` retired: the fix-loop-cap
+    # sentinel is now the ONLY bounce trigger, so this is the only journey left
+    # that reaches the surface line at all.
+    err = capsys.readouterr().err
+    assert "backlog" in err
+    assert item.id in err
 
 
 def test_dispatch_does_not_bounce_ordinary_failure(
