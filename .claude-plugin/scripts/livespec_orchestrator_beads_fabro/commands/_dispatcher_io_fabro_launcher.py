@@ -96,6 +96,16 @@ class WatchedFabroLauncher:
         port = fabro_port_for_plan(plan=plan, runner=runner)
         holder: dict[str, CommandResult] = {}
         run_id_holder: dict[str, str | None] = {}
+        # Set once this dispatch's `fabro run` call has RETURNED, which is
+        # what the watch loop reads as the run being OVER. A thread that has
+        # not yet exited is NOT a run still running: `fabro run` returns from
+        # inside the thread and the interpreter tears that thread down
+        # afterwards, a lag that widens under load. Keyed on `is_alive` alone,
+        # a poll resumed after the run had already finished, sampled a run
+        # that was over, and cancelled it — the event stream freezes when a
+        # run ends, so that sample reads exactly like a stall (bd-ib-qhyxqs,
+        # measured in the sandbox of run 01M4WWQNRN2J at hp load about 23).
+        run_returned = threading.Event()
 
         def _run_fabro() -> None:
             result = port.run(
@@ -118,11 +128,21 @@ class WatchedFabroLauncher:
             )
             holder["result"] = cast("CommandResult", result.command)
             run_id_holder["run_id"] = result.run_id
+            # Last, so that anything which observes the signal and then joins
+            # this thread finds the result already published.
+            run_returned.set()
 
         thread = threading.Thread(target=_run_fabro, name=f"fabro-run-{plan.work_item_id}")
         thread.daemon = True
         thread.start()
-        watched = self._watch(plan=plan, runner=runner, journal=journal, thread=thread, port=port)
+        watched = self._watch(
+            plan=plan,
+            runner=runner,
+            journal=journal,
+            thread=thread,
+            run_returned=run_returned,
+            port=port,
+        )
         if watched.abandoned_run_id is not None:
             thread.join(timeout=_FABRO_RM_TIMEOUT_SECONDS)
             return FabroRunResult(
@@ -152,6 +172,7 @@ class WatchedFabroLauncher:
         runner: CommandRunner,
         journal: JournalWriter,
         thread: threading.Thread,
+        run_returned: threading.Event,
         port: FabroPort,
     ) -> _WatchResult:
         # The window this run is graded against comes from the plan, which
@@ -172,9 +193,19 @@ class WatchedFabroLauncher:
         bound_run_id: str | None = None
         worker_running_notified = False
         stamp = RunAttribution()
-        while thread.is_alive():
+        # The run's own RETURN ends the watch. The thread's death is consulted
+        # beside it only because `port.run` can RAISE: no signal arrives on
+        # that path, and a loop watching the signal alone would then poll a
+        # dead thread for the rest of the dispatch.
+        while not run_returned.is_set() and thread.is_alive():
             self.sleep(_WATCHDOG_POLL_INTERVAL_SECONDS)
-            if not thread.is_alive():
+            if run_returned.is_set() or not thread.is_alive():
+                # The run ended during the sleep, so NO liveness sample is
+                # taken of it: its event stream froze when it ended, and a
+                # sample taken after that reads as a stall and cancels work
+                # that had already completed. A run whose `fabro run` has NOT
+                # returned, and whose liveness stays flat for the full stall
+                # window, is still cancelled as stalled-no-progress below.
                 return _WatchResult()
             run = observed_run(
                 work_item_id=plan.work_item_id,

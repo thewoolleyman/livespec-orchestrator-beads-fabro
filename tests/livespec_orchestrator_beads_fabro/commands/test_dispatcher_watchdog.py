@@ -28,6 +28,7 @@ different question from how it measures PROGRESS (bd-ib-6pdigz).
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from inspect import signature
 from pathlib import Path
@@ -1057,6 +1058,72 @@ def test_watched_launcher_lets_a_healthy_run_complete(tmp_path: Path) -> None:
     assert result.stalled_run_id is None
     assert result.command.exit_code == 0
     assert runner.rm_calls == []
+
+
+def test_watched_launcher_takes_no_sample_once_the_fabro_run_call_has_returned(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """bd-ib-qhyxqs: the run's own RETURN ends the watch, not the thread's exit.
+
+    `fabro run` returns from INSIDE the run thread, and the interpreter tears
+    that thread down afterwards — a lag that widens under load. A watch loop
+    keyed on `is_alive` therefore resumed after the run had finished, took one
+    more liveness sample of a run that was already over, and cancelled it: the
+    event stream froze when the run ended, so the sample reads exactly like a
+    stall. Measured in the sandbox of run 01M4WWQNRN2J at hp load ~23, where
+    the sibling healthy-completion case above failed with a stalled result.
+
+    The condition is pinned by WRAPPING the thread target: the wrapper runs the
+    launcher's own target to completion — so this dispatch's `fabro run` call
+    HAS returned — then signals this test and lingers, so the thread is still
+    alive when the loop resumes. No sleep-ordering guess is involved, which is
+    what the fixture it repairs could not avoid.
+
+    The negative control is `test_watched_launcher_cancels_a_confirmed_stall`
+    above: there the run's `fabro run` call never returns and liveness stays
+    flat for the full stall window, and the run is still cancelled as
+    stalled-no-progress. Without it, a launcher that simply stopped sampling
+    would satisfy this case.
+    """
+    runner = _ScriptedFabroRunner(events_jsons=['[{"timestamp": "2026-06-13T08:00:00Z"}]'])
+    target_returned = threading.Event()
+    real_thread = threading.Thread
+
+    def _lingering_thread(*, target: Callable[[], None], name: str) -> threading.Thread:
+        def _linger() -> None:
+            target()
+            target_returned.set()
+            # Outlive the watch loop's completion check, which is the whole
+            # condition: a thread that has not yet exited is not a run still
+            # running. Bounded, because `launch` joins this thread on its way
+            # out and nothing else can release it.
+            _ = threading.Event().wait(timeout=0.5)
+
+        return real_thread(target=_linger, name=name)
+
+    polls = {"n": 0}
+
+    def _sleep_then_finish(_seconds: float) -> None:
+        polls["n"] += 1
+        if polls["n"] >= 3:
+            runner.run_done.set()
+            assert target_returned.wait(timeout=5.0)
+
+    monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _lingering_thread)
+    journal = _RecordingJournal()
+    launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
+    )
+
+    assert result.stalled_run_id is None
+    assert result.command.exit_code == 0
+    assert runner.rm_calls == []
+    # Two polls sampled liveness; the third found the run returned and probed
+    # nothing. A third sample would have reached 1200s of frozen stream against
+    # the 1000s window this plan declares, which is the cancel being prevented.
+    assert runner.verbs.count("events") == 2
 
 
 def test_watched_launcher_does_not_cancel_when_events_advance(tmp_path: Path) -> None:
