@@ -315,7 +315,8 @@ def _work_item_status(*, repo: Path, work_item_id: str) -> str | None:
     if config is None:
         return None
     try:
-        items = read_work_items(path=config)
+        # The ledger read runs during iteration, not generator creation.
+        items = list(read_work_items(path=config))
     except (BeadsCommandError, BeadsConnectionError):
         return None
     for item in items:
