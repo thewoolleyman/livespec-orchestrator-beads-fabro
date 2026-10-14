@@ -71,20 +71,30 @@ def fabro_run_terminal_outcome(
         and inspect.status_kind == "succeeded"
     ):
         return None
+    failure = None if inspect is None else inspect.failure
+    detail = fabro_failure_outcome_detail(failure=failure, fallback=tail(text=stderr))
+    # BOTH channels the sentinel-driven mappings below read, assembled before
+    # the unobservable branch so that branch can stand aside for a terminal
+    # verdict the client already proved. Deciding unobservability first made it
+    # shadow every such verdict, which is the whole hazard its own docstring
+    # records.
+    client_text = f"{stderr}\n{detail}"
     unobservable = unobservable_run_outcome(
-        outcome_type=outcome_type, plan=plan, run_id=run_id, inspect=inspect
+        outcome_type=outcome_type,
+        plan=plan,
+        run_id=run_id,
+        inspect=inspect,
+        client_text=client_text,
     )
     if unobservable is not None:
         return unobservable
-    failure = None if inspect is None else inspect.failure
-    detail = fabro_failure_outcome_detail(failure=failure, fallback=tail(text=stderr))
     terminated = _needs_human_terminal_outcome(
         outcome_type=outcome_type,
         plan=plan,
         run_id=run_id,
         inspect=inspect,
         failure=failure,
-        text=f"{stderr}\n{detail}",
+        text=client_text,
     )
     if terminated is not None:
         return terminated
