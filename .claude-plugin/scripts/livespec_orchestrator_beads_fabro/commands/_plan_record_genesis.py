@@ -19,6 +19,13 @@ the cache itself and refuses before creating anything, so a pre-check in this
 module would be a second reading of the same question, taken at a different
 instant from the one the create actually acts on. The whole value of a refusal
 that happens inside the primitive is that nothing can get between the two.
+
+AN ALREADY-NAMED CHAIN IS A SKIP AND NOT A REFUSAL. Running this migration
+twice is an ordinary operator act, and the second run's whole claim is that it
+changed nothing; reporting it among the refusals would make idempotence read as
+a tenant full of ambiguous state a human still has to resolve by hand. Nor may
+it be silent: an epic the leg passed over for a good reason and one it never
+considered owe opposite conclusions, and only the entry distinguishes them.
 """
 
 from __future__ import annotations
@@ -39,23 +46,29 @@ __all__: list[str] = ["GenesisLeg", "create_migration_genesis"]
 
 @dataclass(frozen=True, kw_only=True)
 class GenesisLeg:
-    """What the genesis leg wrote for one tenant's live plan epics."""
+    """What the genesis leg wrote, and what it deliberately left alone."""
 
     written: tuple[str, ...]
+    skipped: tuple[str, ...]
 
 
 def create_migration_genesis(*, config: StoreConfig, epic_ids: Sequence[str]) -> GenesisLeg:
-    """Start the chain of each named epic that has none, naming what it wrote.
+    """Start the chain of each named epic that has none, naming every outcome.
 
     Each written entry names the TOKEN as well as the epic, because the token id
     is the only thing that distinguishes this write from the one a second
     operator's migration made in the same minute — and it is what an operator
-    reading a chain-walk finding has to compare the epic's cache against.
+    reading a chain-walk finding has to compare the epic's cache against. The
+    skipped entry is the finding's own detail for the same reason: it already
+    names the standing token, and re-wording it here would be a second account
+    of one measurement.
     """
     written: list[str] = []
+    skipped: list[str] = []
     for epic_id in epic_ids:
         outcome = create_genesis_token(config=config, epic_id=epic_id)
         if isinstance(outcome, ChainFinding):
+            skipped.append(outcome.detail)
             continue
         written.append(f"{epic_id} genesis token {outcome}")
-    return GenesisLeg(written=tuple(written))
+    return GenesisLeg(written=tuple(written), skipped=tuple(skipped))
