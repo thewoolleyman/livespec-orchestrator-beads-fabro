@@ -124,7 +124,9 @@ def test_staged_run_journals_source_head_and_its_containing_origin_ref(*, tmp_pa
     checkout = engine.launch_cwds[-1]
     assert checkout.is_relative_to(root / repo.name)
     assert staged["worktree"] == str(checkout)
-    assert engine.launch_heads[-1] == head
+    # This checkout is an ANCESTOR of origin/master, so the staged branch
+    # carries the fetched default-branch head rather than the checkout's own.
+    assert engine.launch_heads[-1] == remote_head
     _assert_cleanup(repo=repo, checkout=checkout, head=head, remote_head=remote_head)
 
 
