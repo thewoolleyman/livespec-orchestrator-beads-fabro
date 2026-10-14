@@ -81,8 +81,22 @@ _VPS_DEV_TOKEN_VALUE = "vps-fixture-dev-token"
 # Both factories resolve a bearer credential, so no pass degrades onto the
 # unauthenticated `fabro rm -f` fallback and the termination routes under test
 # are the ones the scenarios name.
-_HP = FactoryTarget(name="hp", server=_HP_SERVER, dev_token=_HP_DEV_TOKEN_VALUE)
-_VPS = FactoryTarget(name="vps", server=_VPS_SERVER, dev_token=_VPS_DEV_TOKEN_VALUE)
+# Each also declares the Docker daemon running ITS sandbox containers, which
+# is what the container lane of every pass addresses. Omit it and that factory
+# is reported as unobserved rather than swept through the reconciling host's
+# own daemon, so these scenarios would observe no sweep at all.
+_HP = FactoryTarget(
+    name="hp",
+    server=_HP_SERVER,
+    dev_token=_HP_DEV_TOKEN_VALUE,
+    docker_host="ssh://cwoolley@hp.example",
+)
+_VPS = FactoryTarget(
+    name="vps",
+    server=_VPS_SERVER,
+    dev_token=_VPS_DEV_TOKEN_VALUE,
+    docker_host="ssh://cwoolley@vps.example",
+)
 
 # What the factory answers on `GET /questions` for a run parked at the
 # in-loop gate: the graph's own Abandon edge, carrying the wire `key` the

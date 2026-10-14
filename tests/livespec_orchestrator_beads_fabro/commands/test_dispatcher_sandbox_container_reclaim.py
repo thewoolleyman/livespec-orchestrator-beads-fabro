@@ -56,11 +56,21 @@ _LIVE_STATUSES = {
     "01RUNNING": "running",
     "01RUNNABLE": "runnable",
 }
+# The daemon every port here is opened onto. The sweep addresses the surveyed
+# FACTORY's daemon rather than the reconciling host's, so a port cannot be
+# built without naming one.
+_DOCKER_HOST = "ssh://cwoolley@hp-xubuntu.example"
 
 
 @dataclass(kw_only=True)
 class _Docker:
-    """One fake `docker` CLI, keyed by the verb the argv names."""
+    """One fake `docker` CLI, keyed by the verb the argv names.
+
+    The verb is MEMBERSHIP-tested rather than read at a fixed index: every
+    argv opens with the global `--host <daemon>` pair that names the factory
+    host's daemon, so an index-keyed fake would read the daemon address as the
+    verb and answer every call the same way.
+    """
 
     ps_stdout: str = ""
     ps_exit_code: int = 0
@@ -80,9 +90,9 @@ class _Docker:
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
         self.calls.append(argv)
-        if argv[1] == "ps":
+        if "ps" in argv:
             return CommandResult(exit_code=self.ps_exit_code, stdout=self.ps_stdout, stderr="")
-        if argv[1] == "inspect":
+        if "inspect" in argv:
             return CommandResult(
                 exit_code=self.inspect_exit_code,
                 stdout=self.inspect_stdout,
@@ -109,14 +119,16 @@ def _sweep(
     port_module = importlib.import_module(f"{_PACKAGE}._dispatcher_sandbox_container_port")
     reclaim = importlib.import_module(f"{_PACKAGE}._dispatcher_sandbox_container_reclaim")
     return reclaim.reclaim_terminal_run_containers(
-        port=port_module.SandboxContainerPort(runner=runner, cwd=tmp_path),
+        port=port_module.SandboxContainerPort(
+            runner=runner, cwd=tmp_path, docker_host=_DOCKER_HOST
+        ),
         status_by_run=status_by_run,
         dry_run=dry_run,
     )
 
 
 def _removed_names(*, runner: _Docker) -> list[str]:
-    return [argv[-1] for argv in runner.calls if argv[1] == "rm"]
+    return [argv[-1] for argv in runner.calls if "rm" in argv]
 
 
 def test_the_sweep_removes_a_terminal_runs_container_and_spares_the_live_ones(
@@ -207,7 +219,7 @@ def test_an_empty_inventory_is_observed_and_costs_no_inspect(tmp_path: Path) -> 
 
     sweep = _sweep(runner=runner, tmp_path=tmp_path, status_by_run=_LIVE_STATUSES)
 
-    assert [argv[1] for argv in runner.calls] == ["ps"]
+    assert [argv[3] for argv in runner.calls] == ["ps"]
     assert (sweep.reclaimed, sweep.held, sweep.observed) == ((), (), True)
 
 

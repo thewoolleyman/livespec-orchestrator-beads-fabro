@@ -51,7 +51,15 @@ _MODULE_PATH = (
 
 _HP_SERVER = "https://hp.example:32276"
 _HP_DEV_TOKEN_VALUE = "hp-fixture-dev-token"
-_HP = FactoryTarget(name="hp", server=_HP_SERVER, dev_token=_HP_DEV_TOKEN_VALUE)
+# hp also declares the daemon running ITS sandbox containers, which the
+# container lane of each pass addresses. A factory declaring none is reported
+# as unobserved rather than swept through the reconciling host's own daemon.
+_HP = FactoryTarget(
+    name="hp",
+    server=_HP_SERVER,
+    dev_token=_HP_DEV_TOKEN_VALUE,
+    docker_host="ssh://cwoolley@hp.example",
+)
 _ITEM_ID = "bd-ib-super"
 _FIRST_RUN = "01FIRST"
 _SECOND_RUN = "01SECOND"

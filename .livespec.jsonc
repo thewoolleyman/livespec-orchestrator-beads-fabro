@@ -641,9 +641,31 @@
       // per-instance binary override the same item owns. A canary against the
       // candidate therefore declares its entry host-side, where the client
       // path is known, which is also where that canary's proof is captured.
+      //
+      // Each entry may ALSO carry an optional `docker_host` key: the Docker
+      // daemon that runs THAT factory's sandbox containers, spelled as the
+      // Docker CLI spells one and passed to it as `--host`. The
+      // sandbox-container sweep of each `reconcile-runs` pass addresses it,
+      // and an entry declaring none is reported as UNOBSERVED rather than
+      // swept through whichever daemon the reconciling host runs. That is not
+      // a conservative default, it is the only honest reading: the `server`
+      // url beside this key is no evidence of a daemon's whereabouts -- a
+      // loopback url is as likely to be a forwarded tunnel as a local engine
+      // -- so inferring one fails in the expensive direction, removing a
+      // container on the RECONCILING host on the strength of a run status
+      // read from a different one. The defect that made this key necessary
+      // was exactly that blind spot with the reading reversed: the pass runs
+      // on the host carrying the primary checkout, which has never started a
+      // sandbox container, so every sweep record read
+      // `containers_observed: 0` while twelve `fabro-run-*` containers ran on
+      // `hp`, four of them left behind by runs that server reported `failed`
+      // (measured 2026-10-14). The reconciling host's own credentials must
+      // reach the named daemon; while they do not, the pass says so on every
+      // sweep record instead of reporting a clean factory.
       "factories": {
         "hp": {
-          "server": "https://hp-xubuntu.perch-rudd.ts.net:32276"
+          "server": "https://hp-xubuntu.perch-rudd.ts.net:32276",
+          "docker_host": "ssh://cwoolley@hp-xubuntu.perch-rudd.ts.net"
         }
       }
     }

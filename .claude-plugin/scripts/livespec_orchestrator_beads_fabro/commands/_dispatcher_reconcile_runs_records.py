@@ -40,7 +40,7 @@ every reconcile journal row in one place.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_grace import HeldRun
@@ -133,18 +133,20 @@ class ReconcileRunsSummary:
     waiting on. It is a separate collection from `reconciled` so that nothing
     downstream can hand a held run to the termination path by accident.
 
-    `containers` is the same pass's sweep over the host's running sandbox
-    containers. It defaults to the NO-SWEEP value rather than to an empty
-    sweep, so a caller that built a summary without surveying anything — the
+    `containers` is the same pass's sweeps over the running sandbox containers
+    of the factory hosts it surveyed — ONE PER DAEMON, because the containers
+    run where their Fabro server runs and this pass runs wherever its timer
+    runs. The empty tuple is the NO-SWEEP value rather than one empty sweep,
+    so a caller that built a summary without surveying anything — the
     lifecycle hook, when the repo declares no factory — reports that no sweep
-    happened instead of reporting a host with nothing on it.
+    happened instead of reporting a factory with nothing on it.
     """
 
     reconciled: tuple[ReconciledRun, ...]
     errors: tuple[ReconcileError, ...]
     dry_run: bool
     held: tuple[HeldRun, ...] = ()
-    containers: SandboxContainerSweep = field(default_factory=SandboxContainerSweep)
+    containers: tuple[SandboxContainerSweep, ...] = ()
 
 
 def reconciled_from(
