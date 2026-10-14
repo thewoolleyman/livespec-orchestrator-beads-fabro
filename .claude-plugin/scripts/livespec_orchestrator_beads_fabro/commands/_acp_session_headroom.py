@@ -36,9 +36,10 @@ than inference). An operator who named their own account after the vendor has
 not opted into this clause, and an arbitrary manual adapter is outside it until
 an explicit authentication binding brings it in.
 
-THE SKIP PREDICATE IS THE WHOLE FILTER, and its boundary is the one an
-almost-correct implementation inverts: equality PASSES, which the clause says
-in as many words.
+THE SKIP PREDICATE IS THE WHOLE FILTER, and its two boundaries are the ones an
+almost-correct implementation inverts: equality PASSES, and a floor of 0
+disables both kinds of skip while retaining the reading. Both are the clause's
+own words.
 """
 
 from __future__ import annotations
@@ -175,10 +176,22 @@ def headroom_covers_candidate(
 def headroom_skips_candidate(*, reading: SessionHeadroomReading, floor_percent: int) -> bool:
     """Whether this covered candidate leaves the selectable set for this evaluation.
 
+    TWO boundaries, and an almost-correct implementation inverts either.
+
     EQUALITY PASSES. "With a positive floor, a covered candidate is skipped for
     this admission evaluation when its remaining headroom is strictly below the
     floor or its reading is unobservable. Equality passes this filter."
+
+    A NON-POSITIVE FLOOR DISABLES BOTH KINDS OF SKIP, and the UNOBSERVABLE arm
+    is the only one that needs the guard: no remaining headroom is strictly
+    below zero, so a predicate written without it passes every numeric case at a
+    floor of 0 and still refuses on every unobservable reading. An operator who
+    sets the dial to 0 to switch the filter OFF would then find their dispatches
+    skipped whenever the usage endpoint timed out -- the opposite of what the
+    clause ratifies, from the arm a numeric test cannot reach.
     """
+    if floor_percent <= 0:
+        return False
     remaining = reading.remaining_percent
     if remaining is None:
         return True
