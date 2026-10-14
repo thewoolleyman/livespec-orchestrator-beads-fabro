@@ -12,8 +12,11 @@ resolve its prompts nowhere), and every refusal happens BEFORE any run.
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
+from unittest.mock import patch
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     render_run_config_overlay,
     workflow_graph_path,
@@ -329,3 +332,81 @@ def test_payload_refuses_an_acp_node_whose_adapter_did_not_resolve(tmp_path: Pat
     assert isinstance(refusal, str)
     assert "implement_adapter" in refusal
     assert not (tmp_path / "payload").exists()
+
+
+@pytest.mark.parametrize("filename", ["fabro-dispatch-a-1.lock", "temporary.txt"])
+def test_payload_skips_a_file_removed_before_its_read(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, filename: str
+) -> None:
+    """A sibling's cleanup after enumeration must not prevent overlay rendering."""
+    committed = _committed_workflow(root=tmp_path)
+    vanished = committed.parent / "prompts" / filename
+    _ = vanished.write_text("transient sibling state\n", encoding="utf-8")
+    copyfile = shutil.copyfile
+    copied: list[Path] = []
+
+    def copy_after_removal(*, src: str, dst: str, follow_symlinks: bool) -> str:
+        source = Path(src)
+        copied.append(source)
+        if source == vanished:
+            vanished.unlink()
+        return copyfile(src, dst, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(
+        shutil,
+        "copyfile",
+        lambda src, dst, *, follow_symlinks=True: copy_after_removal(
+            src=src, dst=dst, follow_symlinks=follow_symlinks
+        ),
+    )
+    payload = materialize_workflow_payload(
+        committed=committed,
+        payload_dir=tmp_path / "fabro-workflow-b-2",
+        timeouts=default_node_timeouts(),
+        adapters={},
+    )
+    assert vanished in copied
+    assert isinstance(payload, WorkflowPayload), payload
+    assert not (payload.payload_dir / "prompts" / filename).exists()
+    assert (payload.payload_dir / "prompts" / "implement.md").read_text() == "implement prompt\n"
+    rendered = render_run_config_overlay(
+        committed_text=committed.read_text(),
+        workflow_dir=committed.parent,
+        token=_FAKE_TOKEN,
+        github_token=_FAKE_GITHUB_TOKEN,
+        siblings=None,
+        graph_override=payload.graph,
+    )
+    assert rendered is not None
+    assert f'graph = "{payload.graph}"' in rendered
+    assert 'timeout="1800s"' in payload.graph.read_text()
+
+
+def test_present_unreadable_payload_file_is_refused(*, tmp_path: Path) -> None:
+    """Missing-file tolerance must not hide a present file's permission error."""
+    committed = _committed_workflow(root=tmp_path)
+    unreadable = committed.parent / "prompts" / "implement.md"
+    copyfile = shutil.copyfile
+
+    def copy_with_permission_error(*, src: str, dst: str, follow_symlinks: bool) -> str:
+        if Path(src) == unreadable:
+            raise PermissionError(13, "Permission denied", str(unreadable))
+        return copyfile(src, dst, follow_symlinks=follow_symlinks)
+
+    with patch(
+        "shutil.copyfile",
+        side_effect=lambda src, dst, *, follow_symlinks=True: copy_with_permission_error(
+            src=src, dst=dst, follow_symlinks=follow_symlinks
+        ),
+    ):
+        refusal = materialize_workflow_payload(
+            committed=committed,
+            payload_dir=tmp_path / "payload",
+            timeouts=default_node_timeouts(),
+            adapters={},
+        )
+    assert unreadable.is_file()
+    assert isinstance(refusal, str)
+    assert "is not materializable" in refusal
+    assert str(unreadable) in refusal
+    assert "Permission denied" in refusal

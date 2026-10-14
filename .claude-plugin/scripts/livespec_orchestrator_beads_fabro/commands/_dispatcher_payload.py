@@ -259,5 +259,15 @@ def _copy_payload(*, source: Path, payload_dir: Path, graph: Path, text: str) ->
     stale graph to this run.
     """
     shutil.rmtree(payload_dir, ignore_errors=True)
-    _ = shutil.copytree(source, payload_dir)
+    # A sibling dispatch can remove its lock after copytree enumerates it.
+    # Skip vanished files individually so the rest of the payload is copied;
+    # permission errors still reach the materialization refusal above.
+    _ = shutil.copytree(
+        source,
+        payload_dir,
+        copy_function=lambda src, dst: attempt(
+            action=lambda: shutil.copy2(src, dst),
+            exceptions=(FileNotFoundError,),
+        ),
+    )
     _ = graph.write_text(text, encoding="utf-8")
