@@ -359,6 +359,14 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + codex_otel_env
         + credential_use_env
         + proof_store_env
+        # A resumed clone has no publication file from the earlier run. Both
+        # publication stages consume this validated anchor as their fallback;
+        # never infer it from a branch tip that may have moved since validation.
+        + (
+            ""
+            if resume_checkout is None
+            else f"LIVESPEC_RESUME_PUBLISHED_HEAD = {json.dumps(resume_checkout.head)}\n"
+        )
         # The rendered pull-request TITLE, beside the publish branch the same
         # stage reads. Both are facts about this dispatch that a command node
         # cannot read off the rendered goal, which is why this table is the

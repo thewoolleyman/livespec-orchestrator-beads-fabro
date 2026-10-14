@@ -39,6 +39,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_metadata
     PUBLICATION_BODY_FILENAME,
     PublicationMetadata,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import ResumeCheckout
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
 )
@@ -142,3 +143,22 @@ def test_a_caller_holding_no_work_item_renders_a_byte_identical_overlay(
 
 def _metadata() -> PublicationMetadata:
     return PublicationMetadata(title=_TITLE, body=_BODY)
+
+
+def test_only_a_resume_overlay_supplies_the_anchoring_published_head(*, tmp_path: Path) -> None:
+    """A plain dispatch has no previous publication; a resume carries its exact anchor."""
+    head = "a" * 40
+    resumed = render_run_config_overlay(
+        committed_text=_WORKFLOW_TOML,
+        workflow_dir=tmp_path,
+        token=_FAKE_TOKEN,
+        github_token=_FAKE_GITHUB_TOKEN,
+        siblings=None,
+        resume_checkout=ResumeCheckout(branch="feat/bd-ib-4pn4pd", head=head),
+    )
+    assert resumed is not None
+    resume_env = tomli.loads(resumed)["environments"][_ENVIRONMENT_ID]["env"]
+    assert resume_env.get("LIVESPEC_RESUME_PUBLISHED_HEAD") == head
+    ordinary = _overlay(tmp_path=tmp_path, metadata=None)
+    plain_env = tomli.loads(ordinary)["environments"][_ENVIRONMENT_ID]["env"]
+    assert "LIVESPEC_RESUME_PUBLISHED_HEAD" not in plain_env
