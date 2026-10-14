@@ -1,38 +1,46 @@
 """Which cap triggered a non-convergence bounce, and what that cap observed.
 
-Plan slice S4 (`bd-ib-tbgxm4`) makes the bounce path observable end to end. Two
-mechanical signals route a dispatched slice to `backlog`
-(`_dispatcher_plan.is_non_convergence_outcome`) and they are different failure
-modes: the coarse wall-clock watchdog confirming a run made no progress for its
-whole stall window, and the workflow graph's fix-loop visit cap exhausting
-through the `non_converged` terminal. A calibration reading that cannot tell
-them apart is averaging a hung sandbox with a slice that genuinely would not
-converge, and only the second is the "too big" signal the ratified design names
-as the reactive ceiling's training signal.
+Plan slice S4 (`bd-ib-tbgxm4`) makes the bounce path observable end to end. ONE
+mechanical signal routes a dispatched slice to `backlog`
+(`_dispatcher_plan.is_non_convergence_outcome`): the workflow graph's fix-loop
+visit cap exhausting through the `non_converged` terminal. That is the "too
+big" signal the ratified design names as the reactive ceiling's training
+signal.
 
-WHY THE OBSERVED VALUE IS ABSENT FOR THE FIX-LOOP CAP, AND PRESENT FOR THE
-STALL WINDOW. The watchdog's `decide_stall` confirms a stall ONLY when the
-last-event timestamp held unchanged across the FULL window, so the resolved
-window IS the quiet duration that was measured at the moment it fired. The
-fix-loop visit counter, by contrast, lives inside the sandbox graph: the
-`non_converged` terminal prints a fixed sentence and exits, and nothing in the
-failed outcome carries the count. Writing the CONFIGURED cap into the observed
-field would report a constant as a measurement — an exact round number is the
-signature of a configured value and never of an observation, and a record
-carrying one is indistinguishable from evidence. So the cap is NAMED and the
-observation is recorded as absent. Supplying the per-cycle count is plan slice
-S6's work, which is where the commit-series instrument that can measure it
-lands.
+THE WATCHDOG'S STALL WINDOW IS DELIBERATELY NOT A CAP HERE, and the module's
+own earlier docstring is why it needed naming: it warned that a calibration
+reading which cannot tell a hung sandbox from a slice that genuinely would not
+converge is averaging two unrelated failure modes — and then classified both,
+which made the two distinguishable on the record while leaving them identical
+in disposition. `contracts.md`'s "Dispatcher progress watchdog" settles it:
+a `stalled-no-progress` outcome "is NOT factory non-convergence", the
+Dispatcher must journal no `non-convergence-bounce` record for it, and "the
+calibration analysis pass MUST NOT count it as a non-convergence observation".
+So a stall classifies as `UNTRIGGERED_NON_CONVERGENCE_CAP` (`bd-ib-nfbyot`).
+Nothing an operator needs is lost: the resolved window, the layer that supplied
+it and the quiet duration actually confirmed all ride the
+`watchdog-stall-cancel` record the cancel itself journals, which is where a
+cancellation's own figures belong.
 
-THE CAP NAMES ARE WHAT AN OPERATOR WOULD TUNE, not internal labels. The stall
-window's name is the committed configuration key its resolver reads, so a
-bounce record says which knob moves it; the fix-loop cap's name points at the
-graph edge that enforces it.
+WHY THE OBSERVED VALUE IS ABSENT FOR THE FIX-LOOP CAP. The fix-loop visit
+counter lives inside the sandbox graph: the `non_converged` terminal prints a
+fixed sentence and exits, and nothing in the failed outcome carries the count.
+Writing the CONFIGURED cap into the observed field would report a constant as a
+measurement — an exact round number is the signature of a configured value and
+never of an observation, and a record carrying one is indistinguishable from
+evidence. So the cap is NAMED and the observation is recorded as absent.
+Supplying the per-cycle count is plan slice S6's work, which is where the
+commit-series instrument that can measure it lands.
 
-This module is PURE: the stall window is passed IN by the two callers that
-resolve it, so no configuration read happens here. That keeps
-`_dispatcher_calibration` — which holds this value on its record — a pure
-derivation of its inputs.
+THE CAP NAME IS WHAT AN OPERATOR WOULD TUNE, not an internal label: the
+fix-loop cap's name points at the `janitor -> fix` visit guard in the workflow
+graph that enforces it.
+
+This module is PURE: the stall window is still passed IN by the two callers
+that resolve it, so no configuration read happens here. It is retained as a
+parameter rather than dropped because `decide_stall`'s window is the figure a
+future cap could be graded against, and because both callers already hold it;
+what changed is that no arm reports it.
 """
 
 from __future__ import annotations
@@ -49,24 +57,19 @@ __all__: list[str] = [
     "BOUNCE_CAP_OBSERVED_KEY",
     "FIX_LOOP_VISIT_CAP",
     "NON_CONVERGENCE_BOUNCE_STAGE",
-    "STALL_WINDOW_CAP",
     "UNTRIGGERED_NON_CONVERGENCE_CAP",
     "NonConvergenceCap",
     "non_convergence_cap",
 ]
 
-# The two cap identities, each named as the thing an operator would change. The
-# stall window's name is the COMMITTED CONFIGURATION KEY the host watchdog
-# resolves it from, so the record points at the knob; the fix-loop cap's name
-# points at the `janitor -> fix` visit guard in the workflow graph that
-# enforces it.
+# The one cap identity a bounce can name, spelled as the thing an operator
+# would change: the `janitor -> fix` visit guard in the workflow graph.
 #
-# It named an environment variable until bd-ib-3ugnfr, which is a worse failure
-# than a stale label: the key and the variable resolved to DIFFERENT windows, so
-# a bounce record pointed an operator at a knob that moved nothing while
-# reporting a figure 4.8x off the window the watchdog had actually cancelled
-# against.
-STALL_WINDOW_CAP = "dispatcher.stall_timeout_seconds"
+# `STALL_WINDOW_CAP` stood beside it until `bd-ib-nfbyot`, naming the committed
+# key `dispatcher.stall_timeout_seconds`. That key is still the knob that moves
+# the watchdog window and `_dispatcher_stall_window` still resolves it; what it
+# is no longer is a NON-CONVERGENCE cap, so the name lives with the cancel
+# record rather than here.
 FIX_LOOP_VISIT_CAP = "workflow.janitor_fix_loop_visit_cap"
 
 # The journal stage the bounce appends, and the two keys the cap rides under.
@@ -76,13 +79,6 @@ FIX_LOOP_VISIT_CAP = "workflow.janitor_fix_loop_visit_cap"
 NON_CONVERGENCE_BOUNCE_STAGE = "non-convergence-bounce"
 BOUNCE_CAP_KEY = "bounce_cap"
 BOUNCE_CAP_OBSERVED_KEY = "bounce_cap_observed"
-
-# The watchdog status the engine reports for a confirmed stall
-# (`_dispatcher_engine_journal.stalled_outcome`). Tested here rather than
-# imported because that module imports the engine, which imports the plan layer
-# this module already reads — the constant is one string and the alternative is
-# an import cycle.
-_STALLED_STATUS = "stalled-no-progress"
 
 
 class _TerminalOutcome(Protocol):
@@ -133,18 +129,20 @@ UNTRIGGERED_NON_CONVERGENCE_CAP = NonConvergenceCap(cap=None, observed=None)
 def non_convergence_cap(*, outcome: _TerminalOutcome, stall_seconds: float) -> NonConvergenceCap:
     """Classify one terminal outcome's non-convergence cap.
 
-    `stall_seconds` is the resolved stall window the caller read, which is the
-    quiet duration the watchdog measured when it confirmed the stall. It is a
+    `stall_seconds` is the resolved stall window the caller read. It is a
     parameter rather than an environment read so this module stays pure and
-    `_dispatcher_calibration` can hold the result without becoming impure.
+    `_dispatcher_calibration` can hold the result without becoming impure. No
+    arm reports it since `bd-ib-nfbyot` ruled a watchdog stall out of
+    non-convergence; see the module docstring for why the parameter is kept.
 
-    The STALL arm is tested before the general predicate because the two arms
-    are not mutually exclusive in the predicate's own terms — it answers "is
-    this a bounce at all", and a stalled run satisfies it — so a shared ladder
-    would report every stall as a fix-loop exhaustion.
+    The classification asks the SAME predicate the bounce itself asks, which is
+    the point rather than a tidiness: a cap derived separately from the
+    transition it describes can disagree with it, and the disagreement is
+    invisible because both surfaces look correct on their own. That is also why
+    a stall needs no arm of its own here — the predicate already declines it,
+    so the cap and the bounce decline together by construction.
     """
-    if outcome.status == _STALLED_STATUS:
-        return NonConvergenceCap(cap=STALL_WINDOW_CAP, observed=round(stall_seconds))
+    _ = stall_seconds
     if is_non_convergence_outcome(outcome=outcome):
         return NonConvergenceCap(cap=FIX_LOOP_VISIT_CAP, observed=None)
     return UNTRIGGERED_NON_CONVERGENCE_CAP
