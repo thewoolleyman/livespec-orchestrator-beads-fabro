@@ -28,8 +28,10 @@ unparseable, and a `in` check over the rendered text would not notice.
 from __future__ import annotations
 
 import subprocess
+import time
 from pathlib import Path
 
+import pytest
 import tomli
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     render_run_config_overlay,
@@ -118,7 +120,9 @@ def test_the_rendered_body_rides_a_prepare_step_that_actually_writes_it(
 
 
 def test_a_caller_holding_no_work_item_renders_a_byte_identical_overlay(
+    *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Every direct caller's overlay is unchanged, to the byte.
 
@@ -128,6 +132,10 @@ def test_a_caller_holding_no_work_item_renders_a_byte_identical_overlay(
     run config the engine parses differently is a dispatch-wide fault rather
     than a cosmetic one.
     """
+    # The embedded gzip archive records the clock in its header. Keep that
+    # input identical too, even when these renders cross a second boundary.
+    rendered_at = time.time()
+    monkeypatch.setattr(time, "time", lambda: rendered_at)
     without = _overlay(tmp_path=tmp_path, metadata=None)
 
     assert PR_TITLE_ENV_VAR not in without

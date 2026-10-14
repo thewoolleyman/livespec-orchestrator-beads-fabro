@@ -1,12 +1,18 @@
 """Behavior tests for bounded detached-gate session waits."""
 
+import os
 from dataclasses import dataclass, field
 from math import inf, nan
 from pathlib import Path
 
+import pytest
+from livespec_orchestrator_beads_fabro.commands._session_wait_gate import GateStatusProbe
 from livespec_orchestrator_beads_fabro.commands.session_wait import (
     GateObservation,
+    GateStatusLauncher,
     GateTarget,
+    HerdrPaneLauncher,
+    RoutingLauncher,
     WaitRequest,
     freeze_gate_pointer,
     run_wait,
@@ -211,3 +217,85 @@ def test_shared_deadline_bounds_hung_probe_and_leaves_gates_running(*, tmp_path:
     assert launcher.hung.cancelled is True
     assert launcher.running.cancelled is True
     assert all(target_processes_running.values())
+
+
+def _file_gate_targets(*, repository: Path) -> tuple[GateTarget, ...]:
+    targets = tuple(
+        _target(gate_store_root=repository / "tmp/gate-runs", run_id=run_id)
+        for run_id in ("gate-a", "gate-b", "gate-c")
+    )
+    for target in targets:
+        (target.gate_store_root / target.run_id / "pid").write_text(
+            f"{os.getpid()}\n", encoding="utf-8"
+        )
+    (targets[1].gate_store_root / targets[1].run_id / "exit_code").write_text(
+        "23\n", encoding="utf-8"
+    )
+    return targets
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected_seen"),
+    [
+        ("first-event", ["gate-a", "gate-b", "gate-c"]),
+        ("deadline-before-sibling", ["gate-a"]),
+        ("deadline-on-completion", ["gate-a", "gate-b"]),
+    ],
+)
+def test_file_backed_multi_gate_wait_shares_one_deadline(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scenario: str,
+    expected_seen: list[str],
+) -> None:
+    targets = _file_gate_targets(repository=tmp_path)
+    clock = _ManualClock(value=100.0)
+    seen: list[str] = []
+    poll = GateStatusProbe.poll
+
+    def timed_poll(probe: GateStatusProbe, *, now: float) -> GateObservation:
+        seen.append(probe.target.run_id)
+        cost = 0.25
+        if scenario == "deadline-before-sibling" and probe.target == targets[0]:
+            cost = 1.0
+        elif scenario == "deadline-on-completion" and probe.target == targets[1]:
+            cost = 0.75
+        clock.value += cost
+        return poll(probe, now=now)
+
+    monkeypatch.setattr(GateStatusProbe, "poll", timed_poll)
+    result = run_wait(
+        request=WaitRequest(
+            wait_id=scenario,
+            session_id="multi-gate",
+            repository=tmp_path,
+            deadline_seconds=1.0,
+            targets=targets,
+        ),
+        launcher=RoutingLauncher(
+            gate=GateStatusLauncher(repository=tmp_path),
+            pane=HerdrPaneLauncher(),
+        ),
+        wait_store_root=tmp_path / "tmp/session-waits",
+        monotonic=clock.now,
+        sleeper=clock.sleep,
+    )
+    assert clock.value <= 101.0, "reading later gates must not extend the original deadline"
+    assert seen == expected_seen
+    if scenario == "first-event":
+        assert result.command_outcome == "target-ended"
+        assert result.trigger_target == targets[1].identity
+        assert result.trigger_exit_code == 23
+        assert [result.observations[target.identity].state for target in targets] == [
+            "RUNNING",
+            "FAILED",
+            "RUNNING",
+        ]
+    else:
+        assert result.command_outcome == "deadline"
+        assert result.trigger_target is None
+        assert result.unfinished_targets == tuple(target.identity for target in targets)
+        assert all(not observation.fresh for observation in result.observations.values())
+    assert not (targets[0].gate_store_root / targets[0].run_id / "exit_code").exists()
+    assert not (targets[2].gate_store_root / targets[2].run_id / "exit_code").exists()
