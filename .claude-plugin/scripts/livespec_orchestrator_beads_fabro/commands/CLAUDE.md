@@ -747,6 +747,34 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   while silence would read as a reading that was taken and succeeded. Do NOT
   turn that last one into a configurable exemption — the discriminator is the
   structural absence of a server to ask.
+- The NAMED-CHANGE RETRY DISCIPLINE (`bd-ib-5vtqaq`) — a dispatch whose most
+  recent recorded outcome was a failure or an admission refusal is refused
+  until the caller names what changed with `--because`. Split writer-from-reader
+  around one pure record format, and the dependency direction reads bottom-up:
+  `_dispatcher_retry_records` (PURE: the three record kinds, the render, the
+  parse, the timeline read and the armed/repeat decision, plus the declared
+  stage→source-module table) → `_dispatcher_retry_refusal` (PURE: what each
+  refusal SAYS, including the three-way source-module clause) →
+  `_dispatcher_retry_outcome` (the WRITER: which endings earn a record, the
+  executing build identity every record is stamped with, and the one fail-open
+  append path) → `_dispatcher_retry_guard` (the READER: the first row of the
+  pre-dispatch wall).
+  Properties an editor must not invert. The record lives on the work-item's
+  LEDGER TIMELINE and not only in the dispatch journal, because the journal
+  lives in the `tmp/` tree of whichever host ran the dispatch and this fleet's
+  writers may share nothing but the Beads server — a journal-only signature is
+  invisible to the next dispatch from any other clone. A `named-change` record
+  is NOT a dispatch outcome and must neither arm nor clear the guard: reading it
+  as one would clear the guard on the strength of the override itself. A
+  `capacity-deferred` ending earns NO record, because the work-in-progress cap
+  defers an item nothing is wrong with and a signature there would demand a
+  named change for the ordinary next act. The guard's timeline read fails
+  CLOSED, since an unreadable timeline is indistinguishable from an empty one
+  and the two support opposite decisions. And the guard is the FIRST row of the
+  wall in both senses that matter: before any refusal that could write a
+  signature of its own, so the refusal quotes the failure the operator must
+  account for rather than the gate that fired today, and before anything that
+  spends a prerelease, a provider renewal or a forge round trip.
 - `_plan_completeness_identity.py` — the identity each party to the plan
   archive's completeness leg is computed under, through the SAME primitive the
   proof-record surfaces publish under (`_dispatcher_proof_identity`). ONE

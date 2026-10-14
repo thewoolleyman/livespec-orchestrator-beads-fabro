@@ -48,6 +48,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import 
     reflector_oob_after_verdict,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection import reflect
+from livespec_orchestrator_beads_fabro.commands._dispatcher_retry_outcome import (
+    record_retry_outcomes,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_turn_guard import (
     append_run_turn_checks,
 )
@@ -81,6 +84,11 @@ def dispatch_tail_exit(
         include_loop_summary=False,
         journal=journal,
     )
+    # AFTER the verdict, like every other stage here, and for the same reason:
+    # the record is written on the strength of an ending that is already
+    # immutable, and a ledger error while writing it cannot change what this
+    # dispatch reported.
+    record_retry_outcomes(repo=repo, outcomes=outcomes, journal=journal)
     cost_gate_after_verdict(
         args=args,
         repo=repo,
