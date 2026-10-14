@@ -97,6 +97,29 @@ instead of silently appending to its input. After resuming, read the pane
 the rebind by lease ownership as below. Never report a plugin reload as a task
 only the maintainer can do. (Maintainer corrections, 2026-10-11 and 2026-10-12.)
 
+## The trap: an update that failed reads as one that had nothing to do
+
+Before a reload, make sure the update actually moved the registered install.
+`claude plugin update` refreshes the marketplace from GitHub first. When that
+fetch fails, the command still prints `already at the latest version (<old id>)`,
+followed by a trailing `Warning: marketplace not refreshed`. It reads like
+"nothing new was released", but it means "I could not look". The OLD build stays
+registered, so a reload after it rebinds the stale build, and the lease you then
+confirm belongs to the wrong build.
+
+Measured 2026-10-14 by three sessions during the v0.196.15 rollout. In one case
+the cause was a collision with another session's concurrent refresh: the HTTPS
+clone found `~/.claude/plugins/marketplaces/<marketplace>..clone` already present
+(it was gone seconds later), and the SSH fallback then failed on `publickey`.
+The others saw transient GitHub fetch failures on both attempts. Running
+`claude plugin marketplace update <marketplace>` again and then repeating the
+plugin update succeeded each time.
+
+The discriminator is the registered build id, not the command's message. After
+the update, read this project's entry in `~/.claude/plugins/installed_plugins.json`
+and confirm its build id equals the release you expect. Arm the reload only after
+that; then confirm the rebind by lease, as below.
+
 ## The trap: a stale lease file is not evidence of current binding
 
 **The old lease file under the previous build is NOT removed on rebind.**
