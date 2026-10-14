@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.196.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.2...v0.196.3) (2026-10-14)
+
+
+### Bug Fixes
+
+* **workflow:** bound and redact the reported preservation push error ([77481f6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/77481f61886247af05f07bf3e5c2901f14619c17))
+* **workflow:** report the needs-human preservation push error ([b493a76](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b493a7683375b18a62e8d6f2ffc683ae9b016849))
+
 ## [0.196.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.1...v0.196.2) (2026-10-14)
 
 
