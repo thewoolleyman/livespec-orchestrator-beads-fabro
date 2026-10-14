@@ -36,3 +36,30 @@ of any behavior.
 It was never reviewed. Re-implement from it through ordinary Red/Green on
 current master, re-resolving the `CLAUDE.md` index entries against the
 current file; never commit it wholesale.
+
+## `6jkjzm-run-01M4VW5V79XK3MXBTV260AQKBW-implement.diff` — PREFER THIS ONE
+
+- **Source:** `stages/003-implement@1/diff.patch` of Fabro run
+  `01M4VW5V79XK3MXBTV260AQKBW` for `bd-ib-6jkjzm`, dispatched 2026-10-14
+  through plugin build 0.196.1 with the diff above as its reference.
+  Retrieved with `fabro dump 01M4VW5V79XK3MXBTV260AQKBW --server
+  https://hp-xubuntu.perch-rudd.ts.net:32276`.
+- **Integrity:** SHA256
+  `7a4defb5955bb1ced77045e87b036be11a4479dd327fb8622b66eec9aa48c222`, which
+  equals the preserve-by-reference record on `bd-ib-6jkjzm`.
+- **Base:** commit `693825eb4d2bd01a13d29d9768dee38e93f87c43`. It applies
+  cleanly (`git apply --check`) to master `5a04748f`, including the
+  `commands/CLAUDE.md` index.
+- **How the run ended:** implement finished in 1 h 26 min. The janitor's
+  `just check` ran its suite for 58 min and reported 8057 passed and ONE
+  failure, in a test this diff does not touch:
+  `test_dispatcher_publication_metadata_wiring.py::test_a_caller_holding_no_work_item_renders_a_byte_identical_overlay`
+  (it passed 3 of 3 on a host checkout of master `5a04748f`). The fix stage
+  then hit the Anthropic subscription session limit and the run was routed
+  to needs-human. Nothing was pushed, and no Red and Green commit structure
+  was preserved.
+- **Contents:** the same Scenario 170 attribution as the earlier diff,
+  re-derived on a newer master.
+
+Like the earlier diff, it was never reviewed. Port it through ordinary
+Red/Green; never commit it wholesale.
