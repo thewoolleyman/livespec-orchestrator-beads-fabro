@@ -161,6 +161,33 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   URL already carrying a username and a password, so the token Fabro embeds in
   the origin URL still wins there. That precedence is git's own, not something
   arranged here, which is why both cases are asserted as a pair.
+- `_dispatcher_sandbox_worktree_exclude.py` — the ONE renderer that makes a
+  Dispatcher-materialized sandbox path invisible to the run's own git worktree,
+  shared by `_dispatcher_gh_refresh` (the bundle and its base64 payload,
+  `bd-ib-dud2ww`) and `_dispatcher_credential_use_projection` (the guard script,
+  `bd-ib-ccywva`). PURE. The defect it closes belongs to the LAYOUT rather than
+  to either artifact: the Petri-era engine runs each prepare step as a graph
+  node and checkpoints after it, and on that engine the repository clone IS
+  `/workspace`, so every `/workspace` path a prepare step writes is committed
+  into the run branch — while on the pinned engine the clone is
+  `/workspace/<repo>` and the same path sits outside it. That is why the
+  mechanism is one shared renderer and not a rule each projection re-implements.
+  Four properties an editor must not invert. The entry is written to the clone's
+  own `info/exclude` and never to a tracked `.gitignore`, because a rule added to
+  a tracked file would itself be a change every checkpoint commits. EVERY path
+  the chain writes is listed, not only the artifact it ends with — an
+  intermediate a later step deletes is committed by the checkpoint of the step
+  that wrote it. Callers name paths NARROWLY, a file rather than its directory,
+  because the entry lands in a GOVERNED repository's clone and excluding a
+  directory that repository could legitimately track would hide its own content
+  from git. And every arm that cannot MEASURE where a path sits is passed over
+  WITH a labelled line on stderr: a failing prepare step kills the run before any
+  work, so the pass-over is right, but a silent one is indistinguishable from a
+  successful exclusion until `publish_draft` refuses at the end of a full run.
+  Both call sites render the exclusion as their FIRST prepare step for the same
+  checkpoint reason; the credential-use caller may do so and still install the
+  guard at the path `guarded_acp_command` execs, since hiding it from git is not
+  hiding it from the sandbox.
 - The OPT-IN host Codex credential identity observation — the passive
   measurement behind `codex-cred-status --observe-identity-state <path>` —
   lives in FOUR cohesive modules, and the dependency direction reads bottom-up:

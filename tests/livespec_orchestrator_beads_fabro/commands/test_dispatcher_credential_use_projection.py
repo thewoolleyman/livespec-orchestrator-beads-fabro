@@ -273,7 +273,12 @@ def _prepare_then_launch(
     document = _parsed(rendered=rendered)
     env = _env_table(document=document)
     steps = _guard_steps(document=document)
-    assert len(steps) == 2, steps
+    # Exclude, install, check. The exclusion that keeps the guard out of the run
+    # branch is its own step and runs FIRST; whether git honours it is
+    # `test_dispatcher_credential_use_guard_worktree.py`'s subject, while what
+    # these cases need from it is that it changes neither the install nor the
+    # startup grade that follow.
+    assert len(steps) == 3, steps
 
     marker = sandbox / "ran"
     for script in steps:
