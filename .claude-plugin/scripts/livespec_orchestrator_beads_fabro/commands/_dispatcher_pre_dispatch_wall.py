@@ -87,6 +87,7 @@ from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
+    "post_admission_publish_branch_reclaim",
     "pre_dispatch_wall_exit",
     "selection_credential_requirement",
 ]
@@ -215,6 +216,41 @@ def pre_dispatch_wall_exit(
     if reclaim_publish_branches:
         reclaim_stale_publish_branches(args=args, repo=repo, items=items, journal=journal)
     return None
+
+
+def post_admission_publish_branch_reclaim(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    items: Sequence[WorkItem],
+    journal: JournalFile,
+) -> None:
+    """The publish-branch reclaim, for the items admission SELECTED TO LAUNCH.
+
+    It refuses NOTHING (bd-ib-yebrb7): a dead run's surviving publish branch is
+    what makes a re-dispatch's `publish_draft` push non-fast-forward, and
+    clearing it — once its head is preserved by reference — is what lets the
+    recovery publish and reach proof capture. It is per ITEM, because a publish
+    branch is per item.
+
+    THE CALLER IS EACH LAUNCH PATH, handing this exactly what it is about to
+    launch: `_dispatcher_loop_wave` hands it the wave's picked items and
+    `_dispatcher_run_commands` hands it the one target it launches, each after
+    the valve has written `ready -> active` and before any run exists. That
+    POSITION is the point of the entry point, and it is a separate one rather
+    than a flag on the wall above for the reason `bd-ib-huoyk7` records: the
+    reclaim MUTATES origin, so it must not be reachable from a position that
+    does not yet know whether the selection will run.
+
+    A RESUME CALLS IT NOT AT ALL, and the clause requires that: "It MUST NOT run
+    the stale publish-branch reclaim above: the surviving publish branch is the
+    branch the run resumes on, and no preservation ref is created." The two
+    routes are exclusive per dispatch — one KEEPS the dead run's work by
+    finishing it, the other makes a fresh start possible by clearing it — and
+    running both would preserve the head to a ref and delete the very branch the
+    resumed run was about to check out.
+    """
+    reclaim_stale_publish_branches(args=args, repo=repo, items=items, journal=journal)
 
 
 def _refusing_sequence(

@@ -41,6 +41,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import arm_otel_egress
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
+    post_admission_publish_branch_reclaim,
     pre_dispatch_wall_exit,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_readiness_diagnostics import (
@@ -213,6 +214,15 @@ def _admit_and_dispatch_target(  # noqa: PLR0913 — kw-only targeted dispatch; 
         enforce_cap=False,
         rework=ReworkPass(scope_ids=frozenset({target.id})),
     )
+    launching = [*admission.rework, *admission.admitted]
+    # The stale publish-branch reclaim, for the item this path is about to
+    # launch -- which is a HOST-cleared, admitted target and not merely the one
+    # `--item` named, because the valve can still route it away or hold it. It
+    # deletes `feat/<item>` on origin and closes any pull request open on it, so
+    # it belongs past the admission decision rather than in the pre-dispatch
+    # wall above (bd-ib-huoyk7), and before the launch, which is what keeps the
+    # new run's `publish_draft` push a plain fast-forward.
+    post_admission_publish_branch_reclaim(args=args, repo=repo, items=launching, journal=journal)
     dispatched = [
         dispatch_one(
             # Both per-dispatch ledger pins, as in the queue-draining loop:
@@ -228,6 +238,6 @@ def _admit_and_dispatch_target(  # noqa: PLR0913 — kw-only targeted dispatch; 
             journal=journal,
             janitor=janitor,
         )
-        for item in (*admission.rework, *admission.admitted)
+        for item in launching
     ]
     return (admission.refused + dispatched)[0]
