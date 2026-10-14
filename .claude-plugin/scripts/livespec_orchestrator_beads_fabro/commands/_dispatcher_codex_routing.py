@@ -14,6 +14,17 @@ WHAT COUNTS AS ROUTING TO CODEX, and every arm but the last is FAIL-CLOSED:
 - A resolved candidate whose `candidate_key` NAMES the `codex-acp` agent. The
   key is the derived `<agent>/<provider>/<model>` triple
   (`_acp_structured_identity`), so the agent id leads it.
+- A resolved BUILT-IN candidate whose domain is Codex. A built-in is NOT
+  identified by that triple: `_acp_builtin_candidates` keys it on a digest of
+  the adapter's exact rendered bytes, `builtin-<domain>-<digest>`, precisely so
+  that no identity is ever inferred from command text -- so the un-pinned Codex
+  opt-out postures render a key naming no agent at all. Reading the triple
+  alone therefore missed a dispatch that really does launch Codex, which is the
+  unsafe direction: its credential would go ungraded, unprojected and
+  unenforced. The domain is read from `availability_key` AND from the caller's
+  `builtin` fact together, never from one of them: `availability_key` alone is
+  a string an operator may choose, and `builtin` alone covers the Anthropic
+  built-ins too.
 - A resolved candidate carrying NO identity. That is the conservative legacy
   posture -- an arbitrary adapter this build did not render -- and nothing in
   it says which agent it launches, so it may well be Codex.
@@ -47,6 +58,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import CODEX_AGENT_ID
+from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import CODEX_DOMAIN
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidateIdentity
 from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import RenderedCandidate
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     resolve_dispatch_candidates,
@@ -98,13 +111,16 @@ def codex_routing_for_candidates(
             ),
         )
     keys: list[str] = []
+    codex_keys: list[str] = []
     unidentified = 0
     for rendered in candidates:
         identity = rendered.candidate.identity
         if identity is None:
             unidentified += 1
-        else:
-            keys.append(identity.candidate_key)
+            continue
+        keys.append(identity.candidate_key)
+        if _launches_codex(rendered=rendered, identity=identity):
+            codex_keys.append(identity.candidate_key)
     if unidentified:
         return CodexRouting(
             routes_codex=True,
@@ -114,7 +130,6 @@ def codex_routing_for_candidates(
                 "be read"
             ),
         )
-    codex_keys = [key for key in keys if _names_codex_agent(key=key)]
     if codex_keys:
         return CodexRouting(
             routes_codex=True,
@@ -146,6 +161,18 @@ def codex_routing_for_dispatch(*, repo: Path) -> CodexRouting:
     return codex_routing_for_candidates(candidates=resolve_dispatch_candidates(repo=repo))
 
 
+def _launches_codex(*, rendered: RenderedCandidate, identity: AcpCandidateIdentity) -> bool:
+    """Whether this candidate launches Codex, by either of the two identifications.
+
+    `identity` is passed in rather than re-read off `rendered` so the caller's
+    own None-check is what establishes it, instead of a second check here whose
+    unreachable arm would be code nothing can exercise.
+    """
+    return _names_codex_agent(key=identity.candidate_key) or _is_builtin_codex(
+        rendered=rendered, identity=identity
+    )
+
+
 def _names_codex_agent(*, key: str) -> bool:
     """Whether `key`'s leading segment IS the Codex agent id.
 
@@ -153,3 +180,17 @@ def _names_codex_agent(*, key: str) -> bool:
     a vendor word spelled inside an operator's key is not a declaration.
     """
     return key == CODEX_AGENT_ID or key.startswith(f"{CODEX_AGENT_ID}{_KEY_SEGMENT_SEPARATOR}")
+
+
+def _is_builtin_codex(*, rendered: RenderedCandidate, identity: AcpCandidateIdentity) -> bool:
+    """Whether this candidate is a built-in THIS BUILD renders in the Codex domain.
+
+    BOTH facts are required and neither is sufficient. `builtin` alone covers
+    the Anthropic built-ins too; `availability_key` alone is a string an
+    operator may choose, and broadening onto an operator's candidate because
+    they spelled the vendor's own word is the "unrelated identities" case
+    `_acp_dispatch_coverage` refuses for the same reason. `builtin` is the
+    caller's fact, read once from the rendered-bytes table where the chains
+    were resolved, never inferred here from how a key is spelled.
+    """
+    return rendered.builtin and identity.availability_key == CODEX_DOMAIN
