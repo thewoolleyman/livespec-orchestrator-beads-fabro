@@ -26,6 +26,9 @@ __all__: list[str] = [
 ]
 
 
+_SIGNAL_EXIT_FLOOR = 128
+
+
 def resolve_primary_repository(*, repository: Path) -> Path:
     result = ShellCommandRunner().run(
         argv=["git", "-C", str(repository), "config", "--get", "livespec.primaryPath"],
@@ -69,22 +72,36 @@ def _running_state(*, run_dir: Path) -> str:
     return "RUNNING"
 
 
+def _recorded_verdict(*, run_dir: Path) -> tuple[str, int | None] | None:
+    recorded = _read_integer(path=run_dir / "exit_code")
+    if isinstance(recorded, AttemptFailure):
+        return None if isinstance(recorded.error, FileNotFoundError) else ("UNAVAILABLE", None)
+    state = "PASSED" if recorded == 0 else "FAILED"
+    if recorded >= _SIGNAL_EXIT_FLOOR:
+        state = "DIED_WITHOUT_VERDICT"
+    return state, recorded
+
+
+def _gate_status(*, run_dir: Path) -> tuple[str, int | None]:
+    verdict = _recorded_verdict(run_dir=run_dir)
+    if verdict is not None:
+        return verdict
+    state = _running_state(run_dir=run_dir)
+    if state != "RUNNING":
+        # The runner can atomically publish its verdict and exit between the
+        # first file read and the PID probe. Never discard that recorded result.
+        verdict = _recorded_verdict(run_dir=run_dir)
+        if verdict is not None:
+            return verdict
+    return state, None
+
+
 def observe_gate_target(*, target: GateTarget, observed_at: float) -> GateObservation:
     """Read only this frozen gate; absent or unreadable data never means success."""
     state = _generation_state(target=target)
     exit_code: int | None = None
     if state is None:
-        run_dir = target.gate_store_root / target.run_id
-        recorded = _read_integer(path=run_dir / "exit_code")
-        if isinstance(recorded, AttemptFailure):
-            state = (
-                _running_state(run_dir=run_dir)
-                if isinstance(recorded.error, FileNotFoundError)
-                else "UNAVAILABLE"
-            )
-        else:
-            exit_code = recorded
-            state = "PASSED" if recorded == 0 else "FAILED"
+        state, exit_code = _gate_status(run_dir=target.gate_store_root / target.run_id)
     return GateObservation(
         target=target,
         state=state,
