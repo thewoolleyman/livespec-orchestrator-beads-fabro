@@ -157,6 +157,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones import (
     fetch_fleet_manifest_text,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_source_staging import (
+    SourceStagingRunner,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_checks import run_spec_checks
 from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_commitments import (
     Obligation,
@@ -4398,6 +4401,7 @@ def test_dispatch_threads_its_dispatch_id_into_the_watchdog_launcher(
     journaled = next(record for record in records if record["stage"] == "dispatch-id")
     launcher = fake.seen[0]["fabro_launcher"]
     assert isinstance(launcher, WatchedFabroLauncher)
+    assert isinstance(launcher.run_runner, SourceStagingRunner)
     assert launcher.dispatch_id == journaled["dispatch_id"]
     assert launcher.dispatch_id is not None
 

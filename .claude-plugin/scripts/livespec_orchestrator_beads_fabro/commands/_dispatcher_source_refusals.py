@@ -68,7 +68,9 @@ class SourceCheckoutOutcome:
     record: dict[str, object]
 
 
-def pass_outcome(*, head: str, origin_refs: tuple[str, ...]) -> SourceCheckoutOutcome:
+def pass_outcome(
+    *, head: str, origin_refs: tuple[str, ...], origin_ref: str
+) -> SourceCheckoutOutcome:
     """HEAD is contained by an origin ref: dispatch proceeds, and the pass is journaled."""
     return SourceCheckoutOutcome(
         refusal=None,
@@ -78,6 +80,7 @@ def pass_outcome(*, head: str, origin_refs: tuple[str, ...]) -> SourceCheckoutOu
             "status": "passed",
             "reason": _REASON_REACHABLE,
             "head": head,
+            "origin_ref": origin_ref,
             "origin_refs": list(origin_refs),
         },
     )

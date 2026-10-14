@@ -93,12 +93,12 @@ def _green_preflight_results() -> dict[tuple[str, ...], CommandResult]:
             "--format=%(refname:short)",
             "refs/remotes/origin",
         ): _ok(stdout=f"origin/{_DEFAULT_BRANCH}\n"),
-        ("git", "rev-parse", "--short", "HEAD"): _ok(stdout="abc1234\n"),
+        ("git", "rev-parse", "HEAD"): _ok(stdout="abc1234\n"),
         (
             "git",
             "merge-base",
             "--is-ancestor",
-            "HEAD",
+            "abc1234",
             f"origin/{_DEFAULT_BRANCH}",
         ): _ok(),
         ("git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"): _ok(

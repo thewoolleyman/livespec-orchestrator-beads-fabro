@@ -84,6 +84,8 @@ class WatchedFabroLauncher:
     # and snapshotting the vault; RUNNABLE is only queue admission and is too
     # early. None keeps every non-native caller on the old path.
     on_worker_running: Callable[[], None] | None = None
+    # A run-only source venue; watchdog and auth commands retain the ordinary runner.
+    run_runner: CommandRunner | None = None
 
     def launch(
         self,
@@ -99,6 +101,7 @@ class WatchedFabroLauncher:
 
         def _run_fabro() -> None:
             result = port.run(
+                runner=self.run_runner,
                 workflow_toml=plan.workflow_toml,
                 goal_file=plan.goal_file,
                 inputs=dispatch_fabro_run_inputs(plan=plan),

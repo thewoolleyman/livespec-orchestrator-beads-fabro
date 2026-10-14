@@ -40,6 +40,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import Dispatch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_lease import (
     revoke_proof_credentials,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_source_staging import (
+    SourceStagingRunner,
+)
 
 __all__: list[str] = [
     "DispatchRunContext",
@@ -136,6 +139,9 @@ def run_dispatch_with_watchdog(
             # every beat by it (`cc_otel_overlay_env` projects no run id),
             # so a probe without it can never match a beat.
             fabro_launcher=fabro_launcher_type(
+                run_runner=SourceStagingRunner(
+                    inner=runner, plan=context.plan, journal=context.journal
+                ),
                 heartbeat_path=heartbeat_path(args=context.args, repo=context.repo),
                 dispatch_id=context.dispatch_id,
             ),

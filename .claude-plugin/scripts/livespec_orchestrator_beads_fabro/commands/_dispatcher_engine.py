@@ -4,11 +4,11 @@ The engine owns the per-item lifecycle the family discipline prescribes
 (livespec non-functional-requirements.md, Architecture C shape per
 livespec/tmp/fabro-architecture-c-design.md):
 
-  Fabro run from the target repo's PRIMARY checkout (Fabro clones fresh
-  inside its docker sandbox and the phase graph does
-  implement/janitor/PR — the host owns no git working state, so there
-  is no worktree prep and no reaping) -> blocked-state check (`fabro
-  inspect`) -> confirm auto-merge armed (arming as fallback when the
+  Production Fabro run through an origin-proven SOURCE worktree (the
+  source runner owns its worktree/ref cleanup; Fabro clones fresh inside
+  its docker sandbox and the phase graph does implement/janitor/PR)
+  -> blocked-state check (`fabro inspect`) -> confirm auto-merge armed
+  (arming as fallback when the
   graph could not) -> poll until the PR is MERGED -> refresh the
   primary -> post-merge janitor hard gate in a FRESH detached worktree
   of the merged ref -> report.

@@ -66,10 +66,17 @@ def source_checkout_preflight(*, repo: Path, runner: CommandRunner) -> SourceChe
     if not _is_git_worktree(repo=repo, runner=runner):
         return not_a_worktree_outcome(repo=str(repo))
     origin_refs = _origin_refs(repo=repo, runner=runner)
-    head = _git_stdout(repo=repo, runner=runner, argv=["rev-parse", "--short", "HEAD"])
-    reachable = any(_head_is_ancestor(repo=repo, runner=runner, ref=ref) for ref in origin_refs)
-    if reachable:
-        return pass_outcome(head=head, origin_refs=origin_refs)
+    head = _git_stdout(repo=repo, runner=runner, argv=["rev-parse", "HEAD"])
+    origin_ref = next(
+        (
+            ref
+            for ref in origin_refs
+            if head and _head_is_ancestor(repo=repo, runner=runner, head=head, ref=ref)
+        ),
+        None,
+    )
+    if origin_ref is not None:
+        return pass_outcome(head=head, origin_refs=origin_refs, origin_ref=origin_ref)
     return unreachable_outcome(
         head=head,
         origin_refs=origin_refs,
@@ -98,8 +105,8 @@ def _origin_refs(*, repo: Path, runner: CommandRunner) -> tuple[str, ...]:
     )
 
 
-def _head_is_ancestor(*, repo: Path, runner: CommandRunner, ref: str) -> bool:
-    result = _git(repo=repo, runner=runner, argv=["merge-base", "--is-ancestor", "HEAD", ref])
+def _head_is_ancestor(*, repo: Path, runner: CommandRunner, head: str, ref: str) -> bool:
+    result = _git(repo=repo, runner=runner, argv=["merge-base", "--is-ancestor", head, ref])
     return result.exit_code == 0
 
 
