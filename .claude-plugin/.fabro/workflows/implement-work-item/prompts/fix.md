@@ -1,10 +1,46 @@
-# Fix stage — repair the incoming gate or proof finding
+# Fix stage — repair the incoming gate, proof or refresh finding
 
 The loop routed here after a red janitor check, a code-change finding from
-`proof_capture` or `proof_verify`, or an operator-requested retry. A proof
+`proof_capture` or `proof_verify`, a REFRESH-REPAIR brief from `publish_draft`
+or `pr_refresh`, or an operator-requested retry. A proof
 stage can SUCCEED at reporting a defect while requesting `fix`: its status
 does not mean the implementation passed. A green janitor does not discharge
 a semantic proof finding.
+
+## When the incoming finding is a refresh-repair brief
+
+A refreshing stage could not bring this run onto the default branch — the
+rebase conflicted, or the refreshed head was refused by the repository's own
+gate — so it RESTORED the head it held before the refresh and routed here
+rather than ending the run. The preceding stage's output opens
+`LIVESPEC_REFRESH_REPAIR` and carries the brief; the brief is also written to
+the file `livespec-refresh-repair-brief` inside the publication state
+directory (`git rev-parse --git-path livespec-publication`), which is the
+durable second route when the preamble carries none. Read it with `cat`.
+
+The brief names the stage, the pre-refresh head, the default-branch commit the
+refresh targeted, and either each conflicted path together with the run commit
+that was being applied, or each failed gate target. Your job is to INTEGRATE
+the default branch into this run's work inside this turn and resolve the
+conflict or the gate failure:
+
+1. `git fetch origin {{ inputs.default_branch }}`, then rebase or merge this
+   run's work onto it yourself, resolving each conflicted path on its merits.
+   Do NOT resolve by taking one side wholesale — a conflict means both sides
+   changed something, and discarding either loses work somebody shipped.
+2. Re-run the repository's check suite (`{{ inputs.sandbox_check_suite }}`)
+   against the integrated tree and fix what the integration broke. A gate
+   target the brief names failed on the REFRESHED tree, so a green suite on
+   the pre-refresh tree is not evidence.
+3. Leave the branch at the integrated, green head. The graph re-enters
+   janitor, then `publish_draft`, then `proof_capture`, so publication is
+   re-earned on the repaired head rather than claimed here.
+
+Hooks run normally in this turn, exactly as everywhere else. Never pass
+`--no-verify`, never use bare force, and rewrite no ref other than this run's
+own publish branch under an explicit lease. A run may take at most two
+refresh-repair rounds in total, so a turn that leaves the conflict unresolved
+spends a budget nothing replaces.
 
 This node uses `summary:high` fidelity so the preamble includes prior
 agents' source-labelled responses, not just their status and changed files.

@@ -1776,9 +1776,7 @@
     "heading": "## Scenario 176 \u2014 A green run whose refresh conflicts with a moved default branch is repaired and published instead of ending at needs-human",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified 2026-10-14 by the v134 revision (plan publish-draft-green-work-loss, epic bd-ib-acrr56). The refresh-repair route is not implemented yet; an integration-tier test is owed for the eight sub-scenarios, and work-item bd-ib-5guqmt implements the route and owns that binding.",
-    "work_item": "bd-ib-5guqmt"
+    "test": "tests.integration.test_workflow_refresh_repair_scenario176"
   },
   {
     "heading": "## Scenario 177 \u2014 A repository hook that outlives its limit is reaped and named, and publish_draft's limit is configurable",

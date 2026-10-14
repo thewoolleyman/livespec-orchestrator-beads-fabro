@@ -151,7 +151,16 @@ def _node_script(*, node: str) -> str:
     attr = _SCRIPT_ATTR.search(block.group("body"))
     assert attr is not None, node
     unescaped = re.sub(r"\\(?P<escaped>.)", r"\g<escaped>", attr.group("value"))
-    return unescaped.replace("{{ inputs.default_branch }}", "master")
+    # The declared check suite is bound to a PASSING command, which is what
+    # isolates the arm these cases are about. Since v134 `publish_draft` consults
+    # that gate to classify a failed push — a gate that refused the refreshed
+    # head takes the refresh-repair route instead of failing closed — so leaving
+    # the token unbound would let the shell's own "not found" stand in for a gate
+    # rejection and route the push failure to `fix`. With the gate passing, the
+    # only remaining cause is the push itself, which is this case's subject.
+    return unescaped.replace("{{ inputs.default_branch }}", "master").replace(
+        "{{ inputs.sandbox_check_suite }}", "true"
+    )
 
 
 def _git_writes(*, script: str, verb: str) -> list[str]:

@@ -507,6 +507,15 @@ def test_a_conflicting_rebase_is_aborted_with_no_side_chosen(tmp_path: Path) -> 
     HEAD must be back at the head this run published, and the conflicted file
     must carry no merge markers -- the shape a build that resolved by taking one
     side would leave.
+
+    SINCE v134 THE SENTINEL IS THE REPAIR ONE rather than
+    `LIVESPEC_PR_REFRESH_CONFLICT`: a conflicted refresh now restores its
+    published head and routes to the `fix` node, and that fail-closed sentinel is
+    reached only once the two-round repair budget is spent. Every property this
+    case was written for is unchanged and is exactly what the repair depends on --
+    the abort, the restored head and the unresolved file -- so all three are
+    asserted as before. The repair's own accounting is bound in
+    `test_workflow_refresh_repair_scenario176.py`.
     """
     box = _build(root=tmp_path)
     published = _commit(
@@ -522,7 +531,7 @@ def test_a_conflicting_rebase_is_aborted_with_no_side_chosen(tmp_path: Path) -> 
     result = _run(box=box)
 
     assert result.returncode == 1, result.stdout
-    assert "LIVESPEC_PR_REFRESH_CONFLICT" in result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
     assert box.local_head() == published, "the aborted rebase left HEAD somewhere else"
     assert not (box.clone / ".git" / "rebase-merge").exists()
     assert not (box.clone / ".git" / "rebase-apply").exists()
@@ -545,11 +554,16 @@ def test_a_failing_post_rebase_gate_pushes_nothing(tmp_path: Path) -> None:
     result = _run(box=box, check_suite=_FAILING_GATE)
 
     assert result.returncode == 1, result.stdout
-    assert "LIVESPEC_PR_REFRESH_GATE_FAILED" in result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
     assert box.remote_head(ref=_BRANCH) == before, "a failed gate still published"
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
-    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
     assert box.state(name=PUBLISH_HEAD_STATE_FILENAME) == before
+    # The refresh COUNT does move, and that is v134's own requirement rather than
+    # a relaxation of this case: the bound counts each visit that refreshed onto
+    # an advanced default whether the refresh succeeded or routed to repair, so a
+    # repaired refresh that left the counter alone would let a run alternate
+    # repair and refresh past the bound forever.
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
 
 
 def test_a_remote_moving_after_observation_is_rejected_by_the_lease(tmp_path: Path) -> None:
@@ -730,7 +744,10 @@ def test_the_refresh_execution_boundary_leaves_enclosing_run_state_intact(
     # passing arm wrote a counter there and the failing arm did not, so the one
     # directory carries both answers.
     assert passing_box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
-    assert failing_box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
+    # Both boxes now record a refresh, because v134 counts the repaired visit
+    # too; what this case grades is that each recorded it in its OWN clone, which
+    # is the boundary under test.
+    assert failing_box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
 
 
 def test_the_executed_bytes_are_the_committed_bytes(tmp_path: Path) -> None:
