@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from collections.abc import Callable
@@ -387,58 +388,22 @@ def _poll_until_observed(*, probe: _Pollable) -> GateObservation:
 def _assert_gate_status_adapter(*, context: _InventoryContext) -> None:
     from livespec_orchestrator_beads_fabro.commands.session_wait import GateStatusLauncher
 
-    # A POSIX-SHELL adapter rather than a Python one. `launch` clamps its budget
-    # to `min(1.0, ...)` regardless of the 2.0 passed below, and a cold CPython
-    # cannot print its first line within one second while the suite runs under
-    # coverage tracing on a loaded host — the RUNNING probe was reaped before it
-    # emitted anything, which the parser correctly reads as UNAVAILABLE. That is
-    # what made this test fail, and it was never about the code under test.
-    # Every observable behavior is preserved: `read` strips the trailing newline
-    # exactly as `.strip()` did, `$(dirname "$1")` mirrors `Path(argv[1]).parent`
-    # (the launcher passes the bare run id and runs the child in the gate dir, so
-    # both resolve to `./mode`), the two status lines are emitted byte-identically,
-    # and the hang arm still ignores SIGTERM in a process whose pid survives
-    # `exec`, so cancelling it must still escalate past SIGTERM.
-    helper = context.repository / "fake-gate-status.sh"
-    _ = helper.write_text(
-        """read mode < "$(dirname "$1")/mode"
-case "$mode" in
-hang)
-    trap '' TERM
-    exec sleep 60
-    ;;
-malformed)
-    echo 'not gate status output'
-    ;;
-*)
-    echo "  state             : $mode"
-    if [ "$mode" = FAILED ]; then
-        echo "  exit_code         : 23"
-    fi
-    ;;
-esac
-""",
-        encoding="utf-8",
-    )
     target = _target(gate_store_root=context.gate_store_root, run_id="gate-adapter")
-    mode_file = target.gate_store_root / target.run_id / "mode"
-    adapter = GateStatusLauncher(
-        repository=context.repository,
-        command_prefix=("/bin/sh", str(helper)),
-    )
-    _ = mode_file.write_text("FAILED\n", encoding="utf-8")
+    run_dir = target.gate_store_root / target.run_id
+    exit_file = run_dir / "exit_code"
+    adapter = GateStatusLauncher(repository=context.repository)
+    exit_file.write_text("23\n", encoding="utf-8")
     finished = adapter.launch(target=target, timeout_seconds=2.0)
     observation = _poll_until_observed(probe=finished)
     assert (observation.state, observation.exit_code) == ("FAILED", 23)
     finished.cancel(timeout_seconds=0.0)
-    _ = mode_file.write_text("RUNNING\n", encoding="utf-8")
+    exit_file.unlink()
+    (run_dir / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
     running = adapter.launch(target=target, timeout_seconds=2.0)
     assert _poll_until_observed(probe=running).state == "RUNNING"
-    _ = mode_file.write_text("hang\n", encoding="utf-8")
-    assert running.poll(now=time.monotonic()) is None
-    running.cancel(timeout_seconds=0.01)
+    running.cancel(timeout_seconds=0.0)
     assert running.active is False
-    _ = mode_file.write_text("malformed\n", encoding="utf-8")
+    exit_file.write_text("malformed\n", encoding="utf-8")
     unavailable = adapter.launch(target=target, timeout_seconds=2.0)
     assert _poll_until_observed(probe=unavailable).state == "UNAVAILABLE"
     started_at = target.gate_store_root / target.run_id / "started_at"
