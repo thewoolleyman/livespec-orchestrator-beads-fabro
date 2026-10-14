@@ -11,6 +11,16 @@ normal admission on the first usable result, journaling each refused probe.
 
 Four properties are load-bearing rather than incidental.
 
+EVERY ROUND RE-RESOLVES THE CREDENTIAL, rather than re-probing the value the
+wrapper injected when the loop was launched. Re-probing a launch-time snapshot
+is not a re-probe of the credential at all: it asks the same question of the
+same bytes and can only ever get the same answer, so a rotation can never
+reach a parked loop. Measured 2026-10-08 on this host, four loops parked from
+08:54Z and 11:42Z were still journaling `exhausted` at 23:10Z after the
+credential was rotated at roughly 23:00Z, and had to be stopped and
+re-dispatched by hand. `_dispatcher_credential_rotation` owns the re-read and
+the non-secret identity each refused row records.
+
 THE WAIT IS RETIRED BY THE PROBE'S OWN NEXT RESULT, NEVER BY A CLOCK. Nothing
 here reads, parses or honours a provider-stated reset instant, and the cadence
 is this repository's own committed dial rather than anything a provider said.
@@ -53,6 +63,7 @@ the next candidate in configured order.
 
 from __future__ import annotations
 
+import os
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -68,6 +79,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential im
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_env import (
     assess_credential_status,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_rotation import (
+    resolve_credential_reading,
+    selected_credential_env_name,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
@@ -125,8 +140,14 @@ def await_usable_credential(
             DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS
         )
     )
+    # The credential's env-var NAME is resolved once, for the same reason the
+    # cadence is: a per-round re-selection would re-emit the pool-slot
+    # selector's loud fallback line once a cadence, and the rotation this wait
+    # must notice is a change of VALUE under the name a dispatch would project.
+    env_name = selected_credential_env_name()
     while budget > 0:
-        status = assess_credential_status(repo=repo, probe=probe)
+        reading = resolve_credential_reading(repo=repo, env_name=env_name, environ=os.environ)
+        status = assess_credential_status(repo=repo, probe=probe, token=reading.token)
         if status.condition != PROVIDER_LIMIT_CONDITION:
             return
         journal.append(record=_refused_probe_record(status=status, interval=interval))

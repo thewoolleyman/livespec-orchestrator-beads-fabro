@@ -143,6 +143,27 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   onto "not declared" rather than raising, because every consumer is building a
   DIAGNOSTIC naming the wrapper to fix and an exception there would replace an
   actionable refusal with a traceback about the file it was about to name.
+- `_dispatcher_credential_rotation.py` — what the committed `credential_wrapper`
+  injects RIGHT NOW, plus the non-secret identity of that value
+  (`bd-ib-o6aeji`). Split from `_dispatcher_credential_env` by cohesion: that
+  module asks whether THIS PROCESS's environment carries a usable credential, a
+  question settled when the process started, while this one asks the question a
+  PARKED loop needs answered — has the value under that name changed since the
+  last round. Four properties an editor must not invert. The selected
+  credential NAME is removed from the child's environment, which is a
+  correctness requirement rather than hygiene: this fleet's wrapper computes the
+  DIFF between its caller's environment and the one it injects, so a caller
+  already holding the credential produces a near-empty diff and reads its own
+  stale value straight back — the nested-caller shape `AGENTS.md` records. No
+  VALUE ever leaves the process; the journal records only the one-way truncated
+  domain-separated digest, because the sole question asked of it is whether two
+  consecutive readings are EQUAL. The one process boundary carries a FINITE
+  timeout, since an unbounded one hands a misconfigured wrapper the power to
+  hang the wait. And a wrapper that supplied nothing falls back to the
+  LAUNCH-TIME value rather than reading as an absent credential, so a target
+  declaring no wrapper behaves exactly as it did before and one transient
+  hiccup cannot end a legitimate wait — `_dispatcher_credential_reprobe`'s
+  budget is what keeps that fallback from becoming the hang this repairs.
 - `_dispatcher_git_credential_helper.py` — the git credential helper every
   dispatch configures in the sandbox clone, so an in-sandbox push to
   github.com obtains an App installation token minted AT PUSH TIME from the

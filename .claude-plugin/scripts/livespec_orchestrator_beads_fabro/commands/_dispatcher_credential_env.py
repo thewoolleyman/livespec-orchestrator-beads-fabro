@@ -61,6 +61,7 @@ def assess_credential_status(
     *,
     repo: Path,
     probe: Callable[..., ClaudeCredentialStatus] | None = None,
+    token: str | None = None,
 ) -> ClaudeCredentialStatus:
     """Assess the projected worker credential: absence locally, else ONE bounded probe.
 
@@ -74,17 +75,30 @@ def assess_credential_status(
     keeps ONE probe seam: `probe_claude_credential` is resolved through this
     module's namespace, so a caller that stands the probe in stands in the one
     the whole dispatch path uses.
+
+    `token` is the value to assess. An ABSENT `token` reads this process's own
+    environment, which is the pre-launch question every dispatch asks and whose
+    answer cannot change while the process lives. A caller that has RE-RESOLVED
+    the credential — the bounded re-probe, which must see a rotation land —
+    supplies the value it resolved, and the env read is skipped along with its
+    pool-slot selection, because a per-round re-selection would re-emit that
+    selector's loud fallback line once a cadence.
     """
+    resolved = _environment_credential() if token is None else token
+    if resolved == "":
+        return absent_claude_credential_status(wrapper_text=credential_wrapper_text(repo=repo))
+    selected_probe = probe if probe is not None else probe_claude_credential
+    return selected_probe(token=resolved)
+
+
+def _environment_credential() -> str:
+    """This process's own credential value, under the selected pool slot's name."""
     credential_choice = select_factory_credential(
         environ=os.environ,
         home=Path.home(),
         warn=lambda message: sys.stderr.write(f"livespec-dispatch: {message}\n"),
     )
-    token = os.environ.get(credential_choice.env_name, "")
-    if token == "":
-        return absent_claude_credential_status(wrapper_text=credential_wrapper_text(repo=repo))
-    selected_probe = probe if probe is not None else probe_claude_credential
-    return selected_probe(token=token)
+    return os.environ.get(credential_choice.env_name, "")
 
 
 def check_credential_env(

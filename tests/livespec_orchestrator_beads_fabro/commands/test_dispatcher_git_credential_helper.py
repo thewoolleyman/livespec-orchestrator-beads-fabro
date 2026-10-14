@@ -278,8 +278,20 @@ def _scrubbed_env() -> dict[str, str]:
     `.coverage.*` that races the parallel check dispatcher. The git config
     redirects keep the runner's own global and system config -- which may well
     carry a credential helper of its own -- out of the measurement.
+
+    `GIT_CONFIG_COUNT` AND ITS KEY/VALUE PAIRS ARE DROPPED TOO, because that is
+    a FOURTH config venue and it OUTRANKS every file the redirects above
+    neutralize. A factory sandbox running this suite inherits exactly that
+    family: the dispatch's own push wrapper exports
+    `credential.https://github.com.helper` there -- once empty, which clears
+    the list, then once with its inline helper -- so the clone's configured
+    helper is never consulted and `git credential fill` fatals on a disabled
+    terminal prompt. Measured in hp-candidate sandbox run
+    01M4XNM4BBMYFPQDA6X5JCBDYM, where this case was the only baseline failure
+    in 8143 tests.
     """
-    env = {key: value for key, value in os.environ.items() if not key.startswith("COV")}
+    scrubbed = ("COV", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
+    env = {key: value for key, value in os.environ.items() if not key.startswith(scrubbed)}
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
     env["GIT_CONFIG_NOSYSTEM"] = "1"
