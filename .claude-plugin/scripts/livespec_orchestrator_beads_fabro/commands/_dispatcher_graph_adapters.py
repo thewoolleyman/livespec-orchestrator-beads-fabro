@@ -130,19 +130,31 @@ class _NodeRender:
     command: str
 
 
-def guarded_adapter_commands(*, run_inputs: Sequence[str]) -> Mapping[str, str]:
-    """Each resolved `<input>=<adapter>` pair as input name to GUARDED command.
+def guarded_adapter_commands(
+    *, run_inputs: Sequence[str], guarded: bool = True
+) -> Mapping[str, str]:
+    """Each resolved `<input>=<adapter>` pair as input name to launch command.
 
     The guard is spliced in here for the same reason the launch renderer
     splices it into its `--input` pairs: it wraps the exec that actually starts
     a coding agent, so the absolute credential-use deadline binds whichever
     route the engine takes to the adapter. Rendering the literal into the graph
     without it would create a second, unguarded launch path.
+
+    `guarded` is whether this dispatch projects a Codex credential at all, which
+    is the ONLY thing the deadline bounds (`bd-ib-meejjz`). It defaults to True,
+    the posture every dispatch had before the decision existed. Passing False
+    for a dispatch that DOES project one would leave this launch route
+    unbounded; passing True for one that does NOT is the louder failure, because
+    the guard fails closed on an absent deadline and every node of that dispatch
+    then refuses with the guard's own exit code rather than running. So this
+    argument and the credential projection are ONE decision, and the dispatch
+    resolves it once and hands the same answer to both.
     """
     commands: dict[str, str] = {}
     for pair in run_inputs:
         name, _, rendered = pair.partition("=")
-        commands[name] = guarded_adapter_string(rendered=rendered)
+        commands[name] = guarded_adapter_string(rendered=rendered) if guarded else rendered
     return commands
 
 

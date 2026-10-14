@@ -46,25 +46,32 @@ def dispatch_fabro_run_inputs(*, plan: DispatchPlan) -> tuple[str, ...]:
     value the workflow's own default carries and the value a dispatch renders
     are the same word.
     """
-    # EVERY adapter launch is wrapped here, which is what makes the absolute
-    # credential-use deadline bind the thing that actually execs a coding agent.
-    # This is the one chokepoint that reaches all of them: the graphs declare
-    # `acp.command="{{ inputs.<node>_adapter }}"`, so the built-in catalog
-    # adapters, a repository's `dispatcher.acp_nodes` overlay and a per-dispatch
-    # `--acp-node` override all arrive as these pairs. Wrapping per adapter
-    # IDENTITY would leave whichever route nobody remembered unguarded.
+    # EVERY adapter launch of a PROTECTED dispatch is wrapped here, which is what
+    # makes the absolute credential-use deadline bind the thing that actually execs
+    # a coding agent. This is the one chokepoint that reaches all of them: the
+    # graphs declare `acp.command="{{ inputs.<node>_adapter }}"`, so the built-in
+    # catalog adapters, a repository's `dispatcher.acp_nodes` overlay and a
+    # per-dispatch `--acp-node` override all arrive as these pairs. Wrapping per
+    # adapter IDENTITY would leave whichever route nobody remembered unguarded.
     #
-    # Unconditional, because a launch cannot be reached without the guard being
-    # installed: `dispatch_one` materializes the overlay first, that step reads the
-    # host Codex credential UNCONDITIONALLY and refuses the dispatch when it
-    # cannot, and a credential projected without enforcement renders no overlay at
-    # all. An installed guard is therefore an invariant of reaching this line — and
-    # if that ever stops being true the launch fails loudly on a missing script
-    # rather than quietly running unguarded.
+    # PROTECTED means this dispatch projects a Codex credential, which is the only
+    # thing the deadline bounds, and `plan.routes_codex` is where that single
+    # decision was recorded (`bd-ib-meejjz`). It was unconditional while the
+    # projection was: `materialize_overlay` read the host Codex credential for
+    # every dispatch and refused when it could not, so an installed guard was an
+    # invariant of reaching this line. It no longer is — a dispatch whose every
+    # resolved ACP node runs `claude-acp` installs none — and wrapping such a
+    # launch anyway would NOT run it unguarded: the guard fails closed on an
+    # absent deadline, so every node of that dispatch would refuse with the
+    # guard's own exit code. Reading the plan rather than re-deriving the routing
+    # is what keeps this seam and the projection on one answer.
     adapters = (
         ()
         if plan.acp_nodes is None
-        else tuple(_guarded_adapter_input(pair=pair) for pair in plan.acp_nodes.run_inputs)
+        else tuple(
+            _guarded_adapter_input(pair=pair) if plan.routes_codex else pair
+            for pair in plan.acp_nodes.run_inputs
+        )
     )
     return (
         *adapters,

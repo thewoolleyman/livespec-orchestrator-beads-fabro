@@ -256,10 +256,22 @@ def test_default_target_renders_every_node_at_1800_seconds(
     # The adapter is RESOLVED TO A LITERAL rather than left templated (plan
     # `fabro-currency` P4): a templated `acp.command` kills the agent before the
     # ACP protocol completes on the Petri-era engine, so the generator writes the
-    # resolved command in. The guard wrap is what precedes it.
+    # resolved command in.
     assert "inputs.acp_adapter" not in capturing.graph_text
+    # AND IT CARRIES NO CREDENTIAL-USE GUARD, because this fixture's only ACP
+    # adapter is the Claude one above, so the dispatch routes no node to Codex,
+    # projects no host Codex credential and stamps no credential-use deadline
+    # (`bd-ib-meejjz`). The guard fails closed on an absent deadline, so a
+    # wrapped launch here would refuse with its exit code rather than run --
+    # which is why the unguarded literal is the correct rendering and not a
+    # weakening. The guarded arm, for a dispatch that DOES route a node to
+    # Codex, is asserted by
+    # `test_dispatcher_credential_use_launch_routing.py`; `guarded_adapter_
+    # string` is read here anyway so this assertion names the wrap it is
+    # asserting the ABSENCE of rather than a string spelled by hand.
     guarded = guarded_adapter_string(rendered=_ADAPTER)
-    assert f'acp.command="{guarded}"' in capturing.graph_text
+    assert f'acp.command="{_ADAPTER}"' in capturing.graph_text
+    assert guarded not in capturing.graph_text
 
 
 def test_configured_node_keeps_its_value_and_others_default(

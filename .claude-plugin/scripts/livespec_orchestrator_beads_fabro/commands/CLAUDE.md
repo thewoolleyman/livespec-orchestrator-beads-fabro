@@ -399,7 +399,24 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   of the value-free verbs. `_dispatcher_codex_overlay_leg` is the
   neighbouring extraction that keeps the materializer inside its size ceiling:
   the run budget, the graded host Codex snapshot, the credential-use enforcement
-  inputs and the launch-route guard, in that order, as one unit.
+  inputs and the launch-route guard, in that order, as one unit — and ALL FOUR
+  behind one `routes_codex` short-circuit (`bd-ib-meejjz`), which returns the
+  unprotected pair `(snapshot=None, credential_use=None)` before the first of
+  them for a dispatch that routes no node to Codex. It sits above the
+  REQUIREMENT derivation and not merely above the grade, because that
+  derivation's own refusals would otherwise refuse a dispatch over an allowance
+  nothing was going to size; and above the launch-route check, whose own rule is
+  that protection is owed exactly when a credential is projected. The
+  materializer's Codex `[otel]` table is then keyed on the snapshot the leg
+  returned (`codex_otel_config_for_dispatch`), because `$CODEX_HOME` reaches the
+  sandbox only on the credential's own env lines and that table's prepare step
+  opens with `mkdir -p "$CODEX_HOME"` — rendered without the credential it
+  expands to `mkdir -p ""` and aborts the sandbox for EVERY such dispatch. The
+  two launch wraps (`_dispatcher_graph_adapters.guarded_adapter_commands`'s
+  `guarded` flag for the payload graph's literal, and `_dispatcher_fabro_inputs`
+  for the `--input` pairs) read the SAME answer off `DispatchPlan.routes_codex`:
+  the guard fails closed on an absent deadline, so a wrapped launch in an
+  unprotected dispatch refuses every node rather than running unbounded.
   Six properties an editor must not invert. The INLINE overlay is the default
   only when the declaration is ABSENT; an unrecognised, empty, null or non-string
   declaration REFUSES — the pinned engine resolves no
@@ -465,7 +482,20 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `project_host_codex_auth` — the post-claim projection, which GRADES but never
   renews, since a second renewal would spend provider work on a question whose
   answer can no longer refuse before a claim.
-  A FOURTH property, and the one a reader is most likely to delete as dead
+  A FOURTH property, from `bd-ib-meejjz`: the gate applies ONLY to a selection
+  whose dispatch routes a node to Codex. It takes the routing
+  `_dispatcher_codex_routing` decided, returns before the credential is read
+  when no node does, and journals `codex-credential-gate-not-applied` carrying
+  that routing — a row written even though nothing was refused, because unlike
+  an admitted pass it has no overlay projection record after it, so without the
+  row the decision would be indistinguishable from a gate that ran and passed.
+  That arm sits ABOVE the unresolved-requirement arm deliberately: the
+  requirement is the allowance a LIFETIME is graded against, so a dispatch with
+  no credential to grade must not be refused because no allowance could be
+  derived for it. The routing parameter DEFAULTS to the unmeasured value, which
+  routes Codex, so a caller wiring none keeps Scenario 19 rather than turning it
+  off by omission.
+  A FIFTH property, and the one a reader is most likely to delete as dead
   weight: an EMPTY selection returns `None` before the credential is read at
   all. The drain reaches the wall on every pass that finds no ready work, so
   this is the common case, and grading there spent a bounded provider request

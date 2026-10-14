@@ -211,7 +211,12 @@ def materialize_dispatch(
         payload_dir=workflow_payload_dir(work_item_id=work_item_id),
         journal=journal,
         work_item_id=work_item_id,
-        adapters=guarded_adapter_commands(run_inputs=acp_nodes.run_inputs),
+        # The literal `acp.command` each ACP node receives, behind the
+        # credential-use guard exactly when this dispatch projects a credential
+        # for that guard to bound. The two travel together: the guard fails
+        # closed on an absent deadline, so wrapping an unprotected dispatch's
+        # launch would refuse every one of its nodes.
+        adapters=guarded_adapter_commands(run_inputs=acp_nodes.run_inputs, guarded=routes_codex),
         # The RESUMED-AT stage, when this dispatch is a resume. Read defensively
         # for the same reason `acp_node` above is: only the resume entry point
         # ever sets it, and every other command reaches this code with a

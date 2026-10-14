@@ -241,6 +241,15 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     credential gate, before the item is claimed, because that is the only
     position from which an unrenewable credential can be reported without
     leaving an `active` row nobody is working.
+
+    THAT WHOLE LEG RUNS ONLY FOR A DISPATCH THAT ROUTES A NODE TO CODEX
+    (`routes_codex`, decided once by `_dispatcher_codex_routing` and carried
+    on the plan). One whose every resolved ACP node runs `claude-acp` projects
+    no Codex credential, no credential-use enforcement and no Codex `[otel]`
+    table, and is refused by none of them -- there is no such credential in
+    the dispatch for any of them to be about. The Claude OAuth projection,
+    the GitHub App token, the sibling clones and every other projection here
+    are unaffected.
     """
     # WHAT the written config NAMES its graph, as distinct from WHICH graph this
     # dispatch runs. `graph_override` itself stays absolute — the route check
