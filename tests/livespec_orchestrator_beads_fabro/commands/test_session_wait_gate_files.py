@@ -70,3 +70,38 @@ def test_liveness_failure_is_distinguished_from_death(
     observation = observe_gate_target(target=gate, observed_at=1.0)
     assert observation.state == state
     assert observation.exit_code is None
+
+
+@pytest.mark.parametrize(
+    ("stat", "state"),
+    [
+        (FileNotFoundError(), "DIED_WITHOUT_VERDICT"),
+        (PermissionError(), "UNAVAILABLE"),
+        (UnicodeError(), "UNAVAILABLE"),
+        ("", "UNAVAILABLE"),
+        ("123 (gate) ? 1", "UNAVAILABLE"),
+        ("123 (gate) S 1", "RUNNING"),
+    ],
+)
+def test_process_state_read_distinguishes_exit_from_uncertainty(
+    *,
+    gate: GateTarget,
+    monkeypatch: pytest.MonkeyPatch,
+    stat: str | OSError | UnicodeError,
+    state: str,
+) -> None:
+    pid = os.getpid()
+    (gate.gate_store_root / gate.run_id / "pid").write_text(f"{pid}\n", encoding="utf-8")
+    read_text = Path.read_text
+
+    def proc_text(path: Path, *, encoding: str | None = None, errors: str | None = None) -> str:
+        if path == Path(f"/proc/{pid}/stat"):
+            if isinstance(stat, OSError | UnicodeError):
+                raise stat
+            return stat
+        return read_text(path, encoding=encoding, errors=errors)
+
+    monkeypatch.setattr(Path, "read_text", proc_text)
+    observation = observe_gate_target(target=gate, observed_at=1.0)
+    assert observation.state == state
+    assert observation.exit_code is None

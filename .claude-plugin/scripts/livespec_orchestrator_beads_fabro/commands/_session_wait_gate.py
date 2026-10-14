@@ -69,7 +69,27 @@ def _running_state(*, run_dir: Path) -> str:
         return (
             "DIED_WITHOUT_VERDICT" if isinstance(alive.error, ProcessLookupError) else "UNAVAILABLE"
         )
-    return "RUNNING"
+    return _process_state(pid=pid)
+
+
+def _process_state(*, pid: int) -> str:
+    """Linux retains an exited PID until reaping; signal-zero alone is insufficient."""
+    stat = attempt(
+        action=lambda: Path(f"/proc/{pid}/stat").read_text(encoding="utf-8"),
+        exceptions=(OSError, UnicodeError),
+    )
+    if isinstance(stat, AttemptFailure):
+        return (
+            "DIED_WITHOUT_VERDICT" if isinstance(stat.error, FileNotFoundError) else "UNAVAILABLE"
+        )
+    # The comm field may itself contain parentheses, so split after its LAST close.
+    fields = stat.rpartition(")")[2].split()
+    state = fields[0] if fields else ""
+    if state in {"Z", "X", "x"}:
+        return "DIED_WITHOUT_VERDICT"
+    if state in {"R", "S", "D", "T", "t", "W", "K", "P", "I"}:
+        return "RUNNING"
+    return "UNAVAILABLE"
 
 
 def _recorded_verdict(*, run_dir: Path) -> tuple[str, int | None] | None:
