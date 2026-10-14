@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import gzip
 import io
 import json
 import os
@@ -324,7 +325,11 @@ def github_auth_support_archive_b64(*, scripts_root: Path | None = None) -> str:
     """Return the dispatching plugin build's minimal GitHub auth support bundle."""
     root = scripts_root if scripts_root is not None else Path(__file__).resolve().parents[2]
     buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+    # Fix only the gzip header clock; tar members retain their source metadata.
+    with (
+        gzip.GzipFile(fileobj=buffer, mode="wb", mtime=0) as compressed,
+        tarfile.open(fileobj=compressed, mode="w") as archive,
+    ):
         for relpath in _SUPPORT_ARCHIVE_RELPATHS:
             source = root / relpath
             if source.is_dir():
