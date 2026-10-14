@@ -3063,10 +3063,7 @@ MUST also carry the command node `publish_draft`, entered only from a
 green janitor outcome and exiting to `proof_capture`, which MUST push the
 item's publish branch and, when no pull request for that branch exists,
 open one as a DRAFT; it MUST be idempotent across janitor re-entries and
-MUST fail closed to `needs_human` when origin cannot be reached; a refresh
-that conflicts, or a refreshed head that the repository's gate rejects, MUST
-instead take the refresh-repair route of "Refresh repair" below while that
-route's budget lasts. The command stages `pr_refresh` and `pr` MUST perform publication as specified
+MUST fail closed to `needs_human` when origin cannot be reached. The command stages `pr_refresh` and `pr` MUST perform publication as specified
 below; the publish breaker (`verify_pr`) retains its existing obligations.
 Each of the three ACP nodes selects its
 adapter through exactly the mechanism the existing ACP nodes use, with
@@ -3083,12 +3080,9 @@ MUST be command stages with their own resolved timeouts, not agent turns.
 `pr_refresh` MUST fetch the authoritative default branch and query the publish
 branch on origin. It MUST establish the run's previously published head from
 its recorded publication or validated resume provenance, never from a stale
-local tracking ref. A missing or unobservable remote, or a foreign or
-unexpectedly changed publish head, MUST fail closed with a named cause and
-recovery artifact pointer. A conflicted rebase or merge, and a refreshed head
-that the repository-declared gate rejects, MUST take the refresh-repair route of
-"Refresh repair" below while its budget lasts, and MUST fail closed with a named
-cause and recovery artifact pointer once that budget is spent. A previously completed refresh may be
+local tracking ref. A missing or unobservable remote, a foreign or unexpectedly
+changed publish head, or a conflicted rebase MUST fail closed with a named
+cause and recovery artifact pointer. A previously completed refresh may be
 recognized idempotently from durable run provenance and matching remote state.
 
 When the default branch has advanced beyond the current base, `pr_refresh`
@@ -3103,51 +3097,6 @@ three refreshes per run, after which the run terminates with an explicit
 non-convergence cause and preserved work. An unchanged head proceeds to `pr`.
 All touched nodes MUST retain an unconditional outgoing edge accepted by the
 supported engine, and command nonzero exits MUST take their failure edge.
-
-**Refresh repair.** When `publish_draft` or `pr_refresh` cannot refresh the run
-onto the advanced default branch — because the rebase or merge conflicts, or
-because the refreshed head fails the repository-declared gate that runs before
-or during the publishing push — the stage MUST restore its pre-refresh head,
-MUST record a refresh-repair brief, and MUST route to the existing `fix` agent
-node. The pre-refresh head is the head the stage held when it began that
-refresh: for `publish_draft`, the head the most recent `janitor` passed; for
-`pr_refresh`, the run's previously published head as established above from its
-recorded publication or validated resume provenance, which also covers a
-resumed run that has no `janitor` visit of its own. Restoration MUST abort any
-in-progress rebase or merge AND reset the run's working branch to the
-pre-refresh head, so it applies equally when the refresh itself completed and
-only the gate rejected the result. The brief MUST name the stage, the
-pre-refresh head, the default-branch commit the refresh targeted, and either
-each conflicted path together with the run commit that was being applied, or
-each failed gate target. The stage MUST distinguish a refreshed head that the
-gate rejected from a push that origin refused or could not reach, and from an
-authentication failure; only a conflict or a gate rejection takes this route,
-and every other cause keeps its existing fail-closed behaviour. The `fix` turn
-integrates the default branch into the run's work, resolving the conflict or
-the gate failure inside its own turn. Hooks MUST run normally there, and the
-turn MUST NOT use `--no-verify`, bare force, or a rewrite of any ref other than
-the run's own publish branch under an explicit lease. After a refresh-repair
-round the run re-enters `janitor`, then `publish_draft`, then `proof_capture`,
-exactly as an accepted fix round does, so only proof for the repaired head can
-reach publication.
-
-**Refresh-repair accounting.** A refresh-repair round is counted once, at the
-moment a stage routes to `fix` with a brief. A run MAY take at most two
-refresh-repair rounds in total across `publish_draft` and `pr_refresh`; when a
-third refresh would need repair, the stage MUST fail closed to `needs_human`
-with the named cause `refresh-repair-exhausted` and a recovery artifact pointer
-naming that stage's pre-refresh head. A refresh-repair round MUST NOT consume
-`dispatcher.review_fix_cap` or any review-fix round. `pr_refresh`'s
-three-refresh non-convergence bound counts each `pr_refresh` visit that
-refreshes onto an advanced default branch, whether that refresh succeeds or
-routes to repair, and counts it once at that visit; `publish_draft` refreshes,
-repaired or not, do not count toward that bound, and the re-entry of
-`publish_draft` after a repair does not count a second time for the refresh
-that was repaired. The `fix` node's visit limit MUST accommodate the two
-refresh-repair rounds in addition to the rounds its other entry paths already
-allow. A refresh that applies cleanly and passes the gate is unchanged by this
-paragraph or the one before it. Scenario 176 in `scenarios.md` exercises both
-paragraphs.
 
 `pr` MUST query the exact pull request for the recorded branch, verify its
 current head against the head whose proof was verified, apply the Dispatcher-
@@ -7385,7 +7334,7 @@ in the workflow graph.
 
 **Keys.** `dispatcher.node_timeouts` is a table keyed by node name
 (`dod_gate`, `implement`, `fix`, `review_fix`, `proof_capture`, `review`,
-`disposition`, `proof_verify`, `publish_draft`, `pr_refresh`, `pr`, `janitor`) whose values are positive
+`disposition`, `proof_verify`, `pr_refresh`, `pr`, `janitor`) whose values are positive
 integers of seconds; `dispatcher.stall_timeout_seconds`
 is a positive integer of seconds for the run-level stall watchdog. A node with
 no configured value MUST resolve to **1800** seconds; the stall watchdog with
@@ -7442,31 +7391,6 @@ is an adapter argument and rides the node's `args` under §"ACP node adapter
 configuration"; this section adds no separate key for it.
 
 Implemented by ledger item `bd-ib-cnkf`.
-
-**Repository hooks that outlive a limit.** A governed repository's commit and
-push hooks run inside the factory sandbox under one of two limits: the agent's
-per-tool-call limit, when an ACP agent runs `git commit` or `git push` inside
-its own turn, or the resolved timeout of a command node that commits or pushes,
-such as `publish_draft` or `pr_refresh`. When an agent tool call that runs a git
-commit or push is ended by the agent's per-tool-call limit while the hook run it
-started is still executing, every process of that hook run MUST be terminated
-before the agent's next git commit or push in the same sandbox starts, so that
-two hook runs never execute concurrently in one sandbox. A `hook-over-limit`
-event is a git commit or push ended by one of those two limits while a hook run
-it started was still executing, as observed from that hook run's processes at
-the moment the limit ended the operation; a commit or push ended by a limit
-before its hook started, or after its hook finished, is not a `hook-over-limit`
-event and keeps its existing failure classification. For every `hook-over-limit`
-event the run MUST record a `hook-over-limit` row in the dispatch journal naming
-the node, the git operation, the limit that ended it in seconds, and the elapsed
-milliseconds of the hook run at termination, whether or not the run later
-recovers. When a `hook-over-limit` event is the cause of the run's needs-human
-ending, the needs-human cause recorded on the item MUST name `hook-over-limit`,
-the node and the git operation, so that the stop is not presented as an agent's
-decision; a recovered event MUST NOT be named as the cause of a later
-needs-human ending that has a different cause. `blocked_reason` gains no member
-and the run still preserves its work under "A factory run never awaits a human".
-Scenario 177 in `scenarios.md` exercises this paragraph.
 
 ## Provider-limit permanence and root-cause surfacing
 
