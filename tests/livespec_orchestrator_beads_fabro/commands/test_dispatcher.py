@@ -4285,6 +4285,16 @@ def test_dispatch_green_closes_item_and_journals(
         # the UNOBSERVABLE one -- which is the point of that arm existing, since an
         # unreachable forge must not be reported as an absent prerelease.
         "proof-asset-store",
+        # The Codex credential gate CLOSES the pre-dispatch wall, and this
+        # fixture's repository resolves every ACP node to the workflow's
+        # built-in Anthropic defaults -- so the gate is not applied and says so
+        # (bd-ib-meejjz). The record is informational, exactly like the two
+        # above it: no credential was read, nothing was refused, and the
+        # dispatch runs to `green` with it present. Its POSITION is the
+        # assertion worth having here -- immediately before `ledger-admit` --
+        # because the whole point of that gate's position is that it decides
+        # before the item is claimed.
+        "codex-credential-gate-not-applied",
         "ledger-admit",
         # ADAPTERS BEFORE THE PAYLOAD, and the order is load-bearing rather than
         # incidental: since plan `fabro-currency` P4 the payload generator renders
