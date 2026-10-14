@@ -19,6 +19,7 @@ from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro import store
+from livespec_orchestrator_beads_fabro._pre_admission_dod import judge_before_admission
 from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
     route_factory_size_decomposition,
 )
@@ -281,6 +282,7 @@ def _approve_item(
             err="ungradeable-acceptance-criteria",
             msg=f"approve refused: {refusal}.",
         )
+    _ = judge_before_admission(path=config, item=item)
     store.update_work_item_status(path=config, item_id=item.id, status="ready")
     return valve_success(
         aid=action_id,

@@ -77,6 +77,30 @@ settings.register_profile("livespec", deadline=None)
 settings.load_profile("livespec")
 
 
+@pytest.fixture(scope="session")
+def _judgement_cli_bin(*, tmp_path_factory: pytest.TempPathFactory) -> str:
+    """An unavailable headless model CLI shared by hermetic intake tests."""
+    directory = tmp_path_factory.mktemp("judgement-cli")
+    for name in ("claude", "codex"):
+        executable = directory / name
+        _ = executable.write_text("#!/bin/sh\nexit 127\n", encoding="utf-8")
+        executable.chmod(0o755)
+    return str(directory)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_pre_admission_judge(
+    *, monkeypatch: pytest.MonkeyPatch, _judgement_cli_bin: str
+) -> None:
+    """Keep intake tests from invoking a developer's logged-in model CLI.
+
+    Runtime contract tests replace the command runner and inspect its request.
+    Other intake callers exercise the genuine unavailable-executable result,
+    which preserves their routing without spending a model call.
+    """
+    monkeypatch.setenv("PATH", f"{_judgement_cli_bin}{os.pathsep}{os.environ['PATH']}")
+
+
 @pytest.fixture(autouse=True)
 def _hermetic_claude_credential_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (

@@ -32,6 +32,7 @@ from pathlib import Path
 
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro._pre_admission_dod import judge_before_admission
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     resolve_acp_preflight,
@@ -181,6 +182,7 @@ def admit_and_select(
     config = store_config(repo=repo)
     approved_ids = {item.id for item in plan.approved}
     for item in plan.approved:
+        _ = judge_before_admission(path=config, item=item)
         update_work_item_status(path=config, item_id=item.id, status="ready")
         journal.append(record={"stage": "ledger-approve", "work_item_id": item.id})
         journal.append(

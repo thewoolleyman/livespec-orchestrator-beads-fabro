@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from livespec_orchestrator_beads_fabro import store
+from livespec_orchestrator_beads_fabro._pre_admission_dod import judge_before_admission
 from livespec_orchestrator_beads_fabro._store_cap_mutations import update_work_item_cap
 from livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes import (
     write_blocked_state_and_reconcile,
@@ -257,6 +258,8 @@ def move_item(
                 "acceptance and pending-approval are entered only on their guarded paths."
             ),
         )
+    if target_status == "ready" and item.status in {"backlog", "pending-approval"}:
+        _ = judge_before_admission(path=config, item=item)
     write_work_item_status_and_reconcile(
         path=config,
         item_id=item.id,
