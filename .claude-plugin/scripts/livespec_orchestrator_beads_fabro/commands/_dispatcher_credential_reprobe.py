@@ -81,6 +81,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_env impor
     assess_credential_status,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_rotation import (
+    CredentialReading,
     resolve_credential_reading,
     selected_credential_env_name,
 )
@@ -150,21 +151,41 @@ def await_usable_credential(
         status = assess_credential_status(repo=repo, probe=probe, token=reading.token)
         if status.condition != PROVIDER_LIMIT_CONDITION:
             return
-        journal.append(record=_refused_probe_record(status=status, interval=interval))
+        journal.append(
+            record=_refused_probe_record(status=status, interval=interval, reading=reading)
+        )
         sleep(interval)
 
 
-def _refused_probe_record(*, status: ClaudeCredentialStatus, interval: int) -> dict[str, object]:
+def _refused_probe_record(
+    *,
+    status: ClaudeCredentialStatus,
+    interval: int,
+    reading: CredentialReading,
+) -> dict[str, object]:
     """One refused probe, as the non-secret facts that explain the wait.
 
     The credential value and the probe's response body never reach here —
     `ClaudeCredentialStatus` carries only the classification and the two
-    non-secret transport facts — so the record is safe to append verbatim.
+    non-secret transport facts, and `CredentialReading` contributes its one-way
+    IDENTITY rather than its token — so the record is safe to append verbatim.
+
+    The identity is what makes a wait diagnosable from its own journal. Without
+    it a row says a probe was refused and nothing about WHICH credential was
+    refused, so an operator reading two consecutive rows cannot tell a
+    credential that is genuinely still limited from a rotation that never
+    reached the loop — the question the 2026-10-08 incident left unanswerable.
+    `credential_source` sits beside it because the two have different remedies:
+    the wrapper's current answer being limited is a provider problem, while the
+    launch-time value carried forward means the wrapper supplied nothing and is
+    itself what needs fixing.
     """
     return {
         "stage": CREDENTIAL_REPROBE_STAGE,
         "condition": status.condition,
         "http_status": status.http_status,
         "error_type": status.error_type,
+        "credential_identity": reading.identity,
+        "credential_source": reading.source,
         "reprobe_interval_seconds": interval,
     }

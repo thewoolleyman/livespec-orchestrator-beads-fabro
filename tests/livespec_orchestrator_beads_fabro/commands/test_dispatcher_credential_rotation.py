@@ -174,3 +174,58 @@ def test_a_rotated_credential_reaches_the_parked_wait_on_its_next_probe(
     # The wrapper was consulted once per round, for the selected credential.
     assert wrapper.calls == [(_WRAPPER, CLAUDE_OAUTH_TOKEN_ENV)] * 2
     assert os.environ[CLAUDE_OAUTH_TOKEN_ENV] == _STALE_TOKEN
+
+
+def test_consecutive_refused_rows_show_whether_the_credential_value_changed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each refused row carries a non-secret identity of the value it probed.
+
+    Asserted in BOTH directions over one wait, because either direction alone
+    is satisfied by a build nobody would want: an implementation stamping a
+    CONSTANT satisfies the two rows that must agree while making a rotation
+    invisible, and one stamping a per-round NONCE satisfies the two that must
+    differ while reporting a change that never happened. Rows 1 and 2 probe
+    different values and must differ; rows 2 and 3 probe the same value and
+    must agree.
+
+    The identity is also compared against the module's own primitive rather
+    than merely being present, since "some opaque string is in the row" says
+    nothing about whether it identifies THIS credential; and every row is
+    searched for the credential values themselves, because the row's whole
+    purpose is to be legible in an audit journal an operator reads.
+    """
+    rotation = _module(name=_ROTATION_MODULE)
+    reprobe = _module(name=_REPROBE_MODULE)
+    repo = _repo(tmp_path=tmp_path, cadence=1)
+    journal = _journal(repo=repo)
+    monkeypatch.setenv(CLAUDE_OAUTH_TOKEN_ENV, _STALE_TOKEN)
+    first = "first-rate-limited-token"
+    second = "second-rate-limited-token"
+    monkeypatch.setattr(
+        rotation,
+        "read_wrapper_credential",
+        _Wrapper(values=[first, second, second, _ROTATED_TOKEN]),
+    )
+
+    reprobe.await_usable_credential(
+        repo=repo,
+        journal=journal,
+        budget=9,
+        probe=_TokenKeyedProbe(),
+        sleep=lambda _seconds: None,
+    )
+
+    rows = _refused(journal=journal, stage=reprobe.CREDENTIAL_REPROBE_STAGE)
+    assert len(rows) == 3
+    assert rows[0].get("credential_identity") is not None
+    assert rows[0]["credential_identity"] != rows[1]["credential_identity"]
+    assert rows[1]["credential_identity"] == rows[2]["credential_identity"]
+    assert rows[0]["credential_identity"] == rotation.credential_identity(token=first)
+    assert rows[1]["credential_identity"] == rotation.credential_identity(token=second)
+    assert [row["credential_source"] for row in rows] == [rotation.WRAPPER_SOURCE] * 3
+    serialized = json.dumps(rows)
+    assert first not in serialized
+    assert second not in serialized
+    assert _STALE_TOKEN not in serialized
