@@ -48,6 +48,11 @@ class _Runner:
         if argv[:2] == ["git", "ls-remote"] and self.remote != "absent":
             head = _HEAD if self.remote == "same" else "b" * 40
             stdout = f"{head}\trefs/heads/{self.branch}\n"
+        if argv[:2] == ["git", "rev-parse"]:
+            # The fetched default-branch head. This checkout is AT it, so these
+            # cases stage at their own HEAD and the base decision is not what
+            # they are varying.
+            stdout = f"{_HEAD}\n"
         return CommandResult(exit_code=0, stdout=stdout, stderr="")
 
 
