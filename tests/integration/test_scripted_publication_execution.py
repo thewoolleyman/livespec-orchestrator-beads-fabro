@@ -59,7 +59,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+import tomli
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import render_run_config_overlay
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     VERDICT_CAPTURED,
     VERDICT_NOT_REPRODUCED,
@@ -82,6 +84,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
     PUBLISH_HEAD_LABEL,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import ResumeCheckout
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
 )
@@ -327,6 +330,7 @@ def _run(
     merge_hold: str = "false",
     title: str | None = "feat: a scripted publication",
     body: str | None = None,
+    resume_head: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Execute the stage's bytes in `box`, with an env holding only what it reads.
 
@@ -346,6 +350,17 @@ def _run(
         "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
         SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(box.plugins_root),
     }
+    if resume_head is not None:
+        overlay = render_run_config_overlay(
+            committed_text='[workflow]\ngraph = "workflow.fabro"\n[run.environment]\nid = "sandbox"\n',
+            workflow_dir=box.repo,
+            token="",
+            github_token="",
+            siblings=None,
+            resume_checkout=ResumeCheckout(branch=_BRANCH, head=resume_head),
+        )
+        assert overlay is not None
+        env.update(tomli.loads(overlay)["environments"]["sandbox"]["env"])
     if title is not None:
         env[PR_TITLE_ENV_VAR] = title
     if body is not None:
@@ -682,3 +697,18 @@ def test_the_execution_boundary_leaves_enclosing_run_state_intact(tmp_path: Path
         own = box.state_dir() / PUBLISH_HEAD_STATE_FILENAME
         assert own.is_file(), "the control's own state did not resolve in its own repository"
         assert own.read_text(encoding="utf-8") == _HEAD
+
+
+def test_a_resumed_pr_uses_the_overlay_head_without_a_publication_file(*, tmp_path: Path) -> None:
+    """Final publication consumes the same Dispatcher provenance as pr_refresh."""
+    box = _sandbox(root=tmp_path, pushed="")
+    assert not (box.state_dir() / PUBLISH_HEAD_STATE_FILENAME).exists()
+
+    result = _run(box=box, resume_head=_HEAD)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_NO_PROVENANCE" not in result.stderr
+    assert "LIVESPEC_PR_READY_AND_ARMED" in result.stderr
+    argv = box.merge_argv()
+    assert argv is not None
+    assert argv[argv.index("--match-head-commit") + 1] == _HEAD
