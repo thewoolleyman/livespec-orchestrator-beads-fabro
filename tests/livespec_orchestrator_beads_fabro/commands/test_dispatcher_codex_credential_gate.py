@@ -410,8 +410,25 @@ def _stub_wall_siblings(*, monkeypatch: pytest.MonkeyPatch) -> None:
     The siblings are stood in rather than exercised because each reaches the
     forge, the ledger or committed configuration for its own reasons, and any
     one of them answering first would shadow the gate this module is about.
+
+    THE CODEX ROUTING IS ONE OF THEM NOW (`bd-ib-meejjz`). The gate covers only
+    a dispatch that routes a node to the `codex-acp` agent, and these cases are
+    all about a dispatch that does -- so the routing is declared rather than
+    resolved from the `tmp_path` fixture, whose empty repository resolves to the
+    workflow's built-in Anthropic defaults and would therefore scope the gate
+    away for a reason none of these cases is about. The scoping itself is
+    asserted in `test_dispatcher_codex_credential_gate_routing`, in BOTH
+    directions, which is what keeps this stand-in from hiding it.
     """
     wall = importlib.import_module(_WALL_MODULE)
+    routing = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_routing"
+    )
+    codex_routed = routing.CodexRouting(
+        routes_codex=True,
+        detail="resolved ACP candidate keys naming the codex-acp agent: codex-acp/openai/gpt-5.1",
+    )
+    monkeypatch.setattr(wall, "codex_routing_for_dispatch", lambda **_kwargs: codex_routed)
     monkeypatch.setattr(wall, "pre_dispatch_criteria_refusal", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "proof_assets_refusal_for_items", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "proof_credentials_refusal_for_items", lambda **_kwargs: None)

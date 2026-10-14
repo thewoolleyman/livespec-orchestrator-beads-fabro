@@ -44,13 +44,18 @@ candidate was observed" only to a reader who has stopped failing closed.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import CODEX_AGENT_ID
 from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import RenderedCandidate
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
+    resolve_dispatch_candidates,
+)
 
 __all__: list[str] = [
     "CodexRouting",
     "codex_routing_for_candidates",
+    "codex_routing_for_dispatch",
 ]
 
 # The key segment separator the derived identity triple uses. A key equal to the
@@ -125,6 +130,20 @@ def codex_routing_for_candidates(
             f"resolved candidate keys: {', '.join(sorted(set(keys)))}"
         ),
     )
+
+
+def codex_routing_for_dispatch(*, repo: Path) -> CodexRouting:
+    """The routing the dispatch `repo`'s resolved ACP nodes would run.
+
+    The IO half, kept beside the rule that grades it so "does this dispatch
+    route to Codex" is answered in one place. The resolution itself is
+    `_dispatcher_acp_preflight`'s, which is where every read of a repository's
+    node adapters already lives; a reader of its own here would be a second
+    reading of the same files that could not be proven to agree with the first,
+    and the disagreement would be invisible because both produce a well-formed
+    candidate set.
+    """
+    return codex_routing_for_candidates(candidates=resolve_dispatch_candidates(repo=repo))
 
 
 def _names_codex_agent(*, key: str) -> bool:
