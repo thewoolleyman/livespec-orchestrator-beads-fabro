@@ -1,6 +1,6 @@
 # Plan-session lessons from the fabro-currency direction review (2026-10-10)
 
-Three operating notes a plan session needs before it proposes a direction,
+Operating notes a plan session needs before it proposes a direction,
 files a child, or spins up a reviewer. They are repo-additive guidance in
 the sense of AGENTS.md §"Progressive guidance"; the maintainer rule in the
 first section was declared in conversation on 2026-10-10.
@@ -31,6 +31,35 @@ finding verified against source before it is adopted. Research note
 `plan/fabro-currency/research/008-independent-review-and-corrections-2026-10-10.md`
 is the worked example, including five findings that overturned claims the
 session had already made to the maintainer.
+
+## Take the recorded next action; do not offer it as a picker (maintainer-declared 2026-10-14)
+
+Resuming plan `dolt-server-failures` with `/plan <slug>`, the session
+finished scoping, recorded `impl:bd-ib-zlkjm4` as the typed next action,
+and then offered that same dispatch as option 1 of a three-way picker
+("dispatch and keep going / this one only / stop"). The maintainer's
+answer was: "Why the fuck are you asking me rather than just fixing the
+problem?"
+
+`resume_directive` reports `ask: True` on an attended resume that has no
+current continuation ruling, and plan.md says that case "presents the
+picker". Read that as what the PRIMITIVE reports, not as an instruction
+to interrupt the maintainer. A maintainer who invoked `/plan <slug>` has
+named the goal, so AGENTS.md's "a recorded next action is an instruction,
+not a menu" and "drive authorized work to completion" govern. Take the
+executable next action, record a `PlanContinuationAuthorization` scope
+event so the ledger carries the ruling, and report the outcome. Ask only
+at genuine human gates: confirming SESSION-DERIVED Definition of Done
+assertions, a restart or rollout on shared infrastructure, or any other
+irreversible or outward-facing act.
+
+A related primitive gap from the same session: `reparent_plan_child`
+moves a child OUT of a plan (it removes the edge to the plan epic), so
+it cannot adopt an existing parentless item INTO one. Adopt with
+`make_beads_client(config=...).add_dependency(from_id=<item>,
+to_id=<epic>, edge_type=EDGE_PARENT_CHILD)` plus an explanatory epic
+comment. A duplicate that must be closed can then go through
+`close_plan_child`, which writes the rationale on both records.
 
 ## Spinning up a Codex reviewer in a herdr pane
 
