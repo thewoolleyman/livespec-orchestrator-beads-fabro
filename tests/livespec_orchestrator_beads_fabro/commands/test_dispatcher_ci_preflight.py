@@ -581,6 +581,56 @@ def test_a_newer_run_started_during_the_wait_replaces_the_one_waited_on(tmp_path
     assert _jobs_argv(run_id="303") not in runner.calls
 
 
+def test_each_poll_that_observes_a_pending_run_prints_one_progress_line(tmp_path: Path) -> None:
+    """One line per PENDING poll, naming the run and its status.
+
+    This is what lets an operator watching a dispatch tell a wait from a hang,
+    so the line has to name the run and what the forge said about it -- and it
+    has to be conditional on a pending reading, which the silent-green control
+    below is what proves.
+    """
+    progress = io.StringIO()
+    runner = _Runner(
+        results=_results(),
+        streams={
+            _run_list_argv(): _stream(
+                results=[
+                    _result(stdout=_run_list_payload(status="queued")),
+                    _result(stdout=_run_list_payload(status="in_progress")),
+                    _result(stdout=_run_list_payload()),
+                ]
+            )
+        },
+    )
+    quiet = io.StringIO()
+
+    outcome = _polled(
+        repo=tmp_path,
+        runner=runner,
+        readings=[0.0, 60.0, 120.0],
+        pauses=[],
+        progress=progress,
+    )
+    green_first_read = _polled(
+        repo=tmp_path,
+        runner=_Runner(results=_results()),
+        readings=[0.0],
+        pauses=[],
+        progress=quiet,
+    )
+
+    assert outcome.refusal is None
+    lines = progress.getvalue().splitlines()
+    assert len(lines) == 2
+    assert "303" in lines[0]
+    assert "queued" in lines[0]
+    assert _DEFAULT_BRANCH in lines[0]
+    assert "303" in lines[1]
+    assert "in_progress" in lines[1]
+    assert green_first_read.refusal is None
+    assert quiet.getvalue() == ""
+
+
 @pytest.mark.parametrize("status", _PENDING_STATUSES)
 def test_a_run_still_pending_at_the_bound_is_deferred_not_failed(
     tmp_path: Path, status: str

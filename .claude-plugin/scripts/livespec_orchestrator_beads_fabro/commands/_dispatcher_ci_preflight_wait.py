@@ -40,6 +40,7 @@ __all__: list[str] = [
     "WAIT_BOUND_SECONDS",
     "MasterCiWait",
     "PendingReading",
+    "pending_progress_line",
     "poll_pause",
 ]
 
@@ -73,6 +74,21 @@ class MasterCiWait:
     now: Callable[[], float] = time.monotonic
     sleep: Callable[[float], None] = time.sleep
     progress: TextIO | None = None
+
+
+def pending_progress_line(*, reading: PendingReading, branch: str) -> str:
+    """One pending poll's progress line: which run, which status, which branch.
+
+    Ratified so an operator watching a dispatch can tell a WAIT from a HANG,
+    which is only true if the line names the run and what the forge said about
+    it: a bare "waiting" repeated thirty times is itself indistinguishable from
+    a hang. It also states that the run has not failed, because the line an
+    operator reads first is the one that has to carry that.
+    """
+    return (
+        f"master-ci preflight: `{branch}` run {reading.run_id} is {reading.status}; "
+        "it has not failed. Waiting for its verdict.\n"
+    )
 
 
 def poll_pause(*, waited: float) -> float | None:
