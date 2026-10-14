@@ -27,7 +27,8 @@ been replaced: measured 2026-10-08, four loops on this host kept journaling
 `exhausted` from 08:54Z and 11:42Z through 23:10Z while other repositories'
 dispatches ran on the same factory within minutes of the rotation, and the only
 remedy was to kill and re-dispatch all four. `_dispatcher_credential_rotation`
-is the re-resolution.
+is the re-resolution, and the record below names the credential it probed by a
+one-way identity so two consecutive rows show whether the value changed at all.
 
 THE WAIT ENGAGES ON EXACTLY ONE CONDITION. A provider-limit refusal is the
 `exhausted` condition `classify_claude_probe` assigns to HTTP 402/429 and to the
@@ -84,6 +85,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_env impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_rotation import (
     RotatedCredential,
+    credential_identity,
     resolve_rotated_credential,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
@@ -177,7 +179,15 @@ def _refused_probe_record(
 
     The credential value and the probe's response body never reach here —
     `ClaudeCredentialStatus` carries only the classification and the two
-    non-secret transport facts — so the record is safe to append verbatim.
+    non-secret transport facts, and the credential travels as a ONE-WAY
+    identity — so the record is safe to append verbatim.
+
+    `credential_identity` is what makes a STALE value legible, which is the one
+    question an operator watching a parked loop cannot otherwise answer: two
+    consecutive rows carrying ONE identity say the wait has been re-probing the
+    same credential all along, and a changed identity says a rotation reached
+    it. A NULL identity is an absent credential rather than a changed one,
+    which is why the fingerprint is not taken over the empty string.
 
     `credential_source` says WHERE this round's credential came from, which is
     what tells a wait that is watching the wrapper from one that has nothing to
@@ -190,5 +200,6 @@ def _refused_probe_record(
         "http_status": status.http_status,
         "error_type": status.error_type,
         "reprobe_interval_seconds": interval,
+        "credential_identity": credential_identity(token=rotated.token),
         "credential_source": rotated.source,
     }
