@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.196.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.6...v0.196.7) (2026-10-14)
+
+
+### Bug Fixes
+
+* name safe source-checkout recovery before staging ([366c694](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/366c694d0e7ceb02e1840146b7702048681ee37f))
+* stage Fabro from an origin-proven disposable worktree ([27631a4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/27631a436b790996d27aae85e805c15b928432b1))
+
 ## [0.196.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.5...v0.196.6) (2026-10-14)
 
 
