@@ -23,6 +23,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_span import
     dispatch_request_line,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_fabro_launcher import (
     WatchedFabroLauncher,
 )
@@ -164,7 +165,8 @@ def test_the_watched_launcher_passes_its_own_dispatch_correlation(tmp_path: Path
     ).launch(
         plan=plan,
         runner=runner,
-        journal=object(),  # type: ignore[arg-type]
+        # A watcher poll may win the race with the launch thread.
+        journal=JournalFile(path=tmp_path / "dispatch.jsonl"),
     )
 
     assert result.command.exit_code == 0
