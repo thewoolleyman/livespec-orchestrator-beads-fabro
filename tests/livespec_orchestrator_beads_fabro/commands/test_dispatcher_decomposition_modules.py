@@ -116,16 +116,23 @@ def test_credentials_cluster_importable_from_new_module_and_private_names_remove
         "read_dispatch_labels",
         "resolve_sibling_clones",
     }
-    # The HOST-ENVIRONMENT half, split out by cohesion: these three ask whether
-    # the machine running the Dispatcher holds a usable credential, while the
+    # The HOST-ENVIRONMENT half, split out by cohesion: these ask whether the
+    # machine running the Dispatcher holds a usable credential, while the
     # cluster above PROJECTS one into a sandbox overlay. The typed assessment is
     # public because the loop's bounded re-probe waits on its `condition` — a
     # refusal string cannot tell a rate limit from a revoked token, and the wait
-    # governs only the first.
+    # governs only the first. The RESOLVED-value entry point and the projected
+    # env NAME are public for that same caller: the re-probe assesses the
+    # credential the wrapper holds NOW rather than the launch-time one, so it
+    # resolves its own value for the name the dispatch would project and hands
+    # it back here — which keeps both paths on ONE probe seam and one
+    # absent-credential refusal.
     credential_env_public_names = {
         "assess_credential_status",
+        "assess_resolved_credential",
         "check_credential_env",
         "dispatch_required_credentials_text",
+        "projected_credential_env_name",
     }
     assert set(_dispatcher_credential_env.__all__) == credential_env_public_names
 

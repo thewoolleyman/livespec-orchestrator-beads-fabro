@@ -15,6 +15,14 @@ stands in the one the whole dispatch path uses. That identity is the reason
 re-probe needs the TYPED `condition`, not a refusal string it would have to
 pattern-match, because it waits on exactly one condition (a provider-limit or
 rate-limit refusal) and must exit its wait on every other.
+
+THE RESOLUTION AND THE ASSESSMENT ARE SEPARATE ENTRY POINTS, FOR ONE CALLER. The
+re-probe wait must assess the credential the wrapper holds NOW rather than the
+one this process was launched with, so it resolves its own value and hands it to
+`assess_resolved_credential`. `assess_credential_status` is that same call over
+`os.environ`, which keeps both paths on ONE probe seam and ONE absent-credential
+refusal; a re-probe that duplicated the assessment instead would be free to
+classify a condition differently from the dispatch path that reports it.
 """
 
 from __future__ import annotations
@@ -41,8 +49,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_sele
 
 __all__: list[str] = [
     "assess_credential_status",
+    "assess_resolved_credential",
     "check_credential_env",
     "dispatch_required_credentials_text",
+    "projected_credential_env_name",
 ]
 
 _DISPATCH_REQUIRED_CREDENTIALS = (
@@ -57,12 +67,28 @@ def dispatch_required_credentials_text() -> str:
     return ", ".join(_DISPATCH_REQUIRED_CREDENTIALS)
 
 
-def assess_credential_status(
+def projected_credential_env_name() -> str:
+    """The env-var NAME the dispatch would project, as the caam selector resolves it.
+
+    Public so the re-probe wait can ask the credential wrapper for the SAME name
+    the dispatch would project. Resolving it in the wait rather than re-deriving
+    one there is what keeps a pool-slot selection from being observed by the
+    assessment and ignored by the re-resolution.
+    """
+    return select_factory_credential(
+        environ=os.environ,
+        home=Path.home(),
+        warn=lambda message: sys.stderr.write(f"livespec-dispatch: {message}\n"),
+    ).env_name
+
+
+def assess_resolved_credential(
     *,
     repo: Path,
+    token: str,
     probe: Callable[..., ClaudeCredentialStatus] | None = None,
 ) -> ClaudeCredentialStatus:
-    """Assess the projected worker credential: absence locally, else ONE bounded probe.
+    """Assess a credential value the CALLER resolved: absence, else ONE bounded probe.
 
     Public because the refusal STRING is not the whole answer. The loop's
     bounded credential re-probe -- the admission-time probe-refusal clause of
@@ -75,16 +101,23 @@ def assess_credential_status(
     module's namespace, so a caller that stands the probe in stands in the one
     the whole dispatch path uses.
     """
-    credential_choice = select_factory_credential(
-        environ=os.environ,
-        home=Path.home(),
-        warn=lambda message: sys.stderr.write(f"livespec-dispatch: {message}\n"),
-    )
-    token = os.environ.get(credential_choice.env_name, "")
     if token == "":
         return absent_claude_credential_status(wrapper_text=credential_wrapper_text(repo=repo))
     selected_probe = probe if probe is not None else probe_claude_credential
     return selected_probe(token=token)
+
+
+def assess_credential_status(
+    *,
+    repo: Path,
+    probe: Callable[..., ClaudeCredentialStatus] | None = None,
+) -> ClaudeCredentialStatus:
+    """Assess the credential THIS PROCESS was launched with, through the one seam above."""
+    return assess_resolved_credential(
+        repo=repo,
+        token=os.environ.get(projected_credential_env_name(), ""),
+        probe=probe,
+    )
 
 
 def check_credential_env(
