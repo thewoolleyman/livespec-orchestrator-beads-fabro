@@ -419,12 +419,15 @@
       // inspected and none is held — which is the escape hatch for a factory
       // whose parked runs must be left strictly alone.
       "blocked_run_grace_seconds": 1800,
-      // No per-node adapter configuration at all: this repo inherits the
-      // plugin's built-in per-node ACP defaults (contracts.md section "Built-in
-      // ACP node defaults") -- the implementer nodes run the Claude Opus 5
-      // adapter and the publish (pr) node runs the Claude Haiku 4.5 adapter.
-      // Both are model-agnostic Claude adapters with no OpenAI/Codex catalog
-      // exposure.
+      // Every factory node runs a Claude adapter: the structured "acp_nodes"
+      // entries below put implement, fix, dod_gate, review_fix, proof_capture,
+      // proof_verify and review on Claude Opus 5, and pr and disposition on
+      // Claude Sonnet 4.6. No factory node runs Codex. Maintainer direction
+      // 2026-10-14 (bd-ib-5pxtaw): gpt-6-astra is reserved for consensus and
+      // reviews OUTSIDE the factory nodes (ratification_reviewer_model above)
+      // and goes on no factory node for now. implement and fix ran codex-acp /
+      // gpt-6-astra from 2026-10-14 01:57 (75983fbe) until this change; at the
+      // factory cap that drew the maintainer's Codex session budget down.
       //
       // "dispatcher.codex_models" IS RETIRED and setting it now REFUSES the
       // dispatch before claim, printing the equivalent "acp_nodes" entries.
@@ -439,10 +442,11 @@
       // -- or any adapter via the manual "acp_nodes.<node>" form. There is no
       // class-shaped shorthand: each node is named individually.
       // Per-node ACP adapters (contracts.md, the "ACP node adapter
-      // configuration" material), the PER-REPOSITORY layer. There is NO
-      // `acp_nodes` override as of 2026-08-28: the review node reverts to the
-      // workflow default, which is the Claude Opus 4.8 review adapter
-      // (contracts.md documents that `review` is NOT Codex-backed by default).
+      // configuration" material), the PER-REPOSITORY layer. History: from
+      // 2026-08-28 there was no `acp_nodes` override and the review node took
+      // the workflow default, the Claude Opus 4.8 review adapter (contracts.md
+      // documents that `review` is NOT Codex-backed by default); the current
+      // per-node entries are described above.
       // The prior gpt-5.6-terra override (maintainer direction 2026-08-26) was
       // removed after three consecutive review non-convergences at the Codex
       // review gate: each exhausted review_fix_cap and escalated
@@ -537,8 +541,8 @@
       },
       "acp_nodes": {
         "dod_gate": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" },
-        "implement": { "agent": "codex-acp", "model": "gpt-6-astra", "effort": "high" },
-        "fix": { "agent": "codex-acp", "model": "gpt-6-astra", "effort": "high" },
+        "implement": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" },
+        "fix": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" },
         "review_fix": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" },
         "proof_capture": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" },
         "proof_verify": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" },
