@@ -39,6 +39,7 @@ __all__: list[str] = [
     "MasterCiOutcome",
     "MasterCiRefusal",
     "pass_outcome",
+    "pending_outcome",
     "red_outcome",
     "unprovable_outcome",
 ]
@@ -49,6 +50,8 @@ STEP = "master-ci"
 _REASON_GREEN = "master-ci-green"
 _REASON_RED = "master-ci-red"
 _REASON_UNPROVABLE = "master-ci-unprovable"
+_REASON_PENDING = "master-ci-pending"
+_STATUS_DEFERRED = "deferred"
 
 _WAIVER_ESCAPE = (
     "or commit a `master-ci` entry under `dispatcher.step_waivers` (step, owner, "
@@ -145,6 +148,36 @@ def red_outcome(
         cause=f"aggregate job `{pipeline.job}` concluded {conclusion} on run {run_id}",
         remedy=PENDING_REMEDY,
     )
+
+
+def pending_outcome(
+    *, pipeline: MasterCiPipeline, branch: str, run_id: str, status: str, waited: float
+) -> MasterCiOutcome:
+    """The bounded wait expiring on a run that has not concluded: defer, never fail.
+
+    This is the ONE deferral form of a pre-dispatch refusal. It stops the
+    dispatch exactly as a refusal does -- which is why it carries a
+    `MasterCiRefusal`, the thing the step gate reads to return exit 3 before the
+    work item is claimed -- while its journal record reads as a verdict that has
+    not arrived rather than one that came back bad.
+    """
+    waited_seconds = int(waited)
+    cause = f"the latest `{branch}` run {run_id} is still {status} after {waited_seconds}s"
+    record: dict[str, object] = {
+        **_identity(pipeline=pipeline, branch=branch, run_id=run_id),
+        "terminal": True,
+        "status": _STATUS_DEFERRED,
+        "reason": _REASON_PENDING,
+        "detail": cause,
+        "remedy": PENDING_REMEDY,
+        "recovery": _RECOVERY,
+        "run_status": status,
+        "waited_seconds": waited_seconds,
+    }
+    detail = _detail(
+        pipeline=pipeline, branch=branch, run_id=run_id, cause=cause, remedy=PENDING_REMEDY
+    )
+    return MasterCiOutcome(refusal=MasterCiRefusal(detail=detail, record=record), record=record)
 
 
 def unprovable_outcome(

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import io
+import itertools
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_run_checks, _dispatcher_step_gate
@@ -18,6 +20,11 @@ _MODULE_PATH = (
     / "_dispatcher_ci_preflight.py"
 )
 _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight"
+_WAIT_MODULE_PATH = (
+    Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
+    / "_dispatcher_ci_preflight_wait.py"
+)
+_WAIT_MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_wait"
 _EXIT_PRECONDITION_ERROR = 3
 _RED_CONCLUSIONS = (
     "failure",
@@ -60,7 +67,9 @@ class _MasterCiOutcome(Protocol):
 
 
 class _PreflightModule(Protocol):
-    def master_ci_preflight(self, *, repo: Path, runner: _Runner) -> _MasterCiOutcome:
+    def master_ci_preflight(
+        self, *, repo: Path, runner: _Runner, wait: object = ...
+    ) -> _MasterCiOutcome:
         """Return the master-CI preflight outcome."""
 
 
@@ -89,6 +98,17 @@ class _Runner:
 def _module() -> _PreflightModule:
     assert _MODULE_PATH.is_file()
     return cast("_PreflightModule", importlib.import_module(_MODULE_NAME))
+
+
+def _wait_module() -> Any:
+    """The bounded-wait module, asserted present by PATH before it is imported.
+
+    The path assertion comes first deliberately: a top-level import of a module
+    that does not exist yet dies at COLLECTION, which proves only
+    unimportability, while this fails on a genuine assertion at Red.
+    """
+    assert _WAIT_MODULE_PATH.is_file()
+    return importlib.import_module(_WAIT_MODULE_NAME)
 
 
 def _result(*, exit_code: int = 0, stdout: str = "", stderr: str = "") -> CommandResult:
@@ -162,6 +182,31 @@ def _results(
 
 def _outcome(*, repo: Path, runner: _Runner) -> _MasterCiOutcome:
     return _module().master_ci_preflight(repo=repo, runner=runner)
+
+
+def _polled(
+    *,
+    repo: Path,
+    runner: _Runner,
+    readings: list[float],
+    pauses: list[float],
+    progress: io.StringIO,
+) -> _MasterCiOutcome:
+    """Drive the preflight over a scripted monotonic clock and a recording pause.
+
+    The real bound is 1800 seconds at a 60-second cadence, so a wait driven by
+    the real clock would take half an hour to assert one expiry. `readings` is
+    consumed one per `now()` call and its LAST value repeats forever, which is
+    what lets a two-element script say "start, then past the bound".
+    """
+    ticks = itertools.chain(readings, itertools.repeat(readings[-1]))
+    return _module().master_ci_preflight(
+        repo=repo,
+        runner=runner,
+        wait=_wait_module().MasterCiWait(
+            now=lambda: next(ticks), sleep=pauses.append, progress=progress
+        ),
+    )
 
 
 def _declare(*, repo: Path, workflow: str, job: str) -> None:
@@ -419,23 +464,93 @@ def test_a_repository_with_no_runs_yet_refuses_with_the_waiver_escape(tmp_path: 
 
 
 @pytest.mark.parametrize("status", _PENDING_STATUSES)
-def test_a_still_pending_latest_run_refuses_naming_the_retry(tmp_path: Path, status: str) -> None:
+def test_a_run_still_pending_at_the_bound_is_deferred_not_failed(
+    tmp_path: Path, status: str
+) -> None:
+    """A verdict that has not arrived is journaled as DEFERRED, never as failed.
+
+    The two record keys are the whole point: `master-ci-pending` is distinct
+    from `master-ci-red` and `master-ci-unprovable`, and `deferred` is distinct
+    from `failed`, so a reader of the journal can tell a run that has not
+    concluded from one that came back bad.
+    """
     runner = _Runner(results=_results(run_list=_result(stdout=_run_list_payload(status=status))))
 
-    outcome = _outcome(repo=tmp_path, runner=runner)
+    outcome = _polled(
+        repo=tmp_path,
+        runner=runner,
+        readings=[0.0, 1800.0],
+        pauses=[],
+        progress=io.StringIO(),
+    )
 
     assert outcome.refusal is not None
-    assert f"is still {status}" in outcome.refusal.detail
+    assert outcome.record["reason"] == "master-ci-pending"
+    assert outcome.record["status"] == "deferred"
+    assert outcome.record["run_status"] == status
+    assert outcome.record["waited_seconds"] == 1800
+    assert outcome.record["run_database_id"] == "303"
+    assert outcome.record["branch"] == _DEFAULT_BRANCH
+    assert outcome.record["terminal"] is True
     assert "retry the dispatch when the run concludes" in outcome.refusal.detail
 
 
-def test_a_still_pending_aggregate_job_refuses_naming_the_retry(tmp_path: Path) -> None:
+def test_a_still_pending_aggregate_job_is_deferred_at_the_bound(tmp_path: Path) -> None:
+    """The aggregate JOB pending is the same unconcluded reading as the run pending."""
     runner = _Runner(results=_results(jobs=_result(stdout=_jobs_payload(job_status="in_progress"))))
 
-    outcome = _outcome(repo=tmp_path, runner=runner)
+    outcome = _polled(
+        repo=tmp_path,
+        runner=runner,
+        readings=[0.0, 1900.0],
+        pauses=[],
+        progress=io.StringIO(),
+    )
 
     assert outcome.refusal is not None
+    assert outcome.record["reason"] == "master-ci-pending"
+    assert outcome.record["status"] == "deferred"
+    assert outcome.record["run_status"] == "in_progress"
     assert "retry the dispatch when the run concludes" in outcome.refusal.detail
+
+
+def test_a_pending_run_defers_the_dispatch_without_claiming_the_item(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The deferral stops the dispatch exactly as a refusal does: exit 3, no claim.
+
+    `dispatch_preamble` returning `(None, 3)` is the load-bearing pair — the
+    `None` is the absent selection, so nothing was claimed, and the 3 is the
+    precondition-error exit every pre-dispatch refusal uses.
+    """
+    journal = tmp_path / "journal.jsonl"
+    args = argparse.Namespace(fabro_bin=str(tmp_path / "fabro"), janitor=None, journal=str(journal))
+    runner = _Runner(results=_results(run_list=_result(stdout=_run_list_payload(status="queued"))))
+    _ = (tmp_path / "fabro").write_text("#!/bin/sh\n", encoding="utf-8")
+    (tmp_path / "fabro").chmod(0o755)
+    ticks = itertools.chain([0.0], itertools.repeat(1800.0))
+    deferring = _wait_module().MasterCiWait(
+        now=lambda: next(ticks), sleep=[].append, progress=io.StringIO()
+    )
+    monkeypatch.setattr(_dispatcher_step_gate, "ShellCommandRunner", lambda: runner)
+    monkeypatch.setattr(
+        _dispatcher_step_gate,
+        "master_ci_preflight",
+        lambda *, repo, runner: _module().master_ci_preflight(
+            repo=repo, runner=runner, wait=deferring
+        ),
+    )
+
+    assert _dispatcher_run_checks.dispatch_preamble(args=args, repo=tmp_path) == (
+        None,
+        _EXIT_PRECONDITION_ERROR,
+    )
+    records = [
+        json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines() if line
+    ]
+    assert records[-1]["step"] == "master-ci"
+    assert records[-1]["status"] == "deferred"
+    assert records[-1]["reason"] == "master-ci-pending"
 
 
 def test_an_unrecognized_aggregate_conclusion_refuses(tmp_path: Path) -> None:

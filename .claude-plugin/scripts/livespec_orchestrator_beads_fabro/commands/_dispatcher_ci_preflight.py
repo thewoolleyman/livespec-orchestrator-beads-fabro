@@ -3,10 +3,15 @@
 ABSENCE OF PROOF REFUSES. The three fail-open cases this preflight used to
 document -- no `gh` binary, no stored `gh` credential, no runs yet -- are
 RETIRED: each is now an unprovable refusal naming its remedy and the committed
-step-waiver escape, and a still-pending latest run refuses too rather than
-proceeding on a run nobody has read yet. A host that cannot check is a host that
-cannot prove the default branch green, and proceeding on that was the whole
-defect (`SPECIFICATION/contracts.md`, the master-CI pipeline resolution clause).
+step-waiver escape. A host that cannot check is a host that cannot prove the
+default branch green, and proceeding on that was the whole defect
+(`SPECIFICATION/contracts.md`, the master-CI pipeline resolution clause).
+
+A STILL-PENDING LATEST RUN IS THE ONE READING THAT IS NEITHER. It used to take
+the unprovable arm, which reported a run that had not failed as a failure; it is
+now a `PendingReading` the preflight WAITS on, and only the bounded wait expiring
+turns one into an outcome -- the deferral, never a refusal. The rationale and the
+seam are in `_dispatcher_ci_preflight_wait`.
 
 THE BRANCH IS NEVER HARD-CODED. It is resolved per the ratified
 default-branch-resolution rule, because under the retired branch literal an
@@ -57,8 +62,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_refusal
     PIPELINE_REMEDY,
     MasterCiOutcome,
     pass_outcome,
+    pending_outcome,
     red_outcome,
     unprovable_outcome,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_wait import (
+    MasterCiWait,
+    PendingReading,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_default_branch import (
     resolve_default_branch,
@@ -81,15 +91,21 @@ _PENDING_STATUSES: frozenset[str] = frozenset(
 _RED_CONCLUSIONS: frozenset[str] = frozenset(
     {"failure", "cancelled", "timed_out", "action_required", "stale", "startup_failure"},
 )
+# Resolved once, at import, so the production effects are the signature's own
+# default and no caller has to know the seam exists.
+_DEFAULT_WAIT = MasterCiWait()
 
 
-def master_ci_preflight(*, repo: Path, runner: CommandRunner) -> MasterCiOutcome:
+def master_ci_preflight(
+    *, repo: Path, runner: CommandRunner, wait: MasterCiWait = _DEFAULT_WAIT
+) -> MasterCiOutcome:
     """Prove the resolved default branch green at the resolved aggregate job.
 
     Returns the step's journaled outcome either way: a pass when the latest run
     of the resolved workflow on the resolved branch concluded green at the
-    resolved aggregate job, and a refusal for every other reading -- red, still
-    pending, or unprovable.
+    resolved aggregate job, a refusal for a red or unprovable reading, and the
+    DEFERRAL when the latest run has still not concluded. A pending reading is
+    never a refusal on its own: a run that has not concluded has not failed.
     """
     pipeline = resolve_master_ci_pipeline(cwd=repo)
     if pipeline.defect is not None:
@@ -113,12 +129,34 @@ def master_ci_preflight(*, repo: Path, runner: CommandRunner) -> MasterCiOutcome
             cause="the target's default branch could not be resolved",
             remedy=BRANCH_REMEDY,
         )
-    return _classify_branch(repo=repo, runner=runner, pipeline=pipeline, branch=branch)
+    return _await_verdict(repo=repo, runner=runner, pipeline=pipeline, branch=branch, wait=wait)
 
 
-def _classify_branch(
-    *, repo: Path, runner: CommandRunner, pipeline: MasterCiPipeline, branch: str
+def _await_verdict(
+    *,
+    repo: Path,
+    runner: CommandRunner,
+    pipeline: MasterCiPipeline,
+    branch: str,
+    wait: MasterCiWait,
 ) -> MasterCiOutcome:
+    """Read the latest run for a verdict, deferring while it has not concluded."""
+    start = wait.now()
+    reading = _read_latest(repo=repo, runner=runner, pipeline=pipeline, branch=branch)
+    if isinstance(reading, MasterCiOutcome):
+        return reading
+    return pending_outcome(
+        pipeline=pipeline,
+        branch=branch,
+        run_id=reading.run_id,
+        status=reading.status,
+        waited=wait.now() - start,
+    )
+
+
+def _read_latest(
+    *, repo: Path, runner: CommandRunner, pipeline: MasterCiPipeline, branch: str
+) -> MasterCiOutcome | PendingReading:
     result = list_runs(repo=repo, runner=runner, workflow=pipeline.workflow, branch=branch)
     if result.exit_code != 0:
         return _lookup_failure(
@@ -182,7 +220,7 @@ def _classify_run(
     pipeline: MasterCiPipeline,
     branch: str,
     first: object,
-) -> MasterCiOutcome:
+) -> MasterCiOutcome | PendingReading:
     if not isinstance(first, dict):
         return _unprovable(
             pipeline=pipeline,
@@ -194,13 +232,7 @@ def _classify_run(
     run_id = run_id_of(run=run)
     status = run.get("status")
     if isinstance(status, str) and status in _PENDING_STATUSES:
-        return _unprovable(
-            pipeline=pipeline,
-            branch=branch,
-            run_id=run_id,
-            cause=f"the latest run {run_id} is still {status}",
-            remedy=PENDING_REMEDY,
-        )
+        return PendingReading(run_id=run_id, status=status)
     return _classify_job(repo=repo, runner=runner, pipeline=pipeline, branch=branch, run_id=run_id)
 
 
@@ -211,7 +243,7 @@ def _classify_job(
     pipeline: MasterCiPipeline,
     branch: str,
     run_id: str,
-) -> MasterCiOutcome:
+) -> MasterCiOutcome | PendingReading:
     result = view_run_jobs(repo=repo, runner=runner, run_id=run_id)
     if result.exit_code != 0:
         return _unprovable(
@@ -244,17 +276,11 @@ def _classify_job(
 
 def _classify_conclusion(
     *, pipeline: MasterCiPipeline, branch: str, run_id: str, job: CiJob
-) -> MasterCiOutcome:
+) -> MasterCiOutcome | PendingReading:
     job_status = job.get("status")
     conclusion = job.get("conclusion")
     if isinstance(job_status, str) and job_status in _PENDING_STATUSES:
-        return _unprovable(
-            pipeline=pipeline,
-            branch=branch,
-            run_id=run_id,
-            cause=f"aggregate job `{pipeline.job}` is still {job_status}",
-            remedy=PENDING_REMEDY,
-        )
+        return PendingReading(run_id=run_id, status=job_status)
     if conclusion in _RED_CONCLUSIONS:
         return red_outcome(
             pipeline=pipeline, branch=branch, run_id=run_id, conclusion=str(conclusion)
