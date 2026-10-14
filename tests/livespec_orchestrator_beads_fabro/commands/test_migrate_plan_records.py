@@ -365,10 +365,16 @@ def test_a_second_run_writes_nothing_and_leaves_every_record_identical(
 
     second = _run(project_root=tmp_path)
 
-    # One slug, two anchors, two seeded pointers — then nothing left to do.
-    assert total_writes(report=first) == 5
+    # One slug, two anchors, two seeded pointers, two genesis tokens — then
+    # nothing left to do.
+    assert total_writes(report=first) == 7
     assert total_writes(report=second) == 0
     [alpha_token, kappa_token] = first_tokens
+    assert first.genesis_written == (
+        f"bd-ib-alpha genesis token {alpha_token}",
+        f"bd-ib-kappa genesis token {kappa_token}",
+    )
+    assert second.genesis_written == ()
     assert second.skipped == (
         "bd-ib-alpha already carries plan_slug=alpha",
         "bd-ib-kappa already carries plan_slug=kappa",
@@ -466,10 +472,12 @@ def test_main_reports_the_migration_over_the_project_root(
     captured = capsys.readouterr()
 
     assert rc == 0
+    [token] = _fake().no_history_issue_ids()
     assert captured.out.splitlines() == [
-        "migrate-plan-records: 2 write(s)",
+        "migrate-plan-records: 3 write(s)",
         "wrote: plan/alpha/associated_work_item_id -> bd-ib-alpha",
         "wrote: bd-ib-alpha kind=none ref=''",
+        f"wrote: bd-ib-alpha genesis token {token}",
         "skipped: bd-ib-alpha already carries plan_slug=alpha",
     ]
 
