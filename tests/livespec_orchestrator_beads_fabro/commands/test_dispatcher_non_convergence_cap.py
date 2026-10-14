@@ -240,8 +240,16 @@ def test_a_cap_triggered_bounce_is_reported_as_bounced_to_regroom() -> None:
     assert bounced_to_regroom(outcome=_cap_exhausted()) is True
 
 
-def test_a_watchdog_stall_is_still_reported_as_bounced_to_regroom() -> None:
-    assert bounced_to_regroom(outcome=_stalled()) is True
+def test_a_watchdog_stall_is_not_reported_as_bounced_to_regroom() -> None:
+    """`bd-ib-nfbyot`: a hang is not a slice that would not converge.
+
+    This test asserted the opposite until the watchdog status was removed from
+    `is_non_convergence_outcome`. `contracts.md`'s "Dispatcher progress
+    watchdog" says a `stalled-no-progress` outcome "is NOT factory
+    non-convergence", and the flag reads the same predicate the bounce reads,
+    so the two surfaces move together by construction rather than by promise.
+    """
+    assert bounced_to_regroom(outcome=_stalled()) is False
 
 
 def test_a_run_the_dispatcher_does_not_bounce_is_not_reported_as_bounced() -> None:
@@ -275,18 +283,23 @@ def test_a_cap_triggered_bounce_writes_backlog_through_the_lifecycle_seam(
     assert record[_OBSERVED_KEY] is None
 
 
-def test_a_stalled_bounce_records_the_window_it_measured(
+def test_a_stall_cancel_reaches_no_bounce_and_so_writes_no_record(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    module = _module()
+    """`bd-ib-nfbyot`: the bounce declines a stall before touching the ledger.
+
+    Both halves are asserted because they fail independently: a build that
+    journals the row but skips the status write, and one that moves the item
+    while journaling nothing, each satisfy exactly one of them. The stall
+    window is still declared so a build that resolved it and then bounced
+    anyway cannot pass for a build that declined.
+    """
     _write_stall_timeout(repo=tmp_path, seconds=1200)
 
     journal, writes = _bounce(monkeypatch=monkeypatch, outcome=_stalled(), tmp_path=tmp_path)
 
-    assert writes[0]["status"] == "backlog"
-    record = _stage_record(journal=journal, stage=_BOUNCE_STAGE)
-    assert record[_CAP_KEY] == module.STALL_WINDOW_CAP
-    assert record[_OBSERVED_KEY] == 1200
+    assert writes == []
+    assert [record.get("stage") for record in journal.records] == []
 
 
 def test_a_failed_ledger_write_still_records_which_cap_tripped(
