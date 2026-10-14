@@ -138,6 +138,10 @@ class LivenessSample:
 
     last_event_epoch: float | None
     observed_at: float
+    # Independent of progress: a quiet command is allowed to consume its
+    # recorded node timeout. Computed against epoch time by the event probe,
+    # never by comparing event epochs to this sample's monotonic observed_at.
+    command_in_timeout: bool = False
 
 
 class LivenessProbe(Protocol):
@@ -276,6 +280,8 @@ def decide_stall(
     so a burst of probe failures in the middle of a healthy run cannot
     manufacture a false stall.
     """
+    if samples and samples[-1].command_in_timeout:
+        return StallVerdict.CONTINUE
     quiet_seconds = quiet_window_seconds(samples=samples)
     if quiet_seconds is None:
         return StallVerdict.CONTINUE

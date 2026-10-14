@@ -144,10 +144,12 @@ class LayeredLivenessProbe:
         """Report the freshest available reading, or no signal if both are blind."""
         primary_sample = self.primary.sample(observed_at=observed_at)
         fallback_sample = self.fallback.sample(observed_at=observed_at)
-        if primary_sample.last_event_epoch is None:
-            return fallback_sample
-        if fallback_sample.last_event_epoch is None:
-            return primary_sample
-        if fallback_sample.last_event_epoch > primary_sample.last_event_epoch:
-            return fallback_sample
-        return primary_sample
+        samples = (primary_sample, fallback_sample)
+        epochs = [
+            sample.last_event_epoch for sample in samples if sample.last_event_epoch is not None
+        ]
+        return LivenessSample(
+            last_event_epoch=max(epochs) if epochs else None,
+            observed_at=observed_at,
+            command_in_timeout=any(sample.command_in_timeout for sample in samples),
+        )

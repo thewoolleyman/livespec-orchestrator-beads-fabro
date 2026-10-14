@@ -7,18 +7,22 @@ primary over it — which is a different job from the thread and
 `fabro ps` orchestration in `_dispatcher_io_fabro_launcher`, the module
 this was cut out of.
 
-The layering direction is load-bearing: the heartbeat is the PRIMARY and
-the wall-clock event stream is the FALLBACK, so a heartbeat-pipeline
-outage degrades the watchdog to coarse detection rather than to NO
-detection. A dispatch that wires no heartbeat path reaches the
-wall-clock probe directly, which is what keeps the backstop a backstop.
+Both sources are read on every poll, so either can report newer progress.
+The event stream also carries command-node start, completion and timeout
+facts. A command's permission to remain quiet is independent of which
+source reports the newest progress. A dispatch with no heartbeat path
+still reads the event stream directly.
 """
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_command_liveness import (
+    command_in_timeout,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_heartbeat_probe import (
     HeartbeatLivenessProbe,
     LayeredLivenessProbe,
@@ -70,7 +74,11 @@ class _WallClockEventProbe:
         )
         events_json = events.command.stdout if events.command.exit_code == 0 else ""
         epoch = parse_last_event_epoch(events_json=events_json)
-        return LivenessSample(last_event_epoch=epoch, observed_at=observed_at)
+        return LivenessSample(
+            last_event_epoch=epoch,
+            observed_at=observed_at,
+            command_in_timeout=command_in_timeout(events_json=events_json, now_epoch=time.time()),
+        )
 
 
 def liveness_sample(
@@ -86,7 +94,7 @@ def liveness_sample(
 
     `heartbeat_path` None means the dispatch wired no heartbeat sink, so
     the coarse wall-clock probe answers alone; otherwise the heartbeat
-    primary answers and falls back to it. `dispatch_id` is the id the
+    and the event probe both answer and the newest signal wins. `dispatch_id` is the id the
     overlay projected into the sandbox and therefore the id the sink keys
     every beat by; None falls back to the work-item id alone.
     """
