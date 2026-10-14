@@ -26,6 +26,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_expor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_inputs import (
     ReconcileInputs,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_container_port import (
+    DOCKER_BIN,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroTarget
 from livespec_orchestrator_beads_fabro.commands._run_attribution import (
@@ -67,12 +70,20 @@ _QUESTIONS_BODY = json.dumps(
 
 @dataclass(kw_only=True)
 class _Runner:
-    """One fake `fabro` CLI, keyed by the server the argv names."""
+    """One fake `fabro` CLI, keyed by the server the argv names.
+
+    The reconciliation pass also sweeps this host's sandbox containers, so the
+    one subprocess seam now carries two binaries. The Docker leg is recorded
+    SEPARATELY and answered as a host with no sandbox container on it: `calls`
+    is this file's record of which FACTORY was addressed, and a `docker ps` —
+    which names no `--server` at all — would otherwise read as a survey.
+    """
 
     ps_by_server: dict[str, str] = field(default_factory=dict)
     inspect_by_run: dict[str, str] = field(default_factory=dict)
     failing_servers: frozenset[str] = frozenset()
     calls: list[list[str]] = field(default_factory=list)
+    docker_calls: list[list[str]] = field(default_factory=list)
 
     def run(
         self,
@@ -84,6 +95,9 @@ class _Runner:
         stdin: int | None = None,
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
+        if argv[0] == DOCKER_BIN:
+            self.docker_calls.append(argv)
+            return CommandResult(exit_code=0, stdout="", stderr="")
         self.calls.append(argv)
         server = argv[argv.index("--server") + 1] if "--server" in argv else ""
         if argv[1] == "ps":
@@ -376,6 +390,11 @@ def test_a_factory_without_a_server_url_is_refused_rather_than_surveyed(tmp_path
 
     assert runner.calls == []
     assert [error.reason for error in summary.errors] == ["factory-server-url-missing"]
+    # And the container sweep did not run either. A pass that surveyed no
+    # factory holds no inventory to grade against, so it reports that no
+    # sweep happened rather than reporting a host with nothing on it.
+    assert runner.docker_calls == []
+    assert (summary.containers.observed, summary.containers.held) == (False, ())
 
 
 def test_no_bare_fabro_target_is_ever_constructed(
@@ -434,6 +453,10 @@ def test_a_dry_run_emits_the_orphan_set_and_mutates_nothing(tmp_path: Path) -> N
     assert ledger.verbs == []
     assert transport.calls == []
     assert [call[1] for call in runner.calls] == ["ps"]
+    # The container sweep rides this pass too, and a dry run may READ the
+    # daemon while writing nothing to it. So the claim is about the verbs:
+    # the inventory was listed and no container was removed.
+    assert [call[1] for call in runner.docker_calls] == ["ps"]
 
 
 def test_an_item_missing_orphan_preserves_its_pointer_in_the_journal(tmp_path: Path) -> None:

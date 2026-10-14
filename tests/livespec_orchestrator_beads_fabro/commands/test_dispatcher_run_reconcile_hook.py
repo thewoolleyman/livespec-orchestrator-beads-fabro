@@ -9,6 +9,9 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_container_port import (
+    DOCKER_BIN,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
 from livespec_orchestrator_beads_fabro.store import append_work_item, record_dispatch_factory
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
@@ -25,10 +28,18 @@ _QUESTIONS = json.dumps([{"id": "q-1", "options": ["[A] Abandon (leave open for 
 
 @dataclass(kw_only=True)
 class _Runner:
-    """A fake `fabro` CLI keyed by the server each argv names."""
+    """A fake `fabro` CLI keyed by the server each argv names.
+
+    The reconciliation pass also sweeps this host's sandbox containers, so the
+    one subprocess seam now carries two binaries. The Docker leg is recorded
+    SEPARATELY and answered as a host with no sandbox container on it: `calls`
+    is this file's record of which FACTORY was addressed, and a `docker ps` —
+    which names no `--server` at all — would otherwise read as a survey.
+    """
 
     ps_by_server: dict[str, str] = field(default_factory=dict)
     calls: list[list[str]] = field(default_factory=list)
+    docker_calls: list[list[str]] = field(default_factory=list)
 
     def run(
         self,
@@ -40,6 +51,9 @@ class _Runner:
         stdin: int | None = None,
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
+        if argv[0] == DOCKER_BIN:
+            self.docker_calls.append(argv)
+            return CommandResult(exit_code=0, stdout="", stderr="")
         self.calls.append(argv)
         server = argv[argv.index("--server") + 1] if "--server" in argv else ""
         if argv[1] == "ps":

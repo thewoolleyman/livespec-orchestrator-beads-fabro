@@ -160,6 +160,10 @@ def _emit(
 ) -> None:
     if as_json:
         payload = {
+            # The sandbox-container sweep rides the same pass, so it rides the
+            # same projection: a reclaim an operator cannot see is one they
+            # cannot tell apart from a sweep that found nothing to do.
+            "containers": asdict(summary.containers),
             "dry_run": summary.dry_run,
             "errors": [asdict(error) for error in summary.errors],
             "held": [asdict(run) for run in summary.held],

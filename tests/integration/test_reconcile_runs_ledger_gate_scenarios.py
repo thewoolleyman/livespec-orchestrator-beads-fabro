@@ -54,6 +54,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_input
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_pass import (
     reconcile_pass_summary,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_container_port import (
+    DOCKER_BIN,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
 from livespec_orchestrator_beads_fabro.commands.close_work_item import close_completed
 from livespec_orchestrator_beads_fabro.store import append_work_item, read_work_items
@@ -91,13 +94,21 @@ _QUESTIONS_BODY = json.dumps(
 
 @dataclass(kw_only=True)
 class _FabroCli:
-    """The factory-side `fabro` CLI, keyed by the server each argv names."""
+    """The factory-side `fabro` CLI, keyed by the server each argv names.
+
+    The reconciliation pass also sweeps this host's sandbox containers, so the
+    one subprocess seam now carries two binaries. The Docker leg is recorded
+    SEPARATELY and answered as a host with no sandbox container on it: `calls`
+    is this file's record of which FACTORY was addressed, and a `docker ps` —
+    which names no `--server` at all — would otherwise read as a survey.
+    """
 
     ps_by_server: dict[str, str] = field(default_factory=dict)
     inspect_by_run: dict[str, str] = field(default_factory=dict)
     unreachable_servers: frozenset[str] = frozenset()
     ps_servers: list[str] = field(default_factory=list)
     verbs: list[str] = field(default_factory=list)
+    docker_calls: list[list[str]] = field(default_factory=list)
 
     def run(
         self,
@@ -109,6 +120,9 @@ class _FabroCli:
         stdin: int | None = None,
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
+        if argv[0] == DOCKER_BIN:
+            self.docker_calls.append(argv)
+            return CommandResult(exit_code=0, stdout="", stderr="")
         server = argv[argv.index("--server") + 1]
         self.verbs.append(argv[1])
         if argv[1] == "ps":

@@ -11,6 +11,9 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_run_checks
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_checks import LedgerFinding
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_container_port import (
+    DOCKER_BIN,
+)
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
@@ -28,6 +31,7 @@ class _Runner:
     ps_by_server: dict[str, str] = field(default_factory=dict)
     failing_servers: frozenset[str] = frozenset()
     calls: list[list[str]] = field(default_factory=list)
+    docker_calls: list[list[str]] = field(default_factory=list)
 
     def run(
         self,
@@ -39,6 +43,9 @@ class _Runner:
         stdin: int | None = None,
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
+        if argv[0] == DOCKER_BIN:
+            self.docker_calls.append(argv)
+            return CommandResult(exit_code=0, stdout="", stderr="")
         self.calls.append(argv)
         server = argv[argv.index("--server") + 1] if "--server" in argv else ""
         if server in self.failing_servers:
