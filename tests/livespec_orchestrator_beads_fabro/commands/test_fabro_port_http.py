@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import email.message
 import io
 import json
@@ -293,6 +294,18 @@ def test_status_zero_is_reported_only_when_no_response_arrived(
     request could still report 0. `send` is declared never to raise, so an
     unreadable body must come back as the status-bearing refusal it is,
     neither as an escaping exception nor as a wrong-host 0.
+
+    The dying body is closed through `contextlib.closing`, and that close is
+    ASSERTED rather than left to the interpreter. `raise error` binds a
+    traceback onto the `HTTPError`, which puts it in a reference cycle, so the
+    `fp.close` the response wrapper performs ran only whenever the cycle
+    collector happened to reach it — a moment that varies with xdist worker
+    scheduling. `_DyingBody.close` was therefore executed on some runs of the
+    suite and not others, and `check-per-file-coverage` refused pull requests
+    that touch nothing near this file for the one missing line
+    (`bd-ib-apoogr`). Asserting the close is not a coverage device: closing a
+    body whose read died is what this case claims the caller is left free to
+    do, and asserting it is what makes the claim hold on every run.
     """
     monkeypatch.setattr(
         urllib.request, "urlopen", _always_raising(error=urllib.error.URLError("no route"))
@@ -306,28 +319,36 @@ def test_status_zero_is_reported_only_when_no_response_arrived(
     )
     answered = _send()
 
-    monkeypatch.setattr(
-        urllib.request,
-        "urlopen",
-        _always_raising(error=_http_error(status=503, fp=_DyingBody())),
-    )
-    unreadable = attempt(action=_send, exceptions=(OSError,))
+    dying_body = _DyingBody()
+    declined = _http_error(status=503, fp=dying_body)
+    monkeypatch.setattr(urllib.request, "urlopen", _always_raising(error=declined))
+    with contextlib.closing(declined):
+        unreadable = attempt(action=_send, exceptions=(OSError,))
 
     assert (nothing_arrived.status, nothing_arrived.body) == (0, "")
     assert (answered.status, answered.body) == (401, '{"error": "no token"}')
     assert not isinstance(unreadable, AttemptFailure)
     assert (unreadable.status, unreadable.body) == (503, "")
+    assert dying_body.closed is True
 
 
+@dataclass(kw_only=True)
 class _DyingBody:
-    """A response body whose read fails after its status line arrived."""
+    """A response body whose read fails after its status line arrived.
+
+    Records its own close so the test that drives it can assert the close
+    happened instead of depending on when the interpreter collects the
+    `HTTPError` that wraps it.
+    """
+
+    closed: bool = False
 
     def read(self, amt: int | None = None) -> bytes:
         _ = amt
         raise OSError("connection reset while reading the error body")
 
     def close(self) -> None:
-        return None
+        self.closed = True
 
 
 def _http_error(*, status: int, fp: object) -> urllib.error.HTTPError:
