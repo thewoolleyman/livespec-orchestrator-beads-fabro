@@ -279,8 +279,19 @@ def decide_stall(
     participate in the comparison; no-signal samples are skipped entirely,
     so a burst of probe failures in the middle of a healthy run cannot
     manufacture a false stall.
+
+    That same skipping rule governs the command-node protection, and it
+    has to: both facts a reading carries come from the SAME `fabro
+    events` payload, so a probe failure or an unreachable factory yields
+    `(None, False)` — no signal, and therefore no observation of the open
+    command either. Reading that `False` as "the command closed" would
+    cancel a healthy run inside its command node on the next poll, which
+    is the very false-kill class this layer exists to prevent. The
+    protection is therefore read off the newest reading that OBSERVED
+    something, never off the newest reading of any kind.
     """
-    if samples and samples[-1].command_in_timeout:
+    observed = _newest_observed(samples=samples)
+    if observed is not None and observed.command_in_timeout:
         return StallVerdict.CONTINUE
     quiet_seconds = quiet_window_seconds(samples=samples)
     if quiet_seconds is None:
@@ -288,6 +299,20 @@ def decide_stall(
     if quiet_seconds >= stall_seconds:
         return StallVerdict.STALLED
     return StallVerdict.CONTINUE
+
+
+def _newest_observed(*, samples: tuple[LivenessSample, ...]) -> LivenessSample | None:
+    """The newest reading that observed a signal, or None when none ever did.
+
+    "Observed" is `last_event_epoch is not None`: a reading whose probe
+    failed carries no timestamp and no command-node fact either, so it
+    reports on nothing and cannot be the reading a decision is taken
+    from.
+    """
+    for sample in reversed(samples):
+        if sample.last_event_epoch is not None:
+            return sample
+    return None
 
 
 def quiet_window_seconds(*, samples: tuple[LivenessSample, ...]) -> float | None:

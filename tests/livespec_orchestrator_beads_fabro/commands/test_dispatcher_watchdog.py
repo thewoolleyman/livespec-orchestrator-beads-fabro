@@ -422,6 +422,42 @@ def test_decide_stall_restarts_the_quiet_window_on_fresh_progress() -> None:
     assert decide_stall(samples=unavailable, stall_seconds=1500.0) is StallVerdict.CONTINUE
 
 
+def test_decide_stall_keeps_an_open_command_protected_across_a_probe_failure() -> None:
+    """A no-signal reading cannot strip an open command node's protection.
+
+    The command-node protection is read off the newest reading that
+    actually OBSERVED something, never off the newest reading of any
+    kind. Both facts a reading carries — the last-event epoch and whether
+    a command node is inside its recorded timeout — are derived from the
+    SAME `fabro events` payload, so one transient probe failure or one
+    unreachable factory yields `(None, False)`: no signal, and therefore
+    no observation of the open command either. Reading that `False` as
+    "the command closed" would cancel a healthy run inside its command
+    node on the next poll, which is the exact false-kill class this
+    watchdog layer exists to prevent — and this factory demonstrably
+    returns transient 5xx.
+    """
+    protected = (
+        LivenessSample(last_event_epoch=100.0, observed_at=0.0, command_in_timeout=True),
+        LivenessSample(last_event_epoch=100.0, observed_at=600.0, command_in_timeout=True),
+    )
+    assert decide_stall(samples=protected, stall_seconds=300.0) is StallVerdict.CONTINUE
+    blinded = (
+        *protected,
+        LivenessSample(last_event_epoch=None, observed_at=630.0, command_in_timeout=False),
+    )
+    assert decide_stall(samples=blinded, stall_seconds=300.0) is StallVerdict.CONTINUE
+    # The protection is still only as long as the command's own recorded
+    # budget: an OBSERVED reading reporting the command out of timeout
+    # cancels on the window it has already accumulated, so no-signal
+    # tolerance buys no permanent immunity.
+    expired = (
+        *blinded,
+        LivenessSample(last_event_epoch=100.0, observed_at=660.0, command_in_timeout=False),
+    )
+    assert decide_stall(samples=expired, stall_seconds=300.0) is StallVerdict.STALLED
+
+
 # ---------------------------------------------------------------------------
 # Engine integration: a launcher-reported stall -> stalled-no-progress
 # ---------------------------------------------------------------------------
