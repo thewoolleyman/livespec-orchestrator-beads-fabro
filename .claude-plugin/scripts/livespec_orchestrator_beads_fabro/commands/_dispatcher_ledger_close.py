@@ -268,6 +268,7 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # reached the parser are both None, so an explicit null would read as a
     # positive finding about a terminal nobody observed.
     "needs_human_reason",
+    "needs_human_preservation",
     "provider_usage_limit_provider",
     "remedy",
     "step",

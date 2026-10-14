@@ -2640,6 +2640,7 @@ def test_engine_fabro_run_failure_surfaces_inspect_failure_detail(tmp_path: Path
                 stderr="ACP turn failed",
             ),
             _ok(stdout=failed_inspect),
+            _ok(stdout="[]"),
         ]
     )
 
@@ -2650,7 +2651,11 @@ def test_engine_fabro_run_failure_surfaces_inspect_failure_detail(tmp_path: Path
     assert "script failed with exit 2: pytest fixture broke" in outcome.detail
     assert "category=deterministic" in outcome.detail
     assert "signature=fix|deterministic|script failed with exit 2" in outcome.detail
-    assert [record["stage"] for record in journal.records] == ["fabro-run", "fabro-inspect"]
+    assert [record["stage"] for record in journal.records] == [
+        "fabro-run",
+        "fabro-inspect",
+        "fabro-terminal-events",
+    ]
 
 
 def test_engine_blocked_run_is_a_third_terminal_state(tmp_path: Path) -> None:
@@ -2698,7 +2703,9 @@ def test_engine_blocked_check_falls_back_to_exit_code_routing(tmp_path: Path) ->
         queue=[
             CommandResult(exit_code=1, stdout="Run: 01RUNDEAD\n", stderr="agent died"),
             _ok(stdout=failed_inspect),
+            _ok(stdout="[]"),
             _ok(stdout=failed_inspect),
+            _ok(stdout="[]"),
         ]
     )
     outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)

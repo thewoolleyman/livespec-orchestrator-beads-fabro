@@ -326,6 +326,10 @@ class DispatchOutcome:
     that printed no reason, which is a different fact from a terminal that
     printed an empty one; both arrive here as None because the distinction is
     not one any reader of this field acts on.
+
+    `needs_human_preservation` carries the terminal's measured preservation
+    account to the durable ledger writer: preserved on a named ref, explicitly
+    not pushed, or unknown. None means this outcome never read that account.
     """
 
     work_item_id: str
@@ -348,6 +352,7 @@ class DispatchOutcome:
     needs_human_kind: str | None = None
     needs_human_stages: tuple[str, ...] | None = None
     needs_human_reason: str | None = None
+    needs_human_preservation: str | None = None
 
 
 def run_dispatch(

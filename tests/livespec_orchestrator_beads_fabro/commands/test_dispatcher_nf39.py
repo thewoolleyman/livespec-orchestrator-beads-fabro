@@ -121,6 +121,7 @@ def test_failed_dispatch_reinspects_when_terminal_inspect_has_no_failure_yet(
                 stdout=json.dumps([{"status": {"kind": "failed"}}]),
                 stderr="",
             ),
+            CommandResult(exit_code=0, stdout="[]", stderr=""),
             CommandResult(
                 exit_code=0,
                 stdout=json.dumps(
@@ -140,6 +141,7 @@ def test_failed_dispatch_reinspects_when_terminal_inspect_has_no_failure_yet(
                 ),
                 stderr="",
             ),
+            CommandResult(exit_code=0, stdout="[]", stderr=""),
         ]
     )
     journal = _RecordingJournal()
@@ -160,7 +162,9 @@ def test_failed_dispatch_reinspects_when_terminal_inspect_has_no_failure_yet(
     assert [record["stage"] for record in journal.records] == [
         "fabro-run",
         "fabro-inspect",
+        "fabro-terminal-events",
         "fabro-inspect",
+        "fabro-terminal-events",
     ]
 
 
