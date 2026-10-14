@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.196.21](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.20...v0.196.21) (2026-10-14)
+
+
+### Bug Fixes
+
+* repair a conflicted draft refresh instead of failing closed ([5a06e84](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5a06e84b4ef8930b5132bf4e941bf16bd979edc3))
+* repair a conflicted pr_refresh and budget the repair rounds apart ([837e91d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/837e91d28a8b40de1ce0c758d7b91401dfd7b44e))
+* repair a refreshed head the repository gate rejects ([8342c3c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8342c3c5bf4e48835539af5fd575cf9eff3940f8))
+
 ## [0.196.20](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.19...v0.196.20) (2026-10-14)
 
 
