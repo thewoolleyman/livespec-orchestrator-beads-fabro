@@ -12,6 +12,7 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._plan_result_repository import (
     ResultRepository,
     resolve_result_repository,
@@ -195,3 +196,51 @@ def test_a_name_matching_neither_the_checkout_nor_the_primary_path_does_not_reso
         primary=tmp_path / "livespec-orchestrator-beads-fabro",
     )
     assert resolve_result_repository(project_root=checkout, name="livespec-overseer") is None
+
+
+@pytest.mark.parametrize(
+    ("origin", "resolves"),
+    [
+        ("https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro", True),
+        ("https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git", True),
+        ("git@github.com:thewoolleyman/livespec-orchestrator-beads-fabro.git", True),
+        ("ssh://git@host/thewoolleyman/livespec-orchestrator-beads-fabro.git/", True),
+        ("/clones/livespec-orchestrator-beads-fabro", True),
+        ("https://github.com/thewoolleyman/livespec-overseer.git", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_the_origin_remotes_repository_name_resolves_a_differently_named_checkout(
+    *, tmp_path: Path, origin: str | None, resolves: bool
+) -> None:
+    """A clone directory can be named after neither the repository nor a branch.
+
+    The two identities this module already read cannot see such a checkout: the
+    directory name is unrelated to the repository, and a clone made by a sandbox
+    carries no `livespec.primaryPath` naming a primary checkout. Petri's sandbox
+    clones this repository into `/workspace`, so every same-repository result was
+    unobservable in a Petri-era dispatch (bd-ib-wehfpc) while the pinned engine's
+    `/data/projects/<repo>` checkout matched by name and stayed green.
+
+    The origin remote's own repository name is read from local git configuration,
+    so it costs no network access, and it identifies the repository across each
+    URL spelling a clone can carry. A checkout whose origin names a DIFFERENT
+    repository, or names nothing at all, must still not invent an identity.
+    """
+    checkout = tmp_path / "workspace"
+    checkout.mkdir()
+    _ = subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+    if origin is not None:
+        _ = subprocess.run(
+            ["git", "-C", str(checkout), "config", "remote.origin.url", origin], check=True
+        )
+    unset = subprocess.run(
+        ["git", "-C", str(checkout), "config", "--get", "livespec.primaryPath"],
+        capture_output=True,
+        check=False,
+    )
+    assert unset.returncode == 1
+    name = "livespec-orchestrator-beads-fabro"
+    expected = ResultRepository(name=name, clone=checkout) if resolves else None
+    assert resolve_result_repository(project_root=checkout, name=name) == expected
