@@ -62,7 +62,11 @@ def fabro_run_terminal_outcome(
     )
     if blocked is not None:
         return blocked
-    if exit_code == 0:
+    if exit_code == 0 or (
+        inspect is not None
+        and inspect.command.exit_code == 0
+        and inspect.status_kind == "succeeded"
+    ):
         return None
     failure = None if inspect is None else inspect.failure
     detail = fabro_failure_outcome_detail(failure=failure, fallback=tail(text=stderr))

@@ -35,8 +35,9 @@ class CommandResult:
 class FabroRunResult:
     """Outcome of the watched `fabro run` foreground stage.
 
-    `command` is the `CommandResult` of the `fabro run` process (its exit
-    code routes the blocked / failed / green flow exactly as before).
+    `command` preserves the raw `fabro run` client result. After a stream
+    disconnect, the bound run's inspected terminal state governs routing;
+    the client exit code alone does not establish a run failure.
     `stalled_run_id` is set ONLY when the coarse wall-clock watchdog
     confirmed a sustained-no-progress stall and `fabro rm -f`-ed the run
     (the 7us.6 hang class) — the engine then short-circuits to a distinct
