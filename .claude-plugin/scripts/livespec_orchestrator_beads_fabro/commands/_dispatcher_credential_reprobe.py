@@ -50,6 +50,19 @@ admission-valve condition". The one bound on the wait is the invocation's own
 budget — an invocation with no dispatch slots to spend has nothing to wait for,
 so it never enters the loop at all.
 
+THAT BOUND IS SPENT, ONE ROUND PER REFUSED PROBE, and it is the only thing
+standing between this wait and an unbounded one. The guard used to read the
+budget without ever decrementing it, so the bound the paragraph above claims
+was not a bound at all: a credential that never recovered held the loop until
+a human intervened, which is exactly what the four loops measured on
+2026-10-08 did for fourteen hours. The spend is LOCAL to the wait — the budget
+arrives by value and the wave still admits up to the caller's own `--budget`
+— so what it bounds is how many refused probes this wait tolerates, never how
+much work the pass may dispatch afterwards. An operator who wants to wait
+longer raises the budget; one whose wrapper is broken gets a bounded wait, a
+journal row per round naming the credential identity it probed, and then the
+dispatch path's own actionable refusal.
+
 IT DOES NOT GOVERN A CHAIN THAT STILL HAS A CANDIDATE. `SPECIFICATION/
 contracts.md` section "Factory-configurable ACP fallback priority": "The
 re-probe wait applies to a legacy single candidate and a genuinely exhausted
@@ -146,13 +159,20 @@ def await_usable_credential(
     # selector's loud fallback line once a cadence, and the rotation this wait
     # must notice is a change of VALUE under the name a dispatch would project.
     env_name = selected_credential_env_name()
-    while budget > 0:
+    remaining = budget
+    while remaining > 0:
         reading = resolve_credential_reading(repo=repo, env_name=env_name, environ=os.environ)
         status = assess_credential_status(repo=repo, probe=probe, token=reading.token)
         if status.condition != PROVIDER_LIMIT_CONDITION:
             return
+        # Spent BEFORE the row is written, so `reprobe_rounds_remaining`
+        # reports what is left after this round rather than before it — the
+        # figure an operator reading the newest row needs.
+        remaining -= 1
         journal.append(
-            record=_refused_probe_record(status=status, interval=interval, reading=reading)
+            record=_refused_probe_record(
+                status=status, interval=interval, reading=reading, remaining=remaining
+            )
         )
         sleep(interval)
 
@@ -162,6 +182,7 @@ def _refused_probe_record(
     status: ClaudeCredentialStatus,
     interval: int,
     reading: CredentialReading,
+    remaining: int,
 ) -> dict[str, object]:
     """One refused probe, as the non-secret facts that explain the wait.
 
@@ -178,7 +199,9 @@ def _refused_probe_record(
     `credential_source` sits beside it because the two have different remedies:
     the wrapper's current answer being limited is a provider problem, while the
     launch-time value carried forward means the wrapper supplied nothing and is
-    itself what needs fixing.
+    itself what needs fixing. `reprobe_rounds_remaining` is what makes the
+    bound legible from the newest row alone, so a reader can tell a wait with
+    hours left from one about to return.
     """
     return {
         "stage": CREDENTIAL_REPROBE_STAGE,
@@ -187,5 +210,6 @@ def _refused_probe_record(
         "error_type": status.error_type,
         "credential_identity": reading.identity,
         "credential_source": reading.source,
+        "reprobe_rounds_remaining": remaining,
         "reprobe_interval_seconds": interval,
     }

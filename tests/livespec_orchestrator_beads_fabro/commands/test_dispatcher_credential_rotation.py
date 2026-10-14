@@ -29,6 +29,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -137,6 +138,43 @@ class _Wrapper:
         return self.values[min(len(self.calls) - 1, len(self.values) - 1)]
 
 
+class _BoundedSleep:
+    """Record each sleep, and ASSERT the wait cannot run past a round ceiling.
+
+    A wait that never spends its budget loops for ever against a no-op sleep
+    and would HANG the suite rather than report the defect. The ceiling is well
+    clear of every budget a case here hands the wait, so tripping it IS the
+    finding: the wait outran every bound it was given.
+    """
+
+    def __init__(self, *, ceiling: int) -> None:
+        self.ceiling = ceiling
+        self.calls: list[float] = []
+
+    def __call__(self, seconds: float) -> None:
+        self.calls.append(seconds)
+        assert (
+            len(self.calls) <= self.ceiling
+        ), f"the wait slept {len(self.calls)} times, past its {self.ceiling}-round ceiling"
+
+
+class _StubRun:
+    """A stand-in for the ONE `subprocess.run` the wrapper read performs."""
+
+    def __init__(self, *, outcome: str) -> None:
+        self.outcome = outcome
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        self.calls.append({"argv": argv, **kwargs})
+        if self.outcome == "timeout":
+            raise subprocess.TimeoutExpired(cmd=argv, timeout=kwargs["timeout"])
+        returncode = 0 if self.outcome == "value" else 1
+        return subprocess.CompletedProcess(
+            args=argv, returncode=returncode, stdout="injected-value\n", stderr=""
+        )
+
+
 def test_a_rotated_credential_reaches_the_parked_wait_on_its_next_probe(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -229,3 +267,102 @@ def test_consecutive_refused_rows_show_whether_the_credential_value_changed(
     assert first not in serialized
     assert second not in serialized
     assert _STALE_TOKEN not in serialized
+
+
+@pytest.mark.parametrize("budget", [4, 7])
+def test_a_wrapper_that_supplies_nothing_still_terminates_at_the_reprobe_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    budget: int,
+) -> None:
+    """A misconfigured wrapper runs the wait's budget out instead of hanging.
+
+    The wrapper supplies nothing on every round, so each round carries the
+    launch-time value forward and the probe keeps classifying it `exhausted` —
+    the shape that parked four loops for fourteen hours. The wait must spend
+    one round of its budget per refused probe and return when the budget is
+    gone.
+
+    TWO BUDGETS, because "it terminated" on its own is equally consistent with
+    a hardcoded cap, which would satisfy the whole case while making the bound
+    something no caller can set. The row count tracking the budget is what
+    separates the two.
+
+    The rows are asserted to name the ENVIRONMENT source, which is the fact an
+    operator needs: a wrapper's current answer being limited is a provider
+    problem, while the launch-time value carried forward says the wrapper
+    itself supplied nothing and is what needs fixing.
+    """
+    rotation = _module(name=_ROTATION_MODULE)
+    reprobe = _module(name=_REPROBE_MODULE)
+    repo = _repo(tmp_path=tmp_path, cadence=2)
+    journal = _journal(repo=repo)
+    monkeypatch.setenv(CLAUDE_OAUTH_TOKEN_ENV, _STALE_TOKEN)
+    monkeypatch.setattr(rotation, "read_wrapper_credential", _Wrapper(values=[""]))
+    probe = _TokenKeyedProbe()
+    sleep = _BoundedSleep(ceiling=budget * 3)
+
+    result = reprobe.await_usable_credential(
+        repo=repo, journal=journal, budget=budget, probe=probe, sleep=sleep
+    )
+
+    assert result is None
+    assert sleep.calls == [2] * budget
+    assert probe.tokens == [_STALE_TOKEN] * budget
+    rows = _refused(journal=journal, stage=reprobe.CREDENTIAL_REPROBE_STAGE)
+    assert len(rows) == budget
+    assert [row["credential_source"] for row in rows] == [rotation.ENVIRONMENT_SOURCE] * budget
+
+
+@pytest.mark.parametrize(
+    ("wrapper", "outcome", "expected"),
+    [
+        ((), "unused", ""),
+        (_WRAPPER, "timeout", ""),
+        (_WRAPPER, "nonzero", ""),
+        (_WRAPPER, "value", "injected-value"),
+    ],
+)
+def test_the_one_wrapper_invocation_is_bounded_and_withholds_the_held_credential(
+    monkeypatch: pytest.MonkeyPatch,
+    wrapper: tuple[str, ...],
+    outcome: str,
+    expected: str,
+) -> None:
+    """The other half of "instead of hanging": one round cannot hang either.
+
+    A wrapper that never returns would turn a bounded wait into the very hang
+    this repairs, so the invocation carries a finite deadline and a wrapper
+    that exceeded it, could not be executed, or exited non-zero reports no
+    value rather than being waited on.
+
+    The child environment is asserted NOT to carry the selected credential
+    name. That is a correctness requirement rather than hygiene: this fleet's
+    wrapper injects the DIFF against its caller's environment, so a caller
+    still holding the credential reads its own stale value straight back — the
+    defect under repair, arriving through the remedy.
+    """
+    rotation = _module(name=_ROTATION_MODULE)
+    run = _StubRun(outcome=outcome)
+    monkeypatch.setattr(rotation.subprocess, "run", run)
+
+    read = rotation.read_wrapper_credential(
+        wrapper=wrapper,
+        env_name=CLAUDE_OAUTH_TOKEN_ENV,
+        environ={CLAUDE_OAUTH_TOKEN_ENV: _STALE_TOKEN, "PATH": "/usr/bin"},
+    )
+
+    assert read == expected
+    if not wrapper:
+        # Nothing to invoke, so nothing was invoked — the discriminator for an
+        # undeclared wrapper against one that ran and answered with nothing.
+        assert run.calls == []
+        return
+    assert len(run.calls) == 1
+    call = run.calls[0]
+    assert call["argv"] == [*wrapper, "printenv", CLAUDE_OAUTH_TOKEN_ENV]
+    assert call["timeout"] == rotation.WRAPPER_READ_TIMEOUT_SECONDS
+    assert isinstance(rotation.WRAPPER_READ_TIMEOUT_SECONDS, int)
+    assert rotation.WRAPPER_READ_TIMEOUT_SECONDS > 0
+    assert CLAUDE_OAUTH_TOKEN_ENV not in call["env"]
+    assert call["env"]["PATH"] == "/usr/bin"

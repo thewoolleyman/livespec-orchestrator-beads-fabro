@@ -136,7 +136,7 @@ def selected_credential_env_name() -> str:
     ).env_name
 
 
-def read_wrapper_credential(  # pragma: no cover - the one process boundary
+def read_wrapper_credential(
     *,
     wrapper: tuple[str, ...],
     env_name: str,
