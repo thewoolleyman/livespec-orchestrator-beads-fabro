@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.196.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.3...v0.196.4) (2026-10-14)
+
+
+### Bug Fixes
+
+* **watchdog:** a stale heartbeat no longer masks the Fabro event stream ([317a94d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/317a94d1270349c8346d593f2ec8019dddd051d0))
+
 ## [0.196.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.2...v0.196.3) (2026-10-14)
 
 
