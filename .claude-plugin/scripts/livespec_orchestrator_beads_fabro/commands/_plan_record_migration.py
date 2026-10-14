@@ -225,8 +225,14 @@ def seeded_next_action(*, handoff_body: str | None, prefix: str) -> NextAction:
 
 
 def total_writes(*, report: PlanRecordMigrationReport) -> int:
-    """Count every write one run made; zero is what idempotence looks like."""
-    return len(report.slugs_written) + len(report.anchors_written) + len(report.next_actions_seeded)
+    """Count every write one run made; zero is what idempotence looks like.
+
+    The genesis leg counts here for the same reason the other three do: this
+    total is the whole of the contract's idempotence claim, so a leg left out
+    of it reports zero on the FIRST run too — the one run whose count an
+    operator reads to learn that there WAS something to do.
+    """
+    return len(_written_entries(report=report))
 
 
 def render_report(*, report: PlanRecordMigrationReport) -> str:
@@ -235,12 +241,28 @@ def render_report(*, report: PlanRecordMigrationReport) -> str:
     The write count leads because it is the line an operator re-reads on the
     second run: the contract's idempotence claim is exactly "this says 0".
     """
-    written = (*report.slugs_written, *report.anchors_written, *report.next_actions_seeded)
+    written = _written_entries(report=report)
     lines = [f"migrate-plan-records: {total_writes(report=report)} write(s)"]
     lines.extend(f"wrote: {entry}" for entry in written)
     lines.extend(f"skipped: {entry}" for entry in report.skipped)
     lines.extend(f"refused: {entry}" for entry in report.refused)
     return "".join(f"{line}\n" for line in lines)
+
+
+def _written_entries(*, report: PlanRecordMigrationReport) -> tuple[str, ...]:
+    """Every write one run made, in the order the legs performed them.
+
+    ONE definition, read by both the count and the render, because those two
+    are the same claim stated twice: a leg counted but not rendered reports a
+    total an operator cannot account for, and one rendered but not counted
+    reports writes the total says did not happen.
+    """
+    return (
+        *report.slugs_written,
+        *report.anchors_written,
+        *report.next_actions_seeded,
+        *report.genesis_written,
+    )
 
 
 def _noted_slug(*, notes: str) -> str | None:
