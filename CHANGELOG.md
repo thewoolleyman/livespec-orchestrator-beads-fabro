@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.196.14](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.13...v0.196.14) (2026-10-14)
+
+
+### Bug Fixes
+
+* **dispatcher:** name a bound run the factory no longer holds as a disappearance ([25bef66](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/25bef66718b0e871d4f1f8ac1d5459f285634237))
+* **dispatcher:** poll a bound watchdog run by its id instead of listing the factory ([93dcf35](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/93dcf35395d52a83e01234bab532942184cab2dc))
+* **dispatcher:** treat an unreadable per-run watchdog read as unobservable ([a0a1ce2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a0a1ce2b808c25bc1e10f432c75551f0ac50ed93))
+
 ## [0.196.13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.12...v0.196.13) (2026-10-14)
 
 
