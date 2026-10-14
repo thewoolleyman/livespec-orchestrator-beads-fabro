@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.196.15](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.14...v0.196.15) (2026-10-14)
+
+
+### Bug Fixes
+
+* read the client's terminal sentinel before declaring a run unobservable ([84cc969](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/84cc9695eda1623f65a7799be050c0327f689667))
+* reconcile successful runs after client transport failure ([a27d551](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a27d551339ff6815135f2980d97585d4342b5443))
+* retain claims and journal exhausted run reattachment ([203a183](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/203a18345af24e2811f58b7593679dbf63241b26))
+* retry unanswered run inspections within a bounded window ([aeb4913](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/aeb491314a76a61d774141f05595bf9940cb5cda))
+* supervise a bound run after its client stream drops ([2c06fc5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2c06fc5daeaa9ea2830807066c3971c1e8b7e6bc))
+
 ## [0.196.14](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.13...v0.196.14) (2026-10-14)
 
 
