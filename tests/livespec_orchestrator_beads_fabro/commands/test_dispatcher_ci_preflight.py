@@ -15,6 +15,7 @@ from typing import Any, Protocol, cast
 import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_run_checks, _dispatcher_step_gate
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import InvokerIdentity
 
 _MODULE_PATH = (
     Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
@@ -122,6 +123,19 @@ def _wait_module() -> Any:
     return importlib.import_module(_WAIT_MODULE_NAME)
 
 
+def _wait_surface() -> Any:
+    """The wait module, with its waiver-aware surface asserted before it is used.
+
+    Asserting the two public names first keeps the Red a genuine assertion
+    failure: constructing a `MasterCiWait` with a field it does not carry yet
+    raises a TypeError instead, which proves nothing about the behaviour.
+    """
+    module = _wait_module()
+    assert "bound_seconds" in module.MasterCiWait.__dataclass_fields__
+    assert "master_ci_wait" in module.__all__
+    return module
+
+
 def _stream(*, results: list[CommandResult]) -> Iterator[CommandResult]:
     """One scripted answer per call, repeating the last one for every later call."""
     return itertools.chain(results, itertools.repeat(results[-1]))
@@ -227,6 +241,29 @@ def _polled(
             now=lambda: next(ticks), sleep=pauses.append, progress=progress
         ),
     )
+
+
+def _declare_waiver(*, repo: Path, step: str) -> None:
+    _ = (repo / ".livespec.jsonc").write_text(
+        json.dumps(
+            {
+                "livespec-orchestrator-beads-fabro": {
+                    "dispatcher": {
+                        "step_waivers": [
+                            {"step": step, "owner": "the maintainer", "reason": "cannot verify"}
+                        ]
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _recording_wait(*, waived: bool, asked: list[bool], wait: object) -> object:
+    """Record the `waived` answer the gate asked for, and hand back a test wait."""
+    asked.append(waived)
+    return wait
 
 
 def _declare(*, repo: Path, workflow: str, job: str) -> None:
@@ -721,6 +758,82 @@ def test_the_deferred_text_leads_with_still_running_and_drops_the_red_recovery(
     assert "retry the dispatch when the run concludes" in detail
 
 
+def test_a_waived_master_ci_step_defers_at_once_without_polling(tmp_path: Path) -> None:
+    """A zero bound makes the FIRST pending reading the deferral: no poll, no pause.
+
+    This is how the ratified "a committed waiver still waives the step before
+    any waiting" survives the wait's arrival. Without it the waiver still
+    works, but only after the full half hour has elapsed, so a repository that
+    has already declared it cannot verify master CI would pay the whole bound
+    on every dispatch to be told what it said itself.
+    """
+    pauses: list[float] = []
+    wait_module = _wait_surface()
+    runner = _Runner(results=_results(run_list=_result(stdout=_run_list_payload(status="queued"))))
+    ticks = itertools.chain([0.0], itertools.repeat(0.0))
+
+    outcome = _module().master_ci_preflight(
+        repo=tmp_path,
+        runner=runner,
+        wait=wait_module.MasterCiWait(
+            now=lambda: next(ticks),
+            sleep=pauses.append,
+            progress=io.StringIO(),
+            bound_seconds=0.0,
+        ),
+    )
+
+    assert outcome.record["reason"] == "master-ci-pending"
+    assert outcome.record["waited_seconds"] == 0
+    assert pauses == []
+    assert runner.calls.count(_run_list_argv()) == 1
+    assert wait_module.master_ci_wait(waived=True).bound_seconds == 0.0
+    assert wait_module.master_ci_wait(waived=False).bound_seconds == wait_module.WAIT_BOUND_SECONDS
+
+
+@pytest.mark.parametrize("declared_step", ["master-ci", "source-checkout"])
+def test_the_gate_resolves_the_master_ci_wait_from_the_committed_waiver(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, declared_step: str
+) -> None:
+    """The gate asks for a WAIVED wait, which is what puts the waiver before the wait.
+
+    The flag is asserted rather than the elapsed time deliberately: a gate that
+    passed `waived=False` here would make this test sit through the real
+    1800-second bound, which is a hang rather than a failure.
+
+    The negative case commits a waiver for a DIFFERENT step rather than none at
+    all, because a waiver is scoped to its own step: the discriminating case is
+    a repository that waives something else, not one that waives nothing.
+    """
+    asked: list[bool] = []
+    waived = declared_step == "master-ci"
+    journal = tmp_path / "journal.jsonl"
+    args = argparse.Namespace(fabro_bin=str(tmp_path / "fabro"), janitor=None, journal=str(journal))
+    runner = _Runner(results=_results(run_list=_result(stdout=_run_list_payload(status="queued"))))
+    _ = (tmp_path / "fabro").write_text("#!/bin/sh\n", encoding="utf-8")
+    (tmp_path / "fabro").chmod(0o755)
+    _declare_waiver(repo=tmp_path, step=declared_step)
+    ticks = itertools.chain([0.0], itertools.repeat(0.0))
+    unwaiting = _wait_surface().MasterCiWait(
+        now=lambda: next(ticks), sleep=[].append, progress=io.StringIO(), bound_seconds=0.0
+    )
+    monkeypatch.setattr(_dispatcher_step_gate, "ShellCommandRunner", lambda: runner)
+    monkeypatch.setattr(
+        _dispatcher_step_gate,
+        "master_ci_wait",
+        lambda *, waived: _recording_wait(waived=waived, asked=asked, wait=unwaiting),
+    )
+
+    refusal = _dispatcher_step_gate.step_discipline_refusal(
+        args=args,
+        repo=tmp_path,
+        identity=InvokerIdentity(invoker="agent:test", invoker_source="flag"),
+    )
+
+    assert asked == [waived]
+    assert (refusal is None) is waived
+
+
 def test_a_pending_run_defers_the_dispatch_without_claiming_the_item(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -742,10 +855,8 @@ def test_a_pending_run_defers_the_dispatch_without_claiming_the_item(
     monkeypatch.setattr(_dispatcher_step_gate, "ShellCommandRunner", lambda: runner)
     monkeypatch.setattr(
         _dispatcher_step_gate,
-        "master_ci_preflight",
-        lambda *, repo, runner: _module().master_ci_preflight(
-            repo=repo, runner=runner, wait=deferring
-        ),
+        "master_ci_wait",
+        lambda *, waived: _recording_wait(waived=waived, asked=[], wait=deferring),
     )
 
     assert _dispatcher_run_checks.dispatch_preamble(args=args, repo=tmp_path) == (

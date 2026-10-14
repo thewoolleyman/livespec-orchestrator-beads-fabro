@@ -161,7 +161,7 @@ def _await_verdict(
             text=pending_progress_line(reading=reading, branch=branch), stream=wait.progress
         )
         waited = wait.now() - start
-        pause = poll_pause(waited=waited)
+        pause = poll_pause(waited=waited, bound=wait.bound_seconds)
         if pause is None:
             return pending_outcome(
                 pipeline=pipeline,

@@ -40,6 +40,7 @@ __all__: list[str] = [
     "WAIT_BOUND_SECONDS",
     "MasterCiWait",
     "PendingReading",
+    "master_ci_wait",
     "pending_progress_line",
     "poll_pause",
 ]
@@ -69,11 +70,29 @@ class PendingReading:
 
 @dataclass(frozen=True, kw_only=True)
 class MasterCiWait:
-    """The clock, the pause and the progress stream the preflight's poll loop needs."""
+    """The clock, the pause, the progress stream and the bound the poll loop needs."""
 
     now: Callable[[], float] = time.monotonic
     sleep: Callable[[float], None] = time.sleep
     progress: TextIO | None = None
+    bound_seconds: float = WAIT_BOUND_SECONDS
+
+
+def master_ci_wait(*, waived: bool) -> MasterCiWait:
+    """The production wait for one dispatch, given whether the step is waived.
+
+    A WAIVED step gets a bound of ZERO, which makes the first pending reading
+    the deferral and lets the step gate waive it at once. The ratified clause
+    says a committed `master-ci` waiver still waives the step BEFORE any
+    waiting, and the whole bound otherwise sits between the two: a repository
+    that has already declared it cannot verify master CI would pay 1800 seconds
+    on every dispatch to be told what it said itself.
+
+    The waiver is read by the gate, which has already resolved it to decide
+    whether a refusal proceeds, and passed in -- rather than re-read here,
+    where a second resolution could disagree with the one the gate will act on.
+    """
+    return MasterCiWait(bound_seconds=0.0 if waived else WAIT_BOUND_SECONDS)
 
 
 def pending_progress_line(*, reading: PendingReading, branch: str) -> str:
@@ -91,7 +110,7 @@ def pending_progress_line(*, reading: PendingReading, branch: str) -> str:
     )
 
 
-def poll_pause(*, waited: float) -> float | None:
+def poll_pause(*, waited: float, bound: float) -> float | None:
     """How long to pause before the next poll, or None once the bound is spent.
 
     The pause is CLAMPED to what is left of the bound rather than being a flat
@@ -99,7 +118,7 @@ def poll_pause(*, waited: float) -> float | None:
     up to a full interval -- which would make the deferral report a wait longer
     than the one the clause ratifies.
     """
-    remaining = WAIT_BOUND_SECONDS - waited
+    remaining = bound - waited
     if remaining <= 0:
         return None
     return min(POLL_INTERVAL_SECONDS, remaining)

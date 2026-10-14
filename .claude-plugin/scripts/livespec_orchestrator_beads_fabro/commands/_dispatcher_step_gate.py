@@ -29,6 +29,9 @@ from typing import Protocol
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight import (
     master_ci_preflight,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_wait import (
+    master_ci_wait,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_install_recipe import (
     hook_install_recipe_present,
     recipe_resolution_sentence,
@@ -103,7 +106,7 @@ def step_discipline_refusal(
     journal = JournalFile(path=path, identity=identity)
     waivers = resolve_step_waivers(cwd=repo)
     verified: set[str] = set()
-    for step, outcome in _pre_dispatch_outcomes(repo=repo):
+    for step, outcome in _pre_dispatch_outcomes(repo=repo, waivers=waivers):
         journal.append(record=outcome.record)
         if outcome.refusal is None:
             verified.add(step)
@@ -121,11 +124,27 @@ def step_discipline_refusal(
     )
 
 
-def _pre_dispatch_outcomes(*, repo: Path) -> Iterator[tuple[str, StepOutcomeLike]]:
-    """Each pre-dispatch step's outcome, evaluated only when it is reached."""
+def _pre_dispatch_outcomes(
+    *, repo: Path, waivers: tuple[StepWaiver, ...]
+) -> Iterator[tuple[str, StepOutcomeLike]]:
+    """Each pre-dispatch step's outcome, evaluated only when it is reached.
+
+    The master-CI step is handed its own WAIT, resolved from the waivers this
+    gate has already read, because that step now waits for a still-running
+    default-branch run: the ratified clause keeps a committed `master-ci`
+    waiver ahead of that wait, which it can only be if the waiver is known
+    before the preflight starts rather than consulted after it returns.
+    """
     runner = ShellCommandRunner()
     yield SOURCE_CHECKOUT, source_checkout_preflight(repo=repo, runner=runner)
-    yield MASTER_CI, master_ci_preflight(repo=repo, runner=runner)
+    yield (
+        MASTER_CI,
+        master_ci_preflight(
+            repo=repo,
+            runner=runner,
+            wait=master_ci_wait(waived=waiver_for(waivers=waivers, step=MASTER_CI) is not None),
+        ),
+    )
 
 
 def _persistence_refusal(
