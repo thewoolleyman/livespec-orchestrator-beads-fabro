@@ -2717,11 +2717,19 @@ def test_engine_blocked_check_falls_back_to_exit_code_routing(tmp_path: Path) ->
     assert (outcome.status, outcome.stage) == ("failed", "fabro-run")
 
 
-def test_engine_succeeded_run_with_run_id_proceeds_to_pr_flow(tmp_path: Path) -> None:
+@pytest.mark.parametrize("client_exit", [0, 1])
+def test_engine_succeeded_run_with_run_id_proceeds_to_pr_flow(
+    *, tmp_path: Path, client_exit: int
+) -> None:
     succeeded_inspect = json.dumps({"status": {"kind": "succeeded", "reason": "completed"}})
     runner = _FakeRunner(
         queue=[
-            _ok(stdout="    Run: 01RUNGREEN\n"),
+            CommandResult(
+                exit_code=client_exit,
+                stdout="    Run: 01RUNGREEN\n",
+                stderr="error decoding response body: timed out" if client_exit else "",
+            ),
+            *([_ok(stdout='{"status":{"kind":"running"}}')] if client_exit else []),
             _ok(stdout=succeeded_inspect),
             _ok(stdout=_pr_json(armed=True)),
             _ok(stdout=_pr_json(state="MERGED", sha="cafe07")),
@@ -2731,6 +2739,9 @@ def test_engine_succeeded_run_with_run_id_proceeds_to_pr_flow(tmp_path: Path) ->
     )
     outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
     assert (outcome.status, outcome.stage) == ("green", "done")
+
+    assert (outcome.pr_number, outcome.merge_sha) == (7, "cafe07")
+    assert outcome.fabro_run_id == "01RUNGREEN"
 
 
 def test_engine_fails_when_no_pr_found(tmp_path: Path) -> None:
