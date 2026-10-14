@@ -117,11 +117,18 @@ class SlugDecision:
 
 @dataclass(frozen=True, kw_only=True)
 class PlanRecordMigrationReport:
-    """What one tenant's migration wrote, skipped, and refused."""
+    """What one tenant's migration wrote, skipped, and refused.
+
+    `genesis_written` is REQUIRED rather than defaulted to the empty tuple, like
+    every other bucket here: a default is how a report assembled without the
+    genesis leg reads exactly like one whose genesis leg ran and found nothing
+    to start, and those two states owe an operator opposite conclusions.
+    """
 
     slugs_written: tuple[str, ...]
     anchors_written: tuple[str, ...]
     next_actions_seeded: tuple[str, ...]
+    genesis_written: tuple[str, ...]
     skipped: tuple[str, ...]
     refused: tuple[str, ...]
 
