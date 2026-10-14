@@ -43,6 +43,8 @@ from livespec_orchestrator_beads_fabro.commands import _dispatcher_publication_s
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state import (
     PUBLICATION_STATE_GIT_PATH,
+    PUBLISH_HEAD_STATE_FILENAME,
+    REFRESH_COUNT_STATE_FILENAME,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -520,3 +522,169 @@ def test_an_authentication_failure_keeps_its_push_failure_cause(tmp_path: Path) 
     # the reset is the one observable that separates the two arms once both have
     # exited non-zero.
     assert world.head() != janitor_head
+
+
+def _node_attribute(*, node: str, attribute: str) -> str:
+    """One node's attribute value, parsed rather than grepped out of the text."""
+    graph = parse_dot_graph(text=_graph_text())
+    assert not isinstance(graph, str), graph
+    value: str = graph.nodes[node][attribute]
+    return value
+
+
+def _pr_refresh_script(*, check_suite: str) -> str:
+    graph = parse_dot_graph(text=_graph_text())
+    assert not isinstance(graph, str), graph
+    script: str = graph.nodes["pr_refresh"]["script"]
+    return script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH).replace(
+        "{{ inputs.sandbox_check_suite }}", check_suite
+    )
+
+
+def _published_run(*, root: Path) -> tuple[_World, str, str]:
+    """A run whose proof was verified on a head origin's publish branch carries.
+
+    This is the state `pr_refresh` is entered in: the branch exists on origin at
+    the head this run published, and the run's own publication record names it --
+    which is what the stage establishes its pre-refresh head from, and therefore
+    what it must restore.
+    """
+    world = _world(root=root)
+    published = _commit(
+        cwd=world.clone,
+        path=_SHARED_FILE,
+        text="this run's edit\n",
+        subject="feat: edit the shared file",
+    )
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=world.clone)
+    world.state_dir().mkdir(parents=True, exist_ok=True)
+    _ = (world.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(published, encoding="utf-8")
+    advanced = _advance_default(world=world, path=_SHARED_FILE, text="a conflicting default edit\n")
+    return world, published, advanced
+
+
+def test_a_conflicted_pr_refresh_restores_its_published_head_and_counts_a_refresh(
+    tmp_path: Path,
+) -> None:
+    """The second refreshing stage repairs too, and its visit still counts.
+
+    `pr_refresh` restores a DIFFERENT head from `publish_draft`: the clause names
+    the run's previously published head, established from its publication record,
+    rather than the head a janitor passed -- which is what also covers a resumed
+    run with no janitor visit of its own. The brief's `pre-refresh-head` is
+    therefore compared against the head origin's publish branch carries.
+
+    THE COUNTED REFRESH IS THE ASSERTION MOST EASILY LEFT OUT, and leaving it out
+    is unbounded: the accounting paragraph counts each `pr_refresh` visit that
+    refreshes onto an advanced default WHETHER OR NOT the refresh succeeded, so a
+    repair that skipped the increment would let a run alternate repair and
+    refresh past the three-refresh non-convergence bound forever. The two
+    counters are read separately, because they bound different things and a build
+    that incremented one in place of the other would satisfy a single reading.
+
+    Origin's publish branch is asserted UNMOVED, which is what says the repair
+    rewrote nothing a reviewer or the merge path can see.
+    """
+    world, published, advanced = _published_run(root=tmp_path)
+
+    result = subprocess.run(
+        ["bash", "-c", _pr_refresh_script(check_suite="true")],
+        cwd=world.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "HOME": str(world.clone.parent / "home"),
+            "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
+            "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
+        },
+    )
+    fields = _brief_fields(world=world)
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+    assert world.head() == published
+    assert not (world.clone / ".git" / "rebase-merge").exists()
+    assert not (world.clone / ".git" / "rebase-apply").exists()
+    assert fields.get("stage") == "pr_refresh"
+    assert fields.get("pre-refresh-head") == published
+    assert fields.get("refresh-target") == advanced
+    assert _SHARED_FILE in (fields.get("conflicted-paths") or "")
+    assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
+    assert world.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
+    assert world.remote_head(ref=_BRANCH) == published
+
+
+def test_a_repair_round_is_budgeted_apart_from_the_review_fix_rounds() -> None:
+    """The repair's two rounds are ADDED to the fix budget, not taken from review-fix.
+
+    The accounting paragraph says both halves and each needs its own instrument.
+    `fix.max_visits` must ACCOMMODATE the two repair rounds in addition to what
+    its other entry paths already allow, so the value is asserted as exactly two
+    apiece for the three agent-finding producers PLUS two -- an inequality would
+    be satisfied by a budget widened by any amount, including one that re-opened
+    the starvation the two-apiece sizing closed.
+
+    And a refresh-repair round must consume no review-fix round. That is read as
+    a REACHABILITY claim rather than from the two budgets alone: `review_fix` and
+    `disposition` holding their value is equally true of a graph whose repair
+    route ran through them and happened not to widen them, so the discriminating
+    assertion is that no arm of the classifier reaches either node.
+    """
+    edges = _successors()
+    producers = {
+        source for source, arms in edges.items() for destination, _ in arms if destination == "fix"
+    }
+    budgets = {
+        node: int(_node_attribute(node=node, attribute="max_visits"))
+        for node in ("fix", "disposition", "review_fix")
+    }
+
+    assert _REPAIR_NODE in producers
+    assert budgets["fix"] == 2 * len(producers - {_REPAIR_NODE}) + 2
+    assert budgets["disposition"] == 3
+    assert budgets["review_fix"] == 3
+    assert {destination for destination, _ in edges[_REPAIR_NODE]}.isdisjoint(
+        {"review_fix", "disposition"}
+    )
+
+
+def test_a_third_refresh_needing_repair_ends_at_needs_human_exhausted(
+    tmp_path: Path,
+) -> None:
+    """The budget is two rounds, and the third says so by name with a pointer.
+
+    The counter is seeded at the budget rather than reached by driving two real
+    repairs, because what this case grades is the DECISION at the third, and two
+    live rounds would make the fixture a test of the increment instead.
+
+    THE ABSENT BRIEF IS THE LOAD-BEARING ASSERTION. The classifier routes on the
+    brief's presence, so a third round that wrote one would re-enter `fix` while
+    reporting exhaustion -- green-looking output over an unbounded loop. The
+    reason file is asserted to name both the cause and the pre-refresh head,
+    because the `needs_human` terminal reads its first line and that line is the
+    only account of the run a human gets; and the head is still RESTORED, since
+    the pointer names a head the preserved tree has to actually carry.
+    """
+    world = _world(root=tmp_path)
+    world.state_dir().mkdir(parents=True, exist_ok=True)
+    _ = (world.state_dir() / _REPAIR_COUNT_FILENAME).write_text("2\n", encoding="utf-8")
+    janitor_head = _commit(
+        cwd=world.clone,
+        path=_SHARED_FILE,
+        text="this run's edit\n",
+        subject="feat: edit the shared file",
+    )
+    _ = _advance_default(world=world, path=_SHARED_FILE, text="a conflicting default edit\n")
+
+    result = _run_publish_draft(world=world)
+    reason = (world.clone / ".git" / "livespec-needs-human-reason").read_text(encoding="utf-8")
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_REFRESH_REPAIR_EXHAUSTED" in result.stderr
+    assert world.state(name=_BRIEF_FILENAME) is None
+    assert world.state(name=_REPAIR_COUNT_FILENAME) == "2\n"
+    assert reason.splitlines()[0].startswith("refresh-repair-exhausted:")
+    assert janitor_head in reason.splitlines()[0]
+    assert world.head() == janitor_head
