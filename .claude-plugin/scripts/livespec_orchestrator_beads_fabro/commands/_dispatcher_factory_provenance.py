@@ -28,6 +28,25 @@ cannot see it. The Dispatcher's own `dispatch_id` — the uuid4 minted before
 launch in `_dispatcher_loop`, already carried into the OTel correlation
 overlays — is available at render time and identifies the same dispatch, so
 the marker declares that instead.
+
+THE KEY HAS A SECOND READER, AND IT IS NOT A PYTHON ONE (bd-ib-zddbkq). The
+reserved workflow's `needs_human` terminal reads this key out of the sandbox
+clone's local config to NAME the run-scoped ref it preserves an unfinished tree
+on, because neither engine supplies a usable run id on that node's stdin: the
+Petri-era engine sets `context.internal.run_id` to the literal `petri`, which
+collapsed every needs-human outcome onto one shared ref, and the pinned engine
+supplies no stdin to a script node at all. This value is the only identifier
+reaching that node that is unique to the run on BOTH engines, which is why the
+terminal prefers it over the engine's own context value rather than the other
+way round.
+
+So a RENAME here is not local. The terminal spells the key inside a shell string
+no type checker and no import graph can see, and losing it would drop that node
+onto its stdin fallback — the shared placeholder on one engine, nothing at all
+on the other. `tests/integration/test_needs_human_preservation_ref_identity.py`
+binds the two spellings by asserting the terminal's own script reads the key this
+constant declares; keep them in lockstep, exactly as the `LIVESPEC_NEEDS_HUMAN`
+sentinel is kept in lockstep with `_dispatcher_plan.NEEDS_HUMAN_MARKER`.
 """
 
 from __future__ import annotations

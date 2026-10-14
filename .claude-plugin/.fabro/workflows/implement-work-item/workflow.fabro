@@ -825,27 +825,62 @@ digraph ImplementWorkItem {
     // (commands/_dispatcher_plan.NEEDS_HUMAN_MARKER) — keep the two in
     // lockstep, exactly as LIVESPEC_NON_CONVERGED is.
     //
-    // THE RUN ID ARRIVES ON STDIN, FROM THE ENGINE'S OWN CONTEXT, and that is a
-    // change of SOURCE rather than of policy (plan `fabro-currency` P4,
-    // bd-ib-hti4zf). The ref used to be derived from `$FABRO_RUN_ID`, which the
-    // pinned fabro exports to HOOKS ONLY and never to a script node -- so the
-    // variable was reliably absent here and the step reliably pushed nothing.
-    // The Petri-era engine supplies run identity to a script node through
-    // `stdin_source`, so the node declares `stdin_source="context.internal.run_id"`
-    // and the script reads the id off stdin.
+    // THE ENGINE'S OWN CONTEXT WAS THE RUN-ID SOURCE, AND NEITHER ENGINE SUPPLIES
+    // A USABLE ONE THERE (bd-ib-zddbkq; the source itself arrived with plan
+    // `fabro-currency` P4, bd-ib-hti4zf). The ref used to be derived from
+    // `$FABRO_RUN_ID`, which the pinned fabro exports to HOOKS ONLY and never to a
+    // script node, so the variable was reliably absent and the step reliably pushed
+    // nothing; the node therefore declares
+    // `stdin_source="context.internal.run_id"` and the script reads the id off
+    // stdin. The two engines then failed in OPPOSITE directions, and both read
+    // healthy. The Petri-era engine sets that context key to the literal `petri`,
+    // measured on hp-candidate run 01M4SNYP3GT2 and visible in that run's own
+    // events as internal.run_id = petri: the push SUCCEEDED, so every Petri-era
+    // needs-human outcome landed on ONE shared `needs-human/petri` and each one
+    // overwrote the last run's preserved work. The pinned engine supplies no stdin
+    // to a script node at all, so the same node reported
+    // LIVESPEC_NEEDS_HUMAN_NO_RUN_ID and preserved nothing (measured on run
+    // 01M4T26F0ZERZ7TF0CAFNBJSDA). One engine named a ref no run owns; the other
+    // named none.
+    //
+    // SO THE PRIMARY SOURCE IS THE ONE WHOSE UNIQUENESS IS GUARANTEED rather than
+    // the one the engine happens to offer: the DISPATCH'S OWN CORRELATION ID, which
+    // the Dispatcher already projects into this clone's LOCAL git config as
+    // `livespec.factoryRunId`
+    // (commands/_dispatcher_factory_provenance.FACTORY_RUN_ID_MARKER -- keep the
+    // key spelled here in lockstep with that constant). It is a uuid4 minted per
+    // dispatch before launch, so it is unique to the run on BOTH engines. The
+    // engine's stdin value is the FALLBACK, for a clone no Dispatcher provisioned.
+    //
+    // THAT ORDER IS WHAT MAKES THE NO-SHARED-NAME RULE PROVABLE RATHER THAN
+    // GUESSED. The tempting shape is a grammar that tells a real run id from a
+    // placeholder -- a length bar, a ULID shape -- but that is a guess about a
+    // value neither engine documents, so the first placeholder of a shape it had
+    // not anticipated is admitted silently, which is this defect again. Preferring
+    // the guaranteed-unique candidate needs no such guess. The LOCAL scope is
+    // load-bearing for the same reason: local is the only scope the prepare step
+    // writes, so a value picked up from a global config would name the ref after
+    // some OTHER dispatch -- the very collision this arm exists to refuse.
+    //
+    // THE MEASURED PLACEHOLDER IS STILL REFUSED OUTRIGHT, because the ordering
+    // covers every clone a dispatch provisioned and that is the one arm it does not
+    // cover: with no marker to prefer, a Petri-era run would reach
+    // `needs-human/petri` through the fallback.
+    //
+    // A CANDIDATE MUST ALSO BE A SAFE REF COMPONENT -- non-empty and strictly
+    // alphanumeric. A context value that is a path, a template fragment or a
+    // hyphenated word has no business in a ref name, and both real producers' ids
+    // (a Crockford base32 ULID, a uuid4 hex) are alphanumeric by construction.
     //
     // THERE IS STILL DELIBERATELY NO PLACEHOLDER FALLBACK, for the reason the
     // variable form had none: a `${id:-<placeholder>}` shape silently collapsed
     // every run onto ONE shared ref, so the second needs-human exit clobbered or
     // failed against the first and the console's needs-human valve could not find
-    // the tree it was asked to rule on. With no id on stdin the step therefore
-    // pushes NOTHING and says so loudly on stderr
-    // (LIVESPEC_NEEDS_HUMAN_NO_RUN_ID), leaving the operator on the
-    // preserve-by-reference dump pointer. That absent-id arm is also what keeps
-    // ONE graph running on BOTH engines through the parallel rollout: the pinned
-    // build supplies no stdin here, so it takes the no-id arm exactly as it does
-    // today, and the run-scoped ref appears on the Petri-era engine with no
-    // further change.
+    // the tree it was asked to rule on. The dispatch correlation id is not that --
+    // it is a per-run value, not a constant standing in for one. With NEITHER
+    // candidate qualifying the step still pushes NOTHING and says so loudly on
+    // stderr (LIVESPEC_NEEDS_HUMAN_NO_RUN_ID), leaving the operator on the
+    // preserve-by-reference dump pointer.
     //
     // THE PRESERVATION PUSH SURVIVES A WORKFLOW REFUSAL (bd-ib-cvge). The
     // preserved tree sits on the run's base, so once the default branch has
@@ -909,7 +944,7 @@ digraph ImplementWorkItem {
         shape=parallelogram
         timeout="600s"
         stdin_source="context.internal.run_id"
-        script="open_red=''; head_message=$(git log -1 --format=%B 2>/dev/null || true); if printf '%s\\n' \"$head_message\" | grep -qF 'TDD-Red-Test-File-Checksum:' && ! printf '%s\\n' \"$head_message\" | grep -qF 'TDD-Green-Verified-At:'; then open_red=$(git rev-parse --short HEAD 2>/dev/null || true); fi; run_id=''; read -r run_id 2>/dev/null || true; if test -n \"$run_id\"; then ref=\"refs/heads/needs-human/$run_id\"; git add -A >/dev/null 2>&1 || true; GIT_AUTHOR_NAME=\"${LIVESPEC_GIT_AUTHOR_NAME:?missing LIVESPEC_GIT_AUTHOR_NAME}\" GIT_AUTHOR_EMAIL=\"${LIVESPEC_GIT_AUTHOR_EMAIL:?missing LIVESPEC_GIT_AUTHOR_EMAIL}\" git -c core.hooksPath=/dev/null commit -q -m 'needs-human: preserve tree before terminating' >/dev/null 2>&1 || true; push_out=$(git -c core.hooksPath=/dev/null push origin \"HEAD:$ref\" 2>&1); push_status=$?; if test \"$push_status\" -ne 0 && printf '%s\\n' \"$push_out\" | grep -qF 'refusing to allow a GitHub App to create or update workflow'; then default_branch=\"{{ inputs.default_branch }}\"; if git fetch origin \"$default_branch\" --quiet >/dev/null 2>&1 && git restore --source=\"origin/$default_branch\" --staged --worktree -- .github/workflows >/dev/null 2>&1 && GIT_AUTHOR_NAME=\"${LIVESPEC_GIT_AUTHOR_NAME:?missing LIVESPEC_GIT_AUTHOR_NAME}\" GIT_AUTHOR_EMAIL=\"${LIVESPEC_GIT_AUTHOR_EMAIL:?missing LIVESPEC_GIT_AUTHOR_EMAIL}\" git -c core.hooksPath=/dev/null commit -q -m \"needs-human: take .github/workflows from origin/$default_branch so the tree can be preserved without workflows permission\" >/dev/null 2>&1; then echo \"LIVESPEC_NEEDS_HUMAN_WORKFLOWS_RESET: GitHub refused the preserved tree for a workflow file, so .github/workflows was taken from origin/$default_branch; the run's own workflow files remain in the parent commit $ref~1\" >&2; push_out=$(git -c core.hooksPath=/dev/null push origin \"HEAD:$ref\" 2>&1); push_status=$?; fi; fi; if test \"$push_status\" -eq 0; then echo \"LIVESPEC_NEEDS_HUMAN_PRESERVED: $ref\" >&2; else echo 'LIVESPEC_NEEDS_HUMAN_PUSH_FAILED: tree not pushed; rely on the preserve-by-reference dump pointer' >&2; fi; else echo 'LIVESPEC_NEEDS_HUMAN_NO_RUN_ID: no run id arrived on the stdin of this script node, so no run-scoped ref exists to push and nothing was pushed; rely on the preserve-by-reference dump pointer' >&2; fi; reason_path=$(git rev-parse --git-path livespec-needs-human-reason); if test -s \"$reason_path\"; then reason=$(head -n 1 \"$reason_path\"); elif test -n \"$open_red\"; then reason=\"open Red commit $open_red at the branch head: the stage that ended left TDD-Red trailers with no TDD-Green, so its Red-Green pair is half authored and the loop cannot converge without a human\"; else reason='loop cannot auto-resolve this work-item'; fi; echo \"LIVESPEC_NEEDS_HUMAN: $reason; run terminated, work preserved by reference, decision routed to the ledger (blocked / needs-human)\" >&2; exit 1"
+        script="open_red=''; head_message=$(git log -1 --format=%B 2>/dev/null || true); if printf '%s\\n' \"$head_message\" | grep -qF 'TDD-Red-Test-File-Checksum:' && ! printf '%s\\n' \"$head_message\" | grep -qF 'TDD-Green-Verified-At:'; then open_red=$(git rev-parse --short HEAD 2>/dev/null || true); fi; run_id=''; read -r run_id 2>/dev/null || true; case \"$run_id\" in petri) run_id='' ;; esac; unique_id=''; for candidate in \"$(git config --local --get livespec.factoryRunId 2>/dev/null || true)\" \"$run_id\"; do if test -z \"$unique_id\"; then case \"$candidate\" in '' | *[!0-9A-Za-z]*) : ;; *) unique_id=\"$candidate\" ;; esac; fi; done; run_id=\"$unique_id\"; if test -n \"$run_id\"; then ref=\"refs/heads/needs-human/$run_id\"; git add -A >/dev/null 2>&1 || true; GIT_AUTHOR_NAME=\"${LIVESPEC_GIT_AUTHOR_NAME:?missing LIVESPEC_GIT_AUTHOR_NAME}\" GIT_AUTHOR_EMAIL=\"${LIVESPEC_GIT_AUTHOR_EMAIL:?missing LIVESPEC_GIT_AUTHOR_EMAIL}\" git -c core.hooksPath=/dev/null commit -q -m 'needs-human: preserve tree before terminating' >/dev/null 2>&1 || true; push_out=$(git -c core.hooksPath=/dev/null push origin \"HEAD:$ref\" 2>&1); push_status=$?; if test \"$push_status\" -ne 0 && printf '%s\\n' \"$push_out\" | grep -qF 'refusing to allow a GitHub App to create or update workflow'; then default_branch=\"{{ inputs.default_branch }}\"; if git fetch origin \"$default_branch\" --quiet >/dev/null 2>&1 && git restore --source=\"origin/$default_branch\" --staged --worktree -- .github/workflows >/dev/null 2>&1 && GIT_AUTHOR_NAME=\"${LIVESPEC_GIT_AUTHOR_NAME:?missing LIVESPEC_GIT_AUTHOR_NAME}\" GIT_AUTHOR_EMAIL=\"${LIVESPEC_GIT_AUTHOR_EMAIL:?missing LIVESPEC_GIT_AUTHOR_EMAIL}\" git -c core.hooksPath=/dev/null commit -q -m \"needs-human: take .github/workflows from origin/$default_branch so the tree can be preserved without workflows permission\" >/dev/null 2>&1; then echo \"LIVESPEC_NEEDS_HUMAN_WORKFLOWS_RESET: GitHub refused the preserved tree for a workflow file, so .github/workflows was taken from origin/$default_branch; the run's own workflow files remain in the parent commit $ref~1\" >&2; push_out=$(git -c core.hooksPath=/dev/null push origin \"HEAD:$ref\" 2>&1); push_status=$?; fi; fi; if test \"$push_status\" -eq 0; then echo \"LIVESPEC_NEEDS_HUMAN_PRESERVED: $ref\" >&2; else echo 'LIVESPEC_NEEDS_HUMAN_PUSH_FAILED: tree not pushed; rely on the preserve-by-reference dump pointer' >&2; fi; else echo 'LIVESPEC_NEEDS_HUMAN_NO_RUN_ID: neither the dispatch correlation id in this clone local git config (livespec.factoryRunId) nor the run id on the stdin of this script node is an identifier unique to this run, so no run-scoped ref exists to push and nothing was pushed; rely on the preserve-by-reference dump pointer' >&2; fi; reason_path=$(git rev-parse --git-path livespec-needs-human-reason); if test -s \"$reason_path\"; then reason=$(head -n 1 \"$reason_path\"); elif test -n \"$open_red\"; then reason=\"open Red commit $open_red at the branch head: the stage that ended left TDD-Red trailers with no TDD-Green, so its Red-Green pair is half authored and the loop cannot converge without a human\"; else reason='loop cannot auto-resolve this work-item'; fi; echo \"LIVESPEC_NEEDS_HUMAN: $reason; run terminated, work preserved by reference, decision routed to the ledger (blocked / needs-human)\" >&2; exit 1"
     ]
 
     // Terminal non-converged node (work-item livespec-impl-beads-rw75ym,
