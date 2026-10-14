@@ -41,6 +41,12 @@ pushes exactly as it did before any of this existed: an invented limit would be
 enforced against a bound nobody chose and then REPORTED as the limit that ended
 the push, which is worse than not observing at all.
 
+WHICH graph is a question of its own, and `resolve_publish_draft_limit` is where
+it is settled -- the overlay holds TWO candidates and only one of them can be
+opened. Read its docstring before touching that choice: the written name is
+relative for a package-era client, and resolving it against the Dispatcher's own
+working directory finds a different repository's graph rather than failing.
+
 THREE READINGS AN EDITOR MUST NOT INVERT.
 
 The hook run's root is the EARLIEST-STARTED matching descendant, because the
@@ -62,6 +68,7 @@ exit while it is being walked, and a reader that refused on the first vanished
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_render import (
@@ -86,6 +93,7 @@ __all__: list[str] = [
     "hook_limit_program_source",
     "publish_draft_limit_from_graph",
     "push_observation_budget_seconds",
+    "resolve_publish_draft_limit",
 ]
 
 # The program and this dispatch's resolved figures, below the sandbox plugins
@@ -141,6 +149,53 @@ def publish_draft_limit_from_graph(*, graph: Path) -> int | None:
     if isinstance(text, AttemptFailure):
         return None
     return node_timeout_seconds(graph_text=text, node=PUBLISH_DRAFT_NODE)
+
+
+def resolve_publish_draft_limit(
+    *,
+    graph_artifact: Path | None,
+    written_graph: Path,
+    warn: Callable[[str], object] | None,
+) -> int | None:
+    """The figure to arm this dispatch with: read off an ABSOLUTE graph, or withheld.
+
+    WHICH PATH IS READ IS THE WHOLE POINT, and the two candidates are not
+    interchangeable. `graph_artifact` is where this process can OPEN the graph;
+    `written_graph` is the name the run config CARRIES, which for a package-era
+    client `overlay_graph_reference` makes relative to the collected package
+    because the engine refuses an absolute path in an inline file reference.
+
+    So a RELATIVE candidate is refused as unresolvable rather than read. It is
+    not an unreadable path -- it is a readable path to the WRONG file, since
+    `workflow.fabro` is the conventional graph name and the Dispatcher runs from
+    a repository that has one. Measured pre-fix, reading the written name armed
+    the push at a decoy graph's 900s inside a 3600s stage: a bound no dispatch
+    rendered, which the node would then have named as the limit that ended its
+    push. Reading only an absolute path is what makes that unreachable instead
+    of merely unlikely.
+
+    `written_graph` is still the candidate for a caller that materialized no
+    payload, where the written name IS the absolutized committed graph.
+
+    And `warn` is what ends the silence. Withholding remains correct for the
+    reason the module docstring gives, but every step of the degradation is
+    quiet by construction -- no figure, so no figures file, so the node's own
+    guard pushes unbounded -- which is exactly how a bound that never armed came
+    to look like one that did.
+    """
+    candidate = written_graph if graph_artifact is None else graph_artifact
+    limit_seconds = (
+        publish_draft_limit_from_graph(graph=candidate) if candidate.is_absolute() else None
+    )
+    if limit_seconds is None and warn is not None:
+        message = (
+            f"{PUBLISH_DRAFT_NODE} hook limit withheld: no literal duration could be read"
+            f" for the {PUBLISH_DRAFT_NODE} node from {candidate}, so this run's publication"
+            " push is NOT bounded below its stage limit and a repository hook that outlives"
+            " that limit will end the push without being named"
+        )
+        _ = warn(message)
+    return limit_seconds
 
 
 def hook_limit_program_path_expansion() -> str:
