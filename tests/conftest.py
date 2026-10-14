@@ -89,7 +89,7 @@ def _judgement_cli_bin(*, tmp_path_factory: pytest.TempPathFactory) -> str:
 
 
 @pytest.fixture(autouse=True)
-def _hermetic_pre_admission_judge(
+def hermetic_pre_admission_judge(
     *, monkeypatch: pytest.MonkeyPatch, _judgement_cli_bin: str
 ) -> None:
     """Keep intake tests from invoking a developer's logged-in model CLI.
@@ -97,7 +97,13 @@ def _hermetic_pre_admission_judge(
     Runtime contract tests replace the command runner and inspect its request.
     Other intake callers exercise the genuine unavailable-executable result,
     which preserves their routing without spending a model call.
+    Explicit live acceptance opts out so it still exercises the real CLIs.
     """
+    if (
+        os.environ.get("LIVESPEC_CODEX_SKILL_PICKER") == "1"
+        or os.environ.get("LIVESPEC_E2E_HARNESS") == "real"
+    ):
+        return
     monkeypatch.setenv("PATH", f"{_judgement_cli_bin}{os.pathsep}{os.environ['PATH']}")
 
 
@@ -264,14 +270,14 @@ def _hermetic_release_adoption_bases(
     compose real adopter items into every `build_attention` assertion. The
     lane's own tests inject their fixtures explicitly.
     """
-    from livespec_orchestrator_beads_fabro.commands import needs_attention
+    from livespec_orchestrator_beads_fabro.commands import _needs_attention_hygiene as hygiene
     from livespec_orchestrator_beads_fabro.commands._needs_attention_release_adoption import (
         ReleaseAdoptionBases,
     )
 
     empty = tmp_path_factory.mktemp("claude-plugins")
     monkeypatch.setattr(
-        needs_attention,
+        hygiene,
         "default_release_adoption_bases",
         lambda: ReleaseAdoptionBases(
             install_record=empty / "installed_plugins.json",

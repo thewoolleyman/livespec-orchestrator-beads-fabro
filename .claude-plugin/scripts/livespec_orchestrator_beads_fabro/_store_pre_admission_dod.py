@@ -19,10 +19,42 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 __all__: list[str] = [
     "PRE_ADMISSION_DOD_KEY",
     "pre_admission_hold",
+    "read_pre_admission_holds",
 ]
 
 
 PRE_ADMISSION_DOD_KEY = "pre_admission_dod"
+
+
+def read_pre_admission_holds(*, path: StoreConfig) -> dict[str, str]:
+    """Read current holds and their first remedy without repeating the judgement.
+
+    WorkItem does not carry this raw metadata. Sparse or malformed markers do
+    not constitute a stored needs-human verdict; historical comments alone do
+    not either, since an admitted item keeps those comments after its release.
+    """
+    return {
+        item_id: remedy
+        for record in make_beads_client(config=path).list_issues()
+        if isinstance(item_id := record.get("id"), str)
+        and (remedy := _first_remedy(metadata=record.get("metadata"))) is not None
+    }
+
+
+def _first_remedy(*, metadata: object) -> str | None:
+    if not isinstance(metadata, dict):
+        return None
+    state = cast("dict[str, object]", metadata).get(PRE_ADMISSION_DOD_KEY)
+    if not isinstance(state, dict):
+        return None
+    hold = cast("dict[str, object]", state)
+    if hold.get("verdict") != "needs-human":
+        return None
+    remedies = hold.get("remedies")
+    if not isinstance(remedies, list) or not remedies:
+        return None
+    first = cast("list[object]", remedies)[0]
+    return first if isinstance(first, str) and first.strip() else None
 
 
 def pre_admission_hold(*, path: StoreConfig, item: WorkItem) -> str | None:

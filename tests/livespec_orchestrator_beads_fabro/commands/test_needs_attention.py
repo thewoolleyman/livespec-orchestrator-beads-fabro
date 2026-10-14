@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import IssueDraft, make_beads_client
 from livespec_orchestrator_beads_fabro._store_merge_hold import update_work_item_merge_hold
+from livespec_orchestrator_beads_fabro.commands import _needs_attention_hygiene as hygiene
 from livespec_orchestrator_beads_fabro.commands import needs_attention
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
     write_dispatch_lock,
@@ -183,7 +184,7 @@ def _neutralize_host_currency_staleness(monkeypatch: pytest.MonkeyPatch) -> None
     test_dispatcher_plugin_currency_scenario95.py, so this stub removes no honest
     coverage.
     """
-    monkeypatch.setattr(needs_attention, "currency_staleness_items", lambda **_kwargs: [])
+    monkeypatch.setattr(hygiene, "currency_staleness_items", lambda **_kwargs: [])
 
 
 def _item(
@@ -772,7 +773,7 @@ def test_build_attention_surfaces_ready_aging_fact_after_threshold(
     _set_ready_since(id_="bd-oldest", ready_since="2026-08-24T00:00:00Z")
     _set_ready_since(id_="bd-younger", ready_since="2026-08-25T12:00:00Z")
     monkeypatch.setattr(
-        needs_attention,
+        hygiene,
         "_utc_now_iso",
         lambda: "2026-08-26T12:00:00Z",
         raising=False,
@@ -807,7 +808,7 @@ def test_build_attention_omits_ready_aging_when_dispatch_lock_exists(
     _set_ready_since(id_="bd-old", ready_since="2026-08-24T00:00:00Z")
     _write_dispatch_lock(tmp_path, work_item_id="bd-old")
     monkeypatch.setattr(
-        needs_attention,
+        hygiene,
         "_utc_now_iso",
         lambda: "2026-08-26T12:00:00Z",
         raising=False,
@@ -830,7 +831,7 @@ def test_build_attention_omits_ready_aging_when_watchable_run_exists(
     _seed(_item(id_="bd-old", status="ready", rank="a1"))
     _set_ready_since(id_="bd-old", ready_since="2026-08-24T00:00:00Z")
     monkeypatch.setattr(
-        needs_attention,
+        hygiene,
         "_utc_now_iso",
         lambda: "2026-08-26T12:00:00Z",
         raising=False,
@@ -841,7 +842,7 @@ def test_build_attention_omits_ready_aging_when_watchable_run_exists(
         return frozenset({"bd-old"})
 
     monkeypatch.setattr(
-        needs_attention,
+        hygiene,
         "watchable_fabro_run_item_ids",
         _watchable_item_ids,
     )
@@ -864,7 +865,7 @@ def test_build_attention_checks_watchable_runs_once_for_ready_aging(
         _seed(_item(id_=item_id, status="ready", rank="a1"))
         _set_ready_since(id_=item_id, ready_since="2026-08-24T00:00:00Z")
     monkeypatch.setattr(
-        needs_attention,
+        hygiene,
         "_utc_now_iso",
         lambda: "2026-08-26T12:00:00Z",
         raising=False,
@@ -876,7 +877,7 @@ def test_build_attention_checks_watchable_runs_once_for_ready_aging(
         return frozenset()
 
     monkeypatch.setattr(
-        needs_attention,
+        hygiene,
         "watchable_fabro_run_item_ids",
         _watchable_item_ids,
     )
@@ -899,7 +900,7 @@ def test_build_attention_omits_ready_aging_when_no_ready_item_exceeds_threshold(
     _seed(_item(id_="bd-fresh", status="ready", rank="a1"))
     _set_ready_since(id_="bd-fresh", ready_since="2026-08-26T00:00:00Z")
     monkeypatch.setattr(
-        needs_attention,
+        hygiene,
         "_utc_now_iso",
         lambda: "2026-08-26T12:00:00Z",
         raising=False,
@@ -924,7 +925,7 @@ def test_build_attention_reports_unknown_ready_age_with_aged_fact(
     _set_ready_since(id_="bd-aged", ready_since="2026-08-24T00:00:00Z")
     _set_ready_since(id_="bd-unknown", ready_since="not-a-date")
     monkeypatch.setattr(
-        needs_attention,
+        hygiene,
         "_utc_now_iso",
         lambda: "2026-08-26T12:00:00Z",
         raising=False,
@@ -1246,7 +1247,7 @@ def test_build_attention_composes_the_release_adoption_lane(
         },
     )
     monkeypatch.setattr(
-        needs_attention,
+        hygiene,
         "default_release_adoption_bases",
         lambda: ReleaseAdoptionBases(install_record=installed, marketplace_record=marketplace),
     )

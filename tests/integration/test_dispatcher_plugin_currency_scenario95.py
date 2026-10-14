@@ -39,6 +39,7 @@ from livespec_orchestrator_beads_fabro.commands import (
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_staleness_gate as gate,
 )
+from livespec_orchestrator_beads_fabro.commands import _needs_attention_hygiene as hygiene
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._needs_attention_currency_staleness import (
     CurrencyStalenessSeams,
@@ -206,7 +207,7 @@ def _snapshot(
 ) -> list[AttentionItem]:
     monkeypatch.setattr(needs_attention, "spec_next", _no_spec_next)
     monkeypatch.setattr(
-        needs_attention,
+        hygiene,
         "default_currency_staleness_seams",
         lambda: CurrencyStalenessSeams(
             plugin_root=provisioned, marketplace_record=marketplace_record

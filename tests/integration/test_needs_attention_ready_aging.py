@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client, reset_fake_singleton
+from livespec_orchestrator_beads_fabro.commands import _needs_attention_hygiene as hygiene
 from livespec_orchestrator_beads_fabro.commands import needs_attention
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
     write_dispatch_lock,
@@ -126,14 +127,14 @@ def _snapshot(
     watchable: frozenset[str] = frozenset(),
 ) -> list[AttentionItem]:
     monkeypatch.setattr(needs_attention, "spec_next", _no_spec_next)
-    monkeypatch.setattr(needs_attention, "_utc_now_iso", lambda: _NOW)
+    monkeypatch.setattr(hygiene, "_utc_now_iso", lambda: _NOW)
 
     def _watchable_item_ids(*, repo: Path) -> frozenset[str]:
         _ = repo
         return watchable
 
     monkeypatch.setattr(
-        needs_attention,
+        hygiene,
         "watchable_fabro_run_item_ids",
         _watchable_item_ids if watchable else _no_watchable_runs,
     )

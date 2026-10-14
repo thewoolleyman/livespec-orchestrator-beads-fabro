@@ -22,6 +22,7 @@ from livespec_orchestrator_beads_fabro.commands import (
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_loop_selection as loop_selection,
 )
+from livespec_orchestrator_beads_fabro.commands import _needs_attention_hygiene as hygiene
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     post_run_dispositions,
@@ -49,7 +50,7 @@ def _neutralize_host_currency_staleness(monkeypatch: pytest.MonkeyPatch) -> None
     dedicated coverage in test_needs_attention_currency_staleness.py and its
     wiring into build_attention in test_dispatcher_plugin_currency_scenario95.py.
     """
-    monkeypatch.setattr(needs_attention, "currency_staleness_items", lambda **_kwargs: [])
+    monkeypatch.setattr(hygiene, "currency_staleness_items", lambda **_kwargs: [])
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]

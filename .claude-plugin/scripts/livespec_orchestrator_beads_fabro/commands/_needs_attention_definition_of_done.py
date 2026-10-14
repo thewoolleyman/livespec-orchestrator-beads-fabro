@@ -1,4 +1,8 @@
-"""The advisory-Definition-of-Done hygiene lane: a repairable `ready` item.
+"""Definition-of-Done hygiene: admission holds and repairable `ready` items.
+
+The pre-admission judgement's current hold is reported with its first remedy.
+That lane reads the stored verdict; listing must never run a judgement or
+modify the ledger. The existing advisory lane remains for ready items.
 
 The Definition-of-Done-and-Proof-of-Done clause of `SPECIFICATION/contracts.md`
 (v115) asks for this row in one sentence: "`needs-attention` SHOULD surface, as
@@ -48,9 +52,34 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "advisory_definition_of_done_items",
+    "held_definition_of_done_items",
 ]
 
 _READY_STATUS = "ready"
+
+
+def held_definition_of_done_items(
+    *, project_root: Path, repo: str, items: list[WorkItem], holds: dict[str, str]
+) -> list[AttentionItem]:
+    """Name each current admission hold and the first repair its verdict asks for."""
+    context = ConformanceContext(project_root=project_root, repo=repo)
+    return [
+        context.candidate(
+            id=f"hygiene:pre-admission-definition-of-done:{item.id}",
+            kind="hygiene",
+            urgency="medium",
+            summary=(
+                f"Work-item {item.id} is held before admission by the Definition-of-Done"
+                f" judgement (needs-human). First remedy: {holds[item.id]}"
+            ),
+            source_ref=SourceRef(repo=repo, work_item=item.id),
+            handoff=Handoff(
+                kind="shell", command=_repair_command(project_root=project_root, item=item)
+            ),
+        )
+        for item in items
+        if item.status in {"backlog", "pending-approval"} and item.id in holds
+    ]
 
 
 def advisory_definition_of_done_items(

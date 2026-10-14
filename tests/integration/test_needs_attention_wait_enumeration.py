@@ -30,6 +30,7 @@ from typing import Any
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro.commands import _needs_attention_hygiene as hygiene
 from livespec_orchestrator_beads_fabro.commands import needs_attention
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
     write_dispatch_lock,
@@ -54,7 +55,7 @@ def _hermetic_fake_backend(monkeypatch: pytest.MonkeyPatch) -> object:
     # hygiene row into the snapshot. The lane keeps its own dedicated coverage in
     # test_needs_attention_currency_staleness.py and its build_attention wiring in
     # test_dispatcher_plugin_currency_scenario95.py.
-    monkeypatch.setattr(needs_attention, "currency_staleness_items", lambda **_kwargs: [])
+    monkeypatch.setattr(hygiene, "currency_staleness_items", lambda **_kwargs: [])
     reset_fake_singleton()
     yield
     reset_fake_singleton()

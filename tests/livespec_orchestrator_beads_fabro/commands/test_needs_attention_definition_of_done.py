@@ -102,13 +102,16 @@ def _facts(*, tmp_path: Path, items: list[WorkItem]) -> list[object]:
     )
 
 
-def test_the_lane_is_a_module_of_its_own_exporting_one_public_name() -> None:
+def test_the_module_exports_both_definition_of_done_lanes() -> None:
     """The shape case, whose first assertion fails before any import is reached."""
     assert _MODULE_PATH.is_file()
 
     module = importlib.import_module(_MODULE)
 
-    assert module.__all__ == ["advisory_definition_of_done_items"]
+    assert module.__all__ == [
+        "advisory_definition_of_done_items",
+        "held_definition_of_done_items",
+    ]
 
 
 def test_a_ready_item_with_an_advisory_finding_produces_exactly_one_stable_fact(
@@ -190,5 +193,10 @@ def test_the_snapshot_composition_carries_the_lane(tmp_path: Path) -> None:
         ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/needs_attention.py"
     ).read_text(encoding="utf-8")
 
-    assert "_needs_attention_definition_of_done" in composition
-    assert "advisory_definition_of_done_items(" in composition
+    assert "gather_hygiene_items(" in composition
+    hygiene = Path(
+        ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/"
+        "_needs_attention_hygiene.py"
+    ).read_text(encoding="utf-8")
+    assert "_needs_attention_definition_of_done" in hygiene
+    assert "advisory_definition_of_done_items(" in hygiene
