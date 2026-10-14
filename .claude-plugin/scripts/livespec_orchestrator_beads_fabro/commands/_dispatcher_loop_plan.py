@@ -176,6 +176,12 @@ def dispatch_plan_for_item(  # noqa: PLR0913 — kw-only plan resolver; each fie
         # `stall_timeout` written into the rendered graph, and the subprocess
         # ceiling derived above all come from ONE read of the file.
         stall_window=stall_window_from_timeouts(timeouts=timeouts),
+        # And the WHOLE resolution beside that projection, because the host
+        # watchdog grades a quiet stretch inside a COMMAND node against THAT
+        # node's timeout rather than the stall window — the same one read of
+        # the file, so the bound the watchdog applies is the value the
+        # rendered graph gave the node.
+        node_timeouts=timeouts,
         # Already resolved and journaled by the caller, so the run renders the
         # adapters the dispatch record names rather than a re-derivation.
         acp_nodes=acp_nodes,

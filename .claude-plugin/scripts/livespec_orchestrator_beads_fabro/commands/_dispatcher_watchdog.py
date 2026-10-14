@@ -68,6 +68,7 @@ from livespec_orchestrator_beads_fabro.effects import (
 __all__: list[str] = [
     "LivenessProbe",
     "LivenessSample",
+    "OpenCommandNode",
     "StallVerdict",
     "decide_stall",
     "parse_last_event_epoch",
@@ -124,6 +125,31 @@ _MIN_READINGS_TO_COMPARE = 2
 
 
 @dataclass(frozen=True, kw_only=True)
+class OpenCommandNode:
+    """A COMMAND node observed STARTED and not yet ended, with its own bound.
+
+    `node` is the phase graph's node id and `timeout_seconds` is the
+    timeout that node resolved for THIS dispatch. The two travel together
+    because a bound is only checkable beside the node that earned it: a
+    record naming a widened window without naming the node is
+    indistinguishable from a watchdog that was simply configured loosely.
+
+    WHY THE PAIR EXISTS AT ALL. A command node emits a start event and a
+    completion event and nothing in between, so BOTH liveness layers go
+    flat across its whole duration however healthy the run is — the
+    heartbeat because it beats only while an agent turn runs, the event
+    stream because there is no further event to emit. The node's own
+    configured timeout is therefore the right bound while it is open, and
+    the stall window is the right bound when none is (bd-ib-qsk4o5;
+    `SPECIFICATION/contracts.md`'s section on ACP node timeouts resolves
+    both numbers through the same layers).
+    """
+
+    node: str
+    timeout_seconds: float
+
+
+@dataclass(frozen=True, kw_only=True)
 class LivenessSample:
     """One observation of run liveness taken by the foreground watchdog.
 
@@ -134,10 +160,26 @@ class LivenessSample:
     epoch the foreground watchdog took the sample (from the injected
     clock). A None `last_event_epoch` is the explicit fail-safe "no
     signal" marker `decide_stall` must NOT treat as a stall.
+
+    `open_command_node` is which COMMAND node the run was inside when this
+    observation was taken, or None when none was open AND when the probe
+    could not observe one at all. Those two cases are deliberately NOT
+    distinguished here, because nothing downstream could act on the
+    difference: the layer that would report it is the same `fabro events`
+    read whose failure already lands as a no-signal `last_event_epoch`,
+    and a third state would promise a discrimination the probe cannot
+    make. What keeps the conflation safe is that the bound is taken across
+    the WHOLE quiet window rather than from the newest reading alone — see
+    `decide_stall`.
+
+    It defaults to None so a caller that observes nothing DECLARES
+    nothing: a default bound would silently widen every window in the
+    fleet, which is the direction a backstop must not drift in.
     """
 
     last_event_epoch: float | None
     observed_at: float
+    open_command_node: OpenCommandNode | None = None
 
 
 class LivenessProbe(Protocol):
@@ -275,11 +317,37 @@ def decide_stall(
     participate in the comparison; no-signal samples are skipped entirely,
     so a burst of probe failures in the middle of a healthy run cannot
     manufacture a false stall.
+
+    AN OPEN COMMAND NODE RAISES THE BAR, and that is the third repair
+    (bd-ib-qsk4o5). When any observation IN THE CURRENT WINDOW reports an
+    open command node, the stall is graded against the MAXIMUM of
+    `stall_seconds` and that node's own resolved timeout. The reason is
+    structural rather than a tolerance: a command node emits a start event
+    and a completion event and nothing between them, so BOTH liveness
+    layers are flat for its whole duration however healthy the run is —
+    which made a quiet window inside `janitor` or `publish_draft`
+    indistinguishable from a deadlock, and cancelled three healthy runs on
+    hp between 2026-10-08 and 2026-10-12.
+
+    Two properties of that bound are load-bearing. It is the MAXIMUM of the
+    two rather than the node's alone, so a repository that shortens
+    `dispatcher.stall_timeout_seconds` below a node timeout does not thereby
+    make the watchdog cancel inside that node; and it relaxes the watchdog
+    without disarming it, because once the node's own timeout HAS elapsed the
+    stall is confirmed exactly as before. And it is taken across the WHOLE
+    window rather than from the newest reading, because a command node cannot
+    complete without emitting a completion event and that event would open a
+    new window — so within one window a node once observed open is still open,
+    and a later reading that does not report it has failed to OBSERVE it
+    (a stream truncated mid-record by a probe timeout still parses the records
+    before the cut). Reading the newest sample alone would let one truncated
+    read collapse the bound and cancel the run.
     """
-    quiet_seconds = quiet_window_seconds(samples=samples)
-    if quiet_seconds is None:
+    window = _current_quiet_window(samples=samples)
+    if window is None:
         return StallVerdict.CONTINUE
-    if quiet_seconds >= stall_seconds:
+    bound = max(stall_seconds, _open_command_node_bound(window=window))
+    if _window_seconds(window=window) >= bound:
         return StallVerdict.STALLED
     return StallVerdict.CONTINUE
 
@@ -299,29 +367,67 @@ def quiet_window_seconds(*, samples: tuple[LivenessSample, ...]) -> float | None
     is a different claim and the one that would let a probe outage look
     like a healthy run that had just reported progress.
     """
+    window = _current_quiet_window(samples=samples)
+    if window is None:
+        return None
+    return _window_seconds(window=window)
+
+
+def _current_quiet_window(
+    *, samples: tuple[LivenessSample, ...]
+) -> tuple[LivenessSample, ...] | None:
+    """The CURRENT quiet window's observations, oldest first; None when unmeasured.
+
+    The window is the stretch running back from the newest timestamped
+    reading through every consecutive earlier reading that reports the SAME
+    last-event timestamp. Walking BACKWARDS from the newest reading is what
+    makes the answer the current window rather than any earlier one, and the
+    walk stops at the first reading whose last-event epoch DIFFERS: that
+    reading is the most recent observed progress, so the window opened at the
+    observation just after it. A run whose every reading agrees never stops,
+    and its window opened at its first reading.
+
+    The whole window is returned rather than just its opening instant because
+    TWO questions are asked of it — how long it has run, and whether any
+    observation in it found a command node open — and answering them from one
+    walk is what keeps them talking about the same window. Only timestamped
+    readings are in it: a no-signal reading is a probe failure, which this
+    module must never let manufacture a stall.
+
+    None means UNMEASURED: fewer than two readings carried a timestamp, so
+    there is no pair of observations to span.
+    """
     timestamped = tuple(sample for sample in samples if sample.last_event_epoch is not None)
     if len(timestamped) < _MIN_READINGS_TO_COMPARE:
         return None
-    return timestamped[-1].observed_at - _quiet_window_opened_at(timestamped=timestamped)
-
-
-def _quiet_window_opened_at(*, timestamped: tuple[LivenessSample, ...]) -> float:
-    """Wall-clock epoch at which the CURRENT quiet window opened.
-
-    Walks the timestamped readings BACKWARDS from the newest one, which is
-    what makes the answer the current window rather than any earlier one,
-    and stops at the first reading whose last-event epoch DIFFERS: that
-    reading is the most recent observed progress, so the window opened at
-    the observation just after it. A run whose every reading agrees never
-    stops, and its window opened at its first reading.
-    """
     current_event = timestamped[-1].last_event_epoch
-    opened_at = timestamped[-1].observed_at
-    for sample in reversed(timestamped[:-1]):
-        if sample.last_event_epoch != current_event:
+    opened_at_index = len(timestamped) - 1
+    for index in range(len(timestamped) - 2, -1, -1):
+        if timestamped[index].last_event_epoch != current_event:
             break
-        opened_at = sample.observed_at
-    return opened_at
+        opened_at_index = index
+    return timestamped[opened_at_index:]
+
+
+def _window_seconds(*, window: tuple[LivenessSample, ...]) -> float:
+    """Wall-clock seconds spanned by one quiet window's observations."""
+    return window[-1].observed_at - window[0].observed_at
+
+
+def _open_command_node_bound(*, window: tuple[LivenessSample, ...]) -> float:
+    """The longest open-command-node timeout any observation in `window` reported.
+
+    Zero when none did, which is the identity for the `max` the caller takes
+    against the configured stall window — so a window with nothing open is
+    graded against that window exactly as it was before command nodes were
+    observed at all.
+    """
+    bounds = [
+        sample.open_command_node.timeout_seconds
+        for sample in window
+        if sample.open_command_node is not None
+    ]
+    return max(bounds) if bounds else 0.0
 
 
 def _max_event_epoch(*, events_json: str) -> float | None:

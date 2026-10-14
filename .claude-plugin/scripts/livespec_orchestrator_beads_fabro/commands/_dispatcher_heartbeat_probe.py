@@ -24,15 +24,13 @@ This module adds two seams, both feeding the EXISTING `decide_stall`
   corrupt / unreadable file reads as empty), so a malformed heartbeat
   NEVER crashes the watchdog — it degrades to no signal.
 
-* `LayeredLivenessProbe` — composes the heartbeat probe as the
+* `LayeredLivenessProbe` — composes the heartbeat probe as the finer
   deferred-PRIMARY with the coarse wall-clock `fabro events` probe as
-  the PERMANENT fallback. It samples the primary first; when the primary
-  yields a real signal that wins (the finer heartbeat reading); when the
-  primary is "no signal" (pipeline outage / not-yet-started / malformed)
-  it falls THROUGH to the wall-clock backstop. This is the load-bearing
-  degrade rule: an observability-pipeline outage degrades the watchdog to
-  coarse event-stream detection — NEVER to NO detection. The wall-clock
-  layer STAYS regardless.
+  the PERMANENT backstop, and reports whichever of the two carries the
+  NEWER timestamp. This is the load-bearing degrade rule: an
+  observability-pipeline outage degrades the watchdog to coarse
+  event-stream detection — NEVER to NO detection. The wall-clock layer
+  STAYS regardless, and since bd-ib-qsk4o5 it is never MASKED either.
 
 Keying (§4.4 + the 29f.7 sink): the `HeartbeatSink` stores keys AFTER the
 shared fail-closed `scrub` (so a credential-shaped id lands as the
@@ -133,25 +131,70 @@ class HeartbeatLivenessProbe:
 
 @dataclass(frozen=True, kw_only=True)
 class LayeredLivenessProbe:
-    """Heartbeat-PRIMARY probe with the wall-clock backstop as the fallback.
+    """Heartbeat and wall-clock backstop, reported as whichever is NEWER.
 
-    Samples the deferred-PRIMARY `primary` (the heartbeat) first: when it
-    yields a real signal (`last_event_epoch is not None`) that finer
-    reading wins. When the primary is "no signal" (a pipeline outage, a
-    not-yet-started run, or a malformed heartbeat file) it falls THROUGH
-    to the coarse `fallback` (the wall-clock `fabro events` probe) — so
-    an observability-pipeline outage degrades the watchdog to coarse
-    event-stream detection, NEVER to NO detection. Either reading feeds
-    the SAME `decide_stall` unchanged; this composition only chooses which
-    layer supplies the sample, never the stall policy itself.
+    Samples BOTH layers every poll and reports the newer of the two
+    readings. `primary` is the deferred-PRIMARY heartbeat — the finer
+    signal, because it advances on a short metrics-export interval — and
+    `fallback` is the coarse `fabro events` wall-clock backstop; the names
+    record which layer is finer and which is permanent, not an order of
+    precedence. Either reading feeds the SAME `decide_stall` unchanged;
+    this composition only chooses which layer supplies the sample, never
+    the stall policy itself.
+
+    REPORTING THE NEWER, rather than preferring the primary, is the repair
+    of a measured false-kill (bd-ib-qsk4o5). This method used to return
+    the primary sample whenever it carried ANY timestamp, so the fallback
+    was never even read for the rest of the run. The two layers go quiet
+    for DIFFERENT reasons and neither stands in for the other: the
+    heartbeat is Claude Code's own metrics export, so it beats only while
+    an AGENT turn is running and stops the instant the graph enters a
+    COMMAND node — `janitor`, `publish_draft` — staying frozen for that
+    node's whole duration however healthy the run is, while the event
+    stream is the only layer that records that node starting. Measured on
+    hp run 01M4QKN0R3N3: the last beat for dispatch
+    f655b8d1f9b8423ab0e4009ee37d29dc was 09:30:53Z, when the second
+    implement turn ended; the janitor went green at 09:52:05Z and the run
+    was inside `publish_draft` when the watchdog cancelled it at
+    09:57:54Z, with the event stream that recorded both nodes never read.
+    Three of the six stall cancels on hp since 2026-10-08 were that shape.
+    The same masking kills AGENT nodes whose adapter feeds the sink no
+    beats: on hp run 01M4W9GCPB3B (2026-10-14) dispatch 87e54262's last
+    beat was 04:11:33Z, when the Claude-adapter `dod_gate` ended; the
+    codex-acp `implement` that followed beat nothing, and the run was
+    cancelled at that beat plus the 7200 s window while `fabro events`
+    carried tool activity up to 06:12:12Z.
+
+    The degrade rule survives unchanged because it is a rule about
+    ABSENCE, not about precedence: a layer that yields no signal
+    contributes no timestamp, so the other answers alone, and only when
+    BOTH are blind is the sample "no signal" — which `decide_stall` treats
+    as keep-waiting. A frozen heartbeat beside a frozen event stream still
+    confirms a stall, because neither reading advances.
+
+    The open-command-node observation comes from the FALLBACK alone, and
+    not out of any precedence between the layers: the event stream is the
+    only layer carrying node lifecycle events at all, so the heartbeat has
+    nothing to contribute to that question. Taking it from whichever layer
+    reported the newer timestamp would instead drop it on every poll the
+    heartbeat won — which is most polls inside an agent turn, while the
+    bound exists precisely for the stretch after one ends.
     """
 
     primary: LivenessProbe
     fallback: LivenessProbe
 
     def sample(self, *, observed_at: float) -> LivenessSample:
-        """Prefer the heartbeat; degrade to the wall-clock backstop on no signal."""
+        """Report the NEWER of the heartbeat and the wall-clock backstop."""
         primary_sample = self.primary.sample(observed_at=observed_at)
-        if primary_sample.last_event_epoch is not None:
-            return primary_sample
-        return self.fallback.sample(observed_at=observed_at)
+        fallback_sample = self.fallback.sample(observed_at=observed_at)
+        epochs = [
+            epoch
+            for epoch in (primary_sample.last_event_epoch, fallback_sample.last_event_epoch)
+            if epoch is not None
+        ]
+        return LivenessSample(
+            last_event_epoch=max(epochs) if epochs else None,
+            observed_at=observed_at,
+            open_command_node=fallback_sample.open_command_node,
+        )
