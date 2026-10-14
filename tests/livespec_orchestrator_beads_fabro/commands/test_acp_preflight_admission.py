@@ -61,6 +61,7 @@ _NEW_MODULES = (
     "_acp_candidate_preflight",
     "_acp_preflight_verdict",
     "_acp_reached_termination",
+    "_dispatcher_acp_chain_sources",
     "_dispatcher_acp_preflight",
 )
 
@@ -1145,13 +1146,20 @@ def test_an_unreadable_graph_declaration_refuses_rather_than_admitting(tmp_path:
 def test_an_unreadable_workflow_manifest_refuses_before_claim(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An unreadable manifest is a refusal, never a fall-through to another graph."""
+    """An unreadable manifest is a refusal, never a fall-through to another graph.
+
+    The variant resolution lives in `_dispatcher_acp_chain_sources`, which is
+    where this repository's chain configuration is read off disk; the composer
+    next door grades what that read returns. So the seam is patched THERE, and
+    the refusal is still asserted on the composer's own verdict.
+    """
     modules = _modules()
     composer = modules["_dispatcher_acp_preflight"]
+    sources = modules["_dispatcher_acp_chain_sources"]
     variants = importlib.import_module(f"{_PACKAGE}._workflow_variants")
     repo = _enabled_repo(tmp_path=tmp_path)
     monkeypatch.setattr(
-        composer,
+        sources,
         "prepare_workflow_variant",
         lambda **_: variants.WorkflowVariant(name="gone", directory="no-such-directory"),
     )
@@ -1278,7 +1286,9 @@ def test_an_overlay_refusal_is_surfaced_rather_than_swallowed(
     composer = modules["_dispatcher_acp_preflight"]
     repo = _enabled_repo(tmp_path=tmp_path)
     monkeypatch.setattr(
-        composer, "repository_acp_overlays", lambda **_: "overlay layer is unreadable"
+        modules["_dispatcher_acp_chain_sources"],
+        "repository_acp_overlays",
+        lambda **_: "overlay layer is unreadable",
     )
 
     verdict = composer.resolve_acp_preflight(repo=repo, journal_path=None, now_iso=_NOW)

@@ -26,6 +26,15 @@ clause says the selection record "MUST NOT represent that skip as an observed
 hold", and a `hold_key: null` would still invite a reader to join a headroom
 shortfall against the availability-hold ledger, where it matches nothing. So the
 projection names the candidate, its reading and the floor, and stops.
+
+THE REFUSAL FIELDS ARE ADDED ONLY WHEN HEADROOM ACTUALLY GOVERNS, and that is a
+correctness requirement rather than tidiness. `headroom_refusal_fields` returns
+the EMPTY mapping unless some exhausted node was emptied with a headroom skip in
+it, so a refusal governed by a typed hold -- where the chain emptied before any
+reading was taken -- carries no headroom key. A block stamped on
+unconditionally would tell an operator a credential had been assessed when the
+filter never reached it, which is the same class of false report as a numeric
+sentinel for an unobservable reading.
 """
 
 from __future__ import annotations
@@ -35,10 +44,12 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import 
     NodePreflight,
     SkippedCandidate,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import SessionHeadroomReading
 
 __all__: list[str] = [
     "SESSION_HEADROOM_STAGE",
+    "headroom_refusal_fields",
     "session_headroom_assessment_record",
     "session_headroom_reading_fields",
     "session_headroom_selection_fields",
@@ -120,4 +131,34 @@ def session_headroom_reading_fields(*, reading: SessionHeadroomReading) -> dict[
         "remaining_percent": reading.remaining_percent,
         "unobservable": reading.unobservable,
         "observed_at": reading.observed_at,
+    }
+
+
+def headroom_refusal_fields(*, verdict: AcpPreflightVerdict) -> dict[str, object]:
+    """What a HEADROOM-GOVERNED containment refusal must additionally name.
+
+    Scoped to the EXHAUSTED nodes, because that is what the clause asks for --
+    "skipped candidates for the admission-required node lacking an eligible
+    candidate" -- and because a node that still holds a candidate refused
+    nothing, so naming its skips in a refusal record would point an operator at
+    a chain that is working.
+    """
+    floor = verdict.session_headroom_floor_percent
+    if floor is None:
+        return {}
+    skipped = {
+        node.node: [_skipped_fields(skip=skip) for skip in node.skipped]
+        for node in verdict.nodes
+        if node.node in verdict.exhausted
+        and any(skip.reason == HEADROOM_SKIP for skip in node.skipped)
+    }
+    if not skipped:
+        return {}
+    return {
+        "session_headroom_floor_percent": floor,
+        "session_headroom_assessments": [
+            session_headroom_reading_fields(reading=reading)
+            for reading in verdict.headroom_assessments
+        ],
+        "session_headroom_skipped": skipped,
     }
