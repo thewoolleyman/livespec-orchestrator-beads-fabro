@@ -77,6 +77,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import (
     build_acp_preflight_verdict,
     no_fallback_verdict,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import SessionHeadroomPolicy
 from livespec_orchestrator_beads_fabro.commands._acp_workflow_defaults import (
     rendered_workflow_defaults,
 )
@@ -134,6 +135,7 @@ def resolve_acp_preflight(
     journal_path: Path | None,
     now_iso: str,
     probe: Callable[[str], str] | None = None,
+    headroom: SessionHeadroomPolicy | None = None,
 ) -> AcpPreflightVerdict:
     """Grade every ACP node's candidate chain for this repository, once.
 
@@ -144,6 +146,12 @@ def resolve_acp_preflight(
     entitlement mapping the contract reserves. Wait attention and idle-factory
     leave it absent by the same default, which is what makes their verdict
     free of any external call.
+
+    `headroom` is the admission session-headroom policy, and it defaults to
+    ABSENT for exactly the same reason one clause over: "Snapshot composition
+    MUST NOT issue a live usage request", so wait attention and idle-factory
+    resolve a verdict with no policy and the filter becomes a total no-op. Only
+    the admission pass supplies one.
     """
     block = _workflow_scoped_block(repo=repo)
     catalogs = resolve_acp_catalogs(block=block)
@@ -171,6 +179,7 @@ def resolve_acp_preflight(
             legacy_providers=_legacy_providers(journal_path=journal_path, now_iso=now_iso),
             builtin_pairs=builtin_pairs,
             probe=probe,
+            headroom=headroom,
         ),
     )
 

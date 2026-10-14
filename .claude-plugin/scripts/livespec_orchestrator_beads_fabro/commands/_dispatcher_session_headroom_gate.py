@@ -37,15 +37,20 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from pathlib import Path
+from typing import Protocol
 
 from returns.io import IOResult
 from returns.result import Failure, Result, Success
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT,
     SessionHeadroomPolicy,
     SessionHeadroomReading,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_records import (
+    session_headroom_assessment_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
     CLAUDE_OAUTH_TOKEN_ENV,
@@ -60,9 +65,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_io 
 
 __all__: list[str] = [
     "SESSION_HEADROOM_FLOOR_PERCENT_KEY",
+    "journal_session_headroom",
     "resolve_session_headroom_floor_percent",
     "session_headroom_policy",
 ]
+
+
+class JournalWriter(Protocol):
+    def append(self, *, record: dict[str, object]) -> None:
+        """Persist one journal record."""
+        ...
+
 
 SESSION_HEADROOM_FLOOR_PERCENT_KEY = "session_headroom_floor_percent"
 
@@ -122,5 +135,34 @@ def _floor_value(*, value: object) -> Result[int, PolicySettingUnreadable]:
                 f"dispatcher.{SESSION_HEADROOM_FLOOR_PERCENT_KEY} must be an integer from "
                 f"{_FLOOR_MINIMUM} through {_FLOOR_MAXIMUM} inclusive; got {value!r}"
             ),
+        )
+    )
+
+
+def journal_session_headroom(
+    *, work_item_id: str, verdict: AcpPreflightVerdict, journal: JournalWriter
+) -> None:
+    """Record this evaluation's readings against ONE affected work-item.
+
+    TWO things make this a no-op rather than an empty row, and they are
+    different conditions. A verdict carrying NO floor was resolved without a
+    policy -- wait attention, idle-factory, the legacy no-fallback path -- so no
+    reading was ever attempted and there is nothing to report. A verdict
+    carrying a floor but NO assessments assessed no covered candidate, which is
+    every dispatch in a repository routed wholly away from Claude; a row per
+    item per pass there would be journal noise naming nothing.
+
+    A floor of ZERO is neither of those: the reading is still attempted and
+    still journaled, which is why the guard tests the floor for `None` rather
+    than for falsity.
+    """
+    floor = verdict.session_headroom_floor_percent
+    if floor is None or not verdict.headroom_assessments:
+        return
+    journal.append(
+        record=session_headroom_assessment_record(
+            work_item_id=work_item_id,
+            floor_percent=floor,
+            assessments=verdict.headroom_assessments,
         )
     )

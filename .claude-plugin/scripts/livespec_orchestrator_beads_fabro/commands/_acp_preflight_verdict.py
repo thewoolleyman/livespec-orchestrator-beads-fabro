@@ -24,6 +24,13 @@ refusal can fire, and nothing about admission changes. This is the additive
 guarantee the contract opens with, expressed as an early return rather than as
 a series of conditions that happen to be false.
 
+THE HEADROOM FLOOR IS CARRIED, AND `None` MEANS "NO POLICY WAS SUPPLIED" --
+never "the floor is zero". A floor of 0 is a real, ratified setting that
+disables the skip while retaining the reading, so collapsing the two would make
+a caller that deliberately disabled the filter indistinguishable from wait
+attention and idle-factory, which supply no policy and must issue no usage
+request at all. The journal writer keys on exactly that distinction.
+
 UNKNOWN OBSERVATION VERSIONS RIDE THROUGH, UNREAD. The hold ledger surfaces a
 record whose `schema_version` this build does not know as UNOBSERVABLE rather
 than dropping it, and this verdict carries that set verbatim onto every
@@ -45,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import 
 )
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import ResolvedAcpChain
 from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import AcpHoldLedger
+from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import SessionHeadroomReading
 from livespec_orchestrator_beads_fabro.commands._acp_success_critical import (
     derive_success_critical,
 )
@@ -73,6 +81,8 @@ class AcpPreflightVerdict:
     unobservable: tuple[Mapping[str, object], ...] = ()
     refusal: str | None = None
     assessed_credentials: Mapping[str, str] = field(default_factory=dict)
+    headroom_assessments: tuple[SessionHeadroomReading, ...] = ()
+    session_headroom_floor_percent: int | None = None
 
     @property
     def viable(self) -> bool:
@@ -143,7 +153,28 @@ def build_acp_preflight_verdict(
         exhausted=_exhausted(preflights=preflights, critical=critical.nodes),
         unobservable=ledger.unobservable,
         assessed_credentials=dict(assessed),
+        headroom_assessments=_headroom_assessments(preflights=preflights),
+        session_headroom_floor_percent=(
+            None if inputs.headroom is None else inputs.headroom.floor_percent
+        ),
     )
+
+
+def _headroom_assessments(
+    *, preflights: tuple[NodePreflight, ...]
+) -> tuple[SessionHeadroomReading, ...]:
+    """Every distinct credential's reading across every node, in node order.
+
+    Deduplicated BY CREDENTIAL IDENTITY rather than by value, because that is
+    the unit the clause counts -- "One assessment per distinct projected
+    credential per admission evaluation" -- and two nodes sharing one credential
+    must contribute one row to the journal rather than one each.
+    """
+    seen: dict[str, SessionHeadroomReading] = {}
+    for preflight in preflights:
+        for reading in preflight.assessments:
+            _ = seen.setdefault(reading.credential_identity, reading)
+    return tuple(seen.values())
 
 
 def _exhausted(

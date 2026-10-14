@@ -8,7 +8,7 @@ admission-time credential probe creates no observed record. For a fallback-
 enabled chain, a provider-limit/rate-limit probe refusal is an ephemeral
 candidate-local skip for that one admission evaluation."
 
-THREE FILTERS, AND THE ORDER BETWEEN THEM IS LOAD-BEARING -- IT *IS* THE
+FOUR FILTERS, AND THE ORDER BETWEEN THEM IS LOAD-BEARING -- IT *IS* THE
 PRECEDENCE RULE. "Typed candidate evidence takes precedence over legacy
 cause-text attribution when a chain executed", and consulting typed records
 FIRST is what implements that: a candidate carrying typed evidence is skipped
@@ -18,18 +18,40 @@ than as a second guard also keeps it honest in the one direction that matters
 -- a typed record can only exist because the chain executed, so there is no
 state in which the guard and the ordering could disagree.
 
-The credential probe runs LAST because it is the only filter that costs an
-external call and the only one whose answer is thrown away at the end of the
-evaluation. A candidate already skipped by a durable record is never probed,
+The two EXTERNAL filters run last because each costs a round trip and each
+one's answer is thrown away at the end of the evaluation. A candidate already
+skipped by a durable record is never probed and never assessed for headroom,
 which is most of why "at most once per admission evaluation" is cheap to
 honour.
 
-THE PROBE SKIP IS EPHEMERAL IN EVERY SENSE THE CONTRACT NAMES. It writes no
-journal record, mints no hold, refreshes no expiry, and is keyed on the ONE
-candidate's own availability key rather than broadened to its provider. Nothing
-in this module can persist anything: it is handed values and returns values,
-which is what lets admission, rework admission, wait attention and idle-factory
-consume one verdict without four of them disagreeing about what a probe said.
+THE SESSION-HEADROOM FILTER IS FOURTH, AND BELOW THE PROBE SPECIFICALLY.
+`SPECIFICATION/contracts.md` section "Dispatcher admission, WIP cap, and
+post-merge acceptance": "With a positive floor, a successful credential-
+usability probe MUST NOT override a headroom skip." A probe answers "can this
+credential call the provider at all" and reports USABLE right up to the
+session limit -- measured on hp 2026-10-14, where a run was refused
+mid-implement on the session limit while `claude-cred-status` returned
+`usable` two minutes later. So the probe cannot stand in for the reading, and
+putting the reading above the probe would make a provider-limited credential
+report a headroom shortfall instead of the limit it actually hit.
+
+THE TWO EPHEMERAL SKIPS ARE EPHEMERAL IN EVERY SENSE THE CONTRACT NAMES. Neither
+writes a journal record, mints a hold or refreshes an expiry, and the probe skip
+is keyed on the ONE candidate's own availability key rather than broadened to its
+provider. Nothing in this module can persist anything: it is handed values and
+returns values, which is what lets admission, rework admission, wait attention
+and idle-factory consume one verdict without four of them disagreeing about what
+a probe or a reading said. For headroom that is the clause's own requirement --
+"A reading creates NO observed availability record and retires none" -- and the
+reason it holds here is structural rather than careful: this module is handed no
+journal to write to.
+
+A HEADROOM SKIP IS CARRIED SEPARATELY FROM BOTH OTHER KINDS, in `headroom` and
+`headroom_floor_percent`, because the clause forbids representing it as an
+observed hold and because a reading is only interpretable beside the floor it
+was graded against. The READING RIDES ALONG rather than being re-taken by a
+consumer: the refusal and the selection record must both name the same
+measurement, and a second read would be a second measurement.
 
 WHY THE CREDENTIAL IS KEYED ON `availability_key`. That key names the account or
 router a candidate authenticates against; `candidate_key` names the model or
@@ -52,8 +74,15 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_coverage import (
     legacy_record_covers_candidate,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_hold_records import AcpAvailabilityHold
+from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
+    SessionHeadroomPolicy,
+    SessionHeadroomReading,
+    headroom_covers_candidate,
+    headroom_skips_candidate,
+)
 
 __all__: list[str] = [
+    "HEADROOM_SKIP",
     "LEGACY_HOLD_SKIP",
     "PROBE_SKIP",
     "PROVIDER_LIMIT_CONDITIONS",
@@ -64,11 +93,12 @@ __all__: list[str] = [
     "filter_node_candidates",
 ]
 
-# The three reasons a candidate leaves the selectable set, as stable machine
+# The four reasons a candidate leaves the selectable set, as stable machine
 # tokens so a verdict's explanation is greppable rather than prose-matched.
 TYPED_HOLD_SKIP = "typed-availability-hold"
 LEGACY_HOLD_SKIP = "legacy-provider-hold"
 PROBE_SKIP = "credential-probe-refusal"
+HEADROOM_SKIP = "session-headroom-shortfall"
 
 # The ONLY probe conditions that produce an ephemeral skip. Every other refusal
 # -- absent, revoked, denied, unassessable -- is a fault no fallback repairs, so
@@ -92,6 +122,12 @@ class SkippedCandidate:
     availability causes an observed provider outage carries. Writing it into
     `cause` would make a credential that is merely rate-limited on this host
     indistinguishable, downstream, from an entitlement the provider revoked.
+
+    `headroom` and `headroom_floor_percent` are the THIRD such separation, for
+    the same reason one level on: a session-headroom shortfall is a measurement
+    of a usage window, not a provider refusal of any kind, and the clause
+    forbids representing it as an observed hold. The floor travels with the
+    reading because neither is interpretable without the other.
     """
 
     availability_key: str | None
@@ -101,16 +137,26 @@ class SkippedCandidate:
     scope: str | None = None
     hold_key: str | None = None
     condition: str | None = None
+    headroom: SessionHeadroomReading | None = None
+    headroom_floor_percent: int | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
 class NodePreflight:
-    """One node's surviving candidates in configured order, and what left."""
+    """One node's surviving candidates in configured order, and what left.
+
+    `assessments` is every DISTINCT session-headroom reading this node's filter
+    took, skipped or not. The clause requires the reading to be journaled for
+    each affected work-item whether or not it refused anything, so a reading
+    reported only through `skipped` would vanish on exactly the admitted case
+    the journal exists to record.
+    """
 
     node: str
     enabled: bool
     candidates: tuple[AcpCandidate, ...]
     skipped: tuple[SkippedCandidate, ...]
+    assessments: tuple[SessionHeadroomReading, ...] = ()
 
     @property
     def exhausted(self) -> bool:
@@ -132,6 +178,7 @@ class PreflightInputs:
     legacy_providers: frozenset[str] = frozenset()
     builtin_pairs: frozenset[tuple[str, str]] = frozenset()
     probe: Callable[[str], str] | None = None
+    headroom: SessionHeadroomPolicy | None = None
 
 
 def filter_node_candidates(
@@ -151,8 +198,11 @@ def filter_node_candidates(
     ordered = (chain.primary, *chain.fallbacks)
     selectable: list[AcpCandidate] = []
     skipped: list[SkippedCandidate] = []
+    assessments: list[SessionHeadroomReading] = []
     for candidate in ordered:
-        skip = _skip_for(candidate=candidate, inputs=inputs, assessed=assessed)
+        skip = _skip_for(
+            candidate=candidate, inputs=inputs, assessed=assessed, assessments=assessments
+        )
         if skip is None:
             selectable.append(candidate)
         else:
@@ -162,6 +212,7 @@ def filter_node_candidates(
         enabled=chain.enabled,
         candidates=tuple(selectable),
         skipped=tuple(skipped),
+        assessments=tuple(assessments),
     )
 
 
@@ -170,11 +221,12 @@ def _skip_for(
     candidate: AcpCandidate,
     inputs: PreflightInputs,
     assessed: dict[str, str],
+    assessments: list[SessionHeadroomReading],
 ) -> SkippedCandidate | None:
-    """The first filter this candidate fails, or `None` when it survives all three."""
+    """The first filter this candidate fails, or `None` when it survives all four."""
     for hold in inputs.holds:
         if hold_covers_candidate(hold=hold, candidate=candidate):
-            return _skipped(
+            return _record_skip(
                 candidate=candidate,
                 reason=TYPED_HOLD_SKIP,
                 cause=hold.cause,
@@ -183,8 +235,11 @@ def _skip_for(
             )
     legacy = _legacy_provider(candidate=candidate, inputs=inputs)
     if legacy is not None:
-        return _skipped(candidate=candidate, reason=LEGACY_HOLD_SKIP, hold_key=legacy)
-    return _probe_skip(candidate=candidate, probe=inputs.probe, assessed=assessed)
+        return _record_skip(candidate=candidate, reason=LEGACY_HOLD_SKIP, hold_key=legacy)
+    probed = _probe_skip(candidate=candidate, probe=inputs.probe, assessed=assessed)
+    if probed is not None:
+        return probed
+    return _headroom_skip(candidate=candidate, inputs=inputs, assessments=assessments)
 
 
 def _legacy_provider(*, candidate: AcpCandidate, inputs: PreflightInputs) -> str | None:
@@ -213,25 +268,90 @@ def _probe_skip(
     condition = assessed[key]
     if condition not in PROVIDER_LIMIT_CONDITIONS:
         return None
-    return _skipped(candidate=candidate, reason=PROBE_SKIP, condition=condition)
+    return _ephemeral_skip(candidate=candidate, reason=PROBE_SKIP, condition=condition)
 
 
-def _skipped(
+def _headroom_skip(
+    *,
+    candidate: AcpCandidate,
+    inputs: PreflightInputs,
+    assessments: list[SessionHeadroomReading],
+) -> SkippedCandidate | None:
+    """Assess a COVERED candidate's projected credential, and skip only a shortfall.
+
+    The reading is recorded in `assessments` BEFORE the skip is decided, which
+    is what makes an above-floor reading journalable: the clause requires every
+    assessment to be journaled for each affected work-item, not only the ones
+    that refused something.
+    """
+    policy = inputs.headroom
+    if policy is None or not headroom_covers_candidate(
+        candidate=candidate, builtin_pairs=inputs.builtin_pairs
+    ):
+        return None
+    reading = policy.read()
+    if reading not in assessments:
+        assessments.append(reading)
+    if not headroom_skips_candidate(reading=reading, floor_percent=policy.floor_percent):
+        return None
+    return _ephemeral_skip(
+        candidate=candidate,
+        reason=HEADROOM_SKIP,
+        headroom=reading,
+        headroom_floor_percent=policy.floor_percent,
+    )
+
+
+def _record_skip(
     *,
     candidate: AcpCandidate,
     reason: str,
     cause: str | None = None,
     scope: str | None = None,
     hold_key: str | None = None,
-    condition: str | None = None,
 ) -> SkippedCandidate:
-    identity = candidate.identity
+    """A skip a DURABLE record decided, carrying its typed availability cause."""
+    availability_key, candidate_key = _skip_identity(candidate=candidate)
     return SkippedCandidate(
-        availability_key=None if identity is None else identity.availability_key,
-        candidate_key=None if identity is None else identity.candidate_key,
+        availability_key=availability_key,
+        candidate_key=candidate_key,
         reason=reason,
         cause=cause,
         scope=scope,
         hold_key=hold_key,
-        condition=condition,
     )
+
+
+def _ephemeral_skip(
+    *,
+    candidate: AcpCandidate,
+    reason: str,
+    condition: str | None = None,
+    headroom: SessionHeadroomReading | None = None,
+    headroom_floor_percent: int | None = None,
+) -> SkippedCandidate:
+    """A skip THIS EVALUATION decided, carrying no typed availability cause.
+
+    Kept apart from `_record_skip` rather than folded into one factory with
+    every field: the two populate disjoint field sets, and one factory taking
+    all of them is how a durable cause comes to be written onto an ephemeral
+    skip -- which is exactly the conflation both separations above exist to
+    prevent.
+    """
+    availability_key, candidate_key = _skip_identity(candidate=candidate)
+    return SkippedCandidate(
+        availability_key=availability_key,
+        candidate_key=candidate_key,
+        reason=reason,
+        condition=condition,
+        headroom=headroom,
+        headroom_floor_percent=headroom_floor_percent,
+    )
+
+
+def _skip_identity(*, candidate: AcpCandidate) -> tuple[str | None, str | None]:
+    """The candidate's `(availability_key, candidate_key)`, or both `None`."""
+    identity = candidate.identity
+    if identity is None:
+        return (None, None)
+    return (identity.availability_key, identity.candidate_key)
