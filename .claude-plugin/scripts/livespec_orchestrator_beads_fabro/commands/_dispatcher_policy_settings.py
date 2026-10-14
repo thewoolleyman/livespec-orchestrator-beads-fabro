@@ -60,6 +60,7 @@ __all__: list[str] = [
     "DEFAULT_READY_AGING_THRESHOLD_HOURS",
     "DEFAULT_REQUIRE_INVOKER",
     "DEFAULT_REVIEW_FIX_CAP",
+    "DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT",
     "DEFAULT_WIP_CAP",
     "PolicySettingUnreadable",
     "read_dispatcher_config_value",
@@ -75,6 +76,7 @@ __all__: list[str] = [
     "resolve_ready_aging_threshold_hours",
     "resolve_require_invoker",
     "resolve_review_fix_cap",
+    "resolve_session_headroom_floor_percent",
     "resolve_wip_cap",
 ]
 
@@ -92,6 +94,7 @@ DEFAULT_GROOM_CUT_APPROVAL = "human"
 DEFAULT_AUTOMATED_REGROOM_CAP = 2
 DEFAULT_ANSWER_DISPOSITION = "human"
 DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS = 300
+DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT = 20
 
 _LIVESPEC_CONFIG = ".livespec.jsonc"
 _PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
@@ -109,6 +112,8 @@ _GROOM_CUT_APPROVAL_KEY = "groom_cut_approval"
 _AUTOMATED_REGROOM_CAP_KEY = "automated_regroom_cap"
 _ANSWER_DISPOSITION_KEY = "answer_disposition"
 _CREDENTIAL_REPROBE_INTERVAL_SECONDS_KEY = "credential_reprobe_interval_seconds"
+_SESSION_HEADROOM_FLOOR_PERCENT_KEY = "session_headroom_floor_percent"
+_PERCENTAGE_POINTS = 100
 _ACCEPTANCE_POLICIES = frozenset(("ai-only", "ai-then-human", "human-only"))
 _GROOM_CUT_APPROVALS = frozenset(("human", "consensus"))
 _ANSWER_DISPOSITIONS = frozenset(("human", "consensus"))
@@ -274,6 +279,35 @@ def resolve_credential_reprobe_interval_seconds(
     )
 
 
+def resolve_session_headroom_floor_percent(*, cwd: Path) -> IOResult[int, PolicySettingUnreadable]:
+    """Read `dispatcher.session_headroom_floor_percent`, defaulting to 20.
+
+    The floor the admission session-headroom filter grades its five-hour reading
+    against, in PERCENTAGE POINTS OF ALLOWANCE REMAINING -- not elapsed
+    wall-clock time -- per the headroom clause of `SPECIFICATION/contracts.md`
+    section "Dispatcher admission, WIP cap, and post-merge acceptance".
+
+    The range is `0` through `100` INCLUSIVE, and `0` is a real value rather
+    than "unset": it disables both headroom skips while leaving the bounded
+    reading taken and journaled. That is why this is the one `dispatcher.*`
+    integer with a minimum of zero and an explicit maximum -- a floor above 100
+    could never be met by any reading and would refuse every covered candidate
+    forever, so it is refused as unreadable configuration rather than honoured.
+
+    COMMITTED-ONLY, exactly as the clause ratifies it, so -- like
+    `credential_reprobe_interval_seconds` above -- it is deliberately NOT a
+    member of the API-configurable key manifest and is editable only by a
+    committed `.livespec.jsonc` change.
+    """
+    return _resolve_int_setting(
+        cwd=cwd,
+        key=_SESSION_HEADROOM_FLOOR_PERCENT_KEY,
+        default=DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT,
+        minimum=0,
+        maximum=_PERCENTAGE_POINTS,
+    )
+
+
 def resolve_require_invoker(*, cwd: Path) -> IOResult[bool, PolicySettingUnreadable]:
     """Read `dispatcher.require_invoker` (default False; bool only).
 
@@ -344,10 +378,12 @@ def _resolve_bool_setting(
 
 
 def _resolve_int_setting(
-    *, cwd: Path, key: str, default: int, minimum: int
+    *, cwd: Path, key: str, default: int, minimum: int, maximum: int | None = None
 ) -> IOResult[int, PolicySettingUnreadable]:
     return read_dispatcher_config_value(cwd=cwd, key=key).bind_result(
-        lambda value: _int_value(key=key, value=value, default=default, minimum=minimum)
+        lambda value: _int_value(
+            key=key, value=value, default=default, minimum=minimum, maximum=maximum
+        )
     )
 
 
@@ -368,13 +404,36 @@ def _bool_value(*, key: str, value: object, default: bool) -> Result[bool, Polic
 
 
 def _int_value(
-    *, key: str, value: object, default: int, minimum: int
+    *, key: str, value: object, default: int, minimum: int, maximum: int | None = None
 ) -> Result[int, PolicySettingUnreadable]:
+    """An integer within the setting's own range, or an UNREADABLE failure.
+
+    `maximum` is optional because most of these dials are open-ended caps and
+    counts; a setting measured in percentage points is not, and an out-of-range
+    value there is an operator's configuration being wrong rather than a value
+    to clamp. Clamping would honour a floor nobody wrote.
+    """
     if value is None:
         return Success(default)
-    if isinstance(value, int) and not isinstance(value, bool) and value >= minimum:
+    if (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and _in_range(value=value, minimum=minimum, maximum=maximum)
+    ):
         return Success(value)
-    return Failure(_rejected(setting=key, value=value, want=f"an integer >= {minimum}"))
+    return Failure(
+        _rejected(setting=key, value=value, want=_int_want(minimum=minimum, maximum=maximum))
+    )
+
+
+def _in_range(*, value: int, minimum: int, maximum: int | None) -> bool:
+    return value >= minimum and (maximum is None or value <= maximum)
+
+
+def _int_want(*, minimum: int, maximum: int | None) -> str:
+    if maximum is None:
+        return f"an integer >= {minimum}"
+    return f"an integer from {minimum} through {maximum} inclusive"
 
 
 def _enum_value(

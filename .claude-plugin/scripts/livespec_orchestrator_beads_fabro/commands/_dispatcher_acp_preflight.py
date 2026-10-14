@@ -1,10 +1,13 @@
-"""Resolving ONE repository's ACP preflight verdict, and refusing on it.
+"""Resolving ONE repository's ACP preflight verdict.
 
 This is the I/O half of the preflight: it reads the committed chain
-configuration, the workflow graph, and the live availability records, hands
-them to the pure verdict in `_acp_preflight_verdict`, and offers the two
-consumers that ACT on it -- the admission refusal, and the gate on the legacy
-credential re-probe wait.
+configuration, the workflow graph, and the live availability records, and hands
+them to the pure verdict in `_acp_preflight_verdict`. The two consumers that ACT
+on a verdict -- the admission refusal, and the gate on the legacy credential
+re-probe wait -- live beside it in `_dispatcher_acp_preflight_refusal`:
+resolving a verdict and acting on one are separate concerns, and keeping them
+apart is what lets the admission ladder consume a refusal per candidate row
+without re-resolving anything.
 
 THE READ IS LAZY, AND THAT IS WHAT MAKES THIS ADDITIVE. A repository that
 declares no fallback configuration never gets past the first branch: no
@@ -44,7 +47,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Protocol
 
 from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import (
     builtin_acp_identities,
@@ -77,6 +79,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import (
     build_acp_preflight_verdict,
     no_fallback_verdict,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
+    SessionHeadroomGate,
+    any_covered_candidate,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_workflow_defaults import (
     rendered_workflow_defaults,
 )
@@ -87,7 +93,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
     scoped_repository_block,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import workflow_graph_path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     executing_payload_root,
@@ -107,25 +112,13 @@ from livespec_orchestrator_beads_fabro.commands._workflow_variants import (
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
-    "ACP_PREFLIGHT_REFUSAL_STAGE",
-    "acp_preflight_refusal",
-    "credential_reprobe_wait_applies",
     "resolve_acp_preflight",
     "resolve_acp_primary_generations",
     "resolve_dispatch_candidates",
 ]
 
-# The journal stage a before-claim preflight refusal is recorded under.
-ACP_PREFLIGHT_REFUSAL_STAGE = "acp-preflight-refusal"
-
 _WORKFLOW_MANIFEST = "workflow.toml"
 _RESERVED_SUBPATH = (".fabro", "workflows", RESERVED_WORKFLOW_NAME, _WORKFLOW_MANIFEST)
-
-
-class JournalWriter(Protocol):
-    def append(self, *, record: dict[str, object]) -> None:
-        """Persist one journal record."""
-        ...
 
 
 def resolve_acp_preflight(
@@ -134,6 +127,7 @@ def resolve_acp_preflight(
     journal_path: Path | None,
     now_iso: str,
     probe: Callable[[str], str] | None = None,
+    headroom: Callable[[], SessionHeadroomGate | None] | None = None,
 ) -> AcpPreflightVerdict:
     """Grade every ACP node's candidate chain for this repository, once.
 
@@ -144,6 +138,15 @@ def resolve_acp_preflight(
     entitlement mapping the contract reserves. Wait attention and idle-factory
     leave it absent by the same default, which is what makes their verdict
     free of any external call.
+
+    `headroom` is the session-headroom reading seam, and it defaults to ABSENT
+    for a STRONGER reason than `probe` does: "Snapshot composition MUST NOT
+    issue a live usage request", so wait attention and the idle-factory
+    projection must reach this with no reader at all rather than with one they
+    are trusted not to call. It is invoked AT MOST ONCE per evaluation, and only
+    once the chains resolve and `any_covered_candidate` confirms this dispatch
+    renders a candidate the clause covers -- a repository rendering none pays no
+    usage request, which is what keeps the clause additive.
     """
     block = _workflow_scoped_block(repo=repo)
     catalogs = resolve_acp_catalogs(block=block)
@@ -171,6 +174,9 @@ def resolve_acp_preflight(
             legacy_providers=_legacy_providers(journal_path=journal_path, now_iso=now_iso),
             builtin_pairs=builtin_pairs,
             probe=probe,
+            session_headroom=(
+                None if headroom is None or not any_covered_candidate(chains=chains) else headroom()
+            ),
         ),
     )
 
@@ -256,56 +262,6 @@ def resolve_dispatch_candidates(*, repo: Path) -> tuple[RenderedCandidate, ...] 
     chains, _graph_text, builtin_pairs = resolved
     rendered = rendered_dispatch_candidates(chains=chains, builtin_pairs=builtin_pairs)
     return rendered or None
-
-
-def acp_preflight_refusal(
-    *,
-    work_item_id: str,
-    verdict: AcpPreflightVerdict,
-    journal: JournalWriter,
-) -> DispatchOutcome | None:
-    """Refuse one candidate before claim when a success-critical chain is gone.
-
-    Returns `None` for a viable verdict, which is every verdict a repository
-    with no fallback configuration can produce. The refusal names the verdict's
-    own deterministic explanation rather than re-deriving one, so the journal
-    line and the operator-visible detail cannot disagree.
-    """
-    if verdict.viable:
-        return None
-    outcome = DispatchOutcome(
-        work_item_id=work_item_id,
-        status="failed",
-        stage=ACP_PREFLIGHT_REFUSAL_STAGE,
-        pr_number=None,
-        merge_sha=None,
-        detail=f"acp preflight refusal: {verdict.detail}",
-    )
-    journal.append(
-        record={
-            "stage": ACP_PREFLIGHT_REFUSAL_STAGE,
-            "work_item_id": work_item_id,
-            "detail": verdict.detail,
-            "success_critical": list(verdict.success_critical),
-            "exhausted": list(verdict.exhausted),
-            "unobservable_observations": len(verdict.unobservable),
-        }
-    )
-    return outcome
-
-
-def credential_reprobe_wait_applies(*, verdict: AcpPreflightVerdict) -> bool:
-    """Whether the legacy credential re-probe wait may hold the loop.
-
-    "The re-probe wait applies to a legacy single candidate and a genuinely
-    exhausted fallback chain, never a primary-only probe refusal with a viable
-    fallback." Both admitted cases are read straight off the verdict: a
-    repository with no fallback configuration is the legacy single candidate,
-    and a non-viable verdict is the genuinely exhausted chain. The forbidden
-    case -- fallback enabled and still viable -- is the one remaining
-    combination, so it needs no condition of its own.
-    """
-    return not verdict.fallback_enabled or not verdict.viable
 
 
 def _legacy_providers(*, journal_path: Path | None, now_iso: str) -> frozenset[str]:

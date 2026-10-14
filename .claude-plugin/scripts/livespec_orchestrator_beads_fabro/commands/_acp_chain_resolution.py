@@ -151,6 +151,13 @@ def _attach_one(
         # is rebuilt here from the resolved adapter, so they have to be carried
         # across explicitly or a protocol agent silently runs its own default.
         config_options=chain.config_options,
+        # The resolved registry agent id, carried across the same rebuild and
+        # for the same reason. Dropping it would leave the session-headroom
+        # coverage predicate reading `None` for every PRIMARY while reading the
+        # real id for every fallback -- a filter that graded the tail of each
+        # chain and skipped the head, which is the one asymmetry nothing
+        # downstream could detect.
+        agent_id=chain.agent_id,
     )
     duplicate = _duplicate_identity_refusal(node=node, primary=primary, fallbacks=chain.fallbacks)
     if duplicate is not None:

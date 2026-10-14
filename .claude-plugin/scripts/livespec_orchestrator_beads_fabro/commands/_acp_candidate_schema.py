@@ -110,6 +110,23 @@ class AcpCandidate:
     effort into the adapter instead, which is the "the two mechanisms MUST NOT be
     combined for one candidate" rule of `SPECIFICATION/contracts.md` section
     "Factory-configurable ACP fallback priority".
+
+    `agent_id` is the RESOLVED Agent Client Protocol registry agent id for a
+    STRUCTURED candidate, and `None` for an arbitrary manual adapter. It is
+    PROVENANCE rather than description: it is the id the agent catalog resolved
+    while rendering this candidate, never a value parsed back out of the
+    rendered command. That distinction is what the session-headroom clause of
+    section "Dispatcher admission, WIP cap, and post-merge acceptance" requires
+    of its coverage predicate -- "follow resolved agent provenance ... never
+    display text, a model-name prefix, or a spelling inferred from an opaque
+    availability or candidate key" -- and carrying the id here is what lets that
+    predicate ask one field instead of re-deriving the answer.
+
+    It is deliberately ABSENT from `candidate_fingerprint`, so neither chain
+    digest moves when it is populated: the digests identify what a candidate
+    RUNS, and the agent id names what already rendered those bytes. Including it
+    would report every existing chain as a new generation and retire every live
+    model-fallback warning for no change in behaviour.
     """
 
     adapter: AcpAdapter
@@ -117,6 +134,7 @@ class AcpCandidate:
     signatures: tuple[AcpAvailabilitySignature, ...] = ()
     pricing: AcpCandidatePricing | None = None
     config_options: Mapping[str, str] = field(default_factory=dict)
+    agent_id: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

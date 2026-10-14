@@ -62,6 +62,7 @@ _NEW_MODULES = (
     "_acp_preflight_verdict",
     "_acp_reached_termination",
     "_dispatcher_acp_preflight",
+    "_dispatcher_acp_preflight_refusal",
 )
 
 _NOW = "2026-09-12T12:00:00Z"
@@ -540,7 +541,7 @@ def test_a_locally_unusable_primary_with_a_viable_fallback_stays_viable() -> Non
     assert verdict.exhausted == ()
     assert verdict.success_critical == ("implement",)
     assert _keys(preflight=verdict.node_preflight(node="implement")) == ["fallback"]
-    assert modules["_dispatcher_acp_preflight"].credential_reprobe_wait_applies(
+    assert modules["_dispatcher_acp_preflight_refusal"].credential_reprobe_wait_applies(
         verdict=verdict
     ) is (False)
 
@@ -559,7 +560,9 @@ def test_an_exhausted_success_critical_chain_makes_the_verdict_refuse() -> None:
     assert verdict.viable is False
     assert verdict.exhausted == ("implement",)
     assert verdict.detail == "no candidate remains for success-critical ACP node implement"
-    assert modules["_dispatcher_acp_preflight"].credential_reprobe_wait_applies(verdict=verdict)
+    assert modules["_dispatcher_acp_preflight_refusal"].credential_reprobe_wait_applies(
+        verdict=verdict
+    )
 
 
 def test_an_exhausted_conditional_chain_alone_still_admits() -> None:
@@ -718,7 +721,9 @@ def test_a_repository_with_no_fallback_configuration_gets_a_total_no_op() -> Non
     assert verdict.viable is True
     assert verdict.fallback_enabled is False
     # The legacy single-candidate re-probe wait is unchanged by this slice.
-    assert modules["_dispatcher_acp_preflight"].credential_reprobe_wait_applies(verdict=verdict)
+    assert modules["_dispatcher_acp_preflight_refusal"].credential_reprobe_wait_applies(
+        verdict=verdict
+    )
 
 
 def test_this_repository_resolves_the_viable_no_op_verdict(tmp_path: Path) -> None:
@@ -781,7 +786,7 @@ def test_admission_refuses_both_legs_on_one_shared_verdict(
         enforce_cap=False,
     )
 
-    stage = modules["_dispatcher_acp_preflight"].ACP_PREFLIGHT_REFUSAL_STAGE
+    stage = modules["_dispatcher_acp_preflight_refusal"].ACP_PREFLIGHT_REFUSAL_STAGE
     assert admission.admitted == []
     assert admission.rework == []
     # One refusal per leg, from ONE verdict: the marked rework row and the
@@ -838,7 +843,7 @@ def test_admission_admits_normally_under_a_viable_verdict(
     )
 
     assert [item.id for item in admission.admitted] == ["bd-ib-ready"]
-    stage = modules["_dispatcher_acp_preflight"].ACP_PREFLIGHT_REFUSAL_STAGE
+    stage = modules["_dispatcher_acp_preflight_refusal"].ACP_PREFLIGHT_REFUSAL_STAGE
     assert [record for record in journal.records if record.get("stage") == stage] == []
 
 

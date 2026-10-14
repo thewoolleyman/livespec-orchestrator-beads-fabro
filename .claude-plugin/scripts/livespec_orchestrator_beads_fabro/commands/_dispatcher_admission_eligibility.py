@@ -14,7 +14,7 @@ per-row ladder: an unreadable `dispatcher.adopted_assertion_count_ceiling` is
 a fact about the repository that refuses every candidate identically, so
 resolving it per row would re-read one file once per candidate to reach the
 same answer. The dispatch's RENDERED ACP CANDIDATES are resolved there for
-the same reason. The FIVE per-row refusals then run in this order:
+the same reason. The SIX per-row refusals then run in this order:
 
 1. An unexpired LEGACY provider-exhaustion record COVERING a candidate this
    dispatch's resolved ACP nodes render. A vendor ceiling this dispatch would
@@ -22,9 +22,15 @@ the same reason. The FIVE per-row refusals then run in this order:
    part of the factory the item's nodes reach, which is why the record is
    scoped to those candidates rather than to a vendor list: a record covering
    none of them refuses nothing.
-2. An exhausted success-critical ACP candidate chain. Also a fact about the
+2. An admission-required node the SESSION-HEADROOM filter emptied. Also a fact
+   about the factory -- this pass's one reading of the projected credential --
+   and it sits ABOVE the generic chain refusal because the two carry different
+   fields: a reading mints no hold, so it has no hold identity or expiry to
+   name, and the generic refusal would report the wait with those fields simply
+   absent rather than with the assessment that governed it.
+3. An exhausted success-critical ACP candidate chain. Also a fact about the
    factory, and it reads a verdict already computed for the whole pass.
-3. The adopted assertion-count ceiling, which is the first condition that
+4. The adopted assertion-count ceiling, which is the first condition that
    reads THIS row's ledger metadata -- a `bd show` per candidate once a
    ceiling is adopted -- and the only MUTATING one: an above-ceiling row
    carrying no valid `size_justification` is routed to `backlog` for
@@ -34,8 +40,12 @@ the same reason. The FIVE per-row refusals then run in this order:
    performs N lifecycle mutations on rows the next condition was about to
    refuse anyway -- and the mutation is the expensive half, because a refused
    dispatch is retried while a row moved to `backlog` has to be regroomed.
-4. The item's own ledger labels.
-5. The host-only routing refusal, which needs those labels.
+5. The item's own ledger labels.
+6. The host-only routing refusal, which needs those labels.
+
+The session-headroom READING is journaled before any of the six, because the
+clause journals it "for each affected work-item" whether or not it skipped
+anything -- a floor of `0` is observable through that line and nowhere else.
 
 Putting either factory-wide condition after the label read would report a
 provider outage as "this item's labels could not be read" whenever both were
@@ -53,8 +63,10 @@ from returns.unsafe import unsafe_perform_io
 from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import RenderedCandidate
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
-    acp_preflight_refusal,
     resolve_dispatch_candidates,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight_refusal import (
+    acp_preflight_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import host_only_refusal
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import read_dispatch_labels
@@ -70,6 +82,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
     provider_exhaustion_refusal,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_records import (
+    append_session_headroom_records,
+    session_headroom_refusal,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -145,16 +161,37 @@ def _refusal_for(
     adopted_ceiling: int | None,
     rendered: tuple[RenderedCandidate, ...] | None,
 ) -> DispatchOutcome | None:
-    """The first condition this row fails, or `None` when it passes all five."""
+    """The first condition this row fails, or `None` when it passes all six."""
+    now_iso = utc_now_iso()
+    # BEFORE every refusal, because the clause journals the reading "for each
+    # affected work-item" whether or not anything was skipped, and because a
+    # floor of 0 is observable only through this line. It writes nothing for a
+    # verdict carrying no reading, so the no-op path is untouched.
+    append_session_headroom_records(work_item_id=item.id, verdict=preflight, journal=journal)
     exhaustion_refusal = provider_exhaustion_refusal(
         work_item_id=item.id,
         journal=journal,
         journal_path=getattr(journal, "path", None),
-        now_iso=utc_now_iso(),
+        now_iso=now_iso,
         candidates=rendered,
     )
     if exhaustion_refusal is not None:
         return exhaustion_refusal
+    # ABOVE the chain-exhaustion refusal, because a node emptied by a headroom
+    # reading owes DIFFERENT fields than one emptied by observed holds -- a
+    # reading that minted no hold has no hold identity or expiry to name, and
+    # the generic refusal would report it with those fields absent rather than
+    # with the assessment that governed it. It returns `None` for a chain the
+    # reading did not empty, so a genuine hold exhaustion still falls through.
+    headroom = session_headroom_refusal(
+        repo=repo,
+        work_item_id=item.id,
+        verdict=preflight,
+        journal=journal,
+        now_iso=now_iso,
+    )
+    if headroom is not None:
+        return headroom
     chain_refusal = acp_preflight_refusal(work_item_id=item.id, verdict=preflight, journal=journal)
     if chain_refusal is not None:
         return chain_refusal

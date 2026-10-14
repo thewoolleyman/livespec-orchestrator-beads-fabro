@@ -8,7 +8,7 @@ admission-time credential probe creates no observed record. For a fallback-
 enabled chain, a provider-limit/rate-limit probe refusal is an ephemeral
 candidate-local skip for that one admission evaluation."
 
-THREE FILTERS, AND THE ORDER BETWEEN THEM IS LOAD-BEARING -- IT *IS* THE
+FOUR FILTERS, AND THE ORDER BETWEEN THEM IS LOAD-BEARING -- IT *IS* THE
 PRECEDENCE RULE. "Typed candidate evidence takes precedence over legacy
 cause-text attribution when a chain executed", and consulting typed records
 FIRST is what implements that: a candidate carrying typed evidence is skipped
@@ -18,11 +18,16 @@ than as a second guard also keeps it honest in the one direction that matters
 -- a typed record can only exist because the chain executed, so there is no
 state in which the guard and the ordering could disagree.
 
-The credential probe runs LAST because it is the only filter that costs an
-external call and the only one whose answer is thrown away at the end of the
-evaluation. A candidate already skipped by a durable record is never probed,
-which is most of why "at most once per admission evaluation" is cheap to
-honour.
+The SESSION-HEADROOM filter sits third, and it costs nothing to place there:
+its reading arrives as a VALUE on `PreflightInputs`, already taken once for the
+whole evaluation, so there is no call to defer. The credential probe still runs
+LAST because it is the only filter that costs an external call per candidate
+and the only one whose answer is thrown away at the end of the evaluation. A
+candidate already skipped by a durable record or by the headroom reading is
+never probed, which is most of why "at most once per admission evaluation" is
+cheap to honour -- and it is also why "a successful credential-usability probe
+MUST NOT override a headroom skip" needs no guard of its own: the probe is
+never consulted for a candidate headroom already removed.
 
 THE PROBE SKIP IS EPHEMERAL IN EVERY SENSE THE CONTRACT NAMES. It writes no
 journal record, mints no hold, refreshes no expiry, and is keyed on the ONE
@@ -52,8 +57,13 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_coverage import (
     legacy_record_covers_candidate,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_hold_records import AcpAvailabilityHold
+from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
+    SessionHeadroomGate,
+    candidate_is_covered,
+)
 
 __all__: list[str] = [
+    "HEADROOM_SKIP",
     "LEGACY_HOLD_SKIP",
     "PROBE_SKIP",
     "PROVIDER_LIMIT_CONDITIONS",
@@ -64,11 +74,12 @@ __all__: list[str] = [
     "filter_node_candidates",
 ]
 
-# The three reasons a candidate leaves the selectable set, as stable machine
+# The four reasons a candidate leaves the selectable set, as stable machine
 # tokens so a verdict's explanation is greppable rather than prose-matched.
 TYPED_HOLD_SKIP = "typed-availability-hold"
 LEGACY_HOLD_SKIP = "legacy-provider-hold"
 PROBE_SKIP = "credential-probe-refusal"
+HEADROOM_SKIP = "session-headroom-skip"
 
 # The ONLY probe conditions that produce an ephemeral skip. Every other refusal
 # -- absent, revoked, denied, unassessable -- is a fault no fallback repairs, so
@@ -92,6 +103,14 @@ class SkippedCandidate:
     availability causes an observed provider outage carries. Writing it into
     `cause` would make a credential that is merely rate-limited on this host
     indistinguishable, downstream, from an entitlement the provider revoked.
+
+    A SESSION-HEADROOM skip carries NONE of those fields -- only its `reason`
+    token. Its assessment lives on the evaluation's own
+    `PreflightInputs.session_headroom` gate rather than on the row, because ONE
+    reading governs every covered candidate of that evaluation: copying it onto
+    each row would create as many copies as there are skips, and a later edit
+    that moved one of them would make the rows disagree about a single
+    observation. `_dispatcher_session_headroom_records` reads the gate.
     """
 
     availability_key: str | None
@@ -132,6 +151,12 @@ class PreflightInputs:
     legacy_providers: frozenset[str] = frozenset()
     builtin_pairs: frozenset[tuple[str, str]] = frozenset()
     probe: Callable[[str], str] | None = None
+    # The ONE session-headroom reading and floor governing this evaluation, or
+    # `None` when no usage request was made -- a repository rendering no covered
+    # candidate, or a surface forbidden from issuing one (snapshot composition,
+    # wait attention, the idle-factory projection). `None` skips nothing, which
+    # is what keeps those surfaces free of any external call.
+    session_headroom: SessionHeadroomGate | None = None
 
 
 def filter_node_candidates(
@@ -171,7 +196,7 @@ def _skip_for(
     inputs: PreflightInputs,
     assessed: dict[str, str],
 ) -> SkippedCandidate | None:
-    """The first filter this candidate fails, or `None` when it survives all three."""
+    """The first filter this candidate fails, or `None` when it survives all four."""
     for hold in inputs.holds:
         if hold_covers_candidate(hold=hold, candidate=candidate):
             return _skipped(
@@ -184,7 +209,26 @@ def _skip_for(
     legacy = _legacy_provider(candidate=candidate, inputs=inputs)
     if legacy is not None:
         return _skipped(candidate=candidate, reason=LEGACY_HOLD_SKIP, hold_key=legacy)
+    headroom = _headroom_skip(candidate=candidate, gate=inputs.session_headroom)
+    if headroom is not None:
+        return headroom
     return _probe_skip(candidate=candidate, probe=inputs.probe, assessed=assessed)
+
+
+def _headroom_skip(
+    *, candidate: AcpCandidate, gate: SessionHeadroomGate | None
+) -> SkippedCandidate | None:
+    """Skip a COVERED candidate when this evaluation's reading is below the floor.
+
+    Both guards fail open, in the direction that adds no restriction. No gate
+    means no usage request was made, and an uncovered candidate is outside the
+    clause -- neither is evidence against the candidate, so neither skips it.
+    """
+    if gate is None or not gate.skips_covered_candidates:
+        return None
+    if not candidate_is_covered(candidate=candidate):
+        return None
+    return _skipped(candidate=candidate, reason=HEADROOM_SKIP)
 
 
 def _legacy_provider(*, candidate: AcpCandidate, inputs: PreflightInputs) -> str | None:

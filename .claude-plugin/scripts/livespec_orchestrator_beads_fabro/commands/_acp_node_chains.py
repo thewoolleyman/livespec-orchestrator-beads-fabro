@@ -92,6 +92,12 @@ class AcpNodeChain:
     is nothing to put on a command line. A manual entry never carries one --
     `config_options` is refused in committed configuration -- so the field is
     empty for every other spelling.
+
+    `agent_id` rides the chain for exactly the same reason, and it has to: the
+    primary is REBUILT from the resolved adapter at attach time, so a field the
+    structured entry derived is lost unless the chain carries it across. It is
+    `None` for every manual spelling, which is the session-headroom clause's own
+    answer for an arbitrary adapter.
     """
 
     identity: AcpCandidateIdentity | None = None
@@ -100,6 +106,7 @@ class AcpNodeChain:
     fallbacks: tuple[AcpCandidate, ...] = ()
     enabled: bool = False
     config_options: Mapping[str, str] = field(default_factory=dict)
+    agent_id: str | None = None
 
 
 # What a node with no new-grammar metadata resolves to. Shared rather than
@@ -211,6 +218,7 @@ def _structured_chain(
         fallbacks=fallbacks,
         enabled=True,
         config_options=candidate.config_options,
+        agent_id=candidate.agent_id,
     )
 
 

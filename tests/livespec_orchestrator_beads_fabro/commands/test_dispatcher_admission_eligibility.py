@@ -27,7 +27,7 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
-from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight_refusal import (
     ACP_PREFLIGHT_REFUSAL_STAGE,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_eligibility import (

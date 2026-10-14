@@ -45,6 +45,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import 
 )
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import ResolvedAcpChain
 from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import AcpHoldLedger
+from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import SessionHeadroomGate
 from livespec_orchestrator_beads_fabro.commands._acp_success_critical import (
     derive_success_critical,
 )
@@ -73,6 +74,12 @@ class AcpPreflightVerdict:
     unobservable: tuple[Mapping[str, object], ...] = ()
     refusal: str | None = None
     assessed_credentials: Mapping[str, str] = field(default_factory=dict)
+    # The ONE session-headroom reading and floor this evaluation filtered on,
+    # carried verbatim so every consumer reports the same observation: the
+    # journal's reading record, each node's selection record, and the
+    # containment refusal all read it off here rather than re-taking it. `None`
+    # is an evaluation that issued no usage request at all.
+    session_headroom: SessionHeadroomGate | None = None
 
     @property
     def viable(self) -> bool:
@@ -143,6 +150,7 @@ def build_acp_preflight_verdict(
         exhausted=_exhausted(preflights=preflights, critical=critical.nodes),
         unobservable=ledger.unobservable,
         assessed_credentials=dict(assessed),
+        session_headroom=inputs.session_headroom,
     )
 
 

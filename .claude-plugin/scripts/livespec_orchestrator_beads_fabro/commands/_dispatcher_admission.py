@@ -61,6 +61,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission imp
     admit_rework,
     rework_pending_candidates,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_io import (
+    live_session_headroom_gate,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_WIP_CAP,
     admission_held_detail,
@@ -251,6 +254,12 @@ def _eligible_legs(
         repo=repo,
         journal_path=getattr(journal, "path", None),
         now_iso=utc_now_iso(),
+        # The session-headroom reading seam, supplied HERE and nowhere else:
+        # admission is the one surface the clause permits a live usage request
+        # from, and resolving the verdict once per pass is what makes the
+        # reading "one assessment per distinct projected credential per
+        # admission evaluation" rather than one per candidate row.
+        headroom=lambda: live_session_headroom_gate(repo=repo),
     )
     rework_admittable, refused = filter_eligible_candidates(
         repo=repo,

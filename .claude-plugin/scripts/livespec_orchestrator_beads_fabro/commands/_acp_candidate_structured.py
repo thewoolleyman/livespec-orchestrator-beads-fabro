@@ -87,4 +87,10 @@ def parse_structured_candidate(
         signatures=metadata.signatures or rendered.model.signatures,
         pricing=metadata.pricing or rendered.model.pricing,
         config_options=rendered.config_options,
+        # The resolved registry agent id, taken from the catalog entry that
+        # rendered this candidate. It is read off `rendered` rather than off the
+        # entry's own `agent` string so it names what actually resolved: an
+        # unresolvable agent refused above and never reaches here, so there is
+        # no path on which the id describes an agent the catalogs do not carry.
+        agent_id=rendered.agent.agent_id,
     )

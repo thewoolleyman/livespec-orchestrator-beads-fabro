@@ -18,10 +18,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     DEFAULT_ADMISSION_POLICY,
     DEFAULT_MERGE_ON_REVIEW_CAP,
     DEFAULT_REVIEW_FIX_CAP,
+    DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT,
     resolve_auto_approve_ready,
+    resolve_session_headroom_floor_percent,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 from returns.io import IOResult
+from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
 _NO_CONFIG_CWD = Path("tests/nonexistent-policy-cwd")
@@ -198,3 +201,50 @@ def test_a_plan_anchored_item_keeps_its_own_admission_policy() -> None:
         _read(effective_admission_policy(item=committed, cwd=_NO_CONFIG_CWD))
         == DEFAULT_ADMISSION_POLICY
     )
+
+
+def test_the_session_headroom_floor_accepts_its_whole_inclusive_range(tmp_path: Path) -> None:
+    """`0` and `100` are VALUES, and an unconfigured read answers with 20.
+
+    `0` is the case worth asserting: it is the clause's own way of disabling
+    both headroom skips while keeping the reading, so a reader that treated it
+    as "unset" would silently restore the default floor and skip candidates the
+    operator asked it to admit.
+    """
+    assert _read(resolve_session_headroom_floor_percent(cwd=_NO_CONFIG_CWD)) == (
+        DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT
+    )
+    for configured in (0, 100):
+        directory = tmp_path / f"floor-{configured}"
+        directory.mkdir()
+        cwd = _write_config(
+            tmp_path=directory,
+            text=(
+                '{"livespec-orchestrator-beads-fabro": '
+                f'{{"dispatcher": {{"session_headroom_floor_percent": {configured}}}}}}}'
+            ),
+        )
+        assert _read(resolve_session_headroom_floor_percent(cwd=cwd)) == configured
+
+
+def test_a_floor_above_a_hundred_is_unreadable_rather_than_clamped(tmp_path: Path) -> None:
+    """An unmeetable floor is the operator's config being wrong, not a value.
+
+    Clamping would honour a floor nobody wrote; admitting it would refuse every
+    covered candidate forever, since no reading can leave more than 100 percent
+    of an allowance remaining. The refusal names the inclusive range, which is
+    what tells this setting's message apart from every open-ended `>=` one.
+    """
+    cwd = _write_config(
+        tmp_path=tmp_path,
+        text=(
+            '{"livespec-orchestrator-beads-fabro": '
+            '{"dispatcher": {"session_headroom_floor_percent": 101}}}'
+        ),
+    )
+    outcome = resolve_session_headroom_floor_percent(cwd=cwd)
+
+    assert not is_successful(outcome)
+    failure = unsafe_perform_io(outcome.failure())
+    assert failure.setting == "session_headroom_floor_percent"
+    assert "from 0 through 100 inclusive" in failure.detail
