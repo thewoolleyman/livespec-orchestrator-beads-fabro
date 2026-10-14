@@ -113,14 +113,33 @@ def _bottom_live_rank(*, items: list[WorkItem]) -> str | None:
     (it sorts after every real key precisely so a rank-less row does not crash a
     listing, so taking it as the bottom would make every fresh insert land after
     a value no row really holds). `None` — no live row carries a real key — is
-    the open start `key_between` accepts.
+    the open start `key_between` accepts. Malformed keys are also excluded:
+    they cannot serve as an insertion boundary for fractional indexing.
     """
     live = [
         item.rank
         for item in items
-        if str(item.status) != _LIVESPEC_DONE and item.rank != BOTTOM_SENTINEL
+        if str(item.status) != _LIVESPEC_DONE and _valid_rank(rank=item.rank)
     ]
     return max(live) if live else None
+
+
+def _valid_rank(*, rank: str) -> bool:
+    """Recognize the base-62 fractional key grammar without generating a key.
+
+    The runtime wrapper exposes generators, not a validator. The head encodes
+    the integer length; a fractional suffix cannot end in zero, and the
+    smallest integer is reserved. Reject non-base-62 characters as well.
+    """
+    if not rank or not rank.isascii() or not rank.isalnum() or not rank[0].isalpha():
+        return False
+    head = rank[0]
+    integer_length = ord(head) - ord("a") + 2 if head.islower() else ord("Z") - ord(head) + 2
+    return (
+        len(rank) >= integer_length
+        and rank != "A" + "0" * 26
+        and (len(rank) == integer_length or not rank.endswith("0"))
+    )
 
 
 def apply_native_status_remaps(
