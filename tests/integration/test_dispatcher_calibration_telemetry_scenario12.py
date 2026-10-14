@@ -45,7 +45,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
     calibration_journal_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
-from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
+    NON_CONVERGED_MARKER,
+    DispatchPlan,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_signals import (
     TDD_PROJECTED_KEYS,
 )
@@ -439,22 +442,28 @@ def test_non_convergence_terminal_marks_bounced_to_regroom(
     """A non-convergence terminal records `bounced_to_regroom` true on the signal.
 
     The outcome signal's `bounced_to_regroom` is the mechanical
-    "non-convergence routed back to needs-regroom" flag — a
-    `stalled-no-progress` terminal reads as a bounce, distinguishing the
-    too-big signal from an ordinary green or failed run.
+    "non-convergence routed back to needs-regroom" flag — the fix-loop-cap
+    sentinel reads as a bounce, distinguishing the too-big signal from an
+    ordinary green or failed run.
+
+    The terminal here was `stalled-no-progress` until `bd-ib-nfbyot` ruled a
+    watchdog stall out of non-convergence entirely, which is also why the
+    fix-loop sentinel is the right fixture for THIS test: it is the signal the
+    ratified design names as the reactive ceiling's training signal, and the
+    one the flag exists to make readable.
     """
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item()
     append_work_item(path=_config(), item=item)
-    stalled = DispatchOutcome(
+    non_converged = DispatchOutcome(
         work_item_id=item.id,
-        status="stalled-no-progress",
+        status="failed",
         stage="fabro-run",
         pr_number=None,
         merge_sha=None,
-        detail="run made no progress for the full stall window",
+        detail=f"{NON_CONVERGED_MARKER}: janitor fix-loop cap hit without converging",
     )
-    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _stand_in_returning(stalled))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _stand_in_returning(non_converged))
 
     exit_code = main(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
@@ -466,7 +475,7 @@ def test_non_convergence_terminal_marks_bounced_to_regroom(
     record = _calibration_record(repo=repo)
     assert record["converged"] is False
     assert record["bounced_to_regroom"] is True
-    assert record["outcome_class"] == "stalled-no-progress:fabro-run"
+    assert record["outcome_class"] == "failed:fabro-run"
 
 
 # ---------------------------------------------------------------------------
