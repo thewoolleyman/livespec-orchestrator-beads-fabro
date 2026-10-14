@@ -1771,5 +1771,21 @@
     "test": "TODO",
     "reason": "Ratified 2026-10-14 by the factory-run-wall-budget revision (plan factory-run-wall-budget, epic bd-ib-hqt3s5). The whole-run wall budget is not implemented yet; an integration-tier test is owed for its sub-scenarios, and work-item bd-ib-sdxfsn implements the budget and owns that binding.",
     "work_item": "bd-ib-sdxfsn"
+  },
+  {
+    "heading": "## Scenario 176 \u2014 A green run whose refresh conflicts with a moved default branch is repaired and published instead of ending at needs-human",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified 2026-10-14 by the v134 revision (plan publish-draft-green-work-loss, epic bd-ib-acrr56). The refresh-repair route is not implemented yet; an integration-tier test is owed for the eight sub-scenarios, and work-item bd-ib-5guqmt implements the route and owns that binding.",
+    "work_item": "bd-ib-5guqmt"
+  },
+  {
+    "heading": "## Scenario 177 \u2014 A repository hook that outlives its limit is reaped and named, and publish_draft's limit is configurable",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified 2026-10-14 by the v134 revision (plan publish-draft-green-work-loss, epic bd-ib-acrr56). Hook reaping, the hook-over-limit record and the publish_draft timeout key are not implemented yet; an integration-tier test is owed for the five sub-scenarios, and work-item bd-ib-xi63mq implements them and owns that binding.",
+    "work_item": "bd-ib-xi63mq"
   }
 ]
