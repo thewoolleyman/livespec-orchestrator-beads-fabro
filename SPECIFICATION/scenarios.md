@@ -5716,3 +5716,113 @@ Feature: A judged Definition-of-Done defect is found before a dispatch is spent 
     When needs-attention composes hygiene facts
     Then a hygiene fact names the item and its verdict's first remedy
 ```
+
+## Scenario 175 — A run past the whole-run wall budget is exported, cancelled and rested for a human
+
+```gherkin
+Feature: One factory run holds a slot no longer than the whole-run wall budget
+  Scenario: A run past the budget parks at needs-human with its work preserved
+    Given a dispatch whose resolved dispatcher.run_wall_budget_seconds is 21600
+    And its run has been running for more than 21600 seconds since the factory first reported it running
+    When the watchdog samples the run
+    Then the Dispatcher writes and reads back the run's preserve-by-reference pointer before it cancels the run
+    And the run is cancelled and no longer holds a factory slot
+    And the journal carries one run-wall-budget-exceeded record naming the work-item, the dispatch id, the run id, the factory, the stage, the elapsed seconds, the budget, the layer that supplied it and the preserve-by-reference pointer
+    And the journal carries no watchdog-stall-cancel record for the run
+    And the item rests at blocked with blocked_reason needs-human
+    And its ledger comment names the run id, the factory, the stage, the elapsed seconds, the budget, the preserve-by-reference pointer and the remedy resolve-blocked:<id>:ready
+  Scenario: A budget cancel is not non-convergence and leaves the progress count alone
+    Given an item whose across-dispatch non-progress count is 1
+    And the watchdog cancels its run as run-wall-budget-exceeded
+    When the Dispatcher records the outcome and the calibration analysis pass runs
+    Then no non-convergence-bounce record is journaled and the item is not moved to backlog
+    And the calibration pass does not count the dispatch as a non-convergence observation
+    And the item's across-dispatch non-progress count is still 1
+  Scenario: A budget-rested item is not dispatched automatically
+    Given an item resting at blocked with blocked_reason needs-human after a budget cancel
+    When the next admission pass runs
+    Then the item is not admitted or dispatched
+  Scenario: The budget is exceeded only past it
+    Given a run whose slot-holding time equals its budget exactly
+    When the watchdog samples the run
+    Then it does not cancel the run on the budget
+  Scenario: Queue time does not count against the budget
+    Given a run that waited as runnable before the factory first reported it running
+    And the time since it first ran is less than the budget while the time since it was submitted is more
+    When the watchdog samples the run
+    Then it does not cancel the run on the budget
+  Scenario: The start instant comes from the run's record, else from the first poll that saw it running
+    Given a run whose record carries the instant it first ran
+    When the watchdog measures the run's slot-holding time
+    Then it measures from that recorded instant
+    And for a run whose record carries no such instant it measures from the first watchdog poll that observed the run running
+  Scenario: An unmeasured start is not a cancel
+    Given a run whose record carries no running instant and which no watchdog poll has yet observed running
+    When the watchdog samples the run
+    Then it does not cancel the run on the budget
+  Scenario: A progressing run is still bounded
+    Given a run whose event stream shows a command node started and not completed
+    And its slot-holding time exceeds the budget while that node's resolved timeout has not elapsed
+    When the watchdog samples the run
+    Then it exports and cancels the run as run-wall-budget-exceeded
+  Scenario: A published run names its pull request and head
+    Given a run past the budget whose event stream records a completed publish_draft whose pushed head can be read from the run's record
+    When the Dispatcher journals run-wall-budget-exceeded
+    Then the record and the ledger comment name the pull request and the head the run's last completed publish_draft pushed
+  Scenario: An unreadable published head is explicit
+    Given a run past the budget whose event stream records a completed publish_draft whose pushed head cannot be read from the run's record
+    When the Dispatcher journals run-wall-budget-exceeded
+    Then the record explicitly states that the published head could not be read
+  Scenario: A budget cancel between publication and capture can anchor resume
+    Given an item whose latest dispatch was cancelled as run-wall-budget-exceeded between its last completed publish_draft and proof_capture
+    And no proof record carries that dispatch's identifier
+    And its record names the unchanged published head
+    And all other resume preconditions pass
+    When resume runs for the item
+    Then the run-wall-budget-exceeded record anchors the published head and the new run enters at proof_capture
+  Scenario: An export that cannot be read back holds the cancel until it can
+    Given a run past the budget whose preserve-by-reference pointer cannot be read back
+    When the watchdog samples the run
+    Then it does not cancel the run
+    And the journal carries a run-wall-budget-held record naming the run, the elapsed seconds, the budget and the failed measurement
+    And the export is re-attempted on the immediately following poll
+    And while that re-attempt's read-back fails the run is still not cancelled
+    And once a re-attempt's read-back succeeds the run is cancelled as run-wall-budget-exceeded
+  Scenario: The budget takes precedence over a simultaneous stall
+    Given a run whose slot-holding time exceeds its budget
+    And whose heartbeat and event stream have both stayed unchanged for the full stall window with no command node open
+    When the watchdog samples the run
+    Then it exports and cancels the run as run-wall-budget-exceeded
+    And the journal carries no watchdog-stall-cancel record and the item rests at blocked with blocked_reason needs-human
+    And while the run's budget export is held pending its read-back it is not cancelled as stalled-no-progress
+  Scenario: A budget below a node timeout is refused before any run exists
+    Given a dispatch target whose resolved dispatcher.run_wall_budget_seconds is smaller than its resolved implement node timeout
+    When the Dispatcher prepares the dispatch
+    Then it refuses before any run exists, naming dispatcher.run_wall_budget_seconds, dispatcher.node_timeouts.implement and both values
+  Scenario Outline: The budget resolves from the most specific layer
+    Given the built-in default budget of 21600 seconds
+    And a dispatch target whose .livespec.jsonc sets dispatcher.run_wall_budget_seconds to <configured>
+    And a dispatch invoked with --run-wall-budget-seconds <argument>
+    When the Dispatcher prepares the dispatch
+    Then the resolved budget is <resolved> seconds and the dispatch record names the <layer> layer
+
+    Examples:
+      | configured | argument | resolved | layer                 |
+      | unset      | unset    | 21600    | default               |
+      | 25200      | unset    | 25200    | repository            |
+      | 25200      | 28800    | 28800    | per-dispatch argument |
+
+  Scenario Outline: An invalid budget is refused before any run exists
+    Given a dispatch whose <source> supplies the budget value <value>
+    When the Dispatcher prepares the dispatch
+    Then it refuses before any run exists, naming <named>
+
+    Examples:
+      | source                                  | value | named                             |
+      | .livespec.jsonc run_wall_budget_seconds | 0     | dispatcher.run_wall_budget_seconds |
+      | .livespec.jsonc run_wall_budget_seconds | -60   | dispatcher.run_wall_budget_seconds |
+      | .livespec.jsonc run_wall_budget_seconds | 90.5  | dispatcher.run_wall_budget_seconds |
+      | --run-wall-budget-seconds argument      | 0     | --run-wall-budget-seconds          |
+      | --run-wall-budget-seconds argument      | -60   | --run-wall-budget-seconds          |
+      | --run-wall-budget-seconds argument      | 90.5  | --run-wall-budget-seconds          |
+```
