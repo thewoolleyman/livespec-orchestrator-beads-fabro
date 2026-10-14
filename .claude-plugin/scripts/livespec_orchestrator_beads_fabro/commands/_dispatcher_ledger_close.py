@@ -13,6 +13,7 @@ import json
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
+from livespec_runtime.work_items._fractional_indexing import FIError, validate_order_key
 from livespec_runtime.work_items.rank import BOTTOM_SENTINEL, key_between
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
@@ -81,7 +82,9 @@ def plan_native_status_remaps(*, items: list[WorkItem]) -> list[dict[str, str]]:
     invariant without an on-demand `rebalance-ranks`. Successive rank-less
     rows chain off each other's fresh key, so each lands at its own position
     and NO already-ranked row is re-keyed — this is a run of single inserts,
-    never a rebalance.
+    never a rebalance. A live row whose stored rank is MALFORMED cannot be that
+    bottom (see `_bottom_live_rank`), so one unrepairable key no longer stops
+    the adoption — or the pre-flight the adoption runs inside.
     Performs NO store mutation and NO journaling, so all four normalization
     cadences share identical adoption logic.
     """
@@ -106,21 +109,46 @@ def plan_native_status_remaps(*, items: list[WorkItem]) -> list[dict[str, str]]:
 
 
 def _bottom_live_rank(*, items: list[WorkItem]) -> str | None:
-    """The greatest REAL key among the live rows — the bottom of the live order (PURE).
+    """The greatest VALID key among the live rows — the bottom of the live order (PURE).
 
     `done` rows are excluded because they are not part of the live order, and
-    the sentinel is excluded because it is the ABSENCE of a key rather than one
-    (it sorts after every real key precisely so a rank-less row does not crash a
-    listing, so taking it as the bottom would make every fresh insert land after
-    a value no row really holds). `None` — no live row carries a real key — is
-    the open start `key_between` accepts.
+    every key `key_between` cannot extend is excluded because taking one as the
+    bottom makes the insert REFUSE rather than land after it. That covers two
+    kinds of value, and they are excluded for the same reason rather than by
+    two tests. The sentinel is the ABSENCE of a key rather than one (it sorts
+    after every real key precisely so a rank-less row does not crash a listing,
+    so taking it as the bottom would make every fresh insert land after a value
+    no row really holds). And a MALFORMED key is a stored value that is not a
+    fractional-indexing key at all: `zz` sorts above every well-formed `a…`
+    key, so a plain `max` picks it and `key_between` then raises — which is the
+    measured defect (`FIError invalid order key: zz` from one
+    `pending-approval` row killed every dispatch pre-flight on this tenant on
+    2026-10-14, before any Fabro run existed). `None` — no live row carries a
+    valid key — is the open start `key_between` accepts.
     """
     live = [
         item.rank
         for item in items
-        if str(item.status) != _LIVESPEC_DONE and item.rank != BOTTOM_SENTINEL
+        if str(item.status) != _LIVESPEC_DONE and _valid_rank_key(rank=item.rank)
     ]
     return max(live) if live else None
+
+
+def _valid_rank_key(*, rank: str) -> bool:
+    """Whether `rank` is a key `key_between` / `n_keys_between` accept (PURE).
+
+    Asked through the ported library's own validator rather than re-derived
+    here, so this answers the question the insert will actually ask. The
+    `IndexError` arm is the empty string, which `validate_order_key` indexes
+    before it can reject: `rank_from_metadata` substitutes the sentinel for an
+    empty stored value so no row reaches here carrying one, and a predicate
+    that raised on it would reproduce the very crash class this guards.
+    """
+    try:
+        validate_order_key(key=rank)
+    except (FIError, IndexError):
+        return False
+    return True
 
 
 def apply_native_status_remaps(
@@ -188,14 +216,60 @@ def _append_normalization_note(
     journal.append(record={"stage": "status-normalization", "normalized": normalized})
 
 
+def _malformed_live_ranks(*, items: list[WorkItem]) -> list[dict[str, str]]:
+    """One `{item_id, rank}` dict per live row whose stored rank is malformed (PURE).
+
+    `done` rows are out of scope because they are not part of the live order,
+    and the bottom-sentinel is NOT malformed: it is the adapter's sanctioned
+    stand-in for metadata carrying no key, so reporting it would name every
+    rank-less legacy row as needing a repair it does not need. What is left is
+    exactly the set of stored values that are neither a key nor the absence of
+    one, which is the set an operator has to repair.
+    """
+    return [
+        {"item_id": item.id, "rank": item.rank}
+        for item in items
+        if str(item.status) != _LIVESPEC_DONE
+        and item.rank != BOTTOM_SENTINEL
+        and not _valid_rank_key(rank=item.rank)
+    ]
+
+
 def ledger_blocked_after_normalization(
     *,
     items: list[WorkItem],
     config: StoreConfig,
     journal: JournalFile,
 ) -> bool:
+    _report_malformed_live_ranks(items=items, journal=journal)
     items[:] = _normalize_native_statuses(items=items, config=config, journal=journal)
     return _ledger_blocked(items=items, journal=journal)
+
+
+def _report_malformed_live_ranks(*, items: list[WorkItem], journal: JournalFile) -> None:
+    """Journal + surface each malformed live rank; REFUSE nothing.
+
+    Runs BEFORE normalization, because the normalization is what the malformed
+    key used to kill and a report emitted after it would be absent on exactly
+    the runs that most needed it. It reports rather than blocks: a rank the
+    insert can no longer be asked to extend makes no dispatch unsafe, and
+    refusing here would reinstate the tenant-wide stall under a tidier name.
+    Both surfaces carry the id AND the rank — the journal because it is the
+    durable record, stderr because it is what the operator driving the dispatch
+    reads.
+    """
+    malformed = _malformed_live_ranks(items=items)
+    if not malformed:
+        return
+    journal.append(record={"stage": "malformed-rank", "rows": malformed})
+    for row in malformed:
+        _ = write_stderr(
+            text=(
+                f"LEDGER: malformed-rank  {row['item_id']}  stored rank "
+                f"{row['rank']!r} is not a valid fractional-indexing key; "
+                "repair it through rebalance-ranks\n"
+            ),
+        )
 
 
 def _ledger_blocked(*, items: list[WorkItem], journal: JournalFile) -> bool:

@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.196.13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.12...v0.196.13) (2026-10-14)
+
+
+### Bug Fixes
+
+* keep the native-status remap from crashing on a malformed live rank ([ca7852d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ca7852da5d27cebbfe2973a1af0d0e40521a6f52))
+* report the malformed live rank the dispatch pre-flight tolerates ([b37c38f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b37c38fa2aea51e5f7564edd2a97183bf90bca23))
+
+## [0.196.12](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.11...v0.196.12) (2026-10-14)
+
+
+### Bug Fixes
+
+* resolve the project's own repository identity from its origin remote ([a9e4b35](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a9e4b35fd2794f8551934febf432640e1699997c))
+
+## [0.196.11](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.10...v0.196.11) (2026-10-14)
+
+
+### Bug Fixes
+
+* tolerate disappearing workflow payload files ([105ea43](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/105ea433edd3388fd17b8ebb55b796bb53420235))
+
 ## [0.196.10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.9...v0.196.10) (2026-10-14)
 
 
