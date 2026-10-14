@@ -103,6 +103,14 @@ class AcpCandidate:
     contract keeps covered by every live legacy provider record. Every
     candidate in a fallback-enabled chain carries one.
 
+    `agent_id` is the Agent Client Protocol registry agent this candidate
+    resolved THROUGH, carried for the structured form and `None` for every
+    manual-form candidate. It is resolved provenance rather than a label: it is
+    set from the agent catalog entry `_acp_structured_render` resolved, never
+    parsed out of command text, which is what lets a clause keyed on "the
+    resolved agent id" (the admission session-headroom filter) ask the question
+    without inferring an answer from a spelling.
+
     `config_options` is the ACP session config options the rendered CHAIN
     carries for a candidate whose agent declares the `protocol` mechanism. It is
     never configuration -- `_acp_candidate_forms` refuses the key in a committed
@@ -114,6 +122,7 @@ class AcpCandidate:
 
     adapter: AcpAdapter
     identity: AcpCandidateIdentity | None = None
+    agent_id: str | None = None
     signatures: tuple[AcpAvailabilitySignature, ...] = ()
     pricing: AcpCandidatePricing | None = None
     config_options: Mapping[str, str] = field(default_factory=dict)

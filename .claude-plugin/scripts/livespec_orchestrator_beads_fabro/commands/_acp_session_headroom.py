@@ -36,6 +36,9 @@ than inference). An operator who named their own account after the vendor has
 not opted into this clause, and an arbitrary manual adapter is outside it until
 an explicit authentication binding brings it in.
 
+THE SKIP PREDICATE IS THE WHOLE FILTER, and its boundary is the one an
+almost-correct implementation inverts: equality PASSES, which the clause says
+in as many words.
 """
 
 from __future__ import annotations
@@ -44,6 +47,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import CLAUDE_AGENT_ID
 from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import ANTHROPIC_DOMAIN
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
 
@@ -54,6 +58,7 @@ __all__: list[str] = [
     "SessionHeadroomPolicy",
     "SessionHeadroomReading",
     "headroom_covers_candidate",
+    "headroom_skips_candidate",
     "session_headroom_reading",
     "unobservable_session_headroom",
 ]
@@ -150,16 +155,34 @@ def headroom_covers_candidate(
 ) -> bool:
     """Whether this clause assesses this candidate at all.
 
-    `builtin_pairs` is the identity set THIS BUILD rendered, threaded down from
-    `_acp_builtin_candidates.builtin_acp_identities`. Asking it is a provenance
-    question; asking the candidate's own `availability_key` would be the
-    spelling inference the clause forbids, which is why the domain test is
-    applied ONLY to a pair the built-in table already matched.
+    TWO provenance questions, and neither is a spelling. The STRUCTURED arm
+    reads the agent catalog entry the candidate resolved through, which the
+    renderer set and no configured text can forge. The BUILT-IN arm asks
+    `builtin_pairs` -- the identity set THIS BUILD rendered, threaded down from
+    `_acp_builtin_candidates.builtin_acp_identities`, keyed on exact rendered
+    bytes. Asking either is provenance; asking the candidate's own
+    `availability_key` would be the inference the clause forbids, which is why
+    the domain test is applied ONLY to a pair that table already matched.
     """
+    if candidate.agent_id == CLAUDE_AGENT_ID:
+        return True
     identity = candidate.identity
     if identity is None:
         return False
     return identity.pair in builtin_pairs and identity.availability_key == ANTHROPIC_DOMAIN
+
+
+def headroom_skips_candidate(*, reading: SessionHeadroomReading, floor_percent: int) -> bool:
+    """Whether this covered candidate leaves the selectable set for this evaluation.
+
+    EQUALITY PASSES. "With a positive floor, a covered candidate is skipped for
+    this admission evaluation when its remaining headroom is strictly below the
+    floor or its reading is unobservable. Equality passes this filter."
+    """
+    remaining = reading.remaining_percent
+    if remaining is None:
+        return True
+    return remaining < floor_percent
 
 
 def _valid_utilization(*, value: object) -> float | None:

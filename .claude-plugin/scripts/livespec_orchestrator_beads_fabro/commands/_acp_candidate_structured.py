@@ -84,6 +84,7 @@ def parse_structured_candidate(
     return AcpCandidate(
         adapter=rendered.adapter,
         identity=derived_identity(resolved=rendered, override=override),
+        agent_id=rendered.agent.agent_id,
         signatures=metadata.signatures or rendered.model.signatures,
         pricing=metadata.pricing or rendered.model.pricing,
         config_options=rendered.config_options,
