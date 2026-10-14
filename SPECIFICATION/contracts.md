@@ -1487,11 +1487,12 @@ own run-level `stall_timeout` of §"ACP node timeouts".
 among every source it reads: the agent heartbeat keyed on the dispatch, and
 the run's own Fabro event stream. A source that carries an older instant
 MUST NOT mask a source that carries a newer one. While the run's event
-stream shows a command node started and not completed, the watchdog MUST
-NOT cancel the run before that node's resolved timeout (§"ACP node
-timeouts") has elapsed since the node started. A command node emits only
-its start and completion events, so the stall window alone cannot bound it.
-A run whose every source stays unchanged for the full stall window, with no
+stream shows a command node started and not completed, the watchdog MUST NOT
+cancel the run as `stalled-no-progress` before that node's resolved timeout
+(§"ACP node timeouts") has elapsed since the node started; a whole-run wall
+budget cancel follows its own rule below. A command node emits only its
+start and completion events, so the stall window alone cannot bound it. A
+run whose every source stays unchanged for the full stall window, with no
 command node open, MUST still be cancelled as `stalled-no-progress`.
 
 **Observing the run.** Until the Dispatcher has bound the dispatched run's
@@ -1508,17 +1509,70 @@ unobservable poll, and the watchdog MUST treat it no differently from a
 listing that could not be read. Scenario 173 in `scenarios.md` exercises
 this paragraph.
 
-**The cancel record.** On a cancel the Dispatcher MUST journal one
-`watchdog-stall-cancel` record naming the work-item, the dispatch id, the
-run id, the factory, and the stage the run was executing. That stage is the
-node whose start event has no completion event or, between nodes, the
-target of the edge its last succeeded node's outcome selected. When the
-run's event stream records a completed `publish_draft`, the record MUST
-also name the pull request and the head that the LAST completed
+**The cancel record.** On a `stalled-no-progress` cancel the Dispatcher MUST
+journal one `watchdog-stall-cancel` record naming the work-item, the
+dispatch id, the run id, the factory, and the stage the run was executing.
+That stage is the node whose start event has no completion event or, between
+nodes, the target of the edge its last succeeded node's outcome selected.
+When the run's event stream records a completed `publish_draft`, the record
+MUST also name the pull request and the head that the LAST completed
 `publish_draft` of the run pushed, read from the run's own record. It MUST
 NOT be read from origin at cancel time, because origin's branch may have
 moved since. When that head cannot be read, the record MUST say so rather
 than omit it.
+
+**The whole-run wall budget.** The watchdog MUST also bound how long one run
+holds a factory slot, by the resolved `dispatcher.run_wall_budget_seconds`
+(§"ACP node timeouts"). The budget clock MUST start at the instant the
+factory first reports the run `running`. That instant is read from the run's
+own record when the record carries it; otherwise it is the instant of the
+first watchdog poll that observed the run `running`. Time a run spends
+queued before that instant, including `runnable`, MUST NOT count, because a
+queued run holds no slot. The budget is exceeded only when the elapsed
+slot-holding time is strictly greater than the budget. The budget is
+independent of progress: a run making progress, or with a command node open,
+MUST still be cancelled once the budget is exceeded, and the command-node
+rule of the Progress paragraph above does not defer a budget cancel. When
+the run's `running` instant cannot be read and no poll has yet observed it
+`running`, the budget is unmeasured, and the watchdog MUST NOT cancel on it.
+When a run's measured budget is exceeded and the run also meets the
+stalled-no-progress rule, the budget takes precedence: the run takes the
+budget disposition below and never the stall disposition, including while a
+budget export is held pending its read-back.
+
+When the budget is exceeded, the Dispatcher MUST first export the run's
+record under the export-then-terminate precondition of §"A factory run never
+awaits a human", writing and reading back the preserve-by-reference pointer.
+Only then MUST it cancel the run; cancelling the run is what releases its
+slot. A budget cancel MUST journal one `run-wall-budget-exceeded` record and
+MUST NOT journal a `watchdog-stall-cancel` record. The
+`run-wall-budget-exceeded` record MUST carry every field the cancel record
+above requires, under the same rules for the stage and for the pull request
+and published head (including stating that the head could not be read when
+it cannot), plus the elapsed slot-holding seconds, the budget, the layer
+that supplied the budget, and the preserve-by-reference pointer. It anchors
+resume under §"Resume from a published pull request (`resume --item`)"
+exactly as a `watchdog-stall-cancel` record does.
+
+After a budget cancel the Dispatcher MUST rest the item at `blocked` with
+`blocked_reason` `needs-human` (§"A factory run never awaits a human"). Its
+ledger comment MUST name the run id, the factory, the stage, the elapsed
+seconds, the budget, the preserve-by-reference pointer and, when the record
+names them, the pull request and the published head, and MUST name the
+remedy `resolve-blocked:<id>:ready`. A budget cancel is not non-convergence,
+under the same rule as a `stalled-no-progress` outcome above: no `backlog`
+bounce, no `non-convergence-bounce` record, and no non-convergence
+observation in the calibration pass. It is not released to `ready`
+automatically, so no later admission pass dispatches the item while it
+rests, and it neither increments nor resets the item's count under
+§"Across-dispatch required-result progress".
+
+When the export cannot be read back, the Dispatcher MUST NOT cancel the run.
+It MUST journal one `run-wall-budget-held` record naming the run, the
+elapsed seconds, the budget and the failed measurement, and MUST re-attempt
+the export on the next poll, cancelling only once a read-back succeeds.
+Scenario 175 in `scenarios.md` exercises this paragraph and the budget key
+of §"ACP node timeouts".
 
 **Not non-convergence.** A `stalled-no-progress` outcome is NOT factory
 non-convergence (§"Dispatcher grooming behavior"). The Dispatcher MUST NOT
@@ -3887,8 +3941,9 @@ no head and cannot anchor a resume. The *published head* is the full
 commit sha that record names (§"Proof of Done record" → "The record").
 When no proof record on the pull request carries the identifier of the
 item's latest journaled dispatch, and that dispatch's journal carries a
-`watchdog-stall-cancel` record (§"Dispatcher progress watchdog") naming a
-published head, the cancel record anchors the resume instead. A proof
+`watchdog-stall-cancel` record or a `run-wall-budget-exceeded` record
+(§"Dispatcher progress watchdog") naming a published head, that cancel
+record anchors the resume instead, under every restriction below. A proof
 record that carries the dispatch's identifier always takes precedence over
 a cancel record. The cancel record anchors only when its stage is
 `proof_capture`, or when the run was between its last completed
@@ -7288,6 +7343,21 @@ non-integer value MUST be rejected before any run exists, naming the key. Both
 keys are committed-configuration-only, alongside `dispatcher.acp_nodes`,
 `dispatcher.agent_catalog` and `dispatcher.model_catalog`, and do not trigger
 the console Settings lockstep.
+
+**Whole-run wall budget key.** `dispatcher.run_wall_budget_seconds` is a
+positive integer of seconds for the whole-run wall budget of the Dispatcher
+progress watchdog. It resolves through three layers, most specific last: the
+built-in default of **21600** seconds, the dispatch target's
+`.livespec.jsonc`, then a per-dispatch `--run-wall-budget-seconds <seconds>`
+argument. The workflow graph declares no budget, because the Dispatcher, not
+the engine, enforces it. The dispatch record MUST journal the resolved
+budget and name the layer that supplied it. A non-positive or non-integer
+value MUST be rejected before any run exists, naming the key or argument. A
+resolved budget smaller than any node timeout resolved for the same dispatch
+MUST be rejected before any run exists, naming both keys and both values,
+because such a budget would cancel that node's legitimate turn. Like the two
+keys above, it is committed-configuration-only and does not trigger the
+console Settings lockstep.
 
 **Resolution layers.** The same three layers and precedence as §"ACP node
 adapter configuration" apply: the workflow's own declared defaults, the
