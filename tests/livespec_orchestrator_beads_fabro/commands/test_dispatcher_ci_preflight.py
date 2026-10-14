@@ -7,6 +7,7 @@ import importlib
 import io
 import itertools
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -75,9 +76,16 @@ class _PreflightModule(Protocol):
 
 @dataclass(kw_only=True)
 class _Runner:
-    """Argv-keyed command stand-in; an unscripted argv answers a plain failure."""
+    """Argv-keyed command stand-in; an unscripted argv answers a plain failure.
+
+    `streams` is the per-argv SEQUENCE seam the bounded wait needs. A poll loop
+    that re-reads the latest run has to be able to see a DIFFERENT answer on its
+    second read -- that is the whole behaviour under test -- and a single-answer
+    mapping cannot express it.
+    """
 
     results: dict[tuple[str, ...], CommandResult]
+    streams: dict[tuple[str, ...], Iterator[CommandResult]] = field(default_factory=dict)
     calls: list[tuple[str, ...]] = field(default_factory=list)
 
     def run(
@@ -92,6 +100,9 @@ class _Runner:
         _ = (cwd, timeout_seconds, env, stdin)
         key = tuple(argv)
         self.calls.append(key)
+        stream = self.streams.get(key)
+        if stream is not None:
+            return next(stream)
         return self.results.get(key, CommandResult(exit_code=1, stdout="", stderr="unscripted"))
 
 
@@ -109,6 +120,15 @@ def _wait_module() -> Any:
     """
     assert _WAIT_MODULE_PATH.is_file()
     return importlib.import_module(_WAIT_MODULE_NAME)
+
+
+def _stream(*, results: list[CommandResult]) -> Iterator[CommandResult]:
+    """One scripted answer per call, repeating the last one for every later call."""
+    return itertools.chain(results, itertools.repeat(results[-1]))
+
+
+def _jobs_argv(*, run_id: str) -> tuple[str, ...]:
+    return ("gh", "run", "view", run_id, "--json", "jobs")
 
 
 def _result(*, exit_code: int = 0, stdout: str = "", stderr: str = "") -> CommandResult:
@@ -461,6 +481,104 @@ def test_a_repository_with_no_runs_yet_refuses_with_the_waiver_escape(tmp_path: 
     assert "no runs yet" in outcome.refusal.detail
     assert _WAIVER_TOKEN in outcome.refusal.detail
     assert outcome.record["run_database_id"] == "<none>"
+
+
+def test_a_pending_run_that_concludes_green_lets_the_dispatch_proceed(tmp_path: Path) -> None:
+    """The wait's whole point: a run that had not concluded yet is waited OUT.
+
+    `pauses == [60.0]` is the cadence assertion. The ratified interval is no
+    more than 60 seconds, and a loop that re-read without pausing would spend
+    thirty forge round trips a minute on a run it has been told is running.
+    """
+    pauses: list[float] = []
+    runner = _Runner(
+        results=_results(),
+        streams={
+            _run_list_argv(): _stream(
+                results=[
+                    _result(stdout=_run_list_payload(status="in_progress")),
+                    _result(stdout=_run_list_payload()),
+                ]
+            )
+        },
+    )
+
+    outcome = _polled(
+        repo=tmp_path,
+        runner=runner,
+        readings=[0.0, 30.0],
+        pauses=pauses,
+        progress=io.StringIO(),
+    )
+
+    assert outcome.refusal is None
+    assert outcome.record["status"] == "passed"
+    assert outcome.record["reason"] == "master-ci-green"
+    assert outcome.record["run_database_id"] == "303"
+    assert pauses == [60.0]
+
+
+def test_a_pending_run_that_concludes_red_refuses_as_red(tmp_path: Path) -> None:
+    """Waiting changes WHEN the verdict is read, never what a red verdict means."""
+    runner = _Runner(
+        results=_results(jobs=_result(stdout=_jobs_payload(job_conclusion="failure"))),
+        streams={
+            _run_list_argv(): _stream(
+                results=[
+                    _result(stdout=_run_list_payload(status="queued")),
+                    _result(stdout=_run_list_payload()),
+                ]
+            )
+        },
+    )
+
+    outcome = _polled(
+        repo=tmp_path,
+        runner=runner,
+        readings=[0.0, 15.0],
+        pauses=[],
+        progress=io.StringIO(),
+    )
+
+    assert outcome.refusal is not None
+    assert outcome.record["reason"] == "master-ci-red"
+    assert outcome.record["status"] == "failed"
+    assert outcome.record["run_database_id"] == "303"
+    assert "303" in outcome.refusal.detail
+
+
+def test_a_newer_run_started_during_the_wait_replaces_the_one_waited_on(tmp_path: Path) -> None:
+    """Each poll re-reads the whole lookup, so a default branch that moved is followed.
+
+    The negative assertion is the load-bearing one: a loop that re-checked the
+    run id it first read would keep asking about 303 and could wait out the
+    whole bound on a run nobody cares about any more.
+    """
+    runner = _Runner(
+        results={**_results(), _jobs_argv(run_id="404"): _result(stdout=_jobs_payload())},
+        streams={
+            _run_list_argv(): _stream(
+                results=[
+                    _result(stdout=_run_list_payload(status="in_progress", database_id=303)),
+                    _result(stdout=_run_list_payload(database_id=404)),
+                ]
+            )
+        },
+    )
+
+    outcome = _polled(
+        repo=tmp_path,
+        runner=runner,
+        readings=[0.0, 20.0],
+        pauses=[],
+        progress=io.StringIO(),
+    )
+
+    assert outcome.refusal is None
+    assert outcome.record["reason"] == "master-ci-green"
+    assert outcome.record["run_database_id"] == "404"
+    assert _jobs_argv(run_id="404") in runner.calls
+    assert _jobs_argv(run_id="303") not in runner.calls
 
 
 @pytest.mark.parametrize("status", _PENDING_STATUSES)
