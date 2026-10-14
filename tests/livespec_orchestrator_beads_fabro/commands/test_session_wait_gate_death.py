@@ -1,6 +1,7 @@
 """Exited gates are terminal even while their unreaped PIDs remain addressable."""
 
 import os
+from itertools import count
 from pathlib import Path
 
 import pytest
@@ -52,6 +53,10 @@ def test_an_unreaped_exit_without_a_verdict_is_never_still_running(
             gate=GateStatusLauncher(repository=tmp_path), pane=HerdrPaneLauncher()
         ),
         wait_store_root=tmp_path / "tmp/session-waits",
+        # This checks process state, not host scheduling latency. Advance logical
+        # time on each read so a broken observer still reaches a bounded deadline.
+        monotonic=count(start=0.0, step=0.01).__next__,
+        sleeper=lambda **_: None,
     )
     assert result.observations[target.identity].state == "DIED_WITHOUT_VERDICT"
     assert result.command_outcome == "target-ended"
