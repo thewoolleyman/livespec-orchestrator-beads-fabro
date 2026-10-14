@@ -62,7 +62,8 @@ class DispatchOutcome:
     `status` is one of `green` / `failed` / `blocked` (blocked = the run's
     `needs_human` terminal fired and the item rests at blocked / needs-human
     in the ledger; surfaced to a human, never treated as a failure, never
-    auto-resolved).
+    auto-resolved). A `run-unobservable` result reports exhausted visibility
+    retries while the bound run may still be alive; its active claim is retained.
 
     `step` / `missing_integration_point` / `remedy` are the STRUCTURED half
     of a degraded post-merge outcome: the stable step identifier from the

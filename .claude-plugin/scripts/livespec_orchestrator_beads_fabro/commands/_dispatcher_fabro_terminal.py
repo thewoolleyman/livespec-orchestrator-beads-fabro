@@ -13,7 +13,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_failure import (
     fabro_failure_outcome_detail,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_reattach import inspect_run
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_reattach import (
+    inspect_run,
+    unobservable_run_outcome,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_detail import (
     needs_human_terminal_detail,
     needs_human_terminal_reason,
@@ -53,7 +56,7 @@ def fabro_run_terminal_outcome(
     exit_code: int,
     stderr: str,
 ) -> DispatchOutcome | None:
-    """Return blocked/failed Fabro-run outcome, or None for green routing."""
+    """Return a non-green run observation, or None for ordinary PR reconciliation."""
     blocked = _blocked_outcome(
         outcome_type=outcome_type,
         plan=plan,
@@ -68,6 +71,11 @@ def fabro_run_terminal_outcome(
         and inspect.status_kind == "succeeded"
     ):
         return None
+    unobservable = unobservable_run_outcome(
+        outcome_type=outcome_type, plan=plan, run_id=run_id, inspect=inspect
+    )
+    if unobservable is not None:
+        return unobservable
     failure = None if inspect is None else inspect.failure
     detail = fabro_failure_outcome_detail(failure=failure, fallback=tail(text=stderr))
     terminated = _needs_human_terminal_outcome(
