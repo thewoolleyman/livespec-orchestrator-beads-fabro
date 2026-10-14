@@ -116,4 +116,24 @@ def add_dispatch_common(*, parser: argparse.ArgumentParser) -> None:
         dest="skip_ledger_check",
         action="store_true",
     )
+    # WHAT CHANGED since the failure this dispatch is retrying past. An ARGUMENT
+    # and never an environment variable, for the reason `--acp-node` and
+    # `--workflow-name` above are: the reason is written to the work-item's
+    # ledger and to this attempt's dispatch-journal record, so the thing that
+    # authorized a re-dispatch has to be visible in the recorded invocation
+    # rather than in an ambient value no reader of either can see. Default None
+    # means "not supplied", which is DISTINCT from an empty string: an empty
+    # reason is refused for naming no change, while an absent one simply leaves
+    # the guard to decide.
+    _ = parser.add_argument(
+        "--because",
+        dest="because",
+        default=None,
+        metavar="REASON",
+        help=(
+            "what changed since this work-item's most recently recorded dispatch "
+            "failure or admission refusal; required to re-dispatch past a recorded "
+            "refusal signature, and journaled on the item and on this attempt"
+        ),
+    )
     _ = parser.add_argument("--json", dest="as_json", action="store_true")

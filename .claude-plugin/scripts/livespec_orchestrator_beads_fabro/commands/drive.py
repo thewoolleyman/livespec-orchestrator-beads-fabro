@@ -109,6 +109,15 @@ _DRIVER_SESSION_SCOPE_SUMMARY = (
     "to the session driving the item, journaled with the transition it opens."
 )
 
+# `--because` is scoped the same way: it is the named change the DISPATCHER
+# grades against the item's recorded refusal signature, so an action that spawns
+# no dispatch has nowhere to deliver it, and accepting it there would let an
+# operator believe a re-dispatch had been authorized when none was attempted.
+_BECAUSE_SCOPE_SUMMARY = (
+    "--because is accepted only by 'impl:<id>'; it is what changed since the item's "
+    "recorded dispatch failure, forwarded to the Dispatcher and journaled on the item."
+)
+
 
 def run_action(  # noqa: PLR0911, PLR0913 — kw-only router; one return per claimed action family, and `answer` is one more independent transport input, not a coupled one.
     *,
@@ -121,6 +130,7 @@ def run_action(  # noqa: PLR0911, PLR0913 — kw-only router; one return per cla
     identity: InvokerIdentity | None = None,
     answer: str | None = None,
     driver_session: str | None = None,
+    because: str | None = None,
 ) -> dict[str, Any]:
     """Run one selected action-id.
 
@@ -140,13 +150,14 @@ def run_action(  # noqa: PLR0911, PLR0913 — kw-only router; one return per cla
     supervisor passes the identity it resolved, flag included.
 
     `answer` is the operator's answer to the question a terminated run
-    published, and `driver_session` the reference to the session that will drive
-    a host-only item by hand. Each is refused here for any action that cannot
+    published, `driver_session` the reference to the session that will drive
+    a host-only item by hand, and `because` what changed since this item's
+    recorded dispatch failure. Each is refused here for any action that cannot
     deliver it, so a mis-aimed input is reported rather than dropped.
     """
     resolved_identity = default_invoker_identity() if identity is None else identity
     misaimed = _misaimed_input_refusal(
-        action_id=action_id, answer=answer, driver_session=driver_session
+        action_id=action_id, answer=answer, driver_session=driver_session, because=because
     )
     if misaimed is not None:
         return misaimed
@@ -184,11 +195,16 @@ def run_action(  # noqa: PLR0911, PLR0913 — kw-only router; one return per cla
         acp_nodes=acp_nodes,
         workflow_name=workflow_name,
         identity=resolved_identity,
+        because=because,
     )
 
 
 def _misaimed_input_refusal(
-    *, action_id: str, answer: str | None, driver_session: str | None
+    *,
+    action_id: str,
+    answer: str | None,
+    driver_session: str | None,
+    because: str | None,
 ) -> dict[str, Any] | None:
     """Refuse a transport input the SELECTED action cannot deliver.
 
@@ -201,6 +217,8 @@ def _misaimed_input_refusal(
         return _scope_refusal(action_id=action_id, summary=_ANSWER_SCOPE_SUMMARY)
     if driver_session is not None and not action_id.startswith(DRIVER_DISPATCH_PREFIX):
         return _scope_refusal(action_id=action_id, summary=_DRIVER_SESSION_SCOPE_SUMMARY)
+    if because is not None and not action_id.startswith(_IMPL_PREFIX):
+        return _scope_refusal(action_id=action_id, summary=_BECAUSE_SCOPE_SUMMARY)
     return None
 
 
@@ -236,6 +254,7 @@ def main(*, argv: list[str] | None = None, runner: CommandRunner | None = None) 
         identity=invoker_from_args(args=args),
         answer=args.answer,
         driver_session=args.driver_session,
+        because=args.because,
     )
     emit_payload(payload=result, as_json=args.as_json)
     return exit_code_for_status(status=str(result["status"]))

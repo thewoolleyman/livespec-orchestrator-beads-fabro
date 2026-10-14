@@ -57,6 +57,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall im
     pre_dispatch_wall_exit,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection import reflect
+from livespec_orchestrator_beads_fabro.commands._dispatcher_retry_outcome import (
+    record_retry_outcomes,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import (
     dispatch_preamble,
@@ -159,6 +162,10 @@ def run_loop_command(*, args: argparse.Namespace) -> int:
         include_loop_summary=True,
         journal=journal,
     )
+    # The same post-verdict record the single dispatch writes, over the whole
+    # wave. The drain is where a failure most often goes unread, so the record
+    # the next dispatch's guard reads must be written on this path too.
+    record_retry_outcomes(repo=repo, outcomes=outcomes, journal=journal)
     cost_gate_after_verdict(
         args=args,
         repo=repo,

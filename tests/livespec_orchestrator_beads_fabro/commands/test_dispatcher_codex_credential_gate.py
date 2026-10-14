@@ -412,6 +412,7 @@ def _stub_wall_siblings(*, monkeypatch: pytest.MonkeyPatch) -> None:
     one of them answering first would shadow the gate this module is about.
     """
     wall = importlib.import_module(_WALL_MODULE)
+    monkeypatch.setattr(wall, "retry_discipline_refusal", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "pre_dispatch_criteria_refusal", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "proof_assets_refusal_for_items", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "proof_credentials_refusal_for_items", lambda **_kwargs: None)

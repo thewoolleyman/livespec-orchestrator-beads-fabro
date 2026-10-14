@@ -44,6 +44,11 @@ _EXPECTED_ORDER = (
     "emit_outcomes",
     "dispatch_exit_code",
     "alarm_on_terminal_failure",
+    # The retry-discipline record this ending earns (bd-ib-5vtqaq). Listed here
+    # with every other post-verdict stage because this tuple IS the order the
+    # tail is pinned to: a stage absent from it is a stage this harness does not
+    # stand in, so it runs for real against the recording journal.
+    "record_retry_outcomes",
     "cost_gate_after_verdict",
     "self_update_after_verdict",
     "append_run_turn_checks",

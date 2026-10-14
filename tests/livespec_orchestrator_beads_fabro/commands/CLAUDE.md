@@ -147,6 +147,20 @@ Tests for the thin-transport command modules under
   `getattr` assertion, because each module's Red predates the constants it
   binds and a Red's test bytes are fixed across its Red-to-Green pair.
 
+- `test_dispatcher_retry_records.py`, `test_dispatcher_retry_refusal.py`,
+  `test_dispatcher_retry_outcome.py` and `test_dispatcher_retry_guard.py` — the
+  four modules of the named-change retry discipline. Two of them are worth
+  knowing about before editing. `test_dispatcher_retry_outcome.py` asserts the
+  signature-on-failure claim BESIDE the no-signature-on-capacity-deferral claim
+  in one module, because either alone is satisfied by a writer that is wrong in
+  one direction — one that signed every outcome passes the first and one that
+  signed none passes the second — and the pair is what pins the filter. It also
+  reads every assertion back off the LEDGER rather than off a return value,
+  through `list_comments` indexing `text`, since that is the only surface the
+  next dispatch can see. And `test_dispatcher_retry_guard.py` asserts that an
+  UNARMED item costs no refusal as its positive control: without it, a guard
+  that refused every dispatch would satisfy every other case in the module.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr
