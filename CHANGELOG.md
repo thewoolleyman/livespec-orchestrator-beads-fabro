@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.196.19](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.18...v0.196.19) (2026-10-14)
+
+
+### Bug Fixes
+
+* bound the disposition preamble so it fits its adapter's window ([1fdb024](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1fdb02475717f3d76f66c5544a051e33c1514fd9))
+* keep the credential-use guard out of a sandbox-root run branch ([f89eae5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f89eae5282e15740688ffaeedd326c9629df5734))
+
 ## [0.196.18](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.17...v0.196.18) (2026-10-14)
 
 
