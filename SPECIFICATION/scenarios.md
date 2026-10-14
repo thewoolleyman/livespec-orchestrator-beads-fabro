@@ -3852,6 +3852,59 @@ Feature: Factory-configurable ACP fallback priority
     And the agent.acp.started event carries the confirmed model and effort
     But when the agent does not advertise the requested model the candidate terminates typed before any prompt, mints no hold, and is not released for re-dispatch as a provider-limit failure
     And a dispatch whose selected candidates use no protocol mechanism does not require the config_options capability
+
+  Scenario: A first adapter launch failure is released and re-dispatched without a hold
+    Given a dispatched item whose unrecovered implement node attempt records an ordinary ACP process exit before the protocol completed, with an explicitly unknown exit code
+    And complete attempt-scoped evidence from the run's recorded factory establishes that the prompt boundary was not crossed under the adapter launch evidence rule
+    And the attempt carries no provider evidence and matches none of the excluded failure guards
+    And the item's preceding dispatch did not end in an adapter launch failure
+    And the failed run has verified preserved work at an immutable commit SHA
+    When the run terminates at the workflow's needs_human terminal and the ordinary admission valve next admits the item
+    Then the journal carries one adapter-launch-release record naming the item, run id, factory, node attempt, executed candidate, exit code or its explicit absence, preceding dispatch, and recovery source
+    And one ledger comment on the item names the run id, the factory, the failing node and the exit code or its explicit absence
+    And no availability hold is created and no provider-usage-limit flag is set
+    And the item returns to ready with no blocked_reason before admission
+    And the release consumes no budget of the three rework caps and neither increments nor resets the across-dispatch item count
+    And the next run is a plain dispatch seeded from that preserved commit
+
+  Scenario: A repeated adapter launch failure rests for a human
+    Given an item whose preceding dispatch ended in an adapter launch failure
+    And the current dispatch's unrecovered implement node attempt also fails as an adapter launch failure
+    When the run terminates
+    Then the item rests at blocked with blocked_reason needs-human
+    And its needs-human cause record names both runs and states that a repeated adapter launch failure is not released automatically
+    And the terminal neither increments nor resets the across-dispatch item count
+
+  Scenario: An adapter launch release is replayable without affecting a newer claim
+    Given an adapter launch release interrupted after its ledger comment was written
+    When reconciliation completes that release and later replays it after a newer dispatch has claimed the item
+    Then exactly one adapter-launch-release record and one ledger comment exist for that run
+    And the newer dispatch claim and the item's status are unchanged
+
+  Scenario: An adapter exit after the prompt boundary is not a launch failure
+    Given an unrecovered ACP attempt that exited before the protocol completed after its agent.acp.started event was recorded
+    When the run terminates
+    Then no adapter-launch-release record is journaled
+    And the failure keeps its existing route
+
+  Scenario: A pre-prompt process exit with eligible provider evidence keeps its availability route
+    Given an unrecovered ACP attempt that exited with code 1 before the prompt boundary
+    And its recorded process terminal diagnostic matches the configured candidate-scoped unsupported-model signature and no non-eligible guard
+    When the run terminates
+    Then Provider-limit release and re-dispatch records the candidate hold
+    And no adapter-launch-release record is journaled
+
+  Scenario: An excluded process exit is not released as a launch failure
+    Given an unrecovered pre-prompt ACP process exit with recorded signal termination and no exit code
+    When the run terminates
+    Then no adapter-launch-release record is journaled
+    And the failure keeps its existing route
+
+  Scenario: Missing launch evidence does not authorize release
+    Given a terminal ACP process-exit failure whose attempt event stream cannot be read completely from its recorded factory
+    When the Dispatcher evaluates adapter launch release
+    Then it surfaces unavailable evidence and schedules another observation
+    And it neither journals adapter-launch-release nor creates a needs-human decision from the missing evidence
 ```
 
 ## Scenario 128 — An unrunnable ready item is visible but never advertised for dispatch
