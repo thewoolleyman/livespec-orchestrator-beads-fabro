@@ -573,7 +573,9 @@
         "implement": 14400,
         "janitor": 4340,
         "fix": 3600,
-        "review_fix": 7200
+        "review_fix": 7200,
+        "publish_draft": 3600,
+        "pr_refresh": 3600
       },
       // ACTIVE inventory, not endpoint history: an unnamed `reconcile-runs`
       // pass surveys every entry. Intentionally stopped or retired factories
