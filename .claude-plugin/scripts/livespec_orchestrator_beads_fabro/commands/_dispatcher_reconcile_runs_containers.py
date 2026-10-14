@@ -122,6 +122,7 @@ def _daemon_sweep(
             cwd=inputs.repo,
             docker_host=daemon.docker_host,
         ),
+        factory_names=daemon.factory_names,
         status_by_run=run_statuses,
         dry_run=dry_run,
     )
