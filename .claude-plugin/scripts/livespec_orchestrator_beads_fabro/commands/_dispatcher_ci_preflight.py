@@ -69,6 +69,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_refusal
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_wait import (
     MasterCiWait,
     PendingReading,
+    pending_progress_line,
     poll_pause,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_default_branch import (
@@ -78,6 +79,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     CommandRunner,
 )
+from livespec_orchestrator_beads_fabro.io import write_stderr
 
 __all__: list[str] = [
     "master_ci_preflight",
@@ -155,6 +157,9 @@ def _await_verdict(
         reading = _read_latest(repo=repo, runner=runner, pipeline=pipeline, branch=branch)
         if isinstance(reading, MasterCiOutcome):
             return reading
+        write_stderr(
+            text=pending_progress_line(reading=reading, branch=branch), stream=wait.progress
+        )
         waited = wait.now() - start
         pause = poll_pause(waited=waited)
         if pause is None:
