@@ -7,8 +7,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dead_implementer import (
+    DEAD_IMPLEMENTER_SENTINEL,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import journal_stage
-from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
+    NEEDS_HUMAN_MARKER,
+    NON_CONVERGED_MARKER,
+    DispatchPlan,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroInspectResult,
     fabro_port_for_plan,
@@ -40,6 +47,10 @@ TERMINAL_STATUS_KINDS = frozenset(
     {"succeeded", "failed", "cancelled", "canceled", "blocked", "human_input_required"}
 )
 _LIVE_STATUS_KINDS = frozenset({"running", "runnable", "pending", "queued", "starting", "paused"})
+# Each sentinel a TERMINAL node prints on the client's own channel before the
+# client exits non-green. `DEAD_IMPLEMENTER_SENTINEL` covers its check-failed
+# variant too, which carries it as a prefix.
+_CLIENT_TERMINAL_SENTINELS = (NEEDS_HUMAN_MARKER, NON_CONVERGED_MARKER, DEAD_IMPLEMENTER_SENTINEL)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -161,6 +172,7 @@ def unobservable_run_outcome(
     plan: DispatchPlan,
     run_id: str | None,
     inspect: FabroInspectResult | None,
+    client_text: str,
 ) -> DispatchOutcome | None:
     """Retain ownership when a failed client leaves its bound run unobservable.
 
@@ -168,6 +180,20 @@ def unobservable_run_outcome(
     unrecognized observation cannot establish failure, release a claim or
     authorize another launch of this item. The run id and factory remain
     visible for continued observation after this supervision budget expires.
+
+    A CLIENT THAT PRINTED A TERMINAL SENTINEL IS NOT UNOBSERVABLE, however its
+    inspections went — which is why `client_text` is a required argument rather
+    than something a caller may leave off. Such a sentinel is positive proof the
+    run reached a terminal node, and on the pinned engine the client's own
+    output is the ONLY channel carrying it: an unanswered inspect leaves
+    `inspect.failure` empty, so reporting the run unobservable here would
+    discard the one verdict in hand. The cost is not a relabel. Every
+    disposition downstream — the needs-human ledger valve, the durable
+    `livespec-needs-human-cause` comment that outlives the run, the preserved
+    reference record, and the non-convergence cap that reads
+    `NON_CONVERGED_MARKER` out of the detail — gates on a `blocked` or `failed`
+    status, so a shadowed sentinel rests the item at `active` with none of them
+    written, after a supervision budget spent on a run that had already ended.
     """
     # No inspection result means re-attachment was never attempted, as in
     # legacy callers reporting explicit terminal sentinels from the client.
@@ -175,6 +201,7 @@ def unobservable_run_outcome(
         run_id is None
         or inspect is None
         or (inspect.command.exit_code == 0 and inspect.status_kind in TERMINAL_STATUS_KINDS)
+        or any(sentinel in client_text for sentinel in _CLIENT_TERMINAL_SENTINELS)
     ):
         return None
     return outcome_type(
