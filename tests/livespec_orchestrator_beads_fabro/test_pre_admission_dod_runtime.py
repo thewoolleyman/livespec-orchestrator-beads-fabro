@@ -16,12 +16,27 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
-from livespec_orchestrator_beads_fabro.commands import _drive_valves as valves
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_admission as admission,
+)
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_admission_eligibility as eligibility,
+)
+from livespec_orchestrator_beads_fabro.commands import (
+    _drive_valves as valves,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_criteria_wall_variant import (
     CriteriaWallVariant,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
+    JournalFile,
+    ShellCommandRunner,
+)
+from livespec_orchestrator_beads_fabro.intake_dor import (
+    DefinitionOfReadyChecklist,
+    apply_intake_dor,
+)
 from livespec_orchestrator_beads_fabro.store import read_work_items
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 from returns.pipeline import is_successful
@@ -353,3 +368,92 @@ def test_workflow_scoping_preserves_the_implementation_gate_model(
     monkeypatch.setattr(ShellCommandRunner, "run", run)
     assert isinstance(_judged(path=config, item=item), CommandResult)
     assert models == ["workflow-model"]
+
+
+@pytest.mark.parametrize(
+    ("route", "source"),
+    [
+        ("intake", "backlog"),
+        ("intake", "pending-approval"),
+        ("auto", "pending-approval"),
+        ("approve", "pending-approval"),
+        ("move", "backlog"),
+        ("move", "pending-approval"),
+    ],
+)
+def test_needs_human_judgement_holds_before_ready(
+    *,
+    filed: tuple[StoreConfig, WorkItem],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    route: str,
+    source: str,
+) -> None:
+    config, item = filed
+    client = make_beads_client(config=config)
+    client.update_issue(
+        issue_id=item.id,
+        status=source,
+        add_labels=["admission:manual"] if route == "approve" else [],
+        remove_labels=["admission:auto"] if route == "approve" else [],
+    )
+    item = next(iter(read_work_items(path=config)))
+
+    def run(self: ShellCommandRunner, **_: object) -> CommandResult:
+        _ = self
+        return CommandResult(
+            exit_code=0,
+            stderr="",
+            stdout=json.dumps(
+                {
+                    "result": json.dumps(
+                        {
+                            "outcome": "failed",
+                            "failure_reason": "Assertion 1 names the wrong governing heading.",
+                            "remedies": ["Reference Scenario 174 instead of Routing."],
+                        }
+                    )
+                }
+            ),
+        )
+
+    monkeypatch.setattr(ShellCommandRunner, "run", run)
+    _route(route=route, config=config, item=item, repo=tmp_path, monkeypatch=monkeypatch)
+    assert client.show_issue(issue_id=item.id)["status"] not in {"ready", "active"}
+
+
+def _route(
+    *,
+    route: str,
+    config: StoreConfig,
+    item: WorkItem,
+    repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if route == "intake":
+        _ = apply_intake_dor(
+            path=config,
+            item_id=item.id,
+            checklist=DefinitionOfReadyChecklist(
+                single_coherent_done=True,
+                autonomously_verifiable=True,
+                autonomy_tiered=True,
+                dependency_linked=True,
+                repo_targeted=True,
+                above_floor=True,
+            ),
+        )
+    elif route == "auto":
+        monkeypatch.setattr(admission, "store_config", lambda **_: config)
+        monkeypatch.setattr(eligibility, "read_dispatch_labels", lambda **_: ())
+        _ = admission.admit_and_select(
+            repo=repo,
+            items=[item],
+            candidates=[item],
+            journal=JournalFile(path=repo / "journal.jsonl"),
+            enforce_cap=False,
+        )
+    else:
+        monkeypatch.setattr(valves, "resolve_store_config", lambda **_: config)
+        aid = f"{route}:{item.id}" + (":ready" if route == "move" else "")
+        _ = valves.run_human_valve_action(repo=repo, action_id=aid)

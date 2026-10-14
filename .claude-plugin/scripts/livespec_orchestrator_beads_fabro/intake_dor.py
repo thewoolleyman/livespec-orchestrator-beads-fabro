@@ -113,10 +113,10 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 from livespec_orchestrator_beads_fabro._intake_factory_size_gate import (
     apply_intake_factory_size_gate,
 )
-from livespec_orchestrator_beads_fabro._pre_admission_dod import judge_before_admission
 from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
     record_size_justification,
 )
+from livespec_orchestrator_beads_fabro._store_pre_admission_dod import pre_admission_hold
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_advisories import (
     advisory_definition_of_done_findings,
 )
@@ -307,8 +307,11 @@ def apply_intake_dor(
         # one deliberately does not: only the gate can judge a test-existence or
         # scenario-reference form, and withholding `ready` on a judgement this
         # surface cannot make would hand the operator a refusal nothing clears.
-        if policy == _AUTO_ADMISSION and not findings.withholds_ready:
-            _ = judge_before_admission(path=path, item=item)
+        if (
+            policy == _AUTO_ADMISSION
+            and not findings.withholds_ready
+            and pre_admission_hold(path=path, item=item) is None
+        ):
             status = _READY_STATUS
 
     # The triage marker is stamped for EVERY verdict, not just the routed-on

@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from livespec_orchestrator_beads_fabro import store
-from livespec_orchestrator_beads_fabro._pre_admission_dod import judge_before_admission
 from livespec_orchestrator_beads_fabro._store_cap_mutations import update_work_item_cap
+from livespec_orchestrator_beads_fabro._store_pre_admission_dod import pre_admission_hold
 from livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes import (
     write_blocked_state_and_reconcile,
     write_work_item_status_and_reconcile,
@@ -259,7 +259,9 @@ def move_item(
             ),
         )
     if target_status == "ready" and item.status in {"backlog", "pending-approval"}:
-        _ = judge_before_admission(path=config, item=item)
+        hold = pre_admission_hold(path=config, item=item)
+        if hold is not None:
+            return valve_refusal(aid=aid, wid=item.id, err="pre-admission-dod", msg=hold)
     write_work_item_status_and_reconcile(
         path=config,
         item_id=item.id,

@@ -32,7 +32,6 @@ from pathlib import Path
 
 from returns.unsafe import unsafe_perform_io
 
-from livespec_orchestrator_beads_fabro._pre_admission_dod import judge_before_admission
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     resolve_acp_preflight,
@@ -57,6 +56,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_admission import (
+    judge_auto_approvals,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import (
     ReworkPass,
     admit_rework,
@@ -164,6 +166,11 @@ def admit_and_select(
         active_count=accounting.active_count,
         wip_cap=wip_cap,
     )
+    config = store_config(repo=repo)
+    admittable, judgement_held = judge_auto_approvals(
+        repo=repo, config=config, candidates=admittable, journal=journal
+    )
+    refused.extend(judgement_held)
     occupied = accounting.active_count + len(reworked.admitted)
     free_slots = _ready_free_slots(
         admittable=admittable,
@@ -179,10 +186,8 @@ def admit_and_select(
     )
     admitted: list[WorkItem] = []
     deferred: list[DispatchOutcome] = []
-    config = store_config(repo=repo)
     approved_ids = {item.id for item in plan.approved}
     for item in plan.approved:
-        _ = judge_before_admission(path=config, item=item)
         update_work_item_status(path=config, item_id=item.id, status="ready")
         journal.append(record={"stage": "ledger-approve", "work_item_id": item.id})
         journal.append(

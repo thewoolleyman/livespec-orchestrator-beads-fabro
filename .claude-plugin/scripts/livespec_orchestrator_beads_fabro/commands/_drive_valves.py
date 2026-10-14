@@ -19,10 +19,10 @@ from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro import store
-from livespec_orchestrator_beads_fabro._pre_admission_dod import judge_before_admission
 from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
     route_factory_size_decomposition,
 )
+from livespec_orchestrator_beads_fabro._store_pre_admission_dod import pre_admission_hold
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     acceptance_eligibility,
@@ -282,13 +282,17 @@ def _approve_item(
             err="ungradeable-acceptance-criteria",
             msg=f"approve refused: {refusal}.",
         )
-    _ = judge_before_admission(path=config, item=item)
-    store.update_work_item_status(path=config, item_id=item.id, status="ready")
-    return valve_success(
-        aid=action_id,
-        wid=item.id,
-        stage="human-valve-approve",
-        status="ready",
-        assignee=None,
-        msg=f"Approved {item.id}: pending-approval -> ready.",
-    )
+    hold = pre_admission_hold(path=config, item=item)
+    if hold is not None:
+        result = valve_refusal(aid=action_id, wid=item.id, err="pre-admission-dod", msg=hold)
+    else:
+        store.update_work_item_status(path=config, item_id=item.id, status="ready")
+        result = valve_success(
+            aid=action_id,
+            wid=item.id,
+            stage="human-valve-approve",
+            status="ready",
+            assignee=None,
+            msg=f"Approved {item.id}: pending-approval -> ready.",
+        )
+    return result

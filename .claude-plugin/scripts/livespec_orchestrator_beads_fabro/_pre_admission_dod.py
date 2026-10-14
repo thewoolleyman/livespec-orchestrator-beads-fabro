@@ -178,7 +178,8 @@ def _prompt(*, path: StoreConfig, item: WorkItem, repo: Path) -> str:
         f"Sandbox capability mirror: {json.dumps(capabilities)}\n"
         f"Referenced specification clauses:\n{_clauses(item=item, repo=repo)}\n"
         "For machine-readable transport, retain every finding and remedy in the gate's "
-        'failed outcome. On a clean pass end with {"outcome":"passed"}. '
+        'failed outcome, and add a "remedies" array of remedy strings in finding order. '
+        'On a clean pass end with {"outcome":"passed"}. '
         "If you cannot complete the judgement end with "
         '{"outcome":"unavailable","reason":"<why>"}.\n'
     )
