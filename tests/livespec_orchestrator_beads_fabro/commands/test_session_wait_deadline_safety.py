@@ -214,7 +214,9 @@ def test_a_hung_pane_probe_lets_a_finished_gate_return_first(*, tmp_path: Path) 
     socket_path = tmp_path / "hung.sock"
 
     def complete_gate() -> None:
-        (gate_dir / "exit_code").write_text(f"{_FINISHED_GATE_EXIT_CODE}\n", encoding="utf-8")
+        partial = gate_dir / "exit_code.partial"
+        partial.write_text(f"{_FINISHED_GATE_EXIT_CODE}\n", encoding="utf-8")
+        partial.replace(gate_dir / "exit_code")
 
     with _hung_peer(socket_path=socket_path, on_receive=complete_gate) as received:
         pane = PaneTarget(
