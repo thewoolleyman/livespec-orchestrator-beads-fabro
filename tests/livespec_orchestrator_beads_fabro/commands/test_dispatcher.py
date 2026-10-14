@@ -4259,6 +4259,15 @@ def test_dispatch_green_closes_item_and_journals(
         # the UNOBSERVABLE one -- which is the point of that arm existing, since an
         # unreachable forge must not be reported as an absent prerelease.
         "proof-asset-store",
+        # The Codex credential gate closes the refusing sequence, and for this
+        # fixture it is NOT APPLIED (bd-ib-meejjz): every resolved ACP candidate
+        # names `claude-acp`, so no node routes to Codex, no host credential is
+        # graded and no bounded provider renewal is spent. The row is written even
+        # though nothing was refused, because without it the decision would leave
+        # no trace a reader could tell from a gate that ran and passed — and it
+        # names the routing that decided it. It sits here, between the last
+        # refusal and the claim, which is where the gate itself sits.
+        "codex-credential-gate-not-applied",
         "ledger-admit",
         # ADAPTERS BEFORE THE PAYLOAD, and the order is load-bearing rather than
         # incidental: since plan `fabro-currency` P4 the payload generator renders

@@ -410,8 +410,21 @@ def _stub_wall_siblings(*, monkeypatch: pytest.MonkeyPatch) -> None:
     The siblings are stood in rather than exercised because each reaches the
     forge, the ledger or committed configuration for its own reasons, and any
     one of them answering first would shadow the gate this module is about.
+
+    THE ROUTING RESOLUTION IS STOOD IN TO `None`, which is this fixture
+    DECLARING that a `tmp_path` repository's ACP candidates cannot be read --
+    and `None` is what `resolve_dispatch_candidates` returns for exactly that.
+    The predicate treats it as the absence of a measurement rather than as an
+    answer about candidates, so the gate stays armed and Scenario 19's refusal
+    is what these cases still assert. Left live it would resolve the BUNDLED
+    workflow's own Anthropic built-in defaults against the empty fixture
+    repository, report a dispatch routing no node to Codex, and skip the gate --
+    a correct answer to a question these cases are not asking. The fail-closed
+    arm is therefore exercised end to end here, which is where it matters:
+    an unobservable dispatch keeps the protection it had.
     """
     wall = importlib.import_module(_WALL_MODULE)
+    monkeypatch.setattr(wall, "resolve_dispatch_candidates", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "pre_dispatch_criteria_refusal", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "proof_assets_refusal_for_items", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "proof_credentials_refusal_for_items", lambda **_kwargs: None)

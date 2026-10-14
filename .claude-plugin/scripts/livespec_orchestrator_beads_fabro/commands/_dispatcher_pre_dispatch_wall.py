@@ -32,11 +32,17 @@ from returns.unsafe import unsafe_perform_io
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     pre_dispatch_criteria_refusal,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
+    resolve_dispatch_candidates,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
     implementation_pr_override_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_credential_gate import (
     codex_credential_refusal_for_items,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_routing import (
+    codex_routing_for,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_PRECONDITION_ERROR,
@@ -196,6 +202,15 @@ def pre_dispatch_wall_exit(
         codex_refusal = codex_credential_refusal_for_items(
             work_item_ids=work_item_ids,
             requirement=requirement,
+            # WHETHER this dispatch routes any node to Codex, resolved HERE
+            # rather than inside the gate: the resolution is a read off disk,
+            # and the gate is otherwise reachable from a hermetic caller holding
+            # no repository. `resolve_dispatch_candidates` is the ONE place that
+            # read is taken, and it answers `None` when the resolution could not
+            # be read at all — which the predicate treats as the absence of a
+            # measurement and therefore as routing Codex, so an unobservable
+            # dispatch keeps exactly the protection it had.
+            routing=codex_routing_for(candidates=resolve_dispatch_candidates(repo=repo)),
             journal=journal,
         )
         if codex_refusal is not None:

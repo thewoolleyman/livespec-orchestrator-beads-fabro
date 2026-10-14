@@ -44,11 +44,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
     CodexProjectionRefusal,
     project_codex_auth,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_routing import (
+    UNMEASURED_CODEX_ROUTING,
+    CodexRouting,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_deadline import (
     CredentialLifetimeRequirement,
 )
 
 __all__: list[str] = [
+    "CODEX_CREDENTIAL_GATE_NOT_APPLIED_STAGE",
     "CODEX_CREDENTIAL_GATE_STAGE",
     "CODEX_CREDENTIAL_REQUIREMENT_STAGE",
     "codex_credential_refusal_for_items",
@@ -67,6 +72,16 @@ CODEX_CREDENTIAL_GATE_STAGE = "codex-credential-gate-refused"
 # the second is a configuration change rather than a renewal.
 CODEX_CREDENTIAL_REQUIREMENT_STAGE = "codex-credential-requirement-unresolved"
 
+# The journal stage for a selection whose dispatch routes NO node to Codex, so
+# this gate was not applied at all. Recorded even though nothing was refused,
+# which is the opposite of the admitted-pass rule below, and for a reason that
+# rule does not cover: an admitted pass is followed by the overlay's own
+# projection record, whereas here there IS no projection, so without this line
+# the only trace of the decision would be the silence of a gate nobody can tell
+# from a gate that ran and passed. The row carries the ROUTING rather than a bare
+# "skipped", because the audit question is which routing decided it.
+CODEX_CREDENTIAL_GATE_NOT_APPLIED_STAGE = "codex-credential-gate-not-applied"
+
 
 def wall_clock_epoch() -> int:
     """The Dispatcher's own clock, as whole seconds since the epoch."""
@@ -77,6 +92,7 @@ def codex_credential_refusal_for_items(
     *,
     work_item_ids: Sequence[str],
     requirement: CredentialLifetimeRequirement | str,
+    routing: CodexRouting = UNMEASURED_CODEX_ROUTING,
     clock: Callable[[], int] | None = None,
     journal: object = None,
 ) -> str | None:
@@ -93,6 +109,13 @@ def codex_credential_refusal_for_items(
     nobody could derive is graded against nothing. It is resolved by the caller
     because the caller holds the dispatch's workflow selection and the items whose
     effective policy the figure depends on.
+
+    `routing` is whether this dispatch routes ANY node to Codex, as
+    `_dispatcher_codex_routing` decided it from the resolved ACP candidates. It
+    DEFAULTS to the unmeasured value, which routes Codex: a default that exempted
+    an unmeasured dispatch would make forgetting to wire the routing
+    indistinguishable from establishing that no node routes to Codex, and the
+    whole of Scenario 19 would then turn off by omission.
 
     `clock` is resolved at CALL time rather than bound as a default, because the
     bounded renewal underneath can take up to two minutes and the re-grade after
@@ -125,12 +148,38 @@ def codex_credential_refusal_for_items(
     # a repository declaration that is broken whether or not work is queued.
     if not work_item_ids:
         return None
+    # NOTHING TO PROJECT MEANS NOTHING TO GRADE, and this arm sits ABOVE the
+    # requirement arm below deliberately. The requirement exists to SIZE a
+    # credential grade -- it is the execution allowance the lifetime is measured
+    # against -- so for a dispatch that will project no Codex credential there is
+    # nothing for it to size, and refusing because no allowance could be derived
+    # would refuse a selection over a figure nothing was going to use. Placed
+    # below it, a repository with an unresolvable allowance would still be
+    # refused on behalf of a credential no run touches, which is the very defect
+    # this routing closes.
+    #
+    # The grade is skipped rather than taken and discarded, and the difference is
+    # the PROVIDER REQUEST: `project_codex_auth` spends the one bounded in-place
+    # renewal, which is the half an operator is billed for and the half that
+    # cannot be undone. A gate that read and renewed and then ignored the verdict
+    # would be indistinguishable from this one at every surface except the
+    # provider's.
+    if not routing.routes_codex:
+        _journal(
+            journal=journal,
+            stage=CODEX_CREDENTIAL_GATE_NOT_APPLIED_STAGE,
+            work_item_ids=work_item_ids,
+            detail_key="routing",
+            detail=routing.detail,
+        )
+        return None
     if isinstance(requirement, str):
         _journal(
             journal=journal,
             stage=CODEX_CREDENTIAL_REQUIREMENT_STAGE,
             work_item_ids=work_item_ids,
-            refusal=requirement,
+            detail_key="refusal",
+            detail=requirement,
         )
         return requirement
     projected = project_codex_auth(
@@ -143,7 +192,8 @@ def codex_credential_refusal_for_items(
         journal=journal,
         stage=CODEX_CREDENTIAL_GATE_STAGE,
         work_item_ids=work_item_ids,
-        refusal=f"{projected.message} Requirement: {requirement.detail}.",
+        detail_key="refusal",
+        detail=f"{projected.message} Requirement: {requirement.detail}.",
     )
     return f"{projected.message} Requirement: {requirement.detail}."
 
@@ -153,13 +203,21 @@ def _journal(
     journal: object,
     stage: str,
     work_item_ids: Sequence[str],
-    refusal: str,
+    detail_key: str,
+    detail: str,
 ) -> None:
-    """Record one refusal, reached through `append` so a caller may hold none.
+    """Record one decision, reached through `append` so a caller may hold none.
 
-    Only refusals are recorded. An admitted pass is followed by the overlay's own
-    projection record, and a line asserting that a credential was admitted would
-    duplicate it.
+    Only a REFUSAL and a NOT-APPLIED pass are recorded, never an admitted one: an
+    admitted pass is followed by the overlay's own projection record, and a line
+    asserting that a credential was admitted would duplicate it. A not-applied
+    pass has no such successor, which is why it earns a line of its own.
+
+    `detail_key` is the field the decision's own text lands under, and it is a
+    parameter rather than a fixed `refusal` because a not-applied row carries a
+    ROUTING rather than a refusal. Spelling both under one key would make a
+    journal reader unable to tell a selection that was declined from one that was
+    never graded -- the two have opposite remedies.
     """
     append = getattr(journal, "append", None)
     if append is None:
@@ -168,6 +226,6 @@ def _journal(
         record={
             "stage": stage,
             "unclaimed_work_item_ids": list(work_item_ids),
-            "refusal": refusal,
+            detail_key: detail,
         }
     )
