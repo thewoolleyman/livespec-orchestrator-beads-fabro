@@ -40,6 +40,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_credential_helper import (
     git_credential_helper_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program import (
+    hook_limit_prepare_steps_block,
+    publish_draft_limit_from_graph,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_sandbox_image import (
     resolve_sandbox_image,
 )
@@ -305,7 +309,15 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     codex_env_lines = codex_auth_env_lines(codex_auth_snapshot=codex_auth_snapshot)
     codex_otel_steps = codex_otel_prepare_steps_block(codex_otel_config=codex_otel_config)
     codex_otel_env = codex_otel_env_lines(codex_otel_config=codex_otel_config)
-    plugin_cache_steps = plugin_cache_gate_prepare_steps_block()
+    # The hook-limit observer rides the SAME root as the plugin-cache gate's
+    # publication helpers, and its limit is read back off `resolved_graph` --
+    # the very file this run will execute, whose `publish_draft` attribute
+    # carries the literal duration the engine will enforce. Reading the artifact
+    # is what keeps the bound the node puts on its own push and the bound the
+    # engine imposes from being two numbers nothing proves agree.
+    plugin_cache_steps = plugin_cache_gate_prepare_steps_block() + hook_limit_prepare_steps_block(
+        limit_seconds=publish_draft_limit_from_graph(graph=resolved_graph)
+    )
     factory_provenance_steps = factory_run_id_prepare_steps_block(dispatch_id=dispatch_id)
     author_env_lines = git_author_env_lines(author=git_author)
     # Rendered LAST among the prepare steps, so the startup check observes the

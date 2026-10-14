@@ -7,6 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit import (
+    HookOverLimit,
+    hook_over_limit_from_text,
+    journal_hook_over_limit,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_output_retention import (
     retained_output_record,
 )
@@ -27,6 +32,7 @@ __all__: list[str] = [
     "StageJournalOptions",
     "failed_outcome",
     "journal_publish_draft_refresh",
+    "journal_run_output_markers",
     "journal_stage",
     "run_stage",
     "stalled_outcome",
@@ -74,6 +80,32 @@ def journal_publish_draft_refresh(
             "base_after": match.group("base_after"),
         }
     )
+
+
+def journal_run_output_markers(
+    *,
+    journal: JournalWriter,
+    work_item_id: str,
+    text: str,
+) -> HookOverLimit | None:
+    """Project every publication marker one run's output carries into rows.
+
+    ONE pass over ONE text, which is the point: both markers are printed by the
+    same `publish_draft` script into the same stream, and two call sites reading
+    the run output separately would be two readings nothing proves agree about
+    the run they describe.
+
+    Returns the `hook-over-limit` event so the caller can attach it to the
+    terminal outcome. The row is written HERE, unconditionally of how the run
+    ended, because the clause requires it "whether or not the run later
+    recovers"; the CAUSE is rendered elsewhere, only where the ending is
+    attributed to the event. Returning the event rather than re-parsing it at
+    the cause writer is what keeps the row and the cause describing one reading.
+    """
+    journal_publish_draft_refresh(journal=journal, work_item_id=work_item_id, text=text)
+    event = hook_over_limit_from_text(text=text)
+    journal_hook_over_limit(journal=journal, work_item_id=work_item_id, event=event)
+    return event
 
 
 def failed_outcome(
