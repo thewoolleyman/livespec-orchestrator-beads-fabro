@@ -741,6 +741,35 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   correctly and publishes a graph `fabro validate` rejects outright — the
   `all_conditional_edges` defect that took the whole factory down twice.
 
+- `test_needs_human_preservation_ref_identity.py` — binds work-item
+  bd-ib-zddbkq against Scenario 103's requirement that a needs-human outcome
+  preserve the tree on a RUN-SCOPED ref, which holds only while the name the
+  terminal chooses cannot be shared by two runs. The node's OWN script is
+  extracted from the committed graph, unescaped and driven by `sh` in a
+  throwaway repository with a real bare origin, provisioned with the dispatch
+  correlation id in the same LOCAL git config key the Dispatcher's prepare step
+  writes. Both engines were wrong in OPPOSITE directions and both read healthy:
+  the Petri-era engine sets `context.internal.run_id` to the literal `petri`, so
+  the push SUCCEEDED and every needs-human outcome landed on one shared ref and
+  overwrote the last run's work, while the pinned engine supplies no stdin to a
+  script node and preserved nothing. The ordering under test is therefore
+  guaranteed-unique-first — the dispatch id, then the engine's value — rather
+  than a grammar guessing which stdin values are real ids, and the module says
+  why: a guess admits the first placeholder of a shape it had not anticipated,
+  silently, which is the same defect again. Each case carries a control that
+  rules out the cheap vacuous pass: the fallback naming the ref is only
+  meaningful beside a clone carrying NO marker, which must push nothing, since a
+  node answering with a constant of its own would pass otherwise; and the
+  placeholder's refusal is only meaningful beside a genuine engine run id that
+  still names the ref on that same marker-less arm, since a node that had
+  stopped reading stdin would satisfy the refusal exactly as the correct one
+  does. The preserved BLOB is read back off the ref rather than the ref alone,
+  because a ref created at the last engine checkpoint is present, plausible, and
+  missing exactly the work the node exists to save. The key name is asserted
+  against `FACTORY_RUN_ID_MARKER` itself: the terminal spells it inside a shell
+  string no import graph can see, and a rename on either side drops the node
+  onto the stdin fallback — the placeholder on one engine, nothing on the other.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

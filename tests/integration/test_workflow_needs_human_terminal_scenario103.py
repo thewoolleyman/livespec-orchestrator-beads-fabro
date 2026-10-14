@@ -9,18 +9,25 @@ the same dead-end shape as `non_converged`. The Dispatcher maps that sentinel
 onto its existing `blocked` outcome, so the item rests at
 `blocked / needs-human` in the ledger while the run itself is already gone.
 
-The preservation ref is derived ONLY from the run id the ENGINE supplies on the
-node's stdin — `stdin_source="context.internal.run_id"`, the Petri-era source
-(plan `fabro-currency` P4, bd-ib-hti4zf) — with no placeholder fallback
-(work-item bd-ib-7hta4l). The source moved; the no-placeholder rule did not.
-`$FABRO_RUN_ID` was the former source and the pinned fabro exports it to hooks
-and NOT to script nodes, so it was reliably absent here; a default on either
-source collapses every run onto one shared ref that later runs clobber. The
-last three cases here run the node's OWN script — extracted from the graph and
-unescaped, never a paraphrase — inside a throwaway git repository with a real
-bare `origin`, once with a run id on stdin and once without, so "no ref was
-pushed" is MEASURED against a fixture that demonstrably can carry a push rather
-than inferred from a repository where pushing was never possible.
+The preservation ref carries NO PLACEHOLDER FALLBACK (work-item bd-ib-7hta4l),
+and the cases here hold that rule plus the ENGINE-supplied run id it applies to
+— `stdin_source="context.internal.run_id"`, the Petri-era source (plan
+`fabro-currency` P4, bd-ib-hti4zf). `$FABRO_RUN_ID` was the former source and
+the pinned fabro exports it to hooks and NOT to script nodes, so it was reliably
+absent here; a default on either source collapses every run onto one shared ref
+that later runs clobber. Since bd-ib-zddbkq that engine value is the node's
+FALLBACK rather than its only source: it is `petri` on every Petri-era run and
+absent on the pinned engine, so the node prefers the dispatch's own correlation
+id, which is a per-run value and not a placeholder. That second source, its
+ordering and the placeholder refusal are bound in
+`test_needs_human_preservation_ref_identity.py`. The last three cases here run
+the node's OWN script — extracted from the graph and unescaped, never a
+paraphrase — inside a throwaway git repository with a real bare `origin`, once
+with a run id on stdin and once without, so "no ref was pushed" is MEASURED
+against a fixture that demonstrably can carry a push rather than inferred from a
+repository where pushing was never possible. Those repositories carry no
+dispatch marker either, so the preferred source has nothing to answer with and
+the stdin arm under test is the one that runs.
 """
 
 from __future__ import annotations
@@ -90,7 +97,7 @@ def test_needs_human_is_a_terminal_script_node_that_preserves_then_exits_non_gre
     assert not any(re.match(r"^needs_human\s*->", line) for line in _code_lines(text))
 
 
-def test_the_preservation_ref_derives_only_from_the_run_id() -> None:
+def test_the_preservation_ref_carries_no_placeholder_default() -> None:
     """No placeholder fallback, on the stdin source the engine supplies."""
     script = _preservation_script()
 
