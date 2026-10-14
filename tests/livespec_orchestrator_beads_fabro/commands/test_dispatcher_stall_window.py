@@ -49,6 +49,9 @@ _PS_RUNNING = (
     f'[{{"run_id": "{_RUN_ID}", "goal": "Work-item: {_WORK_ITEM_ID}",'
     ' "status": {"kind": "running"}}]'
 )
+# The listing above answers only the FIRST poll; once the run id is bound the
+# watch loop reads it with `fabro inspect` instead (bd-ib-6pdigz).
+_INSPECT_RUNNING = f'[{{"run_id": "{_RUN_ID}", "status": {{"kind": "running"}}}}]'
 # One timestamp, repeated on every poll: the event stream has flatlined, which
 # is the only condition `decide_stall` confirms a stall on.
 _FROZEN_EVENTS = '[{"timestamp": "2026-10-12T11:28:00Z"}]'
@@ -99,7 +102,7 @@ class _RecordingJournal:
 
 @dataclass(kw_only=True)
 class _ScriptedFabroRunner:
-    """A CommandRunner scripting fabro's run/ps/events/rm subprocesses.
+    """A CommandRunner scripting fabro's run/ps/inspect/events/rm subprocesses.
 
     `fabro run` BLOCKS on `run_done` so the background thread stays alive
     while the foreground watch loop runs; `fabro rm` sets it, modelling fabro
@@ -119,6 +122,8 @@ class _ScriptedFabroRunner:
             return CommandResult(exit_code=0, stdout=f"    Run: {_RUN_ID}\n", stderr="")
         if verb == "ps":
             return CommandResult(exit_code=0, stdout=_PS_RUNNING, stderr="")
+        if verb == "inspect":
+            return CommandResult(exit_code=0, stdout=_INSPECT_RUNNING, stderr="")
         if verb == "events":
             index = min(self._poll, len(self.events_jsons) - 1)
             self._poll += 1

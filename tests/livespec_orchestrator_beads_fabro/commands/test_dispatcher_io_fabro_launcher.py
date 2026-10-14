@@ -40,6 +40,7 @@ class _QueuedRunner:
     calls: list[str]
     rm_calls: list[str]
     reaped: bool = False
+    answers_inspect: bool = False
 
     def run(
         self,
@@ -67,6 +68,12 @@ class _QueuedRunner:
             self.rm_calls.append(argv[3])
             self.reaped = True
             return CommandResult(exit_code=0, stdout="", stderr="")
+        if command == "inspect" and self.answers_inspect:
+            return CommandResult(
+                exit_code=0,
+                stdout='[{"run_id": "01QUEUED", "status": {"kind": "runnable"}}]',
+                stderr="",
+            )
         return CommandResult(exit_code=0, stdout="Run: 01QUEUED\n", stderr="")
 
 
@@ -387,8 +394,7 @@ def test_watched_launcher_does_not_stall_cancel_queued_active_run(
         _ = (plan, port, run_id, heartbeat_path, dispatch_id, observed_at)
         return samples.pop(0)
 
-    def _discover_runnable_run(self: WatchedFabroLauncher, **_: object) -> FabroRunSummary:
-        _ = self
+    def _runnable_run(**_: object) -> FabroRunSummary:
         return FabroRunSummary(
             run_id="01QUEUED",
             status_kind="runnable",
@@ -412,7 +418,9 @@ def test_watched_launcher_does_not_stall_cancel_queued_active_run(
     # and the launcher calls it as a module-level function, so the scripted
     # sample sequence is injected there rather than over a launcher method.
     monkeypatch.setattr(_dispatcher_io_fabro_launcher, "liveness_sample", _next_sample)
-    monkeypatch.setattr(WatchedFabroLauncher, "_discover_run", _discover_runnable_run)
+    # The per-poll run observation lives in `_dispatcher_watchdog_observation`
+    # for the same reason, and is injected the same way.
+    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "observed_run", _runnable_run)
 
     result = launcher.launch(plan=plan, runner=runner, journal=journal)
 
@@ -732,7 +740,7 @@ def test_watched_launcher_recovers_on_next_ledger_poll(
         # Two complete watch polls before the simulated Fabro process returns.
         return _QueuedThread(target=target, name=name, runner=runner, alive_checks=-2)
 
-    runner = _QueuedRunner(calls=[], rm_calls=[])
+    runner = _QueuedRunner(calls=[], rm_calls=[], answers_inspect=True)
     journal = _Journal(records=[])
     _write_livespec_config(repo=tmp_path)
     monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _thread)
@@ -761,9 +769,129 @@ def test_watched_launcher_recovers_on_next_ledger_poll(
     assert result.stalled_run_id is None
     assert runner.calls.count("run") == 1
     assert runner.rm_calls == []
-    polls = [record for record in journal.records if record["stage"] == "watchdog-discovery-poll"]
+    polls = [
+        record
+        for record in journal.records
+        if record["stage"] in {"watchdog-discovery-poll", "watchdog-bound-poll"}
+    ]
     assert [record["run_id"] for record in polls] == ["01QUEUED", "01QUEUED"]
     assert all(record["stage"] != "stale-run-reap" for record in journal.records)
+
+
+def test_watched_launcher_polls_its_bound_run_by_id_without_listing_the_factory(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Once the run id is bound, every later poll reads THAT run and lists nothing.
+
+    `fabro ps -a --json` is a scan of every run the factory has ever held, so a
+    poll built on it costs what the FACTORY'S HISTORY costs rather than what the
+    dispatch costs. Measured 2026-10-12 against hp-xubuntu:32276 from the VPS:
+    1,605 rows, 9-17 s wall and about 100 MB per call, against 1.1-1.5 s and
+    36 MB for `fabro inspect <run-id>`.
+
+    The listing is still how the FIRST poll finds the run, because `fabro run`
+    is blocking and yields its id only on return. So the assertion is ORDERED
+    rather than a bare count: one listing before the bind, and no listing at all
+    after it. A count alone would pass a build that listed on every poll and
+    simply inspected as well.
+    """
+
+    @dataclass(kw_only=True)
+    class _BoundRunner:
+        calls: list[str]
+        run_finished: bool = False
+
+        def run(
+            self,
+            *,
+            argv: list[str],
+            cwd: Path,
+            timeout_seconds: float,
+            env: dict[str, str] | None = None,
+            stdin: int | None = None,
+        ) -> CommandResult:
+            _ = (cwd, timeout_seconds, env, stdin)
+            self.calls.append(argv[1])
+            if argv[1] == "ps":
+                return CommandResult(
+                    exit_code=0,
+                    stdout=(
+                        '[{"run_id": "01BOUND", '
+                        '"status": {"kind": "running"}, '
+                        '"goal": "Work-item: bd-ib-bound\\nRepo: /tmp/repo"}]'
+                    ),
+                    stderr="",
+                )
+            if argv[1] == "inspect":
+                return CommandResult(
+                    exit_code=0,
+                    stdout='[{"run_id": "01BOUND", "status": {"kind": "running"}}]',
+                    stderr="",
+                )
+            if argv[1] == "events":
+                return CommandResult(exit_code=0, stdout="[]", stderr="")
+            self.run_finished = True
+            return CommandResult(exit_code=0, stdout="Run: 01BOUND\n", stderr="")
+
+    @dataclass(kw_only=True)
+    class _ThreePollThread:
+        target: Callable[[], None]
+        name: str
+        daemon: bool = False
+        alive_checks: int = 0
+
+        def start(self) -> None:
+            pass
+
+        def is_alive(self) -> bool:
+            # Two checks per poll (the `while` and the post-sleep re-check), so
+            # seven checks is exactly three polls: one discovery and two bound
+            # reads. Two bound reads rather than one, because a build that
+            # inspected once and then fell back to listing would satisfy a
+            # single-bound-poll fixture.
+            self.alive_checks += 1
+            return self.alive_checks < 7
+
+        def join(self, timeout: float | None = None) -> None:
+            _ = timeout
+            self.target()
+
+    def _thread(*, target: Callable[[], None], name: str) -> _ThreePollThread:
+        return _ThreePollThread(target=target, name=name)
+
+    runner = _BoundRunner(calls=[])
+    journal = _Journal(records=[])
+    monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _thread)
+    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "_work_item_status", lambda **_: "active")
+    plan = build_plan(
+        repo=tmp_path,
+        work_item_id="bd-ib-bound",
+        workflow_toml=tmp_path / "workflow.toml",
+        goal_file=tmp_path / "goal.md",
+        fabro_bin="fabro",
+        janitor=None,
+        janitor_checkout=tmp_path / "janitor",
+    )
+
+    _ = WatchedFabroLauncher(sleep=lambda _seconds: None, clock=lambda: 0.0).launch(
+        plan=plan,
+        runner=runner,
+        journal=journal,
+    )
+
+    assert "inspect" in runner.calls
+    first_inspect = runner.calls.index("inspect")
+    assert runner.calls.count("ps") == 1
+    assert runner.calls.index("ps") < first_inspect
+    assert "ps" not in runner.calls[first_inspect:]
+    assert [record["stage"] for record in journal.records] == [
+        "watchdog-discovery-poll",
+        "dispatch-run-stamp",
+        "watchdog-bound-poll",
+        "watchdog-bound-poll",
+    ]
 
 
 def _write_livespec_config(*, repo: Path) -> None:

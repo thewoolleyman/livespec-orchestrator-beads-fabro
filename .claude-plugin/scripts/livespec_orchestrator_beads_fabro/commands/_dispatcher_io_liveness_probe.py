@@ -51,10 +51,11 @@ __all__: list[str] = [
 ]
 
 # Budget for ONE read-only `fabro` probe the watch loop issues — the
-# `fabro events` call below and the `fabro ps` discovery call in the
-# launcher. One constant rather than one per verb: they are the same kind
-# of call against the same factory, and two numbers here would read as a
-# pair that must be kept in step.
+# `fabro events` call below, and the `fabro ps` / `fabro inspect` run
+# observations in `_dispatcher_watchdog_observation`. One constant rather
+# than one per verb: they are the same kind of call against the same
+# factory, and three numbers here would read as a set that must be kept in
+# step.
 FABRO_PROBE_TIMEOUT_SECONDS = 60.0
 
 

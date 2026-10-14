@@ -337,7 +337,7 @@ def test_launch_guard_releases_only_after_the_worker_reports_running(
         )
     )
 
-    def discover(_self: WatchedFabroLauncher, **_: object) -> FabroRunSummary:
+    def discover(**_: object) -> FabroRunSummary:
         run = next(discovered)
         events.append(run.status_kind)
         return run
@@ -347,7 +347,7 @@ def test_launch_guard_releases_only_after_the_worker_reports_running(
         clock=lambda: 0.0,
         on_worker_running=lambda: events.append("released"),
     )
-    monkeypatch.setattr(WatchedFabroLauncher, "_discover_run", discover)
+    monkeypatch.setattr(launcher_module, "observed_run", discover)
     monkeypatch.setattr(
         launcher_module,
         "stamped_attribution",

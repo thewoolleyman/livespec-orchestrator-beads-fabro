@@ -159,7 +159,7 @@ def test_default_launcher_observes_repeated_running_without_a_release_callback(
         )
     )
 
-    def discover(_self: WatchedFabroLauncher, **_: object) -> FabroRunSummary:
+    def discover(**_: object) -> FabroRunSummary:
         return next(discoveries)
 
     def thread(*, target: Callable[[], None], name: str) -> _LaunchThread:
@@ -170,7 +170,7 @@ def test_default_launcher_observes_repeated_running_without_a_release_callback(
         )
 
     monkeypatch.setattr(launcher_module.threading, "Thread", thread)
-    monkeypatch.setattr(WatchedFabroLauncher, "_discover_run", discover)
+    monkeypatch.setattr(launcher_module, "observed_run", discover)
     monkeypatch.setattr(
         launcher_module,
         "stamped_attribution",

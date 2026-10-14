@@ -21,7 +21,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     run_fabro_factory_auth_login,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
-    FABRO_PROBE_TIMEOUT_SECONDS,
     liveness_sample,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -35,12 +34,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
     decide_stall,
     quiet_window_seconds,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_discovery import (
-    journaled_discovery,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_observation import (
+    observed_run,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroPort,
-    FabroRunSummary,
     fabro_port_for_plan,
 )
 from livespec_orchestrator_beads_fabro.commands._run_attribution import RunAttribution
@@ -165,13 +163,26 @@ class WatchedFabroLauncher:
         stall_seconds = plan.stall_window.seconds
         samples: list[LivenessSample] = []
         known_run_id: str | None = None
+        # The run this watch loop has BOUND, and so the one every poll after
+        # the first match reads BY ID rather than hunting for in a listing.
+        # Deliberately NOT `known_run_id`, which is the narrower "has this run
+        # ever been seen RUNNING" the stall cancel is gated on: a `runnable`
+        # run is already this dispatch's run to observe, and is not yet one to
+        # cancel.
+        bound_run_id: str | None = None
         worker_running_notified = False
         stamp = RunAttribution()
         while thread.is_alive():
             self.sleep(_WATCHDOG_POLL_INTERVAL_SECONDS)
             if not thread.is_alive():
                 return _WatchResult()
-            run = self._discover_run(plan=plan, port=port, journal=journal, attribution=stamp)
+            run = observed_run(
+                work_item_id=plan.work_item_id,
+                port=port,
+                journal=journal,
+                attribution=stamp,
+                bound_run_id=bound_run_id,
+            )
             stamp = stamped_attribution(plan=plan, journal=journal, run=run, attribution=stamp)
             run_id = run.run_id if run is not None and run.status_kind == "running" else None
             known_run_id = run_id if run_id is not None else known_run_id
@@ -180,6 +191,7 @@ class WatchedFabroLauncher:
                     self.on_worker_running()
                 worker_running_notified = True
             if run is not None:
+                bound_run_id = run.run_id
                 item_status = _work_item_status(repo=plan.repo, work_item_id=plan.work_item_id)
                 if item_status is not None and item_status != "active":
                     self._reap_stale_run(
@@ -216,34 +228,6 @@ class WatchedFabroLauncher:
                 )
                 return _WatchResult(stalled_run_id=known_run_id)
         return _WatchResult()
-
-    def _discover_run(
-        self,
-        *,
-        plan: DispatchPlan,
-        port: FabroPort,
-        journal: JournalWriter,
-        attribution: RunAttribution,
-    ) -> FabroRunSummary | None:
-        """Probe `fabro ps` and hand the poll to the journaling discovery seam.
-
-        This method owns the port call and NOTHING else. The classification
-        and its unconditional per-poll journal record live together in
-        `_dispatcher_watchdog_discovery`, so no future caller can take the
-        discovery result without leaving the record — the silent-miss shape
-        that hid a total watchdog outage on `hp` for 11 days.
-
-        `attribution` accumulates across the watch loop: it is empty on the
-        first poll, so that poll matches on the goal-text regex, and carries the
-        ledger stamp on every poll after, so a goal the regex later fails to
-        parse can no longer blind the watchdog to its own run.
-        """
-        return journaled_discovery(
-            work_item_id=plan.work_item_id,
-            ps=port.ps(timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS),
-            journal=journal,
-            attribution=attribution,
-        )
 
     def _cancel(
         self,

@@ -19,7 +19,10 @@ The `fabro events` stream is the SOLE liveness source: the former
 `fabro inspect` / `updated_at` fallback is removed (bd-ib-tec5sz), which
 `test_wall_clock_probe_reads_only_the_event_stream_never_fabro_inspect`
 pins from both ends — the probe never issues `fabro inspect`, and
-`parse_last_event_epoch` no longer accepts an inspect payload.
+`parse_last_event_epoch` no longer accepts an inspect payload. That case
+is driven against the PROBE rather than the launcher, because the launcher
+now does issue `fabro inspect` — to observe its bound RUN, which is a
+different question from how it measures PROGRESS (bd-ib-6pdigz).
 """
 
 from __future__ import annotations
@@ -42,6 +45,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     run_dispatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import WatchedFabroLauncher
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
+    liveness_sample,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     build_plan,
@@ -60,6 +66,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroRunSummary,
+    fabro_port_for_plan,
     fabro_run_summaries_from_stdout,
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import REPOSITORY_LAYER
@@ -675,6 +682,12 @@ _PS_RUNNING = (
     '[{"run_id": "01RUN", "goal": "Work-item: livespec-impl-beads-oyg",'
     ' "status": {"kind": "running"}}]'
 )
+# What `fabro inspect 01RUN --json` answers once the watch loop has BOUND the
+# run: the same run, still running, as a one-element list (the shape the
+# pinned build returns). The listing above is only reachable on the FIRST
+# poll now, so a runner that scripted no inspect would stall the loop at its
+# second poll rather than exercise it.
+_INSPECT_RUNNING = '[{"run_id": "01RUN", "status": {"kind": "running"}}]'
 
 # The janitor's own start and completion events, in the shape the engine
 # emits them (`node_id` at the top level beside the envelope's timestamp),
@@ -693,7 +706,7 @@ _JANITOR_STARTED_JSON = f"[{_JANITOR_STARTED_EVENT}]"
 
 @dataclass(kw_only=True)
 class _ScriptedFabroRunner:
-    """A CommandRunner scripting fabro's run/ps/events/rm subprocesses.
+    """A CommandRunner scripting fabro's run/ps/inspect/events/rm subprocesses.
 
     `fabro run` BLOCKS on `run_done` so the background thread stays alive
     while the foreground watch loop runs (mirroring a real long run);
@@ -703,8 +716,8 @@ class _ScriptedFabroRunner:
     advancing value models progress. `ps_exit` / `events_exit` flip a
     probe to a non-zero error so the no-signal / probe-failure branches
     are exercised. Every verb the launcher issues is recorded in `verbs`,
-    so a test can assert `fabro inspect` is NEVER issued for liveness.
-    NEVER launches a real process.
+    so a test can assert WHICH probe each poll spent. NEVER launches a
+    real process.
     """
 
     events_jsons: list[str]
@@ -723,6 +736,7 @@ class _ScriptedFabroRunner:
         dispatch = {
             "run": self._run,
             "ps": self._ps,
+            "inspect": self._inspect,
             "events": self._events,
             "rm": lambda: self._rm(run_id=argv[-1]),
         }
@@ -740,6 +754,9 @@ class _ScriptedFabroRunner:
 
     def _ps(self) -> CommandResult:
         return CommandResult(exit_code=self.ps_exit, stdout=_PS_RUNNING, stderr="boom")
+
+    def _inspect(self) -> CommandResult:
+        return CommandResult(exit_code=self.ps_exit, stdout=_INSPECT_RUNNING, stderr="boom")
 
     def _events(self) -> CommandResult:
         index = min(self._poll, len(self.events_jsons) - 1)
@@ -762,7 +779,7 @@ def _advancing_clock() -> object:
 
 def test_scripted_runner_rejects_unknown_verb(tmp_path: Path) -> None:
     # Exercise the fake's defensive fallback (the launcher only ever
-    # issues run/ps/events/rm).
+    # issues run/ps/inspect/events/rm).
     runner = _ScriptedFabroRunner(events_jsons=["[]"])
     out = runner.run(argv=["fabro", "bogus"], cwd=tmp_path, timeout_seconds=1.0)
     assert out.exit_code == 1
@@ -771,23 +788,35 @@ def test_scripted_runner_rejects_unknown_verb(tmp_path: Path) -> None:
 def test_wall_clock_probe_reads_only_the_event_stream_never_fabro_inspect(
     tmp_path: Path,
 ) -> None:
-    # bd-ib-tec5sz: the `updated_at` fallback is REMOVED, not repointed.
-    # The pinned fabro build never emits that field, and the only
-    # running-run candidate (`checkpoint.timestamp`) advances per NODE
-    # rather than per event, so it cannot be a wall-clock liveness signal.
-    # Pinned from both ends: the production probe issues `fabro events`
-    # and NEVER `fabro inspect`, and the parser accepts no inspect payload.
-    frozen = '[{"timestamp": "2026-06-13T08:00:00Z"}]'
-    runner = _ScriptedFabroRunner(events_jsons=[frozen])
-    launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
-    result = launcher.launch(
+    """bd-ib-tec5sz: the `updated_at` fallback is REMOVED, not repointed.
+
+    The pinned fabro build never emits that field, and the only
+    running-run candidate (`checkpoint.timestamp`) advances per NODE rather
+    than per event, so it cannot be a wall-clock liveness signal. Pinned
+    from both ends: the production probe issues `fabro events` and NEVER
+    `fabro inspect`, and the parser accepts no inspect payload.
+
+    Aimed at the PROBE and not at the launcher. The launcher reads its bound
+    run with `fabro inspect` since bd-ib-6pdigz, so a launcher-level
+    "inspect was never issued" assertion can no longer separate the
+    liveness question from the observation question — it would simply fail
+    on a probe that is still correct. The exact verb list is what makes this
+    a measurement rather than a containment check.
+    """
+    runner = _ScriptedFabroRunner(events_jsons=['[{"timestamp": "2026-06-13T08:00:00Z"}]'])
+    port = fabro_port_for_plan(plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner)
+
+    sample = liveness_sample(
         plan=_plan(repo=tmp_path, stall_seconds=1000.0),
-        runner=runner,
-        journal=_RecordingJournal(),
+        port=port,
+        run_id="01RUN",
+        heartbeat_path=None,
+        dispatch_id=None,
+        observed_at=0.0,
     )
-    assert result.stalled_run_id == "01RUN"
-    assert "events" in runner.verbs
-    assert "inspect" not in runner.verbs
+
+    assert sample.last_event_epoch is not None
+    assert runner.verbs == ["events"]
     assert "inspect_json" not in signature(parse_last_event_epoch).parameters
 
 

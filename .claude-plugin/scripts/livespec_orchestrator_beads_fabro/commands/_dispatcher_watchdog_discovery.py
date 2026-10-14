@@ -1,12 +1,19 @@
-"""Per-poll run-discovery for the coarse stall watchdog, and its observability.
+"""The LISTING poll that discovers a watchdog's run, and its observability.
 
-The watchdog cannot key its liveness probe on a known run id: `fabro run`
-is BLOCKING and only yields the run id on RETURN, i.e. after the run has
-already finished. So every 30s poll RE-DISCOVERS the in-flight run by
-attributing each `fabro ps -a --json --server <factory>` row to a work-item
-through `_run_attribution` — the ledger's own run-id stamp once the dispatch
-has written one, and the goal-text regex until then. That re-discovery is the
-watchdog's single point of failure,
+The watchdog cannot START keyed on a known run id: `fabro run` is BLOCKING
+and only yields the run id on RETURN, i.e. after the run has already
+finished. So each poll until the Dispatcher has bound one DISCOVERS the
+in-flight run by attributing each `fabro ps -a --json --server <factory>`
+row to a work-item through `_run_attribution` — the ledger's own run-id
+stamp once the dispatch has written one, and the goal-text regex until then.
+
+That is the ONLY window this module serves. Once a poll matches a row the
+run id is bound, and `_dispatcher_watchdog_observation` takes every later
+poll over to a per-run read: this listing scans every run the factory has
+ever held, so re-running it each poll charged the dispatch for the
+FACTORY'S HISTORY. That module records the measurement and owns the choice.
+
+Discovery is the watchdog's single point of failure for its own window,
 and it used to fail SILENTLY: a poll that matched nothing returned None,
 the watch loop hit a bare `continue`, `decide_stall` was never consulted,
 and the watchdog no-opped with ZERO output. Measured: that hid a TOTAL
@@ -43,7 +50,8 @@ actually seen, which is what a later diagnosis of a discovery blind spot
 needs. `classify_discovery` is a pure function of the ps result, so the
 hermetic tier drives every branch without launching a real Fabro run; the
 journal append through the injected writer is this module's only effect,
-and the `fabro ps` call itself stays with the launcher that owns the port.
+and the `fabro ps` call itself is issued by the sibling observation module
+that chose this route.
 """
 
 from __future__ import annotations
@@ -61,6 +69,7 @@ from livespec_orchestrator_beads_fabro.commands._run_attribution import (
 )
 
 __all__: list[str] = [
+    "ACTIONABLE_STATUS_KINDS",
     "DISCOVERY_JOURNAL_STAGE",
     "DISCOVERY_REASON_MATCHED",
     "DISCOVERY_REASON_NO_PS_ROWS",
@@ -84,10 +93,14 @@ DISCOVERY_REASON_NO_PS_ROWS = "no-ps-rows"
 DISCOVERY_REASON_WORK_ITEM_ID_MISMATCH = "work-item-id-mismatch"
 DISCOVERY_REASON_STATUS_KIND_NOT_RUNNING = "status-kind-not-running"
 
-# The ps statuses the watchdog may act on. `runnable` is included because a
+# The run statuses the watchdog may act on. `runnable` is included because a
 # queued run is still this dispatch's run (the stale-item reaper needs it);
 # the watch loop separately refuses to stall-cancel anything not `running`.
-_ACTIONABLE_STATUS_KINDS = ("runnable", "running")
+# PUBLIC because the bound poll in `_dispatcher_watchdog_observation` grades
+# the SAME statuses: two copies of this tuple would let one route start
+# acting on a status the other had stopped acting on, and neither record
+# would say so.
+ACTIONABLE_STATUS_KINDS = ("runnable", "running")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -171,7 +184,7 @@ def classify_discovery(
     if ps_exit_code != 0:
         return _outcome(run=None, reason=DISCOVERY_REASON_PS_EXIT_NONZERO, evidence=evidence)
     for run in mine:
-        if run.status_kind in _ACTIONABLE_STATUS_KINDS:
+        if run.status_kind in ACTIONABLE_STATUS_KINDS:
             return _outcome(run=run, reason=DISCOVERY_REASON_MATCHED, evidence=evidence)
     return _outcome(run=None, reason=_miss_reason(runs=runs, mine=mine), evidence=evidence)
 
