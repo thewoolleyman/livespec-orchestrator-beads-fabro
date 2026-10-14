@@ -66,6 +66,14 @@ _ID_PREFIX = "bd-ib"
 _TENANT = "livespec-orchestrator-beads-fabro"
 _GRACE_SECONDS = 1800
 
+# The stages the container lane of a reconciliation pass writes. Spelled
+# out rather than imported so these scenarios keep naming the records they
+# mean to exclude, not whatever that module happens to export.
+_SWEEP_STAGES = (
+    "sandbox-container-sweep",
+    "sandbox-container-reclaimed",
+    "sandbox-container-held",
+)
 _HP_SERVER = "https://hp.example:32276"
 _VPS_SERVER = "https://vps.example:32276"
 _HP_DEV_TOKEN_VALUE = "hp-fixture-dev-token"
@@ -219,7 +227,7 @@ def test_scenario104_an_item_that_left_active_releases_its_run(tmp_path: Path) -
     assert runner.verbs == ["ps", "dump"]
     assert http.calls[0] == f"POST {_HP_SERVER}/api/v1/runs/01DEPARTED/cancel"
     assert _pointer_present(texts=http.ledger_at_call[0], run_id="01DEPARTED")
-    reconciled = _records(journal=journal)[-1]
+    reconciled = _orphan_records(journal=journal)[-1]
     assert reconciled["stage"] == "orphan-run-reconciled"
     assert reconciled["orphan_reason"] == "item-not-active"
     assert reconciled["export_comment_id"] is not None
@@ -248,7 +256,12 @@ def test_scenario104_a_live_run_under_a_matching_claim_is_left_alone(tmp_path: P
     assert (summary.reconciled, summary.errors, summary.held) == ((), (), ())
     assert http.calls == []
     assert runner.verbs == ["ps"]
-    assert _records(journal=journal) == seeded
+    assert _orphan_records(journal=journal) == seeded
+    # ... and the only record the pass DID add is the container sweep's own,
+    # over a host the daemon reported as carrying no sandbox container.
+    assert [record["stage"] for record in _records(journal=journal)[len(seeded) :]] == [
+        "sandbox-container-sweep"
+    ]
 
 
 def test_scenario104_a_superseded_run_is_released_and_the_newest_is_left_alone(
@@ -332,7 +345,7 @@ def test_scenario105_a_park_past_grace_is_abandoned_and_the_item_is_untouched(
         f"POST {_HP_SERVER}/api/v1/runs/01PARKED/questions/q-1/answer",
     ]
     assert _pointer_present(texts=http.ledger_at_call[0], run_id="01PARKED")
-    reconciled = _records(journal=journal)[-1]
+    reconciled = _orphan_records(journal=journal)[-1]
     assert reconciled["stage"] == "orphan-run-reconciled"
     assert (reconciled["parked_seconds"], reconciled["grace_seconds"]) == (1801.0, _GRACE_SECONDS)
     assert _item_state(item_id="bd-ib-parked") == before
@@ -368,7 +381,12 @@ def test_scenario105_a_park_inside_grace_is_held_with_seconds_remaining(tmp_path
     ]
     assert http.calls == []
     assert runner.verbs == ["ps", "inspect"]
-    assert _records(journal=journal) == seeded
+    assert _orphan_records(journal=journal) == seeded
+    # ... and the only record the pass DID add is the container sweep's own,
+    # over a host the daemon reported as carrying no sandbox container.
+    assert [record["stage"] for record in _records(journal=journal)[len(seeded) :]] == [
+        "sandbox-container-sweep"
+    ]
     assert _comment_texts(item_ids=("bd-ib-young",)) == ()
 
 
@@ -411,7 +429,7 @@ def test_scenario106_each_declared_factory_is_queried_by_its_own_server_target(
     assert [(run.factory_name, run.factory_server_url) for run in summary.reconciled] == [
         ("vps", _VPS_SERVER)
     ]
-    stages = [record["stage"] for record in _records(journal=journal)]
+    stages = [record["stage"] for record in _orphan_records(journal=journal)]
     assert stages[-2:] == ["orphan-run-reconciled", "orphan-run-reconcile-error"]
     pass_summary = reconcile_pass_summary(factories=[_HP, _VPS], summary=summary)
     assert pass_summary.factory_names == ("hp", "vps")
@@ -497,6 +515,17 @@ def _journal_dispatch(*, journal: JournalFile, item_id: str, run_id: str) -> Non
 def _records(*, journal: JournalFile) -> list[dict[str, Any]]:
     lines = journal.path.read_text(encoding="utf-8").splitlines()
     return [json.loads(line) for line in lines]
+
+
+def _orphan_records(*, journal: JournalFile) -> list[dict[str, Any]]:
+    """Every record EXCEPT the sandbox-container lane's.
+
+    The same pass sweeps this host's containers and records what it swept, so
+    the journal now carries two lanes. These scenarios are about the RUN lane,
+    and a position-based read of the whole file would start reporting on
+    whichever lane happened to append last.
+    """
+    return [record for record in _records(journal=journal) if record["stage"] not in _SWEEP_STAGES]
 
 
 def _inputs(
