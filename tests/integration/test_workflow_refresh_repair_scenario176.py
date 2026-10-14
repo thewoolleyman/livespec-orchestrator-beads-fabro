@@ -196,18 +196,41 @@ def _world(*, root: Path) -> _World:
     return _World(origin=origin, clone=clone)
 
 
-def _advance_default(*, world: _World, text: str) -> str:
+def _advance_default(*, world: _World, path: str, text: str) -> str:
     """Move origin's default branch through a SEPARATE clone.
 
     Separate so the case's own clone learns nothing about the movement until the
     stage's own fetch, which is the state a real dispatch is in when the default
     branch advances underneath it.
+
+    The PATH is the case's own choice, and it is what decides whether the refresh
+    conflicts: moving the file the run also edited conflicts, and moving any other
+    file applies cleanly. Both shapes are needed, because the clause's two repair
+    routes differ in exactly that.
     """
     mover = world.clone.parent / "mover"
     _ = _git("clone", "--quiet", str(world.origin), str(mover), cwd=world.clone.parent)
-    advanced = _commit(cwd=mover, path=_SHARED_FILE, text=text, subject="feat: advance the shared")
+    advanced = _commit(cwd=mover, path=path, text=text, subject=f"feat: advance {path}")
     _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_DEFAULT_BRANCH}", cwd=mover)
     return advanced
+
+
+def _refuse_every_push(*, world: _World) -> None:
+    """Install a repository pre-push hook that refuses, as a red gate does.
+
+    This repository's declared gate RUNS IN THE PRE-PUSH HOOK, so "the gate
+    rejects the refreshed head" reaches the stage as a failed push and nothing
+    else. Standing a refusing hook in for it is standing in for the repository's
+    own hook configuration, not for the stage: the push really runs, git really
+    consults the hook, and the stage really sees the failure it has to classify.
+    """
+    hook = world.clone / ".git" / "hooks" / "pre-push"
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    _ = hook.write_text(
+        "#!/bin/sh\nprintf '%s\\n' 'the repository gate refused this head' >&2\nexit 1\n",
+        encoding="utf-8",
+    )
+    hook.chmod(0o755)
 
 
 def _publish_draft_script(*, check_suite: str) -> str:
@@ -220,7 +243,7 @@ def _publish_draft_script(*, check_suite: str) -> str:
 
 
 def _run_publish_draft(
-    *, world: _World, check_suite: str = "true"
+    *, world: _World, check_suite: str = "true", extra_env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
     """Execute the shipped `publish_draft` bytes in this world's clone.
 
@@ -228,17 +251,26 @@ def _run_publish_draft(
     allowlist requires it, and an inherited `LIVESPEC_*` from the enclosing
     factory run could otherwise satisfy a guard the case meant to exercise.
     """
+    env = {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": str(world.clone.parent / "home"),
+        "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
+        # The push-time credential helper's root, pointed at a directory that
+        # holds no helper. The sandbox this suite runs inside DOES carry the
+        # production helper at the default path, and a case that reached it would
+        # measure that helper's own host policy rather than the stage -- and
+        # would then measure something different on a CI runner, which carries
+        # none. Naming an empty root makes every case take the inline fallback,
+        # identically on both.
+        "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
+    }
     return subprocess.run(
         ["bash", "-c", _publish_draft_script(check_suite=check_suite)],
         cwd=world.clone,
         capture_output=True,
         text=True,
         check=False,
-        env={
-            "PATH": "/usr/local/bin:/usr/bin:/bin",
-            "HOME": str(world.clone.parent / "home"),
-            "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
-        },
+        env=env if extra_env is None else {**env, **extra_env},
     )
 
 
@@ -289,7 +321,7 @@ def _conflicted_draft_refresh(*, root: Path) -> _Conflicted:
         text="this run's own file\n",
         subject="feat: add this run's own file",
     )
-    advanced = _advance_default(world=world, text="a conflicting default edit\n")
+    advanced = _advance_default(world=world, path=_SHARED_FILE, text="a conflicting default edit\n")
     return _Conflicted(
         world=world,
         result=_run_publish_draft(world=world),
@@ -392,3 +424,99 @@ def test_the_conflicted_refresh_brief_names_every_field_the_fix_turn_needs(
     assert fields.get("refresh-target") == conflicted.advanced_default
     assert fields.get("run-commit") == conflicted.applied_commit
     assert _SHARED_FILE in (fields.get("conflicted-paths") or "")
+
+
+def _clean_refresh_world(*, root: Path) -> tuple[_World, str, str]:
+    """A janitor-green run whose default branch moved WITHOUT conflicting.
+
+    The run edits the shared file and the default branch adds a different one, so
+    the refresh applies cleanly -- which is the precondition both of the cases
+    below need, because each is about what happens AFTER a successful refresh.
+    """
+    world = _world(root=root)
+    janitor_head = _commit(
+        cwd=world.clone,
+        path=_SHARED_FILE,
+        text="this run's edit\n",
+        subject="feat: edit the shared file",
+    )
+    advanced = _advance_default(world=world, path=_OWNED_FILE, text="the default's own file\n")
+    return world, janitor_head, advanced
+
+
+def test_a_refreshed_head_the_gate_rejects_is_restored_and_repaired(tmp_path: Path) -> None:
+    """A clean refresh whose gate refuses is repaired, not parked.
+
+    This is the SECOND repair route and it is the one most easily left out: the
+    refresh succeeded, so there is no conflict to abort and no in-progress
+    operation to notice -- the only evidence is that the publishing push was
+    refused. Run 01M4T2KEGPQPAR1XS1KEK91P0E lost 3.3 hours to exactly this shape.
+
+    The restoration is the discriminating assertion. A build that routed the
+    failure to `fix` without resetting would hand the repair turn the REFRESHED
+    head, which is the tree whose gate just failed and which no janitor has
+    passed; HEAD back at the janitor-green head is what says the clause's
+    "reset the run's working branch" ran. The brief must name the failed gate
+    target, because the fix turn cannot reproduce a gate failure it is not told
+    about, and the target name is read as a VALUE so a brief carrying the label
+    and nothing after it cannot pass.
+    """
+    world, janitor_head, advanced = _clean_refresh_world(root=tmp_path)
+    _refuse_every_push(world=world)
+
+    result = _run_publish_draft(
+        world=world,
+        check_suite="sh -c 'printf %s\\\\n check-coverage-refused >&2; exit 1'",
+    )
+    fields = _brief_fields(world=world)
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+    assert world.head() == janitor_head
+    assert world.remote_head(ref=_BRANCH) == ""
+    assert fields.get("stage") == "publish_draft"
+    assert fields.get("pre-refresh-head") == janitor_head
+    assert fields.get("refresh-target") == advanced
+    assert "check-coverage-refused" in (fields.get("failed-gate-targets") or "")
+    assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
+
+
+def test_an_authentication_failure_keeps_its_push_failure_cause(tmp_path: Path) -> None:
+    """The one push failure that must NOT be repaired, with the gate red too.
+
+    THE CLAUSE REQUIRES THE STAGE TO DISTINGUISH a gate rejection from a push
+    origin refused and from an authentication failure, and this case is what
+    makes that a positive reading rather than a residual category. The declared
+    gate is deliberately FAILING here: a build that inferred "gate rejection"
+    from a failed push plus a failed gate would repair an unreachable origin and
+    send the fix turn to resolve a conflict that does not exist, while the real
+    cause -- a credential the sandbox never received -- went unreported.
+
+    Three instruments, because the exit code is shared by every arm. The
+    existing sentinel must be the one reported; NO brief may exist, since the
+    classifier routes on its presence and a brief here is what would enter the
+    fix node; and the repair counter must be untouched, because a round that
+    spent budget without repairing anything would shorten the next real
+    repair's.
+    """
+    world, janitor_head, _ = _clean_refresh_world(root=tmp_path)
+    _ = _git(
+        "remote", "set-url", "--push", "origin", "https://example.invalid/repo.git", cwd=world.clone
+    )
+
+    result = _run_publish_draft(
+        world=world, check_suite="false", extra_env={"GITHUB_APP_ID": "123456"}
+    )
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED" in result.stderr
+    assert "LIVESPEC_PUSH_AUTH_ABSENT" in result.stderr, "the push did not fail on credentials"
+    assert "LIVESPEC_REFRESH_REPAIR" not in result.stderr
+    assert world.state(name=_BRIEF_FILENAME) is None
+    assert world.state(name=_REPAIR_COUNT_FILENAME) is None
+    assert world.remote_head(ref=_BRANCH) == ""
+    # And the tree was NOT restored, which is the mirror of the repair arm's own
+    # assertion: a build that reset here took the route this case forbids, and
+    # the reset is the one observable that separates the two arms once both have
+    # exited non-zero.
+    assert world.head() != janitor_head
