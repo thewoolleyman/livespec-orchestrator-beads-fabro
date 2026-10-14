@@ -40,7 +40,16 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHtt
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _HP_DEV_TOKEN_VALUE = "hp-fixture-dev-token"
-_HP = FactoryTarget(name="hp", server="https://hp.example:32276", dev_token=_HP_DEV_TOKEN_VALUE)
+# hp also declares the Docker daemon running ITS sandbox containers, which is
+# the daemon this lane addresses. A factory declaring none is reported rather
+# than swept through the reconciling host's own daemon.
+_HP_DOCKER_HOST = "ssh://cwoolley@hp.example"
+_HP = FactoryTarget(
+    name="hp",
+    server="https://hp.example:32276",
+    dev_token=_HP_DEV_TOKEN_VALUE,
+    docker_host=_HP_DOCKER_HOST,
+)
 # The two runs the hp storage session measured on 2026-10-13: a `failed` run
 # whose container was still running, and the item's live replacement.
 _FAILED_RUN = "01M4RM5YPANB7A4900404SEZXY"
@@ -88,10 +97,13 @@ class _Runner:
         return CommandResult(exit_code=0, stdout="", stderr="")
 
     def _docker(self, *, argv: list[str]) -> CommandResult:
-        if argv[1] == "ps":
-            return CommandResult(exit_code=0, stdout=self.docker_ps_stdout, stderr="")
-        if argv[1] == "inspect":
+        # Membership rather than a fixed index: every docker argv opens with
+        # the global `--host <daemon>` pair naming the factory host's daemon,
+        # so an index-keyed fake would read that address as the verb.
+        if "inspect" in argv:
             return CommandResult(exit_code=0, stdout=self.docker_inspect_stdout, stderr="")
+        if "ps" in argv:
+            return CommandResult(exit_code=0, stdout=self.docker_ps_stdout, stderr="")
         return CommandResult(exit_code=0, stdout="", stderr="")
 
 
@@ -161,7 +173,19 @@ def _docker_calls(*, runner: _Runner) -> list[list[str]]:
 
 
 def _removed(*, runner: _Runner) -> list[str]:
-    return [argv[-1] for argv in _docker_calls(runner=runner) if argv[1] == "rm"]
+    return [argv[-1] for argv in _docker_calls(runner=runner) if "rm" in argv]
+
+
+def _only_sweep(*, summary: Any) -> Any:
+    """The pass's single sweep, with the one-per-daemon shape asserted.
+
+    One surveyed factory declaring one daemon owes exactly one sweep. Reading
+    `[0]` without the count would let a pass that swept the same daemon twice
+    satisfy every assertion below while removing containers it had already
+    graded.
+    """
+    assert len(summary.containers) == 1, f"expected one sweep, got {len(summary.containers)}"
+    return summary.containers[0]
 
 
 def _runner() -> _Runner:
@@ -262,12 +286,12 @@ def test_reconciling_a_factory_removes_the_container_of_its_failed_run(tmp_path:
     assert _removed(runner=runner) == [f"fabro-run-{_FAILED_RUN}"]
     assert [
         (run.run_id, run.run_status_kind, run.memory_limit_bytes, run.removed)
-        for run in summary.containers.reclaimed
+        for run in _only_sweep(summary=summary).reclaimed
     ] == [(_FAILED_RUN, "failed", _LIMIT, True)]
-    assert [(run.run_id, run.hold_reason) for run in summary.containers.held] == [
+    assert [(run.run_id, run.hold_reason) for run in _only_sweep(summary=summary).held] == [
         (_LIVE_RUN, "run-live")
     ]
-    assert summary.containers.observed is True
+    assert _only_sweep(summary=summary).observed is True
 
 
 def test_a_dry_run_projects_the_reclaim_without_removing_anything(tmp_path: Path) -> None:
@@ -281,10 +305,10 @@ def test_a_dry_run_projects_the_reclaim_without_removing_anything(tmp_path: Path
     )
 
     assert _removed(runner=runner) == []
-    assert [(run.run_id, run.removed) for run in summary.containers.reclaimed] == [
+    assert [(run.run_id, run.removed) for run in _only_sweep(summary=summary).reclaimed] == [
         (_FAILED_RUN, False)
     ]
-    assert summary.containers.dry_run is True
+    assert _only_sweep(summary=summary).dry_run is True
 
 
 def test_a_factory_that_could_not_be_surveyed_leaves_every_container_standing(
@@ -306,7 +330,7 @@ def test_a_factory_that_could_not_be_surveyed_leaves_every_container_standing(
     )
 
     assert _removed(runner=runner) == []
-    assert [(run.run_id, run.hold_reason) for run in summary.containers.held] == [
+    assert [(run.run_id, run.hold_reason) for run in _only_sweep(summary=summary).held] == [
         (_FAILED_RUN, "run-unobserved"),
         (_LIVE_RUN, "run-unobserved"),
     ]
@@ -376,6 +400,6 @@ def test_the_run_lane_and_the_container_lane_both_act_in_one_pass(tmp_path: Path
         "sandbox-container-held",
         "sandbox-container-sweep",
     ]
-    assert [(run.run_id, run.hold_reason) for run in summary.containers.held] == [
+    assert [(run.run_id, run.hold_reason) for run in _only_sweep(summary=summary).held] == [
         (_ORPHAN_RUN, "run-live")
     ]

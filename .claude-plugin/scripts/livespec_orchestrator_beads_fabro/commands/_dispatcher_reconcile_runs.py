@@ -29,12 +29,14 @@ RECONCILING A RUN ALSO RECLAIMS ITS SANDBOX CONTAINER, which is a lane of its
 own rather than a step of the orphan path: the orphan join considers only
 non-terminal runs, while a leaked container belongs to a run that has already
 ENDED (`_dispatcher_sandbox_container_sweep.py`). Those containers keep
-running inside `fabro-sandbox.slice` and keep spending the memory and CPU
-envelope the live runs share, so the leak raises OOM and throttle risk for
-real work as runs fail. The sweep grades every container against the
-inventory this pass already read — it takes no second reading, because two
-readings a moment apart disagree about a run that terminated between them —
-and it fails closed in every direction it can be blinded.
+running inside the FACTORY HOST's `fabro-sandbox.slice` and keep spending the
+memory and CPU envelope the live runs share, so the leak raises OOM and
+throttle risk for real work as runs fail. The sweep addresses each surveyed
+factory's own Docker daemon rather than the reconciling host's
+(`_dispatcher_reconcile_runs_containers.py`), it grades every container
+against the inventory this pass already read — it takes no second reading,
+because two readings a moment apart disagree about a run that terminated
+between them — and it fails closed in every direction it can be blinded.
 
 A run parked at a human gate whose item is still live has no moot question to
 release it, so it is governed instead by `dispatcher.blocked_run_grace_seconds`
@@ -59,7 +61,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attri
     FactoryRunInventory,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_containers import (
-    pass_container_sweep,
+    pass_container_sweeps,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_export import (
     export_orphan_reference,
@@ -126,8 +128,10 @@ class _FactoryPass:
 
     `surveyed` is NOT `bool(run_statuses)`: a factory that answered with an
     empty inventory was surveyed, and its answer is what makes a container on
-    this host an ungradeable leak worth reporting. A factory that could not be
-    reached, or that declares no server, was not.
+    that factory's host an ungradeable leak worth reporting. A factory that
+    could not be reached, or that declares no server, was not — and the
+    container lane never addresses an unsurveyed factory's daemon, because a
+    survey that could not be taken cannot license a removal.
     """
 
     held: tuple[HeldRun, ...]
@@ -147,7 +151,10 @@ def reconcile_runs(
     errors: list[ReconcileError] = []
     held: list[HeldRun] = []
     run_statuses: dict[str, str | None] = {}
-    surveyed = False
+    # The surveyed factories themselves rather than a bool: the container lane
+    # addresses each factory's OWN Docker daemon, so it needs to know WHICH
+    # factories answered, not merely that one did.
+    surveyed: list[FactoryTarget] = []
     for factory in factories:
         if factory.server is None:
             errors.append(
@@ -174,7 +181,8 @@ def reconcile_runs(
         )
         held.extend(surveyed_factory.held)
         run_statuses.update(surveyed_factory.run_statuses)
-        surveyed = surveyed or surveyed_factory.surveyed
+        if surveyed_factory.surveyed:
+            surveyed.append(factory)
     if not dry_run:
         for error in errors:
             journal_error(journal=inputs.journal, error=error)
@@ -183,9 +191,9 @@ def reconcile_runs(
         errors=tuple(errors),
         dry_run=dry_run,
         held=tuple(held),
-        containers=pass_container_sweep(
+        containers=pass_container_sweeps(
             inputs=inputs,
-            surveyed=surveyed,
+            factories=tuple(surveyed),
             run_statuses=run_statuses,
             dry_run=dry_run,
         ),

@@ -120,6 +120,7 @@ _ENV_FAKE = "LIVESPEC_BEADS_FAKE"
 _ENV_FABRO_BIN = "LIVESPEC_FABRO_BIN"
 _ENV_FABRO_FACTORY = "LIVESPEC_FABRO_FACTORY"
 _FACTORY_BIN_KEY = "bin"
+_FACTORY_DOCKER_HOST_KEY = "docker_host"
 _FABRO_DEV_AUTH_ENV_PREFIX = "FABRO_DEV_TOKEN__"
 _ENV_FABRO_SANDBOX_IMAGE = "LIVESPEC_FABRO_SANDBOX_IMAGE"
 
@@ -144,6 +145,15 @@ class FactoryTarget:
     # an absent key and an unusable value must stay distinguishable, and
     # `_dispatcher_factory_environment` owns the grade of the reading.
     environment: FactoryEnvironment = NO_FACTORY_ENVIRONMENT
+    # The Docker daemon that runs THIS factory's sandbox containers, from its
+    # optional `docker_host` key, spelled as the Docker CLI spells one (e.g.
+    # `ssh://<user>@<factory host>`). None means the entry declares none,
+    # which is NOT "the local daemon": the sandbox-container sweep reports an
+    # undeclared daemon as unobserved rather than addressing whichever daemon
+    # the reconciling host runs, because the server url beside this key is no
+    # evidence of a daemon's whereabouts — a loopback url is as likely to be a
+    # forwarded tunnel as a local engine.
+    docker_host: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -476,6 +486,7 @@ def _factory_target_for(*, name: str, block: dict[str, Any]) -> FactoryTarget:
         server=_optional_str(value=entry.get("server")),
         fabro_bin=_optional_str(value=entry.get(_FACTORY_BIN_KEY)),
         environment=factory_environment_from_entry(entry=entry),
+        docker_host=_optional_str(value=entry.get(_FACTORY_DOCKER_HOST_KEY)),
         dev_token=_optional_str(value=os.environ.get(f"{_FABRO_DEV_AUTH_ENV_PREFIX}{name}")),
     )
 

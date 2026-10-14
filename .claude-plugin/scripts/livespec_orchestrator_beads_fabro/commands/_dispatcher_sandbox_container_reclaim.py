@@ -72,7 +72,6 @@ JOURNAL_STAGE_CONTAINER_HELD = "sandbox-container-held"
 JOURNAL_STAGE_CONTAINER_SWEEP = "sandbox-container-sweep"
 
 _DRY_RUN_DETAIL = "dry run: nothing was removed"
-_NO_SWEEP_DETAIL = "no sandbox-container sweep was performed"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -100,17 +99,20 @@ class HeldContainer:
 
 @dataclass(frozen=True, kw_only=True)
 class SandboxContainerSweep:
-    """One sweep over the host's running sandbox containers.
+    """One sweep over ONE factory host's running sandbox containers.
 
-    The all-default value is the NO-SWEEP state, and `observed` defaults to
-    False for that reason: a caller holding no factory to survey performed no
-    sweep, which is not the same claim as a sweep that found nothing.
+    `detail` carries no default: it is what tells a sweep that looked and
+    found nothing apart from one that could not look, and a default would
+    make the second borrow the first's words. `observed` defaults to False
+    for the matching reason — a value built without asserting a reading must
+    not claim one. A pass that surveyed no factory performs no sweep at all,
+    which is the empty TUPLE of sweeps rather than any value of this type.
     """
 
+    detail: str
     reclaimed: tuple[ReclaimedContainer, ...] = ()
     held: tuple[HeldContainer, ...] = ()
     observed: bool = False
-    detail: str = _NO_SWEEP_DETAIL
     dry_run: bool = False
 
 
