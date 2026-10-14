@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.196.13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.12...v0.196.13) (2026-10-14)
+
+
+### Bug Fixes
+
+* keep the native-status remap from crashing on a malformed live rank ([ca7852d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ca7852da5d27cebbfe2973a1af0d0e40521a6f52))
+* report the malformed live rank the dispatch pre-flight tolerates ([b37c38f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b37c38fa2aea51e5f7564edd2a97183bf90bca23))
+
 ## [0.196.12](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.11...v0.196.12) (2026-10-14)
 
 
