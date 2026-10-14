@@ -11,6 +11,8 @@ import tarfile
 from collections.abc import Mapping
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_git_push import PUSH_ORIGIN_SOURCE
+
 __all__: list[str] = [
     "DEFAULT_SANDBOX_GH_REFRESH_ROOT",
     "MAX_PREPARE_STEP_BYTES",
@@ -260,6 +262,7 @@ def _payload_chunk_scripts(*, payload_path: str) -> list[str]:
 def _unpack_script(*, bundle_root: str, mint_helper: str, payload_path: str) -> str:
     """Unpack the streamed bundle and install the refreshing `gh` wrapper."""
     helper_source_literal = json.dumps(_MINT_HELPER_SOURCE)
+    push_helper = f"{bundle_root}/bin/push_origin"
     return (
         "set -eu\n"
         f'bundle_root="{bundle_root}"\n'
@@ -281,6 +284,11 @@ def _unpack_script(*, bundle_root: str, mint_helper: str, payload_path: str) -> 
         "from pathlib import Path\n"
         f"Path({mint_helper!r}).write_text({helper_source_literal}, encoding='utf-8')\n"
         "PY\n"
+        "python3 - <<'PY'\n"
+        "from pathlib import Path\n"
+        f"Path({push_helper!r}).write_text({json.dumps(PUSH_ORIGIN_SOURCE)}, encoding='utf-8')\n"
+        "PY\n"
+        f'chmod 755 "{push_helper}"\n'
         'chmod 755 "$mint"\n'
         'real_gh="$(command -v gh)"\n'
         'case "$real_gh" in\n'
