@@ -2710,7 +2710,7 @@ def test_engine_blocked_check_falls_back_to_exit_code_routing(tmp_path: Path) ->
     runner = _FakeRunner(
         queue=[
             CommandResult(exit_code=1, stdout="Run: 01RUNGONE\n", stderr="boom"),
-            _err(stderr="inspect broke"),
+            *[_err(stderr="inspect broke")] * 12,
         ]
     )
     outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
