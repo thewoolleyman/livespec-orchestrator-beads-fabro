@@ -69,6 +69,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_env import (
     assess_credential_status,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_refresh import (
+    refresh_claude_credentials,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS,
@@ -126,6 +129,7 @@ def await_usable_credential(
         )
     )
     while budget > 0:
+        refresh_claude_credentials(repo=repo)
         status = assess_credential_status(repo=repo, probe=probe)
         if status.condition != PROVIDER_LIMIT_CONDITION:
             return
