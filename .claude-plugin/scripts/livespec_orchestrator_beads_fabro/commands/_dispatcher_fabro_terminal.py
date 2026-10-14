@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dead_implementer import (
     dead_implementer_condition_from_text,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import (
-    journal_stage,
     tail,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_failure import (
     fabro_failure_outcome_detail,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_reattach import inspect_run
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_detail import (
     needs_human_terminal_detail,
     needs_human_terminal_reason,
@@ -30,47 +30,18 @@ from livespec_orchestrator_beads_fabro.commands._fabro_escalation import (
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroFailureDetail,
     FabroInspectResult,
-    fabro_port_for_plan,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_terminal_evidence import terminal_evidence
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
-        CommandResult,
-        CommandRunner,
         DispatchOutcome,
-        JournalWriter,
     )
 
 __all__: list[str] = [
     "fabro_run_terminal_outcome",
     "inspect_run",
 ]
-
-_FABRO_INSPECT_TIMEOUT_SECONDS = 300.0
-
-
-def inspect_run(
-    *,
-    plan: DispatchPlan,
-    runner: CommandRunner,
-    journal: JournalWriter,
-    run_id: str | None,
-) -> FabroInspectResult | None:
-    """Read and journal `fabro inspect --json` for a parsed run id."""
-    if run_id is None:
-        return None
-    inspect = fabro_port_for_plan(plan=plan, runner=runner).inspect(
-        run_id=run_id,
-        timeout_seconds=_FABRO_INSPECT_TIMEOUT_SECONDS,
-    )
-    journal_stage(
-        journal=journal,
-        plan=plan,
-        stage="fabro-inspect",
-        result=cast("CommandResult", inspect.command),
-    )
-    return inspect
 
 
 def fabro_run_terminal_outcome(
