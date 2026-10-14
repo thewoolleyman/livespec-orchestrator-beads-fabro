@@ -22,6 +22,7 @@ all.
 
 from __future__ import annotations
 
+import importlib
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -254,3 +255,134 @@ def test_a_stall_cancel_trips_no_cap_at_all() -> None:
     cap = non_convergence_cap(outcome=_outcome(status="stalled-no-progress"), stall_seconds=7200.0)
 
     assert cap == UNTRIGGERED_NON_CONVERGENCE_CAP
+
+
+_RUN_READING_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_stall_run_reading"
+_CANCEL_RECORD_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_record"
+_PACKAGE_COMMANDS = (
+    Path(__file__).resolve().parents[2]
+    / ".claude-plugin"
+    / "scripts"
+    / "livespec_orchestrator_beads_fabro"
+    / "commands"
+)
+
+
+def _publish_draft_events(*, head: str, pull_request: int) -> tuple[str, str]:
+    """An event stream whose `publish_draft` completed, and the record text beside it.
+
+    The marker rides the node's own stderr, which is what the clause means by
+    "read from the run's own record" — nothing here reads origin, because
+    origin's branch may have moved since the push.
+    """
+    events = json.dumps(
+        [
+            {"event": "fabro.stage.started", "node_id": "publish_draft"},
+            {"event": "fabro.stage.completed", "node_id": "publish_draft"},
+            {
+                "event": "fabro.edge.selected",
+                "properties": {"from_node": "publish_draft", "to_node": "proof_capture"},
+            },
+            {"event": "fabro.stage.started", "node_id": "proof_capture"},
+        ]
+    )
+    record_text = (
+        f"LIVESPEC_PUBLISH_DRAFT_PUBLISHED: publish_branch=feat/{_ITEM_ID} "
+        f"head={head} pull_request=#{pull_request}\n"
+    )
+    return events, record_text
+
+
+def test_the_cancel_record_names_every_identifier_the_clause_requires() -> None:
+    """One record naming the work-item, dispatch, run, factory, stage, pull request and head.
+
+    The module path is asserted FIRST so this reads as a genuine assertion
+    before the import rather than as a collection error, which proves only
+    unimportability. Each identifier is then read by NAME off the rendered
+    record: a record carrying six of the seven is a plausible record, and the
+    missing one is whichever an operator needed.
+    """
+    assert (_PACKAGE_COMMANDS / "_dispatcher_stall_run_reading.py").is_file()
+    assert (_PACKAGE_COMMANDS / "_dispatcher_stall_cancel_record.py").is_file()
+    reading = importlib.import_module(_RUN_READING_MODULE)
+    rendering = importlib.import_module(_CANCEL_RECORD_MODULE)
+    head = "a" * 40
+    events, record_text = _publish_draft_events(head=head, pull_request=2612)
+
+    record = rendering.stall_cancel_record(
+        work_item_id=_ITEM_ID,
+        dispatch_id="d90ca2237f7b4e21bc5f0273439dbb59",
+        run_id="01STALLRUN",
+        factory="hp",
+        executing_stage=reading.executing_stage(events_json=events),
+        publication=reading.last_publish_draft_publication(
+            events_json=events, record_text=record_text
+        ),
+    )
+
+    assert record["stage"] == rendering.STALL_CANCEL_STAGE
+    assert record["work_item_id"] == _ITEM_ID
+    assert record["dispatch_id"] == "d90ca2237f7b4e21bc5f0273439dbb59"
+    assert record["run_id"] == "01STALLRUN"
+    assert record["factory"] == "hp"
+    assert record["executing_stage"] == "proof_capture"
+    assert record["pull_request"] == 2612
+    assert record["published_head"] == head
+
+
+def test_the_record_names_the_last_publication_and_not_a_newer_origin_head() -> None:
+    """Two completed publications: the record names the LAST one the run pushed.
+
+    `origin` has moved on in the fixture, so a build reading the branch instead
+    of the run's record would report the newer head — which is the one thing the
+    clause forbids, and which reads exactly like a correct record.
+    """
+    reading = importlib.import_module(_RUN_READING_MODULE)
+    first = "b" * 40
+    last = "c" * 40
+    events = json.dumps(
+        [
+            {"event": "fabro.stage.started", "node_id": "publish_draft"},
+            {"event": "fabro.stage.completed", "node_id": "publish_draft"},
+            {"event": "fabro.stage.started", "node_id": "publish_draft"},
+            {"event": "fabro.stage.completed", "node_id": "publish_draft"},
+            {
+                "event": "fabro.edge.selected",
+                "properties": {"from_node": "publish_draft", "to_node": "proof_capture"},
+            },
+        ]
+    )
+    record_text = (
+        f"LIVESPEC_PUBLISH_DRAFT_PUBLISHED: publish_branch=x head={first} pull_request=#11\n"
+        f"LIVESPEC_PUBLISH_DRAFT_PUBLISHED: publish_branch=x head={last} pull_request=#11\n"
+    )
+
+    publication = reading.last_publish_draft_publication(
+        events_json=events, record_text=record_text
+    )
+
+    assert publication is not None
+    assert publication.published_head == last
+    assert publication.pull_request == 11
+    # And the stage is the edge target, because no node is open between nodes.
+    assert reading.executing_stage(events_json=events) == "proof_capture"
+
+
+def test_a_run_that_completed_no_publish_draft_has_no_publication_to_name() -> None:
+    """An unpublished run reports no publication, which is not an unreadable head.
+
+    The two answers have opposite remedies — a plain dispatch reclaims the
+    publish branch — so a reader that collapsed them would advise reclaiming a
+    branch a run had published onto.
+    """
+    reading = importlib.import_module(_RUN_READING_MODULE)
+    events = json.dumps(
+        [
+            {"event": "fabro.stage.started", "node_id": "implement"},
+        ]
+    )
+
+    assert reading.last_publish_draft_publication(events_json=events, record_text="") is None
+    # The run was cancelled INSIDE `implement`, so the open node is the stage —
+    # not the target of any earlier edge.
+    assert reading.executing_stage(events_json=events) == "implement"
