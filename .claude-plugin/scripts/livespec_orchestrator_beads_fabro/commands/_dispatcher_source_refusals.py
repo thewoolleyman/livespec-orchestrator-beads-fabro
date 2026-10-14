@@ -40,8 +40,9 @@ _REASON_UNREACHABLE = "source-head-not-origin-reachable"
 _REASON_NOT_A_WORKTREE = "source-checkout-not-a-git-worktree"
 
 UNPUSHED_REMEDY = (
-    "preserve the unpushed commit(s) on a branch/worktree, then reset the "
-    "primary checkout to origin/master before dispatching. Do not push from the "
+    "preserve the unpushed commit(s) on a branch/worktree and publish from that "
+    "worktree before dispatching. For an ancestor checkout, fast-forward to its "
+    "origin tracking ref. Do not push from the "
     "primary checkout; the commit-refuse hook correctly forbids that path"
 )
 

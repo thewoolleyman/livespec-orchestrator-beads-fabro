@@ -267,7 +267,8 @@ def test_dispatch_refuses_unpushed_head_with_journaled_terminal_outcome(
     assert "add local.txt" in err
     assert "livespec: refusing commit/push at primary checkout; use a worktree" in err
     assert "preserve the unpushed commit(s) on a branch/worktree" in err
-    assert "reset the primary checkout to origin/master" in err
+    assert "fast-forward" in err
+    assert "Do not push from the primary checkout" in err
     records = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
     assert [record["stage"] for record in records] == ["source-checkout-origin-reachability"]
     assert records[0]["terminal"] is True
