@@ -32,6 +32,7 @@ from typing import Any, cast
 
 __all__: list[str] = [
     "DEFAULT_FABRO_TIMEOUT_SECONDS",
+    "DEFAULT_NODE_TIMEOUTS",
     "DEFAULT_NODE_TIMEOUT_SECONDS",
     "DEFAULT_STALL_TIMEOUT_SECONDS",
     "REPOSITORY_LAYER",
@@ -278,8 +279,16 @@ def _positive_int(*, value: object) -> int | None:
     return value if value > 0 else None
 
 
+# The fully-defaulted resolution as a VALUE, for a caller that needs to put
+# it in a signature or a dataclass default rather than call for it. It is the
+# same object `default_node_timeouts()` returns and is safe to share because
+# `NodeTimeouts` is frozen; declaring it is what lets a plan built without a
+# resolution carry the documented defaults rather than carry None and make
+# every reader branch on an absence that has a perfectly good answer.
+DEFAULT_NODE_TIMEOUTS = default_node_timeouts()
+
 # Derived, never hand-written: the ceiling a fully-defaulted resolution
 # implies. It is the fallback for a `DispatchPlan` built without an explicit
 # ceiling (the hermetic tests and any caller that resolves no config), so
 # even that path follows the graph rather than a literal.
-DEFAULT_FABRO_TIMEOUT_SECONDS = derive_fabro_timeout_seconds(timeouts=default_node_timeouts())
+DEFAULT_FABRO_TIMEOUT_SECONDS = derive_fabro_timeout_seconds(timeouts=DEFAULT_NODE_TIMEOUTS)

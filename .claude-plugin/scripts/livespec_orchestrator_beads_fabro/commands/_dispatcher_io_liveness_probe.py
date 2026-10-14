@@ -7,11 +7,19 @@ primary over it — which is a different job from the thread and
 `fabro ps` orchestration in `_dispatcher_io_fabro_launcher`, the module
 this was cut out of.
 
-The layering direction is load-bearing: the heartbeat is the PRIMARY and
-the wall-clock event stream is the FALLBACK, so a heartbeat-pipeline
-outage degrades the watchdog to coarse detection rather than to NO
-detection. A dispatch that wires no heartbeat path reaches the
-wall-clock probe directly, which is what keeps the backstop a backstop.
+The layering is load-bearing: the heartbeat is the FINER layer and the
+wall-clock event stream is the PERMANENT backstop, and the composition
+reports whichever is NEWER, so a heartbeat-pipeline outage degrades the
+watchdog to coarse detection rather than to NO detection and a frozen
+heartbeat never masks an advancing event stream (bd-ib-qsk4o5). A dispatch
+that wires no heartbeat path reaches the wall-clock probe directly, which
+is what keeps the backstop a backstop.
+
+The open-command-node observation is read HERE, from the same `fabro
+events` output the wall-clock reading is parsed from, rather than by a
+second probe. One read answers both questions, so the two can never
+disagree about the stream they describe — and a second read would double
+the per-poll probe cost on every dispatch in the fleet.
 """
 
 from __future__ import annotations
@@ -23,6 +31,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_heartbeat_probe impo
     HeartbeatLivenessProbe,
     LayeredLivenessProbe,
     heartbeat_lookup_keys,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_open_command_node import (
+    open_command_node,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
@@ -69,8 +80,16 @@ class _WallClockEventProbe:
             timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS,
         )
         events_json = events.command.stdout if events.command.exit_code == 0 else ""
-        epoch = parse_last_event_epoch(events_json=events_json)
-        return LivenessSample(last_event_epoch=epoch, observed_at=observed_at)
+        return LivenessSample(
+            last_event_epoch=parse_last_event_epoch(events_json=events_json),
+            observed_at=observed_at,
+            # Read from the SAME output as the timestamp above, against this
+            # dispatch's own resolved node timeouts, so the bound the stall
+            # decision applies is the value the rendered graph gave the node.
+            open_command_node=open_command_node(
+                events_json=events_json, timeouts=self.plan.node_timeouts
+            ),
+        )
 
 
 def liveness_sample(
