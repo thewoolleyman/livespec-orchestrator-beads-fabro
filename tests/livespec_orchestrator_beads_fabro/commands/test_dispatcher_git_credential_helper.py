@@ -278,8 +278,27 @@ def _scrubbed_env() -> dict[str, str]:
     `.coverage.*` that races the parallel check dispatcher. The git config
     redirects keep the runner's own global and system config -- which may well
     carry a credential helper of its own -- out of the measurement.
+
+    THE PROCESS-LEVEL CONFIG IS SCRUBBED FOR THAT SAME REASON, and it is the one
+    layer the two redirects above cannot reach. `GIT_CONFIG_COUNT` plus its
+    `GIT_CONFIG_KEY_<n>` / `GIT_CONFIG_VALUE_<n>` pairs OUTRANK every file-based
+    layer, so a runner that exports them hands this fixture its own credential
+    configuration whatever the clone's own config says. The Petri-era factory
+    sandbox exports exactly that: measured 2026-10-14 inside run
+    01M4Y7EJWTQWK5CWWS0NKDHY7T, `GIT_CONFIG_COUNT=5` carried an EMPTY
+    `credential.https://github.com.helper` -- which resets the helper list,
+    discarding the `!gh auth git-credential` line the prepare chain just wrote
+    -- followed by a `store` helper pointing at a per-run file holding nothing
+    for this fixture's URL. `git credential fill` then fell through to a prompt
+    and exited 128, so the assertion that failed was about a credential helper
+    that had been configured correctly and never consulted.
     """
-    env = {key: value for key, value in os.environ.items() if not key.startswith("COV")}
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(("COV", "GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))
+    }
+    env["GIT_CONFIG_COUNT"] = "0"
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
     env["GIT_CONFIG_NOSYSTEM"] = "1"

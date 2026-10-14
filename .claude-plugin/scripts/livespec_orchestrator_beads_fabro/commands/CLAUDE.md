@@ -143,6 +143,30 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   onto "not declared" rather than raising, because every consumer is building a
   DIAGNOSTIC naming the wrapper to fix and an exception there would replace an
   actionable refusal with a traceback about the file it was about to name.
+- `_dispatcher_credential_rotation.py` — the re-resolution the loop's bounded
+  credential re-probe takes each round, so a credential ROTATED in that wrapper
+  reaches a wait that is already parked (`bd-ib-o6aeji`, Scenario 121). The wait
+  used to assess `os.environ` — the value injected when the loop was LAUNCHED —
+  which made it unretirable by the one event it exists to wait for: measured
+  2026-10-08, four loops on this host journaled `exhausted` from 08:54Z and
+  11:42Z through 23:10Z while other repositories' dispatches ran on the same
+  factory minutes after the rotation, and the only remedy was to kill and
+  re-dispatch all four. Four properties an editor must not invert. The child's
+  inherited credential name is EMPTIED, because the wrapper caches the DIFF
+  between its caller's environment and what it injected and replays it to every
+  caller on the host: a nested invocation that already holds the value produces
+  a near-empty diff, which both hides the rotation from this reading and poisons
+  that shared cache (`AGENTS.md`'s wrapper-cache entry, measured 2026-10-01). A
+  wrapper fault is NEVER reported as an absent credential — it yields the
+  launch-time value with `rotatable` False — because the two have opposite
+  remedies and a wait retired by a refusal about a misconfigured wrapper reports
+  the wrong fault; what stops a PERSISTENT fault is the wait's own bound on
+  consecutive unresolvable rounds. A repository declaring no wrapper spawns
+  nothing, since there is no second source to read and a `sudo` re-exec per
+  round would learn nothing. And the journal names the credential by a ONE-WAY
+  identity rather than a value, with the empty token fingerprinting to null:
+  the only question two rows are asked is whether the value CHANGED, and "no
+  credential was resolved" must not read as a changed one.
 - `_dispatcher_git_credential_helper.py` — the git credential helper every
   dispatch configures in the sandbox clone, so an in-sandbox push to
   github.com obtains an App installation token minted AT PUSH TIME from the
