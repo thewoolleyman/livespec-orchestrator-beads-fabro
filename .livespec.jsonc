@@ -557,6 +557,8 @@
       "node_timeouts": {
         "implement": 14400,
         "janitor": 3600,
+        "publish_draft": 3600,
+        "pr_refresh": 3600,
         "fix": 3600,
         "review_fix": 7200
       },
