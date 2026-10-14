@@ -191,6 +191,15 @@ def _normalize_native_statuses(
     config: StoreConfig,
     journal: JournalFile,
 ) -> list[WorkItem]:
+    malformed = [
+        {"item_id": item.id, "rank": item.rank}
+        for item in items
+        if str(item.status) != _LIVESPEC_DONE
+        and item.rank != BOTTOM_SENTINEL
+        and not _valid_rank(rank=item.rank)
+    ]
+    if malformed:
+        journal.append(record={"stage": "rank-normalization-warning", "malformed_ranks": malformed})
     remaps = plan_native_status_remaps(items=items)
     if not remaps:
         return items
