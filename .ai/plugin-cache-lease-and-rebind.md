@@ -80,6 +80,16 @@ mise exec -- just gate-start -- sh -c "
   herdr agent prompt $pane 'Plugins reloaded; confirm the rebind by lease, then <next step>.'"
 ```
 
+Resolve the pane with `herdr pane current`, as above, and never with
+`$HERDR_PANE_ID`. That variable can carry a stale id that no herdr agent
+command resolves. Measured 2026-10-14: in the `agent-session-stall-prevention`
+session it read `w1:pF`, `herdr agent get w1:pF` returned `agent_not_found`, and
+`herdr pane current` returned the real pane `w2H:p6`. A waiter armed with the
+stale id polls normally and fails only at the wake, when nothing is left to
+notice it. Before arming any self-wake, confirm the target with
+`herdr agent get <pane>` and check that `terminal_title_stripped` is your
+session name.
+
 Then end the turn with no further tool calls; the waiter fires once the turn
 ends. `herdr agent prompt` is the submit verb, and it refuses a blocked agent
 instead of silently appending to its input. After resuming, read the pane
