@@ -15,12 +15,14 @@ invisible to the next dispatch from any other clone — and this fleet's ledger
 writers may share nothing but the Beads server. The journal still carries every
 write, because an operator triaging ONE dispatch reads that and not the ledger.
 
-THE KINDS ARE NOT INTERCHANGEABLE. A `refusal-signature` is written when a
-dispatch ends in a failure or an admission refusal. A `named-change` record is
-NOT an outcome — it is the reason an operator gave for overriding an armed
-signature — so it must never arm or clear the guard: reading it as an outcome
-would clear the guard on the strength of the override itself, which is the one
-thing an override must not do.
+THREE KINDS, AND ONLY TWO OF THEM ARE DISPATCH OUTCOMES. A `refusal-signature`
+is written when a dispatch ends in a failure or an admission refusal; a
+`guard-cleared` record is written when a dispatch of the item MERGES. Those two
+are the outcomes `guard_state` reads for "what happened last". A `named-change`
+record is NOT an outcome — it is the reason an operator gave for overriding an
+armed signature — so it must never arm or clear the guard: reading it as an
+outcome would clear the guard on the strength of the override itself, which is
+the one thing an override must not do.
 
 A CAPACITY DEFERRAL IS NOT A FAILURE AND EARNS NO RECORD. The work-in-progress
 cap defers an item that nothing is wrong with, so a signature there would arm
@@ -43,6 +45,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 __all__: list[str] = [
+    "GUARD_CLEARED_KIND",
     "NAMED_CHANGE_KIND",
     "REFUSAL_SIGNATURE_KIND",
     "RETRY_DISCIPLINE_PREFIX",
@@ -65,6 +68,7 @@ RETRY_DISCIPLINE_PREFIX = "livespec-dispatch-retry-discipline"
 
 REFUSAL_SIGNATURE_KIND = "refusal-signature"
 NAMED_CHANGE_KIND = "named-change"
+GUARD_CLEARED_KIND = "guard-cleared"
 
 # The class a refusal signature carries when the attempt recorded no engine
 # category and no degraded step. An explicit NAME rather than an empty string,
@@ -92,7 +96,7 @@ _STAGE_SOURCE_MODULES: dict[str, str] = {
     "stale-run-reap": f"{_COMMANDS}/_dispatcher_engine.py",
 }
 
-_KINDS = frozenset({REFUSAL_SIGNATURE_KIND, NAMED_CHANGE_KIND})
+_KINDS = frozenset({REFUSAL_SIGNATURE_KIND, NAMED_CHANGE_KIND, GUARD_CLEARED_KIND})
 _COMMENT_BODY_KEY = "text"
 
 _KIND_FIELD = "kind"
@@ -142,9 +146,20 @@ class RetryRecord:
 
 @dataclass(frozen=True, kw_only=True)
 class GuardState:
-    """What one item's timeline says about whether the guard is armed."""
+    """What one item's timeline says about whether the guard is armed.
+
+    TWO fields from ONE pass, because the second is only meaningful relative to
+    the first: `ineffective_reason` is the reason recorded for the attempt that
+    produced `signature`, and it exists so the refusal can say that the previous
+    reason did not change the outcome. It is `None` whenever the guard is
+    unarmed, whenever no reason was given, and whenever the reason overrode a
+    DIFFERENT stage or class than the one now recorded — that last case is a
+    named change that genuinely moved the failure, which is progress rather than
+    a repeat.
+    """
 
     signature: RetryRecord | None
+    ineffective_reason: str | None
 
 
 def render_retry_record(*, record: RetryRecord) -> str:
@@ -240,19 +255,48 @@ def guard_state(*, records: Sequence[RetryRecord]) -> GuardState:
     """Whether the guard is armed for this timeline, and by which signature.
 
     The scan runs BACKWARDS and stops at the first record that is a dispatch
-    OUTCOME. Everything else — which today is only a `named-change` record — is
-    skipped, because the reason an operator gave is not a statement about how
-    the attempt ended.
+    OUTCOME. A `guard-cleared` record found first means the item's most recent
+    dispatch MERGED, so the guard is unarmed however many signatures sit behind
+    it; a `refusal-signature` found first arms it. Everything else — which today
+    is only a `named-change` record — is skipped, because the reason an operator
+    gave is not a statement about how the attempt ended.
     """
-    for record in reversed(records):
+    for position in range(len(records) - 1, -1, -1):
+        record = records[position]
+        if record.kind == GUARD_CLEARED_KIND:
+            return GuardState(signature=None, ineffective_reason=None)
         if record.kind == REFUSAL_SIGNATURE_KIND:
-            return GuardState(signature=record)
-    return GuardState(signature=None)
+            return GuardState(
+                signature=record,
+                ineffective_reason=_ineffective_reason(
+                    preceding=records[:position], signature=record
+                ),
+            )
+    return GuardState(signature=None, ineffective_reason=None)
 
 
 def stage_source_module(*, stage: str) -> str:
     """The declared source module for a refusing stage, or `""` when unknown."""
     return _STAGE_SOURCE_MODULES.get(stage, "")
+
+
+def _ineffective_reason(*, preceding: Sequence[RetryRecord], signature: RetryRecord) -> str | None:
+    """The reason the attempt that produced `signature` was admitted with.
+
+    Only the record IMMEDIATELY before the signature is consulted, and that is
+    the rule rather than a shortcut: the reason in force for an attempt is the
+    one recorded for THAT attempt, and a reason from two attempts ago was already
+    answered by the signature in between.
+    """
+    if not preceding:
+        return None
+    previous = preceding[-1]
+    if previous.kind != NAMED_CHANGE_KIND:
+        return None
+    overrode = (previous.overrode_stage, previous.overrode_error_class)
+    if overrode != (signature.stage, signature.error_class):
+        return None
+    return previous.reason
 
 
 def _record_fields(*, text: str) -> dict[str, str]:

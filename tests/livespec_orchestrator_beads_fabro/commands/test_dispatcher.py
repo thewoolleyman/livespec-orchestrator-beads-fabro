@@ -4277,6 +4277,10 @@ def test_dispatch_green_closes_item_and_journals(
         "outcome",
         "calibration",
         "review-gate-telemetry-skipped",
+        # The retry-discipline record this ending earns (bd-ib-5vtqaq). This
+        # dispatch MERGED, so it writes the `guard-cleared` record that disarms
+        # the guard for the item's next dispatch rather than a refusal signature.
+        "dispatcher-retry-discipline-cleared",
         "self-update-skipped",
         "run-turn-telemetry-check",
         "reflection",

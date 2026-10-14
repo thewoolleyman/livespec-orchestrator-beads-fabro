@@ -91,6 +91,22 @@ def build_parser() -> argparse.ArgumentParser:
             "variant then dispatcher.default_workflow when this is omitted"
         ),
     )
+    # WHAT CHANGED since this work-item's recorded dispatch failure, forwarded
+    # into the `dispatcher.py loop` argv as one unchanged argument. An ARGUMENT
+    # for the same reason `--acp-node` is one: the reason is written to the item
+    # and to the dispatch journal, so what authorized a re-dispatch belongs in
+    # the recorded invocation rather than in an ambient value.
+    _ = parser.add_argument(
+        "--because",
+        dest="because",
+        default=None,
+        metavar="REASON",
+        help=(
+            "what changed since this work-item's most recently recorded dispatch "
+            "failure, for 'impl:<id>' only; forwarded to the Dispatcher, which "
+            "refuses a re-dispatch past a recorded refusal signature without it"
+        ),
+    )
     # The v093-native answer route. A factory run that needs a human decision
     # TERMINATES, so the answer cannot go back to the run that asked: it is
     # written to the item's ledger, which is what the NEXT dispatch's goal brief

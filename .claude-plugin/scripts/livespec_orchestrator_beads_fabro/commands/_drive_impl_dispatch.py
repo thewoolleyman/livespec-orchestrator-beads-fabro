@@ -23,6 +23,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     INVOKER_FLAG,
     InvokerIdentity,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_retry_refusal import BECAUSE_FLAG
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
@@ -56,6 +57,7 @@ def run_impl_dispatch(  # noqa: PLR0913 — kw-only transport; `workflow_name` i
     acp_nodes: tuple[str, ...],
     workflow_name: str | None,
     identity: InvokerIdentity | None,
+    because: str | None = None,
 ) -> dict[str, Any]:
     """Run one `impl:<id>` action as a `dispatcher.py loop` subprocess."""
     resolved_runner = _SubprocessRunner() if runner is None else runner
@@ -67,6 +69,7 @@ def run_impl_dispatch(  # noqa: PLR0913 — kw-only transport; `workflow_name` i
         acp_nodes=acp_nodes,
         workflow_name=workflow_name,
         identity=identity,
+        because=because,
     )
     result = resolved_runner(argv=argv, cwd=repo)
     parsed = _parse_json_object_or_array(text=result.stdout)
@@ -86,7 +89,7 @@ def run_impl_dispatch(  # noqa: PLR0913 — kw-only transport; `workflow_name` i
     }
 
 
-def build_dispatcher_argv(
+def build_dispatcher_argv(  # noqa: PLR0913 — kw-only argv builder; `because` is one more independent recorded argument forwarded verbatim, not a coupled one.
     *,
     repo: Path,
     dispatcher_bin: Path,
@@ -94,6 +97,7 @@ def build_dispatcher_argv(
     acp_nodes: tuple[str, ...] = (),
     workflow_name: str | None = None,
     identity: InvokerIdentity | None = None,
+    because: str | None = None,
 ) -> tuple[str, ...]:
     """Build the `dispatcher.py loop` argv one `impl:<id>` action runs.
 
@@ -108,6 +112,14 @@ def build_dispatcher_argv(
     also what the drive result payload publishes back. Omitted entirely when
     unselected, so the Dispatcher's own ledger-then-default precedence
     resolves it rather than being pre-empted by an empty string.
+
+    `--because` is re-emitted as its own argv PAIR for the same reason: the
+    reason is operator prose that routinely carries spaces, and as one element it
+    reaches the Dispatcher unchanged with no quoting games. It is forwarded
+    whenever it was SUPPLIED, blank included — unlike `--workflow-name` above,
+    which drops an empty value — because an empty reason is a condition the
+    Dispatcher refuses by name, and dropping it here would turn that refusal
+    into a silent admission.
 
     An ASSERTED identity (flag or environment) is forwarded as an explicit
     `--invoker` so the spawned Dispatcher records the operator, not the shell
@@ -131,6 +143,7 @@ def build_dispatcher_argv(
         "--item",
         work_item_ref,
         *_forwarded_workflow_name(workflow_name=workflow_name),
+        *_forwarded_because(because=because),
         *overrides,
         "--json",
     )
@@ -157,6 +170,12 @@ def _forwarded_workflow_name(*, workflow_name: str | None) -> tuple[str, ...]:
     if workflow_name is None or workflow_name == "":
         return ()
     return ("--workflow-name", workflow_name)
+
+
+def _forwarded_because(*, because: str | None) -> tuple[str, ...]:
+    if because is None:
+        return ()
+    return (BECAUSE_FLAG, because)
 
 
 def _forwarded_invoker(*, identity: InvokerIdentity | None) -> tuple[str, ...]:

@@ -7,10 +7,13 @@ convention each venue remembers.
 WHICH ENDINGS EARN A RECORD, stated here because the filter is the whole of the
 capacity-deferral guarantee. A `failed` outcome earns a refusal signature — that
 status covers both a run that failed and an item the admission valve HELD, which
-is why `admission-held` needs no arm of its own. Everything else earns NOTHING,
-and the ending that matters most there is `capacity-deferred`: the
-work-in-progress cap defers an item nothing is wrong with, so a signature there
-would demand a named change for the ordinary next act.
+is why `admission-held` needs no arm of its own. An outcome carrying a MERGE
+earns a `guard-cleared` record, keyed on the merge rather than on a status,
+because the merge is what makes the next dispatch of that item a fresh start.
+Everything else earns NOTHING, and the ending that matters most there is
+`capacity-deferred`: the work-in-progress cap defers an item nothing is wrong
+with, so a signature there would demand a named change for the ordinary next
+act.
 
 THE EXECUTING BUILD IS STAMPED HERE, and `executing_build` is public so the
 guard can read the same identity rather than derive a second one. Two
@@ -45,6 +48,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     store_config,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_retry_records import (
+    GUARD_CLEARED_KIND,
     REFUSAL_SIGNATURE_KIND,
     UNCLASSIFIED_ERROR_CLASS,
     UNKNOWN_BUILD_VERSION,
@@ -67,20 +71,27 @@ from livespec_orchestrator_beads_fabro.errors import (
 )
 
 __all__: list[str] = [
+    "RETRY_CLEARED_STAGE",
     "RETRY_SIGNATURE_STAGE",
     "RETRY_WRITE_FAILED_STAGE",
+    "append_retry_record",
     "executing_build",
     "outcome_error_class",
     "record_retry_outcomes",
 ]
 
-# The journal stage a written record is reported under, and the one a failed
-# write is reported under. Distinct, because a reader counting arming events
-# must not be handed the writes that never landed.
+# The journal stage each written record is reported under, plus the one a failed
+# write is reported under. One stage PER KIND, because a reader counting arming
+# events must not be handed the clearing ones, nor the writes that never landed.
 RETRY_SIGNATURE_STAGE = "dispatcher-retry-discipline-signature"
+RETRY_CLEARED_STAGE = "dispatcher-retry-discipline-cleared"
 RETRY_WRITE_FAILED_STAGE = "dispatcher-retry-discipline-write-failed"
 
 _FAILED_STATUS = "failed"
+_JOURNAL_STAGES = {
+    REFUSAL_SIGNATURE_KIND: RETRY_SIGNATURE_STAGE,
+    GUARD_CLEARED_KIND: RETRY_CLEARED_STAGE,
+}
 _LEDGER_WRITE_ERRORS = (
     WorkItemNotFoundError,
     BeadsCommandError,
@@ -138,19 +149,32 @@ def record_retry_outcomes(
         record = _record_for_outcome(outcome=outcome, build=resolved_build, recorded_at=recorded_at)
         if record is None:
             continue
-        _append_retry_record(
+        append_retry_record(
             repo=repo,
             work_item_id=outcome.work_item_id,
             record=record,
             journal=journal,
-            journal_stage=RETRY_SIGNATURE_STAGE,
+            journal_stage=_JOURNAL_STAGES[record.kind],
         )
 
 
 def _record_for_outcome(
     *, outcome: DispatchOutcome, build: ExecutingBuild, recorded_at: str
 ) -> RetryRecord | None:
-    """The record one terminal outcome earns, or `None` when it earns none."""
+    """The record one terminal outcome earns, or `None` when it earns none.
+
+    The MERGE arm runs FIRST, and it is keyed on `merge_sha` rather than on a
+    status, because a dispatch whose work merged is a fresh start for that item
+    whatever the post-merge stages then reported.
+    """
+    if outcome.merge_sha is not None:
+        return RetryRecord(
+            kind=GUARD_CLEARED_KIND,
+            stage=outcome.stage,
+            error_class="",
+            build=build,
+            recorded_at=recorded_at,
+        )
     if outcome.status != _FAILED_STATUS:
         return None
     return RetryRecord(
@@ -162,7 +186,7 @@ def _record_for_outcome(
     )
 
 
-def _append_retry_record(
+def append_retry_record(
     *,
     repo: Path,
     work_item_id: str,
@@ -170,7 +194,13 @@ def _append_retry_record(
     journal: JournalWriter,
     journal_stage: str,
 ) -> None:
-    """Append one record to the item's ledger timeline and journal the write."""
+    """Append one record to the item's ledger timeline and journal the write.
+
+    PUBLIC because the GUARD writes the `named-change` record through it: ONE
+    append path means every record a reader parses was written by one writer,
+    and a second append would be a second place the fail-open contract and the
+    journal row shape could drift.
+    """
     written = attempt(
         action=lambda: make_beads_client(config=store_config(repo=repo)).add_comment(
             issue_id=work_item_id,

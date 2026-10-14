@@ -391,3 +391,30 @@ def test_dispatch_loop_and_probe_accept_a_because_argument() -> None:
             [subcommand, "--repo", ".", "--item", _ITEM_ID, *extra, "--because", "a named change"]
         )
         assert args.because == "a named change"
+
+
+def test_a_named_change_recorded_with_no_injected_instant_still_carries_one(
+    tmp_path: Path,
+) -> None:
+    """The production clock is the default, and the record must never be undated.
+
+    Every other named-change case injects an instant so its bytes are
+    deterministic, which leaves the DEFAULT unexercised — and an undated record
+    is one the next refusal quotes with an empty `recorded at` line.
+    """
+    module = _module()
+    append_work_item(path=_config(), item=_item())
+    _seed_signature()
+    journal = _RecordingJournal()
+
+    refusal = module.retry_discipline_refusal(
+        args=_args(because="rebound the session"),
+        repo=_repo(tmp_path),
+        items=[_item()],
+        journal=journal,
+        build=_build(root="/cache/new"),
+    )
+
+    assert refusal is None
+    assert journal.records[0]["stage"] == module.RETRY_NAMED_CHANGE_STAGE
+    assert str(journal.records[0]["recorded_at"]).endswith("Z")

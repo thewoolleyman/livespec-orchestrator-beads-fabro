@@ -102,7 +102,13 @@ def module_identity_clause(*, module: str, recorded: bytes | None, executing: by
     )
 
 
-def armed_refusal(*, work_item_id: str, signature: RetryRecord, module_clause: str) -> str:
+def armed_refusal(
+    *,
+    work_item_id: str,
+    signature: RetryRecord,
+    module_clause: str,
+    ineffective_reason: str | None,
+) -> str:
     """The refusal that quotes an armed signature and names the way to proceed."""
     headline = (
         f"ERROR: dispatch of {work_item_id} refused: its most recent recorded dispatch "
@@ -119,6 +125,24 @@ def armed_refusal(*, work_item_id: str, signature: RetryRecord, module_clause: s
         f"  plugin root: {signature.build.plugin_root}",
         f"  recorded at: {signature.recorded_at}",
         module_clause,
+        *_ineffective_clause(reason=ineffective_reason),
         remedy,
     ]
     return "\n".join(lines) + "\n"
+
+
+def _ineffective_clause(*, reason: str | None) -> tuple[str, ...]:
+    """The clause for an override whose attempt ended the way it started.
+
+    EMPTY when there was no override, and empty too when the override's attempt
+    ended at a DIFFERENT stage or class: that is a named change which moved the
+    failure, and reporting it as ineffective would tell the operator their change
+    did nothing while the record shows it did.
+    """
+    if reason is None:
+        return ()
+    clause = (
+        "The previous reason did NOT change the outcome — this attempt ended at the "
+        f'same stage and error class it overrode: "{reason}"'
+    )
+    return (clause,)
