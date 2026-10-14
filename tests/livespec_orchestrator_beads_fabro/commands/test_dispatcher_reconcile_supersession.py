@@ -30,6 +30,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_input
     ReconcileInputs,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_join import OrphanRun
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_container_port import (
+    DOCKER_BIN,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
 from livespec_orchestrator_beads_fabro.commands._run_attribution import RunAttribution
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -59,11 +62,19 @@ _CANCEL_PATH = f"/api/v1/runs/{_SECOND_RUN}/cancel"
 
 @dataclass(kw_only=True)
 class _Runner:
-    """One fake `fabro` CLI; every verb other than `ps` succeeds silently."""
+    """One fake `fabro` CLI; every verb other than `ps` succeeds silently.
+
+    `calls` records the ENGINE's verbs, so the Docker leg of the pass's
+    sandbox-container sweep is answered before anything is recorded. Both
+    binaries spell their listing verb `ps`, so a fake that recorded the verb
+    alone would file a container listing in this file's record of the
+    engine's supersession routes.
+    """
 
     ps_rows: str = "[]"
     stamp_on_dump: tuple[Path, str] | None = None
     calls: list[str] = field(default_factory=list)
+    docker_calls: list[list[str]] = field(default_factory=list)
 
     def run(
         self,
@@ -75,6 +86,9 @@ class _Runner:
         stdin: int | None = None,
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
+        if argv[0] == DOCKER_BIN:
+            self.docker_calls.append(argv)
+            return CommandResult(exit_code=0, stdout="", stderr="")
         self.calls.append(argv[1])
         if argv[1] == "ps":
             return CommandResult(exit_code=0, stdout=self.ps_rows, stderr="")

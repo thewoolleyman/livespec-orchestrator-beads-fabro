@@ -40,7 +40,7 @@ every reconcile journal row in one place.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_grace import HeldRun
@@ -48,6 +48,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_join 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_terminate import (
     TERMINATION_ROUTE_RM,
     TerminationOutcome,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_container_reclaim import (
+    SandboxContainerSweep,
 )
 
 __all__: list[str] = [
@@ -129,12 +132,19 @@ class ReconcileRunsSummary:
     `held` is a REPORT, never an act: the parked runs the grace arm is still
     waiting on. It is a separate collection from `reconciled` so that nothing
     downstream can hand a held run to the termination path by accident.
+
+    `containers` is the same pass's sweep over the host's running sandbox
+    containers. It defaults to the NO-SWEEP value rather than to an empty
+    sweep, so a caller that built a summary without surveying anything — the
+    lifecycle hook, when the repo declares no factory — reports that no sweep
+    happened instead of reporting a host with nothing on it.
     """
 
     reconciled: tuple[ReconciledRun, ...]
     errors: tuple[ReconcileError, ...]
     dry_run: bool
     held: tuple[HeldRun, ...] = ()
+    containers: SandboxContainerSweep = field(default_factory=SandboxContainerSweep)
 
 
 def reconciled_from(

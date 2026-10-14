@@ -25,6 +25,17 @@ and another session's launch stamp landing between that read and the inventory
 read leaves the pass about to cancel the item's NEWEST run. A reading either
 fresh read does not reproduce is held rather than acted on.
 
+RECONCILING A RUN ALSO RECLAIMS ITS SANDBOX CONTAINER, which is a lane of its
+own rather than a step of the orphan path: the orphan join considers only
+non-terminal runs, while a leaked container belongs to a run that has already
+ENDED (`_dispatcher_sandbox_container_sweep.py`). Those containers keep
+running inside `fabro-sandbox.slice` and keep spending the memory and CPU
+envelope the live runs share, so the leak raises OOM and throttle risk for
+real work as runs fail. The sweep grades every container against the
+inventory this pass already read — it takes no second reading, because two
+readings a moment apart disagree about a run that terminated between them —
+and it fails closed in every direction it can be blinded.
+
 A run parked at a human gate whose item is still live has no moot question to
 release it, so it is governed instead by `dispatcher.blocked_run_grace_seconds`
 (`_dispatcher_reconcile_runs_grace.py`). Past the grace it becomes an orphan
@@ -37,7 +48,8 @@ held set is carried separately from the reconciled set precisely so that
 from __future__ import annotations
 
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_acp_projection import (
@@ -45,6 +57,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_acp_projec
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
     FactoryRunInventory,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_containers import (
+    pass_container_sweep,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_export import (
     export_orphan_reference,
@@ -99,6 +114,27 @@ _ERROR_PS_FAILED = "factory-ps-failed"
 _ERROR_EXPORT_FAILED = "export-not-verified"
 
 
+@dataclass(frozen=True, kw_only=True)
+class _FactoryPass:
+    """What one factory's survey produced beside the orphans it reconciled.
+
+    `run_statuses` is that factory's whole inventory — terminal runs
+    included — because the container sweep's question is about runs the
+    orphan join deliberately ignores. It is carried back rather than
+    accumulated through a parameter so `_reconcile_one_factory` keeps the
+    argument count its own refusal arms need.
+
+    `surveyed` is NOT `bool(run_statuses)`: a factory that answered with an
+    empty inventory was surveyed, and its answer is what makes a container on
+    this host an ungradeable leak worth reporting. A factory that could not be
+    reached, or that declares no server, was not.
+    """
+
+    held: tuple[HeldRun, ...]
+    run_statuses: Mapping[str, str | None]
+    surveyed: bool
+
+
 def reconcile_runs(
     *,
     inputs: ReconcileInputs,
@@ -110,6 +146,8 @@ def reconcile_runs(
     reconciled: list[ReconciledRun] = []
     errors: list[ReconcileError] = []
     held: list[HeldRun] = []
+    run_statuses: dict[str, str | None] = {}
+    surveyed = False
     for factory in factories:
         if factory.server is None:
             errors.append(
@@ -126,16 +164,17 @@ def reconcile_runs(
                 )
             )
             continue
-        held.extend(
-            _reconcile_one_factory(
-                inputs=inputs,
-                factory=factory,
-                item_statuses=item_statuses,
-                dry_run=dry_run,
-                reconciled=reconciled,
-                errors=errors,
-            )
+        surveyed_factory = _reconcile_one_factory(
+            inputs=inputs,
+            factory=factory,
+            item_statuses=item_statuses,
+            dry_run=dry_run,
+            reconciled=reconciled,
+            errors=errors,
         )
+        held.extend(surveyed_factory.held)
+        run_statuses.update(surveyed_factory.run_statuses)
+        surveyed = surveyed or surveyed_factory.surveyed
     if not dry_run:
         for error in errors:
             journal_error(journal=inputs.journal, error=error)
@@ -144,6 +183,12 @@ def reconcile_runs(
         errors=tuple(errors),
         dry_run=dry_run,
         held=tuple(held),
+        containers=pass_container_sweep(
+            inputs=inputs,
+            surveyed=surveyed,
+            run_statuses=run_statuses,
+            dry_run=dry_run,
+        ),
     )
 
 
@@ -155,8 +200,8 @@ def _reconcile_one_factory(
     dry_run: bool,
     reconciled: list[ReconciledRun],
     errors: list[ReconcileError],
-) -> tuple[HeldRun, ...]:
-    """Reconcile one factory's orphans, returning the runs it is still holding."""
+) -> _FactoryPass:
+    """Reconcile one factory's orphans, reporting its holds and its inventory."""
     port = port_for(inputs=inputs, factory=factory)
     ps = port.ps(timeout_seconds=_PS_TIMEOUT_SECONDS)
     if ps.command.exit_code != 0:
@@ -170,7 +215,10 @@ def _reconcile_one_factory(
                 detail=f"fabro ps exited {ps.command.exit_code}",
             )
         )
-        return ()
+        # No statuses, so every container this factory owns reads as a run
+        # nobody reported and the sweep holds it. A survey that could not be
+        # taken must not license a removal.
+        return _FactoryPass(held=(), run_statuses={}, surveyed=False)
     inventory = FactoryRunInventory(
         runs=ps.runs,
         item_statuses=item_statuses,
@@ -210,7 +258,11 @@ def _reconcile_one_factory(
             errors.append(outcome)
             continue
         reconciled.append(outcome)
-    return classify_blocked_holds(inventory=inventory, grace=grace)
+    return _FactoryPass(
+        held=classify_blocked_holds(inventory=inventory, grace=grace),
+        run_statuses={run.run_id: run.status_kind for run in ps.runs},
+        surveyed=True,
+    )
 
 
 def _reconcile_one_run(
