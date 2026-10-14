@@ -12,6 +12,7 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._plan_result_repository import (
     ResultRepository,
     resolve_result_repository,
@@ -195,3 +196,44 @@ def test_a_name_matching_neither_the_checkout_nor_the_primary_path_does_not_reso
         primary=tmp_path / "livespec-orchestrator-beads-fabro",
     )
     assert resolve_result_repository(project_root=checkout, name="livespec-overseer") is None
+
+
+@pytest.mark.parametrize(
+    ("origin", "recognized"),
+    [
+        ("https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro", True),
+        ("https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git", True),
+        ("git@github.com:thewoolleyman/livespec-orchestrator-beads-fabro.git", True),
+        ("ssh://git@github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git", True),
+        ("https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git/", True),
+        ("/clones/livespec-orchestrator-beads-fabro.git", True),
+        ("https://github.com/thewoolleyman/livespec-overseer.git", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_a_sandbox_without_primary_path_resolves_its_own_origin_repository(
+    *, tmp_path: Path, origin: str | None, recognized: bool
+) -> None:
+    """Petri's checkout name is unrelated to the repository's canonical slug.
+
+    Exercise real git configuration with no primary-path setting; the remote
+    identifies the repository without requiring a network read or a sibling
+    manifest entry. A missing or unrelated origin must not invent an identity.
+    """
+    checkout = tmp_path / "workspace"
+    checkout.mkdir()
+    _ = subprocess.run(["git", "init", "-q"], cwd=checkout, check=True)
+    if origin is not None:
+        _ = subprocess.run(["git", "config", "remote.origin.url", origin], cwd=checkout, check=True)
+    primary = subprocess.run(
+        ["git", "config", "--get", "livespec.primaryPath"],
+        cwd=checkout,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert primary.returncode == 1
+    name = "livespec-orchestrator-beads-fabro"
+    expected = ResultRepository(name=name, clone=checkout) if recognized else None
+    assert resolve_result_repository(project_root=checkout, name=name) == expected

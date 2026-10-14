@@ -17,7 +17,7 @@ derives the tenant connection from that same directory, which is what pins
 this repository's own rule that `bd` resolves its connection from the current
 directory's `.beads/config.yaml` rather than from any resolved object.
 
-WHY THE PROJECT'S OWN DIRECTORY NAME IS A CANONICAL IDENTITY. The manifest names
+WHY THE PROJECT HAS IDENTITIES INDEPENDENT OF ITS CHECKOUT NAME. The manifest names
 siblings and never the project itself, so a reference to the repository the
 reader is running in would otherwise be unresolvable — and the delivery and
 deadline callers' commonest result is a target in their own repository. The name
@@ -26,8 +26,11 @@ manifest keys siblings by, and against the basename of the checkout's
 `livespec.primaryPath`. A worktree under `~/.worktrees/<repo>/<branch>` is named
 after its BRANCH, so the directory name alone made every same-repository result
 unobservable there (bd-ib-bqmrvq); the primary checkout's path lives in the
-shared git config every worktree of it reads, and an unset value leaves the
-directory name as the only identity, which is the CI and factory-sandbox case.
+shared git config every worktree of it reads. Factory sandboxes may have neither
+a matching directory name nor a primary path (bd-ib-wehfpc), so the origin
+remote's repository basename also identifies the project. Reading that local
+git configuration requires no network access and keeps the resolved clone at
+the invoking checkout, where its configuration and credential seam live.
 
 WHY AN UNRESOLVABLE NAME IS A VALUE AND NOT AN EXCEPTION. The clause puts
 "missing repository-resolution failures" in the `unobservable` set, so the
@@ -47,6 +50,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._session_wait_gate import (
     resolve_primary_repository,
@@ -87,12 +91,14 @@ class ResultRepository:
 def resolve_result_repository(*, project_root: Path, name: str) -> ResultRepository | None:
     """Resolve one canonical repository identity, or `None` when it does not resolve.
 
-    The project's own directory name, or the basename of its `livespec.primaryPath`,
-    resolves to the project root. Every other
+    The project's own directory name, the basename of its `livespec.primaryPath`,
+    or its origin remote's repository name resolves to the project root. Every other
     name must be a key in the project's configured `cross_repo_targets` block AND
     resolve to a directory that exists on this host.
     """
     if name in (project_root.name, resolve_primary_repository(repository=project_root).name):
+        return ResultRepository(name=name, clone=project_root)
+    if name == _origin_repository_name(project_root=project_root):
         return ResultRepository(name=name, clone=project_root)
     target = load_manifest(project_root=project_root).targets.get(name)
     if target is None:
@@ -101,6 +107,18 @@ def resolve_result_repository(*, project_root: Path, name: str) -> ResultReposit
     if not clone.is_dir():
         return None
     return ResultRepository(name=name, clone=clone)
+
+
+def _origin_repository_name(*, project_root: Path) -> str | None:
+    """Read the origin's slug locally, tolerating absent or unreadable config."""
+    result = ShellCommandRunner().run(
+        argv=["git", "config", "--get", "remote.origin.url"],
+        cwd=project_root,
+        timeout_seconds=5.0,
+    )
+    if result.exit_code != 0:
+        return None
+    return result.stdout.strip().rstrip("/").rsplit("/", 1)[-1].removesuffix(".git") or None
 
 
 def result_store_config(*, repository: ResultRepository) -> StoreConfig | None:
