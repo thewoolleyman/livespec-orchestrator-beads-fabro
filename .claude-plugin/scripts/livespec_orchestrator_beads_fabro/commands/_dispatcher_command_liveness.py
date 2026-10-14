@@ -2,8 +2,10 @@
 
 Fabro 0.254's `command.started` event carries `properties.timeout_ms`, read
 from the node's resolved timeout by the command handler. Its matching
-`command.completed` closes that execution. Read those facts from the run,
-rather than guessing a budget from node names or re-reading repository config.
+`command.completed` closes that execution, as does a terminal stage event:
+a command handler can fail before it emits its own completion. Read those
+facts from the run, rather than guessing a budget from node names or
+re-reading repository config.
 
 This is permission to remain quiet, NOT a synthetic progress timestamp.
 Only a finite, positive recorded budget grants it. The comparison uses epoch
@@ -26,7 +28,12 @@ __all__: list[str] = [
 ]
 
 _MILLISECONDS_PER_SECOND = 1000.0
-_COMMAND_EVENTS = ("command.started", "command.completed")
+_COMMAND_EVENTS = (
+    "command.started",
+    "command.completed",
+    "stage.completed",
+    "stage.failed",
+)
 
 
 def command_in_timeout(*, events_json: str, now_epoch: float) -> bool:
