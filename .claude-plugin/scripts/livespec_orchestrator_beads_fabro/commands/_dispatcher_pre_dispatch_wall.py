@@ -8,12 +8,19 @@ what required every new refusal to be wired twice. It moved out when the Codex
 credential gate became the fourth refusal in each and pushed the single-dispatch
 command module past its file LLOC ceiling — the seam was already there.
 
-WHAT THE WALL IS. Five refusals plus one mutation, sharing one POSITION and one
+WHAT THE WALL IS. Six refusals plus one mutation, sharing one POSITION and one
 guarantee: each runs after selection and BEFORE admission, so a refused item is
 never claimed, no `active` row is left behind, and no factory run exists to reap.
 Reading them as one decision is also what keeps each command entry point's return
 count honest — the alternative was suppressing the too-many-returns rule, which
 would have hidden the fact that the entry point had grown another exit.
+
+THE SIXTH IS THE RETRY-DISCIPLINE GUARD (bd-ib-5vtqaq), and it is the one
+refusal that is NOT a row of the table below. Two things make it different. On
+its ADMIT path it WRITES, recording the operator's named change on the item and
+in the journal, which no table row does; and its own refusal must never become a
+retry record, or the next refusal would quote this gate rather than the failure
+the operator has to account for.
 
 The DRAIN reaches it after its `--dry-run` return, deliberately: a dry run creates
 no run, so it stays a reporting surface that shows the operator exactly which
@@ -77,6 +84,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_reclaim import (
     reclaim_stale_publish_branches,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_retry_guard import (
+    retry_discipline_refusal,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
@@ -166,6 +176,19 @@ def pre_dispatch_wall_exit(
     is about to refuse must leave the remote exactly as it found it.
     """
     work_item_ids = [item.id for item in items]
+    # THE RETRY GUARD IS FIRST, AND IT SITS ABOVE THE TABLE RATHER THAN IN IT
+    # (bd-ib-5vtqaq). Two things make it unlike every row below. It must not be
+    # SIGNED by the recorder the rows below feed — a guard refusal recorded as a
+    # fresh signature would make the next refusal quote this gate instead of the
+    # failure the operator has to account for — and on its admit path it WRITES,
+    # recording the operator's named change on the item and in the journal,
+    # which no refusal in the table does. It is first for the ordinary reason
+    # too: an item whose last dispatch failed has nothing to spend a prerelease,
+    # a provider renewal or a forge round trip on.
+    retry_refusal = retry_discipline_refusal(args=args, repo=repo, items=items, journal=journal)
+    if retry_refusal is not None:
+        _ = write_stderr(text=retry_refusal)
+        return EXIT_PRECONDITION_ERROR
     refusing = _refusing_sequence(
         args=args, repo=repo, items=items, journal=journal, work_item_ids=work_item_ids
     )

@@ -115,3 +115,68 @@ def test_the_unclassified_and_unknown_names_are_stated_rather_than_empty() -> No
 
     assert module.UNCLASSIFIED_ERROR_CLASS == "unclassified"
     assert module.UNKNOWN_BUILD_VERSION == "unknown"
+
+
+def _signature(module: ModuleType) -> object:
+    return module.RetryRecord(
+        kind=module.REFUSAL_SIGNATURE_KIND,
+        stage="fabro-run",
+        error_class="deterministic",
+        build=module.ExecutingBuild(version="0.1.0", plugin_root="/cache"),
+        recorded_at="2026-10-14T01:02:03Z",
+    )
+
+
+def _named_change(module: ModuleType) -> object:
+    return module.RetryRecord(
+        kind=module.NAMED_CHANGE_KIND,
+        stage="fabro-run",
+        error_class="deterministic",
+        build=module.ExecutingBuild(version="0.1.0", plugin_root="/cache"),
+        recorded_at="2026-10-14T02:00:00Z",
+        reason="rebound the session",
+        overrode_stage="fabro-run",
+        overrode_error_class="deterministic",
+    )
+
+
+def test_a_comment_whose_body_is_not_a_string_is_skipped() -> None:
+    module = _module()
+
+    assert (
+        module.retry_records(
+            comments=[{"text": None}, {"author": "someone"}, {"text": "unrelated prose"}]
+        )
+        == ()
+    )
+
+
+def test_a_named_change_after_a_signature_does_not_disarm_the_guard() -> None:
+    """The reason an operator gave is not a statement about how an attempt ended.
+
+    The named-change record sits LAST on this timeline, which is the shape a
+    guard that stopped at the newest record of any kind would read as unarmed —
+    and that reading clears the guard on the strength of the override itself.
+    """
+    module = _module()
+
+    state = module.guard_state(records=[_signature(module), _named_change(module)])
+
+    assert state.signature is not None
+    assert state.signature.kind == module.REFUSAL_SIGNATURE_KIND
+
+
+def test_a_header_line_carrying_no_colon_is_ignored_rather_than_abandoning_the_parse() -> None:
+    module = _module()
+
+    record = module.parse_retry_record(
+        text=(
+            "livespec-dispatch-retry-discipline\n"
+            "kind: refusal-signature\n"
+            "a continuation line with no field separator\n"
+            "stage: fabro-run\n"
+        )
+    )
+
+    assert record is not None
+    assert record.stage == "fabro-run"
