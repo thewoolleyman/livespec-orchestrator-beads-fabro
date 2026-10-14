@@ -188,6 +188,29 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   checkpoint reason; the credential-use caller may do so and still install the
   guard at the path `guarded_acp_command` execs, since hiding it from git is not
   hiding it from the sandbox.
+- `_dispatcher_default_branch_fetch.py` — the DISPATCH BASE every dispatch
+  fetches into its sandbox clone, so `origin/<default_branch>` exists for the
+  `implementation_diff` node and for every check that diffs the default branch
+  (`bd-ib-xlblgr`, Scenario 61). A source-staged clone is SINGLE-BRANCH: its
+  `remote.origin.fetch` refspec names only the disposable
+  `livespec/source/<id>` branch, so the committed `git fetch --unshallow`
+  deepens that branch and brings in no other ref. Four properties an editor
+  must not invert. The DESTINATION half of the refspec is load-bearing rather
+  than decoration: measured 2026-10-14, a bare `git fetch origin <branch>` in
+  such a clone writes `FETCH_HEAD` and creates no
+  `refs/remotes/origin/<branch>`, exiting 0 with no warning — a fetch that
+  reports success while the ref the next node reads still does not exist. The
+  branch is PROJECTED through `CONTRACT_INPUT_NAMES` rather than spelled, so an
+  adopter whose default branch is not this fleet's gets the same step; a
+  renderer keyed on its own spelling of the name would render for no dispatch at
+  all. It lives in the OVERLAY because the committed run config is forked per
+  repository (`_dispatcher_paths.workflow_toml` prefers a dispatch target's own
+  copy), so only the overlay reaches every dispatch — the same reason
+  `_dispatcher_factory_provenance` gives. And it carries NO `|| true`: without
+  the ref a run spends its whole implement stage and then loses it at
+  `implementation_diff`, so a fetch that could not be taken is cheaper to report
+  in preparation than to discover afterwards. It is rendered FIRST among the
+  materialized blocks, immediately after the committed unshallow it completes.
 - The OPT-IN host Codex credential identity observation — the passive
   measurement behind `codex-cred-status --observe-identity-state <path>` —
   lives in FOUR cohesive modules, and the dependency direction reads bottom-up:
