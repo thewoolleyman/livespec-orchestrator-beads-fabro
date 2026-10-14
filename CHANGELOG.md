@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.196.18](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.17...v0.196.18) (2026-10-14)
+
+
+### Bug Fixes
+
+* defer a still-pending master-CI run instead of failing it ([452fb24](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/452fb2438e430904f3b43bdfb64ad5bc8dad9171))
+* end the watch at the fabro run call's return, not the thread's exit ([f760ca4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f760ca40805f8d0c02b174df46d741a4831e2a14))
+* journal every sandbox container the sweep removed or spared ([6a2f144](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6a2f144f34afdf3e4a2349e4c2c0e15cce8aa6c7))
+* keep a committed master-CI waiver ahead of the bounded wait ([ec98b63](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ec98b63cf1cbc5475a6aa487122dfce302990c6c))
+* poll the latest master-CI run for a verdict instead of deferring at once ([44aebf6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/44aebf6a3316f22b727deccb03f4771ca3b8326f))
+* print one master-CI progress line per pending poll ([894d8f3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/894d8f3dbe8cef32e7fafc79f2f681e04b9823cf))
+* reclaim sandbox containers inside the reconciliation pass ([9a91430](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9a91430337d0a83c8d533f54c5030901bebfee42))
+* sweep the sandbox containers of terminal factory runs ([49505b8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/49505b8412b8a0497f099eebe361c3118df47832))
+* word the master-CI deferral as not-yet-concluded, not as a failure ([9ae26e7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9ae26e7d24ccf80681b37954d6046e945f69a6e4))
+
 ## [0.196.17](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.16...v0.196.17) (2026-10-14)
 
 
