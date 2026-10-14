@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.196.17](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.16...v0.196.17) (2026-10-14)
+
+
+### Bug Fixes
+
+* journal the checkout head and the fetched origin head of a staged run ([4567452](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/456745278ec7d7cabd95cf4bc42960bef29e90e2))
+* stage the Fabro source branch at the fetched default-branch head ([34c07f5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/34c07f5966be63149e7328bd9664a07abe2a456e))
+
 ## [0.196.16](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.15...v0.196.16) (2026-10-14)
 
 
