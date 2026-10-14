@@ -64,7 +64,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_current_merge_hold i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import (
     failed_outcome,
-    journal_publish_draft_refresh,
+    journal_run_output_markers,
     journal_stage,
     stalled_outcome,
 )
@@ -228,7 +228,11 @@ def run_dispatch(
     )
     inspect_stdout = "" if inspect is None else inspect.command.stdout
     inspect_stderr = "" if inspect is None else inspect.command.stderr
-    journal_publish_draft_refresh(
+    # Both publication markers are read from ONE pass over this text, and the
+    # hook-over-limit row is written there unconditionally of how the run ended
+    # (see `journal_run_output_markers`). The event comes back so the terminal
+    # outcome can carry it to the cause writer.
+    hook_over_limit = journal_run_output_markers(
         journal=journal,
         work_item_id=plan.work_item_id,
         text=f"{fabro.stdout}\n{fabro.stderr}\n{inspect_stdout}\n{inspect_stderr}",
@@ -242,7 +246,11 @@ def run_dispatch(
         stderr=fabro.stderr,
     )
     if terminal is not None:
-        return terminal
+        # Attached rather than threaded through `fabro_run_terminal_outcome`,
+        # which classifies the ENGINE's own record and has no business reading a
+        # sandbox sentinel. The event is evidence the cause writer renders only
+        # where the ending is attributed to it.
+        return replace(terminal, hook_over_limit=hook_over_limit)
     # THE CURRENT HOLD, read ONCE for the whole merge-confirmation boundary. The
     # plan's `merge_hold` is the launch snapshot the sandbox and the dispatch record
     # share and must keep; this is what the ledger says now, hours later, and a hold

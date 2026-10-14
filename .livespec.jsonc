@@ -566,14 +566,29 @@
       // INTERIM partial mitigation (bd-ib-qieqc6.2): every node timeout feeds
       // the Codex credential-lifetime floor, and 4340 is the largest janitor
       // value that keeps that floor under the bound
-      // tests/test_factory_checkpoint_declaration.py guards. The full raise to
+      // tests/test_factory_checkpoint_declaration.py guards -- measured
+      // against the 530000 s bound that test carried at the time; bd-ib-xi63mq
+      // has since re-measured and raised it, so 4340 is no longer the ceiling
+      // that reasoning derived. The full raise to
       // 7200 follows once the Codex freshness gate applies only to dispatches
       // that route a node to Codex.
+      //
+      // Both PUBLICATION stages run this repository's declared check suite
+      // inside a push hook, so each needs the suite's whole wall clock plus the
+      // push itself. Measured on hp, four runs lost a GREEN janitor's work at
+      // the 1800 s default: bd-ib-vlctc3 (run 01M4TYK09SRPPT5W9EDG4VWGG0) and
+      // bd-ib-zddbkq (01M4VQP22484T20JNXP53FJ41E) inside `publish_draft`'s push,
+      // bd-ib-s6bowj (01M4VQV7APGJS3ZAA38YAB7106) inside `pr_refresh` at about
+      // 96% of its suite. They are raised TOGETHER on purpose: a refresh
+      // bounded at half its sibling's budget fails on the same suite one stage
+      // later (bd-ib-xi63mq, Scenario 177).
       "node_timeouts": {
         "implement": 14400,
         "janitor": 4340,
         "fix": 3600,
-        "review_fix": 7200
+        "review_fix": 7200,
+        "publish_draft": 3600,
+        "pr_refresh": 3600
       },
       // ACTIVE inventory, not endpoint history: an unnamed `reconcile-runs`
       // pass surveys every entry. Intentionally stopped or retired factories

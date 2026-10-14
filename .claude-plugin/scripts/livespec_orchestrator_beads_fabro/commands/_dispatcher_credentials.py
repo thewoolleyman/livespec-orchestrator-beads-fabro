@@ -343,6 +343,18 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # resolved node timeouts as literal durations, NAMED as the client that
         # collects it can resolve it.
         graph_override=graph_reference,
+        # The SAME graph, as the one path THIS process can read it at. Both are
+        # passed because they are two different questions about one file, and
+        # the overlay answers both: the reference is what the engine resolves,
+        # and the artifact is what the hook-limit figure is read off. Handing it
+        # only the reference is what made the publication bound silently never
+        # arm on any client except the pinned 0.254 one.
+        graph_artifact=graph_override,
+        # The seam a withheld hook limit reports through, which is the same one
+        # the credential-slot fallback above already writes to: an unarmed
+        # publication bound is otherwise indistinguishable from an armed one at
+        # every surface a dispatch leaves behind.
+        warn=lambda message: sys.stderr.write(f"livespec-dispatch: {message}\n"),
         # The publish branch and head a RESUME places the sandbox clone on.
         # None for every other dispatch, which renders no step at all.
         resume_checkout=resume_checkout,

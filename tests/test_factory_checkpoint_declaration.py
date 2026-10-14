@@ -39,6 +39,19 @@ bound while doing it. Raising the `janitor` node timeout from 3600 to 4340
 (`bd-ib-qieqc6.2`) moved the 15m control to 808925 and the shipped 5m figure to
 529925, which is still under the bound; 4340 is the largest janitor value that
 stays under it.
+
+Budgeting the two PUBLICATION stages for an hour each (`bd-ib-xi63mq`,
+Scenario 177 -- `publish_draft` and `pr_refresh` run this repository's declared
+check suite inside a push hook) moved them again, and this is a re-measurement
+against the payload and the `.livespec.jsonc` in THIS tree rather than a figure
+carried over: 555125 seconds shipped and 834125 at the retired `"15m"`, so the
+bound moves to 556000. That retires the janitor reasoning in the sentence above
+-- the "largest value that stays under it" was derived against the 530000 bound
+of the day, not against a property of 4340 -- while the janitor entry itself is
+untouched. The bound moving is not a relaxation of the enforcement that matters:
+`credential_deadline_epoch` still caps every run at the token's OBSERVED expiry
+minus its margin, and this figure is the allowance a graph may ask for, not a
+lifetime anything grants.
 """
 
 from __future__ import annotations
@@ -59,12 +72,12 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 
 # The bound the freshness requirement has to sit under, and the figure the
 # RETIRED `"15m"` resolved. The bound is deliberately looser than the measured
-# 529925 seconds this budget yields: the requirement also sums the resolved node
+# 555125 seconds this budget yields: the requirement also sums the resolved node
 # timeouts, so pinning it exactly would make every unrelated timeout edit fail
 # this case. The control below pins the 15m figure exactly, because that one is
 # the thing being moved away from and a drifting comparand would hide the move.
-_FRESHNESS_BOUND_SECONDS = 530_000
-_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 808_925
+_FRESHNESS_BOUND_SECONDS = 556_000
+_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 834_125
 
 
 def _checkpoint() -> dict[str, Any]:
@@ -127,7 +140,7 @@ def test_the_checkpoint_budget_holds_the_credential_freshness_floor_under_the_bo
     that happened to shrink -- a pass earned by something this item never
     touched. The control re-resolves the SAME payload with only the checkpoint
     budget restored to the retired `"15m"` and requires it to land ABOVE the
-    bound at exactly the measured 808925 seconds, which is what makes the first
+    bound at exactly the measured 834125 seconds, which is what makes the first
     assertion evidence about this declaration rather than about the graph.
 
     The replacement is asserted to match exactly once before it is applied: a
