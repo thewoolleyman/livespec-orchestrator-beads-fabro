@@ -12,12 +12,26 @@ This module is deliberately separate from the policy: extraction is a shell-
 grammar concern with its own vocabulary of operators and command forms, and
 the policy is a four-state decision table. Everything here is PURE — no git,
 no environment, no process output.
+
+The GENERIC half of that shell grammar — tokenizing, dropping here-document
+bodies, splitting on control operators, finding the word that actually
+executes, and listing the non-flag operands — now lives in
+`livespec_shell_shape`, because `livespec_sandbox_path_policy` asks the same
+first question of a command before it can decide which paths a REMOVAL would
+act on. What stays here is the part that is about WRITES specifically: the
+redirection operators, `tee`, in-place `sed`, and the last-operand rule for
+`cp`/`mv`/`install`.
 """
 
 from __future__ import annotations
 
-import re
-import shlex
+from livespec_shell_shape import (
+    leading_command_index,
+    operands,
+    shell_tokens,
+    token_segments,
+    without_heredoc_bodies,
+)
 
 __all__: list[str] = [
     "STRUCTURED_WRITE_TOOLS",
@@ -32,16 +46,6 @@ _FILE_PATH_KEY = "file_path"
 _COMMAND_KEY = "command"
 
 _REDIRECT_OPERATORS = (">", ">>")
-_HEREDOC_OPERATORS = ("<<", "<<-")
-_SEGMENT_OPERATORS = (";", "&", "&&", "|", "||", "(", ")")
-_ARGUMENT_TERMINATOR = "--"
-_ENV_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
-# Wrappers that still leave a LATER word in command position, plus the
-# subcommand words those wrappers take before it. Same discrimination the
-# footgun guard makes: the EXECUTED leading command is what classifies a
-# segment, never a word that merely appears somewhere in it.
-_COMMAND_WRAPPERS = ("command", "env", "mise", "nice", "sudo", "time", "uv", "xargs")
-_WRAPPER_SUBCOMMANDS = ("exec", "run", "x")
 _TEE_COMMAND = "tee"
 _SED_COMMAND = "sed"
 # `cp`, `mv` and `install` all write their LAST operand, which is what lets one
@@ -88,8 +92,8 @@ def shell_write_targets(*, command: str) -> list[str]:
     quoting does not close is skipped; the gate above means that only happens
     when some token legitimately spans lines.
     """
-    cleaned = _without_heredoc_bodies(command=command)
-    if not _is_tokenizable(command=cleaned):
+    cleaned = without_heredoc_bodies(command=command)
+    if shell_tokens(command=cleaned) is None:
         return []
     targets: list[str] = []
     for line in cleaned.splitlines():
@@ -97,95 +101,33 @@ def shell_write_targets(*, command: str) -> list[str]:
     return targets
 
 
-def _is_tokenizable(*, command: str) -> bool:
-    """True iff the shell lexer can split `command` into words at all."""
-    try:
-        _ = _shell_tokens(command=command)
-    except ValueError:
-        return False
-    return True
-
-
-def _shell_tokens(*, command: str) -> list[str]:
-    """Split `command` into shell-like words and control operators."""
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    lexer.commenters = ""
-    return list(lexer)
-
-
-def _without_heredoc_bodies(*, command: str) -> str:
-    """Return `command` with here-document body lines removed."""
-    kept: list[str] = []
-    pending: list[str] = []
-    for line in command.splitlines():
-        if pending:
-            if line.strip() == pending[0]:
-                pending.pop(0)
-            continue
-        kept.append(line)
-        pending.extend(_heredoc_delimiters(line=line))
-    return "\n".join(kept)
-
-
-def _heredoc_delimiters(*, line: str) -> list[str]:
-    """Return the here-document delimiters introduced on one command line.
-
-    The lexer splits `<<-EOF` into `<<` and `-EOF`, so the leading dash of the
-    `<<-` form is stripped off the delimiter; the terminator line is matched on
-    `strip()`, which is what makes that form's indented terminator work.
-    """
-    try:
-        tokens = _shell_tokens(command=line)
-    except ValueError:
-        return []
-    delimiters: list[str] = []
-    iterator = iter(tokens)
-    for token in iterator:
-        if token in _HEREDOC_OPERATORS:
-            delimiters.append(next(iterator, "").lstrip("-"))
-    return delimiters
-
-
 def _line_targets(*, line: str) -> list[str]:
     """Return the write targets of one command line, across its segments."""
-    try:
-        tokens = _shell_tokens(command=line)
-    except ValueError:
+    tokens = shell_tokens(command=line)
+    if tokens is None:
         return []
     targets: list[str] = []
-    for segment in _segments(tokens=tokens):
+    for segment in token_segments(tokens=tokens):
         targets.extend(_segment_targets(tokens=segment))
     return targets
-
-
-def _segments(*, tokens: list[str]) -> list[list[str]]:
-    """Split a token list on shell control operators into command segments."""
-    segments: list[list[str]] = [[]]
-    for token in tokens:
-        if token in _SEGMENT_OPERATORS:
-            segments.append([])
-            continue
-        segments[-1].append(token)
-    return [segment for segment in segments if segment]
 
 
 def _segment_targets(*, tokens: list[str]) -> list[str]:
     """Return the write targets of one command segment."""
     targets = _redirect_targets(tokens=tokens)
-    index = _leading_command_index(tokens=tokens)
+    index = leading_command_index(tokens=tokens)
     if index >= len(tokens):
         return targets
     command = tokens[index].rsplit("/", 1)[-1]
     arguments = tokens[index + 1 :]
     if command == _TEE_COMMAND:
-        targets.extend(_operands(tokens=arguments))
+        targets.extend(operands(tokens=arguments))
     elif command == _SED_COMMAND and _requests_in_place(tokens=arguments):
         targets.extend(_sed_targets(tokens=arguments))
     elif command in _LAST_OPERAND_COMMANDS:
-        operands = _operands(tokens=arguments)
-        if operands:
-            targets.append(operands[-1])
+        written = operands(tokens=arguments)
+        if written:
+            targets.append(written[-1])
     return targets
 
 
@@ -196,32 +138,6 @@ def _redirect_targets(*, tokens: list[str]) -> list[str]:
         for index, token in enumerate(tokens)
         if token in _REDIRECT_OPERATORS and index + 1 < len(tokens)
     ]
-
-
-def _leading_command_index(*, tokens: list[str]) -> int:
-    """Return the index of the word that actually EXECUTES in a segment."""
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        if (
-            token == _ARGUMENT_TERMINATOR
-            or token.startswith("-")
-            or _ENV_ASSIGNMENT_RE.fullmatch(token)
-        ):
-            index += 1
-            continue
-        if token.rsplit("/", 1)[-1] in _COMMAND_WRAPPERS:
-            index += 1
-            while index < len(tokens) and tokens[index] in _WRAPPER_SUBCOMMANDS:
-                index += 1
-            continue
-        return index
-    return index
-
-
-def _operands(*, tokens: list[str]) -> list[str]:
-    """Return the non-flag words of an argument list."""
-    return [token for token in tokens if not token.startswith("-")]
 
 
 def _requests_in_place(*, tokens: list[str]) -> bool:
