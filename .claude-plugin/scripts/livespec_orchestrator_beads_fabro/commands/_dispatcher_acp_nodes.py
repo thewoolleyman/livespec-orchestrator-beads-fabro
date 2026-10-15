@@ -18,6 +18,7 @@ an `--input` name its own workflow does not declare, which fabro rejects.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,7 +32,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_catalogs import (
     AcpCatalogs,
     resolve_acp_catalogs,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import attach_acp_chains
+from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import (
+    AcpChainResolution,
+    attach_acp_chains,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_factory_capabilities import (
     factory_capability_reader,
 )
@@ -222,10 +226,17 @@ def prepare_acp_nodes(
     )
     if isinstance(chains, str):
         return chains
+    # The SELECTED candidate identity per node, folded onto the finished
+    # resolution rather than resolved beside it, so the launch reads the
+    # entitlement from the same object it reads the adapters from. A launch
+    # that resolved its own would be a second read of one configuration,
+    # and the disagreement would be invisible: both reads produce a
+    # perfectly well-formed identity.
+    resolution = replace(resolution, candidates=chains.selected_identities)
     record: dict[str, object] = {
         "stage": ACP_NODES_STAGE,
         "work_item_id": work_item_id,
-        **acp_nodes_journal_record(resolution=resolution, redacted=chains),
+        **acp_nodes_journal_record(resolution=resolution, redacted=chains.redacted_nodes),
     }
     if not_applied:
         record["not_applied"] = list(not_applied)
@@ -325,7 +336,7 @@ def _resolve_chains(
     dispatch: Mapping[str, AcpNodeOverlay],
     workflow_inputs: Mapping[str, str],
     factory: FactoryTarget | None,
-) -> Mapping[str, Mapping[str, object]] | str:
+) -> AcpChainResolution | str:
     """Attach each node's candidate chain to its resolved primary, or refuse.
 
     The chain is attached STRICTLY AFTER `resolve_acp_nodes` has finished,
@@ -340,12 +351,13 @@ def _resolve_chains(
     -- and the disagreement would be invisible, because both reads produce a
     perfectly well-formed catalog.
 
-    What comes back is the REDACTED structural record for each
-    new-grammar-enabled node, which is all this slice's journal needs. The
-    resolved chains themselves have no consumer yet -- preflight,
-    classification and the runtime transition are later slices -- so the
-    value of resolving them here is the set of refusals it fires BEFORE any
-    claim or run exists.
+    What comes back is the WHOLE attached resolution, because the caller
+    needs two projections of it that must agree: the REDACTED structural
+    record each new-grammar-enabled node journals, and the SELECTED
+    candidate identity each node's run labels name. Returning one
+    projection and re-deriving the other from a second attach would give
+    the journal and the labels independent answers about which candidate
+    one dispatch rendered, with nothing announcing the divergence.
     """
     declared = repository_acp_chains(block=block, catalogs=catalogs)
     if isinstance(declared, str):
@@ -371,6 +383,4 @@ def _resolve_chains(
         dispatch=dispatch,
         builtins=builtin_acp_identities(workflow_inputs=workflow_inputs),
     )
-    if isinstance(attached, str):
-        return attached
-    return attached.redacted_nodes
+    return attached

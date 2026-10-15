@@ -98,6 +98,37 @@ class AcpChainResolution:
         """
         return {node: chain.redacted for node, chain in self.chains.items() if chain.enabled}
 
+    @property
+    def selected_identities(self) -> Mapping[str, AcpCandidateIdentity]:
+        """Each node's SELECTED candidate identity — candidate ZERO today.
+
+        The PRIMARY, never a fallback, and that is a property of this
+        slice rather than a simplification of it: per-node selection is a
+        later slice, and until it lands the candidate a run renders is
+        candidate zero. A reader taking a fallback's identity instead
+        would produce a perfectly well-formed entitlement naming a
+        candidate the run never ran -- which no surface downstream could
+        distinguish from the truth, because both are valid identities of
+        candidates this node really declares.
+
+        A node whose primary carries NO identity contributes nothing. That
+        is the conservative legacy posture of `AcpCandidate.identity`: an
+        identity-less arbitrary adapter with no fallback metadata has no
+        stable entitlement, so there is no key to record and a guessed one
+        would join a run to an allowance nobody declared.
+
+        EVERY node is included, enabled or not -- unlike `redacted_nodes`
+        above, which narrows to the new grammar because the contract
+        narrows the JOURNAL rule there. This answers a different question:
+        which entitlement did each node's rendered candidate name, and a
+        legacy node that DOES carry a built-in identity names one.
+        """
+        return {
+            node: chain.primary.identity
+            for node, chain in self.chains.items()
+            if chain.primary.identity is not None
+        }
+
 
 def attach_acp_chains(
     *,
