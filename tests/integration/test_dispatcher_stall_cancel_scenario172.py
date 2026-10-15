@@ -509,3 +509,76 @@ def test_a_first_stall_cancel_releases_the_claim_and_returns_the_item_to_ready(
     assert "01STALLRUN" in body
     assert "hp" in body
     assert "proof_capture" in body
+
+
+def test_a_second_consecutive_stall_cancel_rests_the_item_for_a_human(
+    tmp_path: Path,
+) -> None:
+    """Scenario 172's "A second consecutive stall cancel rests for a human".
+
+    The SECOND cancel is where a release stops being the right answer: one
+    cancellation says nothing about the slice, but an item that stalls again on
+    a fresh run is either genuinely unrunnable or is being killed by something
+    a re-dispatch will meet again, and releasing it a second time is an
+    unbounded loop with no operator in it. So the disposition flips: the item
+    rests at `blocked` / `needs-human` and no further dispatch is invoked.
+
+    BOTH cancellations are named in the comment, and that is what the case
+    asserts rather than merely the lifecycle write. A comment naming only the
+    current run reads exactly like a first-cancel record, so an operator
+    deciding whether the kills share a cause — the same factory, the same
+    stage, a false kill inside one open command node twice — would have to
+    reconstruct the earlier run from a journal the dispatching clone may no
+    longer have. The remedy is named for the same reason the needs-human
+    escalation names it: `blocked` is a rest state no automatic path leaves, so
+    a record that did not say how to release it leaves the item parked
+    indefinitely.
+    """
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition"
+    )
+    repo = _repo(tmp_path=tmp_path)
+    journal = _journal(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    for run_id, factory, stage in (
+        ("01FIRSTRUN", "hp", "implement"),
+        ("01SECONDRUN", "vps", "proof_capture"),
+    ):
+        journal.append(
+            record={
+                "stage": "watchdog-stall-cancel",
+                "work_item_id": _ITEM_ID,
+                "run_id": run_id,
+                "factory": factory,
+                "executing_stage": stage,
+            }
+        )
+
+    module.dispose_stall_cancel(
+        repo=repo,
+        item=item,
+        outcome=_outcome(status="stalled-no-progress"),
+        journal=journal,
+    )
+
+    rested = _stored()[_ITEM_ID]
+    assert rested.status == "blocked"
+    assert rested.blocked_reason == "needs-human"
+
+    # The terminal stage is spelled as a LITERAL and bound to the exported name
+    # by the `getattr` below, for the reason this repo's other Red-predating
+    # cases give: a Red authored before the constant exists would die on the
+    # attribute lookup, which proves unimportability rather than unimplemented
+    # behaviour. The binding assertion is what stops the literal drifting away
+    # from the name every other reader uses.
+    stages = [record.get("stage") for record in _journal_records(path=journal.path)]
+    assert "stall-cancel-needs-human" in stages
+    assert module.STALL_RELEASE_STAGE not in stages
+    assert NON_CONVERGENCE_BOUNCE_STAGE not in stages
+    assert getattr(module, "STALL_NEEDS_HUMAN_STAGE", "") == "stall-cancel-needs-human"
+
+    body = read_work_item_comments(path=_config(), work_item_id=_ITEM_ID)[0].text
+    for named in ("01FIRSTRUN", "01SECONDRUN", "hp", "vps", "implement", "proof_capture"):
+        assert named in body, named
+    assert f"resolve-blocked:{_ITEM_ID}:ready" in body
