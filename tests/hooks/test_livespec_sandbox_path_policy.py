@@ -331,6 +331,61 @@ def test_a_mixed_removal_that_also_names_a_protected_path_is_refused_and_names_i
     )
 
 
+@pytest.mark.parametrize("reference", ['"$d"', '"${d}"', "$d"])
+def test_a_removal_through_a_variable_this_command_assigned_is_refused(reference: str) -> None:
+    """Assertion 5: the protected path is named once, in a word that is not an operand.
+
+    The assignment and the removal are different segments, so the value a name
+    carries is the second piece of state the walk has to hold — alongside the
+    working directory — before a later word can be read at all.
+    """
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command=f"d={_SANDBOX_ROOT}; rm -rf {reference}") == (
+        _SANDBOX_ROOT
+    )
+
+
+def test_a_variable_holding_a_scratch_path_is_not_refused() -> None:
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command='d=/tmp/layout-sim; rm -rf "$d"') is None
+
+
+def test_a_longer_variable_name_is_substituted_before_its_own_prefix() -> None:
+    """Substituting `d` before `dd` would rewrite the `$d` inside `$dd`.
+
+    This is the one ordering in the substitution that is not interchangeable,
+    and getting it backwards produces a word that matches nothing while
+    reporting a clean allow.
+    """
+    policy = _load_policy()
+
+    assert (
+        _refused(policy=policy, command=f'd=/tmp/one; dd={_SANDBOX_ROOT}; rm -rf "$dd"')
+        == _SANDBOX_ROOT
+    )
+
+
+def test_a_variable_this_command_never_assigned_is_left_unexpanded() -> None:
+    """A value the environment carries is not in the command, so it is not guessed.
+
+    Leaving the reference unexpanded is what keeps the word from matching
+    anything: a guard that substituted its own environment would be deciding
+    against a value the agent's shell may never see.
+    """
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command='rm -rf "$LIVESPEC_NOT_ASSIGNED_HERE"') is None
+
+
+def test_a_cd_through_a_variable_moves_the_directory_a_later_word_is_read_from() -> None:
+    """The directory and the variable interact, so both pieces of state are expanded."""
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command='d=/; cd "$d" && rm -rf workspace') == _SANDBOX_ROOT
+
+
 def test_a_relative_removal_after_changing_into_a_parent_is_refused() -> None:
     """Assertion 3, and Scenario 180's second scenario verbatim.
 

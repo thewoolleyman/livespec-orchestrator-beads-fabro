@@ -172,6 +172,33 @@ def test_a_segment_that_executes_nothing_has_no_command_index(tokens: list[str])
 
 
 # ---------------------------------------------------------------------------
+# leading_assignments — the values a segment gives names before it runs
+# ---------------------------------------------------------------------------
+
+
+def test_the_leading_assignment_run_is_read_as_names_and_values() -> None:
+    shape = _load_shape()
+
+    assert shape.leading_assignments(tokens=["d=/workspace", "FOO=1", "rm", "-rf", "x"]) == {
+        "d": "/workspace",
+        "FOO": "1",
+    }
+
+
+def test_the_scan_stops_at_the_first_word_that_is_not_an_assignment() -> None:
+    """An assignment cannot follow a command word — after that these are arguments."""
+    shape = _load_shape()
+
+    assert shape.leading_assignments(tokens=["rm", "-rf", "d=/workspace"]) == {}
+
+
+def test_an_assignment_to_an_empty_value_is_still_an_assignment() -> None:
+    shape = _load_shape()
+
+    assert shape.leading_assignments(tokens=["d="]) == {"d": ""}
+
+
+# ---------------------------------------------------------------------------
 # operands — the non-flag words
 # ---------------------------------------------------------------------------
 
