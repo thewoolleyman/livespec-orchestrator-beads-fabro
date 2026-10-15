@@ -39,6 +39,21 @@ EVERY dispatch — which would disarm the deadline for the dispatches that reall
 do launch Codex, the one direction this change must not take. The control is the
 SAME fixture with the routing declared, and it requires the deadline names, the
 projected Codex auth, and the ABSENCE of the unprotected declaration.
+
+THE SAME ARTIFACT ANSWERS A SECOND QUESTION NO ENV-NAME ASSERTION REACHES:
+whether every PREPARE STEP the overlay carries can actually run. Withdrawing the
+Codex credential also withdraws `CODEX_HOME`, which is declared only beside that
+credential — and the Codex TELEMETRY projection's step opens with
+`mkdir -p "$CODEX_HOME"`. With the variable unassigned that is `mkdir -p ""`,
+which exits non-zero and ABORTS PREPARATION, so the dispatch dies before any node
+starts and its error names neither Codex nor the credential scoping that caused
+it. Nothing above catches it: the env-name cases stop at which names the table
+assigns, and a step's own body is a value inside that table rather than a name it
+assigns. So the last pair of cases reads the prepare-step SCRIPTS and holds the
+two halves together — no step may dereference `$CODEX_HOME` on a dispatch whose
+overlay declares none, and the Codex-routed control requires that the telemetry
+step and the variable it reads are BOTH still there, so scoping the projection
+away entirely fails as loudly as leaving it unscoped.
 """
 
 from __future__ import annotations
@@ -53,6 +68,9 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_codex_auth,
     _dispatcher_credentials,
     _dispatcher_sibling_clones,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config import (
+    CODEX_OTEL_CONFIG_ENV_VAR,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_routing import CodexRouting
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
@@ -113,11 +131,14 @@ _ENFORCEMENT_ENV_VARS = (
     CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
 )
 
-# The env name a projected host Codex credential rides. Spelled here rather than
-# imported because the renderer composes it as a literal; the companion
-# `CODEX_HOME` is deliberately not asserted on, since an unprotected dispatch
-# still renders the Codex OTEL config and this module is about the CREDENTIAL.
+# The two env names a projected host Codex credential rides, spelled here rather
+# than imported because the renderer composes each as a literal. `CODEX_HOME` is
+# asserted on BOTH SIDES of the routing, and it is the load-bearing one for the
+# prepare-step cases: it is the directory every Codex projection writes into, it
+# is declared only where the credential is, and a step that dereferences it on a
+# dispatch that declares none cannot run at all.
 _CODEX_AUTH_ENV_VAR = "CODEX_AUTH_JSON"
+_CODEX_HOME_ENV_VAR = "CODEX_HOME"
 
 _NOW = 1_700_000_000
 _FAR_FUTURE = _NOW + 100 * 365 * 24 * 3600
@@ -127,6 +148,17 @@ _FAR_FUTURE = _NOW + 100 * 365 * 24 * 3600
 # table as a single-line-encoded value and reads all four — cannot be mistaken for
 # assignments. See the module docstring on why a substring test cannot work here.
 _ENV_ASSIGNMENT_RE = re.compile(r"(?m)^([A-Z][A-Z0-9_]*) = ")
+
+# One `[[run.prepare.steps]]` body, as the overlay encodes it: a single-line
+# JSON string at the start of a line. Read back through `json.loads` rather than
+# matched in place, because every script is TOML-quoted and a raw scan would be
+# reading escape sequences instead of the shell the sandbox runs.
+_PREPARE_STEP_SCRIPT_RE = re.compile(r'(?m)^script = (".*")$')
+
+# A shell dereference of CODEX_HOME in either form. Anchored on the `$` so the
+# ENV-TABLE assignment of the same name — and the credential directory's own
+# literal path, which carries no variable — are not counted as reads.
+_CODEX_HOME_DEREFERENCE_RE = re.compile(r"\$\{?CODEX_HOME\b")
 
 
 def _auth_json_with_exp(*, exp: int) -> str:
@@ -198,6 +230,14 @@ def _written_overlay(
     return overlay.read_text(encoding="utf-8")
 
 
+def _codex_home_dereferencing_steps(*, rendered: str) -> tuple[str, ...]:
+    """Every prepare-step script in `rendered` that READS `$CODEX_HOME`."""
+    scripts = tuple(json.loads(encoded) for encoded in _PREPARE_STEP_SCRIPT_RE.findall(rendered))
+    return tuple(
+        script for script in scripts if _CODEX_HOME_DEREFERENCE_RE.search(script) is not None
+    )
+
+
 def test_an_all_claude_overlay_declares_unprotected_and_carries_no_deadline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -263,4 +303,69 @@ def test_a_codex_routed_overlay_still_projects_the_credential_and_its_deadline(
     assert CREDENTIAL_USE_UNPROTECTED_ENV_VAR not in assigned, (
         "a dispatch holding a live Codex credential must never declare itself "
         "unprotected; that declaration is the one thing that disarms the deadline"
+    )
+
+
+def test_no_prepare_step_of_an_all_claude_overlay_dereferences_codex_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every prepare step a no-Codex dispatch writes must be able to RUN.
+
+    `CODEX_HOME` is declared only beside the Codex credential, so withdrawing
+    that credential withdraws the variable too — and a step opening with
+    `mkdir -p "$CODEX_HOME"` then runs as `mkdir -p ""`, which exits non-zero.
+    A non-zero prepare step aborts preparation, so the dispatch dies before any
+    node starts, reporting an error that names neither Codex nor the scoping
+    that caused it. The two halves are asserted TOGETHER because either alone is
+    satisfiable by the wrong overlay: a dispatch that declared `CODEX_HOME`
+    would make the dereference harmless while projecting a credential home no
+    agent uses, and the dereference count alone says nothing about whether the
+    variable it reads exists.
+    """
+    rendered = _written_overlay(tmp_path=tmp_path, monkeypatch=monkeypatch, codex_routed=False)
+    assigned = frozenset(_ENV_ASSIGNMENT_RE.findall(rendered))
+
+    assert _CODEX_HOME_ENV_VAR not in assigned, (
+        "a dispatch routing no node to Codex projects no Codex home; this is the "
+        "premise the prepare-step assertion below rests on, so it is measured "
+        "rather than assumed"
+    )
+    assert CODEX_OTEL_CONFIG_ENV_VAR not in assigned, (
+        "the Codex telemetry table is written into $CODEX_HOME and read by a "
+        "Codex process, so a dispatch that launches neither must carry neither "
+        "the table nor the step that writes it"
+    )
+    dereferencing = _codex_home_dereferencing_steps(rendered=rendered)
+    assert not dereferencing, (
+        "no prepare step may read $CODEX_HOME when the overlay assigns it "
+        'nothing: the step runs as `mkdir -p ""`, exits non-zero and aborts '
+        f"preparation for every dispatch in this repository; steps: {dereferencing}"
+    )
+
+
+def test_a_codex_routed_overlay_still_writes_the_codex_telemetry_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control for the case above, and the direction it must not overreach.
+
+    Scoping the telemetry projection away for EVERY dispatch satisfies the
+    sibling case completely while silently retiring Codex spend telemetry — the
+    `[otel]` table is the only surface codex-core resolves its exporters from,
+    and its absence shows up as no span at the destination rather than as a
+    failure here. So this requires the variable, the table and the step that
+    writes it, on the dispatch that really does launch Codex.
+    """
+    rendered = _written_overlay(tmp_path=tmp_path, monkeypatch=monkeypatch, codex_routed=True)
+    assigned = frozenset(_ENV_ASSIGNMENT_RE.findall(rendered))
+
+    assert _CODEX_HOME_ENV_VAR in assigned, (
+        "a Codex-routed dispatch declares the credential home every Codex " "projection writes into"
+    )
+    assert (
+        CODEX_OTEL_CONFIG_ENV_VAR in assigned
+    ), "a Codex-routed dispatch still carries the [otel] table codex-core reads"
+    dereferencing = _codex_home_dereferencing_steps(rendered=rendered)
+    assert any("config.toml" in script for script in dereferencing), (
+        "the step that writes $CODEX_HOME/config.toml must still be rendered for "
+        f"a Codex-routed dispatch; steps reading $CODEX_HOME: {dereferencing}"
     )
