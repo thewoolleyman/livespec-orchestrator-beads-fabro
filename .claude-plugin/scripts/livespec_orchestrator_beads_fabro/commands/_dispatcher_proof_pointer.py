@@ -6,7 +6,9 @@ preserving it byte-for-byte, containing only: the pull request number, the
 comment link of the latest `verified` record, its run id and timestamp, its
 verdict, and — when the item has `human_attested` assertions — the comment link
 of the human-attested record once it exists. The section MUST NOT copy proof
-content." It also makes a pointer whose run id or comment id disagrees with the
+content." v138 adds one more member to that closed set: the comment link of the
+`carried_forward` record, "when the merged head was reached through a
+carry-forward". It also makes a pointer whose run id or comment id disagrees with the
 latest record on the pull request a hygiene fact, which is why the section has to
 be READ back as well as written: `pointer_in` is that reader.
 
@@ -51,6 +53,7 @@ _RUN_LABEL = "Run"
 _TIMESTAMP_LABEL = "Timestamp"
 _VERDICT_LABEL = "Verdict"
 _RESUMED_RUN_LABEL = "Resumed run"
+_CARRIED_FORWARD_LABEL = "Carried-forward record"
 _HOST_RECORD_LABEL = "Host-verified record"
 _HUMAN_RECORD_LABEL = "Human-attested record"
 
@@ -76,6 +79,13 @@ class ProofPointer:
     every pointer in the ledger repeating the run id the line above already
     carries, and a reader could no longer tell a genuine resume from the
     rendering of one.
+
+    `carried_forward_url` is the v138 sibling, and it is the one field whose
+    subject is NOT the record the acceptance pass rested on: the pass still
+    grades the factory-captured assertions from the `verified` record, and this
+    link is what says that verification reached the tree that actually merged.
+    `None` is a merge whose head was proved directly, which is every ordinary
+    run.
     """
 
     pull_request: int
@@ -84,18 +94,20 @@ class ProofPointer:
     timestamp: str
     verdict: str
     resumed_run_id: str | None = None
+    carried_forward_url: str | None = None
     host_verified_url: str | None = None
     human_attested_url: str | None = None
 
     def render(self, *, heading_level: int = 2) -> str:
         """The section's own text, with no trailing newline.
 
-        The three opt-out fields are rendered in the order the clause lists
-        them — the resumed run, then the host link, then the human one — and
-        each only when there is one. The clause says the section contains
-        "only" the fields it names, so a bullet for a value that does not
-        exist would be content the clause does not admit, and a reader would
-        take an empty value for a record that had been published.
+        The four opt-out fields are rendered in the order the clause lists
+        them — the carry-forward link, the resumed run, then the host link,
+        then the human one — and each only when there is one. The clause says
+        the section contains "only" the fields it names, so a bullet for a
+        value that does not exist would be content the clause does not admit,
+        and a reader would take an empty value for a record that had been
+        published.
         """
         lines = [
             f"{'#' * heading_level} {PROOF_OF_DONE_POINTER_TITLE}",
@@ -107,6 +119,7 @@ class ProofPointer:
             f"- {_VERDICT_LABEL}: {self.verdict}",
         ]
         optional = (
+            (_CARRIED_FORWARD_LABEL, self.carried_forward_url),
             (_RESUMED_RUN_LABEL, self.resumed_run_id),
             (_HOST_RECORD_LABEL, self.host_verified_url),
             (_HUMAN_RECORD_LABEL, self.human_attested_url),
@@ -123,6 +136,7 @@ class ProofPointer:
             "timestamp": self.timestamp,
             "verdict": self.verdict,
             "resumed_run_id": self.resumed_run_id,
+            "carried_forward_record": self.carried_forward_url,
             "host_verified_record": self.host_verified_url,
             "human_attested_record": self.human_attested_url,
         }
@@ -196,6 +210,7 @@ def pointer_in(*, description: str) -> ProofPointer | None:
         timestamp=fields.get(_TIMESTAMP_LABEL, ""),
         verdict=fields.get(_VERDICT_LABEL, ""),
         resumed_run_id=fields.get(_RESUMED_RUN_LABEL),
+        carried_forward_url=fields.get(_CARRIED_FORWARD_LABEL),
         host_verified_url=fields.get(_HOST_RECORD_LABEL),
         human_attested_url=fields.get(_HUMAN_RECORD_LABEL),
     )
