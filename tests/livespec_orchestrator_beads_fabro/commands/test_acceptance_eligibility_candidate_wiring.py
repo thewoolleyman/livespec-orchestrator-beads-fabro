@@ -39,7 +39,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import candidates
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_candidates import candidates
 from livespec_orchestrator_beads_fabro.commands._needs_attention_idle_factory import (
     idle_factory_items,
 )

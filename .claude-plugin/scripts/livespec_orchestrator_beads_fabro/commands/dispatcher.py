@@ -329,11 +329,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import 
     load_items,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch_one
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_candidates import (
+    candidates,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_command import (
     run_loop_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
-    candidates,
     is_dispatch_candidate,
     janitor_core_ref,
     post_run_dispositions,
