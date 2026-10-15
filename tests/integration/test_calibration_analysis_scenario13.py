@@ -56,19 +56,12 @@ def _record(
     `dispatch_context_size` is the proxy each case varies to drive the
     correlation; the other proxies default to fixed values so a single proxy's
     ceiling is the unambiguous signal under test.
-
-    The non-green `outcome_class` is the ordinary `failed:fabro-run` a
-    janitor-refused or fix-loop-capped dispatch journals. It named the
-    watchdog's `stalled-no-progress` until `bd-ib-nfbyot`, when that status
-    stopped being a size signal at all: the pass now DECLINES a stall-cancelled
-    record, so a fixture labelled that way correlates nothing and every ceiling
-    in this module would be proposed over the converged band alone.
     """
     return CalibrationRecord(
         work_item_id=work_item_id,
         converged=converged,
         fix_loop_count=0 if converged else 3,
-        outcome_class="green" if converged else "failed:fabro-run",
+        outcome_class="green" if converged else "stalled-no-progress:fabro-run",
         wall_clock_seconds=10.0,
         token_cost_micros=1000,
         bounced_to_regroom=bounced_to_regroom,
