@@ -48,22 +48,27 @@ operator clearance.
 
 IT IS A WAIT, NOT A REFUSAL. `await_usable_credential` returns nothing and
 cannot refuse: returning is "admission may proceed under every OTHER
-admission-valve condition". The invocation's own budget bounds it in two ways —
-an invocation with no dispatch slots to spend has nothing to wait for, so it
-never enters the loop at all, and once inside it is the number of CONSECUTIVE
-rounds the wait tolerates without having re-resolved the credential.
+admission-valve condition". The one bound on the wait is the invocation's own
+budget — an invocation with no dispatch slots to spend has nothing to wait for,
+so it never enters the loop at all.
 
-THAT SECOND BOUND IS KEYED ON UNRESOLVABLE ROUNDS AND NEVER ON ROUNDS. The
-ratified clause says the loop MUST NOT exit on a provider-limit refusal while
-its `--budget` is unspent, so a blanket round cap would break exactly the
-behaviour this module exists to provide. What the bound governs is the other
-failure the re-resolution makes possible: when the declared wrapper cannot run,
-every round falls back to the same launch-time value, which nothing can change
-while the process lives, so the wait is on an event that CANNOT arrive. The
-counter resets on every successful re-resolution, which is why a healthy wait is
-still unbounded and a transient wrapper fault costs nothing; and the bound is
-tested AFTER the sleep, so a wait that has nothing to watch still journals its
-refusal and serves its cadence before ending.
+A WRAPPER THAT CANNOT BE READ IS NOT A RETIREMENT SIGNAL. It is tempting to end
+the wait once the re-resolution has failed often enough, reasoning that a reading
+stuck on the launch-time value can never observe a rotation. That reasoning does
+not hold and a bound built on it breaks the clause this module exists to
+implement: the condition the wait governs is a provider RATE LIMIT, which clears
+on its own with the credential UNCHANGED, so the probe's own next result still
+retires the wait whether or not the wrapper could be read. Keying such a bound on
+the invocation's budget makes the cost concrete — `_drive_impl_dispatch` spawns
+every `drive --action impl:<id>` loop as `loop --budget 1`, which is exactly what
+the four loops of the 2026-10-08 incident were, so one `sudo` or network fault in
+the wrapper would retire a whole drain after a single round — and a repository
+that declares NO wrapper reads the launch environment every round BY DESIGN,
+which is a legitimate configuration rather than a fault. What keeps a
+misconfigured wrapper from hanging a round is the bounded re-resolution
+(`CREDENTIAL_ROTATION_TIMEOUT_SECONDS`), never a round cap; and the record below
+names the reading's SOURCE, so a wait with nothing to watch is legible to the
+operator who can fix the wrapper rather than being silently abandoned.
 
 IT DOES NOT GOVERN A CHAIN THAT STILL HAS A CANDIDATE. `SPECIFICATION/
 contracts.md` section "Factory-configurable ACP fallback priority": "The
@@ -169,7 +174,6 @@ def await_usable_credential(  # noqa: PLR0913 — kw-only wait inputs; `runner` 
     )
     env_name = projected_credential_env_name()
     command = ShellCommandRunner() if runner is None else runner
-    unresolvable_rounds = 0
     while budget > 0:
         rotated = resolve_rotated_credential(
             repo=repo,
@@ -184,9 +188,6 @@ def await_usable_credential(  # noqa: PLR0913 — kw-only wait inputs; `runner` 
             record=_refused_probe_record(status=status, interval=interval, rotated=rotated)
         )
         sleep(interval)
-        unresolvable_rounds = 0 if rotated.rotatable else unresolvable_rounds + 1
-        if unresolvable_rounds >= budget:
-            return
 
 
 def _refused_probe_record(
