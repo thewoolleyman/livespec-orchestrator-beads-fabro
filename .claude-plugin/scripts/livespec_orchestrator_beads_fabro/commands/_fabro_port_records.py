@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -66,6 +67,21 @@ class FabroRunSummary:
     (measured on v0.378.0-nightly.0, research note 006). It defaults to None
     because an absent measurement is ABSENT: a zero would read as a run the
     engine timed and found instantaneous.
+
+    `labels` and `repo_origin_url` are what make a run row AVAILABILITY
+    EVIDENCE rather than a cost row. `SPECIFICATION/contracts.md` section
+    "Factory-configurable ACP fallback priority" requires each recorded
+    attempt to identify its repository and candidate entitlement from the
+    factory's NATIVE records, and the engine already carries both on every
+    row (measured 2026-10-12 on hp, 0.254.0: all 1626 rows). The labels are
+    what the Dispatcher stamped; the origin URL is the engine's own
+    canonical naming of the repository, which is why it is read rather than
+    re-derived from the label beside it.
+
+    Both default to ABSENT rather than to a filled-in value, for the same
+    reason `wall_time_ms` does: a row carrying no labels carries no `labels`
+    key, and a projection that invented one would report an entitlement
+    nobody recorded.
     """
 
     run_id: str
@@ -73,6 +89,8 @@ class FabroRunSummary:
     goal: str | None
     total_usd_micros: int | None
     wall_time_ms: int | None = None
+    labels: Mapping[str, str] = field(default_factory=dict)
+    repo_origin_url: str | None = None
     work_item_id: str | None = field(default=None, compare=False)
 
 
@@ -179,7 +197,27 @@ def _run_summary(*, run: object) -> FabroRunSummary | None:
         work_item_id=_work_item_id(goal=goal),
         total_usd_micros=_optional_int(value=record.get("total_usd_micros")),
         wall_time_ms=_optional_int(value=record.get("wall_time_ms")),
+        labels=_labels(value=record.get("labels")),
+        repo_origin_url=_optional_str(value=record.get("repo_origin_url")),
     )
+
+
+def _labels(*, value: object) -> Mapping[str, str]:
+    """The run row's label map, keeping only the TEXT pairs it carries.
+
+    A `labels` that is not a mapping, and any entry whose key or value is
+    not text, yields nothing rather than a rendering of it — the same
+    fail-closed reading `_detail_text` takes of an unmeasured payload
+    shape, and for the same reason: this parser's own rendering of a
+    foreign value would sit exactly where the engine's label belongs, and
+    no consumer could tell it from a label the dispatch really passed.
+    """
+    if not isinstance(value, dict):
+        return {}
+    entries = cast("dict[object, object]", value)
+    return {
+        key: text for key, text in entries.items() if isinstance(key, str) and isinstance(text, str)
+    }
 
 
 def _optional_str(*, value: object) -> str | None:
