@@ -61,3 +61,29 @@ because a crashing PreToolUse hook wedges every tool call in the session. The
 one sanctioned fail-open inside the decision is the Bash tokenizer, since a
 lexer error must not refuse legitimate work.
 
+## The sandbox path policy
+
+`livespec_sandbox_path_policy.py` is the pure decision behind the `contracts.md`
+paragraph "The run's working tree survives the agent." (Scenario 180): which
+paths a factory run cannot survive losing, which paths an executed destructive
+segment of a shell command would act on, and whether either destroys the other.
+
+Three properties an editor must not invert. The protected set is DISCOVERED
+from the layout the caller can read rather than configured, because the two
+engine layouts put the clone in different places and nothing in the sandbox
+announces which. That discovery is also what makes the policy INERT outside a
+factory sandbox, which is the governing clause's own scope. And the comparison
+includes every directory ABOVE a protected path but nothing below one: `rm -rf
+..` from the repository root ends the run, while removing the clone's `.git` or
+emptying the whole tree is in-tree and v142 allows it.
+
+## The shared shell reading
+
+`livespec_shell_shape.py` is the one place a Bash command is separated into the
+words a shell would EXECUTE and the bytes it would merely carry. Both the
+test-first order guard's target extraction and the sandbox path policy read it.
+Keep it that way: two copies of this reading would let the two guards disagree
+about which half of a command is data, which is the exact distinction both of
+them exist to make. (`livespec_footgun_guard.py` still carries its own simpler
+regex segmenting; consolidating that is a separate concern.)
+
