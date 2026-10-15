@@ -1071,6 +1071,34 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   Nothing is spawned: the launcher's own `subprocess.run` is stood in for, which
   is what makes "the guard was not launched" assertable at all.
 
+- `test_sandbox_path_guard_scenario180.py` — binds `SPECIFICATION/scenarios.md`
+  Scenario 180 and the `contracts.md` paragraph "The run's working tree survives
+  the agent." (v142): the committed PreToolUse hook
+  `.claude/hooks/livespec_sandbox_path_guard.py` refuses a command whose
+  executed segment would remove, move or replace the sandbox root, the run's
+  working directory, its working-directory link or the run's clone, while
+  scratch removals, in-tree removals and data-only mentions still run. One case
+  per gherkin scenario, each driven through `main()` IN-PROCESS — a payload on
+  stdin, a deny payload on stdout — over a REAL layout built under `tmp_path`:
+  a root holding a symbolic link to a clone under a sibling `repos/` tree, which
+  is the layout the 2026-10-15 incident ran in. The real filesystem is what puts
+  this at the integration tier rather than beside the policy's unit cases: the
+  protected set is DISCOVERED from that layout — the working-directory link is
+  identified by what it points at, and the clone sits OUTSIDE the root — so a
+  stubbed filesystem would exercise the decision ladder and leave the discovery
+  unexercised. The production root is `/workspace`, redirected here through the
+  guard's own documented override. Two things are worth knowing before editing.
+  The sandbox-root case asserts the link and the clone still EXIST after the
+  hook has spoken, because the clause's "before any part of it executes" is
+  exactly what a deny decision buys and an exit code cannot show it. And the
+  Background premise — that the agent's ACP adapter runtime offers a hook
+  running before each shell command — is a property of the RUNTIME, so it is
+  bound here only as the half this repository controls, namely that the guard is
+  registered on the `Bash` PreToolUse matcher in the committed
+  `.claude/settings.json`; that a dispatched run's agent actually reaches it is
+  work-item bd-ib-jgedjo's HOST-CAPTURED assertion, proved on the factory
+  against a released build.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

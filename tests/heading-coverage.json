@@ -1817,9 +1817,8 @@
     "heading": "## Scenario 180 \u2014 A sandbox agent cannot remove the run's working tree, and ordinary removals still run",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by the revision accepting proposal sandbox-path-protection (plan checkpoint-commit-hook-failures, epic bd-ib-hcwmnq). The sandbox path guard is not implemented yet; an integration-tier test is owed for the five sub-scenarios, and work-item bd-ib-jgedjo implements them and owns that binding.",
-    "work_item": "bd-ib-jgedjo"
+    "test": "tests.integration.test_sandbox_path_guard_scenario180",
+    "reason": "Integration-tier binding for the Background premise and all five scenarios: each case drives the committed PreToolUse hook .claude/hooks/livespec_sandbox_path_guard.py over a REAL sandbox layout built under tmp_path -- a root holding a working-directory symlink to a clone outside it -- because the protected set is DISCOVERED from that layout and a stubbed filesystem would leave the discovery unexercised. The Background's premise that the agent's ACP adapter runtime offers a pre-shell-command hook is exercised as the half this repository controls, namely that the guard is registered on the Bash PreToolUse matcher in the committed .claude/settings.json; that a dispatched run's agent actually reaches it is work-item bd-ib-jgedjo's HOST-CAPTURED assertion, proved on the factory against a released build."
   },
   {
     "heading": "## Scenario 183 \u2014 A checkpoint-failed run whose tree nothing else carries is published to a preservation ref",
