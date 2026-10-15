@@ -55,6 +55,7 @@ from livespec_orchestrator_beads_fabro.store import (
     materialize_work_items,
     read_work_item_comments,
     read_work_items,
+    update_work_item_status,
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -509,6 +510,97 @@ def test_a_first_stall_cancel_releases_the_claim_and_returns_the_item_to_ready(
     assert "01STALLRUN" in body
     assert "hp" in body
     assert "proof_capture" in body
+
+
+def test_a_first_stall_release_is_replayable_without_affecting_a_newer_claim(
+    tmp_path: Path,
+) -> None:
+    """Scenario 172's "A first stall release is replayable without affecting a newer claim".
+
+    The release is keyed by FACTORY AND RUN, which is what makes a second pass
+    over the same cancellation a completion rather than a repetition. The
+    hazard the clause names is not an untidy duplicate record: it is that the
+    replay performs the release's ledger write a second time, long after the
+    item was re-dispatched, and so hands a LIVE dispatch's claim back to the
+    queue. Nothing about the resulting row says it happened — the item is
+    `ready` with no assignee, which is exactly what a correct first release
+    leaves — so the item is admitted again while the run it already has keeps
+    going, and two runs publish onto one branch.
+
+    The journey is the clause's own: an interrupted release, the reconciliation
+    that completes it, a NEWER dispatch that claims the item, and then the
+    replay. Both guards are exercised by it, and the two are separate
+    mechanisms rather than one read twice — the already-released reading is
+    keyed on the cancellation, while the newer-claim reading is keyed on the
+    item — so each is asserted on its own instrument: the release row count
+    says the completion did not run twice, and the item's status and assignee
+    say the live claim survived.
+
+    THE CANCEL-ROW COUNT IS ASSERTED TOO, and it is not decoration. The row
+    count IS this item's across-dispatch cancellation record, which is what the
+    second-cancel disposition routes on, so a replay that appended one would
+    convert this item's single released stall into the repeat cancellation that
+    rests for a human — on a dispatch that is still running.
+    """
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition"
+    )
+    repo = _repo(tmp_path=tmp_path)
+    journal = _journal(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    journal.append(
+        record={
+            "stage": "watchdog-stall-cancel",
+            "work_item_id": _ITEM_ID,
+            "run_id": "01STALLRUN",
+            "factory": "hp",
+            "executing_stage": "proof_capture",
+        }
+    )
+
+    module.dispose_stall_cancel(
+        repo=repo,
+        item=item,
+        outcome=_outcome(status="stalled-no-progress"),
+        journal=journal,
+    )
+    assert _stored()[_ITEM_ID].status == "ready"
+
+    # The newer dispatch: the ordinary admission valve claims the released item
+    # and journals its own `dispatch-id` record, exactly as a live dispatch does.
+    update_work_item_status(path=_config(), item_id=_ITEM_ID, status="active", assignee="fabro")
+    journal.append(
+        record={
+            "stage": "dispatch-id",
+            "work_item_id": _ITEM_ID,
+            "dispatch_id": "0000000000000000000000000000beef",
+        }
+    )
+
+    module.dispose_stall_cancel(
+        repo=repo,
+        item=replace(item, status="active"),
+        outcome=_outcome(status="stalled-no-progress"),
+        journal=journal,
+    )
+
+    still_claimed = _stored()[_ITEM_ID]
+    assert still_claimed.status == "active"
+    assert still_claimed.assignee == "fabro"
+
+    stages = [record.get("stage") for record in _journal_records(path=journal.path)]
+    assert stages.count("watchdog-stall-cancel") == 1
+    assert stages.count(module.STALL_RELEASE_STAGE) == 1
+    assert len(read_work_item_comments(path=_config(), work_item_id=_ITEM_ID)) == 1
+
+    # The held stage is spelled as a LITERAL and bound to the exported name by
+    # the `getattr` below, for the reason this module's other Red-predating
+    # cases give: a Red authored before the constant exists would die on the
+    # attribute lookup, which proves unimportability rather than unimplemented
+    # behaviour.
+    assert "stall-cancel-release-held" in stages
+    assert getattr(module, "STALL_RELEASE_HELD_STAGE", "") == "stall-cancel-release-held"
 
 
 def test_a_second_consecutive_stall_cancel_rests_the_item_for_a_human(
