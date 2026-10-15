@@ -81,9 +81,15 @@ def _decision(*, raw: str, environ: dict[str, str]) -> str | None:
     root = environ.get(SANDBOX_ROOT_ENV_VAR, "").strip() or DEFAULT_SANDBOX_ROOT
     working = str(data.get("cwd", "") or "").strip()
     repository = environ.get(_PROJECT_DIR_ENV_VAR, "").strip() or working
+    targets = policy.removal_targets(command=command, working_directory=working or repository)
     matched = policy.refused_path(
-        targets=policy.removal_targets(command=command, working_directory=working or repository),
-        resolved={},
+        targets=targets,
+        # Each target paired with what it REALLY is, so a symbolic link the
+        # agent made itself cannot stand in for the path it points at. Pairing
+        # happens here rather than in the policy because the policy has no
+        # filesystem; a glob target resolves to itself and the policy ignores
+        # the pairing for one anyway.
+        resolved={target: _real_path(path=target) for target in targets},
         protected=policy.protected_paths(
             sandbox_root=root,
             repository_path=repository,
