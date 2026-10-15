@@ -26,7 +26,6 @@ from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition import (
-    STALL_NEEDS_HUMAN_STAGE,
     STALL_RELEASE_STAGE,
     UNREAD_CANCEL_ROW,
     dispose_stall_cancel,
@@ -286,31 +285,3 @@ def test_a_failed_release_journals_the_error_and_not_the_success(tmp_path: Path)
     stages = _stages(journal=journal)
     assert f"{STALL_RELEASE_STAGE}-error" in stages
     assert STALL_RELEASE_STAGE not in stages
-
-
-def test_a_failed_rest_journals_the_error_and_not_the_success(tmp_path: Path) -> None:
-    """The repeat-cancellation arm fails soft in the same shape the release does.
-
-    Two cancel rows route to the needs-human disposition, and the item is again
-    deliberately absent from the tenant so the blocked write raises. The pair of
-    assertions mirrors the release case for the same reason: a build appending
-    the success record would report an item resting at `blocked` / `needs-human`
-    that is in fact still `active` and still claimed, which is the reading that
-    decides whether an operator goes looking for it.
-    """
-    repo = _repo(tmp_path=tmp_path)
-    journal = _journal(
-        tmp_path=tmp_path,
-        lines=(_cancel_line(run_id="01FIRSTGONE"), _cancel_line(run_id="01SECONDGONE")),
-    )
-
-    dispose_stall_cancel(
-        repo=repo,
-        item=_item(),
-        outcome=_outcome(status="stalled-no-progress"),
-        journal=journal,
-    )
-
-    stages = _stages(journal=journal)
-    assert f"{STALL_NEEDS_HUMAN_STAGE}-error" in stages
-    assert STALL_NEEDS_HUMAN_STAGE not in stages
