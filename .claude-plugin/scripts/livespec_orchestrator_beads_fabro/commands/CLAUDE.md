@@ -179,10 +179,16 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   arranged here, which is why both cases are asserted as a pair.
 - `_dispatcher_sandbox_worktree_exclude.py` — the ONE renderer that makes a
   Dispatcher-materialized sandbox path invisible to the run's own git worktree,
-  shared by `_dispatcher_gh_refresh` (the bundle and its base64 payload,
-  `bd-ib-dud2ww`) and `_dispatcher_credential_use_projection` (the guard script,
-  `bd-ib-ccywva`). PURE. The defect it closes belongs to the LAYOUT rather than
-  to either artifact: the Petri-era engine runs each prepare step as a graph
+  shared by ALL FOUR projections that write a fixed `/workspace` path:
+  `_dispatcher_gh_refresh` (the bundle and its base64 payload, `bd-ib-dud2ww`),
+  `_dispatcher_credential_use_projection` (the guard script, `bd-ib-ccywva`),
+  `_dispatcher_codex_auth_projection` (the projected Codex home) and
+  `_dispatcher_tmux_socket_root` (the tmux socket root) — the last two found by
+  a static audit (`bd-ib-5qxa5q`) rather than by a run, which is the shape this
+  defect class takes once the first two have been repaired: the remaining
+  instances are latent until a dispatch happens to reach them. PURE. The defect
+  it closes belongs to the LAYOUT rather than
+  to any one artifact: the Petri-era engine runs each prepare step as a graph
   node and checkpoints after it, and on that engine the repository clone IS
   `/workspace`, so every `/workspace` path a prepare step writes is committed
   into the run branch — while on the pinned engine the clone is
@@ -196,14 +202,32 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   that wrote it. Callers name paths NARROWLY, a file rather than its directory,
   because the entry lands in a GOVERNED repository's clone and excluding a
   directory that repository could legitimately track would hide its own content
-  from git. And every arm that cannot MEASURE where a path sits is passed over
+  from git — and the narrowness rule is about WHAT THE CALLER WRITES rather than
+  about path shape, which is what admits the two directory-naming callers: the
+  Codex home is a credential HOME the telemetry projection and the codex-acp
+  child both populate, and the tmux root is a socket root the tmux SERVER
+  populates, so in neither case is there a file the projection could name that
+  would cover what later lands beside it. And every arm that cannot MEASURE
+  where a path sits is passed over
   WITH a labelled line on stderr: a failing prepare step kills the run before any
   work, so the pass-over is right, but a silent one is indistinguishable from a
   successful exclusion until `publish_draft` refuses at the end of a full run.
-  Both call sites render the exclusion as their FIRST prepare step for the same
+  Every call site renders the exclusion as its FIRST prepare step for the same
   checkpoint reason; the credential-use caller may do so and still install the
-  guard at the path `guarded_acp_command` execs, since hiding it from git is not
-  hiding it from the sandbox.
+  guard at the path `guarded_acp_command` execs, and the Codex and tmux callers
+  may do so and still have the adapter resolve `$CODEX_HOME` and tmux resolve
+  `TMUX_TMPDIR`, since hiding a path from git is not hiding it from the sandbox.
+- `_dispatcher_tmux_socket_root.py` — the sandbox-local tmux socket root, as
+  ONE projection: the path, the exclude-then-create prepare steps, and the
+  `TMUX_TMPDIR` env line. Split out of `_dispatcher_overlay` by cohesion when
+  the root gained its worktree exclusion (`bd-ib-5qxa5q`) — that file ASSEMBLES
+  the overlay, while this is a peer of `_dispatcher_codex_auth_projection` and
+  every other materialized `/workspace` projection. Keep the three together:
+  the exclusion, the creation and `TMUX_TMPDIR` must all name the same
+  directory, and splitting them across modules is how two of them come to name
+  different ones. The root is projected UNCONDITIONALLY, because it is what
+  keeps a sandbox-local `tmux kill-server` away from the host default
+  under `/tmp`.
 - `_dispatcher_default_branch_fetch.py` — the DISPATCH BASE every dispatch
   fetches into its sandbox clone, so `origin/<default_branch>` exists for the
   `implementation_diff` node and for every check that diffs the default branch
