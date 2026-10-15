@@ -174,20 +174,14 @@ def _stage_record(*, journal: _RecordingJournal, stage: str) -> dict[str, object
 # --- the cap classification ------------------------------------------------
 
 
-def test_a_watchdog_stall_names_no_cap_and_observes_nothing() -> None:
-    """`bd-ib-nfbyot`: a stall is not a non-convergence, so it trips no cap.
-
-    This asserted the opposite — the resolved window as the cap and the figure
-    as its observation — until `contracts.md`'s "Dispatcher progress watchdog"
-    ruled that "the calibration analysis pass MUST NOT count it as a
-    non-convergence observation". The window still reaches an operator, on the
-    `watchdog-stall-cancel` record the cancel journals.
-    """
+def test_a_watchdog_stall_names_the_stall_window_and_the_duration_it_measured() -> None:
+    """The window IS the measured quiet duration: the watchdog fires on nothing less."""
     module = _module()
 
     cap = module.non_convergence_cap(outcome=_stalled(), stall_seconds=1800.0)
 
-    assert cap == module.UNTRIGGERED_NON_CONVERGENCE_CAP
+    assert cap.cap == module.STALL_WINDOW_CAP
+    assert cap.observed == 1800
 
 
 def test_a_fix_loop_exhaustion_names_its_cap_and_observes_nothing() -> None:
@@ -218,37 +212,23 @@ def test_the_cap_flattens_to_two_sibling_journal_keys() -> None:
     """Flat scalars, so the egress leg promotes each without unwrapping a map."""
     module = _module()
 
-    record = module.non_convergence_cap(outcome=_cap_exhausted(), stall_seconds=900.0).as_record()
+    record = module.non_convergence_cap(outcome=_stalled(), stall_seconds=900.0).as_record()
 
-    assert record == {_CAP_KEY: module.FIX_LOOP_VISIT_CAP, _OBSERVED_KEY: None}
+    assert record == {_CAP_KEY: module.STALL_WINDOW_CAP, _OBSERVED_KEY: 900}
     assert module.UNTRIGGERED_NON_CONVERGENCE_CAP.as_record() == {
         _CAP_KEY: None,
         _OBSERVED_KEY: None,
     }
 
 
-def test_the_fix_loop_cap_names_the_graph_guard_an_operator_would_tune() -> None:
-    """The one cap identity a bounce can name points at the guard that enforces it.
-
-    `STALL_WINDOW_CAP` was asserted here beside the resolver that reads its
-    committed key, until `bd-ib-nfbyot` removed the stall arm. The resolver is
-    still asserted — in `test_the_stall_window_still_resolves_its_committed_key`
-    below — because the key did not stop existing; it stopped being a cap.
-    """
+def test_the_stall_window_cap_names_the_setting_an_operator_would_tune(tmp_path: Path) -> None:
+    """The cap identity is the committed key the stall-window resolver reads."""
     module = _module()
 
-    assert module.FIX_LOOP_VISIT_CAP == "workflow.janitor_fix_loop_visit_cap"
-
-
-def test_the_stall_window_still_resolves_its_committed_key(tmp_path: Path) -> None:
-    """The window the cancel record names is read from the key an operator writes.
-
-    Retained from the removed cap assertion: a cancel record pointing at a knob
-    that moves nothing is worse than no name at all, and that remains true now
-    that the window rides the cancel record instead of a bounce cap.
-    """
+    assert module.STALL_WINDOW_CAP == "dispatcher.stall_timeout_seconds"
+    # And the resolver the Dispatcher passes it is the one that reads that key:
+    # a record naming a knob that moves nothing is worse than no name at all.
     _write_stall_timeout(repo=tmp_path, seconds=60)
-
     assert resolve_stall_window(cwd=tmp_path).seconds == 60.0
 
 

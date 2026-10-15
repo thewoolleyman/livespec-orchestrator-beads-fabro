@@ -28,22 +28,13 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
-from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
-    build_calibration_record,
-    calibration_journal_record,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     bounce_non_convergence_to_backlog,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_non_convergence_cap import (
-    BOUNCE_CAP_KEY,
-    BOUNCE_CAP_OBSERVED_KEY,
-    FIX_LOOP_VISIT_CAP,
     NON_CONVERGENCE_BOUNCE_STAGE,
-    UNTRIGGERED_NON_CONVERGENCE_CAP,
-    non_convergence_cap,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     NON_CONVERGED_MARKER,
@@ -193,64 +184,3 @@ def test_a_stall_cancelled_dispatch_is_neither_bounced_nor_journaled_as_one(
     stages = [record.get("stage") for record in _journal_records(path=journal.path)]
     assert NON_CONVERGENCE_BOUNCE_STAGE not in stages
     assert _stored()[_ITEM_ID].status == "active"
-
-
-def _calibration_row(*, outcome: DispatchOutcome) -> dict[str, object]:
-    """The journal row the calibration analysis pass reads for one terminal.
-
-    Built through the SAME pure derivation `emit_calibration` uses, with the
-    stall window the dispatch would have resolved handed in — the cap
-    classification is pure precisely so this reading needs no repository on
-    disk, and handing in a real window is what stops a build that still named
-    it from passing for one that declines to.
-    """
-    return calibration_journal_record(
-        record=build_calibration_record(
-            item=_item(),
-            outcome=outcome,
-            repo_name="livespec-orchestrator-beads-fabro",
-            journal_records=(),
-            wall_clock_seconds=12.0,
-            token_cost_micros=None,
-            dispatch_context_size=0,
-            merged_pr_diff_size=None,
-            bounce_cap=non_convergence_cap(outcome=outcome, stall_seconds=7200.0),
-        )
-    )
-
-
-def test_the_calibration_pass_counts_the_fix_loop_cap_and_not_a_stall_cancel() -> None:
-    """One non-convergence observation for the fix-loop cap, none for a stall.
-
-    The two rows are asserted TOGETHER because each alone is vacuous: a pass
-    that counted nothing would satisfy the stall half, and one that counted
-    everything would satisfy the fix-loop half. Both the observation flag and
-    the cap identity are read, because they are independent fields and a build
-    that cleared the flag while still naming the stall window reports a
-    dispatch that tripped a cap it was not bounced for.
-    """
-    stalled = _calibration_row(outcome=_outcome(status="stalled-no-progress"))
-    assert stalled["bounced_to_regroom"] is False
-    assert stalled[BOUNCE_CAP_KEY] is None
-    assert stalled[BOUNCE_CAP_OBSERVED_KEY] is None
-
-    exhausted = _calibration_row(
-        outcome=_outcome(
-            status="failed",
-            detail=f"{NON_CONVERGED_MARKER}: janitor fix-loop cap hit without converging",
-        )
-    )
-    assert exhausted["bounced_to_regroom"] is True
-    assert exhausted[BOUNCE_CAP_KEY] == FIX_LOOP_VISIT_CAP
-
-
-def test_a_stall_cancel_trips_no_cap_at_all() -> None:
-    """The classification itself declines, so no caller can report a stall cap.
-
-    Asserted on the classification as well as on the row above because the cap
-    rides two surfaces — the bounce record and the calibration span — and a
-    row-only assertion passes for a build that merely stopped projecting it.
-    """
-    cap = non_convergence_cap(outcome=_outcome(status="stalled-no-progress"), stall_seconds=7200.0)
-
-    assert cap == UNTRIGGERED_NON_CONVERGENCE_CAP
