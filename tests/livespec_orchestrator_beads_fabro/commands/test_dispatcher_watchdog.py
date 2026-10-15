@@ -27,7 +27,6 @@ different question from how it measures PROGRESS (bd-ib-6pdigz).
 
 from __future__ import annotations
 
-import json
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -829,66 +828,6 @@ def test_wall_clock_probe_reads_only_the_event_stream_never_fabro_inspect(
     assert sample.last_event_epoch is not None
     assert runner.verbs == ["events"]
     assert "inspect_json" not in signature(parse_last_event_epoch).parameters
-
-
-def test_the_cancel_record_locates_the_run_before_the_rm_destroys_it(tmp_path: Path) -> None:
-    """`bd-ib-nfbyot`: the production launcher journals the run's own half too.
-
-    The two readings this adds — the executing stage and the publication — are
-    available ONLY while the run exists, so the case asserts the verb ORDER as
-    well as the fields: a reading taken after `fabro rm -f` would still succeed
-    and would report every cancelled run as a run with no publication. Both the
-    stage and the head come from the SAME scripted stream, because a fixture
-    supplying one and not the other cannot tell a reader that located the run
-    from one that happened to find a marker.
-    """
-    head = "d" * 40
-    frozen = json.dumps(
-        [
-            {"timestamp": "2026-06-13T08:00:00Z", "event": "fabro.stage.started"},
-            {"event": "fabro.stage.started", "node_id": "publish_draft"},
-            {"event": "fabro.stage.completed", "node_id": "publish_draft"},
-            {
-                "event": "fabro.edge.selected",
-                "properties": {"from_node": "publish_draft", "to_node": "proof_capture"},
-            },
-            {"event": "fabro.stage.started", "node_id": "proof_capture"},
-            {
-                "event": "fabro.agent.log",
-                "properties": {
-                    "text": (
-                        "LIVESPEC_PUBLISH_DRAFT_PUBLISHED: publish_branch=feat/x "
-                        f"head={head} pull_request=#2612"
-                    )
-                },
-            },
-        ]
-    )
-    runner = _ScriptedFabroRunner(events_jsons=[frozen])
-    journal = _RecordingJournal()
-    launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
-
-    result = launcher.launch(
-        plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
-    )
-
-    assert result.stalled_run_id == "01RUN"
-    cancels = [r for r in journal.records if r.get("stage") == "watchdog-stall-cancel"]
-    assert len(cancels) == 1
-    # This launcher is wired with no dispatch id, so the key is present and
-    # NULL rather than absent: an absent key is what a record from a build
-    # predating the field looks like, and a reader could not tell the two
-    # apart. The populated case is asserted on the renderer, which is the only
-    # layer that can be handed one without the correlation wiring this fake
-    # runner does not model.
-    assert cancels[0]["dispatch_id"] is None
-    assert cancels[0]["factory"] == "default"
-    assert cancels[0]["executing_stage"] == "proof_capture"
-    assert cancels[0]["pull_request"] == 2612
-    assert cancels[0]["published_head"] == head
-    # The reading precedes the destruction: `events` and `inspect` both appear
-    # before the `rm` that makes them unanswerable.
-    assert runner.verbs.index("rm") > runner.verbs.index("inspect")
 
 
 def test_watched_launcher_cancels_a_confirmed_stall(tmp_path: Path) -> None:

@@ -28,10 +28,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_stamp import stamped_attribution
-from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel import (
-    FABRO_RM_TIMEOUT_SECONDS,
-    cancel_stalled_run,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
     LivenessSample,
     StallVerdict,
@@ -56,11 +52,7 @@ __all__: list[str] = ["WatchedFabroLauncher"]
 # (`_node_timeouts.derive_fabro_timeout_seconds`) — the watched and
 # synchronous launchers deliberately read the SAME number, so a repository
 # that lengthens a node cannot have one path outlive the other.
-# The `fabro rm -f` budget lives with the cancel it belongs to
-# (`_dispatcher_stall_cancel`); the launcher reads it back because it joins its
-# own run thread against the same number — the thread is waiting for the
-# `fabro run` that `rm` is what ends, so two different budgets would let the
-# join outlive or undercut the cancel it is waiting on.
+_FABRO_RM_TIMEOUT_SECONDS = 120.0
 _WATCHDOG_POLL_INTERVAL_SECONDS = 30.0
 
 
@@ -152,7 +144,7 @@ class WatchedFabroLauncher:
             port=port,
         )
         if watched.abandoned_run_id is not None:
-            thread.join(timeout=FABRO_RM_TIMEOUT_SECONDS)
+            thread.join(timeout=_FABRO_RM_TIMEOUT_SECONDS)
             return FabroRunResult(
                 command=holder.get(
                     "result",
@@ -162,7 +154,7 @@ class WatchedFabroLauncher:
                 abandoned_item_status=watched.abandoned_item_status,
             )
         if watched.stalled_run_id is not None:
-            thread.join(timeout=FABRO_RM_TIMEOUT_SECONDS)
+            thread.join(timeout=_FABRO_RM_TIMEOUT_SECONDS)
             return FabroRunResult(
                 command=holder.get(
                     "result",
@@ -258,8 +250,7 @@ class WatchedFabroLauncher:
                 continue
             window = tuple(samples)
             if decide_stall(samples=window, stall_seconds=stall_seconds) == StallVerdict.STALLED:
-                cancel_stalled_run(
-                    dispatch_id=self.dispatch_id,
+                self._cancel(
                     plan=plan,
                     port=port,
                     journal=journal,
@@ -268,6 +259,50 @@ class WatchedFabroLauncher:
                 )
                 return _WatchResult(stalled_run_id=known_run_id)
         return _WatchResult()
+
+    def _cancel(
+        self,
+        *,
+        plan: DispatchPlan,
+        port: FabroPort,
+        journal: JournalWriter,
+        run_id: str,
+        quiet_seconds: float | None,
+    ) -> None:
+        """`fabro rm -f` the stalled run and journal what governed the decision.
+
+        THREE figures ride the record, and each answers a question the other
+        two cannot. `plan.stall_window.seconds` is the resolved interval and
+        `quiet_seconds` is the window actually confirmed against it: the
+        interval alone cannot be checked — it says what the threshold was,
+        never that anything reached it — and the 2026-10-09 incident
+        (bd-ib-n44n4e) had to be reconstructed from the run's own event stream
+        because the record carried neither figure.
+
+        `plan.stall_window.layer` is the third, and it is the FIRST question
+        asked of a cancellation: an interval of 7200 seconds is the fleet
+        default on one target and a deliberate repository override on another,
+        and only the layer separates them — so only the layer says whether
+        raising `dispatcher.stall_timeout_seconds` would have saved this run
+        or whether it had already been raised. The interval is read off the
+        plan here rather than taken as an argument so the record cannot name
+        one window while the decision above graded against another.
+        """
+        rm = port.rm(
+            run_id=run_id,
+            timeout_seconds=_FABRO_RM_TIMEOUT_SECONDS,
+        )
+        journal.append(
+            record={
+                "work_item_id": plan.work_item_id,
+                "stage": "watchdog-stall-cancel",
+                "run_id": run_id,
+                "rm_exit_code": rm.command.exit_code,
+                "stall_seconds": plan.stall_window.seconds,
+                "stall_layer": plan.stall_window.layer,
+                "quiet_seconds": quiet_seconds,
+            }
+        )
 
     def _reap_stale_run(
         self,
@@ -280,7 +315,7 @@ class WatchedFabroLauncher:
     ) -> None:
         rm = fabro_port_for_plan(plan=plan, runner=runner).rm(
             run_id=run_id,
-            timeout_seconds=FABRO_RM_TIMEOUT_SECONDS,
+            timeout_seconds=_FABRO_RM_TIMEOUT_SECONDS,
         )
         journal.append(
             record={
