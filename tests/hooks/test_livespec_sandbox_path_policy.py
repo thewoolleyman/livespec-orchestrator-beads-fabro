@@ -331,6 +331,78 @@ def test_a_mixed_removal_that_also_names_a_protected_path_is_refused_and_names_i
     )
 
 
+def test_a_relative_removal_after_changing_into_a_parent_is_refused() -> None:
+    """Assertion 3, and Scenario 180's second scenario verbatim.
+
+    The `cd` and the removal are different segments, so the directory a later
+    word is read from is state the walk has to carry. Without it `workspace/`
+    resolves against the ORIGINAL working directory, lands inside the
+    repository tree, and reports a clean allow.
+    """
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command="cd / && rm -rf workspace/") == _SANDBOX_ROOT
+
+
+def test_a_bare_cd_leaves_the_last_known_directory_in_place() -> None:
+    """A `cd` with no operand goes somewhere this module cannot know.
+
+    Keeping the last KNOWN directory is the deliberate direction: resolving
+    later relative words against a home directory the guard invented would
+    make every one of those readings fiction. The cost is a possible refusal
+    of a removal that would have happened elsewhere, which an absolute path
+    avoids; the alternative cost is losing the run.
+    """
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command="cd && rm -rf .") == _CLONE
+
+
+def test_a_trailing_slash_does_not_hide_a_protected_path() -> None:
+    """Assertion 3: `/workspace/` and `/workspace` are the same directory."""
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command=f"rm -rf {_SANDBOX_ROOT}/") == _SANDBOX_ROOT
+
+
+def test_a_glob_that_expands_to_a_protected_path_is_refused() -> None:
+    """Assertion 3: the shell would hand `rm` the protected path itself.
+
+    Matched as a PATTERN against the protected set rather than expanded,
+    because expansion needs the filesystem and this module has none — and
+    because the question is only ever whether a protected path is among what
+    the shell would produce.
+    """
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command="rm -rf /works*") == _SANDBOX_ROOT
+
+
+def test_a_glob_under_the_sandbox_root_reaches_the_working_directory_link() -> None:
+    """`rm -rf /workspace/*` removes the link, which ends the run as surely."""
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command=f"rm -rf {_SANDBOX_ROOT}/*") == _LINK
+
+
+def test_a_glob_under_a_scratch_directory_is_not_refused() -> None:
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command="rm -rf /tmp/*") is None
+
+
+def test_a_glob_that_empties_the_repository_tree_is_not_refused() -> None:
+    """`rm -rf *` from the repository root is in-tree, and v142 allows it.
+
+    Recorded as a case rather than left implicit because it is the boundary of
+    this guard: emptying the tree, or removing the clone's `.git`, is tracked
+    separately as bd-ib-quzpge and is deliberately NOT refused here.
+    """
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command="rm -rf *") is None
+
+
 def test_removing_the_working_directory_itself_as_a_dot_is_refused() -> None:
     """Assertion 4: `rm -rf .` from the unchanged working directory IS the clone."""
     policy = _load_policy()
