@@ -31,25 +31,41 @@ nothing and would still succeed. Reading the row the cancel wrote is therefore
 not a shortcut — it is the only honest source, and it also keeps the comment
 and the journal from describing the same cancellation two ways.
 
-THE SECOND CANCEL IS A DIFFERENT DISPOSITION, AND THE ROW COUNT IS THE WHOLE
-DISCRIMINATOR. One cancellation says nothing about the slice, so it is released.
-An item whose FRESH run stalls again is either genuinely unrunnable or is being
-killed by something a re-dispatch will meet again, and releasing it a second
-time is an unbounded loop with no operator in it — so the second rests at
-`blocked` / `needs-human` and nothing automatic leaves that state.
+THE SECOND CANCEL IS A DIFFERENT DISPOSITION, AND THE DISCRIMINATOR IS THE
+ITEM'S PRECEDING DISPATCH — NOT HOW MANY TIMES IT HAS EVER BEEN CANCELLED. One
+cancellation says nothing about the slice, so it is released. An item whose
+FRESH run stalls again is either genuinely unrunnable or is being killed by
+something a re-dispatch will meet again, and releasing it a second time is an
+unbounded loop with no operator in it — so the second rests at `blocked` /
+`needs-human` and nothing automatic leaves that state.
 
-The count is read off the journal's own cancel rows rather than from a stored
-per-item counter, because the rows ARE the across-dispatch record: the cancel
-site appends exactly one per cancellation, so "how many times has this item been
-cancelled" is a question the journal already answers. Note what that does NOT
-claim to be. `contracts.md`'s "progress high-water mark" paragraph defines a
-CONSECUTIVE NON-PROGRESS COUNT with a committed `dispatcher.redispatch_no_progress_limit`
-refusing the next dispatch, and nothing in this repository implements that
-mechanism yet — so this routing does not increment it, does not reset it, and
-must not be read as having implemented it. A local counter no admission gate
-consults would be a field written and never read, which is the
-constant-reported-as-a-measurement failure `_dispatcher_non_convergence_cap`'s
-own docstring warns about.
+A LIFETIME COUNT ANSWERS A DIFFERENT QUESTION, AND THE TWO DIVERGE ON A SEQUENCE
+THIS VERY ITEM DEMONSTRATES. Scenario 172 gives the release arm "the item's
+preceding dispatch did not end stalled-no-progress" and the needs-human arm "an
+item whose preceding dispatch ended stalled-no-progress", and the two contract
+paragraphs above say IMMEDIATELY preceding. So a stall, a release to `ready`, a
+re-dispatch that ends needs-human on a provider session limit, a human
+`resolve-blocked:<id>:ready`, and then a stall leaves TWO cancel rows standing
+while the clause calls for a release: a lifetime count parks the item and
+`_dispatcher_stall_cancel_comments` writes the durable claim that it "stalled
+twice in a row", which is false on that path and which `bd` offers no way to
+edit or delete afterwards.
+
+THE RESET IS READ OFF THE TERMINAL ROWS THE JOURNAL ALREADY CARRIES, so the
+reading needs no counter and no second data source: `post_run_dispositions`
+appends an `outcome` row for EVERY terminal before calling this, so the
+cancellations belonging to the item's current unbroken run of non-progress are
+exactly the cancel rows following its last terminal that did not stall. Those
+rows ARE the across-dispatch record — the cancel site appends exactly one per
+cancellation — which is why no per-item counter is stored beside them. Note what
+that does NOT claim to be. `contracts.md`'s "progress high-water mark" paragraph
+defines a CONSECUTIVE NON-PROGRESS COUNT with a committed
+`dispatcher.redispatch_no_progress_limit` refusing the next dispatch, and nothing
+in this repository implements that mechanism yet — so this routing does not
+increment it, does not reset it, and must not be read as having implemented it.
+A local counter no admission gate consults would be a field written and never
+read, which is the constant-reported-as-a-measurement failure
+`_dispatcher_non_convergence_cap`'s own docstring warns about.
 
 THE LEDGER WRITE IS FAIL-SOFT and the comment is written BEFORE it, which is the
 opposite order from `_dispatcher_loop_selection`'s needs-human pair and is
@@ -100,8 +116,8 @@ __all__: list[str] = [
     "STALL_NEEDS_HUMAN_STAGE",
     "STALL_RELEASE_HELD_STAGE",
     "STALL_RELEASE_STAGE",
+    "consecutive_stall_cancel_rows",
     "dispose_stall_cancel",
-    "item_stall_cancel_rows",
 ]
 
 # The journal stage a released first stall appends. One literal, shared by the
@@ -132,6 +148,15 @@ _HELD_NEWER_DISPATCH_CLAIM = "newer-dispatch-claim"
 # needs to RECOGNISE the row, and the name is part of the ratified record set.
 _DISPATCH_ID_STAGE = "dispatch-id"
 
+# The journal stage every terminal writes, spelled here for the same reason.
+# Its row is shaped UNLIKE every other row this module reads: the terminal's own
+# fields — `work_item_id` among them — sit NESTED under an `outcome` key rather
+# than beside `stage`, because `post_run_dispositions` appends the whole
+# dataclass as one value. A reading that looked for `work_item_id` at the top
+# level, as `_names` correctly does for every other stage, would match no
+# terminal at all and would report every item as never having finished one.
+_OUTCOME_STAGE = "outcome"
+
 # How many cancellations an item may collect before it stops being released. The
 # SECOND one is the terminal, so this is the count at which the release arm
 # yields to the needs-human arm rather than a tunable tolerance.
@@ -146,15 +171,28 @@ _LEDGER_WRITE_ERRORS = (
 )
 
 
-def item_stall_cancel_rows(
+def consecutive_stall_cancel_rows(
     *, journal: JournalFile, item_id: str
 ) -> tuple[Mapping[str, object], ...]:
-    """Every `watchdog-stall-cancel` row this journal carries for one item.
+    """The cancel rows of the item's current UNBROKEN run of non-progress.
 
     In journal order, which is cancellation order: the cancel site appends one
-    row per cancellation, so the last is this dispatch's own and any earlier one
-    belongs to a previous dispatch of the same item. That ordering is what makes
-    the row count the "first or second cancel" reading Scenario 172 routes on.
+    row per cancellation, so the last is this dispatch's own and an earlier one
+    belongs to a previous dispatch of the same item. The run is CUT at the
+    item's last terminal that did not stall, which is what makes the row count
+    the "did the PRECEDING dispatch also stall" reading Scenario 172 routes on
+    rather than the lifetime count that answers a different question. On a
+    journal holding nothing but this item's cancellations the two agree, which
+    is why the simple history could not tell them apart.
+
+    A terminal row this reading cannot ATTRIBUTE to the item leaves the run
+    unbroken, while one it can attribute but whose status it cannot read as the
+    stall status BREAKS it. The two are opposite directions on purpose: the
+    first is a failure to establish whose terminal it was, so it says nothing
+    about this item, whereas the second is this item's terminal and the rest arm
+    is conditioned on a POSITIVE reading that the preceding dispatch also
+    stalled. An unreadable status therefore releases rather than parking, which
+    is the fail-soft direction `dispose_stall_cancel` documents throughout.
 
     Every read failure yields the EMPTY tuple rather than raising, which is the
     same fail-soft the pre-run claim release takes over the same file: the
@@ -162,11 +200,31 @@ def item_stall_cancel_rows(
     journal would strand the item it was about to release. An empty tuple is
     read as "no row was found", which the comment states as such.
     """
+    records = _journal_records(journal=journal)
+    ended_without_stalling = [
+        index
+        for index, record in enumerate(records)
+        if _ends_a_dispatch_without_stalling(record=record, item_id=item_id)
+    ]
+    consecutive_from = ended_without_stalling[-1] + 1 if ended_without_stalling else 0
     return tuple(
         record
-        for record in _journal_records(journal=journal)
+        for record in records[consecutive_from:]
         if _names(record=record, item_id=item_id, stage=STALL_CANCEL_STAGE)
     )
+
+
+def _ends_a_dispatch_without_stalling(*, record: Mapping[str, object], item_id: str) -> bool:
+    """Whether this record is a terminal of the item that is not a stall."""
+    if record.get("stage") != _OUTCOME_STAGE:
+        return False
+    nested: object = record.get("outcome")
+    if not isinstance(nested, Mapping):
+        return False
+    terminal = cast("Mapping[str, object]", nested)
+    if terminal.get("work_item_id") != item_id:
+        return False
+    return terminal.get("status") != STALL_STATUS
 
 
 def _journal_records(*, journal: JournalFile) -> tuple[Mapping[str, object], ...]:
@@ -239,7 +297,7 @@ def dispose_stall_cancel(
     outcome: DispatchOutcome,
     journal: JournalFile,
 ) -> None:
-    """Route one watchdog cancellation to the disposition its count calls for.
+    """Route one watchdog cancellation by whether the PRECEDING dispatch stalled.
 
     A no-op for every outcome that is not a watchdog cancellation, which is
     every green run, every ordinary failure and every human-gate park. The
@@ -263,7 +321,7 @@ def dispose_stall_cancel(
     """
     if outcome.status != STALL_STATUS:
         return
-    rows = item_stall_cancel_rows(journal=journal, item_id=item.id)
+    rows = consecutive_stall_cancel_rows(journal=journal, item_id=item.id)
     if len(rows) >= _CONSECUTIVE_CANCELS_THAT_REST:
         _rest_for_human(repo=repo, item=item, journal=journal, rows=rows)
         return
@@ -351,9 +409,9 @@ def _rest_for_human(
 ) -> None:
     """Park the item at `blocked` / `needs-human` on a repeat cancellation.
 
-    The LAST TWO rows are the pair that matters, not the whole history: the
-    clause asks for the item's own PRECEDING dispatch and its current one, and
-    an item cancelled five times would otherwise have its oldest cancellation
+    The LAST TWO rows are the pair that matters, not the whole run: the clause
+    asks for the item's own PRECEDING dispatch and its current one, and an item
+    cancelled five times in a row would otherwise have its oldest cancellation
     reported as the one a re-dispatch is being judged against.
 
     `admission_policy="manual"` rides the same write for the same reason
