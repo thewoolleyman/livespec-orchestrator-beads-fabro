@@ -126,14 +126,18 @@ def _skipped_fields(*, skip: SkippedCandidate) -> dict[str, object]:
 def session_headroom_reading_fields(*, reading: SessionHeadroomReading) -> dict[str, object]:
     """One reading's journaled facts, with nulls written rather than omitted.
 
-    The last key is JOURNAL-ONLY alongside the seven-day figure and neither
-    moves an admission decision: both exist because the five-hour REMAINING
-    figure the floor decides on cannot see the other cliff
-    (`bd-ib-rszkjc`). A credential at 0.95 of its
+    The last TWO keys are JOURNAL-ONLY and neither moves an admission decision:
+    both exist because the five-hour REMAINING figure the floor decides on
+    cannot see the other cliff (`bd-ib-rszkjc`). A credential at 0.95 of its
     seven-day allowance, and one draining 15 points of its five-hour window
     every half hour, both read as ample headroom at the instant of admission --
     and a run keeps its dispatch-time token to the end, so the admission-time
     reading is the only guard an in-flight run has.
+
+    Both are written on EVERY reading, nulls included, for the same reason the
+    original five are: an omitted key is what a record from a build predating
+    this clause looks like, so a reader could not tell "this figure was
+    unmeasurable" from "this record was never asked for it".
     """
     return {
         "credential_identity": reading.credential_identity,
@@ -142,6 +146,7 @@ def session_headroom_reading_fields(*, reading: SessionHeadroomReading) -> dict[
         "unobservable": reading.unobservable,
         "observed_at": reading.observed_at,
         "seven_day_utilization_percent": reading.seven_day_utilization_percent,
+        "five_hour_drain_percent_per_hour": reading.five_hour_drain_percent_per_hour,
     }
 
 

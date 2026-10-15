@@ -50,6 +50,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     SessionHeadroomPolicy,
     SessionHeadroomReading,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_drain import (
+    reading_with_drain_rate,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_records import (
     session_headroom_assessment_record,
 )
@@ -59,6 +62,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_sele
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     PolicySettingUnreadable,
     read_dispatcher_config_value,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_baseline import (
+    session_headroom_baseline,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_io import (
     read_projected_session_headroom,
@@ -101,9 +107,23 @@ def session_headroom_policy(
     *,
     repo: Path,
     now_iso: str,
+    journal_path: Path | None,
     read: Callable[..., SessionHeadroomReading] = read_projected_session_headroom,
 ) -> SessionHeadroomPolicy:
-    """This evaluation's floor plus its at-most-once reading of the projection."""
+    """This evaluation's floor plus its at-most-once reading of the projection.
+
+    `journal_path` is the history the DRAIN RATE is measured against, and it is
+    a required parameter rather than a defaulted one: `None` is the honest
+    answer for a caller holding no journal, and a default would let a caller
+    that simply forgot to thread it through report "no baseline" for every
+    dispatch forever -- a record that reads exactly like a repository with no
+    history. It is PASSED rather than derived from `repo` because
+    `dispatcher.py` accepts a `--journal` override, so a re-derived path can
+    name a different file from the one this pass appends to.
+
+    The baseline is read INSIDE the memo, so an evaluation that assesses no
+    covered candidate touches the journal no more than it spends a request.
+    """
     floor = unsafe_perform_io(
         resolve_session_headroom_floor_percent(cwd=repo).value_or(
             DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT
@@ -113,7 +133,18 @@ def session_headroom_policy(
 
     def read_once() -> SessionHeadroomReading:
         if not taken:
-            taken.append(read(token=_projected_token(), observed_at=now_iso))
+            reading = read(token=_projected_token(), observed_at=now_iso)
+            taken.append(
+                reading_with_drain_rate(
+                    reading=reading,
+                    baseline=session_headroom_baseline(
+                        journal_path=journal_path,
+                        credential_identity=reading.credential_identity,
+                        now_iso=now_iso,
+                    ),
+                    now_iso=now_iso,
+                )
+            )
         return taken[0]
 
     return SessionHeadroomPolicy(floor_percent=floor, read=read_once)

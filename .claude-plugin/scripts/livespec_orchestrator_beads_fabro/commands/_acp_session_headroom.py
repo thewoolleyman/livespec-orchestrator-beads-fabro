@@ -41,16 +41,22 @@ almost-correct implementation inverts: equality PASSES, and a floor of 0
 disables both kinds of skip while retaining the reading. Both are the clause's
 own words.
 
-THE SEVEN-DAY FIGURE IS JOURNAL-ONLY AND IS NOT GRADED BY THIS MODULE'S VALID-
-READING RULE (`bd-ib-rszkjc`). The clause's inclusive 0..100 grade governs the
-FIVE-HOUR utilization, because that is the figure remaining headroom is
-computed from and the floor decides on; the seven-day figure decides nothing,
-so coercing it into that grade would discard a reading nothing depends on and
-report an absence the provider contradicted. It therefore arrives already
-read -- a percentage or `None` -- and travels through both constructors
-untouched. `headroom_skips_candidate` does not look at it, which is what makes
-"journaled only, changes no admission decision" a property of the predicate's
-inputs rather than a note a reader has to trust.
+TWO FIGURES ON THIS READING ARE JOURNAL-ONLY AND ARE NOT GRADED BY THIS
+MODULE'S VALID-READING RULE (`bd-ib-rszkjc`): the SEVEN-DAY utilization and the
+five-hour DRAIN RATE. The clause's inclusive 0..100 grade governs the FIVE-HOUR
+utilization, because that is the figure remaining headroom is computed from and
+the floor decides on; neither journal-only figure decides anything, so coercing
+them into that grade would discard readings nothing depends on -- a drain rate
+is a rate and has no 0..100 range at all. The seven-day figure arrives already
+read and travels through both constructors untouched; the drain rate is
+attached afterwards by `_acp_session_headroom_drain`, which needs a history
+this module has no business reading.
+
+`headroom_skips_candidate` looks at NEITHER, which is what makes "journaled
+only, changes no admission decision" a property of the predicate's inputs
+rather than a note a reader has to trust: the predicate reads
+`remaining_percent` and the floor, so no value either figure could take can
+reach a decision.
 """
 
 from __future__ import annotations
@@ -106,6 +112,7 @@ class SessionHeadroomReading:
     remaining_percent: float | None = None
     unobservable: str | None = None
     seven_day_utilization_percent: float | None = None
+    five_hour_drain_percent_per_hour: float | None = None
 
     @property
     def observable(self) -> bool:
