@@ -109,6 +109,9 @@ def _run_guard(
 
 
 def _refusal_reason(*, captured: str) -> str:
+    # Asserted before parsing so a missing refusal reads as "no deny payload"
+    # rather than as a JSON decode error about the empty string.
+    assert captured, "expected a deny payload on stdout, got nothing"
     emitted = json.loads(captured)
     hook_output = emitted["hookSpecificOutput"]
     assert hook_output["hookEventName"] == "PreToolUse"
@@ -197,6 +200,58 @@ def test_the_repository_is_taken_from_the_payload_when_no_project_dir_is_set(
     )
 
     assert str(layout.root) in _refusal_reason(captured=capsys.readouterr().out)
+
+
+@pytest.mark.parametrize("points_at", ["root", "clone"])
+def test_removing_an_agent_made_link_to_a_protected_path_is_refused(
+    points_at: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Assertion 6: a link the agent made itself is not a path of its own.
+
+    The target the command writes is nowhere in the protected set, so only
+    resolving it reaches the verdict — and resolving is something only the hook
+    can do, which is why this case lives here and not beside the policy.
+    """
+    layout = _Layout(base=tmp_path)
+    protected = layout.root if points_at == "root" else layout.clone
+    agent_link = tmp_path / "agent-made-link"
+    agent_link.symlink_to(protected)
+    guard = _load_guard()
+
+    _run_guard(
+        guard=guard,
+        payload=_payload(command=f"rm -rf {agent_link}", cwd=str(layout.clone)),
+        monkeypatch=monkeypatch,
+        sandbox_root=str(layout.root),
+        project_dir=str(layout.clone),
+    )
+
+    assert str(protected) in _refusal_reason(captured=capsys.readouterr().out)
+
+
+def test_removing_an_agent_made_link_to_a_scratch_directory_is_not_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Resolution must not turn every link into a refusal."""
+    layout = _Layout(base=tmp_path)
+    scratch = tmp_path / "layout-sim"
+    scratch.mkdir()
+    agent_link = tmp_path / "agent-made-link"
+    agent_link.symlink_to(scratch)
+    guard = _load_guard()
+
+    _run_guard(
+        guard=guard,
+        payload=_payload(command=f"rm -rf {agent_link}", cwd=str(layout.clone)),
+        monkeypatch=monkeypatch,
+        sandbox_root=str(layout.root),
+        project_dir=str(layout.clone),
+    )
+
+    assert capsys.readouterr().out == ""
 
 
 # ---------------------------------------------------------------------------
