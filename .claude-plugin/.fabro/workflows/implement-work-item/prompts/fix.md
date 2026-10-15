@@ -37,8 +37,12 @@ conflict or the gate failure:
    re-earned on the repaired head rather than claimed here.
 
 Hooks run normally in this turn, exactly as everywhere else. Never pass
-`--no-verify`, never use bare force, and rewrite no ref other than this run's
-own publish branch under an explicit lease. A run may take at most two
+`--no-verify`, never use bare force, and rewrite no ref at all — not even
+this run's own publish branch. The `publish_draft` visit the graph re-enters
+after this repair owns the one republication the contract permits, under an
+explicit lease against the head this run itself published; a branch you
+rewrote here would move it to a head no janitor had passed and no proof had
+been captured on. A run may take at most two
 refresh-repair rounds in total, so a turn that leaves the conflict unresolved
 spends a budget nothing replaces.
 
