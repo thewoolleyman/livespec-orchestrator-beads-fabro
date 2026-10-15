@@ -151,3 +151,70 @@ def test_no_resume_renders_no_checkout_step_at_all() -> None:
     """An ordinary dispatch's overlay is byte-for-byte what it always was."""
     module = _entry_module()
     assert module.resume_checkout_prepare_steps_block(checkout=None) == ""
+
+
+def _committed_graph() -> str:
+    """The repository's own `implement-work-item` graph, read from disk.
+
+    Read rather than synthesized, because the claim asserted below is about THIS
+    graph: a hand-written fixture would prove the derivation moves an edge and
+    say nothing about whether the nodes the clause forbids are genuinely out of
+    reach in the graph a resume actually runs.
+    """
+    graph = (
+        Path(__file__).resolve().parents[3]
+        / ".claude-plugin"
+        / ".fabro"
+        / "workflows"
+        / "implement-work-item"
+        / "workflow.fabro"
+    )
+    assert graph.is_file()
+    return graph.read_text(encoding="utf-8")
+
+
+def _reachable_from_start(*, graph_text: str) -> set[str]:
+    """Every node a run of this graph can visit, walking edges out of `start`.
+
+    REACHABILITY rather than a text search for the forbidden names: every node
+    stays DECLARED in a derived graph — deleting one would break the edges
+    pointing at it — so a name search finds `dod_gate` in both the derived graph
+    and the original and could never fail.
+    """
+    edges: dict[str, set[str]] = {}
+    for line in graph_text.splitlines():
+        head, _, tail = line.partition("->")
+        source = head.strip()
+        target = tail.strip().partition("[")[0].strip().rstrip(";").strip()
+        if not source.isidentifier() or not target.isidentifier():
+            continue
+        edges.setdefault(source, set()).add(target)
+    seen: set[str] = set()
+    frontier = ["start"]
+    while frontier:
+        node = frontier.pop()
+        for target in edges.get(node, set()):
+            if target not in seen:
+                seen.add(target)
+                frontier.append(target)
+    return seen
+
+
+def test_a_resume_entered_at_proof_capture_can_reach_neither_dod_gate_nor_implement() -> None:
+    """Scenario 172: the resumed run enters at capture, and nothing precedes it.
+
+    `janitor` is deliberately NOT asserted unreachable: the clause keeps the
+    rework loop intact, so "a `review` that requests changes still re-enters
+    `janitor`, `publish_draft` and `proof_capture` before `review`". What the
+    clause forbids is a visit BEFORE the entry, which the single outgoing `start`
+    edge settles.
+    """
+    module = _entry_module()
+    derived = module.graph_entered_at(graph_text=_committed_graph(), node="proof_capture")
+    assert derived is not None
+    assert "start -> proof_capture" in derived
+    assert "start -> dod_gate" not in derived
+    reachable = _reachable_from_start(graph_text=derived)
+    assert "proof_capture" in reachable
+    assert "dod_gate" not in reachable
+    assert "implement" not in reachable
