@@ -116,6 +116,29 @@ def _answer_once(*, connection: socket.socket, reply: bytes) -> None:
         connection.sendall(reply)
 
 
+def _serve(
+    *,
+    listener: socket.socket,
+    reply: bytes,
+    stop: threading.Event,
+    idled: threading.Event,
+) -> None:
+    """Answer each connection until stopped, signalling every accept timeout."""
+    served = itertools.count()
+    while not stop.is_set():
+        try:
+            connection, _ = listener.accept()
+        except OSError:
+            idled.set()
+            continue
+        _ = next(served)
+        threading.Thread(
+            target=_answer_once,
+            kwargs={"connection": connection, "reply": reply},
+            daemon=True,
+        ).start()
+
+
 @contextmanager
 def _herdr_peer(*, terminal_id: str) -> Iterator[Path]:
     """A unix socket answering `agent.get` with one agent record.
@@ -135,27 +158,21 @@ def _herdr_peer(*, terminal_id: str) -> Iterator[Path]:
         + b"\n"
     )
     stop = threading.Event()
-    served = itertools.count()
+    idled = threading.Event()
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     listener.bind(str(socket_path))
     listener.listen(8)
     listener.settimeout(0.05)
-
-    def serve() -> None:
-        while not stop.is_set():
-            try:
-                connection, _ = listener.accept()
-            except OSError:
-                continue
-            _ = next(served)
-            threading.Thread(
-                target=_answer_once,
-                kwargs={"connection": connection, "reply": reply},
-                daemon=True,
-            ).start()
-
-    worker = threading.Thread(target=serve, daemon=True)
+    worker = threading.Thread(
+        target=_serve,
+        kwargs={"listener": listener, "reply": reply, "stop": stop, "idled": idled},
+        daemon=True,
+    )
     worker.start()
+    # No client can connect before this yields, so the server's first accept
+    # always times out: waiting for that makes the timeout arm run on every
+    # pass, where racing the first client covered it only by luck.
+    assert idled.wait(timeout=30.0)
     try:
         yield socket_path
     finally:
