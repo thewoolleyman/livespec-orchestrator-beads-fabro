@@ -4,8 +4,9 @@ The integration case in `tests/integration/test_dispatcher_stall_cancel_scenario
 asserts the HAPPY release end to end against a live tenant. This module covers
 the arms that case cannot reach without breaking the thing it is measuring: a
 journal that cannot be read, a line that is not JSON, a row that is not a
-mapping, a row whose fields are absent or the wrong type, a terminal that is not
-a cancellation at all, and a ledger write that fails.
+mapping, a row whose fields are absent or the wrong type, an `outcome` row no
+item can be read off, a terminal that is not a cancellation at all, and a
+ledger write that fails.
 
 EVERY ONE OF THOSE ARMS EXISTS TO AVOID A CONFIDENT WRONG ANSWER, which is why
 they are asserted rather than left to coverage. An unreadable journal that
@@ -32,8 +33,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition im
     STALL_NEEDS_HUMAN_STAGE,
     STALL_RELEASE_HELD_STAGE,
     STALL_RELEASE_STAGE,
+    consecutive_stall_cancel_rows,
     dispose_stall_cancel,
-    item_stall_cancel_rows,
 )
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
@@ -145,7 +146,7 @@ def test_an_unreadable_journal_yields_no_rows_rather_than_raising(tmp_path: Path
     monkeypatched builtin, which would also pass on a build that caught the
     wrong exception.
     """
-    assert item_stall_cancel_rows(journal=JournalFile(path=tmp_path), item_id=_ITEM_ID) == ()
+    assert consecutive_stall_cancel_rows(journal=JournalFile(path=tmp_path), item_id=_ITEM_ID) == ()
 
 
 def test_a_line_that_is_not_json_yields_no_rows(tmp_path: Path) -> None:
@@ -156,10 +157,10 @@ def test_a_line_that_is_not_json_yields_no_rows(tmp_path: Path) -> None:
     malformed line is what decides the answer, not the absence of any row.
     """
     journal = _journal(tmp_path=tmp_path, lines=("{not json", _cancel_line(run_id="01A")))
-    assert item_stall_cancel_rows(journal=journal, item_id=_ITEM_ID) == ()
+    assert consecutive_stall_cancel_rows(journal=journal, item_id=_ITEM_ID) == ()
 
     well_formed = _journal(tmp_path=tmp_path / "ok", lines=(_cancel_line(run_id="01A"),))
-    assert len(item_stall_cancel_rows(journal=well_formed, item_id=_ITEM_ID)) == 1
+    assert len(consecutive_stall_cancel_rows(journal=well_formed, item_id=_ITEM_ID)) == 1
 
 
 def test_only_this_items_cancel_rows_are_returned(tmp_path: Path) -> None:
@@ -180,9 +181,77 @@ def test_only_this_items_cancel_rows_are_returned(tmp_path: Path) -> None:
             _cancel_line(run_id="01MINE"),
         ),
     )
-    rows = item_stall_cancel_rows(journal=journal, item_id=_ITEM_ID)
+    rows = consecutive_stall_cancel_rows(journal=journal, item_id=_ITEM_ID)
     assert len(rows) == 1
     assert rows[0].get("run_id") == "01MINE"
+
+
+def _terminal_line(**outcome: object) -> str:
+    """One `outcome` journal row, nesting the terminal exactly as the dispatch does."""
+    return json.dumps({"stage": "outcome", "outcome": outcome})
+
+
+def test_a_terminal_row_this_item_cannot_be_read_off_leaves_the_run_unbroken(
+    tmp_path: Path,
+) -> None:
+    """An unattributable terminal cuts nothing, because it is about nobody.
+
+    Two shapes reach the same answer and both are asserted, because they fail
+    at different readings and a build dropping either one would still pass the
+    other: an `outcome` key holding something that is not a mapping, which no
+    `work_item_id` can be read out of at all, and a well-formed terminal
+    belonging to ANOTHER item. Neither says anything about this item, so
+    neither may end its run of cancellations — a build treating an unreadable
+    or foreign terminal as a reset would release a genuinely repeat
+    cancellation back to the queue, which is the unbounded loop with no
+    operator in it that the needs-human arm exists to stop.
+
+    This is the opposite direction from a terminal that IS this item's but
+    whose status cannot be read as the stall status, which DOES cut the run;
+    the integration module asserts that half against the live tenant. The two
+    together are the reading's whole discrimination, and asserting only one
+    leaves the other free to be inverted.
+    """
+    journal = _journal(
+        tmp_path=tmp_path,
+        lines=(
+            _cancel_line(run_id="01FIRST"),
+            json.dumps({"stage": "outcome", "outcome": "not a mapping"}),
+            _terminal_line(work_item_id="bd-ib-other", status="green"),
+            _cancel_line(run_id="01SECOND"),
+        ),
+    )
+
+    rows = consecutive_stall_cancel_rows(journal=journal, item_id=_ITEM_ID)
+
+    assert [row.get("run_id") for row in rows] == ["01FIRST", "01SECOND"]
+
+
+def test_this_items_own_non_stall_terminal_cuts_the_run(tmp_path: Path) -> None:
+    """The reset is the LAST such terminal, and only cancellations after it count.
+
+    Three cancellations straddling two of this item's terminals: the run is cut
+    at the later one, so a build reading the FIRST reset — or reading any reset
+    at all rather than the last — reports two consecutive cancellations where
+    one stands, and parks an item the clause says to release. The stall-status
+    terminal between them is the control that the cut keys on the status: it
+    sits after a cancellation and must leave the run unbroken.
+    """
+    journal = _journal(
+        tmp_path=tmp_path,
+        lines=(
+            _cancel_line(run_id="01FIRST"),
+            _terminal_line(work_item_id=_ITEM_ID, status="stalled-no-progress"),
+            _terminal_line(work_item_id=_ITEM_ID, status="blocked"),
+            _cancel_line(run_id="01SECOND"),
+            _terminal_line(work_item_id=_ITEM_ID, status="failed"),
+            _cancel_line(run_id="01THIRD"),
+        ),
+    )
+
+    rows = consecutive_stall_cancel_rows(journal=journal, item_id=_ITEM_ID)
+
+    assert [row.get("run_id") for row in rows] == ["01THIRD"]
 
 
 def test_a_terminal_that_is_not_a_cancellation_is_left_alone(tmp_path: Path) -> None:

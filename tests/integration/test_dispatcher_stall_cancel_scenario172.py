@@ -758,3 +758,163 @@ def test_a_released_first_stall_spends_no_budget_and_leaves_the_count_alone(
     # it, and one that rewrote the journal would reset it.
     stages = [record.get("stage") for record in _journal_records(path=journal.path)]
     assert stages.count("watchdog-stall-cancel") == 1
+
+
+def _terminal_line(*, status: str) -> str:
+    """One `outcome` journal row, in the nested shape the dispatch writes it.
+
+    The terminal's own fields sit under an `outcome` key rather than at the
+    record's top level — `post_run_dispositions` appends
+    `{"stage": "outcome", "outcome": asdict(outcome)}` — so a reading that
+    looked for `work_item_id` beside `stage`, as every other row in this
+    journal carries it, would match no terminal at all and would report every
+    item as having never completed a dispatch.
+    """
+    return json.dumps(
+        {
+            "stage": "outcome",
+            "outcome": {
+                "work_item_id": _ITEM_ID,
+                "status": status,
+                "stage": "fabro-run",
+                "detail": "",
+            },
+        }
+    )
+
+
+def _cancel_line(*, run_id: str, factory: str, executing_stage: str) -> str:
+    """One `watchdog-stall-cancel` row, as the cancel site appends it."""
+    return json.dumps(
+        {
+            "stage": "watchdog-stall-cancel",
+            "work_item_id": _ITEM_ID,
+            "run_id": run_id,
+            "factory": factory,
+            "executing_stage": executing_stage,
+        }
+    )
+
+
+def _seeded_journal(*, tmp_path: Path, lines: tuple[str, ...]) -> JournalFile:
+    """A journal holding the item's earlier dispatch history, in append order."""
+    path = tmp_path / "journal.jsonl"
+    _ = path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
+    return JournalFile(path=path)
+
+
+def test_a_stall_cancel_after_an_intervening_non_stall_dispatch_is_released(
+    tmp_path: Path,
+) -> None:
+    """Scenario 172 keys the two arms on the PRECEDING DISPATCH, not on a lifetime.
+
+    The release arm is given "the item's preceding dispatch did not end
+    stalled-no-progress" and the needs-human arm "an item whose preceding
+    dispatch ended stalled-no-progress", and `contracts.md` spells both as the
+    item's IMMEDIATELY preceding dispatch. A count of every cancellation the
+    item has ever collected answers a different question, and the two diverge
+    on the sequence this very item demonstrates: a stall, a release to `ready`,
+    a re-dispatch that ends needs-human on a provider session limit, a human
+    `resolve-blocked:<id>:ready`, and then a stall. Two cancel rows stand, so a
+    lifetime count parks the item at `blocked` / `needs-human` where the clause
+    says to release it — and `_dispatcher_stall_cancel_comments` then writes the
+    durable, uneditable claim that it "stalled twice in a row", which is false
+    on that path and cannot be edited or deleted off the ledger afterwards.
+
+    The RESET is what the journal already records, so no new data source is
+    needed: every terminal appends its own `outcome` row before the disposition
+    runs, so the intervening needs-human dispatch is on the file between the two
+    cancellations. The sibling case below is the control that the reset keys on
+    that row's STATUS rather than on its mere presence.
+    """
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition"
+    )
+    repo = _repo(tmp_path=tmp_path)
+    journal = _seeded_journal(
+        tmp_path=tmp_path,
+        lines=(
+            _cancel_line(run_id="01FIRSTRUN", factory="hp", executing_stage="implement"),
+            _terminal_line(status="stalled-no-progress"),
+            json.dumps({"stage": module.STALL_RELEASE_STAGE, "work_item_id": _ITEM_ID}),
+            _terminal_line(status="blocked"),
+            _cancel_line(run_id="01THIRDRUN", factory="hp", executing_stage="proof_capture"),
+            _terminal_line(status="stalled-no-progress"),
+        ),
+    )
+    item = _item()
+    append_work_item(path=_config(), item=item)
+
+    module.dispose_stall_cancel(
+        repo=repo,
+        item=item,
+        outcome=_outcome(status="stalled-no-progress"),
+        journal=journal,
+    )
+
+    released = _stored()[_ITEM_ID]
+    assert released.status == "ready"
+    assert released.blocked_reason is None
+    assert released.assignee is None
+
+    stages = [record.get("stage") for record in _journal_records(path=journal.path)]
+    assert stages.count(module.STALL_RELEASE_STAGE) == 2
+    assert module.STALL_NEEDS_HUMAN_STAGE not in stages
+    assert module.STALL_RELEASE_HELD_STAGE not in stages
+
+    # The comment names THIS cancellation and must not carry the stalled-twice
+    # account, which is the half that outlives the journal and cannot be retracted.
+    body = read_work_item_comments(path=_config(), work_item_id=_ITEM_ID)[0].text
+    assert "01THIRDRUN" in body
+    assert "stalled twice in a row" not in body
+
+
+def test_a_stall_cancel_whose_intervening_terminal_also_stalled_rests_for_a_human(
+    tmp_path: Path,
+) -> None:
+    """The control: the reset keys on the terminal's STATUS, not on its presence.
+
+    This fixture is the sibling above with ONE byte of meaning changed — the
+    intervening `outcome` row reports `stalled-no-progress` instead of
+    `blocked` — so the two cancellations are genuinely consecutive and the
+    needs-human arm owns them. Without it, a build that reset its count on any
+    `outcome` row whatsoever would satisfy the release case while releasing a
+    repeat cancellation forever, which is the unbounded loop with no operator in
+    it that the second arm exists to stop.
+    """
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition"
+    )
+    repo = _repo(tmp_path=tmp_path)
+    journal = _seeded_journal(
+        tmp_path=tmp_path,
+        lines=(
+            _cancel_line(run_id="01FIRSTRUN", factory="hp", executing_stage="implement"),
+            _terminal_line(status="stalled-no-progress"),
+            json.dumps({"stage": module.STALL_RELEASE_STAGE, "work_item_id": _ITEM_ID}),
+            _cancel_line(run_id="01THIRDRUN", factory="vps", executing_stage="proof_capture"),
+            _terminal_line(status="stalled-no-progress"),
+        ),
+    )
+    item = _item()
+    append_work_item(path=_config(), item=item)
+
+    module.dispose_stall_cancel(
+        repo=repo,
+        item=item,
+        outcome=_outcome(status="stalled-no-progress"),
+        journal=journal,
+    )
+
+    rested = _stored()[_ITEM_ID]
+    assert rested.status == "blocked"
+    assert rested.blocked_reason == "needs-human"
+
+    stages = [record.get("stage") for record in _journal_records(path=journal.path)]
+    assert module.STALL_NEEDS_HUMAN_STAGE in stages
+    assert stages.count(module.STALL_RELEASE_STAGE) == 1
+
+    body = read_work_item_comments(path=_config(), work_item_id=_ITEM_ID)[0].text
+    for named in ("01FIRSTRUN", "01THIRDRUN", "hp", "vps", "implement", "proof_capture"):
+        assert named in body, named
+    assert f"resolve-blocked:{_ITEM_ID}:ready" in body
