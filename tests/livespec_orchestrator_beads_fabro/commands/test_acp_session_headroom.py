@@ -23,20 +23,17 @@ almost-correct implementation gets backwards:
   read returns two answers for one credential and cannot be told apart from a
   correct one by looking at the readings -- only by counting the reads.
 
-Everything is HERMETIC: the usage endpoint is reached through an injected
-`urlopen`, and no credential value leaves this file.
+Everything is HERMETIC: the reading seam is injected, and no credential value
+leaves this file. The provider request itself is covered by
+`test_dispatcher_session_headroom_io.py`.
 """
 
 from __future__ import annotations
 
-import io
 import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
-from urllib.error import HTTPError, URLError
-from urllib.request import Request
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import _acp_session_headroom as headroom
@@ -81,18 +78,6 @@ def _candidate(*, availability_key: str = "codex", candidate_key: str = "gpt-5-5
     )
 
 
-def _response(*, status: int, body: bytes) -> MagicMock:
-    response = MagicMock()
-    response.status = status
-    response.read.return_value = body
-    response.__enter__.return_value = response
-    return response
-
-
-def _usage_body(*, utilization: object) -> bytes:
-    return json.dumps({"five_hour": {"utilization": utilization}}).encode()
-
-
 def _recording_read(calls: list[str | None]) -> Callable[..., Any]:
     """A reading seam that records the token it was handed.
 
@@ -110,16 +95,6 @@ def _recording_read(calls: list[str | None]) -> Callable[..., Any]:
         )
 
     return _read
-
-
-def _recording_urlopen(calls: list[tuple[Request, float]], *, body: bytes) -> Callable[..., Any]:
-    """An `urlopen` stand-in that records each request, for the same reason."""
-
-    def _urlopen(request: Request, *, timeout: float) -> MagicMock:
-        calls.append((request, timeout))
-        return _response(status=200, body=body)
-
-    return _urlopen
 
 
 def _write_floor(*, root: Path, value: str) -> None:
@@ -222,131 +197,6 @@ def test_an_identity_less_legacy_candidate_is_outside_this_clause() -> None:
     legacy = AcpCandidate(adapter=AcpAdapter(command="adapter", env={}, args=()))
 
     assert headroom.headroom_covers_candidate(candidate=legacy, builtin_pairs=frozenset()) is False
-
-
-# ---------------------------------------------------------------------------
-# The bounded usage read against the exact projected credential snapshot.
-# ---------------------------------------------------------------------------
-
-
-def test_the_usage_read_is_bounded_and_addressed_to_the_projected_token(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[tuple[Request, float]] = []
-    monkeypatch.setattr(
-        headroom_io, "urlopen", _recording_urlopen(calls, body=_usage_body(utilization=72.5))
-    )
-
-    reading = headroom_io.read_projected_session_headroom(token=_TOKEN, observed_at=_NOW)
-
-    assert reading.utilization_percent == 72.5
-    assert reading.remaining_percent == 27.5
-    assert len(calls) == 1
-    request, timeout = calls[0]
-    assert request.full_url == headroom_io.CLAUDE_SESSION_USAGE_URL
-    assert request.get_header("Authorization") == f"Bearer {_TOKEN}"
-    assert timeout == headroom_io.SESSION_HEADROOM_READ_TIMEOUT_SECONDS
-
-
-def test_the_credential_identity_is_opaque_stable_and_credential_specific() -> None:
-    """The journal carries an identity, and the identity is not the credential."""
-    first = headroom_io.projected_credential_identity(token=_TOKEN)
-    again = headroom_io.projected_credential_identity(token=_TOKEN)
-    other = headroom_io.projected_credential_identity(token=_OTHER_TOKEN)
-
-    assert first == again
-    assert first != other
-    assert _TOKEN not in first
-    assert (
-        headroom_io.projected_credential_identity(token=None)
-        == headroom_io.ABSENT_CREDENTIAL_IDENTITY
-    )
-
-
-@pytest.mark.parametrize(
-    ("status", "reason"),
-    [
-        (401, "authentication-failed"),
-        (403, "authentication-failed"),
-        (500, "transport-failed"),
-    ],
-)
-def test_an_http_refusal_is_journaled_as_its_own_unobservable_result(
-    monkeypatch: pytest.MonkeyPatch, status: int, reason: str
-) -> None:
-    error = HTTPError(
-        url=headroom_io.CLAUDE_SESSION_USAGE_URL,
-        code=status,
-        msg="refused",
-        hdrs=None,
-        fp=io.BytesIO(b'{"error":{"message":"secret detail"}}'),
-    )
-
-    def fake_urlopen(request: Request, *, timeout: float) -> Any:
-        _ = (request, timeout)
-        raise error
-
-    monkeypatch.setattr(headroom_io, "urlopen", fake_urlopen)
-
-    reading = headroom_io.read_projected_session_headroom(token=_TOKEN, observed_at=_NOW)
-
-    assert reading.observable is False
-    assert reading.unobservable == reason
-    assert reading.utilization_percent is None
-
-
-@pytest.mark.parametrize(
-    ("error", "reason"),
-    [
-        (TimeoutError("slow"), "timed-out"),
-        (URLError("down"), "transport-failed"),
-        (OSError("reset"), "transport-failed"),
-    ],
-)
-def test_a_transport_fault_is_journaled_as_its_own_unobservable_result(
-    monkeypatch: pytest.MonkeyPatch, error: Exception, reason: str
-) -> None:
-    def fake_urlopen(request: Request, *, timeout: float) -> Any:
-        _ = (request, timeout)
-        raise error
-
-    monkeypatch.setattr(headroom_io, "urlopen", fake_urlopen)
-
-    reading = headroom_io.read_projected_session_headroom(token=_TOKEN, observed_at=_NOW)
-
-    assert reading.observable is False
-    assert reading.unobservable == reason
-
-
-def test_an_absent_projected_credential_is_unobservable_without_a_request(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """No credential is no reading -- and no round trip to discover that."""
-    calls: list[tuple[Request, float]] = []
-    monkeypatch.setattr(
-        headroom_io, "urlopen", _recording_urlopen(calls, body=_usage_body(utilization=0))
-    )
-
-    reading = headroom_io.read_projected_session_headroom(token=None, observed_at=_NOW)
-
-    assert calls == []
-    assert reading.observable is False
-    assert reading.unobservable == headroom_io.ABSENT_CREDENTIAL_REASON
-    assert reading.credential_identity == headroom_io.ABSENT_CREDENTIAL_IDENTITY
-
-
-@pytest.mark.parametrize(
-    "body",
-    [b'{"seven_day": {"utilization": 10}}', b"not json at all", b"[]", b'{"five_hour": 7}'],
-)
-def test_a_body_the_five_hour_window_cannot_be_read_from_is_unobservable(
-    monkeypatch: pytest.MonkeyPatch, body: bytes
-) -> None:
-    monkeypatch.setattr(headroom_io, "urlopen", _recording_urlopen([], body=body))
-
-    reading = headroom_io.read_projected_session_headroom(token=_TOKEN, observed_at=_NOW)
-
-    assert reading.unobservable == headroom.UNREADABLE_UTILIZATION
 
 
 # ---------------------------------------------------------------------------
