@@ -19,15 +19,9 @@ at a glance from work that is genuinely in flight. That is a worse end state
 than the wrong `backlog` bounce it replaces, because a bounced item is at least
 selectable.
 
-THE COMMENT IS THE DURABLE HALF, and it is required rather than decorative for
-the reason `_dispatcher_needs_human_cause` gives at length: the dispatch
-journal is a per-clone file and the run record is pruned, so once the
-dispatching clone is gone the ledger comment is the ONLY surface still naming
-which run was cancelled. A triager deciding whether a kill was genuine needs
-the run id, the factory it ran on and the stage it was executing — the three
-facts `watchdog-stall-cancel` carries — and a released item with no comment
-offers a re-dispatch no way to tell a released stall from work never dispatched
-at all.
+THE COMMENT EACH ROUTE WRITES LIVES IN `_dispatcher_stall_cancel_comments`,
+which is the PURE half of this pair and carries why the comment is the durable
+record and why an unreadable fact is stated rather than omitted.
 
 THE THREE FACTS ARE READ BACK OFF THE JOURNAL RATHER THAN RE-DERIVED. The
 cancel site already read them from the run's own record while the run still
@@ -36,14 +30,6 @@ runs the run has been `fabro rm -f`-ed, so re-probing would answer about
 nothing and would still succeed. Reading the row the cancel wrote is therefore
 not a shortcut — it is the only honest source, and it also keeps the comment
 and the journal from describing the same cancellation two ways.
-
-A ROW THE JOURNAL DOES NOT CARRY IS STATED AS UNREAD rather than omitted, for
-the reason the cancel record's own unreadable-head arm is: an omission is what a
-record written by a build predating this reading looks like, so a comment that
-simply left the run unnamed would be indistinguishable from one whose cancel row
-could not be found. Both are possible — the journal is a file, and an
-interrupted dispatch can end between the cancel and the disposition — and only
-the second is a fault.
 
 THE SECOND CANCEL IS A DIFFERENT DISPOSITION, AND THE ROW COUNT IS THE WHOLE
 DISCRIMINATOR. One cancellation says nothing about the slice, so it is released.
@@ -89,6 +75,11 @@ from livespec_orchestrator_beads_fabro._store_comments import append_work_item_c
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_comments import (
+    cancel_row_field,
+    needs_human_comment,
+    release_comment,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_record import (
     STALL_CANCEL_STAGE,
 )
@@ -107,8 +98,8 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "STALL_NEEDS_HUMAN_STAGE",
+    "STALL_RELEASE_HELD_STAGE",
     "STALL_RELEASE_STAGE",
-    "UNREAD_CANCEL_ROW",
     "dispose_stall_cancel",
     "item_stall_cancel_rows",
 ]
@@ -123,11 +114,23 @@ STALL_RELEASE_STAGE = "stall-cancel-release"
 # parked it.
 STALL_NEEDS_HUMAN_STAGE = "stall-cancel-needs-human"
 
-# What the comment says in place of a fact the journal carried no row for. It
-# states the MEASUREMENT that failed rather than leaving a blank, because an
-# unnamed run and a run whose cancel row could not be read support different
-# conclusions and a blank reads as the first.
-UNREAD_CANCEL_ROW = "not recorded (this dispatch journalled no cancel row for the item)"
+# The journal stage a replay appends when it declines to perform the release.
+# Its own stage rather than a field on the release row, for the same reason the
+# needs-human terminal has one: a reader asking "was this item released" must
+# not match the row that says it deliberately was not.
+STALL_RELEASE_HELD_STAGE = "stall-cancel-release-held"
+
+# The two reasons a release is held, each naming the reading that stopped it.
+# They are kept apart because they have different consequences: the first says
+# the release already happened and nothing is owed, while the second says a
+# release IS owed and could not be taken now without damaging a live dispatch.
+_HELD_ALREADY_RELEASED = "already-released"
+_HELD_NEWER_DISPATCH_CLAIM = "newer-dispatch-claim"
+
+# The journal stage a dispatch writes to announce itself. Spelled here rather
+# than imported, because the writer keeps it private; the hold reading only
+# needs to RECOGNISE the row, and the name is part of the ratified record set.
+_DISPATCH_ID_STAGE = "dispatch-id"
 
 # How many cancellations an item may collect before it stops being released. The
 # SECOND one is the terminal, so this is the count at which the release arm
@@ -159,6 +162,23 @@ def item_stall_cancel_rows(
     journal would strand the item it was about to release. An empty tuple is
     read as "no row was found", which the comment states as such.
     """
+    return tuple(
+        record
+        for record in _journal_records(journal=journal)
+        if _names(record=record, item_id=item_id, stage=STALL_CANCEL_STAGE)
+    )
+
+
+def _journal_records(*, journal: JournalFile) -> tuple[Mapping[str, object], ...]:
+    """Every mapping record the journal file holds, in append order.
+
+    Append order is what both readings above it depend on: the cancel rows are
+    counted in cancellation order, and the hold reading asks what the journal
+    recorded AFTER a particular cancellation. A record that is not a mapping is
+    dropped rather than raising, for the same reason every read failure yields
+    the empty tuple — a disposition that crashed on one malformed line would
+    strand the item it was about to release.
+    """
     read = attempt(action=lambda: journal.path.read_text(encoding="utf-8"), exceptions=(OSError,))
     if isinstance(read, AttemptFailure):
         return ()
@@ -169,10 +189,47 @@ def item_stall_cancel_rows(
         return ()
     records = cast("list[object]", parsed)
     return tuple(
-        cast("Mapping[str, object]", record)
-        for record in records
-        if _is_cancel_row(record=record, item_id=item_id)
+        cast("Mapping[str, object]", record) for record in records if isinstance(record, dict)
     )
+
+
+def _release_hold_reason(*, journal: JournalFile, item_id: str) -> str | None:
+    """Why this cancellation's release must not be performed now, if it must not.
+
+    The release is keyed by the CANCELLATION — the contract's "keyed by factory
+    and run" — so the question is settled by what the journal recorded after the
+    item's last cancel row, and the two readings it takes are not one reading
+    twice. A release row there says the release already landed, so a second pass
+    owes nothing. A `dispatch-id` row there says a LATER dispatch has since
+    claimed the item, so the claim now standing is not the one this cancellation
+    released: performing the release would hand a live run's claim back to the
+    queue, and the resulting row is byte-identical to a correct first release,
+    so nothing downstream could tell the two apart.
+
+    A journal carrying NO cancel row for the item holds nothing, which keeps the
+    fail-soft direction `dispose_stall_cancel` documents: without a cancel row
+    there is no "after" to read, so the newer-claim question has not been
+    answered either way, and the one dispatch most likely to have left the item
+    stranded is exactly the one whose record went missing.
+    """
+    records = _journal_records(journal=journal)
+    cancelled_at = [
+        index
+        for index, record in enumerate(records)
+        if _names(record=record, item_id=item_id, stage=STALL_CANCEL_STAGE)
+    ]
+    if not cancelled_at:
+        return None
+    following = records[cancelled_at[-1] + 1 :]
+    if any(
+        _names(record=record, item_id=item_id, stage=STALL_RELEASE_STAGE) for record in following
+    ):
+        return _HELD_ALREADY_RELEASED
+    if any(
+        _names(record=record, item_id=item_id, stage=_DISPATCH_ID_STAGE) for record in following
+    ):
+        return _HELD_NEWER_DISPATCH_CLAIM
+    return None
 
 
 def dispose_stall_cancel(
@@ -197,12 +254,28 @@ def dispose_stall_cancel(
     those are exactly the dispatches most likely to have left the item
     stranded; parking an item for a human because its own account could not be
     read would turn a lost record into an operator interrupt.
+
+    THE WHOLE ROUTING IS REPLAYABLE, which is what lets reconciliation finish an
+    interrupted release by running it again: the release arm is held whenever
+    the journal already records it landing, or records a LATER dispatch claiming
+    the item. Both holds are journaled rather than silent, because a replay that
+    did nothing and said nothing is indistinguishable from one that never ran.
     """
     if outcome.status != STALL_STATUS:
         return
     rows = item_stall_cancel_rows(journal=journal, item_id=item.id)
     if len(rows) >= _CONSECUTIVE_CANCELS_THAT_REST:
         _rest_for_human(repo=repo, item=item, journal=journal, rows=rows)
+        return
+    held = _release_hold_reason(journal=journal, item_id=item.id)
+    if held is not None:
+        journal.append(
+            record={
+                "stage": STALL_RELEASE_HELD_STAGE,
+                "work_item_id": item.id,
+                "reason": held,
+            }
+        )
         return
     _release_first_cancel(repo=repo, item=item, journal=journal, row=rows[-1] if rows else None)
 
@@ -227,7 +300,7 @@ def _release_first_cancel(
         action=lambda: append_work_item_comment(
             path=store_config(repo=repo),
             work_item_id=item.id,
-            body=_release_comment(item_id=item.id, row=row),
+            body=release_comment(item_id=item.id, row=row),
         ),
         exceptions=_LEDGER_WRITE_ERRORS,
     )
@@ -254,16 +327,16 @@ def _release_first_cancel(
             "stage": STALL_RELEASE_STAGE,
             "work_item_id": item.id,
             "status": "ready",
-            "run_id": _field(row=row, key="run_id"),
-            "factory": _field(row=row, key="factory"),
-            "executing_stage": _field(row=row, key="executing_stage"),
+            "run_id": cancel_row_field(row=row, key="run_id"),
+            "factory": cancel_row_field(row=row, key="factory"),
+            "executing_stage": cancel_row_field(row=row, key="executing_stage"),
         }
     )
     _ = write_stderr(
         text=(
             f"SURFACE: work-item {item.id} was released to ready after a stall-watchdog "
-            f"cancel of run {_field(row=row, key='run_id')} on factory "
-            f"{_field(row=row, key='factory')}; the cancellation is NOT "
+            f"cancel of run {cancel_row_field(row=row, key='run_id')} on factory "
+            f"{cancel_row_field(row=row, key='factory')}; the cancellation is NOT "
             f"non-convergence and the slice was not bounced to backlog.\n"
         )
     )
@@ -293,7 +366,7 @@ def _rest_for_human(
         action=lambda: append_work_item_comment(
             path=store_config(repo=repo),
             work_item_id=item.id,
-            body=_needs_human_comment(item_id=item.id, previous=previous, current=current),
+            body=needs_human_comment(item_id=item.id, previous=previous, current=current),
         ),
         exceptions=_LEDGER_WRITE_ERRORS,
     )
@@ -322,128 +395,21 @@ def _rest_for_human(
             "work_item_id": item.id,
             "status": "blocked",
             "blocked_reason": "needs-human",
-            "previous_run_id": _field(row=previous, key="run_id"),
-            "run_id": _field(row=current, key="run_id"),
+            "previous_run_id": cancel_row_field(row=previous, key="run_id"),
+            "run_id": cancel_row_field(row=current, key="run_id"),
         }
     )
     _ = write_stderr(
         text=(
             f"SURFACE: work-item {item.id} stalled twice in a row — runs "
-            f"{_field(row=previous, key='run_id')} and "
-            f"{_field(row=current, key='run_id')} were both cancelled by the progress "
+            f"{cancel_row_field(row=previous, key='run_id')} and "
+            f"{cancel_row_field(row=current, key='run_id')} were both cancelled by the progress "
             f"watchdog; it rests at blocked / needs-human and no further dispatch or "
             f"resume is invoked automatically.\n"
         )
     )
 
 
-def _needs_human_comment(
-    *,
-    item_id: str,
-    previous: Mapping[str, object],
-    current: Mapping[str, object],
-) -> str:
-    """The durable account of BOTH cancellations, plus the way out.
-
-    Both runs are named with their factory and stage because that is what tells
-    an operator whether the two kills share a cause: the same factory twice
-    points at the host, the same stage twice points at a false kill inside one
-    open command node, and two unrelated stages point at the work.
-
-    The REMEDY is spelled as the valve rather than described, and the wording is
-    the resume ladder's own `resolve-blocked` clause, so the comment and the
-    refusal an operator meets next cannot say two different things. The
-    plain-dispatch line is the second applicable remedy: a cancel record whose
-    published head could not be read cannot anchor a resume, which is the
-    ladder's headless refusal, and its remedy is a plain dispatch.
-    """
-    return "\n".join(
-        (
-            "livespec-stall-cancel-needs-human",
-            "",
-            f"work-item: {item_id}",
-            _run_line(label="preceding cancelled run", row=previous),
-            _run_line(label="current cancelled run", row=current),
-            "",
-            "This item stalled twice in a row, so it rests at blocked /",
-            "needs-human and no further dispatch or resume is invoked",
-            "automatically. A stall cancel is still NOT factory non-convergence:",
-            "the item was not bounced to backlog and no slice-size calibration",
-            "observation was recorded for either run.",
-            "",
-            "Remedies:",
-            f"- release it with `resolve-blocked:{item_id}:ready`, which is the",
-            "  only route out of blocked and what the resume refusal ladder names",
-            "  for an item resting on a human decision.",
-            "- if a resume then refuses because no record names a publish-branch",
-            "  head, dispatch it plainly instead; a cancel record whose published",
-            "  head could not be read cannot anchor a resume.",
-        )
-    )
-
-
-def _run_line(*, label: str, row: Mapping[str, object]) -> str:
-    """One cancelled run named with the three facts that locate it.
-
-    The run, its factory and the stage it was executing travel together on one
-    line because they are read together: the same factory twice points at the
-    host, the same stage twice at a false kill inside one open command node,
-    and two unrelated stages at the work itself.
-    """
-    run_id = _field(row=row, key="run_id")
-    factory = _field(row=row, key="factory")
-    stage = _field(row=row, key="executing_stage")
-    return f"{label}: {run_id} on factory {factory}, executing {stage}"
-
-
-def _release_comment(*, item_id: str, row: Mapping[str, object] | None) -> str:
-    """The durable account of the cancellation, as the ledger will keep it.
-
-    Labelled `livespec-stall-cancel-release` so it is greppable beside the
-    `livespec-needs-human-cause` and `livespec-preserve-by-reference` records
-    an operator already reads on a parked item. Plain lines rather than a
-    fenced block, for the reason the proof-attachment renderer gives: a fenced
-    body is invisible to the surfaces that scan a record's own lines.
-    """
-    return "\n".join(
-        (
-            "livespec-stall-cancel-release",
-            "",
-            f"work-item: {item_id}",
-            f"cancelled run id: {_field(row=row, key='run_id')}",
-            f"factory: {_field(row=row, key='factory')}",
-            f"stage the run was executing: {_field(row=row, key='executing_stage')}",
-            "",
-            "A stall-watchdog cancel is NOT factory non-convergence, so this item",
-            "was not bounced to backlog. The dispatch claim was released and the",
-            "item returned to ready; the ordinary admission valve will pick it up.",
-            "Triage the cancelled run above before assuming the slice is at fault:",
-            "a hang, a per-container OOM kill and a false kill inside an open",
-            "command node all end this way, and none of them is a verdict about",
-            "the work.",
-        )
-    )
-
-
-def _field(*, row: Mapping[str, object] | None, key: str) -> str:
-    """One fact off the cancel row, or the statement that no row carried it.
-
-    A row present but holding a null or a non-string value reports the same
-    statement as an absent row, because both are the same finding: this
-    dispatch's journal does not say. Rendering a bare `None` into the comment
-    would put the word "None" where an operator expects a run id.
-    """
-    if row is None:
-        return UNREAD_CANCEL_ROW
-    value: object = row.get(key)
-    if isinstance(value, str) and value.strip():
-        return value
-    return UNREAD_CANCEL_ROW
-
-
-def _is_cancel_row(*, record: object, item_id: str) -> bool:
-    """Whether this record is a cancel row for the item under disposition."""
-    if not isinstance(record, dict):
-        return False
-    values = cast("Mapping[str, object]", record)
-    return values.get("stage") == STALL_CANCEL_STAGE and values.get("work_item_id") == item_id
+def _names(*, record: Mapping[str, object], item_id: str, stage: str) -> bool:
+    """Whether this record is the named stage, written for the named item."""
+    return record.get("stage") == stage and record.get("work_item_id") == item_id
