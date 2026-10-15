@@ -209,7 +209,7 @@ def test_every_forge_read_resolves_as_a_get_rather_than_as_a_write() -> None:
     only pass while the predicate can still return the refusing verdict, which
     is the question a pair of passing reads cannot answer. The argv is the
     repository's own conforming write form, spelled as
-    `_dispatcher_publish_branch_preserve._create_ref_argv` builds it.
+    `_dispatcher_publish_branch_preserve.create_ref_argv` builds it.
     """
     deliberate_write = [
         "gh",
