@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.201.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.200.0...v0.201.0) (2026-10-15)
+
+
+### Features
+
+* **dispatcher:** label a fallback-bearing node from its selected candidate ([e91dc52](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e91dc52fd6499c0c34cb6bb207778383ccae2bf4))
+* **dispatcher:** pass the repository and node entitlement labels on every launch ([19160db](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/19160dbb1765fc82cec44de474591e35ee756a1b))
+* **dispatcher:** stamp each run with its repository and candidate entitlement ([0f6e392](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0f6e39228c2dd3454622605eea37470ebb44e2b7))
+* **fabro-port:** expose each run row's labels and repository origin ([c7040c0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c7040c030fad09be613bcc37434e6f98c624cd1d))
+
+
+### Bug Fixes
+
+* route a failed pr_refresh to refresh_repair by removing its duplicate terminal arm (bd-ib-nyovwv) ([db4ff41](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/db4ff414e8191e6d7e58763ace29223899826f72))
+
 ## [0.200.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.199.0...v0.200.0) (2026-10-15)
 
 
