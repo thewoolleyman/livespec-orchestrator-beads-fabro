@@ -3129,11 +3129,35 @@ authentication failure; only a conflict or a gate rejection takes this route,
 and every other cause keeps its existing fail-closed behaviour. The `fix` turn
 integrates the default branch into the run's work, resolving the conflict or
 the gate failure inside its own turn. Hooks MUST run normally there, and the
-turn MUST NOT use `--no-verify`, bare force, or a rewrite of any ref other than
-the run's own publish branch under an explicit lease. After a refresh-repair
-round the run re-enters `janitor`, then `publish_draft`, then `proof_capture`,
-exactly as an accepted fix round does, so only proof for the repaired head can
-reach publication.
+turn MUST NOT use `--no-verify`, bare force, or a rewrite of any ref. After a
+refresh-repair round the run re-enters `janitor`, then `publish_draft`, then
+`proof_capture`, exactly as an accepted fix round does, so only proof for the
+repaired head can reach publication.
+
+The `publish_draft` visit that follows a refresh-repair round is the visit
+immediately after the `janitor` visit that follows a `fix` visit entered with a
+refresh-repair brief; a `publish_draft` visit reached through a review-fix
+round, or any other path, follows no refresh-repair round. On the visit that
+follows a refresh-repair round, `publish_draft` MUST establish the run's
+previously published head as the head the run's last completed
+`publish_draft` pushed, read from the run's own record as the cancel record of
+§"Dispatcher progress watchdog" reads it, when the run has recorded one, and
+otherwise as the head named by the run's validated resume provenance; it MUST
+NOT establish it from a local tracking ref. When origin has no tip for the
+publish branch, or its tip is an
+ancestor of the repaired head, `publish_draft` MUST push a plain fast-forward as
+before. When the tip is not an ancestor of the repaired head and equals the
+run's previously published head, `publish_draft` MUST republish the repaired
+head with an explicit lease against the recorded remote head of this run's own
+publish branch. Hooks MUST run normally during that push, and it MUST NOT use
+`--no-verify`, bare force, or a rewrite of any other ref. A non-fast-forward of
+the run's own published head is the expected result of a repair that rebased,
+not evidence of a stale or foreign branch. When the tip is not an ancestor of
+the repaired head and either differs from the run's previously published head
+or that head cannot be established, `publish_draft` MUST keep failing closed
+with its existing divergent-prior-run cause and MUST NOT push. A
+`publish_draft` visit that follows no refresh-repair round MUST NOT rewrite the
+publish branch.
 
 **Refresh-repair accounting.** A refresh-repair round is counted once, at the
 moment a stage routes to `fix` with a brief. A run MAY take at most two
@@ -4063,11 +4087,15 @@ reconciliation could not or did not terminate.
   preserve-by-reference comment that named the branch. Deleting the branch
   closes the draft pull request the dead run opened on it; that pull
   request and every record on it remain readable. `publish_draft` is
-  unchanged: it still pushes a plain fast-forward and rewrites no other
-  ref; the reclaim is a HOST-side act because the host is the one party
-  that can answer whether the run that pushed the branch is still alive,
-  and the stages clause grants the lease-guarded force push to the `pr_refresh`
-  node alone.
+  unchanged here: it pushes a plain fast-forward and MUST rewrite no ref
+  except, on the visit that follows a refresh-repair round, the run's own
+  publish branch over the run's previously published head, established from
+  its publication record when the run has recorded one and otherwise from its
+  validated resume provenance, with an explicit lease against the recorded
+  remote head of this run's own publish branch ("Refresh repair" above). The
+  reclaim is a HOST-side act because the host is the one party that can answer
+  whether the run that pushed the branch is still alive, and every other
+  lease-guarded rewrite of a publish branch belongs to the `pr_refresh` node.
 - **Every arm that cannot measure holds, and says so.** When origin
   cannot be asked, when a factory cannot be asked, when a factory reports
   a live run for the item, or when the preserve or the delete fails, the
@@ -4261,9 +4289,14 @@ with the same exit code naming the measurement it could not take; it
 MUST NOT proceed on an unobservable answer. A refusal leaves the item,
 the branch and the pull request exactly as they stood.
 
-**Unchanged.** `publish_draft` still pushes a plain fast-forward and
-rewrites no other ref; the `pr_refresh` node's lease-guarded force push stays the
-only rewrite of a publish branch; `reconcile-merged` still refuses an
+**Unchanged.** `publish_draft` still pushes a plain fast-forward and MUST
+rewrite no ref except, on the visit that follows a refresh-repair round, the
+run's own publish branch over the run's previously published head, established
+from its publication record when the run has recorded one and otherwise from
+its validated resume provenance, with an explicit lease against the recorded
+remote head of this run's own publish branch; apart from that one
+republication, the `pr_refresh` node's lease-guarded force push stays the only
+rewrite of a publish branch; `reconcile-merged` still refuses an
 unmerged pull request; and a plain `dispatch` or `loop` of the same item
 still reclaims the stale publish branch under the section above.
 Scenario 142 and Scenario 143 in `scenarios.md` exercise this section.

@@ -4806,7 +4806,7 @@ Feature: A dead run's publish branch does not block the item's next dispatch, an
     And the dispatch journal carries a publish-branch-reclaim-held record naming which measurement stopped the reclaim
     And the dispatch is not refused by the reclaim
   Scenario: The reclaim is a host-side act and publish_draft is unchanged
-    Given a dispatched run whose publish_draft stage runs
+    Given a dispatched run whose publish_draft stage runs with no refresh-repair round before it
     When it pushes the publish branch
     Then the push is a plain fast-forward and no other ref is rewritten
 ```
@@ -6069,6 +6069,19 @@ Feature: A janitor-green run survives a default branch that moved under it
     And the run has no janitor visit of its own
     When its pr_refresh rebase conflicts
     Then the run's working branch is at P and the brief names P as the pre-refresh head
+
+  Scenario: A repaired pr_refresh republishes over the run's own published head
+    Given a run whose previously published head on origin is P, established from its publication record when it has one and otherwise from its validated resume provenance
+    And its pr_refresh rebase conflicted and the fix turn integrated the default branch into a repaired head R that does not contain P
+    When the run re-enters publish_draft after janitor passes on R
+    Then publish_draft pushes R with an explicit lease against the recorded remote head of this run's own publish branch, P
+    And the run enters proof_capture for R rather than needs_human
+
+  Scenario: publish_draft still refuses a foreign divergent tip after a repair
+    Given a run that re-enters publish_draft after a refresh-repair round with repaired head R and previously published head P
+    And origin's publish branch tip is T, which is neither an ancestor of R nor equal to P
+    When publish_draft publishes
+    Then publish_draft fails closed with its divergent-prior-run cause and pushes nothing
 
   Scenario: A repair round leaves the review-fix budget untouched
     Given a run that has used one review-fix round
