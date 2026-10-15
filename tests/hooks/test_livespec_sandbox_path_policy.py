@@ -222,6 +222,20 @@ def test_an_empty_command_acts_on_nothing() -> None:
     assert policy.removal_targets(command="", working_directory=_CLONE) == ()
 
 
+@pytest.mark.parametrize("prefix", ["sudo", "env FOO=1", "mise exec --"])
+def test_a_segment_that_executes_nothing_acts_on_nothing(prefix: str) -> None:
+    """A segment of pure wrappers, assignments and flags runs no command.
+
+    It still has to be WALKED rather than skipped, because the segment after it
+    is where the removal lives.
+    """
+    policy = _load_policy()
+
+    assert policy.removal_targets(
+        command=f"{prefix}; rm -rf /tmp/one", working_directory=_CLONE
+    ) == ("/tmp/one",)
+
+
 def test_a_wrapper_still_leaves_the_removal_it_wraps_visible() -> None:
     policy = _load_policy()
 

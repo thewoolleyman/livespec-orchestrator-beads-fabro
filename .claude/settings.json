@@ -41,6 +41,11 @@
           },
           {
             "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/livespec_sandbox_path_guard.py\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/beads-access-guard.sh\"",
             "timeout": 10
           }

@@ -59,7 +59,12 @@ from __future__ import annotations
 import posixpath
 from collections.abc import Mapping, Sequence
 
-from livespec_shell_shape import leading_command_index, operands, shell_tokens
+from livespec_shell_shape import (
+    leading_command_index,
+    operands,
+    shell_tokens,
+    token_segments,
+)
 
 __all__: list[str] = [
     "DESTRUCTIVE_VERBS",
@@ -120,6 +125,11 @@ def protected_paths(
 def removal_targets(*, command: str, working_directory: str) -> tuple[str, ...]:
     """The paths the executed destructive segment of `command` would act on.
 
+    EVERY segment is read, not just the first, and that is the whole shape of
+    the measured incident: `cd /tmp && rm -rf /workspace && mkdir -p /workspace`
+    leads with `cd`, so a reading that classified the command by its first word
+    would call it a directory change and let the removal through.
+
     The whole operand list is read rather than just the first or last word,
     because a protected path can sit anywhere in it: `rm -rf /tmp/sim
     /workspace` destroys the root with its SECOND operand, and `mv /tmp/x
@@ -129,15 +139,10 @@ def removal_targets(*, command: str, working_directory: str) -> tuple[str, ...]:
     tokens = shell_tokens(command=command)
     if tokens is None:
         return ()
-    index = leading_command_index(tokens=tokens)
-    if index >= len(tokens):
-        return ()
-    arguments = tokens[index + 1 :]
-    if not _is_destructive(verb=tokens[index].rsplit("/", 1)[-1], arguments=arguments):
-        return ()
-    return tuple(
-        _resolve(word=word, directory=working_directory) for word in operands(tokens=arguments)
-    )
+    found: list[str] = []
+    for segment in token_segments(tokens=tokens):
+        found.extend(_segment_targets(segment=segment, directory=working_directory))
+    return tuple(found)
 
 
 def refused_path(
@@ -176,6 +181,16 @@ def refusal_message(*, protected_path: str, command: str) -> str:
         "command. To simulate a sandbox layout, build the whole simulation under a "
         "scratch directory such as /tmp and leave this run's own paths alone."
     )
+
+
+def _segment_targets(*, segment: list[str], directory: str) -> list[str]:
+    index = leading_command_index(tokens=segment)
+    if index >= len(segment):
+        return []
+    arguments = segment[index + 1 :]
+    if not _is_destructive(verb=segment[index].rsplit("/", 1)[-1], arguments=arguments):
+        return []
+    return [_resolve(word=word, directory=directory) for word in operands(tokens=arguments)]
 
 
 def _is_destructive(*, verb: str, arguments: Sequence[str]) -> bool:
