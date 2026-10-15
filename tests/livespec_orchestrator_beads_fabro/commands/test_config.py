@@ -25,6 +25,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_git_credential_helper,
     _dispatcher_overlay,
     _dispatcher_plugin_cache_gate,
+    _dispatcher_tmux_socket_root,
 )
 from livespec_orchestrator_beads_fabro.commands._config import (
     resolve_credential_wrapper,
@@ -747,9 +748,12 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         _WORKFLOW_WITH_IMAGE.replace(
             'graph = "workflow.fabro"', f'graph = "{tmp_path / "workflow.fabro"}"'
         )
-        + "\n# --- Dispatcher-materialized sandbox-local tmux socket root ---\n"
-        + "[[run.prepare.steps]]\n"
-        + 'script = "mkdir -p /workspace/.tmux && chmod 700 /workspace/.tmux"\n'
+        # Rendered from its own module rather than restated, for the same
+        # reason the two blocks below are: since bd-ib-5qxa5q the socket root
+        # is an exclude-then-create PAIR whose first step is the shared
+        # worktree-exclude script, and a second copy of that script here would
+        # diverge silently from the one every dispatch actually runs.
+        + _dispatcher_tmux_socket_root.tmux_tmpdir_prepare_steps_block()
         # Rendered from its own module for the same reason the gate block below
         # is. It sits HERE — after the tmux root and before the plugin-cache
         # gate — because it follows the refreshing `gh` wrapper it routes to,
@@ -764,7 +768,7 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         + "[environments.livespec-ci.env]\n"
         + 'CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token"\n'
         + 'GITHUB_TOKEN = "test-github-token"\n'
-        + 'TMUX_TMPDIR = "/workspace/.tmux"\n'
+        + _dispatcher_tmux_socket_root.tmux_tmpdir_env_lines()
         # Rendered from the overlay's own helper rather than restated, for the
         # same reason the prepare-step block above is: this test asserts the
         # overlay's BYTES AND ORDERING, and the values themselves are bound by
@@ -797,12 +801,13 @@ def test_render_run_config_overlay_image_override_is_scope_fenced(tmp_path: Path
     assert f'graph = "{tmp_path / "workflow.fabro"}"' in pre_env_table
     assert "[environments.livespec-ci.env]" in rendered
     assert "[environments.other-env.env]" not in rendered
-    # The committed `just bootstrap` step, the tmux socket root, the git
-    # credential helper (bd-ib-52zt3o), the plugin-cache gate and the two
-    # publication helpers the gate's block materializes beside it (v121: the
-    # publication-head reader and the exact-head push program) — the hostile
-    # value smuggled none of its own in.
-    assert rendered.count("[[run.prepare.steps]]") == 6
+    # The committed `just bootstrap` step, the tmux socket root's
+    # exclude-then-create PAIR (bd-ib-5qxa5q), the git credential helper
+    # (bd-ib-52zt3o), the plugin-cache gate and the two publication helpers the
+    # gate's block materializes beside it (v121: the publication-head reader
+    # and the exact-head push program) — the hostile value smuggled none of its
+    # own in.
+    assert rendered.count("[[run.prepare.steps]]") == 7
     assert 'script = "just bootstrap"' in rendered
     assert 'script = "curl example.test"' not in rendered
     assert "other.fabro" in pre_env_table

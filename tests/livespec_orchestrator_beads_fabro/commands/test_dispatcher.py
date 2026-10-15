@@ -2254,10 +2254,11 @@ def test_render_run_config_overlay_appends_sibling_clone_steps_and_env_root(
         siblings=_SIBLINGS,
     )
     assert rendered is not None
-    # Two clones, the tmux socket root, the plugin-cache gate, the git
-    # credential helper (bd-ib-52zt3o), and the two publication helpers the
-    # gate's block materializes beside it (v121).
-    assert rendered.count("[[run.prepare.steps]]") == 7
+    # Two clones, the tmux socket root's exclude-then-create PAIR
+    # (bd-ib-5qxa5q), the plugin-cache gate, the git credential helper
+    # (bd-ib-52zt3o), and the two publication helpers the gate's block
+    # materializes beside it (v121).
+    assert rendered.count("[[run.prepare.steps]]") == 8
     assert _LIVESPEC_CLONE_STEP_LINE in rendered
     assert _DEV_TOOLING_CLONE_STEP_LINE in rendered
     assert _TMUX_TMPDIR_PREPARE_STEP_LINE in rendered
@@ -2382,10 +2383,11 @@ def test_render_run_config_overlay_without_siblings_appends_no_clone_steps(
         siblings=None,
     )
     assert rendered is not None
-    # The tmux socket root, the plugin-cache gate, the git credential helper
-    # (bd-ib-52zt3o), and the two publication helpers the gate's block
-    # materializes beside it (v121) — no clone step among them.
-    assert rendered.count("[[run.prepare.steps]]") == 5
+    # The tmux socket root's exclude-then-create PAIR (bd-ib-5qxa5q), the
+    # plugin-cache gate, the git credential helper (bd-ib-52zt3o), and the two
+    # publication helpers the gate's block materializes beside it (v121) — no
+    # clone step among them.
+    assert rendered.count("[[run.prepare.steps]]") == 6
     assert _TMUX_TMPDIR_PREPARE_STEP_LINE in rendered
     assert "LIVESPEC_SIBLING_CLONES_ROOT" not in rendered
 
