@@ -21,6 +21,15 @@ A 403 permission refusal IS still covered below, deliberately: a later scope
 change on the Messages API must surface as `authentication-failed`, never as a
 silent numeric reading.
 
+THE SEVEN-DAY WINDOW RIDES THE SAME RESPONSE (`bd-ib-rszkjc`), and its cases
+are here rather than in a file of their own because what binds them is the
+REQUEST: one bounded Messages call answers both windows, so a second request
+for the second window would be the measurable regression. Measured on this host
+2026-10-15, the factory token returned
+`anthropic-ratelimit-unified-7d-utilization: 0.95` with a 7d status of
+`allowed_warning` while the five-hour window was barely touched -- so the next
+cliff was the seven-day one, and the five-hour floor cannot see it.
+
 Everything is HERMETIC: the provider is reached through an injected `urlopen`,
 and no credential value leaves this file.
 """
@@ -39,6 +48,9 @@ from urllib.request import Request
 import pytest
 from livespec_orchestrator_beads_fabro.commands import _acp_session_headroom as headroom
 from livespec_orchestrator_beads_fabro.commands import (
+    _acp_session_headroom_records as headroom_records,
+)
+from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_session_headroom_io as headroom_io,
 )
 
@@ -46,6 +58,12 @@ _NOW = "2026-10-15T02:00:00Z"
 _TOKEN = "projected-oauth-token"
 _OTHER_TOKEN = "a-different-projected-token"
 _HEADER = "anthropic-ratelimit-unified-5h-utilization"
+
+# Spelled as LITERALS and bound to the exported name by one `getattr`
+# assertion below, because this file's Red predates the constant it binds and a
+# Red's test bytes are fixed across its Red-to-Green pair.
+_SEVEN_DAY_HEADER = "anthropic-ratelimit-unified-7d-utilization"
+_SEVEN_DAY_FIELD = "seven_day_utilization_percent"
 
 
 def _headers(**values: str) -> Message:
@@ -238,3 +256,112 @@ def test_the_credential_identity_is_opaque_stable_and_credential_specific() -> N
     assert first == headroom_io.projected_credential_identity(token=_TOKEN)
     assert first != headroom_io.projected_credential_identity(token=_OTHER_TOKEN)
     assert _TOKEN not in first
+
+
+# ---------------------------------------------------------------------------
+# The seven-day window, read from the SAME request as the five-hour one.
+# ---------------------------------------------------------------------------
+
+
+def test_the_seven_day_window_is_read_from_the_same_request_as_the_five_hour_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ONE bounded request answers both windows, and the record carries both.
+
+    The call count is asserted because it is the whole claim: a second request
+    for the second window would double the admission path's provider spend and
+    would read a window the five-hour figure was not measured against.
+    """
+    calls: list[tuple[Request, float]] = []
+    monkeypatch.setattr(
+        headroom_io,
+        "urlopen",
+        _recording_urlopen(calls, headers=_headers(**{_HEADER: "0.20", _SEVEN_DAY_HEADER: "0.95"})),
+    )
+
+    reading = headroom_io.read_projected_session_headroom(token=_TOKEN, observed_at=_NOW)
+    fields = headroom_records.session_headroom_reading_fields(reading=reading)
+
+    assert len(calls) == 1
+    assert reading.utilization_percent == 20.0
+    assert fields.get(_SEVEN_DAY_FIELD) == 95.0
+    assert getattr(headroom_io, "SEVEN_DAY_UTILIZATION_HEADER", None) == _SEVEN_DAY_HEADER
+
+
+@pytest.mark.parametrize("seven_day", [None, "soon", ""])
+def test_an_absent_or_unparseable_seven_day_header_is_null_rather_than_coerced(
+    monkeypatch: pytest.MonkeyPatch, seven_day: str | None
+) -> None:
+    """The key is WRITTEN and holds null; every numeric sentinel is also a reading."""
+    values = {_HEADER: "0.20"}
+    if seven_day is not None:
+        values[_SEVEN_DAY_HEADER] = seven_day
+    monkeypatch.setattr(headroom_io, "urlopen", _recording_urlopen([], headers=_headers(**values)))
+
+    reading = headroom_io.read_projected_session_headroom(token=_TOKEN, observed_at=_NOW)
+    fields = headroom_records.session_headroom_reading_fields(reading=reading)
+
+    assert reading.observable is True
+    assert _SEVEN_DAY_FIELD in fields
+    assert fields[_SEVEN_DAY_FIELD] is None
+
+
+def test_a_refused_response_still_reports_the_seven_day_window_it_carried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The two windows are graded INDEPENDENTLY from one response.
+
+    A 403 carrying no five-hour header says nothing about that window, and the
+    reading is unobservable for it -- but the seven-day header it DID carry is
+    an answer, and dropping it would report an absence the response contradicts.
+    """
+    monkeypatch.setattr(
+        headroom_io,
+        "urlopen",
+        _refusing_urlopen(status=403, headers=_headers(**{_SEVEN_DAY_HEADER: "0.99"}), body=b"{}"),
+    )
+
+    reading = headroom_io.read_projected_session_headroom(token=_TOKEN, observed_at=_NOW)
+    fields = headroom_records.session_headroom_reading_fields(reading=reading)
+
+    assert reading.observable is False
+    assert reading.unobservable == headroom_io.AUTHENTICATION_FAILED_REASON
+    assert fields.get(_SEVEN_DAY_FIELD) == 99.0
+
+
+def test_a_transport_fault_reports_no_seven_day_window_at_all(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No response means no header, from either window."""
+
+    def fake_urlopen(request: Request, *, timeout: float) -> Any:
+        _ = (request, timeout)
+        raise TimeoutError("slow")
+
+    monkeypatch.setattr(headroom_io, "urlopen", fake_urlopen)
+
+    reading = headroom_io.read_projected_session_headroom(token=_TOKEN, observed_at=_NOW)
+    fields = headroom_records.session_headroom_reading_fields(reading=reading)
+
+    assert reading.unobservable == headroom_io.TIMED_OUT_REASON
+    assert _SEVEN_DAY_FIELD in fields
+    assert fields[_SEVEN_DAY_FIELD] is None
+
+
+def test_an_absent_projected_credential_reports_no_seven_day_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """There is nothing to authenticate with, so no window is observable."""
+    calls: list[tuple[Request, float]] = []
+    monkeypatch.setattr(
+        headroom_io,
+        "urlopen",
+        _recording_urlopen(calls, headers=_headers(**{_SEVEN_DAY_HEADER: "0.5"})),
+    )
+
+    reading = headroom_io.read_projected_session_headroom(token=None, observed_at=_NOW)
+    fields = headroom_records.session_headroom_reading_fields(reading=reading)
+
+    assert calls == []
+    assert _SEVEN_DAY_FIELD in fields
+    assert fields[_SEVEN_DAY_FIELD] is None

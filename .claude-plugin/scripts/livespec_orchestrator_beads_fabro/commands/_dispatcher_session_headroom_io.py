@@ -31,6 +31,20 @@ shared grader sees the percentage the clause measures. A refused response that
 still carries the header -- a 429 at the session limit does -- is graded from
 the header, because it answers the question exactly as a 200 would.
 
+THE SAME RESPONSE ANSWERS THE SEVEN-DAY WINDOW, AND IT IS READ HERE RATHER
+THAN IN A SECOND REQUEST (`bd-ib-rszkjc`). Measured on this host 2026-10-15,
+the factory token answered `anthropic-ratelimit-unified-7d-utilization: 0.95`
+with a 7d status of `allowed_warning` while the five-hour window was barely
+touched, so the next cliff was the seven-day one and the five-hour floor cannot
+see it. Both headers are fractions and both are multiplied by 100 here.
+
+The two windows are graded INDEPENDENTLY from the one response, which is the
+property an almost-correct implementation collapses: a refusal carrying no
+five-hour header is unobservable FOR THAT WINDOW, and the seven-day header it
+did carry is still an answer. Dropping it there would report an absence the
+response contradicts. The seven-day figure is journal-only, so no failure to
+read it can refuse a dispatch.
+
 NOTHING LEAVES THIS MODULE BUT A GRADED READING. The response body is read
 under a byte bound and decoded here; the only values that escape are a float,
 an unobservable REASON from the closed set below, and the opaque identity. So
@@ -55,6 +69,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from email.message import Message
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -74,6 +89,7 @@ __all__: list[str] = [
     "CLAUDE_SESSION_HEADROOM_URL",
     "FIVE_HOUR_UTILIZATION_HEADER",
     "SESSION_HEADROOM_READ_TIMEOUT_SECONDS",
+    "SEVEN_DAY_UTILIZATION_HEADER",
     "TIMED_OUT_REASON",
     "TRANSPORT_FAILED_REASON",
     "projected_credential_identity",
@@ -87,6 +103,7 @@ CLAUDE_SESSION_HEADROOM_URL = "https://api.anthropic.com/v1/messages"
 CLAUDE_SESSION_HEADROOM_MODEL = "claude-haiku-4-5-20251001"
 CLAUDE_SESSION_HEADROOM_MAX_OUTPUT_TOKENS = 1
 FIVE_HOUR_UTILIZATION_HEADER = "anthropic-ratelimit-unified-5h-utilization"
+SEVEN_DAY_UTILIZATION_HEADER = "anthropic-ratelimit-unified-7d-utilization"
 
 # Finite, as the clause requires in as many words, and the same bound the
 # sibling credential probe uses: both are one bounded request on the admission
@@ -116,6 +133,21 @@ _CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
 _AUTHENTICATION_STATUSES = frozenset({401, 403})
 
 
+@dataclass(frozen=True, kw_only=True)
+class _UsageWindows:
+    """Both windows ONE response reported, or the failure that stopped the read.
+
+    The two windows are separate fields rather than one value because they are
+    separate answers: a response can carry either, both or neither, and a
+    `failure` naming the measurement that stopped the FIVE-HOUR read says
+    nothing about a seven-day header that arrived on the same response.
+    """
+
+    five_hour: float | None = None
+    seven_day: float | None = None
+    failure: str | None = None
+
+
 def projected_credential_identity(*, token: str | None) -> str:
     """The opaque, non-secret identity the journal names this credential by."""
     if not token:
@@ -135,42 +167,55 @@ def read_projected_session_headroom(
             observed_at=observed_at,
             reason=ABSENT_CREDENTIAL_REASON,
         )
-    utilization = _five_hour_utilization(token=token)
-    if isinstance(utilization, str):
+    windows = _usage_windows(token=token)
+    if windows.failure is not None:
         return unobservable_session_headroom(
-            credential_identity=identity, observed_at=observed_at, reason=utilization
+            credential_identity=identity,
+            observed_at=observed_at,
+            reason=windows.failure,
+            seven_day_utilization_percent=windows.seven_day,
         )
     return session_headroom_reading(
         credential_identity=identity,
         observed_at=observed_at,
-        utilization=utilization,
+        utilization=windows.five_hour,
+        seven_day_utilization_percent=windows.seven_day,
     )
 
 
-def _five_hour_utilization(*, token: str) -> float | None | str:
-    """The header's utilization percentage, `None`, or the NAME of the failure.
+def _usage_windows(*, token: str) -> _UsageWindows:
+    """Both windows one bounded request reported, or the failure that stopped it.
 
-    `None` means the provider answered without a parseable header, which the
-    shared grader reports as an unreadable utilization. A `str` return is an
-    unobservable reason rather than an error message: the caller journals it
-    verbatim, so it must be one of the closed reasons above and must never
-    carry the provider's own sentence, which is a raw provider response.
+    A `failure` is an unobservable reason rather than an error message: the
+    caller journals it verbatim, so it must be one of the closed reasons above
+    and must never carry the provider's own sentence, which is a raw provider
+    response. A response with no parseable five-hour header carries NO failure
+    -- the provider answered -- and the shared grader reports that as an
+    unreadable utilization.
     """
     try:
         with urlopen(  # noqa: S310 - fixed HTTPS endpoint, no caller-controlled URL.
             _headroom_request(token=token),
             timeout=SESSION_HEADROOM_READ_TIMEOUT_SECONDS,
         ) as response:
-            return _header_percent(headers=response.headers)
+            return _response_windows(headers=response.headers)
     except HTTPError as error:
-        percent = _header_percent(headers=error.headers)
-        if percent is not None:
-            return percent
-        return _http_reason(status=error.code)
+        windows = _response_windows(headers=error.headers)
+        if windows.five_hour is not None:
+            return windows
+        return _UsageWindows(seven_day=windows.seven_day, failure=_http_reason(status=error.code))
     except TimeoutError:
-        return TIMED_OUT_REASON
+        return _UsageWindows(failure=TIMED_OUT_REASON)
     except (URLError, OSError):
-        return TRANSPORT_FAILED_REASON
+        return _UsageWindows(failure=TRANSPORT_FAILED_REASON)
+
+
+def _response_windows(*, headers: Message | None) -> _UsageWindows:
+    """One response's two utilization headers, each graded on its own."""
+    return _UsageWindows(
+        five_hour=_header_percent(headers=headers, name=FIVE_HOUR_UTILIZATION_HEADER),
+        seven_day=_header_percent(headers=headers, name=SEVEN_DAY_UTILIZATION_HEADER),
+    )
 
 
 def _headroom_request(*, token: str) -> Request:
@@ -202,15 +247,18 @@ def _http_reason(*, status: int) -> str:
     return TRANSPORT_FAILED_REASON
 
 
-def _header_percent(*, headers: Message | None) -> float | None:
-    """The five-hour header as a percentage, or `None` when it cannot be read.
+def _header_percent(*, headers: Message | None, name: str) -> float | None:
+    """One named utilization header as a percentage, or `None` when unreadable.
 
     Range and finiteness are NOT checked here: grading is the reading's own
     job, and a value this function silently clamped would be a coerced reading.
+    The header NAME is a parameter rather than a constant because both windows
+    are the same fraction-of-allowance encoding, and a second copy of this
+    function is how one window comes to be multiplied by 100 and the other not.
     """
     if headers is None:
         return None
-    raw = headers.get(FIVE_HOUR_UTILIZATION_HEADER)
+    raw = headers.get(name)
     if raw is None:
         return None
     try:

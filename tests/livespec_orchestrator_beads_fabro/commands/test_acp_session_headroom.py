@@ -289,6 +289,7 @@ def test_the_assessment_record_names_the_item_the_identity_and_the_reading() -> 
             "remaining_percent": 45.0,
             "unobservable": None,
             "observed_at": _NOW,
+            "seven_day_utilization_percent": None,
         }
     ]
 
@@ -309,6 +310,7 @@ def test_the_assessment_record_carries_an_unobservable_result_explicitly() -> No
             "remaining_percent": None,
             "unobservable": "timed-out",
             "observed_at": _NOW,
+            "seven_day_utilization_percent": None,
         }
     ]
 
@@ -334,4 +336,5 @@ def test_the_record_carries_no_credential_value_or_raw_provider_response() -> No
         "utilization_percent",
         "remaining_percent",
         "unobservable",
+        "seven_day_utilization_percent",
     }

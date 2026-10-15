@@ -40,6 +40,17 @@ THE SKIP PREDICATE IS THE WHOLE FILTER, and its two boundaries are the ones an
 almost-correct implementation inverts: equality PASSES, and a floor of 0
 disables both kinds of skip while retaining the reading. Both are the clause's
 own words.
+
+THE SEVEN-DAY FIGURE IS JOURNAL-ONLY AND IS NOT GRADED BY THIS MODULE'S VALID-
+READING RULE (`bd-ib-rszkjc`). The clause's inclusive 0..100 grade governs the
+FIVE-HOUR utilization, because that is the figure remaining headroom is
+computed from and the floor decides on; the seven-day figure decides nothing,
+so coercing it into that grade would discard a reading nothing depends on and
+report an absence the provider contradicted. It therefore arrives already
+read -- a percentage or `None` -- and travels through both constructors
+untouched. `headroom_skips_candidate` does not look at it, which is what makes
+"journaled only, changes no admission decision" a property of the predicate's
+inputs rather than a note a reader has to trust.
 """
 
 from __future__ import annotations
@@ -94,10 +105,16 @@ class SessionHeadroomReading:
     utilization_percent: float | None = None
     remaining_percent: float | None = None
     unobservable: str | None = None
+    seven_day_utilization_percent: float | None = None
 
     @property
     def observable(self) -> bool:
-        """Whether this reading carries a valid utilization at all."""
+        """Whether this reading carries a valid utilization at all.
+
+        Named for the FIVE-HOUR window, which is the one the filter decides on.
+        The seven-day figure is journal-only and is graded independently, so a
+        reading can be unobservable here while still carrying one.
+        """
         return self.unobservable is None
 
 
@@ -117,7 +134,11 @@ class SessionHeadroomPolicy:
 
 
 def session_headroom_reading(
-    *, credential_identity: str, observed_at: str, utilization: object
+    *,
+    credential_identity: str,
+    observed_at: str,
+    utilization: object,
+    seven_day_utilization_percent: float | None = None,
 ) -> SessionHeadroomReading:
     """Grade one provider utilization figure into a reading, or an unobservable.
 
@@ -126,6 +147,13 @@ def session_headroom_reading(
     inclusive" is a question about a value of unknown shape, and a narrower
     parameter type would push that grading onto the caller with the least
     context for it.
+
+    `seven_day_utilization_percent` is typed `float | None` for the opposite
+    reason: it is JOURNAL-ONLY, so the clause's valid-reading grade does not
+    apply to it, and whoever read the header has already decided whether the
+    header was there and parseable. It rides through BOTH arms, because the
+    two windows are independent answers from one response -- a five-hour
+    header that was absent says nothing about a seven-day header that was not.
     """
     percent = _valid_utilization(value=utilization)
     if percent is None:
@@ -133,21 +161,30 @@ def session_headroom_reading(
             credential_identity=credential_identity,
             observed_at=observed_at,
             reason=UNREADABLE_UTILIZATION,
+            seven_day_utilization_percent=seven_day_utilization_percent,
         )
     return SessionHeadroomReading(
         credential_identity=credential_identity,
         observed_at=observed_at,
         utilization_percent=percent,
         remaining_percent=FULL_ALLOWANCE_PERCENT - percent,
+        seven_day_utilization_percent=seven_day_utilization_percent,
     )
 
 
 def unobservable_session_headroom(
-    *, credential_identity: str, observed_at: str, reason: str
+    *,
+    credential_identity: str,
+    observed_at: str,
+    reason: str,
+    seven_day_utilization_percent: float | None = None,
 ) -> SessionHeadroomReading:
     """The explicit unobservable result, naming the measurement that failed."""
     return SessionHeadroomReading(
-        credential_identity=credential_identity, observed_at=observed_at, unobservable=reason
+        credential_identity=credential_identity,
+        observed_at=observed_at,
+        unobservable=reason,
+        seven_day_utilization_percent=seven_day_utilization_percent,
     )
 
 

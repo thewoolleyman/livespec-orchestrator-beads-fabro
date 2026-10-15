@@ -473,6 +473,7 @@ def test_an_admission_pass_journals_one_assessment_record_per_work_item(
             "remaining_percent": 10.0,
             "unobservable": None,
             "observed_at": _NOW,
+            "seven_day_utilization_percent": None,
         }
     ]
 

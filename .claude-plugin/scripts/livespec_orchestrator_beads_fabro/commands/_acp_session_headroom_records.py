@@ -124,13 +124,24 @@ def _skipped_fields(*, skip: SkippedCandidate) -> dict[str, object]:
 
 
 def session_headroom_reading_fields(*, reading: SessionHeadroomReading) -> dict[str, object]:
-    """One reading's five journaled facts, with nulls written rather than omitted."""
+    """One reading's journaled facts, with nulls written rather than omitted.
+
+    The last key is JOURNAL-ONLY alongside the seven-day figure and neither
+    moves an admission decision: both exist because the five-hour REMAINING
+    figure the floor decides on cannot see the other cliff
+    (`bd-ib-rszkjc`). A credential at 0.95 of its
+    seven-day allowance, and one draining 15 points of its five-hour window
+    every half hour, both read as ample headroom at the instant of admission --
+    and a run keeps its dispatch-time token to the end, so the admission-time
+    reading is the only guard an in-flight run has.
+    """
     return {
         "credential_identity": reading.credential_identity,
         "utilization_percent": reading.utilization_percent,
         "remaining_percent": reading.remaining_percent,
         "unobservable": reading.unobservable,
         "observed_at": reading.observed_at,
+        "seven_day_utilization_percent": reading.seven_day_utilization_percent,
     }
 
 
