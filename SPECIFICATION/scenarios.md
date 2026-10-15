@@ -1556,6 +1556,51 @@ Feature: The Dispatcher skips observed-unavailable candidates and refuses only a
     And the headroom filter does not skip that candidate
     And all other admission conditions are still applied
 
+  Scenario: A covered primary projected to exhaust within the horizon selects an uncovered fallback
+    Given an item whose implement node's primary is a covered candidate under the admission session-headroom clause
+    And dispatcher.session_headroom_floor_percent is 20
+    And dispatcher.session_headroom_horizon_minutes is 180
+    And the earliest assessment of the primary credential journaled between 15 and 90 minutes earlier, for any work-item, read 64.5 percent utilization 30 minutes earlier
+    And its current reading is 75 percent utilization, so its remaining headroom of 25 percent passes the floor
+    And that node lists an uncovered eligible fallback candidate
+    And every other admission condition is satisfied
+    When the Dispatcher evaluates admission
+    Then the journal records a drain rate of 21 percentage points per hour and a projected exhaustion about 71 minutes after the observation
+    And the primary is skipped by projection, not by the floor
+    And the fallback candidate is selected for the implement node
+    And the selection record references the primary's assessment, the governing floor and the governing horizon as a projection skip
+
+  Scenario: A projected exhaustion beyond the horizon is admitted, and a provider reset claim changes nothing
+    Given a covered candidate whose remaining headroom of 25 percent passes a floor of 20
+    And its baseline assessment 30 minutes earlier read 72 percent utilization, so the drain rate is 6 percentage points per hour
+    And dispatcher.session_headroom_horizon_minutes is 180
+    And the reading response carries a provider reset instant 10 minutes away
+    When admission is evaluated
+    Then the projected exhaustion is about 250 minutes after the observation and no projection skip applies
+    And the reset instant is not used for the skip and, if journaled, only as an unverified provider claim
+    And all other admission conditions are still applied
+
+  Scenario: A credential with no baseline in this checkout is governed by the floor alone
+    Given a covered candidate whose remaining headroom passes the floor
+    And this checkout's dispatch journal holds no assessment of its credential identity between 15 and 90 minutes earlier
+    When admission is evaluated
+    Then the projection is journaled as unavailable with its reason
+    And no projection skip applies to that candidate
+
+  Scenario: A reading no higher than its baseline has no projection
+    Given a covered candidate whose remaining headroom passes the floor
+    And its baseline assessment within the window read a utilization equal to or higher than the current reading
+    When admission is evaluated
+    Then the projection is journaled as unavailable with its reason
+    And no projection skip applies to that candidate
+
+  Scenario: A horizon of zero records the projection without skipping
+    Given a covered candidate whose projected exhaustion falls within 180 minutes of its observation
+    And dispatcher.session_headroom_horizon_minutes is 0
+    When admission is evaluated
+    Then the drain rate and projected exhaustion instant are journaled
+    And no projection skip applies to that candidate
+
   Scenario: A passing usage reading cannot clear observed availability evidence
     Given a covered candidate with headroom above the positive floor
     And a live observed hold covers that candidate
