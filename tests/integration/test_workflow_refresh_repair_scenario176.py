@@ -112,14 +112,21 @@ def _arms(*, source: str) -> list[tuple[str, dict[str, str]]]:
 
 
 def _routed(*, source: str, outcome: str) -> str:
-    """The successor the graph picks for one node's reported outcome.
+    """The successor the graph DETERMINES for one node's reported outcome.
 
-    Conditional edges outrank the unconditional fallthrough, in declaration
-    order, which is the routing the pinned engine applies and the reason every
-    inserted node leaves its ordinary route unconditional. Nothing here models a
-    term beyond `outcome=`, because the two nodes this grades -- a command stage
-    and the classifier -- report nothing else, and a richer evaluator would be
-    an evaluator this module never exercises.
+    A matching conditional arm outranks the unconditional fallthrough, and the
+    match must be UNIQUE. Declaration order is not something the engine reads,
+    so a node carrying two arms with one condition determines no route at all,
+    and this reader REFUSES rather than answering with whichever was declared
+    first. Answering the first is how this helper reported the repaired route
+    while the engine took the other arm (work-item bd-ib-nyovwv): a proof of
+    the repaired route built on the old reader would have passed before that
+    fix exactly as readily as after it, which makes the refusal the
+    load-bearing half of this function rather than a guard on it.
+
+    Nothing here models a term beyond `outcome=`, because the two nodes this
+    grades -- a command stage and the classifier -- report nothing else, and a
+    richer evaluator would be an evaluator this module never exercises.
     """
     arms = _arms(source=source)
     conditional = [
@@ -129,6 +136,10 @@ def _routed(*, source: str, outcome: str) -> str:
     ]
     fallthrough = [destination for destination, attributes in arms if "condition" not in attributes]
     assert fallthrough, f"{source} declares no unconditional fallthrough"
+    assert len(conditional) <= 1, (
+        f"{source} declares {len(conditional)} arms carrying outcome={outcome}, "
+        f"so this graph determines no route for that outcome: {arms}"
+    )
     return conditional[0] if conditional else fallthrough[0]
 
 
@@ -406,41 +417,49 @@ def test_a_repair_round_re_earns_janitor_publish_draft_and_capture_before_pr() -
             assert route.index(earlier) < route.index(later), route
 
 
-def test_a_failed_pr_refresh_is_routed_to_the_classifier_ahead_of_needs_human() -> None:
-    """The SECOND refreshing stage reaches the classifier, and reaches it FIRST.
+def test_pr_refresh_declares_exactly_one_failed_arm_and_it_is_the_classifier() -> None:
+    """ONE failure arm, targeting the classifier, with `needs_human` one node on.
 
-    v134 built the repair route for `publish_draft` alone, so the clause's other
-    named stage kept routing every failure straight to the terminal: measured on
-    hp, run 01M4YT2Z7PFF07D353YN2KBKEA restored its pre-refresh head, recorded a
-    brief and said in as many words that it expected the fix node, and the graph
-    ended the run at `needs_human` 8.7 seconds later.
+    THIS CASE REPLACES A FALSIFIED ASSUMPTION, which is why it grades a set
+    rather than an order. v134's successor (work-item bd-ib-5oc2d3) added the
+    `refresh_repair` arm and KEPT the older `pr_refresh -> needs_human` arm
+    behind it, on the reading that conditional arms are consulted in
+    declaration order so the first matching one wins. The engine does not read
+    declaration order. Measured on hp, run 01M4ZMNCDR7FN8SKCC5J3YWPTF: the
+    rebase conflicted in four files, the stage restored its pre-refresh head,
+    wrote the brief and printed that it expected the fix node, and the engine's
+    own `edge.selected` event then read `from_node pr_refresh, to_node
+    needs_human, label "Refresh failed or did not converge", reason condition`
+    -- the SECOND of the two identically-conditioned arms. The run ended about
+    50 seconds later having repaired nothing.
 
-    ORDER IS THE ASSERTION, not mere presence. Conditional arms are consulted in
-    declaration order, so a `refresh_repair` arm declared BEHIND the terminal's
-    `outcome=failed` arm is an arm nothing ever takes -- present in the graph,
-    invisible in every run, and indistinguishable from this defect. The index
-    comparison is therefore read off the parsed sequence rather than inferred
-    from the destination set.
+    So the assertion is UNIQUENESS. Two arms carrying one condition leave the
+    route undetermined, and an ORDER assertion over such a node grades a
+    property the engine never consults -- it passes while the run takes the
+    other arm, which is precisely how the defect reached a release. The arms
+    carrying `outcome=failed` are therefore compared as a whole against the one
+    destination they may hold.
+
+    `needs_human` is asserted ABSENT from `pr_refresh`'s destinations
+    altogether, and nothing fail-closed is lost by that: the classifier deletes
+    no cause, because `pr_refresh` clears any stale brief at its start and the
+    classifier routes to `needs_human` whenever no brief exists, so a missing
+    branch, a foreign head, a rejected lease, a failed gate and the
+    non-convergence bound all still reach the terminal carrying this stage's own
+    cause -- one node later, through an arm this module's sibling case drives.
 
     The unconditional fallthrough is asserted UNCHANGED beside it, because that
-    is the arm an inserted edge is most likely to consume: a node whose every
+    is the arm an edge removal is most likely to disturb: a node whose every
     outgoing edge carries a condition is the `all_conditional_edges` shape the
     pinned engine rejects outright, before any node runs.
     """
     arms = _arms(source="pr_refresh")
     failed = [
-        index
-        for index, (_, attributes) in enumerate(arms)
-        if attributes.get("condition") == _FAILED
-    ]
-    terminal = [
-        index for index, (destination, _) in enumerate(arms) if destination == "needs_human"
+        destination for destination, attributes in arms if attributes.get("condition") == _FAILED
     ]
 
-    assert failed, "pr_refresh declares no failed-outcome arm at all"
-    assert arms[failed[0]][0] == _REPAIR_NODE
-    assert terminal, "pr_refresh no longer declares its fail-closed terminal arm"
-    assert failed[0] < min(terminal), arms
+    assert failed == [_REPAIR_NODE], arms
+    assert "needs_human" not in {destination for destination, _ in arms}, arms
     assert [destination for destination, attributes in arms if "condition" not in attributes] == [
         "pr_refresh_head"
     ]
