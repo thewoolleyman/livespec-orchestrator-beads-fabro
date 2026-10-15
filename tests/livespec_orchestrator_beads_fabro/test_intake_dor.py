@@ -134,6 +134,20 @@ def _comments(*, issue_id: str) -> tuple[str, ...]:
     )
 
 
+def _finding_comments(*, issue_id: str) -> tuple[str, ...]:
+    """Only the host-side WALL's finding comments, which is what these cases grade.
+
+    The pre-admission judgement records its own verdict on the same sidecar, so
+    an unfiltered read here would grade the wall against a record a different
+    clause writes.
+    """
+    return tuple(
+        body
+        for body in _comments(issue_id=issue_id)
+        if body.startswith("definition-of-done finding")
+    )
+
+
 def test_evaluate_routes_epic_to_backlog() -> None:
     checklist = DefinitionOfReadyChecklist(
         single_coherent_done=False,
@@ -196,14 +210,21 @@ def test_an_advisory_finding_is_recorded_and_does_not_withhold_ready(tmp_path: P
 
     assert verdict == "ready"
     assert _status(issue_id="li-advisory") == "ready"
-    comments = _comments(issue_id="li-advisory")
-    assert len(comments) == 1
-    assert comments[0].startswith("definition-of-done finding (advisory):")
-    assert "regression tests" in comments[0]
+    findings = _finding_comments(issue_id="li-advisory")
+    assert len(findings) == 1
+    assert findings[0].startswith("definition-of-done finding (advisory):")
+    assert "regression tests" in findings[0]
 
 
 def test_a_conforming_filing_reaches_ready_and_records_no_comment(tmp_path: Path) -> None:
-    """The control for both cases above: a clean item is neither held nor annotated."""
+    """The control for both cases above: a clean item is neither held nor annotated.
+
+    The wall's own findings are what this asserts the absence of. The
+    pre-admission Definition-of-Done judgement writes its own separate record
+    when it cannot run — there is no judge executable in this tier — and that
+    record is the subject of `test_dod_judgement_pre_admission_scenario174`,
+    not of the wall's finding set.
+    """
     _seed_issue(
         issue_id="li-clean",
         description=_description(
@@ -215,7 +236,7 @@ def test_a_conforming_filing_reaches_ready_and_records_no_comment(tmp_path: Path
     verdict = _route(issue_id="li-clean", repo=_repo(tmp_path=tmp_path))
 
     assert verdict == "ready"
-    assert _comments(issue_id="li-clean") == ()
+    assert _finding_comments(issue_id="li-clean") == ()
 
 
 def test_an_item_with_no_section_is_held_out_of_ready_by_the_absent_section_finding(
