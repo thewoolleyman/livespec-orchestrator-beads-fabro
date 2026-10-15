@@ -69,6 +69,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     read_dispatch_labels,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_wall import (
+    dod_judgement_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency_gate import (
     fabro_currency_refusal,
 )
@@ -140,6 +143,16 @@ def pre_dispatch_wall_exit(
     explicit `--workflow-name`, resolves which graph the selection would run, and
     exempts a groom-kind dispatch, whose acceptance is the human approval of the
     draft.
+
+    The Definition-of-Done JUDGEMENT follows it, which is the SEMANTIC half of
+    the same gate: the criteria wall above parses the section, and this asks
+    whether what it says is gradeable at all. It shares that wall's exit code,
+    because the clause ratifies one code for both. Its position is between the
+    two for the same cheap-first reason the rest of this table is ordered: it
+    spends a model call, so it must run after every free parse that could
+    already have refused the selection, and before the two rows that spend more
+    than it does — the proof-assets gate, which CREATES a repository
+    prerelease, and the Codex gate, which spends a bounded provider renewal.
 
     The proof-ASSETS gate follows (S5 / bd-ib-b4u6b7): an item carrying a
     `factory_captured` assertion needs this repository's standing proof-assets
@@ -305,6 +318,11 @@ def _refusing_sequence(
             lambda: pre_dispatch_criteria_refusal(
                 items=items, cwd=repo, workflow_name=args.workflow_name
             ),
+            EXIT_UNGRADEABLE_CRITERIA,
+            False,
+        ),
+        (
+            lambda: dod_judgement_refusal(repo=repo, items=items),
             EXIT_UNGRADEABLE_CRITERIA,
             False,
         ),
