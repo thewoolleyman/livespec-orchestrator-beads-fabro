@@ -613,6 +613,107 @@ def test_a_refreshed_head_the_gate_rejects_is_restored_and_repaired(tmp_path: Pa
     assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
 
 
+def _refuse_commit_signing(*, world: _World) -> None:
+    """Make every commit a rebase would write fail, with NO path conflicted.
+
+    A non-conflict refresh failure has to be forced through something other than
+    the git identity. `bd-ib-lsr3vf` now renders a prepare step that sets a
+    repository-local identity, so the measured "Committer identity unknown"
+    trigger no longer occurs and a fixture built on it would quietly stop
+    exercising this arm the moment that step ran. A repository that requires
+    signed commits, inside a sandbox carrying no signing key, fails in the same
+    place for the same reason -- the sequencer cannot write the commit it is
+    replaying -- and `gpg.program` is pointed at a program that ALWAYS fails so
+    the case does not depend on whether the executing machine carries gpg at
+    all.
+
+    Measured with git 2.43.0: the rebase prints "error: gpg failed to sign the
+    data", exits 1, leaves `.git/rebase-merge` in place, reports ZERO paths at
+    `--diff-filter=U`, and leaves HEAD on the new base. That is precisely the
+    shape the conflicted arm cannot classify, and `_wedged_rebase_control`
+    below asserts each half of it rather than trusting this paragraph.
+    """
+    _ = _git("config", "commit.gpgsign", "true", cwd=world.clone)
+    _ = _git("config", "gpg.program", "/bin/false", cwd=world.clone)
+
+
+def _wedged_rebase_control(*, root: Path) -> None:
+    """Prove the trigger really wedges a rebase with nothing conflicted.
+
+    THE CONTROL FOR THE CASE BELOW, and it is what makes that case evidence
+    rather than a plausible green. "The stage restored its pre-refresh head"
+    says nothing unless the refresh got far enough to LOSE it: a trigger that
+    refused before the rebase started -- a dirty tree, a pre-rebase hook, an
+    untracked file in the way -- leaves HEAD at the run's own head already, so
+    every assertion below would pass against the unrepaired stage. This runs
+    the same rebase the stage runs, in an identical world, with the shipped
+    script taken out of the picture, and asserts the three properties the arm
+    is defined by: it failed, it left an in-progress rebase behind, it reported
+    no conflicted path, and HEAD is no longer the run's own head.
+    """
+    control, run_head, _advanced = _clean_refresh_world(root=root)
+    _refuse_commit_signing(world=control)
+    _ = _git("fetch", "origin", _DEFAULT_BRANCH, "--quiet", cwd=control.clone)
+
+    wedged = subprocess.run(
+        ["git", "rebase", f"origin/{_DEFAULT_BRANCH}"],
+        cwd=control.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_fixture_env(),
+    )
+
+    assert wedged.returncode != 0, wedged.stdout
+    assert (control.clone / ".git" / "rebase-merge").exists(), "the rebase was never wedged"
+    assert _git("diff", "--name-only", "--diff-filter=U", cwd=control.clone).stdout == ""
+    assert control.head() != run_head, "the wedged rebase left HEAD on the run's own head"
+
+
+def test_a_non_conflict_draft_refresh_failure_restores_the_head_janitor_passed(
+    tmp_path: Path,
+) -> None:
+    """A refresh that dies mid-rebase with nothing conflicted is UNDONE too.
+
+    THE MEASURED LOSS. On hp on 2026-10-15, canary 13 (run
+    01M4YV4YJ30J5ABBGJWR4KYWKX, item bd-ib-o6aeji) passed implement and janitor
+    and then died in `publish_draft@1` at "Rebasing (1/94)" with "Committer
+    identity unknown", exit 128. The conflicted arm could not classify it --
+    there were no conflicted paths -- so the stage exited with the rebase still
+    in progress, `needs_human` preserved whatever HEAD the stage had left, and
+    the ref it pushed carried a tree identical to origin's default branch. The
+    janitor-green checkpoint never reached origin.
+
+    So the discriminating assertion is HEAD, not the exit code: the stage
+    failed closed before this change too, and failing closed is still the right
+    ending for a cause this route does not repair. What was wrong is WHICH TREE
+    the ending preserved.
+
+    Five instruments. HEAD is back at the head the janitor passed. No rebase
+    directory of either backend is left behind, which would wedge the
+    preservation commit the terminal performs. Origin carries no publish branch,
+    so nothing half-refreshed was published. And the brief and the repair
+    counter are both ABSENT -- this cause is NOT repaired, so a build that
+    restored by routing into the repair round would have taken the one route
+    v134 reserves for a conflict or a gate rejection, and spent a repair budget
+    on a failure the `fix` turn cannot resolve.
+    """
+    _wedged_rebase_control(root=tmp_path / "control")
+    world, janitor_head, _advanced = _clean_refresh_world(root=tmp_path / "subject")
+    _refuse_commit_signing(world=world)
+
+    result = _run_publish_draft(world=world)
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_PUBLISH_DRAFT_REFRESH_FAILED" in result.stderr
+    assert world.head() == janitor_head
+    assert not (world.clone / ".git" / "rebase-merge").exists()
+    assert not (world.clone / ".git" / "rebase-apply").exists()
+    assert world.remote_head(ref=_BRANCH) == ""
+    assert world.state(name=_BRIEF_FILENAME) is None
+    assert world.state(name=_REPAIR_COUNT_FILENAME) is None
+
+
 def test_an_authentication_failure_keeps_its_push_failure_cause(tmp_path: Path) -> None:
     """The one push failure that must NOT be repaired, with the gate red too.
 
