@@ -63,14 +63,14 @@ Rejected:
 
 **1. contracts.md, §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work" (7447-7472).** Replace the first paragraph ("Before stale publish-branch reclaim, the Dispatcher MUST evaluate ... MUST NOT reclaim the branch.") with:
 
-"An item is *released for recovery* when its latest journaled dispatch ended in a first-stall release (§"Dispatcher progress watchdog"), a `provider-limit-release` record, or an `adapter-launch-release` record. Both `dispatch` and `loop` MUST perform *recovery routing* for every released candidate. Routing comes after the pre-dispatch wall and BEFORE the admission valve, while the item is still `ready`, and assigns the item exactly one route. Routes are graded in the order listed; the first that holds is the route, and an unobservable or unreadable measurement at any step routes `held`.
+"An item is *released for recovery* when its latest journaled dispatch ended in a first-stall release (§"Dispatcher progress watchdog"), a `provider-limit-release` record, or an `adapter-launch-release` record. Both `dispatch` and `loop` MUST perform *recovery routing* for every released candidate. Routing comes after the pre-dispatch wall and BEFORE the admission valve, while the item is still `ready`, and assigns the item exactly one route. Routes are graded in the order listed; the first that holds is the route, and an unobservable or unreadable measurement at any step routes `held`. A refusal of §"Resume from a published pull request (`resume --item`)" is *fallback-permitting* when its named remedy is a plain dispatch: the publish branch carries no open pull request, which includes a missing pull request and one closed without merging; no proof record names a head and no cancel record anchors one; the pull request's head moved; the Definition of Done changed; or the pull request already anchored two resumes. Every other refusal is *non-fallback*: the earlier run is live, the item's dispatch-scoped ownership lock is held by a live process, or the pull request is merged, whose remedy stays `reconcile-merged --item`. A non-fallback refusal takes precedence over every fallback-permitting one, so a merged pull request is never treated as a missing anchor.
 
 - `resume`, when every published-PR resume precondition of §"Resume from a published pull request (`resume --item`)" passes;
-- `seeded`, when resume is inapplicable for the reasons below and preserved work is verified;
-- `fresh`, when preserved work is confirmed absent;
-- `held`, when any measurement routing needs cannot be taken.
+- `seeded`, when every applicable resume refusal is fallback-permitting and preserved work is verified;
+- `fresh`, when every applicable resume refusal is fallback-permitting and preserved work is confirmed absent;
+- `held`, when any non-fallback refusal applies, or any measurement routing needs cannot be taken.
 
-Routing MUST NOT mutate the ledger, origin, or any factory. An item not released for recovery is routed `fresh` without any remote measurement. A route is valid only for the pass that measured it: an item the valve defers for capacity carries no route into the next pass, which measures it afresh. A `held` item MUST NOT be offered to the admission valve in that pass. It stays `ready`, the journal carries one `recovery-held` record naming the item and the measurement that could not be taken, and the next pass retries automatically. Under `loop` the hold is reported as a deferred outcome on the same terms as a capacity deferral. Under `dispatch --item` it is a precondition error (exit `3`, §"Dispatcher exit codes") naming the item and the measurement, before any run exists, as `resume --item` refuses today."
+Routing MUST NOT mutate the ledger, origin, or any factory. An item not released for recovery is routed `fresh` without any remote measurement. A route is valid only for the pass that measured it: an item the valve defers for capacity carries no route into the next pass, which measures it afresh. A `held` item MUST NOT be offered to the admission valve in that pass. It stays `ready`, the journal carries one `recovery-held` record naming the item and either the measurement that could not be taken or every applicable non-fallback refusal with its existing remedy, in the order the resume's refusals are listed, and the next pass retries automatically. Under `loop` the hold is reported as a deferred outcome on the same terms as a capacity deferral. Under `dispatch --item` it is a precondition error (exit `3`, §"Dispatcher exit codes") naming the item and the measurement or the non-fallback refusals with their remedies, before any run exists, as `resume --item` refuses today."
 
 Keep the second paragraph ("When resume is inapplicable ... seeded from preserved work ..."), the third ("The seed record MUST name ...") and the fourth ("A confirmed absence of preserved work ...", 7470-7472) unchanged, then add after the fourth:
 
@@ -82,7 +82,7 @@ Keep the second paragraph ("When resume is inapplicable ... seeded from preserve
 
 Replace it in both places with:
 
-"and the preserved-work reference the release observed (the published head or preservation ref) or its confirmed absence; the recovery route itself is decided by recovery routing at the item's next dispatch."
+"and the preserved-work reference the release observed (the published head or preservation ref) or its confirmed absence; the recovery route itself is decided by recovery routing at the item's next dispatch;" (ending in ';' because each site continues an inline numbered list)
 
 **2. contracts.md, §"Dispatcher progress watchdog" → "A first stall cancel is released and recovered" (bold label at 1584; the replaced sentence is 1597-1601, verbatim).** Replace "Before any stale publish-branch reclaim, it evaluates the resume preconditions, which the cancel record can now anchor (§"Resume from a published pull request (`resume --item`)"). It invokes resume under its own invoker identity when they pass, and otherwise makes a dispatch seeded from preserved work." with: "Recovery routing evaluates that next dispatch before admission, under §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work". The cancel record can anchor the resume route (§"Resume from a published pull request (`resume --item`)"). A `resume` route runs under the Dispatcher's own invoker identity."
 
@@ -125,6 +125,21 @@ Feature: Recovery routing for an automatically released item
     When the Dispatcher routes it
     Then the item stays ready and is not admitted in that pass
     And the journal carries a recovery-held record naming the measurement
+    And no publish-branch reclaim runs for it
+  Scenario: A live ownership lock holds a released item that has preserved work
+    Given a ready released item whose resume is inapplicable and whose failed run has a verified preserved commit
+    And the item's dispatch-scoped ownership lock exists and its process is alive
+    When the Dispatcher routes it
+    Then the route is held, not seeded
+    And the journal carries a recovery-held record naming the live ownership lock and its age
+    And the item is not admitted in that pass and no publish-branch reclaim runs for it
+    And under dispatch --item the dispatch exits with code 3 naming the live ownership lock before any run exists
+  Scenario: A merged pull request holds a released item and keeps the reconcile-merged remedy
+    Given a ready released item whose publish branch carries a merged pull request
+    And its failed run has a verified preserved commit
+    When the Dispatcher routes it
+    Then the route is held, neither seeded nor fresh
+    And the journal carries a recovery-held record naming the merged state and the remedy reconcile-merged --item
     And no publish-branch reclaim runs for it
 ```
 
