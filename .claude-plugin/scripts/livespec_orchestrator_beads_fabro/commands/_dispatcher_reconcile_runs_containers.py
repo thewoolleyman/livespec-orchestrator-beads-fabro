@@ -28,12 +28,19 @@ served by whichever factory launched it, so a sweep that asked only the
 factory it was addressing would read every sibling server's container as a
 run nobody reported and hold it for as long as it keeps running.
 
-A FACTORY THAT DECLARES NO DAEMON IS NOT SWEPT. The declaration is the only
-thing that says where that factory's containers run: a server url is no
-evidence of it — a loopback url is as likely to be a forwarded tunnel as a
-local engine — so inferring one fails in the expensive direction, removing a
-container on the reconciling host on the strength of a status read from a
-different host.
+A FACTORY THAT DECLARES NO DAEMON IS NOT SWEPT, and is RECORDED AS
+UNOBSERVED rather than passed over. The declaration is the only thing that
+says where that factory's containers run: a server url is no evidence of it —
+a loopback url is as likely to be a forwarded tunnel as a local engine — so
+inferring one fails in the expensive direction, removing a container on the
+reconciling host on the strength of a status read from a different host. But
+saying nothing fails in the other direction, because a surveyed factory that
+left no record is one no reader is looking for; and a sweep reporting ZERO
+CONTAINERS would be worse still, since that record is byte-identical to the
+one a clean factory writes — which is precisely the reading that let twelve
+containers leak unremarked. So the pass writes the one claim it is entitled
+to: this host's inventory was not taken, and here is the key that would
+address it.
 
 A PASS THAT SURVEYED NO FACTORY PERFORMS NO SWEEP, and the empty tuple says
 so. Not as a saving: with no inventory at all every container is ungradeable,
@@ -63,6 +70,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_container_re
 
 __all__: list[str] = ["pass_container_sweeps"]
 
+# What the unobserved record says, and it names the KEY rather than only the
+# fault: the remedy is one declaration, and a detail that reported only "no
+# daemon" leaves an operator to find out where to put one.
+_UNADDRESSABLE_DETAIL = (
+    "factory {factory_name} declares no docker_host, so the daemon running "
+    "its sandbox containers was not inventoried"
+)
+
 
 @dataclass(frozen=True, kw_only=True)
 class _SurveyedDaemon:
@@ -70,6 +85,19 @@ class _SurveyedDaemon:
 
     docker_host: str
     factory_names: tuple[str, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class _UnaddressableDaemon:
+    """One surveyed factory whose daemon this pass has no address for.
+
+    A TYPE rather than a `docker_host` of None on the value above, so a
+    daemon that cannot be addressed cannot reach the sweep driver at all: the
+    port requires an address, and the arm that has none is the one arm that
+    must never open one.
+    """
+
+    factory_name: str
 
 
 def pass_container_sweeps(
@@ -96,26 +124,47 @@ def pass_container_sweeps(
     return sweeps
 
 
-def _surveyed_daemons(*, factories: Sequence[FactoryTarget]) -> tuple[_SurveyedDaemon, ...]:
-    """Group the surveyed factories by the daemon each one declares."""
+def _surveyed_daemons(
+    *,
+    factories: Sequence[FactoryTarget],
+) -> tuple[_SurveyedDaemon | _UnaddressableDaemon, ...]:
+    """Group the surveyed factories by the daemon each one declares.
+
+    A factory declaring none is its OWN entry rather than being grouped with
+    the others that declare none: each owes a record naming itself, and one
+    record naming several factories would say that none of their inventories
+    was taken without saying which daemon any of them wanted.
+    """
     by_host: dict[str, list[str]] = {}
+    unaddressable: list[_UnaddressableDaemon] = []
     for factory in factories:
         if factory.docker_host is None:
+            unaddressable.append(_UnaddressableDaemon(factory_name=factory.name))
             continue
         by_host.setdefault(factory.docker_host, []).append(factory.name)
-    return tuple(
-        _SurveyedDaemon(docker_host=docker_host, factory_names=tuple(names))
-        for docker_host, names in by_host.items()
+    return (
+        *(
+            _SurveyedDaemon(docker_host=docker_host, factory_names=tuple(names))
+            for docker_host, names in by_host.items()
+        ),
+        *unaddressable,
     )
 
 
 def _daemon_sweep(
     *,
     inputs: ReconcileInputs,
-    daemon: _SurveyedDaemon,
+    daemon: _SurveyedDaemon | _UnaddressableDaemon,
     run_statuses: Mapping[str, str | None],
     dry_run: bool,
 ) -> SandboxContainerSweep:
+    if isinstance(daemon, _UnaddressableDaemon):
+        return SandboxContainerSweep(
+            docker_host=None,
+            factory_names=(daemon.factory_name,),
+            detail=_UNADDRESSABLE_DETAIL.format(factory_name=daemon.factory_name),
+            dry_run=dry_run,
+        )
     return reclaim_terminal_run_containers(
         port=SandboxContainerPort(
             runner=inputs.runner,
