@@ -25,6 +25,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_result im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit import (
     emit_calibration,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance_record import (
+    record_base_advanced_after_arming,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     bounce_non_convergence_to_backlog,
     complete_and_accept,
@@ -353,6 +356,15 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     groom_cut_filed = record_groom_draft(
         args=args, repo=repo, item=item, outcome=outcome, journal=journal
     )
+    # BEFORE the escalation, which is the opposite of the needs-human pair
+    # below and is the ratified clause's own choice. This record is the only
+    # account of which head was armed against which default-branch tip, so a
+    # lifecycle write that landed while the record was never attempted would
+    # leave an operator an item at needs-human with nothing to reconstruct the
+    # overtaking from. Neither write prevents the other — every arm of this one
+    # is fail-soft — so the order decides only which account survives a partial
+    # failure. A no-op for every outcome that is not this ending.
+    record_base_advanced_after_arming(repo=repo, item=item, outcome=outcome, journal=journal)
     if not groom_cut_filed:
         escalate_needs_human_block(repo=repo, item=item, outcome=outcome, journal=journal)
         # AFTER the escalation, because the escalation owns the lifecycle write

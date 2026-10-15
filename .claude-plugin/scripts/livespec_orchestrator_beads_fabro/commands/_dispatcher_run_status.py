@@ -34,6 +34,14 @@ class PrView:
     absent reading is what those decisions must refuse on, so the field is
     optional rather than defaulted to a sentinel a comparison would silently
     accept.
+
+    `base` is the pull request's `baseRefOid` — the tip of the branch it is
+    opened against, which for every dispatch here is the default branch. It
+    rides THIS view, beside the mergeability the overtaken-arming ending routes
+    on, rather than a probe of its own: a second round trip could answer
+    differently from the reading beside it, for the same pull request, with
+    nothing in the record saying which was read. `None` on the same terms as
+    `head`.
     """
 
     number: int
@@ -44,6 +52,7 @@ class PrView:
     terminal_required_check_failures: tuple[str, ...]
     diff_size: int | None = None
     head: str | None = None
+    base: str | None = None
 
 
 _TERMINAL_CHECK_CONCLUSIONS = frozenset(
@@ -78,6 +87,7 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
     state_raw: object = parsed.get("state")
     merge_state_raw: object = parsed.get("mergeStateStatus")
     head_raw: object = parsed.get("headRefOid")
+    base_raw: object = parsed.get("baseRefOid")
     return PrView(
         number=number_raw,
         state=state_raw if isinstance(state_raw, str) else "UNKNOWN",
@@ -87,6 +97,7 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
         terminal_required_check_failures=terminal_failures,
         diff_size=pr_diff_size_of(payload=parsed),
         head=head_raw if isinstance(head_raw, str) and head_raw else None,
+        base=base_raw if isinstance(base_raw, str) and base_raw else None,
     )
 
 
