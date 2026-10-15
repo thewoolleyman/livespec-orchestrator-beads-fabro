@@ -3332,10 +3332,10 @@ edits the section. No new state transition, exit code or claim-release
 path is introduced. The mechanical half of this check (section present,
 references resolve, modes parse) MUST also run in the host-side wall so a
 malformed item never spends a sandbox. The semantic half MUST run in the
-node on every run, and MUST also run once before admission per
-§"Effective acceptance criteria" → "Authoring at filing time"
-("Judged before admission"); that earlier judgement never removes or
-replaces the node.
+node on every run, and MUST also run before admission and before
+dispatch per §"Effective acceptance criteria" → "Authoring at filing
+time" ("Judged before admission" and "Judged again before dispatch");
+neither earlier judgement removes or replaces the node.
 
 **`proof_capture`.** For every `factory_captured` assertion the node MUST
 author the reproduction steps, execute them verbatim inside the sandbox,
@@ -5667,6 +5667,41 @@ remedy; the ready-item advisory hygiene fact above still applies to
 items the judgement admitted or could not judge. Scenario 174 in
 `scenarios.md` exercises this paragraph.
 
+**Judged again before dispatch.** Admission is not the only route to
+`ready`: an item also reaches it through `resolve-blocked:<id>:ready`
+after a needs-human ending, and its Definition of Done MAY be edited
+after it was admitted. So before the Dispatcher claims an implement-kind
+item for a dispatch — in the pre-dispatch wall, on the single-item and
+the drain paths alike, whatever route brought the item to `ready` — it
+MUST run the same Definition-of-Done judgement the "Judged before
+admission" paragraph names, against the item's effective criteria as
+they stand at dispatch time. When that judgement would end a run through
+the structured needs-human ending, the Dispatcher MUST refuse the
+dispatch before any claim is taken and before any factory run is
+created, MUST name in the refusal the finding text the judgement
+produced, and MUST append that verdict, with each remedy, to the item as
+a ledger comment; the item MUST NOT be moved out of `ready` by the
+refusal. When the judgement admits the item, the dispatch MUST proceed
+exactly as it would without the judgement. When the judgement cannot be
+run (no eligible model, a timeout, or an unparseable verdict), the
+Dispatcher MUST record on the item that the pre-dispatch judgement did
+not run and why, and MUST proceed as it would without the judgement; the
+in-run `dod_gate` node remains the backstop. The Dispatcher MUST reuse
+the most recent verdict recorded for the item, the pre-admission verdict
+or an earlier pre-dispatch verdict, while the item's effective criteria
+and referenced headings are byte-unchanged since that verdict was taken,
+and MUST NOT run the judgement again or append another comment for a
+reused verdict; a reused refusing verdict refuses the dispatch without a
+new comment. A refused item MUST be excluded from drain candidate
+enumeration until its effective criteria or referenced headings change,
+and `needs-attention` MUST list it as a hygiene fact naming the
+verdict's first remedy, exactly as the pre-admission paragraph does for
+held items. The did-not-run record MUST likewise be written at most once
+per distinct cause until the judgement next runs. A refusal on the
+hand-picked `dispatch --item` path MUST exit with the dedicated exit
+code `5` of "The pre-dispatch wall" paragraph. Scenario 174 in
+`scenarios.md` exercises this paragraph.
+
 **Kept current.** The Definition of Done is the statement the proof
 stages capture against and the acceptance pass grades against, read from
 the dispatch-time snapshot. A factory run MUST NOT deliver behaviour that
@@ -5818,6 +5853,9 @@ state that the effective acceptance criteria are empty or ungradeable or
 name the missing or malformed element of the section, and exit with the
 dedicated documented exit code `5`
 (§"Dispatcher exit codes"), distinct from the precondition exit `3`.
+The same exit code `5` MUST be used when the pre-dispatch
+Definition-of-Done judgement of "Judged again before dispatch" refuses a
+hand-picked dispatch.
 An explicit hand-picked dispatch remains protected by this refusal even when
 candidate enumerations filtered the item earlier. Already-filed items that
 predate the wall are not backfilled or exempted: an affected physical `ready`
@@ -5867,7 +5905,10 @@ completed with the work-item routed to the ledger's human gate
 terminated (§"A factory run never awaits a human").
 `5` — effective-criteria refusal: the effective acceptance criteria are
 empty or ungradeable, or the Definition of Done section is absent or
-carries no valid reference line (§"Effective acceptance criteria"). `skipped`-severity findings never flip the exit code.
+carries no valid reference line (§"Effective acceptance criteria"), or
+the pre-dispatch Definition-of-Done judgement refused a hand-picked
+dispatch (§"Effective acceptance criteria" → "Authoring at filing time"
+→ "Judged again before dispatch"). `skipped`-severity findings never flip the exit code.
 
 ### Post-merge acceptance (`acceptance → done`)
 
