@@ -160,8 +160,11 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   wrapper fault is NEVER reported as an absent credential — it yields the
   launch-time value with `rotatable` False — because the two have opposite
   remedies and a wait retired by a refusal about a misconfigured wrapper reports
-  the wrong fault; what stops a PERSISTENT fault is the wait's own bound on
-  consecutive unresolvable rounds. A repository declaring no wrapper spawns
+  the wrong fault; a PERSISTENT fault is SURFACED through the `source` label
+  every refused-probe record carries, and never by ending the wait, because the
+  provider limit the wait governs clears with the credential unchanged and the
+  probe's own next result is its only retirement signal. A repository declaring
+  no wrapper spawns
   nothing, since there is no second source to read and a `sudo` re-exec per
   round would learn nothing. And the journal names the credential by a ONE-WAY
   identity rather than a value, with the empty token fingerprinting to null:
