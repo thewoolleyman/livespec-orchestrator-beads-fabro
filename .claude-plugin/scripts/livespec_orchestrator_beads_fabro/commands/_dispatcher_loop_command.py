@@ -29,12 +29,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import 
     emit_outcomes,
     ledger_blocked_after_normalization,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_candidates import (
+    candidates,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_dry_run import dry_run_outcomes
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
     failed_dispatch_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
-    candidates,
     prepare,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_size_gate import (
