@@ -1,0 +1,617 @@
+
+  >_ OpenAI Codex (v0.162.1)
+     /data/projects/livespec-orchestrator-beads-fabro
+  permissions: YOLO mode
+
+
+› Read tmp/petri-gmktec-review/brief.md in this repository and do exactly what it says.
+
+
+• I’ll read the brief and follow its instructions.
+
+• Explored
+  └ Read brief.md
+    + Show details
+
+• Ran cat tmp/petri-gmktec-review/design.md tmp/petri-gmktec-review/review-round1.md tmp/petri-gmktec-review/re…
+  └ 12. **NOT RESOLVED** — The design uses the current active-CI assumption, but the requested host records are…
+
+    REVIEW-COMPLETE: BLOCKERS
+    + 609 lines (^t to expand)
+
+• Explored
+  └ Read design.md, review-round1.md
+    Read design.md
+    List docker_sandbox_slice
+    + Show details
+
+• Ran cat /data/projects/gmktec-xubuntu-info/AGENTS.md /data/projects/gmktec-xubuntu-info/llm-server.md
+  └ - **`/v1/models` needs the key** on this build (401 otherwise).
+    - No amdgpu GTT / IOMMU tuning was needed on this kernel; RADV exposed the full
+      unified pool and `--n-gpu-layers 999` offloaded the entire model.
+    + 421 lines (^t to expand)
+
+• The single-actor design closes several earlier races, but confirmation still writes a separate start-
+  permission file before recording its final state. I’m checking crash recovery around that gap, along with
+  actor ownership and package-install fencing.
+
+• Browsing the web
+
+• Ran cat /data/projects/livespec-dev-tooling/ansible/fabro-hosts.yml /data/projects/livespec-dev-tooling/ansib…
+  └ # failing, so the mechanism is armed and reporting if the layer ever appears.
+    # storage_reclaim_checkout_roots defaults to /home/cwoolley/repos, which is
+    # correct here: 3 clones, measured 2026-08-22.
+    + 311 lines (^t to expand)
+
+• Ran sed -n '950,1040p' /data/projects/livespec-dev-tooling/ansible/roles/fabro_server/tasks/main.yml; cat /da…
+  └ 349:# ADMISSION_CAPACITY_C. The credential the timer authenticates with is
+    361:NODE_TAINTS=
+    363:ADMISSION_CAPACITY_C=12
+    + 383 lines (^t to expand)
+
+• Ran git config --get livespec.primaryPath; git status --short --branch; git check-ignore tmp/petri-gmktec-rev…
+  └ tmp/petri-gmktec-review/review-round2.md:97:### NOTE 11 — Sysctl/Tailscale scope is materially improved, bu…
+    tmp/petri-gmktec-review/review-round2.md:103:### NOTE 12 — Companion implementation and stale host records …
+    tmp/petri-gmktec-review/review-round2.md:111:## Verdict per round-1 finding
+    + 30 lines (^t to expand)
+
+• Opened https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html
+
+• Ran git config --get livespec.primaryPath; git status --short --branch; git check-ignore tmp/petri-gmktec-rev…
+  └
+    ### BLOCKER 3 — Apt lock waiting still does not fence the approved transaction or unrelated restart hooks
+
+    + 32 lines (^t to expand)
+
+• Ran python3 - <<'PY' …
+  └ These options configure the action that is take
+    systemctl kill-whom= absent
+    systemctl Conditions= absent
+    + 291 lines (^t to expand)
+
+• Ran ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes cwoolley@gmktec-xubuntu.perch-rudd…
+  └ active
+    active
+    active
+    + 3 lines (^t to expand)
+
+• Ran ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes cwoolley@hp-xubuntu.perch-rudd.ts.…
+  └     fi
+    fi
+    # End automatically added section
+    + 304 lines (^t to expand)
+
+• Ran ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes cwoolley@hp-xubuntu.perch-rudd.ts.…
+  └ -A ts-input -s fd7a:115c:a1e0::2933:c133/128 -i lo -j ACCEPT
+    -A ts-input -i tailscale0 -j ACCEPT
+    -A ts-input -p udp -m udp --dport 41641 -j ACCEPT
+    + 43 lines (^t to expand)
+
+• Ran ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes cwoolley@gmktec-xubuntu.perch-rudd…
+  └ 10.42.2.0/24 via 10.42.2.0 dev flannel.1 onlink
+    192.168.1.0/24 dev eno1 proto kernel scope link src 192.168.1.156 metric 100
+    192.168.1.0/24 dev wlp195s0 proto kernel scope link src 192.168.1.66 metric 600
+    + 4 lines (^t to expand)
+
+• Browsing the web
+
+• Opened https://www.freedesktop.org/software/systemd/man/systemd.service.html
+
+• Explored
+  └ Search endpoints|node-status|resources:.*nodes|resources:.*endpoints in k3s
+    Search KUBELET_ARGS=|NODE_TAINTS=|ADMISSION_CAPACITY_C= in gmktec-xubuntu.env
+    Search docker|restart|service_state in main.yml
+    + Show details
+
+• Ran nl -ba /data/projects/livespec-dev-tooling/ci-runner/k3s/phase2/node-status-credential/node-status-patch-…
+  └ 361:NODE_TAINTS=
+    363:ADMISSION_CAPACITY_C=12
+    Conditions=[unprintable]
+    + 135 lines (^t to expand)
+
+• Ran python3 - <<'PY' …
+  └       @org\&.freedesktop\&.DBus\&.Property\&.EmitsChangedSignal("const")
+          readonly u StartLimitBurst = \&.\&.\&.;
+          @org\&.freedesktop\&.DBus\&.Property\&.EmitsChangedSign
+    + 98 lines (^t to expand)
+
+• Ran ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes cwoolley@hp-xubuntu.perch-rudd.ts.…
+  └          limit rate 10/minute burst 10 packets meta mark & 0x00010000 != 0x00010000 counter packets 0 bytes…
+        }
+    }
+    + 599 lines (^t to expand)
+
+• I found a concrete probe mismatch: the repository’s node-status credential grants access only to one node’s
+  status, not the DNS endpoints the design proposes reading. The actor also lacks a specified recovery path for
+  hangs or exhausted restart limits. I’m recording these separately from the firewall cleanup improvements that
+  do address earlier findings.
+
+• Ran python3 - <<'PY' …
+  └ If set to
+    \fBdirect\fR, the service transitions to the activating state directly during auto\-restart, skipping faile…
+    \fIExecStopPost=\f
+    + 176 lines (^t to expand)
+
+• Browsing the web
+
+• Opened https://raw.githubusercontent.com/systemd/systemd/main/man/systemd.service.xml
+
+• Blocked by hook
+  └ BLOCKED by livespec_footgun_guard.py (livespec-driver-codex)
+
+    NEVER edit files directly at a livespec PRIMARY checkout (a repo whose `git config --get
+livespec.primaryPath` equals its own worktree root). Direct commits / writes at the primary are refused by the
+family commit-refuse hook. Do edits in a SECONDARY worktree via `git -C <repo> worktree add ~/.worktrees/<repo>/
+<branch> -b <branch> origin/master`, then PR → merge → cleanup. (memory
+feedback_dispatch_no_checkout_master_in_worktree)
+
+    Command: cat > tmp/petri-gmktec-review/review-round3.md <<'EOF'
+    # Independent review, round 3 — Docker on gmktec-xubuntu
+
+    Reviewed 2026-10-15 against revision 3. **BLOCKERS remain. Do not converge this revision on gmktec as
+written.**
+
+    This is a design review, not implementation acceptance. The only write was this explicitly requested,
+gitignored report. No host, service, package, firewall, ledger or tracked repository content was changed. No
+installation, simulation, container launch, active application probe or fault injection was performed. Remote
+commands used only the brief's allowed reads. References to `design.md` mean this directory's revision 3;
+`ansible/` and `ci-runner/` paths are relative to `/data/projects/livespec-dev-tooling/`. Earlier reviewers'
+observations were read but are not represented as fresh measurements.
+
+    ## Ranked findings
+
+    ### BLOCKER 1 — Confirmation still has two durable authorities, and rollback revokes only one of the two
+start permissions
+
+    Evidence: `design.md:54–55,94–99,116–122,129–154,250–254`.
+
+    Atomic replacement protects `state.json`, but the systemd condition does not read that file. Confirmation
+separately writes the global `confirmed` file, removes `allow-start`, enables units, and finally publishes state
+`confirmed`. Consider a crash immediately after the global file is written, or an enablement failure after it is
+written. State is still nonterminal, yet Docker has durable permission to start. The specified rollback removes
+only `allow-start`: the OR condition remains satisfied by `confirmed`. The assertion that no new start is
+possible is false in this case. A reboot in this gap also defeats the claim that an unfinished run cannot start
+Docker if the boot actor fails. The later-run classifier trusts the global file rather than requiring completed
+actor finalization.
+
+    Passing probes before this gap does not itself make accepting the run wrong. The missing piece is a defined
+commit point and recovery semantics: either durable confirmation is irrevocable and every subsequent failure
+resumes only confirmation finalization, or a rollback must durably revoke every start permission before killing
+anything. Specify consistency checks for the run identity, configuration digest, decision and marker; define
+missing/corrupt state behavior. Test kills between every operation inside confirmation, including marker
+publication and enablement failure, not merely between named phases. One writer does not make two files plus
+systemd operations atomic.
+
+    ### BLOCKER 2 — “One actor” is an assertion, not an enforced host-wide ownership rule
+
+    Evidence: `design.md:78–90,124–127,150–154,248–257`.
+
+    A template instantiated with a run ID permits multiple distinct services. The resume row explicitly says to
+start a **new** actor run whenever installed packages lack confirmation; it does not exclude a still-running
+actor, an incomplete rollback or the boot actor. After a controller dies, a normal rerun can therefore start B
+while A is observing or rolling back. Their shared `allow-start`, global `confirmed`, Docker units and firewall
+are not per-run resources. B can recreate permission or start Docker while A cleans it up. Atomic per-run state
+files cannot serialize this.
+
+    Make one host-wide owner mechanically exclusive across normal start, rerun and boot recovery. A rerun must
+attach to or recover the existing run, not allocate a second transition until recovery is terminal and verified.
+Define precedence between `rollback-partial` and the broader installed/unconfirmed row. Include concurrent
+controller starts, controller retry during rollback, and boot/retry overlap in acceptance.
+
+    There are related restart holes. The design persists completed rollback phases but does not define how their
+predicates are revalidated after reboot: firewall state and cgroups do not survive a boot like disk state does.
+Nor does it specify persistent absolute deadlines/boot identity, so an implementation could reset N on each
+restart. Specify that recovery cannot restart the safety window indefinitely, and that recovered phase
+completion is accepted only if its postcondition still holds. If the boot actor resumes a forward-start phase,
+its `Before=` relationship to the Docker units also needs an explicit service type/job graph: a oneshot that
+synchronously waits for a unit ordered after its own completion deadlocks. Prefer an explicit boot recovery
+policy rather than an ambiguous copy of every forward phase.
+
+    ### BLOCKER 3 — The replacement for the dead-man timer cannot currently detect its own loss of progress
+
+    Evidence: `design.md:79–80,103–105,148–162,299–309`; local `/usr/share/man/man5/systemd.service.5.gz`
+(`Restart=`, `WatchdogSec=`, `TimeoutStartSec=`) and `/usr/share/man/man5/systemd.unit.5.gz`
+(`StartLimitIntervalSec=`, `StartLimitBurst=`). Cross-checked the [upstream service manual source](https://
+raw.githubusercontent.com/systemd/systemd/main/man/systemd.service.xml).
+
+    `Restart=on-failure` handles certain exits, not a live but stuck actor. With `TimeoutStartSec=infinity` and
+no independent progress supervision, a deadlock, SIGSTOP or blocking operation outside a correctly bounded
+subprocess leaves `allow-start` present indefinitely. In-process deadline checks are ineffective when their
+process cannot reach them. Repeated failing restarts can also exhaust systemd's start limit and leave the actor
+failed while Docker remains permitted. For non-oneshot services, default handling of SIGTERM/SIGHUP/SIGPIPE
+counts as clean termination and does not trigger on-failure restart; the service type and signal policy are
+unspecified.
+
+    Keep one decision-maker, but provide independent liveness supervision capable of replacing a stalled owner
+with recovery, without creating two concurrent decision-makers. Specify restart limits/backoff, signal behavior,
+stop/shutdown behavior, and bounded calls in **all** phases including persistence and probes. Acceptance needs a
+hung actor, repeated crash/start-limit exhaustion, signals other than SIGKILL, and failure before the actor's
+first durable state publication. An actor that never successfully starts should leave permissions absent; prove
+that invariant as well.
+
+    The explicit rollback budgets and early FORWARD restoration improve the earlier global-timeout problem. They
+do not establish that those budgets will be enforced when the sole enforcer stops making progress. The old
+`systemd-run` arming failure no longer applies, because revision 3 uses installed services; the equivalent
+start/arming failure still needs the above invariant.
+
+    ### BLOCKER 4 — Timer stopping plus a lock-free observation is still not a package-transaction fence
+
+    Evidence: `design.md:220–242`; fresh gmktec `systemctl is-active k3s-agent tailscaled local-homelab-llama-
+server unattended-upgrades apt-daily.timer apt-daily-upgrade.timer` returned six `active` lines. Fresh hp reads
+of `/var/lib/dpkg/info/docker.io.postinst` and `/var/lib/dpkg/info/containerd.postinst` still show unit enable/
+start actions, and Docker's script includes AppArmor loading.
+
+    Downloading an exact audited set is a substantial improvement: `dpkg -i` makes no new apt resolver choice.
+But stopping two timers and observing no package process/free lock does not reserve that state through
+simulation, download, audit and install. An independently launched apt/packagekit operation can begin afterward.
+There is no specified lock ownership and revalidation boundary that makes the observed state the state mutated.
+An existing pending configuration/trigger queue is also not explicitly refused. `dpkg --configure -a` on
+recovery broadens execution to **every** pending package, not just this role's audited set. Three start
+conditions do not inhibit unrelated package scripts or trigger handlers.
+
+    Specify an implementable package-lock protocol using the actual locking semantics, with validation under
+ownership and refusal/revalidation after contention. Audit the complete effects of the actual dpkg operation,
+including relevant triggers and dpkg hooks/configuration, not just apt hook files (the direct dpkg path does not
+execute apt's hooks). Recover only the recorded package transaction or explicitly refuse unrelated pending work.
+The promised digests/allowlist must exist and be reviewed before application.
+
+    An Ansible `always` block is not crash recovery: if the controller is killed or loses the host, the timers
+can stay stopped for the rest of the boot. Persist their prior state and give restoration a host-local recovery
+owner and a deadline independent of the controller. Do not unconditionally start timers that were previously
+inactive.
+
+    ### SHOULD-FIX 5 — The proposed condition-verification command does not verify those conditions
+
+    Evidence: `design.md:49–74`; local `/usr/share/man/man5/org.freedesktop.systemd1.5.gz` declares the unit's
+`Conditions` array. A local read `systemctl show -p Conditions -p ConditionPathExists dbus.service` returned
+only `Conditions=[unprintable]`, with no `ConditionPathExists` property. This is a control-host observation, not
+a gmktec experiment. See also the [upstream D-Bus manual source](https://raw.githubusercontent.com/systemd/
+systemd/main/man/org.freedesktop.systemd1.xml).
+
+    `ConditionPathExists` is unit-file syntax; requesting a same-named show property is not proof systemd loaded
+it. Before package installation the main unit files are absent as well, so specify how an effective loaded unit
+is verified at that stage rather than assuming drop-in directories alone constitute the packaged units. Inspect
+the real loaded `Conditions`, load state and drop-in paths at the appropriate point, and prove in the disposable
+VM that postinst and socket/boot starts are inhibited throughout installation. Exit status or empty output must
+not count as success.
+
+    The OR syntax is appropriate for these two intended permissions. Conditions are start-time checks, not a
+continuously enforced lease: removing a file does not stop an already active service or cancel an already
+accepted start. Track outstanding start jobs and quiesce them during rollback, then verify absence of processes
+and jobs before firewall/interface cleanup. A bounded wait for the `systemctl` client is not by itself
+cancellation of the manager's job. hp's freshly read Docker unit has `TimeoutSec=0`, `Restart=always`,
+`Requires=docker.socket`, and `KillMode=process`, making that distinction relevant.
+
+    ### SHOULD-FIX 6 — The probe recipe assumes privileges the specified credential does not have
+
+    Evidence: `design.md:170–184,192–201`; `ci-runner/k3s/phase2/node-status-credential/node-status-patch-
+rbac.yaml:109–118` grants only `get` and `patch` on `nodes/status`, restricted to one node. It grants neither
+endpoints nor ordinary nodes/pods reads.
+
+    Read Ready and allocatable via the authorized named node **status subresource**; an ordinary `kubectl get
+node` is not the same permission. The proposed DNS-endpoint lookup with this credential cannot work under the
+committed grant. The fallback cross-node pod TCP test can be valid, but it needs an explicit known endpoint,
+port, identity and ownership/discovery source rather than silently assuming another forbidden API read. An
+endpoint list containing a remote DNS pod would also not prove which backend answered a ClusterIP request when
+local and remote backends coexist. Ensure all possible selected backends are remote or instrument the actual
+path.
+
+    The effective-resync timing requirement is better than an arbitrary delay, but agent flags alone do not
+establish hardcoded/version-dependent controller defaults or actual completed resyncs. Record the effective
+source for each interval, including kube-router and kube-proxy, and address flannel reconciliation as
+applicable. A 420-second sampled window is evidence, not a guarantee of uninterrupted service.
+
+    Controller-side SSH/LLM probes can occur at the **beginning** of that window and their file remains
+sufficient at its end. Loss of tailnet reachability after that early success can still yield confirmation if
+local probes pass. Require a fresh end-of-window challenge/response tied to run ID and phase, with a bounded age
+and no acceptance of an earlier signal after reboot/resume. Host service-active does not replace that
+independent path.
+
+    ### SHOULD-FIX 7 — Detecting an out-of-scope consumer is not preventing its unrecoverable mutations
+
+    Evidence: `design.md:106–112,132–141,205–216,250–257,274–295`; fresh hp `/usr/lib/systemd/system/
+docker.socket` read shows `/run/docker.sock`, mode `0660`, group `docker`; fresh gmktec `ip route` shows the two
+LAN defaults, LAN 192.168.1.0/24 and pod routes 10.42.0.0/24, 10.42.1.0/24, 10.42.2.0/24, with no main-table
+172.17 route.
+
+    Empty foreign stores and postponing Fabro are useful controls. But the design does not establish exclusive
+access to the newly active Docker/containerd APIs during the window. A same-bridge container evades the
+additional-network predicate and can override its cgroup parent; a user-created bridge can modify routes/sysctls
+before a 15-second sample detects it, and the specified rollback deletes only docker0. “Canary is the only
+container” must be a verified admission condition, not an inference from the factory being stopped. Specify the
+allowed clients/workload inventory and how admission stays exclusive through recovery. If unexpected resources
+are detected, never claim docker0-only cleanup completely recovered them.
+
+    Also define the predicate precisely: Docker's built-in `host` and `none` networks are not forbidden extra
+bridges, and the canary's expected veth is necessarily another Docker-created interface. A literal reading of
+“any other Docker network ... or Docker-created interface” rejects normal initialization. Keep exact owned
+network/interface identities, namespace-aware cleanup, and a preflight collision check against all relevant
+route tables/families. The permitted main-table route read above is not an exhaustive routing audit. No broad
+route restoration should be introduced.
+
+    ### SHOULD-FIX 8 — Resume provenance is described but not published at a defined crash-safe boundary
+
+    Evidence: `design.md:85,239–257`.
+
+    Nothing says when or how `installed` is written relative to the first `dpkg -i`. A crash after package
+mutation but before the record leaves this role's own packages classified as foreign. A crash after creating the
+guard directory/configuration but before packages exist matches neither the pristine row nor the installed row.
+`rollback-partial` acknowledgment also does not specify whether repair must complete before a new run starts.
+The broad installed/unconfirmed row is insufficient to distinguish these cases from an actor still running
+(blocker 2).
+
+    Persist prepared transaction provenance before mutation, then reconcile actual package/configuration state
+against it. Specify the pre-install, partially installed, configured/inert, running, rollback-incomplete and
+committed states, including durable snapshots and missing records. An acknowledgment is permission to
+investigate/repair, not evidence that failed cleanup has become safe. Extend fault injection into installation
+and all record-publication boundaries.
+
+    ### SHOULD-FIX 9 — Companion implementation and host-record corrections remain prerequisites, not completed
+dispositions
+
+    Evidence checked directly: `ansible/fabro-hosts.yml:17–18,32–44` still targets hp literally and orders redis
+before the slice; `ansible/inventory/legacy.yml:49–64` still omits gmktec from sandbox_hosts. `ansible/roles/
+docker_sandbox_slice/tasks/main.yml:65–97` still requires Docker before installing/starting the slice at `108–
+135`; it merges daemon keys at `151–180` and preserves pending-restart markers at `198–225`. `ansible/roles/
+fabro_server/tasks/main.yml:977–1020` supports started or stopped/disabled instances; its template `:36–37`
+Wants Docker and tailscaled, and its handler gates restart on the instance being running. `ansible/inventory/
+host_vars/hp-xubuntu.yml:1–5` identifies generated role-owned configuration, with hp-specific identities and
+capacities below it.
+
+    The proposed slice split, host-side canary ancestry/limits, gmktec-specific capacity, parked Fabro instance
+and separate fresh-host order address the original design mistakes. Preserve the daemon-key merge and restart-
+pending semantics when implementing them. Use one host-specific source for the slice name and limits; do not
+hardcode a second value in docker_engine. Verify the reserved capacity actually covers the slice and other host
+consumers before admitting work, including redis and the LLM's host-side overhead.
+
+    `/data/projects/gmktec-xubuntu-info/AGENTS.md`, “CI cluster role,” still records NoSchedule and 0-versus-32
+admission. The committed gmktec profile at `ci-runner/k3s/phase0-bare-metal/profiles/gmktec-xubuntu.env:296,361–
+363` instead has empty KUBELET_ARGS, empty NODE_TAINTS and capacity 12. `/data/projects/gmktec-xubuntu-info/llm-
+server.md`, “Host,” still says 64 GiB unified, whereas AGENTS.md records 128 GB installed with a 64-GiB firmware
+carveout. Revision 3's promise of a coordinated PR is not an already completed correction. Gate convergence on
+the companion implementation, effective reservation and corrected records; verify tag/limit behavior protects
+hp.
+
+    ### NOTE 10 — The revised firewall cleanup covers the demonstrated raw/NAT and IPv6 omissions within an
+exclusive clean-install scope
+
+    Evidence: `design.md:203–216`; fresh hp `sudo -n nft list ruleset` showed raw PREROUTING destination drops
+referencing docker0 and the direct 172.17.0.0/16 POSTROUTING masquerade. Fresh `sudo -n ip6tables -S` showed
+DOCKER, DOCKER-BRIDGE, DOCKER-CT, DOCKER-FORWARD, DOCKER-INTERNAL and DOCKER-USER, including jumps from FORWARD.
+The nft output warns that these tables are managed by iptables-nft.
+
+    The current token-based predicates select those direct rules and both-family chain references. Flush-all-
+before-delete handles inter-chain references; bounded xtables waits, re-reads and residue reporting are
+appropriate. Do not revert to older isolation-chain assumptions or whole-table restoration. This resolves the
+demonstrated rule-selection defect, not the ownership/admission defects in finding 7 or a tested rollback
+implementation.
+
+    After quiescing all writers, verify the **whole** final rollback predicate again, including both FORWARD
+policies, processes/jobs and interfaces. An early recorded policy restoration can become stale while the daemon
+is still alive. If kill/stop fails, later cleanup is best-effort and must remain partial; retries cannot
+establish exclusive ownership while a writer survives.
+
+    ### NOTE 11 — Shared-state and access claims are better scoped, but partial recovery is not a no-lockout
+guarantee
+
+    Evidence: `design.md:15–20,142–144,185–190,263–281,299–319`; host AGENTS.md “Access”; `llm-server.md`
+“systemd unit” and “Verification evidence.” Fresh gmktec service reads returned active for the three required
+services. Fresh hp maintainer-script reads showed no direct tailscaled, interface or route commands, but do not
+audit all target dependency/trigger behavior.
+
+    Tailscale userspace SSH and the separate host-bound LLM path are correctly distinguished. Fixed IPv4-only
+bridge configuration, both-family comparisons and reporting unexpected shared-sysctl changes as partial are
+improvements. Default-bridge IPv6 being disabled does not eliminate IPv6 firewall work, as the live hp read
+confirms. The design appropriately disclaims an egress security policy. Neither sampled service health nor
+recording a shared-state change proves access restoration.
+
+    The proposed real-systemd/dpkg/iptables-nft VM acceptance is valuable and must produce evidence before
+convergence. Its stubbed k3s/LLM checks do not test actual kube-router/kube-proxy/flannel coexistence. Retain
+that limitation explicitly; add the failure cases above and evaluate real coexistence in a disposable
+representative environment if available. No such acceptance result was supplied or generated in this review.
+
+    ## Verdict per round-1 finding
+
+    1. **NOT RESOLVED** — Per-phase budgets and cgroup termination improve rollback, but actor liveness/restart
+exhaustion and stale recovery checkpoints remain unspecified (blockers 2–3).
+    2. **NOT RESOLVED** — The separate confirmation marker and unenforced singleton retain crash/activation
+races (blockers 1–2).
+    3. **RESOLVED** — The demonstrated raw/direct-NAT and both-family rule-selection omissions are addressed at
+design level, within exclusive scope (note 10).
+    4. **RESOLVED** — Baselined request/reply probes replace counter deltas; credential/path/freshness
+refinements remain (finding 6).
+    5. **NOT RESOLVED** — Exact downloaded packages reduce resolver risk, but observing a free lock is not
+transaction fencing and configure-all recovery is too broad (blocker 4).
+    6. **RESOLVED** — The design now establishes the slice first and checks real canary ancestry and ancestor
+limits from the host; implementation/reservation remain convergence prerequisites (finding 9).
+    7. **RESOLVED** — Fixed initial scope and both-family comparison/reporting replace the original blanket no-
+sysctl-change claim; partial is explicitly not full restoration (note 11).
+    8. **NOT RESOLVED** — Narrowing to docker0 helps, but concurrent admission, precise interface scope and full
+routing collision predicates remain missing (finding 7).
+    9. **NOT RESOLVED** — The required play/inventory changes are described but absent in the inspected
+implementation (finding 9).
+    10. **RESOLVED** — The design explicitly disclaims an egress security boundary (design.md:280–281).
+    11. **RESOLVED** — Tailscale userspace interception and independent baselined SSH/LLM paths are described
+correctly; confirmation freshness remains a separate defect (finding 6).
+    12. **NOT RESOLVED** — The inspected host records still contain the stale capacity/taint and memory
+descriptions (finding 9).
+
+    ## Verdict per round-2 finding
+
+    1. **NOT RESOLVED** — Atomic state replacement does not atomically publish the separate confirmation/start
+permission, and singleton/recovery semantics remain incomplete (blockers 1–2).
+    2. **NOT RESOLVED** — Start conditions remove the clean initial boot/activation gap, but split confirmation,
+overlapping actors and unspecified pending-job handling still defeat the claimed fence (blockers 1–2; finding
+5).
+    3. **NOT RESOLVED** — The exact package set improves the design but does not lock the validated state or
+constrain configure-all/trigger recovery (blocker 4).
+    4. **NOT RESOLVED** — The former global rollback cutoff is removed and budgets prioritized, but loss of
+actor progress/restart eligibility still strands recovery (blocker 3).
+    5. **NOT RESOLVED** — The overlapping pool is removed; exclusive docker0 scope is still asserted/detected
+rather than maintained, and the predicate needs correction (finding 7).
+    6. **NOT RESOLVED** — Foreign-state refusal and canary cgroup killing improve matters, but exclusive
+consumers and complete workload ownership are not established (finding 7).
+    7. **RESOLVED** — The canary runs under observation before confirmation, with PID cgroup and ancestor limits
+read from the host (design.md:106–119).
+    8. **NOT RESOLVED** — A classification table exists, but interrupted provenance publication and active/
+partial run precedence still lack a supported recovery path (blocker 2; finding 8).
+    9. **NOT RESOLVED** — Node Ready, churn reselection and counter-free snapshots improve probes; the committed
+credential cannot perform endpoint discovery, and timing/path/freshness proof remains incomplete (finding 6).
+    10. **RESOLVED** — Exact-spec cleanup retains coverage of the measured Docker 29 footprint in both families;
+implementation and exclusive-scope qualifications remain (note 10).
+    11. **RESOLVED** — Shared-state discrepancies are explicitly reported as partial recovery, and access
+assumptions remain narrow (note 11).
+    12. **NOT RESOLVED** — Companion role/play changes and corrected host records are still outstanding in the
+files inspected (finding 9).
+
+    REVIEW-COMPLETE: BLOCKERS
+    EOF
+    python3 - <<'PY'
+    from pathlib import Path
+    p=Path('tmp/petri-gmktec-review/review-round3.md')
+    s=p.read_text()
+    assert s.splitlines()[-1] == 'REVIEW-COMPLETE: BLOCKERS'
+    assert len(s.split('## Verdict per round-1 finding')[1].split('## Verdict per round-2 finding')
+[0].strip().splitlines()) == 12
+    assert len(s.split('## Verdict per round-2 finding')[1].strip().splitlines()) == 14
+    print(f'Written {p}: {len(s.splitlines())} lines')
+    PY
+    git status --short --branch
+
+    This block is NOT a transient/transport failure. Do NOT retry the same command. Use the named alternative,
+or stop and ask the user. If this is a FALSE positive, tighten livespec-driver-codex's hooks/
+livespec_footgun_guard.py.
+
+• The review is complete, with four blockers. The repository’s automatic guard rejected writing the report
+  because this is the primary checkout, even though the requested path is gitignored. I won’t bypass the guard
+  or create a PR, since the brief explicitly prohibits repository changes and commits. I’ll return the findings
+  here; the requested file has not been created.
+
+• Review complete: BLOCKERS remain. The requested file was not created; the write was rejected by the repository
+  guard.
+
+  Ranked findings, with references to revision 3’s design.md:
+
+  1. BLOCKER — Confirmation is still not crash-safe. Confirmation writes the global confirmed permission before
+     publishing final actor state. A crash or enablement failure between those operations leaves Docker
+     permitted to start, while rollback removes only allow-start. Define an irrevocable commit point and
+     resumable finalization, or revoke both permissions during rollback. Evidence: lines 54–55, 94–99, 116–129,
+     250–254.
+
+  2. BLOCKER — Single-actor ownership is not enforced. Distinct @<run-id> instances can coexist. The resume rule
+     starts a new actor without excluding an existing actor or boot recovery. Two actors can manipulate the same
+     permission files, services and firewall. Require host-wide exclusive ownership and attach/recover
+     semantics. Persist deadlines and revalidate rollback checkpoints after reboot. Evidence: lines 78–90, 124–
+     154, 248–257.
+
+  3. BLOCKER — The actor cannot detect its own loss of progress. Restart=on-failure does not recover a hung
+     process; repeated crashes can exhaust restart limits. With TimeoutStartSec=infinity, in-process deadlines
+     provide no protection when the actor stops progressing. Specify independent liveness supervision, restart/
+     signal policy and failure tests. Evidence: lines 79–80, 148–162; local systemd.service(5) and
+     systemd.unit(5), cross-checked against upstream documentation (https://raw.githubusercontent.com/systemd/
+     systemd/main/man/systemd.service.xml).
+
+  4. BLOCKER — Package activity is not actually fenced. Stopping timers and observing a free lock does not
+     reserve package state through audit and installation. Exact downloaded packages improve matters, but
+     pending triggers and dpkg --configure -a can execute unrelated configuration. An Ansible always block also
+     cannot restore stopped timers after controller death. Require actual lock ownership/revalidation, scoped
+     recovery and host-local timer restoration. Evidence: lines 220–242; fresh gmktec reads confirmed
+     unattended-upgrades and both timers active.
+
+  5. SHOULD-FIX — Condition verification uses the wrong property. ConditionPathExists is unit-file syntax, not
+     the corresponding systemctl show property. The D-Bus property is Conditions. Before installation, the main
+     unit files are absent too. Prove effective inhibition throughout installation in the disposable VM, and
+     explicitly handle outstanding start jobs during rollback. Evidence: lines 49–74; local systemctl show -p
+     Conditions -p ConditionPathExists dbus.service returned only Conditions=[unprintable]; upstream interface
+     documentation (https://raw.githubusercontent.com/systemd/systemd/main/man/org.freedesktop.systemd1.xml).
+
+  6. SHOULD-FIX — Probe permissions and freshness are insufficient. The committed node-status credential grants
+     only named nodes/status access, not DNS endpoints. Ready/allocatable must use that subresource; cross-node
+     probing needs an authorized, explicit endpoint source. Controller SSH/LLM success at the window’s beginning
+     remains sufficient for confirmation seven minutes later. Require fresh end-of-window confirmation.
+     Evidence: lines 170–201; ci-runner/k3s/phase2/node-status-credential/node-status-patch-rbac.yaml:109–118.
+
+  7. SHOULD-FIX — Scope detection does not enforce exclusive admission. Another API consumer can create
+     containers outside the intended cgroup or networks outside rollback’s scope before detection. Define
+     exclusive consumers and precise allowed network/interface identities, including built-in host/none networks
+     and canary veths. Main-table routes alone do not establish collision freedom. Evidence: lines 106–141, 205–
+     216, 274–295; fresh hp socket configuration and gmktec route reads.
+
+  8. SHOULD-FIX — Installation provenance has unspecified crash boundaries. The design never specifies when
+     installed is published. A crash after package mutation but before that record misclassifies this role’s
+     installation as foreign; a guard directory created before installation matches neither principal state.
+     Define prepared transaction provenance, recovery precedence and acknowledgment semantics. Evidence: lines
+     239–257.
+
+  9. SHOULD-FIX — Companion changes and host documentation remain outstanding. The inspected play still targets
+     hp; inventory excludes gmktec from sandbox_hosts; the slice role still queries Docker before installing the
+     slice. Host records still describe stale taint/capacity and memory information. The proposed split and
+     host-side canary checks are appropriate, but their implementation remains a convergence prerequisite.
+     Evidence: ansible/fabro-hosts.yml:17–44, ansible/inventory/legacy.yml:49–64, slice tasks at 65–135; gmktec
+     profile at 296, 361–363; host AGENTS.md and llm-server.md.
+
+  10. NOTE — Firewall selection addresses the demonstrated omissions. Fresh hp reads confirmed direct raw drops,
+     direct NAT masquerade and IPv6 Docker chains. The revised token predicates cover these within exclusive
+     first-install scope. Reverify the complete final rollback predicate after quiescing writers; an early
+     policy-restoration checkpoint can become stale. Evidence: lines 203–216; allowed hp nft/ip6tables reads.
+
+  11. NOTE — Access and shared-state claims are better scoped. Tailscale userspace SSH, independent LLM checks,
+     IPv6 firewall handling and partial sysctl recovery are described more accurately. The proposed VM tests
+     remain necessary, but stubbed k3s checks do not establish actual kube-router/kube-proxy/flannel
+     coexistence. Evidence: lines 15–20, 142–190, 299–319.
+
+  Round-1 dispositions:
+
+  1. NOT RESOLVED — Actor liveness and recovery checkpoint gaps remain.
+
+  2. NOT RESOLVED — Split confirmation and overlapping actors retain races.
+
+  3. RESOLVED — Demonstrated raw/NAT and IPv6 cleanup omissions addressed.
+
+  4. RESOLVED — Request/reply probes replace counter predicates.
+
+  5. NOT RESOLVED — Package transaction fencing remains incomplete.
+
+  6. RESOLVED — Slice-first design and host-side canary checks address the design defect; implementation remains
+     pending.
+
+  7. RESOLVED — Shared-state changes are compared and reported as partial recovery.
+
+  8. NOT RESOLVED — Exclusive interface/network scope and routing predicates remain incomplete.
+
+  9. NOT RESOLVED — Companion play/inventory implementation remains absent.
+
+  10. RESOLVED — Egress-security claims are explicitly disclaimed.
+
+  11. RESOLVED — Tailscale SSH mechanism and independent paths are correctly described.
+
+  12. NOT RESOLVED — Inspected host records remain stale.
+
+  Round-2 dispositions:
+
+  1. NOT RESOLVED — Atomic actor state does not atomically publish start permission.
+  2. NOT RESOLVED — Conditions improve inhibition, but confirmation and ownership gaps remain.
+  3. NOT RESOLVED — Exact packages do not fence validated package state.
+  4. NOT RESOLVED — Global cutoff removed, but stalled/exhausted actor recovery remains missing.
+  5. NOT RESOLVED — Overlapping pool removed; exclusive scope remains unenforced.
+  6. NOT RESOLVED — Foreign-state refusal improves safety; exclusive consumers remain unproven.
+  7. RESOLVED — Canary ancestry and limits are checked from the host before confirmation.
+  8. NOT RESOLVED — Interrupted provenance and active-run precedence remain unspecified.
+  9. NOT RESOLVED — Credential, path, timing and confirmation-freshness gaps remain.
+  10. RESOLVED — Revised cleanup covers the measured footprint within stated scope.
+  11. RESOLVED — Shared-state damage is explicitly classified as partial recovery.
+  12. NOT RESOLVED — Companion implementation and corrected records remain outstanding.
+
+  Automatic approval review rejected writing tmp/petri-gmktec-review/review-round3.md: livespec_footgun_guard.py
+  prohibits writes in the primary checkout and requires a worktree/PR workflow. That workflow conflicts with
+  this brief’s prohibition on repository changes and commits. No host or repository changes were made.
+
+  REVIEW-COMPLETE: BLOCKERS
+
+  Worked for 7m 20s • 8:46 AM
+
+
+› Ask Codex to do anything
+
+  GPT-6-Astra medium · /data/projects/livespec-orchestrator-beads-fabro · Context 59% left · Read brief instruc…
+  ← for agents · ? for shortcuts                                                      ⚠ 2 warnings · f2 to view
