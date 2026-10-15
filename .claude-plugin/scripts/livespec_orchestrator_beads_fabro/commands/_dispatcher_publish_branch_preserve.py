@@ -53,6 +53,7 @@ __all__: list[str] = [
     "PreserveFailure",
     "Reclaimed",
     "SurvivingPublishBranch",
+    "create_ref_argv",
     "preserve_and_clear",
     "preserved_publish_ref",
 ]
@@ -161,13 +162,18 @@ def _ref_path_segment(*, ref: str) -> str:
     return ref.removeprefix("refs/")
 
 
-def _create_ref_argv(*, ref: str, sha: str) -> list[str]:
+def create_ref_argv(*, ref: str, sha: str) -> list[str]:
     """Create `ref` at `sha` on the forge.
 
     `--raw-field` rather than the typed form, because `gh`'s typed fields coerce a
     value that LOOKS like a number and an all-digit object name is a valid sha --
     which would reach the forge as an integer and be refused for its shape rather
     than for anything about the ref.
+
+    PUBLIC because the checkpoint-failed tree preservation creates ITS ref the
+    same way, and the ratified clause requires it to: a second builder here would
+    be a second spelling of one forge call, and the two would drift silently
+    because each one's own tests would keep passing.
     """
     return [
         "gh",
@@ -248,7 +254,7 @@ def _preserve(
     actually survived.
     """
     created = runner.run(
-        argv=_create_ref_argv(ref=preserved, sha=surviving.head),
+        argv=create_ref_argv(ref=preserved, sha=surviving.head),
         cwd=repo,
         timeout_seconds=_FORGE_TIMEOUT_SECONDS,
     )
