@@ -873,6 +873,23 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   `review_fix`/`disposition` budgets are asserted UNCHANGED beside the widened
   `fix` budget, because "the repair took nothing from review-fix" is otherwise
   equally consistent with a graph that widened nothing at all.
+  The same module carries v146's narrowing of the divergent-prior-run guard
+  (work-item bd-ib-c435hh) and Scenario 144's mirrored "with no refresh-repair
+  round before it" sub-scenario: a repaired visit republishes a non-ancestor tip
+  EQUAL to the head this run published, under an explicit lease, while a foreign
+  tip, an unestablishable published head and a visit following no repair round
+  each still fail closed. Its fixture DRIVES the real conflict through the
+  shipped `pr_refresh` bytes and then performs the fix turn's own instructed
+  integration, because the premise — a published head that is a NON-ANCESTOR of
+  the repaired head — cannot be arranged by hand without assuming it, and the
+  non-ancestry is ASSERTED rather than trusted. Two controls are load-bearing.
+  The brief-absent case is the republication world with ONLY the brief removed,
+  which is exactly the state a review-fix round reaches the stage in, so the
+  refusal is evidence about the brief rather than about anything else the
+  fixture carries. And the two plain-fast-forward arms run with the exact-head
+  push helper WITHHELD from the sandbox plugins root: both arms move the ref to
+  the same sha a lease would, so the absent helper is the only instrument that
+  can tell a fast-forward from a rewrite.
 
 - `test_tenant_client_backup_lane_scenario181.py` — binds the `Given` of
   `SPECIFICATION/scenarios.md` Scenario 181 and the `contracts.md` §"Beads
