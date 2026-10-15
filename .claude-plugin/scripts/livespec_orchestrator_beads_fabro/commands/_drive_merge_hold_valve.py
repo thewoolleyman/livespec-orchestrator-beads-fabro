@@ -19,6 +19,14 @@ The forge is READ before either direction writes anything, because both
 write-nothing refusals depend on what it says: setting a hold on an
 already-merged pull request has no merge left to hold, and releasing one cannot
 arm a strategy no dispatch recorded.
+
+WHAT A RELEASE MUST ESTABLISH BEFORE IT ARMS lives next door, in
+`_drive_merge_hold_arm_guard`. v145 made this release the ONE arming that
+happens outside a run, so it may not arm while a run of the item is live and may
+arm only a head the latest `verified` or `carried_forward` record of that item's
+latest run names. Those are two external measurements with their own failure
+modes; this module keeps the valve's own shape — the label, the two directions,
+the one forge write — and asks the guard for the answer.
 """
 
 from __future__ import annotations
@@ -27,7 +35,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from subprocess import run
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro._store_merge_hold import update_work_item_merge_hold
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
@@ -38,6 +46,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_probe_cycle import (
     probe_publish_branch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_status import PrView, parse_pr_view
+from livespec_orchestrator_beads_fabro.commands._drive_merge_hold_arm_guard import (
+    MergeHoldCommandRun,
+    arm_refusal_for_release,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_reject_valve import HumanValveRunner
 from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
     valve_refusal,
@@ -57,25 +69,13 @@ _JOURNAL_SUBPATH = ("tmp", "fabro-dispatch-journal.jsonl")
 # it. Walked as a path rather than indexed step by step so the four "is this
 # still a mapping?" guards are one loop instead of four nested branches.
 _MERGE_MODE_RECORD_PATH = ("integration_contract", "fields", "merge_mode", "value")
-_PR_VIEW_FIELDS = "number,state,autoMergeRequest,mergeCommit"
-
-
-class MergeHoldCommandRun(Protocol):
-    """The slice of a completed command this valve reads.
-
-    Wider than `_drive_reject_valve`'s equivalent by exactly one member:
-    `reject` only needs to know whether its revert failed and why, while this
-    valve must PARSE the pull-request view it asked for.
-    """
-
-    @property
-    def returncode(self) -> int: ...
-
-    @property
-    def stdout(self) -> str: ...
-
-    @property
-    def stderr(self) -> str: ...
+# `headRefOid` rides this ONE view because the v145 arm guard compares the
+# pull request's CURRENT head against the head a proof record names, and the
+# view is already taken at the moment the valve decides. A probe of its own
+# would be a second forge round trip that could answer differently for the same
+# pull request in the same action, with nothing in the record saying which
+# reading the arming was justified by.
+_PR_VIEW_FIELDS = "number,state,autoMergeRequest,mergeCommit,headRefOid"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -153,6 +153,20 @@ def _release(*, call: _MergeHoldCall, view: PrView | None) -> dict[str, Any]:
     if view is None or view.state != _OPEN_STATE:
         update_work_item_merge_hold(path=call.config, item_id=call.item.id, value=False)
         return _release_success(call=call, note="no open pull request, so no auto-merge was armed")
+    # THE GUARD RUNS FIRST, before the strategy is resolved and before the label
+    # is removed. It answers whether this release may arm AT ALL, and a release
+    # that may not is a different answer from one that cannot resolve a strategy
+    # -- reporting the strategy fault on a pull request a live run is about to
+    # rewrite would send an operator after the wrong thing.
+    refusal = arm_refusal_for_release(
+        repo=call.repo,
+        work_item_id=call.item.id,
+        pr_number=view.number,
+        pr_head=view.head,
+        runner=call.runner,
+    )
+    if refusal is not None:
+        return valve_refusal(aid=call.aid, wid=call.item.id, err=refusal.error, msg=refusal.message)
     method = journaled_merge_method_flag(repo=call.repo, work_item_id=call.item.id)
     if method is None:
         return valve_refusal(
