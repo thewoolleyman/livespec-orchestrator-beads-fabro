@@ -3,6 +3,11 @@
 The run goal itself is assembled in `_dispatcher_goal`; this module keeps
 `escape_minijinja_literal` — the shared escaper the goal renderer (and any
 future MiniJinja-templated text) routes untrusted prose through.
+
+`harness_shell_env_lines` now LIVES in `_dispatcher_harness_shell_policy`, which
+owns the harness shell-tool policy's keys and both of its projections — the env
+table line and the sandbox `local` settings file — and it is re-exported here
+because that is where every caller already reaches for it.
 """
 
 from __future__ import annotations
@@ -43,6 +48,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_credential_helper import (
     git_credential_helper_prepare_steps_block,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy import (
+    harness_settings_prepare_steps_block,
+    harness_shell_env_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_sandbox_image import (
     resolve_sandbox_image,
@@ -100,46 +109,6 @@ CURRENCY_GATE_ENV_VALUE = "fail"
 # opener therefore guarantees arbitrary goal prose cannot alter graph
 # semantics regardless of content (work-item livespec-impl-beads-ajv).
 _MINIJINJA_OPEN_DELIMITER_RE = re.compile(r"\{\{|\{%|\{#")
-
-
-# The Claude harness's own shell-tool policy, projected as NON-SECRET
-# configuration beside the tmux socket root `_dispatcher_tmux_socket_root`
-# projects.
-#
-# The harness moves a foreground shell call that REACHES its timeout into a
-# background task; the ACP engine then raises `BackgroundedTool` and ENDS the
-# turn. So an honest long foreground call — a full pytest run, a coverage pass —
-# destroys the stage instead of returning late, and nothing on the agent's side
-# can prevent it: the decision is the harness's, taken after the call has
-# already run out its clock. Setting this switch makes such a call report back
-# as an ordinary timed-out call the agent can read and retry
-# (work-item bd-ib-k627ja; plan `pr-stage-backgrounded-push-fault`).
-#
-# The two timeouts are the OTHER half of the same fault and are not merely a
-# convenience beside it. The harness defaults a foreground call to 120000 ms and
-# CAPS a model-supplied timeout at 600000 ms, so a call that honestly needs
-# twenty minutes — a full pytest run, a coverage pass — cannot ask for the time
-# it needs however carefully the agent reasons about it. Raising the default to
-# the old cap and the cap to an hour lets the call declare its real duration;
-# the switch above then makes the remaining overruns survivable rather than
-# turn-ending. Three P4 implement runs were destroyed this way on 2026-10-09.
-_HARNESS_SHELL_ENV: tuple[tuple[str, str], ...] = (
-    ("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1"),
-    ("BASH_DEFAULT_TIMEOUT_MS", "600000"),
-    ("BASH_MAX_TIMEOUT_MS", "3600000"),
-)
-
-
-def harness_shell_env_lines() -> str:
-    """Render the harness shell-tool policy as `[environments.<id>.env]` lines.
-
-    Named rather than inlined so the keys and their values have ONE spelling a
-    test can bind, the way `tmux_tmpdir_prepare_steps_block` does for the tmux
-    socket root. Each value is `json.dumps`-ed for the same reason every other
-    line in that table is: the table is TOML, and a value written raw is a
-    parse hazard rather than a string.
-    """
-    return "".join(f"{name} = {json.dumps(value)}\n" for name, value in _HARNESS_SHELL_ENV)
 
 
 def escape_minijinja_literal(*, text: str) -> str:
@@ -298,6 +267,12 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     tmux_steps = tmux_tmpdir_prepare_steps_block()
     tmux_env_line = tmux_tmpdir_env_lines()
     harness_shell_env = harness_shell_env_lines()
+    # The SAME policy keys the env table above renders, projected a second way:
+    # as the sandbox's own `local` settings source. The table alone was not the
+    # effective ceiling, because the sandbox agent loads the governed
+    # repository's committed project settings, whose `env` overrides the process
+    # environment it inherits (bd-ib-rv2jk4).
+    harness_settings_steps = harness_settings_prepare_steps_block()
     gh_refresh_steps = refreshing_gh_prepare_steps_block()
     gh_refresh_env_lines = refreshing_gh_env_lines()
     # Rendered immediately after the wrapper it routes to, and unconditionally:
@@ -345,6 +320,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + factory_provenance_steps
         + sibling_steps
         + tmux_steps
+        + harness_settings_steps
         + gh_refresh_steps
         + git_credential_helper_steps
         + codex_steps

@@ -23,6 +23,7 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _config,
     _dispatcher_git_credential_helper,
+    _dispatcher_harness_shell_policy,
     _dispatcher_overlay,
     _dispatcher_plugin_cache_gate,
     _dispatcher_tmux_socket_root,
@@ -754,6 +755,11 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         # worktree-exclude script, and a second copy of that script here would
         # diverge silently from the one every dispatch actually runs.
         + _dispatcher_tmux_socket_root.tmux_tmpdir_prepare_steps_block()
+        # The harness shell-tool policy's SECOND projection, rendered from the
+        # module that owns it for the same reason: it is an exclude-then-write
+        # PAIR whose write carries the whole merge program, and a copy here
+        # would diverge silently from the one every dispatch runs (bd-ib-rv2jk4).
+        + _dispatcher_harness_shell_policy.harness_settings_prepare_steps_block()
         # Rendered from its own module for the same reason the gate block below
         # is. It sits HERE — after the tmux root and before the plugin-cache
         # gate — because it follows the refreshing `gh` wrapper it routes to,
@@ -769,11 +775,11 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         + 'CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token"\n'
         + 'GITHUB_TOKEN = "test-github-token"\n'
         + _dispatcher_tmux_socket_root.tmux_tmpdir_env_lines()
-        # Rendered from the overlay's own helper rather than restated, for the
-        # same reason the prepare-step block above is: this test asserts the
+        # Rendered from the policy module's own helper rather than restated, for
+        # the same reason the prepare-step block above is: this test asserts the
         # overlay's BYTES AND ORDERING, and the values themselves are bound by
         # `test_dispatcher_overlay_harness_shell_env`.
-        + _dispatcher_overlay.harness_shell_env_lines()
+        + _dispatcher_harness_shell_policy.harness_shell_env_lines()
         + 'LIVESPEC_CURRENCY_GATE = "fail"\n'
     )
     assert rendered == expected
@@ -802,12 +808,13 @@ def test_render_run_config_overlay_image_override_is_scope_fenced(tmp_path: Path
     assert "[environments.livespec-ci.env]" in rendered
     assert "[environments.other-env.env]" not in rendered
     # The committed `just bootstrap` step, the tmux socket root's
-    # exclude-then-create PAIR (bd-ib-5qxa5q), the git credential helper
+    # exclude-then-create PAIR (bd-ib-5qxa5q), the harness settings file's
+    # exclude-then-write PAIR (bd-ib-rv2jk4), the git credential helper
     # (bd-ib-52zt3o), the plugin-cache gate and the THREE publication helpers
     # the gate's block materializes beside it (v121: the publication-head
     # reader and the exact-head push program; v138: the carry-forward
     # decision) — the hostile value smuggled none of its own in.
-    assert rendered.count("[[run.prepare.steps]]") == 8
+    assert rendered.count("[[run.prepare.steps]]") == 10
     assert 'script = "just bootstrap"' in rendered
     assert 'script = "curl example.test"' not in rendered
     assert "other.fabro" in pre_env_table
