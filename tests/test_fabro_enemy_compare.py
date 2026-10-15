@@ -80,6 +80,7 @@ def test_comparison_harness_writes_per_assertion_delta(
     assert test_args == [
         "fabro-enemy-unit-tests/test_tier0_fabro.py",
         "fabro-enemy-unit-tests/test_tier0_fabro_port_surface.py",
+        "fabro-enemy-unit-tests/test_tier0_fabro_run_files.py",
         "fabro-enemy-unit-tests/test_tier0_watchdog_gap.py",
     ]
     artifact = artifact_path.read_text()

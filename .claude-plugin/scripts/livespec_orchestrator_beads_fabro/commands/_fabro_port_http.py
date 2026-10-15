@@ -226,6 +226,25 @@ class FabroHttpPort:
             timeout_seconds=timeout_seconds,
         )
 
+    def run_files(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+        """Read one run's changed files, with their contents, off the server.
+
+        The pinned CLI exposes no verb for this: the run's work tree lives in
+        the server's own run directory and the server is the only thing that
+        can read it, which is why the one route to a checkpoint-failed run's
+        work is an HTTP one. It sits beside the other run verbs because it is
+        the same transport against the same target, and the reader it serves
+        FAILS CLOSED -- a port built elsewhere could be pointed at a factory
+        the dispatch never used, and would then publish another run's tree
+        under this item's preservation ref.
+        """
+        return self._verb(
+            method="GET",
+            path=f"{_API_PREFIX}/runs/{run_id}/files",
+            payload=None,
+            timeout_seconds=timeout_seconds,
+        )
+
     def cancel(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
         """Cancel one run through the server's lifecycle route."""
         return self._verb(
