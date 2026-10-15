@@ -40,6 +40,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_early_renewal import (
     CodexRenewalOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_routing import CodexRouting
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_deadline import (
     CredentialLifetimeRequirement,
 )
@@ -208,6 +209,33 @@ def _auth_json_with_exp(*, exp: int) -> str:
                 "account_id": "acct-123",
             },
         }
+    )
+
+
+def _declare_codex_routing(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Declare that this dispatch routes a node to Codex (`bd-ib-meejjz`).
+
+    DECLARED rather than resolved. Every case that calls this is about what the
+    overlay leg does WITH a host Codex credential -- grade it, refuse on its
+    lifetime, spend no second renewal, project it -- and since `bd-ib-meejjz`
+    the leg reaches none of that for a dispatch routing no node to the
+    `codex-acp` agent. The `tmp_path` repositories these cases build declare no
+    node adapters, so they resolve to the workflow's built-in Anthropic defaults
+    and would scope the whole leg away for a reason none of these cases is
+    about. The scoping itself is asserted in
+    `test_dispatcher_codex_overlay_leg_routing`, in BOTH directions, which is
+    what keeps this stand-in from hiding it.
+    """
+    monkeypatch.setattr(
+        _dispatcher_credentials,
+        "codex_routing_for_dispatch",
+        lambda **_kwargs: CodexRouting(
+            routes_codex=True,
+            detail=(
+                "resolved ACP candidate keys naming the codex-acp agent: "
+                "codex-acp/openai/gpt-5.1"
+            ),
+        ),
     )
 
 
@@ -722,6 +750,7 @@ def test_the_one_bounded_renewal_is_the_gate_and_never_the_overlay(
     assert isinstance(gated, CodexProjectionRefusal)
     assert spent == ["requested"]
 
+    _declare_codex_routing(monkeypatch=monkeypatch)
     # The POST-CLAIM projection, over the same credential: no second request.
     error = materialize_overlay(
         committed=committed,
@@ -763,6 +792,7 @@ def test_materialize_overlay_refuses_on_missing_host_credential(
         _dispatcher_sibling_clones, "fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT
     )
     monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda: None)
+    _declare_codex_routing(monkeypatch=monkeypatch)
     error = materialize_overlay(
         committed=committed,
         overlay=overlay,
@@ -796,6 +826,7 @@ def test_materialize_overlay_writes_codex_projection_when_fresh(
     monkeypatch.setattr(
         _dispatcher_codex_auth, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
     )
+    _declare_codex_routing(monkeypatch=monkeypatch)
     error = materialize_overlay(
         committed=committed,
         overlay=overlay,
@@ -1105,6 +1136,7 @@ def test_the_overlay_refuses_when_the_requirement_cannot_be_resolved(
     monkeypatch.setattr(
         _dispatcher_codex_auth, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
     )
+    _declare_codex_routing(monkeypatch=monkeypatch)
 
     error = materialize_overlay(
         committed=committed,

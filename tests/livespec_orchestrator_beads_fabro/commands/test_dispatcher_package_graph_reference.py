@@ -27,14 +27,12 @@ behaviour in place from there on.
 
 from __future__ import annotations
 
-import base64
 import json
 from inspect import signature
 from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
-    _dispatcher_codex_auth,
     _dispatcher_credentials,
     _dispatcher_sibling_clones,
 )
@@ -77,17 +75,6 @@ _MINIMAL_GRAPH = (
 _FLEET_MANIFEST_TEXT = json.dumps(
     {"owner": "thewoolleyman", "fleet": [{"repo": "livespec"}]},
 )
-
-
-def _auth_json_with_exp(*, exp: int) -> str:
-    """A fake Codex auth.json whose access-token JWT carries `exp`."""
-    payload = base64.urlsafe_b64encode(json.dumps({"exp": exp}).encode()).decode().rstrip("=")
-    return json.dumps(
-        {
-            "auth_mode": "chatgpt",
-            "tokens": {"access_token": f"header.{payload}.sig", "refresh_token": "host-refresh"},
-        }
-    )
 
 
 def _written_graph_value(*, text: str) -> str:
@@ -136,11 +123,11 @@ def _materialize(
     )
     now = 1_700_000_000
     monkeypatch.setattr(_dispatcher_credentials.time, "time", lambda: now)
-    monkeypatch.setattr(
-        _dispatcher_codex_auth,
-        "read_host_codex_auth",
-        lambda: _auth_json_with_exp(exp=now + 100 * 365 * 24 * 3600),
-    )
+    # NO host Codex credential is stood in. This fixture's repository declares no
+    # node adapters, so it routes no node to the `codex-acp` agent and the overlay
+    # leg projects no Codex credential at all (`bd-ib-meejjz`) -- which is the
+    # posture this repository actually dispatches in. A stub here would be dead
+    # scaffolding for a read that no longer happens.
     error = materialize_overlay(
         committed=committed,
         overlay=overlay,
