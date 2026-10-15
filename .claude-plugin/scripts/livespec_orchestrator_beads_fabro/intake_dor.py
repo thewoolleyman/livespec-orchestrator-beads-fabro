@@ -122,6 +122,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_a
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_findings import (
     definition_of_done_findings,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
+    judge_item_definition_of_done,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
+    STAGE_PRE_ADMISSION,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
     resolve_adopted_assertion_count_ceiling,
 )
@@ -306,7 +312,20 @@ def apply_intake_dor(
         # one deliberately does not: only the gate can judge a test-existence or
         # scenario-reference form, and withholding `ready` on a judgement this
         # surface cannot make would hand the operator a refusal nothing clears.
-        if policy == _AUTO_ADMISSION and not findings.withholds_ready:
+        # The SEMANTIC half, which only the judgement can decide, runs last and
+        # only where the mechanical half has already admitted the item: the
+        # judgement is a model call, and spending one on an item a free parse
+        # already holds back buys nothing. A judgement that could not run
+        # reports `holds` False, so the item routes exactly as it did before
+        # this clause existed while the record on it says the judgement did not
+        # happen.
+        if (
+            policy == _AUTO_ADMISSION
+            and not findings.withholds_ready
+            and not judge_item_definition_of_done(
+                item=item, repo=repo_root, path=path, stage=STAGE_PRE_ADMISSION
+            ).holds
+        ):
             status = _READY_STATUS
 
     # The triage marker is stamped for EVERY verdict, not just the routed-on
