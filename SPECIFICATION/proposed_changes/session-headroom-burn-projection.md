@@ -31,7 +31,7 @@ Provider-reported reset instants are deliberately not used to admit. The maintai
 
 In SPECIFICATION/contracts.md, paragraph **Admission filters candidates by projected Claude session headroom.**, insert the following sentences immediately after the sentence beginning "A floor of 0 disables both kinds of headroom skip":
 
-With a positive floor, a covered candidate whose valid reading passes the floor MUST additionally be assessed for projected exhaustion. The five-hour drain rate MUST be computed from this reading and a baseline. The baseline is the EARLIEST valid assessment journaled under this clause for the same opaque credential identity in the same repository's dispatch journal, read regardless of the work-item it was journaled for, whose observation time is no less than 15 minutes and no more than 90 minutes earlier. The rate is the increase in utilization percentage points divided by the elapsed hours between the baseline's observation time and this one.
+With a positive floor, a covered candidate whose valid reading passes the floor MUST additionally be assessed for projected exhaustion. The five-hour drain rate MUST be computed from this reading and a baseline. The baseline is the EARLIEST assessment carrying a valid reading journaled under this clause for the same opaque credential identity in the dispatching checkout's dispatch journal, read regardless of the work-item it was journaled for, whose observation time is no less than 15 minutes and no more than 90 minutes earlier. The rate is the increase in utilization percentage points divided by the elapsed hours between the baseline's observation time and this one.
 
 The projection is unavailable when no such baseline exists, or when this reading's utilization is not higher than the baseline's (a window reset or a provider correction occurred between them). An unavailable projection MUST be journaled with its reason and MUST NOT skip the candidate. The floor already governs an unprojected reading, and a projection with no history would otherwise refuse every first dispatch on a credential.
 
@@ -85,7 +85,7 @@ In SPECIFICATION/scenarios.md, inside the gherkin block of `## Scenario 60 — A
     And the reading response carries a provider reset instant 10 minutes away
     When admission is evaluated
     Then the projected exhaustion is about 250 minutes after the observation and no projection skip applies
-    And the reset instant is journaled only as an unverified provider claim
+    And the reset instant is not used for the skip and, if journaled, only as an unverified provider claim
     And all other admission conditions are still applied
 
   Scenario: A credential with no baseline in this checkout is governed by the floor alone
