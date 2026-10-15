@@ -5,6 +5,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import (
+    release_to_ready_command,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_stranded_dispatch import (
     stranded_dispatch_items,
 )
@@ -125,6 +128,21 @@ def test_a_merge_held_item_is_never_reported_as_stranded(tmp_path: Path) -> None
 def test_stranded_dispatch_items_render_release_handoff_for_pre_branch_death(
     tmp_path: Path,
 ) -> None:
+    """A pre-branch death hands over the move-to-ready action, not a reconcile.
+
+    The handoff is asserted by IDENTITY against the renderer that owns that
+    action, never as a substring of the rendered command. `drive_command`
+    embeds `_wrapper_path`, which resolves against the installed package --
+    i.e. against the CHECKOUT DIRECTORY -- so a substring assertion also
+    ranges over a path this test neither controls nor intends to test. The
+    `"reconcile-merged" not in ...` form it replaces failed for a correct
+    implementation whenever the repository was checked out under a directory
+    whose name carried that token, and read exactly like a real regression in
+    the change under test. Identity is also the stronger instrument in the
+    direction that matters: a handoff rendering `reconcile_merged_command`
+    here fails this assertion, whereas `"--action reconcile-merged" not in
+    ...` could never have matched that command's argv at all.
+    """
     _write_journal_lines(
         tmp_path,
         records=[
@@ -145,8 +163,9 @@ def test_stranded_dispatch_items_render_release_handoff_for_pre_branch_death(
     assert "dispatch-id" in stranded.summary
     assert "1 prior attempt" in stranded.summary
     assert stranded.handoff.kind == "shell"
-    assert "move:bd-active:ready" in stranded.handoff.command
-    assert "reconcile-merged" not in stranded.handoff.command
+    assert stranded.handoff.command == release_to_ready_command(
+        project_root=tmp_path, work_item="bd-active"
+    )
 
 
 def test_stranded_dispatch_items_render_pr_handoff_for_unmerged_pr_failure(
