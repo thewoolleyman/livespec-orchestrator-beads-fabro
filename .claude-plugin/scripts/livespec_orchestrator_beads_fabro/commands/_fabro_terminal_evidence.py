@@ -222,7 +222,7 @@ def _failed_stages(
     failed = [
         node
         for node, outcome in outcomes.items()
-        if node != ESCALATION_NODE_ID and _node_failed(outcome=outcome)
+        if _stage_node(stage=node) != ESCALATION_NODE_ID and _node_failed(outcome=outcome)
     ]
     ordered = [node for node in _completed_nodes(checkpoint=checkpoint) if node in failed]
     ordered.extend(node for node in failed if node not in ordered)
@@ -297,6 +297,18 @@ def _history_signatures(
             and stage not in failed
         )
     )
+
+
+def _stage_node(*, stage: str) -> str:
+    """The node half of a `<node>@<visit>` stage key, or the key as it stands.
+
+    This exists for the terminal exclusion alone, and it is the whole reason
+    that exclusion reaches a Petri record: the excluded value is a NODE id,
+    while Petri keys its stages by node AND visit, so a direct comparison
+    silently matched nothing and let the dead-end terminal be attributed on
+    every ending. A pinned-engine key carries no `@` and is returned unchanged.
+    """
+    return stage.split("@", maxsplit=1)[0].strip()
 
 
 def _signature_stage(*, signature: str) -> str:
