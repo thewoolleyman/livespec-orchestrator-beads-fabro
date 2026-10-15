@@ -101,12 +101,14 @@ __all__: list[str] = [
     "PROOF_RECORD_TITLE",
     "PROOF_RECORD_VERDICTS",
     "VERDICT_CAPTURED",
+    "VERDICT_CARRIED_FORWARD",
     "VERDICT_HOST_NOT_REPRODUCED",
     "VERDICT_HOST_RECORDED",
     "VERDICT_HOST_VERIFIED",
     "VERDICT_HUMAN_ATTESTED",
     "VERDICT_NOT_CAPTURED",
     "VERDICT_NOT_REPRODUCED",
+    "VERDICT_REPROOF_REQUIRED",
     "VERDICT_VERIFIED",
     "ProofRecord",
     "latest_proof_record",
@@ -126,6 +128,20 @@ VERDICT_NOT_CAPTURED = "not_captured"
 VERDICT_VERIFIED = "verified"
 VERDICT_NOT_REPRODUCED = "not_reproduced"
 VERDICT_HUMAN_ATTESTED = "human_attested"
+# The two DECISION verdicts of a changed-head `pr_refresh` (v138). Neither is a
+# capture or a replay: their body carries the carry-forward decision's inputs in
+# place of per-assertion reproduction steps.
+#
+# THE TWO ARE NOT SYMMETRIC, and the asymmetry is the reason both are in this
+# enumeration while only one is a factory ANCHOR. A `carried_forward` record
+# anchors a resume exactly as the `verified` record it carries would, at the new
+# head it names; a `reproof_required` record is NOT proof, so it must not anchor
+# a resume and every reader of the latest record must skip it. Admitting it here
+# is what makes it PARSE as a record -- which is what the posting primitive and
+# the size budget need -- while `FACTORY_RECORD_VERDICTS` is where the skipping
+# is expressed, by leaving it out.
+VERDICT_CARRIED_FORWARD = "carried_forward"
+VERDICT_REPROOF_REQUIRED = "reproof_required"
 # The three HOST-LEG verdicts of v115: the capture an agent session publishes on
 # an operator host, the independent replay that reproduces it, and the replay that
 # does not. They deliberately share no word with the proof MODE `host_captured`,
@@ -145,6 +161,8 @@ PROOF_RECORD_VERDICTS = (
     VERDICT_VERIFIED,
     VERDICT_NOT_REPRODUCED,
     VERDICT_HUMAN_ATTESTED,
+    VERDICT_CARRIED_FORWARD,
+    VERDICT_REPROOF_REQUIRED,
     VERDICT_HOST_RECORDED,
     VERDICT_HOST_VERIFIED,
     VERDICT_HOST_NOT_REPRODUCED,
