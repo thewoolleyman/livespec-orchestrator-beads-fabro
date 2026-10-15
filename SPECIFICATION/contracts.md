@@ -3069,7 +3069,7 @@ that conflicts, or a refreshed head that the repository's gate rejects, MUST
 instead take the refresh-repair route of "Refresh repair" below while that
 route's budget lasts. The command stages `pr_refresh` and `pr` MUST perform
 publication as specified below; the publish breaker (`verify_pr`) retains its
-existing obligations. Each of the three ACP nodes selects its adapter through
+existing obligations. The command node `pr` MUST be followed by a command node `pr_route`, which exits non-zero exactly when `pr` recorded the refresh-route marker of "Scripted publication and proof-head integrity" for that visit, and zero otherwise. `pr_route` MUST consume the marker on every visit, so a marker left by an earlier `pr` visit can never route a later one. Its failure edge MUST lead to `pr_refresh`, and its unconditional edge MUST lead to the existing successor of `pr`. `pr`'s own failure edge is unchanged, so every command node keeps exactly two outcomes and an unconditional outgoing edge. Each of the three ACP nodes selects its adapter through
 exactly the mechanism the existing ACP nodes use, with its own adapter input
 (`dod_gate_adapter`, `proof_capture_adapter`, `proof_verify_adapter`), and
 migrates with them when that mechanism changes; the three nodes are named in
@@ -3093,7 +3093,7 @@ recognized idempotently from durable run provenance and matching remote state.
 
 When the default branch has advanced beyond the current base, `pr_refresh` MUST
 rebase, run the existing repository-declared `sandbox_check_suite` as a
-foreground command with its own timeout, and push only after that gate passes.
+foreground command with its own timeout, and push only after that gate passes. Before it rebases, `pr_refresh` MUST read whether the run's pull request carries an auto-merge request and, when it does, MUST disarm it. When the request cannot be read or cannot be disarmed, `pr_refresh` MUST fail closed naming that measurement or action, before any rebase or push. Within a run, only `pr` arms auto-merge, and only for a head named by the latest `verified` or `carried_forward` record of this run, so a disarmed pull request stays unarmed until `pr` re-arms it. The one arming outside a run is the host-side hold release of §"The per-item merge hold". That release MUST NOT arm while a run of the item is live, and it MUST arm only a pull request whose current head is named by the latest `verified` or `carried_forward` record of the item's latest run; otherwise it MUST refuse, naming the measurement that failed, and leave the pull request unarmed.
 A rewrite MUST use an explicit lease against the recorded remote head of this
 run's own publish branch. Hooks MUST run normally. It MUST NOT use bare force,
 `--no-verify`, or rewrite another ref. A changed head MUST take the decision of
@@ -3149,7 +3149,7 @@ repaired or not, do not count toward that bound, and the re-entry of
 `publish_draft` after a repair does not count a second time for the refresh
 that was repaired. The `fix` node's visit limit MUST accommodate the two
 refresh-repair rounds in addition to the rounds its other entry paths already
-allow. A refresh that applies cleanly and passes the gate is unchanged by this
+allow. The visit limits of `pr_refresh`, `pr_refresh_head`, `pr`, `pr_route` and every node on the proof loop MUST accommodate the entries the `pr` to `pr_refresh` route adds beyond the three counted refreshes, so that the ratified non-convergence cause, and not an engine visit cap, ends a run that keeps meeting an advanced default branch. A refresh that applies cleanly and passes the gate is unchanged by this
 paragraph or the one before it. Scenario 176 in `scenarios.md` exercises both
 paragraphs.
 
@@ -3282,12 +3282,14 @@ unless the item's merge hold is active. It MUST retain existing `PR_NUMBER` and
 merge-hold result markers. A pull request already merged is a recorded success;
 one closed without merging or carrying an unexpected head MUST fail closed.
 Publication metadata MUST be passed as data, not interpolated as shell syntax.
-A merge hold MUST preserve the ready pull request and leave auto-merge unarmed.
+A merge hold MUST preserve the ready pull request and leave auto-merge unarmed. When the forge rejects the head-bound auto-merge arming and a re-read reports the pull request OPEN rather than MERGED, `pr` MUST read the pull request's current head, the forge's mergeability report for it, and the authoritative default branch's current tip, read from a fetch of the authoritative branch on origin and never from a local tracking ref, before deciding what the rejection means. When the head is still the head that the latest `verified` or `carried_forward` record of this run names, and the default branch's current tip is not an ancestor of that head (the same test `pr_refresh` applies), `pr` MUST record a refresh-route marker naming this `pr` visit in the run's publication state and exit zero, and the run MUST return to `pr_refresh` through `pr_route`. That `pr_refresh` visit refreshes onto an advanced default branch, so it counts toward the three-refresh non-convergence bound; it MUST NOT consume a refresh-repair round unless the refresh itself takes the refresh-repair route. The refreshed head then takes the decision of "Proof carry-forward across a refresh" exactly as any other changed-head refresh, so only a head named by a `verified` or `carried_forward` record can reach the next arming. When `pr` is entered again on that route it finds the pull request already out of draft and reports that it readied nothing, which is expected and is not a failure. When the head differs from the recorded head, `pr` MUST fail closed as for any unexpected head. When the default branch's tip is an ancestor of the head, or when the forge cannot report the head, the mergeability or the default branch's tip, `pr` MUST fail closed naming the forge's rejection cause or the measurement it could not take, and MUST NOT route to `pr_refresh` on an unobservable answer. Every rejected arming that does not end in `MERGED` MUST write one stage-output line naming the forge's rejection message verbatim, the pull request's state, the forge's mergeability report, the pull request's current head, whether that head equals the head of the latest `verified` or `carried_forward` record of this run, the default branch's current tip, and whether that tip is an ancestor of the head. The line MUST NOT state that the head differs from the verified head unless that comparison was taken and differed.
 Resume from an earlier verified head MUST enter `pr_refresh` before `pr`,
 preserving the existing exact-head and run-attribution refusals. A later head
 change requires fresh proof or a `carried_forward` record for that head;
 publication MUST NOT reuse a verified record from before that change except
 through a `carried_forward` record that names the head being published.
+
+**Armed pull request overtaken by the default branch.** After a run arms auto-merge, the Dispatcher's merge wait MUST read the forge's mergeability report on each poll. When two consecutive polls report the pull request OPEN and in conflict with the default branch, the wait MUST stop before the poll budget, and the dispatch outcome MUST be `blocked` at stage `merge-poll` with the named cause `base-advanced-after-arming`. The Dispatcher MUST rest the item at `blocked` with `blocked_reason: needs-human`, through the same transition and `needs-human-blocked` journal row that a `needs_human` terminal produces, with the cause as the item's question. The item MUST NOT be left `active`, and the claim MUST NOT be released to `ready`. `blocked_reason` gains no member. The dispatch reports exit code 4 under §"Dispatcher exit codes"; no exit code is added or redefined. Before the blocked transition, the Dispatcher MUST add one ledger comment to the item that opens with the marker line `livespec-base-advanced-after-arming` and carries the run id, the factory name, the pull request number, its head and the default branch's tip. The comment MUST carry names and figures only. Every name in it MUST be identifier-shaped as §"Dispatch trace correlation" defines that term; a name that is not identifier-shaped MUST be left out, and the comment MUST state how many names were left out. The comment MUST pass the shared template-opener detector before it is written. A comment that fails the detector, or that cannot be written, MUST be journaled with its reason and MUST NOT prevent the blocked transition. The outcome detail MUST name the recovery chain: `resolve-blocked:<work-item-id>:ready`, then `resume --item <work-item-id>`. The Dispatcher MUST NOT disarm, close or rewrite the pull request itself; the resumed run's `pr_refresh` disarms it before refreshing, as "Scripted publication and proof-head integrity" requires. An exhausted poll budget on a pull request the forge does not report as conflicting keeps its existing outcome. Scenario 184 in `scenarios.md` exercises this paragraph, the `pr` routing above, and the disarm in "Scripted publication and proof-head integrity".
 
 Groom-kind variants retain their existing filing-plan publication behavior:
 the ACP `pr` node validates and encodes the approved cut for host-side filing
@@ -4151,7 +4153,7 @@ MUST derive the stage from the verdict of the latest record carrying the
 earlier run's identifier — `verified`: `pr_refresh`; `captured`: `review`;
 `not_captured` or `not_reproduced`: `fix`; no such record:
 `proof_capture` — and the resume record MUST name which source decided
-it. An authoritative not-found answer from the factory observes the run
+it. When the earlier run terminated through `exit` after `pr` armed auto-merge, the resumed-at stage is `pr_refresh`, and the resume record MUST name the factory record as the source that decided it. An authoritative not-found answer from the factory observes the run
 as not live; only an unanswered or errored query is unobservable.
 
 **What a resume does.** A resume is a hand-picked dispatch: it MUST
@@ -6534,7 +6536,7 @@ and are ratified here.
 - **Run account in the valve summary.** The `needs-attention` valve item for a
   `blocked / needs-human` item MUST carry the terminated run's account in its
   summary: the run id, the factory name and its server, that a `needs_human`
-  termination routed the decision to this valve, why it terminated, what the run
+  termination, or the Dispatcher-side ending that rested it, routed the decision to this valve, why it terminated, what the run
   reported, the preserved reference to its work, and the available valve actions.
   The enrichment MUST fail soft: an unreadable config or an unreachable factory
   costs the ENRICHMENT and never the valve — the valve item is surfaced regardless,
