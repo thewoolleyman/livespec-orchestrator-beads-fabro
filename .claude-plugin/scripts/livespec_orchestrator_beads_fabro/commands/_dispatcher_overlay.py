@@ -43,6 +43,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_credential_helper import (
     git_credential_helper_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_settings import (
+    harness_settings_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_sandbox_image import (
     resolve_sandbox_image,
 )
@@ -298,6 +301,13 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     tmux_steps = _tmux_tmpdir_prepare_steps_block()
     tmux_env_line = f"TMUX_TMPDIR = {json.dumps(_SANDBOX_TMUX_TMPDIR)}\n"
     harness_shell_env = harness_shell_env_lines()
+    # The same policy as the env table above, written into the sandbox's `local`
+    # settings source — because the governed repository's committed `project`
+    # settings outrank the process environment, so without this the table's
+    # values are projected and then ignored (bd-ib-rv2jk4).
+    harness_settings_steps = harness_settings_prepare_steps_block(
+        harness_env=(("BASH_DEFAULT_TIMEOUT_MS", "600000"), ("BASH_MAX_TIMEOUT_MS", "3600000")),
+    )
     gh_refresh_steps = refreshing_gh_prepare_steps_block()
     gh_refresh_env_lines = refreshing_gh_env_lines()
     # Rendered immediately after the wrapper it routes to, and unconditionally:
@@ -339,6 +349,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + factory_provenance_steps
         + sibling_steps
         + tmux_steps
+        + harness_settings_steps
         + gh_refresh_steps
         + git_credential_helper_steps
         + codex_steps

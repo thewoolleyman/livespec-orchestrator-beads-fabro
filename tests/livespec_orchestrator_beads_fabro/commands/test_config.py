@@ -23,6 +23,7 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _config,
     _dispatcher_git_credential_helper,
+    _dispatcher_harness_settings,
     _dispatcher_overlay,
     _dispatcher_plugin_cache_gate,
 )
@@ -750,6 +751,16 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         + "\n# --- Dispatcher-materialized sandbox-local tmux socket root ---\n"
         + "[[run.prepare.steps]]\n"
         + 'script = "mkdir -p /workspace/.tmux && chmod 700 /workspace/.tmux"\n'
+        # The harness settings file, beside the tmux socket root it was added
+        # next to (bd-ib-rv2jk4). Rendered from its own module rather than
+        # restated, for the reason the two blocks below are: the script is that
+        # module's own text, and a second copy here would diverge silently.
+        + _dispatcher_harness_settings.harness_settings_prepare_steps_block(
+            harness_env=(
+                ("BASH_DEFAULT_TIMEOUT_MS", "600000"),
+                ("BASH_MAX_TIMEOUT_MS", "3600000"),
+            ),
+        )
         # Rendered from its own module for the same reason the gate block below
         # is. It sits HERE — after the tmux root and before the plugin-cache
         # gate — because it follows the refreshing `gh` wrapper it routes to,
@@ -797,12 +808,12 @@ def test_render_run_config_overlay_image_override_is_scope_fenced(tmp_path: Path
     assert f'graph = "{tmp_path / "workflow.fabro"}"' in pre_env_table
     assert "[environments.livespec-ci.env]" in rendered
     assert "[environments.other-env.env]" not in rendered
-    # The committed `just bootstrap` step, the tmux socket root, the git
-    # credential helper (bd-ib-52zt3o), the plugin-cache gate and the two
-    # publication helpers the gate's block materializes beside it (v121: the
-    # publication-head reader and the exact-head push program) — the hostile
-    # value smuggled none of its own in.
-    assert rendered.count("[[run.prepare.steps]]") == 6
+    # The committed `just bootstrap` step, the tmux socket root, the harness
+    # settings file (bd-ib-rv2jk4), the git credential helper (bd-ib-52zt3o),
+    # the plugin-cache gate and the two publication helpers the gate's block
+    # materializes beside it (v121: the publication-head reader and the
+    # exact-head push program) — the hostile value smuggled none of its own in.
+    assert rendered.count("[[run.prepare.steps]]") == 7
     assert 'script = "just bootstrap"' in rendered
     assert 'script = "curl example.test"' not in rendered
     assert "other.fabro" in pre_env_table
