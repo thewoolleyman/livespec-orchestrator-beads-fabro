@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.198.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.198.2...v0.198.3) (2026-10-15)
+
+
+### Bug Fixes
+
+* give the Petri sandbox clone a repository-local git identity ([ecce613](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ecce6134761ea18119d7c98a2f40fa42ac13d03b))
+
 ## [0.198.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.198.1...v0.198.2) (2026-10-15)
 
 
