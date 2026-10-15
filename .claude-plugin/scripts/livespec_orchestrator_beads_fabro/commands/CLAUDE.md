@@ -1200,6 +1200,41 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   runs — a `--repo` that does not exist and an unattributed state-changing
   invocation. Do NOT keep one code private by splitting the set across the two
   modules: that is how the surface comes to disagree with itself.
+- The DURABLE LAUNCH OBLIGATION of `contracts.md`'s "Launch obligations and
+  consumed recovery" clause (`bd-ib-zejlae`, Scenarios 160 and 161) — the record
+  a dispatch or a delegation persists BEFORE it may report a protected launch.
+  Seven cohesive modules, and the dependency direction reads bottom-up:
+  `_session_obligation_coverage` (PURE: the three coverage grades and every
+  refusal rung) and `_session_obligation_records` (the two writes — intent, then
+  attachment — plus the census) → `_session_obligation_launch` (PURE ordering:
+  the launch boundary and the turn-completion gate) and
+  `_session_obligation_reconcile` (the crash repair, keyed on the stable
+  operation id) → `_session_obligation_host` (the host's installed coverage
+  declaration and the obligation store root) → `_session_obligation_delegation`
+  (the ONE place the product puts a real target through both: a detached gate
+  run, which is how work is DISPATCHED, and a Herdr pane, which is how it is
+  DELEGATED) → `_session_obligation_cli` (the `session-wait launch` and
+  `session-wait complete` host commands, routed from `_session_wait_cli`).
+  Six properties an editor must not invert. The coverage DECLARATION is read off
+  the host and can be put in no parameter, because the clause makes it "runtime
+  evidence, not a user-selectable exemption" — an argument would be exactly the
+  exemption it forbids. The obligation store sits BESIDE the session-wait store
+  and the declaration sits beside BOTH: an obligation discoverable only through
+  a wait row cannot cover the incident, which is a coordinator that armed no
+  wait, and a declaration filed under the store root is censused as an
+  unreadable obligation. `unmonitored` and `unobservable` are never collapsed —
+  one is a confident negative about the host, the other a failure to measure,
+  and the clause keeps them apart in both directions. The REFUSAL writes no
+  record and performs no effect, so `effect.calls == []` is what proves it. The
+  reconciliation's reader has exactly ONE verb and it reads, so "never auto-kill
+  a live target to repair tracking" holds structurally rather than carefully.
+  And the retry RECONCILES rather than re-registering: a second call under one
+  operation id completes the original obligation's attachment, preserving its
+  epoch, deadline and authority, instead of opening a second obligation for one
+  piece of work. The canonical result identity, epoch and original deadline are
+  the relay contract's and arrive AS GIVEN; nothing here computes, defaults or
+  refreshes any of them, because that would be the second result model the same
+  clause forbids.
 
 Rules an agent editing this tree must follow:
 
