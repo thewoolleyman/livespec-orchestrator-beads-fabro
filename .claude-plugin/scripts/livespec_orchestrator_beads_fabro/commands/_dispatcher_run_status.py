@@ -27,6 +27,13 @@ class PrView:
 
     `None` means the forge reported neither field or only one of them — absent,
     deliberately distinct from a pull request whose churn is genuinely zero.
+
+    `head` is the pull request's current `headRefOid`, and it is `None` when the
+    view did not ASK for it — not when the pull request has no head. Every
+    consumer of it is deciding whether a head may be armed or merged, and an
+    absent reading is what those decisions must refuse on, so the field is
+    optional rather than defaulted to a sentinel a comparison would silently
+    accept.
     """
 
     number: int
@@ -36,6 +43,7 @@ class PrView:
     merge_sha: str | None
     terminal_required_check_failures: tuple[str, ...]
     diff_size: int | None = None
+    head: str | None = None
 
 
 _TERMINAL_CHECK_CONCLUSIONS = frozenset(
@@ -69,6 +77,7 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
     )
     state_raw: object = parsed.get("state")
     merge_state_raw: object = parsed.get("mergeStateStatus")
+    head_raw: object = parsed.get("headRefOid")
     return PrView(
         number=number_raw,
         state=state_raw if isinstance(state_raw, str) else "UNKNOWN",
@@ -77,6 +86,7 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
         merge_sha=_merge_sha_of(parsed=parsed),
         terminal_required_check_failures=terminal_failures,
         diff_size=pr_diff_size_of(payload=parsed),
+        head=head_raw if isinstance(head_raw, str) and head_raw else None,
     )
 
 
