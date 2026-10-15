@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.198.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.198.0...v0.198.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* assess session headroom on the caam-selected projected slot (bd-ib-nzp5ln) ([9c5968f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9c5968f03788c3e2d696a81b5134cd52eb13d41f))
+* read session headroom from the Messages API rate-limit header (bd-ib-nzp5ln) ([5b29530](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5b29530f9e569e303a04534b0584c1fe9b0ce0a6))
+
 ## [0.198.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.197.0...v0.198.0) (2026-10-15)
 
 
