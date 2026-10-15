@@ -6283,3 +6283,20 @@ Feature: A factory agent's commit leg is not bounded by one tool call
     When the agent starts another commit through the runner
     Then the runner refuses the start and names the running commit run
 ```
+
+## Scenario 181 — A ledger write from this repository prints no auto-backup warning
+
+```gherkin
+Feature: The tenant's client backup lane stays disabled
+  As an operator reading the output of a ledger call
+  I want no auto-backup failure warning from a lane the shared server will always refuse
+  So that a warning about backups means a real backup problem
+
+  Scenario: A successful ledger write with the key committed
+    Given this repository's committed .beads/config.yaml sets backup.enabled: false
+    And the repository has a git remote
+    When a bd write made through the plugin from the repository root under the credential wrapper succeeds
+    And reading the written change back from the tenant returns it
+    Then that write's stderr carries no auto-backup failed warning
+    And the next hourly dolt-backup.service run still reports every tenant synced
+```

@@ -7805,6 +7805,17 @@ retired in livespec core's research consolidation):
   `running (external)` truthfully. Server-mode auto-commit stays OFF
   (the default); the server owns the transaction lifecycle and the
   plugin MUST NOT re-enable per-write commits.
+- **Client backup lane disabled.** The repository's committed
+  `.beads/config.yaml` MUST set `backup.enabled: false`, with a comment
+  stating that the tenant is backed up server-side every hour by
+  `dolt-backup.service` through `DOLT_BACKUP('sync','s3')`. Without the
+  key, `bd` auto-enables a client backup lane whenever the repository
+  has a git remote and tries to register a `backup_export` remote, which
+  the shared dolt-server denies to the DB-scoped tenant user (Error 1105)
+  by design. The plugin MUST NOT seek, require or document a tenant grant
+  that would let that registration succeed. A `bd` call made through the
+  plugin from the repository root MUST NOT print an `auto-backup failed`
+  warning. Scenario 181 in `scenarios.md` exercises this bullet.
 - **In-memory fake backend.** For hermetic CI and the
   no-live-connection runtime fallback, the plugin selects an in-memory
   fake backend (via `LIVESPEC_BEADS_FAKE=1` or the `connection.fake`

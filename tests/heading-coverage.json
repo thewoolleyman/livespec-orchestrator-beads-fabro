@@ -1801,5 +1801,13 @@
     "test": "TODO",
     "reason": "Ratified 2026-10-14 by the pr-refresh-reproof-relevance revision (plan pr-refresh-reproof-relevance, epic bd-ib-ku7phe). The pr_refresh proof carry-forward decision is not implemented yet; an integration-tier test is owed for the thirty-one sub-scenarios, and work-item bd-ib-v4exlm implements the decision and owns that binding.",
     "work_item": "bd-ib-v4exlm"
+  },
+  {
+    "heading": "## Scenario 181 \u2014 A ledger write from this repository prints no auto-backup warning",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified 2026-10-15 by the v139 revision (plan dolt-server-failures, epic bd-ib-etfwwx, assertion 5). The committed backup.enabled: false key and the warning-free ledger write are not landed yet; an integration-tier test is owed for the scenario, and work-item bd-ib-rxf implements the key and owns that binding.",
+    "work_item": "bd-ib-rxf"
   }
 ]
