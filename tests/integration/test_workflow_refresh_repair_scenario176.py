@@ -81,6 +81,14 @@ _REPAIR_COUNT_FILENAME = "livespec-refresh-repair-count"
 # claims below are claims about WHICH arm carries it.
 _FAILED = "outcome=failed"
 
+# The phrase a non-conflict refresh failure used to report instead of naming the
+# head it left behind. It is spelled here because the assertion is that NO arm of
+# the stage says it any more: the claim was true of the pre-repair stage and is
+# now false of every arm, and a per-arm needle would leave the second refresh --
+# the one behind the workflows-permission retry, which no execution case here
+# reaches -- free to go on saying it.
+_PRESERVED_STATE = "the git operation state preserved"
+
 
 def _graph_text() -> str:
     return _GRAPH_PATH.read_text(encoding="utf-8")
@@ -712,6 +720,45 @@ def test_a_non_conflict_draft_refresh_failure_restores_the_head_janitor_passed(
     assert world.remote_head(ref=_BRANCH) == ""
     assert world.state(name=_BRIEF_FILENAME) is None
     assert world.state(name=_REPAIR_COUNT_FILENAME) is None
+
+
+def test_the_non_conflict_refresh_failure_names_the_restored_pre_refresh_head(
+    tmp_path: Path,
+) -> None:
+    """The reported cause names the head, because the cause IS the recovery pointer.
+
+    The `needs_human` terminal runs no git of its own and its first line is the
+    only account of the run a human gets, so a cause that says the git operation
+    state was preserved -- while the stage has just undone that state -- sends the
+    triage at a tree nothing holds. The assertion is on the VALUE: a line
+    mentioning a pre-refresh head without printing it reads correct and points
+    nowhere, which is why the janitor head is matched inside the reported line
+    rather than the wording being matched anywhere in the output.
+
+    THE RETIRED PHRASE IS ASSERTED ABSENT FROM THE WHOLE SCRIPT, not just from
+    this run's stderr, and that is the half of the case worth the extra line.
+    `publish_draft` refreshes TWICE: once at entry, and again behind the
+    workflows-permission push retry, which only a GitHub App refusal reaches and
+    which no case in this module executes. Both arms carried the same claim and
+    both left a rebase in progress. A needle scoped to the executed stderr would
+    pass with the second arm untouched, which is the same defect in a path that
+    fires rarely enough to go years without being seen.
+    """
+    world, janitor_head, _advanced = _clean_refresh_world(root=tmp_path)
+    _refuse_commit_signing(world=world)
+
+    result = _run_publish_draft(world=world)
+    reported = [
+        line
+        for line in result.stderr.splitlines()
+        if "LIVESPEC_PUBLISH_DRAFT_REFRESH_FAILED" in line
+    ]
+
+    assert result.returncode != 0, result.stdout
+    assert reported, "the stage reported no refresh-failure cause at all"
+    assert janitor_head in reported[0], reported[0]
+    assert _PRESERVED_STATE not in result.stderr
+    assert _PRESERVED_STATE not in _publish_draft_script(check_suite="true")
 
 
 def test_an_authentication_failure_keeps_its_push_failure_cause(tmp_path: Path) -> None:
