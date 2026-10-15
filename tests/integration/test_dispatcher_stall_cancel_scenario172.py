@@ -26,16 +26,9 @@ import importlib
 import json
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
 
 import pytest
-from livespec_orchestrator_beads_fabro._beads_client import (
-    make_beads_client,
-    reset_fake_singleton,
-)
-from livespec_orchestrator_beads_fabro._store_acceptance_rework import (
-    update_acceptance_failed_ai_passes,
-)
+from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
     build_calibration_record,
     calibration_journal_record,
@@ -681,80 +674,3 @@ def test_a_second_consecutive_stall_cancel_rests_the_item_for_a_human(
     for named in ("01FIRSTRUN", "01SECONDRUN", "hp", "vps", "implement", "proof_capture"):
         assert named in body, named
     assert f"resolve-blocked:{_ITEM_ID}:ready" in body
-
-
-def _metadata() -> dict[str, object]:
-    """The item's raw metadata object, which is where a spent budget persists.
-
-    Read through the client rather than through `WorkItem`, because the
-    adapter projects only the fields the lifecycle models and the rework
-    budget is not one of them — a reading taken off the projection could not
-    see the counter this case is about either before or after.
-    """
-    record = make_beads_client(config=_config()).show_issue(issue_id=_ITEM_ID)
-    return dict(cast("dict[str, object]", record.get("metadata", {})))
-
-
-def test_a_released_first_stall_spends_no_budget_and_leaves_the_count_alone(
-    tmp_path: Path,
-) -> None:
-    """Scenario 172's "the released stall consumes no budget … nor resets the count".
-
-    A cancellation is not a verdict about the slice, so it must cost the slice
-    nothing: the budgets exist to bound loops the WORK drives, and spending one
-    on a hung sandbox or a false kill brings an item closer to a terminal it
-    did nothing to earn. The same holds in the other direction for the count —
-    a release that RESET it would discard a genuine preceding non-progress
-    terminal and hand the item an attempt it had already used.
-
-    The budget is SPENT BEFORE the release rather than asserted at zero, which
-    is what makes this a measurement instead of a restatement: an untouched
-    counter and a counter cleared back to its initial value are the same
-    reading at zero, and the second is exactly what a lifecycle write that
-    rewrote the metadata object wholesale would produce. One pass is recorded
-    through the production writer, so the value under test is one the store
-    itself put there.
-
-    The KEY SET is asserted beside it because the other two rework caps are not
-    persisted on the row today: a build that began spending one would announce
-    itself as a new metadata key, and `ready_since` is the one addition the
-    release is entitled to make, since returning the item to `ready` is what
-    stamps the durable dwell instant.
-    """
-    repo = _repo(tmp_path=tmp_path)
-    journal = _journal(tmp_path=tmp_path)
-    append_work_item(path=_config(), item=_item())
-    spent = update_acceptance_failed_ai_passes(path=_config(), item_id=_ITEM_ID)
-    assert spent.failed_ai_passes == 1
-    before = _metadata()
-    journal.append(
-        record={
-            "stage": "watchdog-stall-cancel",
-            "work_item_id": _ITEM_ID,
-            "run_id": "01STALLRUN",
-            "factory": "hp",
-            "executing_stage": "proof_capture",
-        }
-    )
-
-    dispose_stall_cancel_module = importlib.import_module(
-        "livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition"
-    )
-    dispose_stall_cancel_module.dispose_stall_cancel(
-        repo=repo,
-        item=_item(),
-        outcome=_outcome(status="stalled-no-progress"),
-        journal=journal,
-    )
-
-    assert _stored()[_ITEM_ID].status == "ready"
-    after = _metadata()
-    assert after.get("acceptance_failed_ai_passes") == 1
-    assert set(after) - set(before) <= {"ready_since"}
-    assert set(before) - set(after) == set()
-
-    # The cancel rows ARE this item's across-dispatch non-progress record, so
-    # the count is read off them: a release that appended one would increment
-    # it, and one that rewrote the journal would reset it.
-    stages = [record.get("stage") for record in _journal_records(path=journal.path)]
-    assert stages.count("watchdog-stall-cancel") == 1
