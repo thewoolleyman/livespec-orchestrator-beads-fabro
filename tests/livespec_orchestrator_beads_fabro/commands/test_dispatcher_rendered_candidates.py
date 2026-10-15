@@ -39,6 +39,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_poli
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _PREFLIGHT = "livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight"
+# The dispatcher block is read from its OWNER rather than through whichever
+# module happens to import it: `_dispatcher_acp_chain_sources` reads it on the
+# dispatch path, and a test reaching for it through a re-export is one module
+# split away from an AttributeError about the wrong thing.
+_CONFIG = "livespec_orchestrator_beads_fabro.commands._config"
 _WORKFLOW_SUBPATH = (".fabro", "workflows", "implement-work-item")
 
 
@@ -132,7 +137,7 @@ def test_a_repository_level_publication_entry_is_scoped_out_not_refused() -> Non
     the node rather than that the entry was harmless all along.
     """
     preflight = import_module(_PREFLIGHT)
-    raw_block = preflight.dispatcher_block(cwd=_REPO_ROOT)
+    raw_block = import_module(_CONFIG).dispatcher_block(cwd=_REPO_ROOT)
     declared = preflight.repository_acp_chains(
         block=raw_block, catalogs=preflight.resolve_acp_catalogs(block=raw_block)
     )

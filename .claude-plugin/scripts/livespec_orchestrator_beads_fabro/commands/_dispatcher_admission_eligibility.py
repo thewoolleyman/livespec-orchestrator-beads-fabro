@@ -71,6 +71,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_c
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
     provider_exhaustion_refusal,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_gate import (
+    journal_session_headroom,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -121,6 +124,13 @@ def filter_eligible_candidates(
     admittable: list[WorkItem] = []
     refused: list[DispatchOutcome] = []
     for item in candidates:
+        # The headroom reading is an OBSERVATION about this item's evaluation,
+        # not a condition of it, so it is journaled before the refusal ladder
+        # runs and for every candidate alike. The clause requires the reading
+        # for each affected work-item whether or not it refused anything, and
+        # recording it inside the ladder would lose it on exactly the admitted
+        # case the journal exists to make auditable.
+        journal_session_headroom(work_item_id=item.id, verdict=preflight, journal=journal)
         refusal = _refusal_for(
             repo=repo,
             preflight=preflight,

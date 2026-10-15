@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.198.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.197.0...v0.198.0) (2026-10-15)
+
+
+### Features
+
+* count and render the migration's genesis writes ([748d2f7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/748d2f72a5de19cd55c6863760bfd66b062aaff0))
+* create a live plan epic's genesis in the plan-record migration ([f075591](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f075591ec87956a2887335bad5d475263fb13b9c))
+* refuse a migration genesis its read-back cannot confirm ([f31f09c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f31f09c5fa65e5e5a34d06a7f9e04c5478f94972))
+* report a migration's already-chained epic as skipped ([8f81660](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8f816606985f10756a5bcb7a478f10859d025e79))
+* start a plan epic's authority chain at creation ([f30db90](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f30db90485176129d413dd17a3fe8e00394d680e))
+
+## [0.197.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.21...v0.197.0) (2026-10-15)
+
+
+### Features
+
+* a zero session-headroom floor skips nothing and still measures ([4e4d66c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4e4d66cb1ecaec2eac9d8498ecc7033c864765af))
+* assess projected Claude session headroom at admission ([d35ee15](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d35ee15fbb3b24e4f8185ba8b8c0af3fc0400913))
+* name the headroom assessment on a containment refusal ([b1ebe67](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b1ebe678d1be5e73fbc8f44b6eefd7d447a7864f))
+* reference the headroom assessment from the per-node selection record ([83a30d7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/83a30d7f36353d49a0355ea772505403672df56e))
+* skip a covered candidate below the session-headroom floor ([214db2b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/214db2b4d8a13664563e30bac7ad42b544e3ba79))
+
+
+### Bug Fixes
+
+* carry a structured node's resolved agent id onto its rebuilt primary ([4a4e771](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4a4e771afee6285f38c21f3d9afadb4d2fa09790))
+
 ## [0.196.21](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.20...v0.196.21) (2026-10-14)
 
 

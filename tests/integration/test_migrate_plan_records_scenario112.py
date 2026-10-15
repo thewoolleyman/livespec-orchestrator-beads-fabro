@@ -170,6 +170,16 @@ def _written(*, lines: Sequence[str]) -> list[str]:
     return [line for line in lines if line.startswith("wrote: ")]
 
 
+def _already_chained(*, epic_id: str, token: str) -> str:
+    """The rendered skip line one already-migrated epic's genesis leg reports."""
+    return f"skipped: {epic_id} already names chain token {token}, so no genesis was created"
+
+
+def _genesis_written(*, epic_id: str, token: str) -> str:
+    """The rendered write line one epic's new chain reports."""
+    return f"wrote: {epic_id} genesis token {token}"
+
+
 def test_scenario112_the_first_run_writes_every_missing_slug_anchor_and_pointer(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -178,8 +188,11 @@ def test_scenario112_the_first_run_writes_every_missing_slug_anchor_and_pointer(
 
     lines = _run(project_root=tmp_path, capsys=capsys)
 
+    # The genesis leg runs LAST, so its writes render last, and the token ids
+    # are read back off the tenant rather than spelled: a server assigns them.
+    [alpha_token, kappa_token] = _client().no_history_issue_ids()
     assert lines == [
-        "migrate-plan-records: 7 write(s)",
+        "migrate-plan-records: 9 write(s)",
         f"wrote: {_KAPPA} plan_slug=kappa",
         f"wrote: plan/alpha/{_ANCHOR_FILENAME} -> {_ALPHA}",
         f"wrote: plan/beta/{_ANCHOR_FILENAME} -> unassigned",
@@ -187,6 +200,8 @@ def test_scenario112_the_first_run_writes_every_missing_slug_anchor_and_pointer(
         f"wrote: plan/archive/gamma/{_ANCHOR_FILENAME} -> {_GAMMA}",
         f"wrote: {_ALPHA} kind=human ref='bd-ib-ott6'",
         f"wrote: {_KAPPA} kind=none ref=''",
+        _genesis_written(epic_id=_ALPHA, token=alpha_token),
+        _genesis_written(epic_id=_KAPPA, token=kappa_token),
         f"skipped: {_ALPHA} already carries plan_slug=alpha",
         f"skipped: {_GAMMA} already carries plan_slug=gamma",
         f"skipped: {_HOLDER} already carries plan_slug=shared-topic",
@@ -213,15 +228,30 @@ def test_scenario112_a_second_run_writes_nothing_and_leaves_every_record_identic
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """The idempotence claim, read off the ONE surface an operator re-reads.
+
+    The genesis leg is counted in the write total and rendered among the
+    `wrote:` lines exactly as the slug, anchor and pointer legs are, because
+    that total is the whole of what the contract's idempotence claim says: the
+    second run prints zero. A leg whose writes rode neither the count nor the
+    lines would report zero on the FIRST run too — the number an operator is
+    reading to learn that there was nothing left to do.
+    """
     _fixture_repository(project_root=tmp_path)
 
     first = _run(project_root=tmp_path, capsys=capsys)
     anchors_after_first = _anchors(project_root=tmp_path)
     records_after_first = _records()
+    tokens_after_first = _client().no_history_issue_ids()
 
     second = _run(project_root=tmp_path, capsys=capsys)
 
-    assert len(_written(lines=first)) == 7
+    assert len(_written(lines=first)) == 9
+    # The two live plan epics gained a genesis token on the first run, in
+    # epic-id order, so the second run reports each of them as already chained.
+    [alpha_token, kappa_token] = tokens_after_first
+    assert _genesis_written(epic_id=_ALPHA, token=alpha_token) in first
+    assert _genesis_written(epic_id=_KAPPA, token=kappa_token) in first
     assert second == [
         "migrate-plan-records: 0 write(s)",
         f"skipped: {_ALPHA} already carries plan_slug=alpha",
@@ -234,8 +264,11 @@ def test_scenario112_a_second_run_writes_nothing_and_leaves_every_record_identic
         f"skipped: plan/archive/gamma/{_ANCHOR_FILENAME} already anchored",
         f"skipped: {_ALPHA} already carries next_action",
         f"skipped: {_KAPPA} already carries next_action",
+        _already_chained(epic_id=_ALPHA, token=alpha_token),
+        _already_chained(epic_id=_KAPPA, token=kappa_token),
         f"refused: {_COLLIDES} derives plan_slug=shared-topic, already carried by {_HOLDER}",
     ]
     assert _written(lines=second) == []
     assert _anchors(project_root=tmp_path) == anchors_after_first
     assert _records() == records_after_first
+    assert _client().no_history_issue_ids() == tokens_after_first

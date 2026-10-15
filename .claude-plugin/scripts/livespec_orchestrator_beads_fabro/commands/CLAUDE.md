@@ -93,9 +93,13 @@ public module per query-only skill:
   requires per tenant BEFORE those checks arm (NOT a contract CLI and
   NOT a skill surface). It writes the missing `plan_slug` tags, the
   missing `plan/<slug>/associated_work_item_id` anchors (`unassigned`
-  when no epic carries the slug), and the missing typed `next_action` +
-  `last_session` pointers, then reports what it wrote, skipped and
-  refused; a second run reports zero writes. Every ledger write goes
+  when no epic carries the slug), the missing typed `next_action` +
+  `last_session` pointers, and — as the SECOND of the two writes relay
+  research note 007 permits to start a plan epic's authority chain — the
+  missing GENESIS token of every live plan epic that carries no chain
+  (`_plan_record_genesis.py`, through `create_genesis_token`). It then
+  reports what it wrote, skipped and refused; a second run reports zero
+  writes. Every ledger write goes
   through the existing store bridge (`tag_epic_plan_slug`,
   `set_next_action`); the decisions — slug derivation, collision
   refusal, whether an anchor already stands, what a handoff seeds —
@@ -103,6 +107,18 @@ public module per query-only skill:
   the anchor files land through the repository's ordinary worktree →
   pull-request → merge discipline, and the fleet-wide run across
   tenants is an operator follow-up.
+  THE GENESIS LEG RUNS LAST, so every epic one run touches reaches the
+  same starting state: the pointer the seeding leg writes is the
+  migration's GUESS at a next action and carries no obligation, so
+  letting it commit the chain's first transition would start the
+  authority history with a record of nothing and would leave a
+  freshly-seeded epic at epoch 1 while an epic whose pointer already
+  stood sat at epoch 0. Its two findings are routed by CODE and not
+  interchangeably: an already-named chain is a SKIP, because running the
+  migration twice is an ordinary operator act whose whole claim is that
+  it changed nothing, while an unconfirmed genesis is REFUSED carrying
+  its remedy, because another writer may have migrated the epic in the
+  same minute and that is state a human resolves.
 
 Each public module exports `main(argv=None) -> int` (the supervisor
 the wrapper calls) plus its named helpers, all enumerated in
@@ -739,6 +755,46 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   gate owes them opposite treatments. `_dispatcher_acp_preflight.
   resolve_dispatch_candidates` is the one place the resolution is read off
   disk, and `_dispatcher_admission_eligibility` spends it ONCE PER PASS.
+- The ADMISSION SESSION-HEADROOM FILTER of `contracts.md`'s "Admission filters
+  candidates by projected Claude session headroom" paragraph (`bd-ib-jwuxs4`,
+  Scenario 60) lives in FOUR cohesive modules, split pure-from-impure the usual
+  way, and the dependency direction reads bottom-up: `_acp_session_headroom`
+  (PURE: the reading value, its validation, the coverage predicate and the skip
+  predicate, plus the per-evaluation policy type) → `_acp_session_headroom_
+  records` (PURE: the journal projections — the per-item assessment record, the
+  per-node selection fields, and the fields a headroom-governed refusal adds) and
+  `_dispatcher_session_headroom_io` (the ONE bounded usage request plus the
+  opaque credential fingerprint) → `_dispatcher_session_headroom_gate` (the
+  committed floor, the per-evaluation policy its memo lives in, and the journal
+  writer). The filter itself is the FOURTH filter of
+  `_acp_candidate_preflight`; `_dispatcher_admission` is the only caller that
+  supplies a policy.
+  SIX PROPERTIES AN EDITOR MUST NOT INVERT. This is NOT the credential probe:
+  `claude-cred-status` answers "can this credential call the provider" and
+  reported `usable` two minutes after a run was refused mid-implement on the
+  session limit (hp, 2026-10-14), which is why the clause exists at all. An
+  UNOBSERVABLE reading is its own field and is never coerced to a number —
+  every sentinel available (0, 100) is also a valid reading, so a coerced one
+  is indistinguishable downstream from a measurement. COVERAGE FOLLOWS
+  PROVENANCE: the resolved `claude-acp` agent id, or a built-in identity keyed
+  on exact rendered bytes, never an `availability_key` that happens to spell a
+  vendor. EQUALITY PASSES the floor and a floor of ZERO disables both kinds of
+  skip while RETAINING the reading and its journal row — the unobservable arm
+  is the only one the zero-floor guard reaches, since no remaining headroom is
+  strictly below zero. The filter sits BELOW the credential probe, because "a
+  successful credential-usability probe MUST NOT override a headroom skip". And
+  a reading creates NO observed availability record and retires none, which
+  holds structurally rather than carefully: nothing in the filter is handed a
+  journal.
+  ONE GAP IS WORTH KNOWING BEFORE EDITING THE CHAIN LAYERS, because it produced
+  a clean, plausible, entirely wrong green. A node's FALLBACKS are parsed as
+  candidates and keep their resolved `agent_id`; its PRIMARY is REBUILT in
+  `_acp_chain_resolution._attach_one` from the already-resolved adapter, so
+  `agent_id` has to be carried across `AcpNodeChain` explicitly — exactly as
+  `config_options` is. Without that, coverage saw `None` on every primary and
+  the filter assessed nothing this repository's own eight ACP nodes run.
+  `test_acp_session_headroom_primary_coverage.py` keeps the live control that
+  caught it.
 - The **TDD order calibration** modules (plan `factory-test-first-enforcement`
   slice S3, `bd-ib-3h5vfq`) put seven `tdd.*` fields plus the implement
   adapter on the terminal `dispatcher.calibration` span, so "is the factory

@@ -255,18 +255,23 @@ def test_the_report_renders_writes_skips_and_refusals() -> None:
         slugs_written=("bd-ib-kappa plan_slug=kappa",),
         anchors_written=("plan/kappa/associated_work_item_id -> bd-ib-kappa",),
         next_actions_seeded=("bd-ib-kappa kind=none ref=''",),
+        genesis_written=("bd-ib-kappa genesis token wisp-1",),
         skipped=("bd-ib-tagged already carries plan_slug=tagged",),
         refused=("bd-ib-collides derives plan_slug=shared, already carried by bd-ib-holder",),
     )
 
     rendered = module.render_report(report=report)
 
-    assert module.total_writes(report=report) == 3
+    # All four write legs are counted and rendered, in the order they ran. The
+    # genesis leg is last because it runs last, and it is here at all because
+    # the write total is the contract's whole idempotence claim.
+    assert module.total_writes(report=report) == 4
     assert rendered.splitlines() == [
-        "migrate-plan-records: 3 write(s)",
+        "migrate-plan-records: 4 write(s)",
         "wrote: bd-ib-kappa plan_slug=kappa",
         "wrote: plan/kappa/associated_work_item_id -> bd-ib-kappa",
         "wrote: bd-ib-kappa kind=none ref=''",
+        "wrote: bd-ib-kappa genesis token wisp-1",
         "skipped: bd-ib-tagged already carries plan_slug=tagged",
         "refused: bd-ib-collides derives plan_slug=shared, already carried by bd-ib-holder",
     ]
@@ -279,6 +284,7 @@ def test_an_empty_report_counts_zero_writes() -> None:
         slugs_written=(),
         anchors_written=(),
         next_actions_seeded=(),
+        genesis_written=(),
         skipped=(),
         refused=(),
     )

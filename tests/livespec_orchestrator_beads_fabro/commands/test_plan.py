@@ -214,6 +214,11 @@ def test_handoff_append_is_ledger_comment_and_timeline_readable(tmp_path: Path) 
     assert entries[0].created_at == "2026-08-11T01:02:03Z"
     assert entries[0].body == "Next action: dispatch bd-ib-child through the factory."
     metadata = _fake().show_issue(issue_id=created["epic_id"])["metadata"]
+    # `create_thread` now starts the epic's authority chain, so this handoff is
+    # a TRACKED write rather than a legacy one: it commits the chain's first
+    # transition and the stored pointer is that transition's projection. Hence
+    # the two projected budget fields — the accepted-handoff count this write
+    # consumed, and the epoch whose authority the pointer is projecting.
     assert metadata["next_action"] == {
         "kind": "impl",
         "ref": "bd-ib-child",
@@ -222,7 +227,12 @@ def test_handoff_append_is_ledger_comment_and_timeline_readable(tmp_path: Path) 
             "repo": "repo",
             "item_status": {"item_id": created["epic_id"], "status": "closed"},
         },
-        "budget": {"deadline": "2099-08-11T00:00:00Z", "max_handoffs": 3},
+        "budget": {
+            "deadline": "2099-08-11T00:00:00Z",
+            "max_handoffs": 3,
+            "handoff_count": 1,
+            "epoch": "1",
+        },
     }
     assert metadata["last_session"] == "factory-test at 2026-08-11T01:02:03Z"
 

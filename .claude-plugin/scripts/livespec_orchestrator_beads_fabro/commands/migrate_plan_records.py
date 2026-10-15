@@ -46,6 +46,9 @@ from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     parse_next_action,
     set_next_action,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_record_genesis import (
+    create_migration_genesis,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_record_migration import (
     MIGRATION_SESSION,
     PlanEpic,
@@ -87,6 +90,14 @@ def migrate_plan_records(
     anchors and the `next_action` seeds both key on which epic carries which
     slug, and an epic tagged in this same run must anchor its own directory
     rather than reading as unassigned for one more migration.
+
+    GENESIS RUNS LAST, so every epic this migration touches reaches the same
+    starting state. The pointer the seed writes is the migration's GUESS at a
+    next action and carries no obligation; letting it commit the chain's first
+    transition would start the authority history with a record of nothing, and
+    would leave a freshly-seeded epic at epoch 1 while an epic whose pointer
+    already stood sat at epoch 0 — two shapes out of one run, distinguishable
+    only by whether the tenant happened to need a pointer.
     """
     epics = _plan_epics(config=config)
     decisions = slug_decisions(epics=epics)
@@ -95,19 +106,18 @@ def migrate_plan_records(
     anchors_written, anchors_skipped = _write_anchors(
         project_root=project_root, epic_by_slug=epic_by_slug
     )
-    seeded, seeds_skipped = _seed_next_actions(
-        config=config,
-        project_root=project_root,
-        epics=epics,
-        epic_by_slug=epic_by_slug,
-        now=now,
-    )
+    live = _live_plan_epics(epics=epics, epic_by_slug=epic_by_slug, project_root=project_root)
+    seeded, seeds_skipped = _seed_next_actions(config=config, epics=live, now=now)
+    genesis = create_migration_genesis(config=config, epic_ids=[epic.epic_id for epic in live])
     return PlanRecordMigrationReport(
         slugs_written=tuple(slugs_written),
         anchors_written=tuple(anchors_written),
         next_actions_seeded=tuple(seeded),
-        skipped=tuple([*_slug_skips(epics=epics), *anchors_skipped, *seeds_skipped]),
-        refused=tuple(_slug_refusals(decisions=decisions)),
+        genesis_written=genesis.written,
+        skipped=tuple(
+            [*_slug_skips(epics=epics), *anchors_skipped, *seeds_skipped, *genesis.skipped]
+        ),
+        refused=tuple([*_slug_refusals(decisions=decisions), *genesis.refused]),
     )
 
 
@@ -230,23 +240,33 @@ def _write_anchors(
     return written, skipped
 
 
+def _live_plan_epics(
+    *,
+    epics: Sequence[PlanEpic],
+    epic_by_slug: dict[str, str],
+    project_root: Path,
+) -> list[PlanEpic]:
+    """The open epics whose plan directory is live — the ones this run owes work.
+
+    An archived or slugless plan has no live directory to resume, and a closed
+    epic has nothing left to do; neither owes a typed pointer or an authority
+    chain. Both per-epic legs read this ONE selection rather than each deciding
+    for itself, so the population they report on cannot differ.
+    """
+    live = _live_slugs(project_root=project_root)
+    slug_of = {epic_id: slug for slug, epic_id in epic_by_slug.items()}
+    return [epic for epic in epics if epic.is_open and slug_of.get(epic.epic_id) in live]
+
+
 def _seed_next_actions(
     *,
     config: StoreConfig,
-    project_root: Path,
     epics: Sequence[PlanEpic],
-    epic_by_slug: dict[str, str],
     now: str,
 ) -> tuple[list[str], list[str]]:
-    live = _live_slugs(project_root=project_root)
-    slug_of = {epic_id: slug for slug, epic_id in epic_by_slug.items()}
     seeded: list[str] = []
     skipped: list[str] = []
     for epic in epics:
-        # An archived or slugless plan has no live directory to resume, and a
-        # closed epic has nothing left to do; neither owes a pointer.
-        if not epic.is_open or slug_of.get(epic.epic_id) not in live:
-            continue
         if epic.has_next_action:
             skipped.append(f"{epic.epic_id} already carries next_action")
             continue

@@ -61,6 +61,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission imp
     admit_rework,
     rework_pending_candidates,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_gate import (
+    session_headroom_policy,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_WIP_CAP,
     admission_held_detail,
@@ -246,11 +249,20 @@ def _eligible_legs(
     per-candidate credential channel is ratified yet, so the admission-time
     assessment seam stays unwired for the same reason `resolve_acp_preflight`
     leaves it absent by default.
+
+    The session-headroom policy IS supplied, and this is the only place that
+    does it: a policy built here is built once per admission evaluation, which
+    is what makes its memo the "one assessment per distinct projected
+    credential per admission evaluation" guarantee rather than a convention.
+    The policy shares the pass's own `now_iso`, so the observation time the
+    journal reports is the instant this evaluation is dated by.
     """
+    now_iso = utc_now_iso()
     verdict = resolve_acp_preflight(
         repo=repo,
         journal_path=getattr(journal, "path", None),
-        now_iso=utc_now_iso(),
+        now_iso=now_iso,
+        headroom=session_headroom_policy(repo=repo, now_iso=now_iso),
     )
     rework_admittable, refused = filter_eligible_candidates(
         repo=repo,
