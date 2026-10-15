@@ -52,6 +52,25 @@ exits 1 by design, so it records a failed outcome and a loop signature of its
 own on every run that reaches it. It runs only because something else already
 failed, which makes it the one node that cannot be the cause — and the
 unordered outcome map would otherwise let it be picked first.
+
+THE PETRI ENGINE RECORDS NO `node_outcomes` AT ALL, so the grading above has a
+second input rather than a second reader. A terminated run's checkpoint on that
+engine carries only `current_node`, `git_commit_sha` and `timestamp`; the
+per-stage results live in the record's own top-level `stages` map, keyed
+`<node>@<visit>`, each entry carrying `handler`, `state`, `output` and
+`response`. Reading that map is what keeps a Petri ending from landing in
+`UNESTABLISHED` — measured 2026-10-15 on run `01M4Y7EJWTQWK5CWWS0NKDHY7T`,
+whose `inspect` named 48 succeeded stages and 2 failed ones while the durable
+ledger comment said the record established nothing.
+
+It is a FALLBACK and never a merge: a record carrying `node_outcomes` is graded
+from them exactly as before, because that map is the checkpoint's own account
+of the ending while the stage map is the run's account of its whole history,
+and a reader preferring the broader one would answer a different question on
+the engine that supplies both. Only the `state` field is read, and an entry
+carrying none is dropped rather than counted — the honest-unknown lever above
+is what distinguishes "graded, and nothing failed" from "nothing to grade", so
+an ungradeable entry must not make the map look readable.
 """
 
 from __future__ import annotations
@@ -105,7 +124,7 @@ def terminal_evidence(*, payload: object | None) -> TerminalEvidence | None:
     checkpoint = _terminal_checkpoint(record=record)
     if checkpoint is None:
         return None
-    outcomes = _node_outcomes(checkpoint=checkpoint)
+    outcomes = _node_outcomes(checkpoint=checkpoint) or _stage_state_outcomes(record=record)
     failed = _failed_stages(checkpoint=checkpoint, outcomes=outcomes)
     return TerminalEvidence(
         current_predecessor=failed[-1] if failed else None,
@@ -155,14 +174,38 @@ def _node_outcomes(*, checkpoint: dict[str, Any]) -> dict[str, dict[str, Any]]:
     engine's document order — a better fallback than sorting, which would
     impose an alphabetical answer on a question about sequence.
     """
-    raw: object = checkpoint.get("node_outcomes")
+    return _mapping_entries(raw=checkpoint.get("node_outcomes"))
+
+
+def _stage_state_outcomes(*, record: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """The Petri `stages` map projected onto the outcome shape, in record order.
+
+    The projection keeps ONE grading path rather than giving the engine its own
+    reader: everything downstream asks whether a node is recorded failed and in
+    what order, which `state` answers exactly as `status` does. The stage KEY is
+    carried whole, visit suffix included, because `proof_capture@2` says which
+    visit failed and `proof_capture` would discard a fact the engine recorded.
+    """
+    return {
+        stage: {"status": state}
+        for stage, entry in _mapping_entries(raw=record.get("stages")).items()
+        if (state := _text(value=entry.get("state"))) is not None
+    }
+
+
+def _mapping_entries(*, raw: object) -> dict[str, dict[str, Any]]:
+    """One engine-written map of node id to mapping, malformed entries dropped.
+
+    Shared by both outcome readers so a record whose keys or values are
+    unusable degrades the same way whichever engine wrote it.
+    """
     if not isinstance(raw, dict):
         return {}
-    outcomes: dict[str, dict[str, Any]] = {}
+    entries: dict[str, dict[str, Any]] = {}
     for key, value in cast("dict[object, object]", raw).items():
         if isinstance(key, str) and key.strip() and isinstance(value, dict):
-            outcomes[key.strip()] = cast("dict[str, Any]", value)
-    return outcomes
+            entries[key.strip()] = cast("dict[str, Any]", value)
+    return entries
 
 
 def _failed_stages(
