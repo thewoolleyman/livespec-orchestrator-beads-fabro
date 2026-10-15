@@ -72,6 +72,14 @@ _REFRESH_LOOP = _PUBLICATION_STAGES_ADDED | {"proof_capture", "review", "proof_v
 # of the v134 route. The nodes it moves are the fix loop's, which is every node
 # the repair round re-earns.
 _REFRESH_REPAIR_ADDED = {"refresh_repair"}
+
+# The refresh-route decision node (v145; work-item bd-ib-3hpdvm), kept as its own
+# constant for the reason the refresh-repair set above gives: the subject of this
+# module is the PORT, so a later addition merged into the port's own set would
+# make a future port regression read as part of this route. The nodes it moves
+# are the publication stages' and the proof loop's, because the route re-enters
+# `pr_refresh` and a changed head re-earns the trio.
+_PR_ROUTE_ADDED = {"pr_route"}
 _REFRESH_REPAIR_LOOP = _REFRESH_REPAIR_ADDED | {
     "fix",
     "janitor",
@@ -250,7 +258,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
     # an executable path missing from a figure still presented as an allowance.
     assert (
         set(ported.node_visits) - set(pre_port.node_visits)
-        == _PUBLICATION_STAGES_ADDED | _REFRESH_REPAIR_ADDED
+        == _PUBLICATION_STAGES_ADDED | _REFRESH_REPAIR_ADDED | _PR_ROUTE_ADDED
     )
     assert set(pre_port.node_visits) - set(ported.node_visits) == set()
 
@@ -264,7 +272,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         if (ported.node_visits.get(node), ported.node_attempts.get(node))
         != (pre_port.node_visits.get(node), pre_port.node_attempts.get(node))
     }
-    reachable = _PUBLICATION_STAGES | _REFRESH_LOOP | _REFRESH_REPAIR_LOOP
+    reachable = _PUBLICATION_STAGES | _REFRESH_LOOP | _REFRESH_REPAIR_LOOP | _PR_ROUTE_ADDED
     assert moved <= reachable, sorted(moved - reachable)
     # And the direction is the honest one: the graph grew, so the allowance grew.
     # Asserted rather than left implicit, because an allowance that SHRANK after

@@ -75,10 +75,17 @@ _CHECK_FAILED = "LIVESPEC_PR_NOT_CREATED_CHECK_FAILED"
 # zero, so comment lines are skipped explicitly and the rest are matched whole.
 _EDGE_RE = re.compile(r"^(?P<source>\w+)\s*->\s*(?P<target>\w+)\s*(?:\[(?P<attrs>[^\]]*)\])?$")
 
-# The mutant control: the committed `pr -> verify_pr` fallthrough, and the
-# conditional form the reverted release shipped it as.
-_FALLTHROUGH = "pr -> verify_pr"
-_MUTANT_FALLTHROUGH = 'pr -> verify_pr [condition="outcome=succeeded"]'
+# The mutant control: the committed fallthrough out of `pr`, and the conditional
+# form the reverted release shipped it as.
+#
+# THE TARGET IS `pr_route` AND NOT `verify_pr` SINCE v145 (work-item
+# bd-ib-3hpdvm), which inserted the refresh-route decision node between them and
+# therefore CONSUMED `pr`'s fallthrough exactly as `verify_pr` did at 0.146.0 —
+# the same hazard this module exists for, one node further along. The mutant is
+# whichever edge is currently `pr`'s unconditional one, because that is the edge
+# whose loss reproduces the `all_conditional_edges` rejection.
+_FALLTHROUGH = "pr -> pr_route"
+_MUTANT_FALLTHROUGH = 'pr -> pr_route [condition="outcome=succeeded"]'
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -183,12 +190,20 @@ def test_an_unanswerable_lookup_is_not_reported_as_an_unpublished_run() -> None:
 
 
 def test_the_pr_stage_falls_through_to_verify_pr_before_exit() -> None:
-    """pr reaches verify_pr, and pr no longer reaches exit itself."""
+    """pr reaches verify_pr THROUGH pr_route, and pr no longer reaches exit itself.
+
+    Both hops are asserted because the breaker's guarantee is about the PATH: a
+    `pr -> pr_route` edge whose own fallthrough went anywhere else would satisfy
+    "pr no longer reaches exit" while leaving the publish breaker unreachable
+    from a successful publication, which is the state release 0.146.0 shipped.
+    """
     edges = _edges(text=_dot_text())
     from_pr = {(edge.target, edge.conditional) for edge in edges if edge.source == "pr"}
+    from_route = {(edge.target, edge.conditional) for edge in edges if edge.source == "pr_route"}
 
-    assert ("verify_pr", False) in from_pr
-    assert "exit" not in {target for target, _ in from_pr}
+    assert ("pr_route", False) in from_pr
+    assert ("verify_pr", False) in from_route
+    assert "exit" not in {target for target, _ in from_pr | from_route}
 
 
 def test_verify_pr_owns_the_only_edge_into_exit() -> None:
@@ -215,6 +230,24 @@ def test_the_pr_node_carries_an_unconditional_outgoing_edge() -> None:
     edges: the guard was added after it, and the guard took its fallback.
     """
     assert "pr" not in _sources_lacking_an_unconditional_edge(edges=_edges(text=_dot_text()))
+
+
+def test_the_refresh_route_node_carries_an_unconditional_outgoing_edge() -> None:
+    """pr_route's own fallthrough is the breaker, and its refresh route is the condition.
+
+    Named beside `pr`'s because inserting this node is what consumed `pr`'s
+    fallback, so the pair is the whole of the invariant: a conditional-only
+    `pr_route` is rejected by the engine before any node runs, and a `pr_route`
+    whose UNCONDITIONAL edge were the refresh would send every green publication
+    back through a refresh it does not owe.
+    """
+    edges = _edges(text=_dot_text())
+
+    assert "pr_route" not in _sources_lacking_an_unconditional_edge(edges=edges)
+    assert any(
+        edge.source == "pr_route" and edge.target == "pr_refresh" and edge.conditional
+        for edge in edges
+    )
 
 
 def test_the_verify_pr_node_carries_an_unconditional_outgoing_edge() -> None:

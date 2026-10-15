@@ -105,15 +105,27 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # `publish_draft` is a review that requests changes, which `review_fix.max_visits`
 # already caps inside the four budgeted here.
 #
-# THE PUBLICATION STAGES themselves. `pr_refresh` and its postcondition breaker
-# `pr_refresh_head` are budgeted at FOUR -- one entry plus the three refreshes --
-# and the refresh is the one publication stage that can genuinely spend its whole
-# timeout, because it runs the repository's declared check suite as a foreground
-# command against the rebased head. That is precisely the work moving publication
-# out of an agent turn exists to budget honestly. `pr` and `verify_pr` are ONE
-# each: neither carries a retry any more (the retired ACP `pr` node's
-# `max_retries=1` is what their old `2` was for), and `pr -> verify_pr -> exit` is
-# the only path out, so nothing re-enters either.
+# THE PUBLICATION STAGES themselves. `pr_refresh` is budgeted at EIGHT and its
+# postcondition breaker `pr_refresh_head` at SEVEN, and the refresh is the one
+# publication stage that can genuinely spend its whole timeout, because it runs
+# the repository's declared check suite as a foreground command against the
+# rebased head. That is precisely the work moving publication out of an agent
+# turn exists to budget honestly.
+#
+# THOSE TWO FIGURES ARE THE GRAPH'S OWN `max_visits`, AND THEY ARE NOT THE
+# THREE-REFRESH BOUND (v145: the `pr` to `pr_refresh` route). A refresh ENTRY and
+# a COUNTED refresh differ -- an entry finding the publish head already on the
+# authoritative default exits zero and counts nothing -- and the route makes
+# uncounted entries reachable in a loop, so the worst case is three counted
+# refreshes, one uncounted entry around each, and the entry that refuses. The
+# node comments in `workflow.fabro` carry the derivation; this table mirrors it
+# rather than re-deriving it, because the two must agree.
+#
+# `pr` and the refresh-route decision node `pr_route` are FOUR each: each `pr`
+# visit either ends the run or spends one of the three counted refreshes, so one
+# entry plus three routed re-entries is the whole of it. `verify_pr` is ONE: it
+# is reached only from `pr_route`'s unconditional edge and `verify_pr -> exit` is
+# the only path out, so nothing re-enters it.
 _WORST_CASE_VISITS: Mapping[str, int] = {
     "dod_gate": 2,
     "implement": 2,
@@ -126,9 +138,10 @@ _WORST_CASE_VISITS: Mapping[str, int] = {
     "proof_verify": 6,
     "disposition": 3,
     "review_fix": 3,
-    "pr_refresh": 4,
-    "pr_refresh_head": 4,
-    "pr": 1,
+    "pr_refresh": 8,
+    "pr_refresh_head": 7,
+    "pr": 4,
+    "pr_route": 4,
     "verify_pr": 1,
 }
 

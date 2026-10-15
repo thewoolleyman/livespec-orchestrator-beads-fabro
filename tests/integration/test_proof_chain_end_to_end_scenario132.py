@@ -889,6 +889,7 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
         _PR_REFRESH,
         _PR_REFRESH_HEAD,
         _PR,
+        "pr_route",
         "verify_pr",
         "exit",
     ]

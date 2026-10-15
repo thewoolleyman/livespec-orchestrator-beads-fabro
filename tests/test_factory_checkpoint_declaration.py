@@ -83,6 +83,33 @@ of a token's remaining life, so a ten-day Codex token has to be under about
 of the enforcement that matters: `credential_deadline_epoch` still caps every
 run at the token's OBSERVED expiry minus its margin, and this figure is the
 allowance a graph may ASK for, not a lifetime anything grants.
+
+THAT PREDICTED RE-CHOOSING HAPPENED AT v145 (the `pr` to `pr_refresh` route,
+work-item bd-ib-3hpdvm), and the mechanism is worth stating because the route's
+own four nodes are the SMALL half of the move. The route makes `pr_refresh`
+re-enterable, so its `max_visits` had to be sized at the entries the
+three-refresh bound actually admits -- three counted refreshes, an uncounted
+entry around each, and the entry that refuses, i.e. 8 rather than 4 -- and the
+derivation then propagates those visits into every node of the proof loop the
+refresh re-earns: `review` and `proof_verify` moved from 18 to 22 visits apiece,
+`proof_capture` to 19, `refresh_repair` to 20. The figures below are measured
+against a tree carrying BOTH that route AND the hour-each publication budget of
+the paragraph above, because the two compound: the hour-each budget raises what
+one `pr_refresh` visit costs and this route raises how many of those visits the
+bound admits, so neither side's separately-measured figure survives the
+integration. Measured against THIS tree: 1_204_770 at the retired `"15m"` and
+805_170 shipped, so the bound moves to 880000 to stay between them. The
+derivation is an upper bound summed over distinct predecessors and no run
+reaches it, which is the correct direction for a credential floor.
+
+WHAT THAT COSTS, STATED RATHER THAN ABSORBED: the shipped figure plus the
+margin now demands about 8.5 days of a token's remaining life, so a ten-day
+Codex token has to be under roughly 1.5 days old to pass the freshness gate.
+This repository routes NO factory node to Codex (`.livespec.jsonc`'s `acp_nodes`
+put every node on a Claude adapter), so nothing here is refused by it; a
+repository that does route one and raises its node timeouts should expect that
+gate to bite, and the remedy is the gate's own -- a shorter configured timeout
+or a fresher credential -- not a visit cap sized below what the graph can reach.
 """
 
 from __future__ import annotations
@@ -103,12 +130,12 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 
 # The bound the freshness requirement has to sit under, and the figure the
 # RETIRED `"15m"` resolved. The bound is deliberately looser than the measured
-# 665835 seconds this budget yields: the requirement also sums the resolved node
+# 805170 seconds this budget yields: the requirement also sums the resolved node
 # timeouts, so pinning it exactly would make every unrelated timeout edit fail
 # this case. The control below pins the 15m figure exactly, because that one is
 # the thing being moved away from and a drifting comparand would hide the move.
-_FRESHNESS_BOUND_SECONDS = 680_000
-_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_006_035
+_FRESHNESS_BOUND_SECONDS = 880_000
+_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_204_770
 
 
 def _checkpoint() -> dict[str, Any]:
@@ -171,8 +198,8 @@ def test_the_checkpoint_budget_holds_the_credential_freshness_floor_under_the_bo
     that happened to shrink -- a pass earned by something this item never
     touched. The control re-resolves the SAME payload with only the checkpoint
     budget restored to the retired `"15m"` and requires it to land ABOVE the
-    bound at exactly the measured 1006035 seconds, which is what makes the first
-    assertion evidence about this declaration rather than about the graph.
+    bound at exactly the measured figure named above, which is what makes the
+    first assertion evidence about this declaration rather than about the graph.
 
     The replacement is asserted to match exactly once before it is applied: a
     `str.replace` that matched nothing would leave the control resolving the
