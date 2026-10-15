@@ -36,6 +36,11 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 from livespec_orchestrator_beads_fabro._store_acceptance_rework import (
     update_acceptance_failed_ai_passes,
 )
+from livespec_orchestrator_beads_fabro.calibration_analysis import (
+    CalibrationProposal,
+    analyze_calibration,
+    load_calibration_records,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
     build_calibration_record,
     calibration_journal_record,
@@ -252,6 +257,60 @@ def test_the_calibration_pass_counts_the_fix_loop_cap_and_not_a_stall_cancel() -
     )
     assert exhausted["bounced_to_regroom"] is True
     assert exhausted[BOUNCE_CAP_KEY] == FIX_LOOP_VISIT_CAP
+
+
+def _calibration_pass(
+    *, tmp_path: Path, label: str, rows: tuple[dict[str, object], ...]
+) -> CalibrationProposal:
+    """The analysis pass over a journal holding exactly `rows`.
+
+    Written through the real `JournalFile` and read back through
+    `load_calibration_records`, so the pass is handed the bytes a dispatch
+    would have left rather than the dicts this module just built.
+    """
+    directory = tmp_path / label
+    directory.mkdir()
+    journal = _journal(tmp_path=directory)
+    for row in rows:
+        journal.append(record=row)
+    return analyze_calibration(records=load_calibration_records(journal_path=journal.path))
+
+
+def test_the_calibration_analysis_pass_declines_a_stall_and_keeps_the_cap(
+    tmp_path: Path,
+) -> None:
+    """The PASS's own count, which the row fields asserted above do not decide.
+
+    The row assertions one level down are a different claim. The pass derives
+    non-convergence from `converged` as well as from `bounced_to_regroom`, and
+    a stall row is not green, so it was carried in by that first field whatever
+    the bounce flag said. Measured on this journal before the fix: two rows in,
+    `non_converged_runs` of 2 — from rows that were already correct, which is
+    why a green suite and a `captured` proof record coexisted with the defect.
+
+    The two isolated readings are asserted beside the combined one because the
+    combined figure alone cannot separate a build that declines the stall from
+    one that declines the cap instead, and neither from one that counts nothing.
+    `total_runs` is asserted too: declining the stall as a NON-CONVERGENCE while
+    keeping it as a converged observation satisfies the clause's letter and
+    feeds a cancelled sandbox's diff size to the ceiling as evidence that a
+    slice of that size converges — the same averaging, sign flipped.
+    """
+    stalled = _calibration_row(outcome=_outcome(status="stalled-no-progress"))
+    exhausted = _calibration_row(
+        outcome=_outcome(
+            status="failed",
+            detail=f"{NON_CONVERGED_MARKER}: janitor fix-loop cap hit without converging",
+        )
+    )
+
+    both = _calibration_pass(tmp_path=tmp_path, label="both", rows=(stalled, exhausted))
+    stall_only = _calibration_pass(tmp_path=tmp_path, label="stall", rows=(stalled,))
+    cap_only = _calibration_pass(tmp_path=tmp_path, label="cap", rows=(exhausted,))
+
+    assert (both.total_runs, both.non_converged_runs) == (1, 1)
+    assert (stall_only.total_runs, stall_only.non_converged_runs) == (0, 0)
+    assert (cap_only.total_runs, cap_only.non_converged_runs) == (1, 1)
 
 
 def test_a_stall_cancel_trips_no_cap_at_all() -> None:
