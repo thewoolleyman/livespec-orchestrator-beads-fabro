@@ -55,6 +55,7 @@ def launch_fabro_run(  # noqa: PLR0913 — kw-only launch assembly; each argumen
     goal_file: Path,
     inputs: tuple[str, ...],
     timeout_seconds: float,
+    labels: tuple[str, ...],
     correlation: DispatchCorrelation | None,
 ) -> FabroRunResult:
     """Run `fabro run` for one dispatch and read the run id off its output."""
@@ -63,6 +64,7 @@ def launch_fabro_run(  # noqa: PLR0913 — kw-only launch assembly; each argumen
         workflow=client.run_workflow(version=fabro_version, workflow_toml=workflow_toml),
         goal_file=goal_file,
         inputs=inputs,
+        labels=labels,
         correlation=correlation,
         environment=environment,
         server_url=server_url,
@@ -85,6 +87,7 @@ def fabro_run_argv(  # noqa: PLR0913 — kw-only argv assembly, same reasoning a
     workflow: Path,
     goal_file: Path,
     inputs: tuple[str, ...],
+    labels: tuple[str, ...],
     correlation: DispatchCorrelation | None,
     environment: str | None,
     server_url: str | None,
@@ -93,6 +96,13 @@ def fabro_run_argv(  # noqa: PLR0913 — kw-only argv assembly, same reasoning a
 
     The labels and the environment sit BEFORE the per-subcommand `--server`,
     which pinned 0.254 requires to stay last on the subcommand.
+
+    `labels` carries the `KEY=VALUE` pairs the DISPATCH resolved -- the
+    repository and each ACP node's rendered candidate entitlement -- and
+    arrives already rendered, exactly as `inputs` does, because the values
+    come from a plan this seam cannot see. They ride BESIDE the correlation
+    triple rather than through it: the triple is the trace-join identity,
+    and `_dispatcher_correlation` is the one place that stays true.
 
     An `environment` of None emits NO flag rather than the `default` id the
     server would have selected anyway. The two are equivalent only on an
@@ -110,6 +120,7 @@ def fabro_run_argv(  # noqa: PLR0913 — kw-only argv assembly, same reasoning a
         "--no-upgrade-check",
         *([] if environment is None else ["--environment", environment]),
         *correlation_label_args(correlation=correlation),
+        *client.fabro_label_args(labels=labels),
         *([] if server_url is None else ["--server", server_url]),
     ]
 

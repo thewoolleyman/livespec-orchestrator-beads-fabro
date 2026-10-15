@@ -27,6 +27,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_c
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_labels import (
+    dispatch_run_label_pairs,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_stamp import stamped_attribution
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel import (
     FABRO_RM_TIMEOUT_SECONDS,
@@ -122,6 +125,15 @@ class WatchedFabroLauncher:
                 goal_file=plan.goal_file,
                 inputs=dispatch_fabro_run_inputs(plan=plan),
                 timeout_seconds=plan.fabro_timeout_seconds,
+                # The repository and each ACP node's rendered candidate
+                # entitlement, so this run's own record carries the attempt
+                # identity section "Factory-configurable ACP fallback
+                # priority" requires to be discoverable host-wide. Read off
+                # the PLAN rather than re-resolved here, for the reason the
+                # adapters themselves are: the resolution is what the
+                # dispatch record journaled, and re-deriving it at launch is
+                # how the record and the run come to disagree.
+                labels=dispatch_run_label_pairs(repo=plan.repo, acp_nodes=plan.acp_nodes),
                 # The dispatch id this launch was minted under, so the
                 # engine's run spans carry the SAME triple the dispatch
                 # span does. Read off the launcher rather than re-derived:

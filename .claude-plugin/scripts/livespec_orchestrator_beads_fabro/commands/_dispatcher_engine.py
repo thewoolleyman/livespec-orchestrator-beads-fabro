@@ -96,6 +96,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_open_diff import (
     pr_open_diff_record,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_labels import (
+    dispatch_run_label_pairs,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
 
 __all__: list[str] = [
@@ -167,6 +170,11 @@ class SynchronousFabroLauncher:
             goal_file=plan.goal_file,
             inputs=dispatch_fabro_run_inputs(plan=plan),
             timeout_seconds=plan.fabro_timeout_seconds,
+            # The repository and per-node entitlement labels, read off the
+            # SAME plan fields the watched launcher reads them from: both
+            # paths label a run identically, so a repository cannot have one
+            # path's evidence discoverable host-wide and the other's not.
+            labels=dispatch_run_label_pairs(repo=plan.repo, acp_nodes=plan.acp_nodes),
             correlation=dispatch_correlation(
                 work_item_id=plan.work_item_id,
                 dispatch_id=self.dispatch_id,
