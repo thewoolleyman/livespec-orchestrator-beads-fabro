@@ -48,6 +48,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_secret_channel as channel_module,
 )
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_routing import CodexRouting
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
 )
@@ -155,6 +156,25 @@ def _materialize(
         _dispatcher_codex_auth,
         "read_host_codex_auth",
         lambda: _auth_json_with_exp(exp=now + 100 * 365 * 24 * 3600),
+    )
+    # THE CODEX ROUTING IS DECLARED RATHER THAN RESOLVED (`bd-ib-meejjz`). These
+    # cases are about which TRANSPORT each credential family travels through, and
+    # the Codex family is one of the three — so the dispatch has to be one that
+    # projects a Codex credential at all. The `tmp_path` repository here declares
+    # no node adapters, so it resolves to the workflow's built-in Anthropic
+    # defaults and would scope that family away for a reason no case here is
+    # about. The scoping itself is asserted in
+    # `test_dispatcher_codex_overlay_leg_routing`, in BOTH directions.
+    monkeypatch.setattr(
+        _dispatcher_credentials,
+        "codex_routing_for_dispatch",
+        lambda **_kwargs: CodexRouting(
+            routes_codex=True,
+            detail=(
+                "resolved ACP candidate keys naming the codex-acp agent: "
+                "codex-acp/openai/gpt-5.1"
+            ),
+        ),
     )
     error = materialize_overlay(
         committed=committed,
