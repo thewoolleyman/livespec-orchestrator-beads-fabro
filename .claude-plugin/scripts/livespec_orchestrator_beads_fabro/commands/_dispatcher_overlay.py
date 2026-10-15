@@ -68,6 +68,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source
     COMMITTED_RUN_CONFIG_IMAGE,
     SandboxImageSource,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_tmux_socket_root import (
+    tmux_tmpdir_env_lines,
+    tmux_tmpdir_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_toml_read import (
     toml_section_string,
 )
@@ -97,14 +101,9 @@ CURRENCY_GATE_ENV_VALUE = "fail"
 _MINIJINJA_OPEN_DELIMITER_RE = re.compile(r"\{\{|\{%|\{#")
 
 
-# Sandbox-local tmux socket root. tmux appends its own tmux-<uid>/default
-# socket below TMUX_TMPDIR, so bare `tmux kill-server` inside a Fabro sandbox
-# resolves only sandbox-local sockets and never the host default under /tmp.
-_SANDBOX_TMUX_TMPDIR = "/workspace/.tmux"
-
-
 # The Claude harness's own shell-tool policy, projected as NON-SECRET
-# configuration beside the tmux socket root above.
+# configuration beside the tmux socket root `_dispatcher_tmux_socket_root`
+# projects.
 #
 # The harness moves a foreground shell call that REACHES its timeout into a
 # background task; the ACP engine then raises `BackgroundedTool` and ENDS the
@@ -134,7 +133,7 @@ def harness_shell_env_lines() -> str:
     """Render the harness shell-tool policy as `[environments.<id>.env]` lines.
 
     Named rather than inlined so the keys and their values have ONE spelling a
-    test can bind, the way `_tmux_tmpdir_prepare_steps_block` does for the tmux
+    test can bind, the way `tmux_tmpdir_prepare_steps_block` does for the tmux
     socket root. Each value is `json.dumps`-ed for the same reason every other
     line in that table is: the table is TOML, and a value written raw is a
     parse hazard rather than a string.
@@ -295,8 +294,8 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     currency_gate_env_line = f"{CURRENCY_GATE_ENV_VAR} = {json.dumps(CURRENCY_GATE_ENV_VALUE)}\n"
     core_plugin_env = core_plugin_env_line(siblings=siblings)
     otel_env_lines = _otel_env_lines(otel_env=otel_env)
-    tmux_steps = _tmux_tmpdir_prepare_steps_block()
-    tmux_env_line = f"TMUX_TMPDIR = {json.dumps(_SANDBOX_TMUX_TMPDIR)}\n"
+    tmux_steps = tmux_tmpdir_prepare_steps_block()
+    tmux_env_line = tmux_tmpdir_env_lines()
     harness_shell_env = harness_shell_env_lines()
     gh_refresh_steps = refreshing_gh_prepare_steps_block()
     gh_refresh_env_lines = refreshing_gh_env_lines()
@@ -444,17 +443,6 @@ def _escape_toml_basic_string(*, value: str) -> str:
     failure. Backslash first, so the quote escape is not re-escaped.
     """
     return value.replace("\\", "\\\\").replace('"', '\\"')
-
-
-def _tmux_tmpdir_prepare_steps_block() -> str:
-    script = f"mkdir -p {_SANDBOX_TMUX_TMPDIR} && chmod 700 {_SANDBOX_TMUX_TMPDIR}"
-    lines = [
-        "",
-        "# --- Dispatcher-materialized sandbox-local tmux socket root ---",
-        "[[run.prepare.steps]]",
-        f"script = {json.dumps(script)}",
-    ]
-    return "\n".join(lines) + "\n"
 
 
 def _otel_env_lines(*, otel_env: dict[str, str] | None) -> str:
