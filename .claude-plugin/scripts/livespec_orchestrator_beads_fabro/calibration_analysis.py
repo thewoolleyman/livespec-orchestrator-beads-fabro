@@ -33,6 +33,31 @@ S4 repaired those inputs at the PRODUCING end. The only change needed here is
 to correlate the new PR-open churn proxy; the repaired assertion count and the
 repaired bounce signal arrive under the keys this pass already read.
 
+WHICH DISPATCHES THE PASS WILL CORRELATE AT ALL. `contracts.md`'s "Dispatcher
+progress watchdog" → "Not non-convergence" rules a `stalled-no-progress`
+terminal out: it "is NOT factory non-convergence" and "the calibration analysis
+pass MUST NOT count it as a non-convergence observation, while a fix-loop-cap
+non-convergence still counts". The pass cannot honour that by reading the
+bounce signal alone, which is the trap `bd-ib-nfbyot` landed on: a stall row
+carries `bounced_to_regroom: false` and a null `bounce_cap` — both already
+correct — and is still carried in by `converged`, which is `outcome.status ==
+"green"` and so false for every cancellation. The two fields are independent
+inputs to one `or`, so repairing the bounce side changed nothing the pass
+counted.
+
+Such a row is DECLINED ENTIRELY rather than recorded as a converged
+observation. Counting it as converged would satisfy the clause's letter and
+commit the mirror-image error: a watchdog cancel is a statement about the
+SANDBOX, not about the slice, so feeding its diff size and assertion count to
+`_propose_threshold` as a convergence makes a hung run evidence that a slice
+that size converges — the same two populations averaged, with the sign flipped,
+pushing the proposed ceiling UP instead of down. A cancellation's own figures
+(the resolved window, the layer that supplied it, the quiet duration confirmed)
+ride the `watchdog-stall-cancel` record the cancel journals, which is where
+they belong. `total_runs` therefore counts the runs the pass CORRELATED, which
+a journal holding cancellations makes smaller than the record count it was
+handed.
+
 Two design commitments hold the spec's guardrails:
 
   * **Advisory only — never auto-enforced.** The pass is a pure correlation
@@ -99,6 +124,27 @@ _MIN_PARTITION_RUNS = 2
 # not a confident ceiling.
 _MIN_LIFT = 0.25
 
+# How a record names its terminal. The Dispatcher journals no bare status on a
+# calibration row: `_dispatcher_calibration.outcome_class` writes
+# `f"{status}:{stage}"` for every non-green terminal (and the bare `green` for
+# a green one), so the status is the part before the first separator.
+_OUTCOME_CLASS_KEY = "outcome_class"
+_OUTCOME_CLASS_SEPARATOR = ":"
+
+# The engine's terminal status for a watchdog-confirmed stall, written from
+# exactly one place (`_dispatcher_engine_journal.stalled_outcome`) and owned as
+# a constant by `_dispatcher_stall_telemetry.STALL_STATUS`.
+#
+# SPELLED HERE RATHER THAN IMPORTED, and not for convenience: this pass may
+# hold no `commands.` module at all. That isolation is asserted structurally —
+# an absent import, rather than "it wrote nothing on the cases a test ran" —
+# because it is what makes the pass unable to change lifecycle state, and
+# `_dispatcher_stall_telemetry` would be a hole in it for the sake of one
+# string. `_dispatcher_non_convergence_cap` spelled the same status locally for
+# the sibling reason (an import cycle). What stops the two spellings from
+# drifting is a test built from the constant itself, not this comment.
+_STALL_OUTCOME_STATUS = "stalled-no-progress"
+
 
 @dataclass(frozen=True, kw_only=True)
 class ProxyThreshold:
@@ -130,7 +176,10 @@ class CalibrationProposal:
     ceiling or declining for want of signal. `advisory` is `True` and
     `adopted` is `False` by construction — this pass NEVER enforces a
     threshold and NEVER adopts one; adoption is a separate maintainer act.
-    `total_runs` / `non_converged_runs` summarize the correlated journal.
+    `total_runs` / `non_converged_runs` summarize the runs the pass
+    CORRELATED, which is not every record it was handed: a stall-cancelled
+    dispatch is declined outright, so `total_runs` falls short of the record
+    count by the number of cancellations in the journal.
     """
 
     advisory: bool
@@ -190,8 +239,16 @@ def analyze_calibration(*, records: tuple[dict[str, object], ...]) -> Calibratio
     non-convergence (subject to the minimum-sample and minimum-lift guards),
     declining for want of signal otherwise. Every proposed ceiling is
     advisory by construction — the returned proposal enforces nothing.
+
+    A stall-cancelled dispatch is dropped before any of that, so it is neither
+    counted as a non-convergence nor averaged into a ceiling as a convergence;
+    see the module docstring for why declining the record beats relabelling it.
     """
-    observations = tuple(_to_observation(record=record) for record in records)
+    observations = tuple(
+        _to_observation(record=record)
+        for record in records
+        if not _is_stall_cancelled(record=record)
+    )
     non_converged = sum(1 for observation in observations if observation.non_converged)
     thresholds = tuple(
         _propose_threshold(proxy=proxy, observations=observations)
@@ -206,11 +263,33 @@ def analyze_calibration(*, records: tuple[dict[str, object], ...]) -> Calibratio
     )
 
 
+def _is_stall_cancelled(*, record: dict[str, object]) -> bool:
+    """Whether this record's terminal was a progress-watchdog cancellation.
+
+    Keyed on `_STALL_OUTCOME_STATUS`, which is the engine's own literal and is
+    pinned to `_dispatcher_stall_telemetry.STALL_STATUS` by a test rather than
+    by an import; see that constant for why the import is not taken.
+
+    The reading must be POSITIVE to exclude. A record whose `outcome_class` is
+    absent or not a string cannot be identified as a cancellation, so it stays
+    in the correlation under the general rule: excluding on a failed reading
+    would silently drop ordinary non-green runs — the signal the pass exists to
+    correlate — and every legacy record predating this key is such a reading.
+    """
+    outcome_class = record.get(_OUTCOME_CLASS_KEY)
+    if not isinstance(outcome_class, str):
+        return False
+    return outcome_class.split(_OUTCOME_CLASS_SEPARATOR, 1)[0] == _STALL_OUTCOME_STATUS
+
+
 def _to_observation(*, record: dict[str, object]) -> _Observation:
     """Reduce one `calibration` journal record to a correlatable observation.
 
     A run is `non_converged` when it did not converge OR it bounced back to
-    `backlog` (the empirical "too big" signal). Each numeric proxy is
+    `backlog` (the empirical "too big" signal). Those are independent inputs,
+    which is why a stall cancel has to be declined by `_is_stall_cancelled`
+    before reaching here: its bounce signal is already `false` and the
+    `converged` disjunct carries it in regardless. Each numeric proxy is
     carried only when its recorded value is a usable `int` — a `None` (the
     Dispatcher's unobservable marker) or a non-numeric is omitted so the proxy
     simply has one fewer sample, never a false zero pulling the cutoff down.
