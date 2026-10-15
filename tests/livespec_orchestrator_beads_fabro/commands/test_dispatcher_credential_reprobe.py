@@ -36,6 +36,15 @@ satisfied by anything that varies per row — a timestamp, a counter, a random
 value — so the sibling case holds the wrapper's value STILL and asserts the two
 rows carry ONE identity. Both are taken with the same probe verdict on every
 round, so nothing about the refusal itself can be doing the distinguishing.
+
+THE TERMINATION CASE ALSO COMES AS A PAIR, for the same reason and with higher
+stakes. "A misconfigured wrapper terminates at the budget" is satisfied by an
+implementation that caps EVERY wait at the budget — which would exit a healthy
+wait while its `--budget` is unspent, the one thing the ratified re-probe clause
+forbids. The working-wrapper control runs past a budget of one and resumes only
+on the probe's own verdict, so the bound can only be keyed on rounds the wait
+could not re-resolve. Both use a sleep double that FAILS past a ceiling rather
+than letting an unbounded wait hang the suite into a stage timeout.
 """
 
 from __future__ import annotations
@@ -55,6 +64,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential im
     classify_claude_probe,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_rotation import (
+    LAUNCH_ENVIRONMENT_WRAPPER_UNRESOLVABLE,
     WRAPPER_RESOLVED,
     credential_identity,
 )
@@ -75,6 +85,9 @@ _RATE_LIMITED = ClaudeProbeObservation(
     http_status=429, error_type="rate_limit_error", input_tokens=None, output_tokens=None
 )
 _WRAPPER = ("/usr/local/bin/with-livespec-env.sh", "--")
+# Comfortably past every bound any case here expects, so a wait that reaches it
+# has failed to terminate rather than merely taken one round more than planned.
+_UNBOUNDED_WAIT_CEILING = 12
 # The launch-time value stays provider-limited for every wait below, so the only
 # route to a usable probe is the wrapper's rotated value.
 _STALE_TOKEN = "stale-launch-time-token"
@@ -140,6 +153,30 @@ def _wrapper_printing(*, tokens: list[str]) -> _Runner:
     return _Runner(
         results=[CommandResult(exit_code=0, stdout=token, stderr="") for token in tokens]
     )
+
+
+def _misconfigured_wrapper() -> _Runner:
+    """A declared wrapper that cannot run — the shape `sudo: command not found` takes."""
+    return _Runner(results=[CommandResult(exit_code=127, stdout="", stderr="not found")])
+
+
+@dataclass(kw_only=True)
+class _BoundedSleep:
+    """A sleep that FAILS past its ceiling rather than letting the wait hang.
+
+    A wait that does not terminate would otherwise hang the suite until the
+    node's own timeout, which reports as a stage timeout rather than as the
+    unbounded wait it is. Failing on the ceiling turns the same defect into one
+    named assertion.
+    """
+
+    ceiling: int
+    calls: list[float] = field(default_factory=list)
+
+    def __call__(self, seconds: float) -> None:
+        self.calls.append(seconds)
+        if len(self.calls) > self.ceiling:
+            pytest.fail(f"the wait ran {len(self.calls)} rounds without terminating")
 
 
 def _repo(
@@ -355,6 +392,96 @@ def test_two_consecutive_rows_show_a_stale_credential_by_one_repeated_identity(
     ] * 2
 
 
+def test_the_bounded_sleep_guard_fails_once_past_its_ceiling() -> None:
+    """The HARNESS guard, proved to fire — a guard that cannot fire proves nothing.
+
+    The two cases below pass if the wait terminates, and they also pass if this
+    guard never fires for any reason: a ceiling it can never reach, a counter
+    that does not increment, a `pytest.fail` the double stopped calling. So the
+    guard is exercised directly, exactly as a mutation has to be shown to land
+    before a surviving-mutant reading means anything.
+    """
+    sleeps = _BoundedSleep(ceiling=1)
+
+    sleeps(5)
+
+    assert sleeps.calls == [5]
+    with pytest.raises(pytest.fail.Exception, match="2 rounds without terminating"):
+        sleeps(5)
+
+
+def test_a_misconfigured_wrapper_terminates_at_the_reprobe_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A wait that cannot observe a rotation ENDS instead of running forever.
+
+    The declared wrapper cannot run, so every round falls back to the same
+    launch-time value — which no rotation can ever change while this process
+    lives. Continuing is then a wait on an event that cannot arrive, so the
+    invocation's own budget bounds the consecutive rounds it tolerates.
+    """
+    reprobe = _reprobe()
+    monkeypatch.setenv(CLAUDE_OAUTH_TOKEN_ENV, _STALE_TOKEN)
+    repo = _repo(tmp_path=tmp_path, cadence=2, wrapper=_WRAPPER)
+    journal = _journal(repo=repo)
+    probe = _Probe(statuses=[_status(condition="exhausted", usable=False)])
+    sleeps = _BoundedSleep(ceiling=_UNBOUNDED_WAIT_CEILING)
+
+    reprobe.await_usable_credential(
+        repo=repo,
+        journal=journal,
+        budget=3,
+        probe=probe,
+        sleep=sleeps,
+        runner=_misconfigured_wrapper(),
+    )
+
+    assert sleeps.calls == [2, 2, 2]
+    assert probe.calls == 3
+    rows = _refusals(journal=journal, reprobe=reprobe)
+    assert len(rows) == 3
+    assert {row["credential_source"] for row in rows} == {LAUNCH_ENVIRONMENT_WRAPPER_UNRESOLVABLE}
+
+
+def test_a_working_wrapper_is_not_bounded_by_that_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control, and the ratified clause: the wait does not exit on a refusal.
+
+    Without this case the bound above is satisfied by capping EVERY wait at the
+    budget, which would exit a healthy wait while its `--budget` is unspent —
+    the one thing the re-probe clause forbids. Here the wrapper re-resolves on
+    every round, so the wait runs well past a budget of one and resumes only
+    when the probe itself says the credential is usable.
+    """
+    reprobe = _reprobe()
+    monkeypatch.setenv(CLAUDE_OAUTH_TOKEN_ENV, _STALE_TOKEN)
+    repo = _repo(tmp_path=tmp_path, cadence=2, wrapper=_WRAPPER)
+    journal = _journal(repo=repo)
+    probe = _Probe(
+        statuses=[
+            _status(condition="exhausted", usable=False),
+            _status(condition="exhausted", usable=False),
+            _status(condition="exhausted", usable=False),
+            _status(condition="usable", usable=True),
+        ]
+    )
+    sleeps = _BoundedSleep(ceiling=_UNBOUNDED_WAIT_CEILING)
+
+    reprobe.await_usable_credential(
+        repo=repo,
+        journal=journal,
+        budget=1,
+        probe=probe,
+        sleep=sleeps,
+        runner=_wrapper_printing(tokens=[_STALE_TOKEN]),
+    )
+
+    assert probe.calls == 4
+    assert sleeps.calls == [2, 2, 2]
+    assert len(_refusals(journal=journal, reprobe=reprobe)) == 3
+
+
 def test_the_default_cadence_is_three_hundred_seconds(tmp_path: Path) -> None:
     """No committed key, so the ratified default is what the wait sleeps."""
     reprobe = _reprobe()
@@ -449,7 +576,13 @@ def test_a_spent_budget_never_enters_the_wait(tmp_path: Path) -> None:
 
 
 def test_a_usable_probe_does_not_retire_an_unexpired_exhaustion_record(tmp_path: Path) -> None:
-    """The wait adds no retirement route; the record outlives the resumed loop."""
+    """The wait adds no retirement route; the record outlives the resumed loop.
+
+    The budget is TWO and the usable probe is asserted to have been reached,
+    because this repository declares no wrapper in the fixture: a budget of one
+    would end the wait at its unresolvable-round bound BEFORE the usable result,
+    and the record would then survive a resumption that never happened.
+    """
     reprobe = _reprobe()
     repo = _repo(tmp_path=tmp_path)
     journal = _journal(repo=repo)
@@ -470,9 +603,10 @@ def test_a_usable_probe_does_not_retire_an_unexpired_exhaustion_record(tmp_path:
     )
 
     reprobe.await_usable_credential(
-        repo=repo, journal=journal, budget=1, probe=probe, sleep=lambda _seconds: None
+        repo=repo, journal=journal, budget=2, probe=probe, sleep=lambda _seconds: None
     )
 
+    assert probe.calls == 2
     held = dispatch_provider_exhaustion(journal_path=journal.path, now_iso="2026-09-08T00:00:00Z")
     assert held is not None
     assert held.provider == "anthropic"
