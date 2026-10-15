@@ -73,6 +73,7 @@ __all__: list[str] = [
     "SOURCE_CANCEL_RECORD",
     "CancelAnchor",
     "cancel_anchor",
+    "unanchoring_cancel_stage",
 ]
 
 # The ONE stage a cancel record can enter a resumed run at. It is a constant
@@ -147,6 +148,36 @@ def cancel_anchor(
     if head is None:
         return None
     return CancelAnchor(run_id=run_id, head=head)
+
+
+def unanchoring_cancel_stage(
+    *, records: Sequence[Mapping[str, object]], work_item_id: str
+) -> str | None:
+    """The stage of a cancel record that names a head and still cannot anchor.
+
+    The REWORK-STAGE case, and only it: the row named a published head, so an
+    operator can see a head-naming record on the journal, and it was refused for
+    its stage because "its head would not carry the rework". The refusal needs
+    that stage to state the whole of its condition.
+
+    Every other reason a row cannot anchor returns `None`, because none of them
+    leaves an operator with a head-naming record to wonder about: a row naming no
+    head says so in words, a row outranked by a proof record was superseded by
+    better evidence, and an item with no cancel record has nothing to explain. The
+    head test therefore runs FIRST — a `janitor` cancel whose head was unreadable
+    is the no-head case, not the rework case, and reporting its stage would offer
+    the rework rule as the reason a resume cannot proceed when the real reason is
+    that nothing was measured.
+    """
+    latest = _latest_cancel_record(records=records, work_item_id=work_item_id)
+    if latest is None:
+        return None
+    if _text(value=latest.get(_PUBLISHED_HEAD_KEY)) is None:
+        return None
+    stage = _text(value=latest.get(_EXECUTING_STAGE_KEY))
+    if stage is None or stage == CANCEL_ANCHOR_RESUMED_AT:
+        return None
+    return stage
 
 
 def _dispatch_identifiers(*, record: Mapping[str, object], run_id: str) -> frozenset[str]:
