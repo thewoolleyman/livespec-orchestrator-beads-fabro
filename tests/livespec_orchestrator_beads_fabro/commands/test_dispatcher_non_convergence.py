@@ -18,7 +18,6 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_blocked, _dispatcher_completion
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
-from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import NON_CONVERGED_MARKER
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -53,21 +52,14 @@ def _item() -> WorkItem:
     )
 
 
-def _non_converged_outcome(*, item_id: str) -> DispatchOutcome:
-    """The ONE terminal the bounce acts on, since `bd-ib-nfbyot`.
-
-    The fixture was a `stalled-no-progress` terminal until a watchdog stall was
-    ruled out of non-convergence entirely; the fix-loop-cap sentinel is now the
-    only signal that reaches this path at all, so a stalled fixture would exit
-    the bounce before the ledger write this test is about.
-    """
+def _stalled_outcome(*, item_id: str) -> DispatchOutcome:
     return DispatchOutcome(
         work_item_id=item_id,
-        status="failed",
+        status="stalled-no-progress",
         stage="fabro-run",
         pr_number=None,
         merge_sha=None,
-        detail=f"{NON_CONVERGED_MARKER}: janitor fix-loop cap hit without converging",
+        detail="run made no progress for the full stall window",
     )
 
 
@@ -91,7 +83,7 @@ def test_bounce_failsoft_journals_error_when_ledger_write_raises(
     _dispatcher_completion.bounce_non_convergence_to_backlog(
         repo=tmp_path,
         item=item,
-        outcome=_non_converged_outcome(item_id=item.id),
+        outcome=_stalled_outcome(item_id=item.id),
         journal=journal,
     )
 

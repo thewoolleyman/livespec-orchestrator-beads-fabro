@@ -281,39 +281,30 @@ def is_non_convergence_outcome(*, outcome: _NonConvergenceOutcome) -> bool:
     The Dispatcher reads this predicate AFTER the terminal outcome to
     decide whether to bounce the item to `backlog`.
 
-    ONE mechanical signal marks non-convergence: the DOT non-converged
-    sentinel. The single Fabro workflow-DOT tweak (work-item
-    livespec-impl-beads-rw75ym, Scenario 14) routes a fix-loop-cap exhaustion
-    to a terminal `non_converged` node that exits non-zero with
-    `NON_CONVERGED_MARKER` on stderr. The run ends non-green and the engine
-    surfaces that marker in the failed outcome's `detail`, so a substring match
-    recovers the DOT's non-converged exit edge as a Dispatcher-side bounce
-    trigger.
+    Two mechanical signals mark non-convergence, both already produced by
+    the existing dispatch path:
 
-    THE WATCHDOG'S `stalled-no-progress` STATUS IS DELIBERATELY NOT HERE, and
-    its removal is the repair of a measured defect rather than a narrowing of
-    taste. It was the second arm until `bd-ib-nfbyot`, on the reasoning that a
-    stalled run will not converge either — but `contracts.md`'s "Dispatcher
-    progress watchdog" says in as many words that a `stalled-no-progress`
-    outcome "is NOT factory non-convergence", and the two conditions have
-    opposite remedies. Scenario 11 defines non-convergence as a slice that
-    repeatedly fails the janitor gate within the fix-loop cap, which is the
-    "too big" signal the reactive ceiling trains on; a hang, an OOM kill, or a
-    watchdog false kill is none of those, and averaging them is what
-    `_dispatcher_non_convergence_cap`'s own docstring warns about. Measured
-    2026-10-12 on this tenant: all six `watchdog-stall-cancel` rows since
-    2026-10-08 were followed within two seconds by a `non-convergence-bounce`
-    row, so six items went to `backlog` — and three of the six were HEALTHY
-    runs the watchdog killed inside an open command node (`bd-ib-qsk4o5`). A
-    stall cancel is routed by `_dispatcher_stall_disposition` instead: released
-    to `ready` on a first cancel, rested at `blocked` / `needs-human` on a
-    second.
+    - `stalled-no-progress` — the coarse wall-clock watchdog confirmed the
+      run made no progress for the full stall window and `fabro rm -f`-ed
+      it (the 7us.6 hang class). A stalled run will not converge and would
+      otherwise be retried; it is the empirical non-convergence terminal
+      already in the engine's vocabulary.
+    - the DOT non-converged sentinel — the single Fabro workflow-DOT tweak
+      (work-item livespec-impl-beads-rw75ym, Scenario 14) routes a
+      fix-loop-cap exhaustion to a terminal `non_converged` node that exits
+      non-zero with `NON_CONVERGED_MARKER` on stderr. The run ends non-green
+      and the engine surfaces that marker in the failed outcome's `detail`,
+      so a substring match recovers the DOT's non-converged exit edge as a
+      Dispatcher-side bounce trigger.
 
     Ordinary failures (a `host-only-refused` / `human-gated-surfaced`
     routing refusal, a `blocked` human-gate park, a one-off `pr-view`
-    failure) are NOT non-convergence and must not be bounced either, so the
-    match is deliberately narrow — the explicit DOT sentinel only.
+    failure) are NOT non-convergence and must not be bounced, so the match
+    is deliberately narrow — the watchdog status plus the explicit DOT
+    sentinel only.
     """
+    if outcome.status == "stalled-no-progress":
+        return True
     return outcome.status == "failed" and NON_CONVERGED_MARKER in outcome.detail
 
 

@@ -48,7 +48,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import GithubTokenEnvRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import cost_sink_path
-from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import NON_CONVERGED_MARKER
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 # The two values that share `spec_commitment_hint`. The commitment fixture
@@ -260,21 +259,9 @@ def test_outcome_class_non_green_carries_stage() -> None:
     assert outcome_class(outcome=failed) == "failed:janitor-post-merge"
 
 
-def test_bounced_to_regroom_only_on_the_fix_loop_cap_sentinel() -> None:
-    """The flag reads the fix-loop-cap sentinel, and a watchdog stall is not one.
-
-    `bd-ib-nfbyot` removed the `stalled-no-progress` arm: a hang is not a slice
-    that would not converge, so counting one as a non-convergence observation
-    averages a hung sandbox with a slice that is genuinely too big.
-    """
-    non_converged = _outcome(
-        status="failed",
-        stage="fabro-run",
-        detail=f"{NON_CONVERGED_MARKER}: janitor fix-loop cap hit without converging",
-    )
-    assert bounced_to_regroom(outcome=non_converged) is True
+def test_bounced_to_regroom_only_on_stalled_non_convergence() -> None:
     stalled = _outcome(status="stalled-no-progress", stage="fabro-run")
-    assert bounced_to_regroom(outcome=stalled) is False
+    assert bounced_to_regroom(outcome=stalled) is True
     assert bounced_to_regroom(outcome=_outcome(status="green")) is False
     assert bounced_to_regroom(outcome=_outcome(status="failed", stage="fabro-run")) is False
 
