@@ -331,6 +331,52 @@ def test_a_mixed_removal_that_also_names_a_protected_path_is_refused_and_names_i
     )
 
 
+def test_removing_the_working_directory_itself_as_a_dot_is_refused() -> None:
+    """Assertion 4: `rm -rf .` from the unchanged working directory IS the clone."""
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command="rm -rf .") == _CLONE
+
+
+def test_removing_the_parent_of_the_working_directory_is_refused() -> None:
+    """Assertion 4: a directory ABOVE a protected path destroys it just as surely.
+
+    `rm -rf ..` from the clone removes the directory the clone sits in, so
+    nothing it contains survives — which is why the comparison includes every
+    ancestor, and why this refusal names the CLONE rather than the ancestor the
+    command wrote.
+    """
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command="rm -rf ..") == _CLONE
+
+
+def test_a_non_canonical_spelling_of_a_protected_path_is_refused() -> None:
+    """Assertion 4: `/tmp/../workspace` is `/workspace` spelled the long way."""
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command="rm -rf /tmp/../workspace") == _SANDBOX_ROOT
+
+
+def test_removing_the_directory_that_holds_the_clone_tree_is_refused() -> None:
+    """The ancestry rule reaches the whole chain, not only the immediate parent."""
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command="rm -rf /repos") == _CLONE
+
+
+def test_a_relative_path_inside_the_repository_tree_is_not_refused() -> None:
+    """Resolution against the working directory must not over-reach downward.
+
+    A path BELOW a protected path is in-tree, so it resolves to something the
+    protected set does not hold — the allowance half of assertion 8, written in
+    the relative form an agent actually types.
+    """
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command="rm -f tests/conftest.py") is None
+
+
 def test_a_removal_under_a_scratch_directory_is_not_refused() -> None:
     """Assertion 8, first half."""
     policy = _load_policy()
