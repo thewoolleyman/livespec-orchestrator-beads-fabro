@@ -27,6 +27,15 @@ where the run stopped. The clause says so outright, and the direction matters: a
 cancel row names `proof_capture` unconditionally, so preferring it would re-enter
 capture for a run whose capture had already completed and been reviewed.
 
+"THE DISPATCH'S IDENTIFIER" IS EITHER OF TWO VALUES, and the cancel row carries
+both. `_dispatcher_proof_attribution` attributes one record to one dispatch by its
+Fabro RUN id or by its DISPATCH id — the widening it exists for — and the clause
+inherits that reading, since the earlier run is "resolved through the dispatch
+journal exactly as the acceptance pass attributes a record". So the precedence
+test asks about both: a cancelled dispatch whose capture HAD completed, and whose
+record names it by dispatch id, otherwise reads here as a dispatch with no record
+at all, and the resume re-captures a head already proved.
+
 The stage must be `proof_capture`. "A cancel in any other stage, including a
 later `janitor`, `fix` or `publish_draft` of a rework loop, does not anchor,
 because its head would not carry the rework." The single comparison covers BOTH
@@ -83,6 +92,7 @@ SOURCE_CANCEL_RECORD = "watchdog-stall-cancel-record"
 _STAGE_KEY = "stage"
 _WORK_ITEM_KEY = "work_item_id"
 _RUN_ID_KEY = "run_id"
+_DISPATCH_ID_KEY = "dispatch_id"
 _EXECUTING_STAGE_KEY = "executing_stage"
 _PUBLISHED_HEAD_KEY = "published_head"
 
@@ -114,7 +124,9 @@ def cancel_anchor(
     carry. It is passed IN rather than read here because this module is pure over
     the journal and the records live on the forge, and because the caller has
     already read them for the proof-record anchor — a second read could answer
-    differently about the same pull request.
+    differently about the same pull request. It is compared against BOTH
+    identifiers the cancel row names; see the module docstring for why one is not
+    enough.
 
     Every arm below returns `None`, which is the whole of "this row cannot anchor
     a resume": the caller then falls back to the proof-record anchor, and the
@@ -127,7 +139,7 @@ def cancel_anchor(
     run_id = _text(value=latest.get(_RUN_ID_KEY))
     if run_id is None:
         return None
-    if run_id in proof_run_ids:
+    if not proof_run_ids.isdisjoint(_dispatch_identifiers(record=latest, run_id=run_id)):
         return None
     if latest.get(_EXECUTING_STAGE_KEY) != CANCEL_ANCHOR_RESUMED_AT:
         return None
@@ -135,6 +147,21 @@ def cancel_anchor(
     if head is None:
         return None
     return CancelAnchor(run_id=run_id, head=head)
+
+
+def _dispatch_identifiers(*, record: Mapping[str, object], run_id: str) -> frozenset[str]:
+    """Every identifier a proof record may carry and still belong to this dispatch.
+
+    The run id is already in hand and is always a member; the dispatch id is added
+    when the row names a readable one. A row written before the cancel site
+    recorded the dispatch id degrades to the run id alone rather than refusing —
+    an older row is still a perfectly good anchor, and the only thing a missing
+    dispatch id costs is the second precedence comparison.
+    """
+    dispatch_id = _text(value=record.get(_DISPATCH_ID_KEY))
+    if dispatch_id is None:
+        return frozenset({run_id})
+    return frozenset({run_id, dispatch_id})
 
 
 def _latest_cancel_record(
