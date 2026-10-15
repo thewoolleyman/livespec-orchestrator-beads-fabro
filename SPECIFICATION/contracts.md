@@ -4141,6 +4141,7 @@ The resume record MUST name the factory record as the source that decided
 the stage when that record is available; when the factory authoritatively
 reports that it no longer holds the run, the cancel record decides the
 stage and the resume record MUST name it as the source.
+When the pull request's current head differs from the head the latest proof record names, the earlier run's own republication anchors the resume instead, and only from the factory's own record of that run. That anchor applies when the factory that the earlier dispatch names still holds the earlier run and its record shows ALL of the following: (a) the run completed a `publish_draft` visit after the visit that published the latest proof record; (b) the published head the run's terminal checkpoint carries equals the pull request's current head; (c) the head the latest proof record names is an ancestor of that head; and (d) the run terminated while executing `proof_capture`, or between that completed `publish_draft` visit and `proof_capture`. Under this anchor the earlier run is that run, the published head is the pull request's current head, the resumed-at stage is `proof_capture`, and the resume record MUST name the factory record as the source that decided both. When the factory answers that it no longer holds the run, or cannot be read, this anchor does not apply and the moved-head refusal below stands. Because the resumed run enters at `proof_capture`, fresh capture, review and replay run on the published head, and the earlier record is never read as proof of it.
 The *resumed-at stage* is the node the earlier run was executing when it
 terminated (an earlier `pr` entry MUST normalize to `pr_refresh`), or, when it terminated between nodes, the target of the edge
 its last succeeded node's outcome selected. The Dispatcher MUST read it
@@ -4226,7 +4227,7 @@ remedy, when:
   record on it names a head and no `watchdog-stall-cancel` record anchors
   one as above (remedy: a plain dispatch);
 - the pull request's current head does not equal the published head,
-  naming both shas (remedy: a plain dispatch, which reclaims the
+  naming both shas, and no republication anchor applies as above (remedy: a plain dispatch, which reclaims the
   branch). A `pr_refresh` node that rebased and pushed before terminating leaves
   exactly this state, and the refusal is deliberate: proof verified on
   one tree is not proof of another;
