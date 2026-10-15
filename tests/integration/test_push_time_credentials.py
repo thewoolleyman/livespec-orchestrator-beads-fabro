@@ -207,7 +207,13 @@ def provision_auth(
     bin_dir, bundle, plugins = root / "bin", root / "bundle", root / "plugins"
     bin_dir.mkdir()
     plugins.mkdir()
-    executable(path=bin_dir / "gh", source="#!/bin/sh\nexit 0\n")
+    # The base `gh` the refreshing wrapper wraps. It answers `null` because
+    # `pr_refresh` reads the pull request's auto-merge request before it rebases
+    # (v145) and fails closed on an empty answer, so a stub printing nothing
+    # would refuse every case here before any push — the subject of this module
+    # is the push-time credential, and the arming is reported absent so the
+    # refresh reaches it.
+    executable(path=bin_dir / "gh", source="#!/bin/sh\nprintf 'null\\n'\nexit 0\n")
     executable(path=plugins / "livespec-push-exact-head", source=publication_push_program_source())
     (plugins / "livespec-run-plugin-gate.py").write_text("# fixture gate\n")
     env.update(

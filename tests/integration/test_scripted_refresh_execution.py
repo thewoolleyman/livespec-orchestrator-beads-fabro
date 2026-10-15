@@ -54,11 +54,13 @@ regression control for that property.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import pytest
 import tomli
@@ -155,6 +157,23 @@ class _Refresh:
     clone: Path
     plugins_root: Path
     gate_script: Path
+    bin_dir: Path
+    forge_state: Path
+
+    def forge(self) -> dict[str, object]:
+        return json.loads(self.forge_state.read_text(encoding="utf-8"))
+
+    def forge_calls(self) -> list[dict[str, object]]:
+        """Every argv the stub was handed, each with the clone's head at that moment."""
+        return cast("list[dict[str, object]]", self.forge()["calls"])
+
+    def disarm_heads(self) -> list[str]:
+        """The clone's head at each `--disable-auto` call the stage issued."""
+        return [
+            str(call["head"])
+            for call in self.forge_calls()
+            if cast("list[str]", call["argv"])[:2] == ["pr", "merge"]
+        ]
 
     def state_dir(self) -> Path:
         return self.clone / ".git" / PUBLICATION_STATE_GIT_PATH
@@ -223,7 +242,13 @@ def _materialized_plugins_root(*, root: Path) -> Path:
     return plugins_root
 
 
-def _build(*, root: Path) -> _Refresh:
+def _build(
+    *,
+    root: Path,
+    armed: bool = False,
+    arming_unreadable: bool = False,
+    disarm_fails: bool = False,
+) -> _Refresh:
     """An origin carrying `master` and the publish branch, and a clone on the branch.
 
     The clone's HEAD is the publish branch's tip and origin's copy of that branch
@@ -242,11 +267,29 @@ def _build(*, root: Path) -> _Refresh:
     )
     _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=clone)
     gate_script = root / "install-plugin-gate.sh"
+    bin_dir = root / "bin"
+    _ = bin_dir.mkdir()
+    stub = bin_dir / "gh"
+    _ = stub.write_text(_GH_STUB % {"python": sys.executable}, encoding="utf-8")
+    stub.chmod(0o755)
     box = _Refresh(
         origin=origin,
         clone=clone,
         plugins_root=_materialized_plugins_root(root=root),
         gate_script=gate_script,
+        bin_dir=bin_dir,
+        forge_state=root / "forge.json",
+    )
+    _ = box.forge_state.write_text(
+        json.dumps(
+            {
+                "armed": armed,
+                "arming_unreadable": arming_unreadable,
+                "disarm_fails": disarm_fails,
+                "calls": [],
+            }
+        ),
+        encoding="utf-8",
     )
     box.state_dir().mkdir(parents=True)
     _ = (box.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(
@@ -271,9 +314,11 @@ def _env(*, box: _Refresh, extra: dict[str, str] | None = None) -> dict[str, str
     HEAD` above all, which is the fallback the no-provenance control asserts.
     """
     env = {
-        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "PATH": f"{box.bin_dir}:/usr/local/bin:/usr/bin:/bin",
         "HOME": str(box.clone.parent / "home"),
         "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
+        "LIVESPEC_FAKE_FORGE": str(box.forge_state),
+        "LIVESPEC_FAKE_FORGE_CLONE": str(box.clone),
         SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(box.plugins_root),
     }
     return env if extra is None else {**env, **extra}
@@ -303,6 +348,56 @@ def _branch_clone(*, box: _Refresh, name: str) -> Path:
 
 _PASSING_GATE = "true"
 _FAILING_GATE = "false"
+
+# The forge stub, a PROGRAM on `PATH` rather than an in-process mock because the
+# stage reaches `gh` as a subprocess. It serves exactly the two calls the v145
+# disarm leg makes -- the auto-merge read and the `--disable-auto` write -- and
+# records both, so WHAT the stage asked the forge is itself under assertion.
+#
+# IT ALSO RECORDS THE CLONE'S HEAD AT EACH CALL, which is what makes "before it
+# rebases" an OBSERVATION rather than an inference from the end state. A disarm
+# issued after the rebase is a disarm of a pull request whose head the forge was
+# holding armed for merge and which this run has already rewritten, and nothing
+# in the final refs distinguishes the two orders.
+_GH_STUB = r"""#!%(python)s
+import json, os, subprocess, sys
+
+state_path = os.environ["LIVESPEC_FAKE_FORGE"]
+clone = os.environ["LIVESPEC_FAKE_FORGE_CLONE"]
+
+
+def head():
+    done = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=clone, capture_output=True, text=True, check=False
+    )
+    return done.stdout.strip()
+
+
+with open(state_path) as handle:
+    state = json.load(handle)
+
+argv = sys.argv[1:]
+state["calls"].append({"argv": argv, "head": head()})
+
+with open(state_path, "w") as handle:
+    json.dump(state, handle)
+
+if argv[:2] == ["pr", "view"]:
+    if state["arming_unreadable"]:
+        sys.stderr.write("the forge declined to report autoMergeRequest\n")
+        sys.exit(1)
+    print("{}" if state["armed"] else "null")
+    sys.exit(0)
+
+if argv[:2] == ["pr", "merge"] and "--disable-auto" in argv:
+    if state["disarm_fails"]:
+        sys.stderr.write("failed to disable auto-merge: the forge refused\n")
+        sys.exit(1)
+    sys.exit(0)
+
+sys.stderr.write("unstubbed gh invocation: %%s\n" %% " ".join(argv))
+sys.exit(2)
+"""
 
 
 def _run(
@@ -356,6 +451,99 @@ def test_an_advanced_default_is_rebased_gated_and_republished_under_a_lease(
     assert box.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{republished}\n"
     assert box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) == ""
+
+
+def test_an_armed_pull_request_is_disarmed_before_the_rebase(tmp_path: Path) -> None:
+    """The v145 disarm: nothing armed survives into a rewritten head.
+
+    `SPECIFICATION/contracts.md` section "Definition-of-Done and Proof-of-Done
+    stages" -> "Scripted publication and proof-head integrity" (v145) requires
+    this stage to read whether the run's pull request carries an auto-merge
+    request and, when it does, to remove it BEFORE it rebases. What that closes
+    is a merge of an unproved head: an armed pull request whose checks are green
+    merges on the forge's own schedule, so a refresh that pushed a rebased head
+    while the arming stood would hand the forge a tree no record names.
+
+    THE ORDER IS OBSERVED RATHER THAN INFERRED. The stub records the clone's own
+    head at each call, so the disarm is asserted to have happened while the
+    clone still stood at the PRE-refresh head -- a disarm issued after the
+    rebase leaves exactly the same final refs and exactly the same call list.
+    """
+    box = _build(root=tmp_path, armed=True)
+    before = box.local_head()
+    _ = _advance_default(box=box)
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_REFRESH_DISARMED" in result.stderr
+    assert "LIVESPEC_PR_REFRESH_CHANGED" in result.stderr
+    assert box.disarm_heads() == [before]
+    # And the rebase really happened, so the disarm is not a no-op path.
+    assert box.local_head() != before
+    assert box.remote_head(ref=_BRANCH) == box.local_head()
+
+
+def test_an_unarmed_pull_request_is_not_disarmed(tmp_path: Path) -> None:
+    """The ordinary refresh issues the READ and no write at all.
+
+    The control for the case above: without it, "the arming was removed" is
+    equally consistent with a stage that issues `--disable-auto` on every
+    refresh, which spends a forge write per refresh and reports a removal that
+    removed nothing.
+    """
+    box = _build(root=tmp_path)
+    _ = _advance_default(box=box)
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_REFRESH_DISARMED" not in result.stderr
+    assert box.disarm_heads() == []
+    assert [cast("list[str]", call["argv"])[:2] for call in box.forge_calls()] == [["pr", "view"]]
+
+
+def test_an_unreadable_arming_fails_closed_before_any_rewrite(tmp_path: Path) -> None:
+    """A forge that cannot answer is not a pull request known to be unarmed.
+
+    The clause says the stage fails closed naming the MEASUREMENT, and the
+    direction matters: proceeding on an unreadable answer is how a rebase
+    rewrites the head of a pull request the forge is holding armed, which is the
+    one outcome the disarm exists to prevent. Origin is asserted untouched on
+    BOTH refs, because "nothing was pushed" is the claim and a stage that
+    refused after its rebase would still have left the clone rewritten.
+    """
+    box = _build(root=tmp_path, arming_unreadable=True)
+    before = box.remote_head(ref=_BRANCH)
+    advanced = _advance_default(box=box)
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_PR_REFRESH_ARMING_UNREADABLE" in result.stderr
+    assert box.remote_head(ref=_BRANCH) == before
+    assert box.remote_head(ref=_DEFAULT_BRANCH) == advanced
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
+
+
+def test_a_failed_disarm_fails_closed_before_any_rewrite(tmp_path: Path) -> None:
+    """An arming that could not be REMOVED is the same hazard, named separately.
+
+    Two sentinels rather than one because the remedies differ: an unreadable
+    arming is a forge that would not answer, while a refused `--disable-auto` is
+    an arming that is still standing -- and an operator reading the second has a
+    pull request to disarm by hand before anything can be re-dispatched.
+    """
+    box = _build(root=tmp_path, armed=True, disarm_fails=True)
+    before = box.remote_head(ref=_BRANCH)
+    _ = _advance_default(box=box)
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_PR_REFRESH_DISARM_FAILED" in result.stderr
+    assert box.remote_head(ref=_BRANCH) == before
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
 
 
 def test_an_unchanged_default_owes_no_rebase_and_pushes_nothing(tmp_path: Path) -> None:
