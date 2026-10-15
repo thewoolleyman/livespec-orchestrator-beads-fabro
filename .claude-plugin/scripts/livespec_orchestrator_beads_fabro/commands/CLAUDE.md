@@ -1238,13 +1238,24 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
 - The PROOF CARRY-FORWARD DECISION a changed-head `pr_refresh` takes
   (`contracts.md` §"Definition-of-Done and Proof-of-Done stages" → "Proof
   carry-forward across a refresh", "The observation scope" and "The decision";
-  `bd-ib-v4exlm`, Scenario 178). `_dispatcher_carry_forward_grammar` owns the
-  closed direct-read grammar and the two record lines the proof prompts write;
-  `_dispatcher_carry_forward_record` owns the verified-record parse and the
-  decision record's own rendering; `_dispatcher_carry_forward_program`
-  assembles both into the ONE stdlib-only program the Dispatcher materializes
-  into the sandbox, beside the publication-head reader and for the same reason.
-  Four properties an editor must not invert. The decision is taken ENTIRELY
+  `bd-ib-v4exlm`, Scenario 178). FOUR modules, and the dependency direction
+  reads bottom-up: `_dispatcher_carry_forward_grammar` owns the closed
+  direct-read grammar and the two record lines the proof prompts write;
+  `_dispatcher_carry_forward_record` owns the SANDBOX's one account of the
+  Proof of Done record — the header and publish-head reader the publication-head
+  program now composes too, plus the reproduction-step parse;
+  `_dispatcher_carry_forward_decision` owns the condition ladder, the decision
+  record's rendering and its posting; and `_dispatcher_carry_forward_program`
+  assembles all four into the ONE stdlib-only program the Dispatcher
+  materializes into the sandbox, beside the publication-head reader and for the
+  same reason. The ASSEMBLY ORDER is load-bearing and is not alphabetical: each
+  fragment uses names the earlier ones define, so a reordering raises
+  `NameError` at import rather than deciding something wrong in a sandbox.
+  `pr_refresh` records the four decision inputs — the previous head, the
+  previous base, the new base and the new head — beside its changed marker, and
+  `pr_refresh_head` is where the program is entered; its EXIT CODE is the
+  decision, because that is all the engine gives a command node.
+  Five properties an editor must not invert. The decision is taken ENTIRELY
   inside the sandbox, so these modules ship a PROGRAM FRAGMENT and no host-side
   implementation: a host-side twin would be a second account of one grammar
   with no caller, which is the duplication `_dispatcher_publication_head`
@@ -1257,7 +1268,11 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   metacharacters by the time words exist. And a REJECTED path operand is kept
   apart from a command OUTSIDE the grammar even though both route identically:
   the distinction buys the record, which must point its reader at the `..`
-  segment rather than at the command's shape.
+  segment rather than at the command's shape. And an UNREADABLE decision input
+  still POSTS a record naming it, rather than failing closed in silence: the
+  clause requires exactly one decision record on every changed-head refresh,
+  and the condition hardest to reconstruct afterwards is exactly the one a
+  silent refusal would leave no artifact for.
 
 Rules an agent editing this tree must follow:
 

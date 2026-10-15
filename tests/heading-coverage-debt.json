@@ -863,13 +863,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 178 \u2014 A refresh that brings in only inert paths carries the verified proof forward, and anything else re-proves",
-    "work_item": "bd-ib-v4exlm",
-    "first_seen": "2026-10-14"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 180 \u2014 A sandbox agent cannot remove the run's working tree, and ordinary removals still run",
     "work_item": "bd-ib-jgedjo",
     "first_seen": "2026-10-15"
