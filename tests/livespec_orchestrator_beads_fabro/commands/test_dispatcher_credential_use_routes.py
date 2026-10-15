@@ -35,6 +35,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_catalogs import builtin_cat
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
 from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import workflow_layer
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_routing import CodexRouting
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
     GUARD_SCRIPT_PATH,
@@ -581,6 +582,25 @@ def _materialize_with(*, graph: str, tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(_dispatcher_credentials.time, "time", lambda: now)
     monkeypatch.setattr(
         _dispatcher_codex_auth, "read_host_codex_auth", lambda: _auth_json_far_future(now=now)
+    )
+    # THE CODEX ROUTING IS DECLARED RATHER THAN RESOLVED (`bd-ib-meejjz`). The
+    # launch-route check these two cases drive exists to establish that every
+    # launch reaches the guard that enforces the credential-use deadline, so it
+    # only runs for a dispatch that projects a Codex credential to bound. The
+    # `tmp_path` repository here declares no node adapters, so it resolves to the
+    # workflow's built-in Anthropic defaults and would scope the check away for a
+    # reason neither case is about. The scoping itself is asserted in
+    # `test_dispatcher_codex_overlay_leg_routing`, in BOTH directions.
+    monkeypatch.setattr(
+        _dispatcher_credentials,
+        "codex_routing_for_dispatch",
+        lambda **_kwargs: CodexRouting(
+            routes_codex=True,
+            detail=(
+                "resolved ACP candidate keys naming the codex-acp agent: "
+                "codex-acp/openai/gpt-5.1"
+            ),
+        ),
     )
     return materialize_overlay(
         committed=committed,

@@ -21,6 +21,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_overlay_leg import (
     project_codex_overlay_leg,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_routing import (
+    codex_routing_for_dispatch,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_env import (
     check_credential_env,
 )
@@ -285,6 +288,16 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # The ONE wall-clock seam the leg reads, held here so the whole dispatch
         # path has a single place a test stands time still.
         clock=lambda: int(time.time()),
+        # WHETHER THIS DISPATCH ROUTES ANY NODE TO CODEX, which decides whether
+        # there is a credential for the leg to grade and stamp a deadline from.
+        # Resolved from the SAME pure function the pre-dispatch wall's gate
+        # consults, against the same host-side checkout, so the pre-claim and
+        # post-claim halves cannot scope themselves differently; it is read here
+        # rather than threaded down from the wall because the wall grades a
+        # whole selection while this runs per dispatch, and a value carried
+        # across that boundary would have to ride every plan and seam between
+        # them to reach one call site.
+        codex_routing=codex_routing_for_dispatch(repo=repo),
     )
     if isinstance(codex_leg, str):
         return codex_leg
