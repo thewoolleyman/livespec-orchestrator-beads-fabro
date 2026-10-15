@@ -500,6 +500,68 @@ def test_proof_naming_another_tree_is_refused_before_any_write(tmp_path: Path) -
     assert box.merge_argv() is None
 
 
+def _commit(*, repo: Path, message: str, content: str | None = None) -> str:
+    """One real commit in `repo`, changing `tracked.txt` only when `content` is given."""
+    if content is not None:
+        _ = (repo / "tracked.txt").write_text(content, encoding="utf-8")
+        _ = subprocess.run(["git", "add", "tracked.txt"], cwd=repo, check=True, capture_output=True)
+    _ = subprocess.run(
+        ["git", "commit", "--quiet", "--allow-empty", "-m", message],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def test_proof_on_an_unchanged_tree_engine_checkpoint_publishes_the_pushed_head(
+    tmp_path: Path,
+) -> None:
+    """A record naming an unpushed, unchanged-tree checkpoint of the pushed head is that tree's proof.
+
+    The Petri-era engine commits a checkpoint after every node, publish_draft
+    included, so the clone's HEAD sits one empty commit above what the run
+    pushed. Proof is a property of a TREE, so a record naming that checkpoint
+    proves the pull request's head and must not be refused as another tree's.
+    """
+    box = _sandbox(root=tmp_path, pushed="")
+    pushed = _commit(repo=box.repo, message="the work", content="delivered\n")
+    checkpoint = _commit(repo=box.repo, message="fabro(run): publish_draft (success)")
+    _ = (box.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(pushed, encoding="utf-8")
+    forge = box.forge()
+    forge["head"] = pushed
+    forge["comments"] = _proven(head=checkpoint)
+    _ = box.forge_state.write_text(json.dumps(forge), encoding="utf-8")
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_READY_AND_ARMED" in result.stderr
+    argv = box.merge_argv()
+    assert argv is not None, "the stage armed nothing"
+    assert argv[argv.index("--match-head-commit") + 1] == pushed
+
+
+def test_proof_on_a_descendant_with_a_changed_tree_is_still_refused(tmp_path: Path) -> None:
+    """Only an UNCHANGED tree carries the proof across: a real later change does not."""
+    box = _sandbox(root=tmp_path, pushed="")
+    pushed = _commit(repo=box.repo, message="the work", content="delivered\n")
+    changed = _commit(repo=box.repo, message="an unpushed change", content="different\n")
+    _ = (box.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(pushed, encoding="utf-8")
+    forge = box.forge()
+    forge["head"] = pushed
+    forge["comments"] = _proven(head=changed)
+    _ = box.forge_state.write_text(json.dumps(forge), encoding="utf-8")
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_PR_PROOF_HEAD_MISMATCH" in result.stderr
+    assert box.merge_argv() is None
+
+
 def test_a_newer_unreplayed_verdict_blocks_publication(tmp_path: Path) -> None:
     """The real reader runs here: a later `not_reproduced` supersedes the replay.
 

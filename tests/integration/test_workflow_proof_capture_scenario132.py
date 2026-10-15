@@ -431,6 +431,28 @@ def test_the_capture_prompt_publishes_the_ratified_record_format() -> None:
     assert "pending human attestation" in prompt
 
 
+def test_both_proof_prompts_declare_the_pull_requests_published_head() -> None:
+    """The declared head is the pull request's, read from the forge, never the clone's HEAD.
+
+    The Petri-era engine commits a checkpoint after every node, so the clone's
+    HEAD is routinely an unpushed commit the pull request never carries; a record
+    naming it makes the pr node refuse the run and the resume anchor nothing. The
+    tree check is asserted too, because it is what keeps a genuinely unpushed
+    change failing closed rather than being declared as the published head.
+    """
+    for name in ("proof-capture.md", "proof-verify.md"):
+        prompt = _prompt(name=name)
+
+        assert "the full 40-character commit sha of the pull request's head" in prompt, name
+        assert "headRefOid" in prompt, name
+        assert 'git fetch --quiet origin "refs/pull/<number>/head"' in prompt, name
+        assert "git diff --quiet FETCH_HEAD HEAD" in prompt, name
+        assert (
+            "do NOT\nwrite the label at all" in prompt or "do NOT write the label at all" in prompt
+        ), name
+        assert "the full 40-character commit sha of HEAD>" not in prompt, name
+
+
 def test_the_capture_prompt_names_the_asset_naming_form_and_the_store() -> None:
     """Images ride the store seam under the flat name, never the repository tree.
 

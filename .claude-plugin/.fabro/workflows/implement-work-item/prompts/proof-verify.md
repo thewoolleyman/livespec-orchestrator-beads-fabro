@@ -317,11 +317,21 @@ using the run id you resolved in Step 3 and an ISO-8601 UTC timestamp.
 The SECOND line must declare, exactly once, the publish-branch head YOUR
 replay ran on:
 
-    Publish-branch head: <the full 40-character commit sha of HEAD>
+    Publish-branch head: <the full 40-character commit sha of the pull request's head>
 
-Read it with `git rev-parse HEAD` in the sandbox clone and paste the full
-sha — your own reading, never the one the captured record declares, even
-when the two agree. It is what lets a later `resume` finish this run from
+Read it from the FORGE, not from the clone: `gh pr view <number> --json
+headRefOid --jq .headRefOid`, and paste the full sha — your own reading,
+never the one the captured record declares, even when the two agree. The
+engine commits a checkpoint after every node, so the clone's own `git
+rev-parse HEAD` is usually UNPUSHED commits above what the pull request
+carries. Then confirm the pull request's head is the TREE your replay ran
+on: run `git fetch --quiet origin "refs/pull/<number>/head"` and then `git
+diff --quiet FETCH_HEAD HEAD`. Exit status 0 means the clone differs from
+the pull request's head only by commits that change no file — declare that
+head. Any other status means the clone carries changes the pull request
+does not: then do NOT write the label at all, and say in one prose
+sentence that no head is declared because the clone's HEAD (give its full
+sha) carries changes the pull request's head (give its full sha) does not. It is what lets a later `resume` finish this run from
 this pull request instead of re-implementing it, and the resume compares it
 against the pull request's current head. Declare it in PROSE, outside every
 fenced block. Your replay re-prints the captured record's own lines, this
