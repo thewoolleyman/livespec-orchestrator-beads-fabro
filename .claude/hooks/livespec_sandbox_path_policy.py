@@ -56,6 +56,7 @@ readings and emits the deny payload is `livespec_sandbox_path_guard`.
 
 from __future__ import annotations
 
+import fnmatch
 import posixpath
 from collections.abc import Mapping, Sequence
 
@@ -76,6 +77,9 @@ __all__: list[str] = [
 
 _ROOT = "/"
 _UNREADABLE = ("", _ROOT, ".")
+_CHANGE_DIRECTORY = "cd"
+# The characters that make a word a shell PATTERN rather than a path.
+_GLOB_CHARACTERS = frozenset("*?[")
 
 # The verbs that can REMOVE, MOVE or REPLACE a path outright, which is the
 # triple the governing clause names. `cp` is deliberately absent: its
@@ -139,9 +143,16 @@ def removal_targets(*, command: str, working_directory: str) -> tuple[str, ...]:
     tokens = shell_tokens(command=command)
     if tokens is None:
         return ()
+    directory = working_directory
     found: list[str] = []
     for segment in token_segments(tokens=tokens):
-        found.extend(_segment_targets(segment=segment, directory=working_directory))
+        verb, arguments = _executed(segment=segment)
+        if verb == _CHANGE_DIRECTORY:
+            directory = _changed_directory(arguments=arguments, directory=directory)
+        elif _is_destructive(verb=verb, arguments=arguments):
+            found.extend(
+                _resolve(word=word, directory=directory) for word in operands(tokens=arguments)
+            )
     return tuple(found)
 
 
@@ -155,9 +166,19 @@ def refused_path(
 
     `resolved` maps a target to what it really is, so a symbolic link an agent
     made itself cannot stand in for the path it points at.
+
+    A target carrying a glob is matched as a PATTERN rather than compared, and
+    it is never looked up in `resolved`: a pattern is not a path, so there is
+    nothing on disk to resolve, and the only question worth asking is whether a
+    protected path is among what the shell would expand it to.
     """
     refusable = _refusable_targets(protected=protected)
     for target in targets:
+        if _GLOB_CHARACTERS & set(target):
+            matched = _matched_pattern(pattern=target, refusable=refusable)
+            if matched is not None:
+                return matched
+            continue
         for candidate in (target, resolved.get(target, target)):
             victim = _victim(candidate=candidate, refusable=refusable)
             if victim is not None:
@@ -183,14 +204,30 @@ def refusal_message(*, protected_path: str, command: str) -> str:
     )
 
 
-def _segment_targets(*, segment: list[str], directory: str) -> list[str]:
+def _executed(*, segment: list[str]) -> tuple[str, list[str]]:
+    """The command word one segment runs, and its arguments.
+
+    An empty verb means the segment runs nothing — it is all flags,
+    assignments and wrappers. Such a segment is still WALKED rather than
+    short-circuited, because the segment after it is where a removal lives.
+    """
     index = leading_command_index(tokens=segment)
     if index >= len(segment):
-        return []
-    arguments = segment[index + 1 :]
-    if not _is_destructive(verb=segment[index].rsplit("/", 1)[-1], arguments=arguments):
-        return []
-    return [_resolve(word=word, directory=directory) for word in operands(tokens=arguments)]
+        return "", []
+    return segment[index].rsplit("/", 1)[-1], segment[index + 1 :]
+
+
+def _changed_directory(*, arguments: list[str], directory: str) -> str:
+    """Where a `cd` leaves the shell, so a later relative word means the right path.
+
+    A `cd` with no operand goes somewhere this module cannot know. Keeping the
+    last KNOWN directory is the deliberate direction: resolving later relative
+    words against a home directory the policy invented would make every one of
+    those readings fiction, and the cost of keeping the known one is at worst a
+    refusal of a removal that would have happened elsewhere.
+    """
+    moved = operands(tokens=arguments)
+    return _resolve(word=moved[0], directory=directory) if moved else directory
 
 
 def _is_destructive(*, verb: str, arguments: Sequence[str]) -> bool:
@@ -254,5 +291,18 @@ def _ancestors(*, path: str) -> tuple[str, ...]:
 def _victim(*, candidate: str, refusable: Sequence[tuple[str, str]]) -> str | None:
     for refusable_path, victim in refusable:
         if candidate == refusable_path:
+            return victim
+    return None
+
+
+def _matched_pattern(*, pattern: str, refusable: Sequence[tuple[str, str]]) -> str | None:
+    """The protected path a glob would expand onto, if any.
+
+    `fnmatchcase` rather than `fnmatch` because the sandbox filesystem is
+    case-sensitive, and a case-folding comparison would refuse `/WORKSPACE`
+    while a shell would not have touched the root at all.
+    """
+    for refusable_path, victim in refusable:
+        if fnmatch.fnmatchcase(refusable_path, pattern):
             return victim
     return None
