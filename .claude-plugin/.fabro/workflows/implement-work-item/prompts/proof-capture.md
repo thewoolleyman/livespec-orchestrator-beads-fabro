@@ -308,10 +308,23 @@ using the run id you resolved in Step 4 and an ISO-8601 UTC timestamp.
 The SECOND line must declare, exactly once, the publish-branch head these
 steps ran on:
 
-    Publish-branch head: <the full 40-character commit sha of HEAD>
+    Publish-branch head: <the full 40-character commit sha of the pull request's head>
 
-Read it with `git rev-parse HEAD` in the sandbox clone and paste the full
-sha — never an abbreviation, and never a branch name. It is what lets a
+Read it from the FORGE, not from the clone: `gh pr view <number> --json
+headRefOid --jq .headRefOid` for the draft pull request you are commenting
+on, and paste the full sha — never an abbreviation, and never a branch name.
+The engine commits a checkpoint after every node, publish_draft included, so
+the clone's own `git rev-parse HEAD` is usually one or more UNPUSHED commits
+above what the pull request carries, and a record naming it anchors nothing
+the pull request has. Then confirm the pull request's head is the TREE your
+steps ran on: run `git fetch --quiet origin "refs/pull/<number>/head"` and
+then `git diff --quiet FETCH_HEAD HEAD`. Exit status 0 means the clone
+differs from the pull request's head only by commits that change no file,
+so that head is the one these steps proved — declare it. Any other status
+means the clone carries changes the pull request does not: then do NOT
+write the label at all, and say in one prose sentence that no head is
+declared because the clone's HEAD (give its full sha) carries changes the
+pull request's head (give its full sha) does not. It is what lets a
 later `resume` finish this run from this pull request instead of
 re-implementing it: the resume refuses when the pull request's head no
 longer equals the head this record names, because proof verified on one
