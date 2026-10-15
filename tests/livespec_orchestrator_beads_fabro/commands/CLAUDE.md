@@ -88,6 +88,17 @@ Tests for the thin-transport command modules under
   whose cause text already named Anthropic would pass against no implementation
   at all.
 
+- `test_fabro_reattach_executed_candidate.py` — the same attribution through
+  the run observation that WIRES it, which is a different claim: the reading is
+  available either way, and these cases decide whether a real dispatch takes
+  it. Its `ps` fixture carries TWO rows and the non-matching one is the other
+  vendor's, so a reader that took the list head — or merged every row — fails
+  here instead of landing on the right answer by luck. Its runner is keyed on
+  the fabro SUBCOMMAND rather than on call order, which is what lets the
+  ordinary-failure case assert that the labels read did not happen AT ALL; a
+  reply list would make that absence look like an unconsumed element, which is
+  also what a reordered pair looks like.
+
 - `test_dispatcher_fabro_currency.py`,
   `test_dispatcher_fabro_currency_sources.py`,
   `test_dispatcher_fabro_release_cache.py`,
