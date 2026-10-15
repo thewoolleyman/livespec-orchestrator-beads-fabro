@@ -913,6 +913,31 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   timer, so work-item `bd-ib-rxf` carries it as a HOST-CAPTURED assertion
   instead. This file never connects to a tenant.
 
+- `test_sandbox_commit_runner_scenario179.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 179 and the commit-leg-completion
+  paragraph of `contracts.md`: the detached commit runner the Dispatcher
+  materializes into the factory sandbox, so a repository commit hook that
+  outlasts one of the agent's tool calls still reaches its OWN verdict. Every
+  case EXECUTES the materialized program against a real local repository with
+  real hooks installed, because each of the heading's four sub-scenarios is a
+  property of real separate processes — an identity returned before a hook
+  finishes, a bounded wait that returns while the hook still runs, a signal
+  death reporting `no-verdict`, a second start refused by name — and reading the
+  program's text can establish none of them. The slow-hook fixtures are the
+  point rather than incidental cost: a hook that outlasts its caller IS the
+  condition under test, so the detachment cases install a hook that sleeps far
+  longer than the bound they pass to `wait`, and each stops its run before
+  returning. Two controls are load-bearing. The refusal case runs the SAME
+  refused commit in the FOREGROUND first and compares exit statuses, so the
+  reported status is measured against git's own rather than against a number
+  the test chose. And the hook-parity case compares the hook set a foreground
+  commit fires with the set the runner fires, because an empty recorded set
+  reads identically for "the runner skipped every hook" and "the fixture
+  installed none" — the shape of probe that reports a clean pass over a question
+  it could not answer. The module is in `pyproject.toml`'s
+  `subprocess_spawn_allowlist` with its rationale, and every child runs under
+  the coverage-scrubbed `_child_env()` an allowlisted spawn owes.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
