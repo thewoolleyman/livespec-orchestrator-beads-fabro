@@ -62,6 +62,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
+_CANCEL_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_resume_cancel_anchor"
 _RECORD_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_resume_run_record"
 _GATHER_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation"
 _COMMANDS = (
@@ -80,6 +81,7 @@ _HEAD = "f" * 40
 _MOVED_HEAD = "a" * 40
 _EARLIER_RUN = "01M49TZ44210GSEC8VTFR8VHKP"
 _EARLIER_DISPATCH = "5088bcaff2aa4bad99d9d0cf4fbbbe2f"
+_CANCELLED_RUN = "01M4Q4XBZ5398FJAWQ131QER60"
 _PR = 2639
 _ASSERTION = "The resume enters at the unfinished stage."
 _COMMENT_URL = "https://github.test/c/1"
@@ -481,3 +483,135 @@ def test_earlier_resumes_of_the_same_pull_request_are_counted(repo: Path) -> Non
         runner=_runner(),
     )
     assert gather.observation.earlier_resumes == (_EARLIER_RUN,)
+
+
+def _cancel_journal(
+    *,
+    path: Path,
+    run_id: str = _CANCELLED_RUN,
+    executing_stage: str = "proof_capture",
+    published_head: str = _HEAD,
+) -> Path:
+    """The ordinary journal plus one `watchdog-stall-cancel` row for a LATER dispatch.
+
+    The cancel row's run is deliberately NOT the run the pull request's proof
+    record names: that is the state the clause describes — "no proof record on the
+    pull request carries the identifier of the item's latest journaled dispatch" —
+    and it is what makes these cases discriminate. A gather that ignored the
+    cancel row would still find the proof-record anchor and report the stage that
+    record's `captured` verdict implies, which is `review`.
+    """
+    journal = _journal(path=path)
+    with journal.open("a", encoding="utf-8") as handle:
+        _ = handle.write(
+            json.dumps(
+                {
+                    "stage": "watchdog-stall-cancel",
+                    "work_item_id": _ITEM_ID,
+                    "dispatch_id": "7a636b5e7d60425c942ebdaf10fe7e53",
+                    "run_id": run_id,
+                    "factory": "hp",
+                    "executing_stage": executing_stage,
+                    "pull_request": _PR,
+                    "published_head": published_head,
+                    "published_head_unreadable": None,
+                }
+            )
+            + "\n"
+        )
+    return journal
+
+
+def _gather_with_cancel(*, repo: Path, item: WorkItem, runner: _StubRunner) -> Any:
+    module = importlib.import_module(_GATHER_MODULE)
+    return module.gather_resume(
+        args=_args(),
+        repo=repo,
+        item=item,
+        journal_path=_cancel_journal(path=repo / "tmp" / "journal.jsonl"),
+        runner=runner,
+    )
+
+
+def _ps_holding(*, run_id: str) -> CommandResult:
+    return _ok(
+        stdout=json.dumps(
+            [{"run_id": run_id, "status": "failed", "goal": f"Work-item: {_ITEM_ID}"}]
+        )
+    )
+
+
+def test_a_cancel_record_anchors_proof_capture_when_the_factory_lost_the_run(repo: Path) -> None:
+    """Scenario 172: a cancel between publication and capture anchors the resume.
+
+    The factory answers that it no longer holds the cancelled run, so the cancel
+    record decides the stage and the resume record must name it as the source.
+    `proof_capture` is the clause's fixed entry for this anchor, and it is NOT
+    what the proof-record reader would have answered here — that record's
+    `captured` verdict implies `review` — so this case fails for a gather that
+    read only the pull request.
+    """
+    assert _GATHER_PATH.is_file()
+    cancel = importlib.import_module(_CANCEL_MODULE)
+    gather = _gather_with_cancel(repo=repo, item=_item(), runner=_runner())
+    assert gather.anchor is not None
+    assert gather.anchor.resumed_at == "proof_capture"
+    assert gather.anchor.source == cancel.SOURCE_CANCEL_RECORD
+    assert gather.anchor.head == _HEAD
+    assert gather.anchor.run_id == _CANCELLED_RUN
+    assert gather.anchor.record is None
+    assert gather.observation.anchor_head == _HEAD
+
+
+def test_a_factory_still_holding_the_cancelled_run_decides_the_stage(repo: Path) -> None:
+    """ "The factory's own record of the run ... takes precedence for the stage."
+
+    Same journal and same records as the case above; the only difference is that
+    `fabro ps` holds the cancelled run, so `inspect` is asked and its node wins.
+    `fix` is a node the cancel anchor's own fixed entry would never produce, which
+    is what separates the two readings.
+    """
+    assert _GATHER_PATH.is_file()
+    gather = _gather_with_cancel(
+        repo=repo,
+        item=_item(),
+        runner=_runner(
+            ps=_ps_holding(run_id=_CANCELLED_RUN), inspect=_ok(stdout=_inspect(node="fix"))
+        ),
+    )
+    assert gather.anchor is not None
+    assert gather.anchor.resumed_at == "fix"
+    assert gather.anchor.source == SOURCE_FACTORY_RUN
+    assert gather.anchor.head == _HEAD
+
+
+def test_the_cancel_anchor_leads_the_earlier_run_identifiers(repo: Path) -> None:
+    """The cancelled run is the earlier run the `resume` record links, so it leads.
+
+    `resumes_anchored_on` names each resume by the FIRST identifier, so an
+    operator reading the third-resume refusal has to see the run they can look up
+    on the factory — which for this anchor is the cancelled one, not the run whose
+    proof record the pull request happens to carry.
+    """
+    assert _GATHER_PATH.is_file()
+    gather = _gather_with_cancel(repo=repo, item=_item(), runner=_runner())
+    assert gather.earlier_run_ids[0] == _CANCELLED_RUN
+    assert _EARLIER_RUN in gather.earlier_run_ids
+
+
+def test_a_cancel_anchor_inherits_no_proof_so_nothing_reads_as_changed(repo: Path) -> None:
+    """A cancel anchor carries no record, so the changed-Definition-of-Done arm is silent.
+
+    The refusal exists so "the inherited records prove exactly the assertions the
+    resumed dispatch is graded on"; under this anchor NOTHING is inherited — the
+    resumed run enters at `proof_capture` and captures afresh — so an assertion the
+    pull request's older record does not carry is not a mismatch. Measuring it
+    against that record anyway would refuse every cancel-anchored resume whose
+    item had been re-groomed, and the refusal would name a plain dispatch, which
+    reclaims the very branch the resume exists to finish.
+    """
+    assert _GATHER_PATH.is_file()
+    gather = _gather_with_cancel(
+        repo=repo, item=_item(assertion="An assertion no earlier record carries."), runner=_runner()
+    )
+    assert gather.observation.changed_assertions == ()
