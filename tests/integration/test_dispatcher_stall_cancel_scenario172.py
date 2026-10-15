@@ -53,6 +53,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
+    read_work_item_comments,
     read_work_items,
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
@@ -445,3 +446,66 @@ def test_an_unreadable_published_head_is_stated_rather_than_omitted() -> None:
     )
     assert "published_head_unreadable" in unpublished
     assert unpublished["published_head_unreadable"] is None
+
+
+def test_a_first_stall_cancel_releases_the_claim_and_returns_the_item_to_ready(
+    tmp_path: Path,
+) -> None:
+    """Scenario 172's "A first stall cancel ... is released and recovered".
+
+    The disposition is asserted through the LEDGER and the JOURNAL together,
+    because each surface alone passes on a build that is wrong in the other.
+    A build that writes the release record but never reaches the store leaves
+    the item `active` with `fabro` still holding it — the stranded shape this
+    whole routing exists to retire, and the one a journal-only reading reports
+    as a healthy release. A build that moves the item but journals nothing
+    leaves an operator with a `ready` item and no account of which run was
+    cancelled, so a re-dispatch cannot tell a released stall from work that
+    was never dispatched.
+
+    The COMMENT is asserted for the same reason it is required rather than
+    optional: the journal is a per-clone file, so it is the ledger comment —
+    and only the comment — that still names the cancelled run after the
+    dispatching clone is gone. It must name the run, its factory and the stage
+    the run was executing, which are the three facts a triager needs before
+    deciding whether the kill was genuine.
+    """
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition"
+    )
+    repo = _repo(tmp_path=tmp_path)
+    journal = _journal(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    journal.append(
+        record={
+            "stage": "watchdog-stall-cancel",
+            "work_item_id": _ITEM_ID,
+            "run_id": "01STALLRUN",
+            "factory": "hp",
+            "executing_stage": "proof_capture",
+        }
+    )
+
+    module.dispose_stall_cancel(
+        repo=repo,
+        item=item,
+        outcome=_outcome(status="stalled-no-progress"),
+        journal=journal,
+    )
+
+    released = _stored()[_ITEM_ID]
+    assert released.status == "ready"
+    assert released.blocked_reason is None
+    assert released.assignee is None
+
+    stages = [record.get("stage") for record in _journal_records(path=journal.path)]
+    assert module.STALL_RELEASE_STAGE in stages
+    assert NON_CONVERGENCE_BOUNCE_STAGE not in stages
+
+    comments = read_work_item_comments(path=_config(), work_item_id=_ITEM_ID)
+    assert len(comments) == 1
+    body = comments[0].text
+    assert "01STALLRUN" in body
+    assert "hp" in body
+    assert "proof_capture" in body
