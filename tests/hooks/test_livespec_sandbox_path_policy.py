@@ -556,6 +556,33 @@ def test_a_target_whose_resolution_is_unprotected_is_not_refused() -> None:
     )
 
 
+def test_a_protected_path_inside_a_here_document_body_is_not_refused() -> None:
+    """Assertion 9, second half: a body is file data, so its words are not commands.
+
+    The body carries a `&&`, and that is what makes the case bite rather than
+    being a formality. Without dropping bodies BEFORE the command is read, the
+    segment walk splits on that operator and takes the body's second half for a
+    command the shell would run — so writing a test fixture about the incident
+    would be refused as if it were the incident.
+    """
+    policy = _load_policy()
+    command = (
+        "cat > layout-sim.sh <<'EOF'\n"
+        f"cd /tmp && rm -rf {_SANDBOX_ROOT} && mkdir -p {_SANDBOX_ROOT}\n"
+        "EOF"
+    )
+
+    assert _refused(policy=policy, command=command) is None
+
+
+def test_a_removal_on_the_line_after_a_closed_here_document_is_still_refused() -> None:
+    """Dropping bodies must not swallow the commands that follow one."""
+    policy = _load_policy()
+    command = f"cat > note.txt <<'EOF'\njust prose\nEOF\nrm -rf {_SANDBOX_ROOT}"
+
+    assert _refused(policy=policy, command=command) == _SANDBOX_ROOT
+
+
 def test_a_removal_that_names_nothing_protected_is_not_refused() -> None:
     policy = _load_policy()
 
