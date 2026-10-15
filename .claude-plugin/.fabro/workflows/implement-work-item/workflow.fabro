@@ -1338,14 +1338,33 @@ digraph ImplementWorkItem {
     // `pr_refresh` fails closed on every cause it cannot act on — an
     // unobservable origin, a missing or foreign publish head, an unreadable
     // refresh counter, a conflicted rebase, a failed gate, a rejected lease and
-    // the non-convergence bound — and each of those takes the conditional
-    // failure edge to `needs_human`, which preserves the tree on a run-scoped
-    // ref and carries the script's own sentinel as the recorded cause. Its
-    // UNCONDITIONAL fallthrough is the postcondition breaker, for the reason the
-    // `pr -> verify_pr` comment below already records: naming the exceptional
-    // route with a condition and leaving the ordinary one unconditional is what
-    // keeps `all_conditional_edges` from rejecting the node outright, before
-    // anything runs.
+    // the non-convergence bound — and each of those exits non-zero under its own
+    // sentinel. Its UNCONDITIONAL fallthrough is the postcondition breaker, for
+    // the reason the `pr -> verify_pr` comment below already records: naming the
+    // exceptional route with a condition and leaving the ordinary one
+    // unconditional is what keeps `all_conditional_edges` from rejecting the node
+    // outright, before anything runs.
+    //
+    // THE FAILURE ARM GOES THROUGH `refresh_repair` (v134 "Refresh repair";
+    // work-item bd-ib-5oc2d3), exactly as `publish_draft`'s does. The clause
+    // names BOTH refreshing stages in one breath — "when `publish_draft` or
+    // `pr_refresh` cannot refresh the run … MUST route to the existing `fix`
+    // agent node" — and the classifier is already shared, but v134 wired only
+    // `publish_draft` into it, so this stage's three endings still collapsed onto
+    // the terminal. Measured on hp, run 01M4YT2Z7PFF07D353YN2KBKEA: the rebase
+    // conflicted, the stage restored its pre-refresh head, recorded the brief and
+    // said in as many words that it expected the fix node, and this graph ended
+    // the run at `needs_human` 8.7 seconds later.
+    //
+    // DECLARATION ORDER IS THE WHOLE OF IT. Conditional arms are consulted in
+    // order, so the classifier arm has to precede the terminal's `outcome=failed`
+    // arm; behind it, it is an arm no run ever takes — present in the graph and
+    // invisible in every dispatch, which is the defect it repairs wearing a fix's
+    // clothes. The terminal arm is KEPT behind it as the node's declared
+    // fail-closed destination, and nothing is lost by it no longer firing: the
+    // classifier's own UNCONDITIONAL fallthrough is `needs_human`, so a failure
+    // that wrote no brief — an authentication failure, an unreachable origin, an
+    // exhausted repair budget — still lands there carrying this stage's own cause.
     //
     // `pr_refresh_head` is where the THREE-way decision lands. Its failure edge
     // is the CHANGED-head route — a non-zero exit there is not a fault, it is the
@@ -1354,6 +1373,7 @@ digraph ImplementWorkItem {
     // UNCHANGED head falls through to `pr`, which is what makes "publication
     // never reuses a verified record from before a head change" a property of the
     // GRAPH rather than of a script's good intentions.
+    pr_refresh -> refresh_repair [label="Blocked", condition="outcome=failed"]
     pr_refresh -> needs_human [label="Refresh failed or did not converge", condition="outcome=failed"]
     pr_refresh -> pr_refresh_head
     pr_refresh_head -> proof_capture [label="head changed: fresh proof owed", condition="outcome=failed"]
