@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.198.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.197.0...v0.198.0) (2026-10-15)
+
+
+### Features
+
+* count and render the migration's genesis writes ([748d2f7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/748d2f72a5de19cd55c6863760bfd66b062aaff0))
+* create a live plan epic's genesis in the plan-record migration ([f075591](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f075591ec87956a2887335bad5d475263fb13b9c))
+* refuse a migration genesis its read-back cannot confirm ([f31f09c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f31f09c5fa65e5e5a34d06a7f9e04c5478f94972))
+* report a migration's already-chained epic as skipped ([8f81660](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8f816606985f10756a5bcb7a478f10859d025e79))
+* start a plan epic's authority chain at creation ([f30db90](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f30db90485176129d413dd17a3fe8e00394d680e))
+
 ## [0.197.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.196.21...v0.197.0) (2026-10-15)
 
 
