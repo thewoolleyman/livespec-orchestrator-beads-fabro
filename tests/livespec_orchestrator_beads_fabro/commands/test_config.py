@@ -752,11 +752,16 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         + "[[run.prepare.steps]]\n"
         + 'script = "mkdir -p /workspace/.tmux && chmod 700 /workspace/.tmux"\n'
         # The harness settings file, beside the tmux socket root it was added
-        # next to (bd-ib-rv2jk4). Rendered from its own module rather than
-        # restated, for the reason the two blocks below are: the script is that
-        # module's own text, and a second copy here would diverge silently.
+        # next to (bd-ib-rv2jk4). The BLOCK is rendered from its own module
+        # rather than restated, for the reason the two blocks below are: the
+        # script is that module's own text, and a second copy here would
+        # diverge silently. The MAPPING is stated, because the overlay's own
+        # tuple is private to it; the values themselves are bound by
+        # `test_dispatcher_overlay_harness_shell_env`, which also asserts that
+        # a change to that tuple reaches this file.
         + _dispatcher_harness_settings.harness_settings_prepare_steps_block(
             harness_env=(
+                ("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1"),
                 ("BASH_DEFAULT_TIMEOUT_MS", "600000"),
                 ("BASH_MAX_TIMEOUT_MS", "3600000"),
             ),
