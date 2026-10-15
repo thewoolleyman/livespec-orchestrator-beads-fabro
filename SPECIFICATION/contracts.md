@@ -1594,11 +1594,12 @@ Dispatcher MUST, without a human:
 
 That valve's next dispatch of the item applies §"Factory-configurable ACP
 fallback priority" → "Recovery from the failed run's preserved work"
-unchanged. Before any stale publish-branch reclaim, it evaluates the resume
-preconditions, which the cancel record can now anchor (§"Resume from a
-published pull request (`resume --item`)"). It invokes resume under its own
-invoker identity when they pass, and otherwise makes a dispatch seeded from
-preserved work. The release MUST be idempotent and replayable by
+unchanged. Recovery routing evaluates that next dispatch before admission,
+under §"Factory-configurable ACP fallback priority" → "Recovery from the failed
+run's preserved work". The cancel record can anchor the resume route (§"Resume
+from a published pull request (`resume --item`)"). A `resume` route runs under
+the Dispatcher's own invoker identity. The release MUST be idempotent and
+replayable by
 reconciliation, keyed by factory and run, exactly as a provider-limit
 release is. A released stall cancel MUST NOT consume any budget of §"The
 three rework caps", and it neither increments nor resets the item's count
@@ -4048,8 +4049,12 @@ head is not a descendant of the dead run's tip, so `publish_draft`'s plain
 fast-forward push is refused non-fast-forward, and the only remedy that
 refusal can name — clear the branch by hand — discards the dead run's
 published head and every record attached to it. The Dispatcher therefore
-reclaims the branch on the host, before the run exists, as a pre-dispatch
-act of both `dispatch` and `loop` for every selected item. It runs AFTER
+reclaims the branch on the host, before the run exists, as a pre-dispatch act
+of both `dispatch` and `loop` for every selected item. It runs after the
+admission valve, for the items admission selected to launch, and only for those
+whose recovery route is `fresh` or `seeded` (§"Factory-configurable ACP
+fallback priority" → "Recovery from the failed run's preserved work"). A
+deferred item keeps its branch and any pull request on it. It runs AFTER
 the dispatch preamble's orphan reconciliation (§"A factory run never
 awaits a human"), so a run that reconciliation terminated is already
 terminal when the reclaim asks; the live-run hold below covers the run
@@ -4118,8 +4123,10 @@ reconciliation could not or did not terminate.
   belongs to. An operator who wants to KEEP that work drives the resume
   below instead of a plain dispatch; the two routes are exclusive per
   dispatch and the journal shows which one ran. For an item released under
-  §"Factory-configurable ACP fallback priority" → "Provider-limit release
-  and re-dispatch", the Dispatcher makes that choice itself as that
+  §"Factory-configurable ACP fallback priority" → "Provider-limit release and
+  re-dispatch", released by that section's adapter launch release, or released
+  after a first stall cancel under §"Dispatcher progress watchdog", the
+  Dispatcher makes that choice itself as that
   section's "Recovery from the failed run's preserved work" specifies.
 
 Scenario 144 in `scenarios.md` exercises this section. The resume surface
@@ -4139,8 +4146,9 @@ It is a published state-changing entry point and inherits `--invoker`
 (§"Journal invoker attribution"). `drive` gains no new action for it;
 the `impl:<id>` action remains a plain dispatch. The exceptions to both
 statements are an item released under §"Factory-configurable ACP fallback
-priority" → "Provider-limit release and re-dispatch" and an item released
-after a first stall cancel under §"Dispatcher progress watchdog": for each the Dispatcher
+priority" → "Provider-limit release and re-dispatch", an item released by that
+section's adapter launch release, and an item released after a first stall
+cancel under §"Dispatcher progress watchdog": for each the Dispatcher
 itself invokes this resume, under its own invoker identity, when every
 precondition below passes, and otherwise dispatches a plain run seeded from
 the failed run's preserved work rather than from the default branch, as that
@@ -4251,8 +4259,10 @@ remedy, when:
 
 - the item is not `ready`, naming its status (remedy:
   `resolve-blocked:<id>:ready` for an item resting at `blocked /
-  needs-human`, or `reconcile-runs` for a stranded claim) — a resume
-  never steps around the ledger's human decision;
+  needs-human`, or `reconcile-runs` for a stranded claim) — a resume never
+  steps around the ledger's human decision. For a resume the Dispatcher routes
+  itself, this bullet is graded at recovery routing, before admission, and not
+  again after the claim;
 - the item's publish branch carries no open pull request, or no proof
   record on it names a head and no `watchdog-stall-cancel` record anchors
   one as above (remedy: a plain dispatch);
@@ -7402,8 +7412,10 @@ eligible cause, the Dispatcher MUST, in this order and without a human:
 (1) record the hold that failure observed, scoped and keyed as the matching
 signature declares; (2) journal one `provider-limit-release` record naming the
 work-item, run id, factory, failing node attempt, matched cause, scope and hold
-key, the candidate identity that failed, and the recovery source chosen under
-"Recovery from the failed run's preserved work" below or its confirmed absence;
+key, the candidate identity that failed, and the preserved-work reference the
+release observed (the published head or preservation ref) or its confirmed
+absence; the recovery route itself is decided by recovery routing at the item's
+next dispatch;
 (3) release the item's dispatch claim and return it to `ready`, NOT to
 `blocked` and with no `blocked_reason`; and (4) leave the item to the ordinary
 admission valve, which re-dispatches it with every node selected afresh as
@@ -7442,13 +7454,51 @@ measured non-match or converted into a needs-human decision.
 
 Adapter launch evidence MUST be read from the factory recorded for the run and scoped to the unrecovered attempt responsible for its terminal disposition. The prompt boundary is conservatively considered crossed when that attempt has an `agent.acp.started` event; this event precedes prompt submission, so its presence excludes launch release even when no later activity was observed. Absence of that event establishes the boundary was not crossed only when the engine's event-emission and durability guarantees cover that execution path and the attempt's event stream is verified complete through termination. Any recorded agent activity also excludes launch release. Neither zero inference, an empty tool ledger, the generic process-exit message, nor an internal activity-derived `turn_started` value alone establishes eligibility. Missing, incomplete, unreadable, or unscopable evidence is unavailable, not negative evidence: the Dispatcher MUST surface it and retry observation automatically without releasing the item or manufacturing a needs-human decision.
 
-When a run terminates -- through any terminal, the workflow's `needs_human` terminal included -- and its unrecovered failing node attempt is an adapter launch failure, and the item's preceding dispatch did not itself end in an adapter launch failure, the Dispatcher MUST, in this order and without a human: (1) journal one `adapter-launch-release` record naming the work-item, run id, factory, failing node attempt, executed candidate identity, the recorded exit code or its explicit absence, the preceding dispatch's run id or the explicit statement that the item has none, and the recovery source chosen under "Recovery from the failed run's preserved work" below or its confirmed absence; (2) write one ledger comment on the item naming the run id, factory, failing node and the recorded exit code or its explicit absence; (3) release the item's dispatch claim and return it to `ready`, NOT to `blocked` and with no `blocked_reason`; and (4) leave the item to the ordinary admission valve, which re-dispatches it with every node selected afresh as "Per-node selection" specifies. The *preceding dispatch* is the immediately preceding submitted run for the same item in durable dispatch order, relative to the run being classified, across every factory: a refused admission is not a dispatch, a node retry is not a new dispatch, and an item's first dispatch has none. The predecessor identity is persisted with the release decision and reused by any replay; unavailable predecessor history is unavailable evidence, never proof of no predecessor. The bound is therefore one release per consecutive sequence of adapter launch failures: any intervening dispatch that did not end in an adapter launch failure resets it. An adapter launch release MUST NOT consume any budget of §"The three rework caps", MUST neither increment nor reset the item count of §"Across-dispatch required-result progress", and MUST NOT be surfaced as a needs-human decision. When the item's preceding dispatch also ended in an adapter launch failure, the current failure keeps its existing route, including the `blocked / needs-human` rest of §"A factory run never awaits a human"; that terminal is not item-attributable and neither increments nor resets the across-dispatch item count, and its needs-human cause record MUST name both runs and state that a repeated adapter launch failure is not released automatically. The release MUST be idempotent per run under the release operation above: completing or replaying it after a newer dispatch has claimed the item MUST NOT release that newer claim, journal a second record, or write a second ledger comment.
+When a run terminates -- through any terminal, the workflow's `needs_human` terminal included -- and its unrecovered failing node attempt is an adapter launch failure, and the item's preceding dispatch did not itself end in an adapter launch failure, the Dispatcher MUST, in this order and without a human: (1) journal one `adapter-launch-release` record naming the work-item, run id, factory, failing node attempt, executed candidate identity, the recorded exit code or its explicit absence, the preceding dispatch's run id or the explicit statement that the item has none, and the preserved-work reference the release observed (the published head or preservation ref) or its confirmed absence; the recovery route itself is decided by recovery routing at the item's next dispatch; (2) write one ledger comment on the item naming the run id, factory, failing node and the recorded exit code or its explicit absence; (3) release the item's dispatch claim and return it to `ready`, NOT to `blocked` and with no `blocked_reason`; and (4) leave the item to the ordinary admission valve, which re-dispatches it with every node selected afresh as "Per-node selection" specifies. The *preceding dispatch* is the immediately preceding submitted run for the same item in durable dispatch order, relative to the run being classified, across every factory: a refused admission is not a dispatch, a node retry is not a new dispatch, and an item's first dispatch has none. The predecessor identity is persisted with the release decision and reused by any replay; unavailable predecessor history is unavailable evidence, never proof of no predecessor. The bound is therefore one release per consecutive sequence of adapter launch failures: any intervening dispatch that did not end in an adapter launch failure resets it. An adapter launch release MUST NOT consume any budget of §"The three rework caps", MUST neither increment nor reset the item count of §"Across-dispatch required-result progress", and MUST NOT be surfaced as a needs-human decision. When the item's preceding dispatch also ended in an adapter launch failure, the current failure keeps its existing route, including the `blocked / needs-human` rest of §"A factory run never awaits a human"; that terminal is not item-attributable and neither increments nor resets the across-dispatch item count, and its needs-human cause record MUST name both runs and state that a repeated adapter launch failure is not released automatically. The release MUST be idempotent per run under the release operation above: completing or replaying it after a newer dispatch has claimed the item MUST NOT release that newer claim, journal a second record, or write a second ledger comment.
 
-**Recovery from the failed run's preserved work.** Before stale publish-branch
-reclaim, the Dispatcher MUST evaluate the published-PR resume preconditions of
-§"Resume from a published pull request (`resume --item`)". When all pass, it
-MUST invoke resume under its own invoker identity and MUST NOT reclaim the
-branch.
+**Recovery from the failed run's preserved work.** An item is *released for
+recovery* when its latest journaled dispatch ended in a first-stall release
+(§"Dispatcher progress watchdog"), a `provider-limit-release` record, or an
+`adapter-launch-release` record. Both `dispatch` and `loop` MUST perform
+*recovery routing* for every released candidate. Routing comes after the
+pre-dispatch wall and BEFORE the admission valve, while the item is still
+`ready`, and assigns the item exactly one route. Routes are graded in the order
+listed; the first that holds is the route, and an unobservable or unreadable
+measurement at any step routes `held`. A refusal of §"Resume from a published
+pull request (`resume --item`)" is *fallback-permitting* when its named remedy
+is a plain dispatch: the publish branch carries no open pull request, which
+includes a missing pull request and one closed without merging; no proof record
+names a head and no cancel record anchors one; the pull request's head moved;
+the Definition of Done changed; or the pull request already anchored two
+resumes. Every other refusal is *non-fallback*: the earlier run is live, the
+item's dispatch-scoped ownership lock is held by a live process, or the pull
+request is merged (its remedy stays `reconcile-merged --item`). The not-ready
+refusal cannot apply, because routing grades a `ready` item. A non-fallback
+refusal takes precedence over every fallback-permitting one, so a merged pull
+request is never treated as a missing anchor.
+
+- `resume`, when every published-PR resume precondition of §"Resume from a
+  published pull request (`resume --item`)" passes;
+- `seeded`, when every applicable resume refusal is fallback-permitting and
+  preserved work is verified;
+- `fresh`, when every applicable resume refusal is fallback-permitting and
+  preserved work is confirmed absent;
+- `held`, when any non-fallback refusal applies, or any measurement routing
+  needs cannot be taken.
+
+Routing MUST NOT mutate the ledger, origin, or any factory. An item not
+released for recovery is routed `fresh` without any remote measurement. A route
+is valid only for the pass that measured it: an item the valve defers for
+capacity carries no route into the next pass, which measures it afresh. A
+`held` item MUST NOT be offered to the admission valve in that pass. It stays
+`ready`, the journal carries one `recovery-held` record naming the item and
+the measurement that could not be taken, every applicable non-fallback refusal
+with its existing remedy in the order the resume's refusals are listed, or both,
+and the next pass retries automatically. Under `loop` the hold is reported as a
+deferred outcome on the same terms as a capacity deferral. Under
+`dispatch --item` it is a precondition error (exit `3`, §"Dispatcher exit
+codes") naming the item and the measurement or the non-fallback refusals with
+their remedies, before any run exists, as `resume --item` refuses today.
 
 When resume is inapplicable because no valid proof anchor exists, the head or
 Definition of Done changed, or the resume-count bound is reached, the
@@ -7470,6 +7520,20 @@ whose current state the agent inspects before continuing.
 A confirmed absence of preserved work permits a plain dispatch from the
 default branch, with that loss recorded. An unreadable reference is not
 confirmed absence.
+
+After admission, each launch path MUST execute every admitted item's route on
+that item's own copy of the dispatch arguments, in the same per-item step that
+applies the item's factory and workflow pins. Route-specific state MUST NOT be
+written to arguments shared by the wave. A `resume` route executes the resume's
+post-admission sequence: it journals the `resume` record before the run exists,
+enters at the anchored node on the anchored head, and runs the workflow the
+earlier dispatch record names. The status grading of the not-ready refusal is
+satisfied by routing and is not repeated after the claim. A `seeded` route
+checks out the recorded SHA as the preceding paragraph requires. The stale
+publish-branch reclaim runs for `fresh` and `seeded` items only. For a `seeded`
+item it runs after the seed's preservation is verified, and it MUST NOT run for
+a `resume` item. An automatically routed resume is subject to the WIP-cap
+posture of the entry point that admitted it.
 
 **Availability is re-confirmed after expiry.** When a domain or candidate hold
 reaches its bounded expiry, the candidates it covered carry an outstanding

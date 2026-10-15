@@ -157,11 +157,17 @@ def test_failed_dispatch_reinspects_when_terminal_inspect_has_no_failure_yet(
     assert outcome.fabro_failure_category == "deterministic"
     assert outcome.fabro_failure_cause == "You've hit your usage limit."
     assert outcome.fabro_failure_signature == "implement|deterministic|provider limit"
+    # `fabro-run-labels` closes the sequence because this failure IS a provider
+    # ceiling, and the entitlement it spent is recorded on the factory's run row
+    # rather than in the inspect payload. The read is taken once, after the
+    # re-inspection that finally produced a failure block — so its position here
+    # is also what says the re-inspection ran first.
     assert [record["stage"] for record in journal.records] == [
         "fabro-run",
         "fabro-inspect",
         "fabro-reattach",
         "fabro-inspect",
+        "fabro-run-labels",
     ]
 
 

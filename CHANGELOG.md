@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.201.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.1...v0.201.2) (2026-10-15)
+
+
+### Bug Fixes
+
+* **provider-limits:** attribute a ceiling to the candidate that ran ([54a6165](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/54a61658e7bf2a9271eb79ff9f456ff69b254e42))
+* **provider-limits:** read the executed candidate off the factory run row ([9284a5a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9284a5a64ba358a52dcea073ef703a3687375f86))
+
 ## [0.201.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.0...v0.201.1) (2026-10-15)
 
 

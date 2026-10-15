@@ -75,6 +75,46 @@ Tests for the thin-transport command modules under
   defect these cases were added to close, where a merge nobody could read graded
   as a merge nobody recorded and the containment relation then did not run.
 
+- `test_fabro_executed_candidate_attribution.py` — the attribution of a
+  provider ceiling to the candidate that ran. Its two CONTROLS are the
+  load-bearing cases and neither works without the other: an unlabelled failing
+  node keeps the v107 cause-text provider, and a recorded identity cannot
+  MANUFACTURE a ceiling on a failure that reports none. Without the second, an
+  attribution that fired on every failure would satisfy the positive case while
+  labelling ordinary transport faults with a vendor; without the first, one that
+  fired only where an identity exists would strand the legacy posture. The
+  positive case asserts the ARRIVING attribution is `codex` before asserting the
+  attributed one is `anthropic`, which is what makes it able to fail — a fixture
+  whose cause text already named Anthropic would pass against no implementation
+  at all.
+
+- `test_fabro_reattach_executed_candidate.py` — the same attribution through
+  the run observation that WIRES it, which is a different claim: the reading is
+  available either way, and these cases decide whether a real dispatch takes
+  it. Its `ps` fixture carries TWO rows and the non-matching one is the other
+  vendor's, so a reader that took the list head — or merged every row — fails
+  here instead of landing on the right answer by luck. Its runner is keyed on
+  the fabro SUBCOMMAND rather than on call order, which is what lets the
+  ordinary-failure case assert that the labels read did not happen AT ALL; a
+  reply list would make that absence look like an unconsumed element, which is
+  also what a reordered pair looks like.
+
+- `test_provider_exhaustion_executed_domain.py` and
+  `test_fabro_message_only_executed_candidate.py` complete that attribution's
+  grading, and both are CONTROLS: they pin consequences of the two cases above
+  rather than behaviour of their own, so neither could fail before the
+  attribution landed and both were committed on the suite-green leg. The first
+  grades the hold's SCOPE — a provider value is only right in so far as the
+  record written under it holds the right dispatches and admits the rest — and
+  its negative case sits on the SAME journal as its positive, because a hold
+  that refuses everything satisfies the positive edge exactly as well as a
+  correct one does. The second grades the Petri-era shape, where the failure
+  block is RUN-LEVEL and the failing attempt can only be read out of the
+  `stages` map; its own control is the list-shaped `stages` that carries no
+  per-stage state, which establishes no identity and is asserted to keep the
+  v107 attribution so a later reader does not mistake that degradation for a
+  defect.
+
 - `test_dispatcher_fabro_currency.py`,
   `test_dispatcher_fabro_currency_sources.py`,
   `test_dispatcher_fabro_release_cache.py`,
