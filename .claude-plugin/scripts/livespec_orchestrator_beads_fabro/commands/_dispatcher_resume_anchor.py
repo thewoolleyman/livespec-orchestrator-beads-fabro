@@ -48,6 +48,18 @@ own declaration, so a `verified` record replaying a capture would be attributed
 the capture's head rather than its own. `_dispatcher_proof_record` records the
 identical trap on the `Reproduced:` line, and the fence reader is shared with it
 rather than re-derived.
+
+WHY THE ANCHOR CARRIES A RUN ID OF ITS OWN BESIDE AN OPTIONAL RECORD. The clause
+admits a SECOND anchor — a stall-cancelled dispatch's own journal row, read by
+`_dispatcher_resume_cancel_anchor` — and under it there IS no proof record,
+because posting one is the very node the run never reached. So `record` is
+`None` on that arm and every consumer that needed an identifier reads `run_id`
+instead. The alternative was a synthetic record standing in for one nobody
+published, which is worse in the direction that matters: the changed-
+Definition-of-Done arm measures the item's assertions AGAINST the record, so a
+stand-in carrying an empty body would report every assertion as unproved and
+refuse the one resume this anchor exists to allow — naming a plain dispatch,
+which reclaims the branch.
 """
 
 from __future__ import annotations
@@ -64,6 +76,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
     VERDICT_VERIFIED,
     ProofRecord,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_cancel_anchor import (
+    CANCEL_ANCHOR_RESUMED_AT,
+    SOURCE_CANCEL_RECORD,
+    CancelAnchor,
+)
 
 __all__: list[str] = [
     "FACTORY_RECORD_VERDICTS",
@@ -79,6 +96,7 @@ __all__: list[str] = [
     "normalized_entry_node",
     "published_head",
     "resume_anchor",
+    "resume_anchor_from_cancel",
     "resumed_at_for_verdict",
 ]
 
@@ -153,10 +171,16 @@ class ResumeAnchor:
     every consumer needs something different off it — the refusals need its head,
     the journal record needs its run id, and the pointer needs its url — and a
     second read of the pull request to recover a field this one already held
-    could answer differently.
+    could answer differently. It is `None` on the cancel-record arm, where no
+    proof record exists to carry; see the module docstring for why a synthetic
+    one would be worse.
+
+    `run_id` is the earlier run under BOTH anchors, which is what lets every
+    consumer that needs only an identifier stop reaching through `record`.
     """
 
-    record: ProofRecord
+    record: ProofRecord | None
+    run_id: str
     head: str
     resumed_at: str
     source: str
@@ -245,15 +269,49 @@ def resume_anchor(
     if executing_node is not None:
         return ResumeAnchor(
             record=latest,
+            run_id=latest.run_id,
             head=head,
             resumed_at=normalized_entry_node(node=executing_node),
             source=SOURCE_FACTORY_RUN,
         )
     return ResumeAnchor(
         record=latest,
+        run_id=latest.run_id,
         head=head,
         resumed_at=resumed_at_for_verdict(verdict=latest.verdict),
         source=SOURCE_LATEST_RECORD,
+    )
+
+
+def resume_anchor_from_cancel(*, cancel: CancelAnchor, executing_node: str | None) -> ResumeAnchor:
+    """The anchor one stall-cancel record provides, with the factory's stage preferred.
+
+    TOTAL rather than optional, because every bound on this anchor was already
+    applied by `cancel_anchor`: a caller holding a `CancelAnchor` is holding a row
+    the clause admits, so there is nothing left here to refuse.
+
+    `executing_node` carries the SAME precedence the proof-record anchor gives it
+    — "The factory's own record of the run, when the factory still holds it, takes
+    precedence for the stage" — and the SOURCE moves with it, because the resume
+    record must name which party decided. The clause's fixed `proof_capture` entry
+    is the answer only once the factory has authoritatively lost the run, and the
+    retired `pr` entry normalizes here exactly as it does there, through the one
+    value both sources flow through.
+    """
+    if executing_node is not None:
+        return ResumeAnchor(
+            record=None,
+            run_id=cancel.run_id,
+            head=cancel.head,
+            resumed_at=normalized_entry_node(node=executing_node),
+            source=SOURCE_FACTORY_RUN,
+        )
+    return ResumeAnchor(
+        record=None,
+        run_id=cancel.run_id,
+        head=cancel.head,
+        resumed_at=CANCEL_ANCHOR_RESUMED_AT,
+        source=SOURCE_CANCEL_RECORD,
     )
 
 
