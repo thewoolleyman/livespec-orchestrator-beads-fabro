@@ -65,14 +65,13 @@ from __future__ import annotations
 
 import json
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_record import (
+    record_reader_fragment,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     VERDICT_CAPTURED,
     VERDICT_CARRIED_FORWARD,
     VERDICT_VERIFIED,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
-    FACTORY_RECORD_VERDICTS,
-    PUBLISH_HEAD_LABEL,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     sandbox_plugins_root_expansion,
@@ -114,84 +113,36 @@ PROOF_HEAD_REQUIRED_VERDICTS: tuple[str, ...] = (VERDICT_CAPTURED, VERDICT_VERIF
 # when the anchor IS the verified record, which is every ordinary run.
 PROOF_HEAD_ANCHOR_VERDICTS: tuple[str, ...] = (VERDICT_VERIFIED, VERDICT_CARRIED_FORWARD)
 
-# The materialized program. `__LABEL__` is substituted from `PUBLISH_HEAD_LABEL`
-# so the reader and the two capture prompts name ONE line, and `__VERDICTS__`
-# from `FACTORY_RECORD_VERDICTS` so the header parse admits exactly the factory
-# verdicts the host-side reader admits.
-#
-# The reader is a transcription of `published_head` plus the header parse, and it
-# keeps that function's four decisions verbatim: a fenced line is skipped (a
-# replay legitimately `cat`s an earlier record, and matching inside the fence
-# would attribute that record's head to this one); the comparison is casefolded
-# and backticks are stripped; only a FULL forty-character sha counts; and a
-# record naming TWO different heads answers "none", because a record that cannot
-# say which tree it proved has not proved one.
-_PROGRAM_SOURCE = '''
+# The imports the composed program needs, hoisted so the shared record reader
+# carries only its own `re`. A record-reading program needs the forge
+# (`subprocess`), its payload (`json`) and its own exit (`sys`); the reader
+# fragment needs none of the three.
+_PROGRAM_PREAMBLE = """
 import json
-import re
 import subprocess
 import sys
+"""
 
-LABEL = "__LABEL__"
-FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
-FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
-HEADER_SEPARATOR = "\\u2014"
-IDENTITY_PREFIXES = ("run ", "session ", "human ")
-VERDICTS = __VERDICTS__
+# The program's OWN half: the anchor set, the forge read, and the ladder from a
+# comment list to one publishable head.
+#
+# THE RECORD READER IT SITS ON TOP OF IS NO LONGER INLINE HERE. It is
+# `_dispatcher_carry_forward_record.record_reader_fragment`, which is where the
+# `__LABEL__` and `__VERDICTS__` substitutions now happen and where the four
+# decisions this comment used to describe are documented. The move is what keeps
+# this module's own warning TRUE once a SECOND materialized program reads the
+# same format: the carry-forward decision program composes the identical text,
+# so there is still ONE account of the header parse and the publish-head
+# reading rather than two. The equality binding is unchanged -- the composed
+# result is still run beside the host-side `published_head` over the same
+# bodies, which is what makes "one format" a measured claim.
+_PROGRAM_SOURCE = '''
 ANCHOR_VERDICTS = __ANCHOR_VERDICTS__
 
 
 def fail(message):
     sys.stderr.write("livespec publication-head: " + message + "\\n")
     raise SystemExit(1)
-
-
-def fence_after(fence, delimiter):
-    """The open fence after one delimiter line, or None outside a fence."""
-    if fence is None:
-        return delimiter
-    if delimiter[0] == fence[0] and len(delimiter) >= len(fence):
-        return None
-    return fence
-
-
-def declared_sha(line):
-    stripped = line.strip()
-    prefix = LABEL + ":"
-    if not stripped.casefold().startswith(prefix.casefold()):
-        return None
-    value = stripped[len(prefix):].strip().strip("`").casefold()
-    return value if FULL_SHA.match(value) is not None else None
-
-
-def published_head(body):
-    """The full sha one record's PROSE declares, or None when it declares none."""
-    found = set()
-    fence = None
-    for line in body.splitlines():
-        delimiter = FENCE.match(line)
-        if delimiter is not None:
-            fence = fence_after(fence, delimiter.group(1))
-            continue
-        if fence is not None:
-            continue
-        sha = declared_sha(line)
-        if sha is not None:
-            found.add(sha)
-    return found.pop() if len(found) == 1 else None
-
-
-def record_verdict(body):
-    """The verdict one canonical factory-record header declares, else None."""
-    lines = body.splitlines()
-    if not lines:
-        return None
-    fields = [part.strip() for part in lines[0].split(HEADER_SEPARATOR)]
-    if len(fields) < 3 or fields[0] != "Proof of Done" or fields[1] not in VERDICTS:
-        return None
-    if not any(fields[2].startswith(prefix) for prefix in IDENTITY_PREFIXES):
-        return None
-    return fields[1]
 
 
 def comment_bodies(number):
@@ -317,17 +268,19 @@ if __name__ == "__main__":
 
 
 def proof_head_program_source() -> str:
-    """The materialized program's exact bytes, with its constants substituted.
+    """The materialized program's exact bytes: the preamble, the shared reader, this.
 
-    A function rather than a module constant because the substitution is the
+    A function rather than a module constant because the COMPOSITION is the
     whole guarantee: a reader comparing this against `published_head` must be
-    able to see that the LABEL came from `PUBLISH_HEAD_LABEL` and the verdict
-    set from `FACTORY_RECORD_VERDICTS`, not from literals typed twice.
+    able to see that the header parse and the publish-head reading came from the
+    one shared `record_reader_fragment` -- which substitutes the LABEL from
+    `PUBLISH_HEAD_LABEL` and the verdict set from `FACTORY_RECORD_VERDICTS` --
+    rather than from a copy typed here a second time.
     """
     return (
-        _PROGRAM_SOURCE.replace("__LABEL__", PUBLISH_HEAD_LABEL)
-        .replace("__VERDICTS__", repr(FACTORY_RECORD_VERDICTS))
-        .replace("__ANCHOR_VERDICTS__", repr(PROOF_HEAD_ANCHOR_VERDICTS))
+        _PROGRAM_PREAMBLE
+        + record_reader_fragment()
+        + _PROGRAM_SOURCE.replace("__ANCHOR_VERDICTS__", repr(PROOF_HEAD_ANCHOR_VERDICTS))
     )
 
 

@@ -529,6 +529,17 @@ destructive_cli_allowlist = [
 #   `PATH`-free absolute paths, with an explicit `env` for every child of the
 #   stage; the fixture `git` calls, the only ones that inherit anything, scrub
 #   COVERAGE_PROCESS_START + COV_CORE_* through `_fixture_git_env`.
+# - test_pr_refresh_carry_forward_scenario178.py runs the MATERIALIZED
+#   carry-forward decision program, for the publication-head reason above plus
+#   one of its own: the decision ITSELF spawns processes. Every input is a git
+#   reading — a merge base, two `diff --name-only` lists, two `patch-id
+#   --stable` values, a blob id per observed path, a `hash-object --no-filters`
+#   of a working-tree file — and the mechanical replay EXECUTES the step's own
+#   command at the new head with standard input closed and `LC_ALL` pinned.
+#   An in-process call would have to double every one of those, which is to say
+#   it would exercise the ladder and leave the readings and the replay — the
+#   half a reader cannot check by eye — untested. It scrubs the child env
+#   exactly as an allowlisted spawn must, by passing an explicit `env`.
 #
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables
 # below (same TOML attachment reason as `destructive_cli_allowlist`).
@@ -554,6 +565,7 @@ subprocess_spawn_allowlist = [
     "tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_publication_head.py",
     "tests/integration/test_scripted_publication_execution.py",
     "tests/integration/test_scripted_refresh_execution.py",
+    "tests/integration/test_pr_refresh_carry_forward_scenario178.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]
