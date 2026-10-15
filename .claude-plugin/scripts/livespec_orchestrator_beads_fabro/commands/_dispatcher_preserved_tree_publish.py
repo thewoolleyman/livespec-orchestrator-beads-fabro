@@ -50,6 +50,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_run_files import RunFile
 __all__: list[str] = [
     "STEP_BLOB",
     "STEP_COMMIT",
+    "STEP_FILES_READ",
     "STEP_REF",
     "STEP_TREE",
     "PreservedTree",
@@ -57,9 +58,13 @@ __all__: list[str] = [
     "publish_preserved_tree",
 ]
 
-# The four publication steps, as the ratified clause names them. A failure
-# carries one of these verbatim, so the comment an operator reads names the
-# operation rather than a paraphrase of it.
+# The publication steps, as the ratified clause names them. A failure carries
+# one of these verbatim, so the comment an operator reads names the operation
+# rather than a paraphrase of it. `STEP_FILES_READ` is the clause's "the files
+# read" and is the FIRST thing that can fail -- it lives here with the other
+# four so one module names the whole closed set, even though the read itself
+# happens a layer up.
+STEP_FILES_READ = "files-read"
 STEP_BLOB = "blob"
 STEP_TREE = "tree"
 STEP_COMMIT = "commit"
@@ -70,12 +75,6 @@ _FORGE_TIMEOUT_SECONDS = 120.0
 _COMMITS_ENDPOINT = "/repos/{owner}/{repo}/git/commits"
 _BLOBS_ENDPOINT = "/repos/{owner}/{repo}/git/blobs"
 _TREES_ENDPOINT = "/repos/{owner}/{repo}/git/trees"
-
-# The mode a tree entry takes when the factory reported none. A regular
-# non-executable file is what a run changes in every measured case, and a wrong
-# guess here is recoverable (the recovered tree is applied as uncommitted work,
-# where mode is re-decided) while refusing the publication is not.
-DEFAULT_FILE_MODE = "100644"
 
 
 @dataclass(frozen=True, kw_only=True)
