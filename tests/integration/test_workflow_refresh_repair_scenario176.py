@@ -19,6 +19,20 @@ origin and asserts what happened to real refs; the ROUTING claim is read off the
 graph instead, because the stage's own exit says nothing about where the graph
 sends it.
 
+WHAT v146 ADDED, AND WHY IT IS THE SAME HEADING. The repair round above reaches
+`publish_draft` with a head the fix turn REBASED, which makes the run's own
+published head a non-ancestor BY CONSTRUCTION -- so the divergent-prior-run
+guard refused the very work the repair had just integrated, and three
+janitor-green, review-approved runs ended at `needs_human` on released build
+v0.201.0 on 2026-10-15 (runs 01M504QX5PJF0VM35DMZT99S2D,
+01M504S9SB8A and 01M50903PF06Y07STKF2G0M0K6). v146 narrows that guard: on the
+visit that follows a refresh-repair round, a non-ancestor tip EQUAL to the head
+this run published is republished under an explicit lease against it, and every
+OTHER non-ancestor tip still fails closed. The cases from
+`test_a_repaired_refresh_republishes_over_this_run_s_own_published_head` down
+bind that narrowing and Scenario 144's mirrored "with no refresh-repair round
+before it" sub-scenario.
+
 THE SCRIPT BYTES ARE READ THROUGH THE CANONICAL PARSER, never retyped: a module
 carrying its own copy of the recipe would pass while the shipped stage did
 something else. Only the engine's own template tokens are bound, because the
@@ -41,10 +55,17 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_publication_state
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
+    PUBLICATION_PUSH_PROGRAM_FILENAME,
+    publication_push_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state import (
     PUBLICATION_STATE_GIT_PATH,
     PUBLISH_HEAD_STATE_FILENAME,
     REFRESH_COUNT_STATE_FILENAME,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
+    SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -80,6 +101,20 @@ _REPAIR_COUNT_FILENAME = "livespec-refresh-repair-count"
 # The one edge condition this module grades. Spelled once, because the routing
 # claims below are claims about WHICH arm carries it.
 _FAILED = "outcome=failed"
+
+# The forge double's body, as LINES rather than one concatenated literal: the
+# repository bans implicit string concatenation, and a shell program assembled
+# by `+` is one missing newline away from a script that runs a different
+# command. `pr list` deliberately prints NOTHING, which is what routes the
+# stage onto `pr create` and exercises the draft-opening arm.
+_GH_DOUBLE_LINES = (
+    "#!/bin/sh",
+    'if test "$1 $2" = "pr create"; then',
+    "    printf '%s\\n' 'https://example.invalid/o/r/pull/7'",
+    "fi",
+    "exit 0",
+    "",
+)
 
 
 def _graph_text() -> str:
@@ -898,3 +933,360 @@ def test_a_third_refresh_needing_repair_ends_at_needs_human_exhausted(
     assert reason.splitlines()[0].startswith("refresh-repair-exhausted:")
     assert janitor_head in reason.splitlines()[0]
     assert world.head() == janitor_head
+
+
+def _materialized_push_program(*, root: Path) -> Path:
+    """A sandbox plugins root carrying the PRODUCTION exact-head push helper.
+
+    Written from its own source rather than restated here, so the lease the
+    republication performs is the lease the Dispatcher ships. The root is handed
+    to the stage through `LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT`, which is the
+    channel the stage itself resolves.
+    """
+    plugins_root = root / "plugins"
+    plugins_root.mkdir(parents=True, exist_ok=True)
+    program = plugins_root / PUBLICATION_PUSH_PROGRAM_FILENAME
+    _ = program.write_text(publication_push_program_source(), encoding="utf-8")
+    program.chmod(0o700)
+    return plugins_root
+
+
+def _forge_double(*, root: Path) -> Path:
+    """A `gh` that answers the two calls a SUCCEEDING publish makes, and nothing else.
+
+    Every pre-v146 case in this module fails before the stage reaches the forge,
+    so none of them needed one. The republication arm is the first case here that
+    runs to exit 0, and the forge is the only boundary it cannot reach for real:
+    `pr list` answering nothing routes the stage onto `pr create`, whose printed
+    URL the stage reads the number out of.
+    """
+    bin_dir = root / "forge-bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    gh = bin_dir / "gh"
+    _ = gh.write_text("\n".join(_GH_DOUBLE_LINES), encoding="utf-8")
+    gh.chmod(0o755)
+    return bin_dir
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Repaired:
+    """A resumed run whose conflicted `pr_refresh` its fix turn then repaired."""
+
+    world: _World
+    published_head: str
+    repaired_head: str
+    advanced_default: str
+    plugins_root: Path
+    forge_bin: Path
+
+
+def _repaired_run(*, root: Path, push_program: bool) -> _Repaired:
+    """Drive the real conflict, then perform the fix turn's own integration.
+
+    The premise this clause is about cannot be arranged by hand without
+    assuming it: the published head has to be a NON-ANCESTOR of the repaired
+    head, and it is one only because a real rebase moved the run's commit onto
+    the advanced default. So the shipped `pr_refresh` bytes run against a real
+    origin to produce the conflict and the brief, and the fix turn's three
+    instructed steps -- fetch the default branch, rebase onto it, resolve the
+    conflicted path on its merits -- are then performed in the same clone.
+
+    The non-ancestry is ASSERTED rather than assumed: a fixture whose repaired
+    head still contained the published head would make every case below pass
+    through the fast-forward arm while reporting the republication arm green.
+
+    `push_program` is REQUIRED rather than defaulted, as every fixture parameter
+    at this tier is: the absent-helper arm is what makes a plain fast-forward
+    distinguishable from a lease, so a default would make one case's premise
+    silently another's.
+    """
+    world, published, advanced = _published_run(root=root)
+
+    refresh = subprocess.run(
+        ["bash", "-c", _pr_refresh_script(check_suite="true")],
+        cwd=world.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "HOME": str(world.clone.parent / "home"),
+            "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
+            "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
+        },
+    )
+    assert refresh.returncode != 0, refresh.stdout
+    assert world.head() == published, "pr_refresh did not restore the published head"
+    assert world.state(name=_BRIEF_FILENAME) is not None, "pr_refresh recorded no brief"
+
+    _ = _git("fetch", "origin", _DEFAULT_BRANCH, cwd=world.clone)
+    conflicted = subprocess.run(
+        ["git", "rebase", f"origin/{_DEFAULT_BRANCH}"],
+        cwd=world.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_fixture_env(),
+    )
+    assert conflicted.returncode != 0, conflicted.stdout
+    _ = (world.clone / _SHARED_FILE).write_text(
+        "this run's edit and the default's, integrated\n", encoding="utf-8"
+    )
+    _ = _git("add", _SHARED_FILE, cwd=world.clone)
+    _ = _git("-c", "core.editor=true", "rebase", "--continue", cwd=world.clone)
+    repaired = world.head()
+
+    contains = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", published, repaired],
+        cwd=world.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_fixture_env(),
+    )
+    assert contains.returncode != 0, "the repaired head still contains the published head"
+
+    return _Repaired(
+        world=world,
+        published_head=published,
+        repaired_head=repaired,
+        advanced_default=advanced,
+        plugins_root=(
+            _materialized_push_program(root=root) if push_program else root / "absent-plugins"
+        ),
+        forge_bin=_forge_double(root=root),
+    )
+
+
+def _run_repaired_publish_draft(
+    *, repaired: _Repaired, extra_env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """The shipped `publish_draft` bytes, with the forge double and the plugins root."""
+    env = {
+        "PATH": f"{repaired.forge_bin}:/usr/local/bin:/usr/bin:/bin",
+        SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(repaired.plugins_root),
+    }
+    return _run_publish_draft(
+        world=repaired.world, extra_env=env if extra_env is None else {**env, **extra_env}
+    )
+
+
+def _foreign_publish_tip(*, world: _World) -> str:
+    """Move origin's publish branch to a head no run of this item ever published."""
+    other = world.clone.parent / "foreign"
+    _ = _git("clone", "--quiet", str(world.origin), str(other), cwd=world.clone.parent)
+    _ = _git("switch", "--quiet", "-c", "foreign-run", cwd=other)
+    tip = _commit(
+        cwd=other, path="foreign.txt", text="another run's work\n", subject="feat: foreign work"
+    )
+    _ = _git("push", "--quiet", "--force", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=other)
+    return tip
+
+
+def test_a_repaired_refresh_republishes_over_this_run_s_own_published_head(
+    tmp_path: Path,
+) -> None:
+    """The measured loss, made green: the repaired head reaches capture, leased.
+
+    SIX INSTRUMENTS, because "it exited zero" is satisfied by a stage that
+    pushed nothing at all. Origin's publish branch must carry the REPAIRED head,
+    which is the whole point and the one thing the pre-v146 stage could not do;
+    the publication record must name it, since `pr` compares the pull request
+    head against that record and a republication the record did not follow would
+    fail there instead; the stage's own sentinel must name the published head it
+    leased against, so the republication is readable in a transcript rather than
+    inferred from a moved ref; and the working branch must be UNMOVED, because a
+    stage that rebased the repair away would publish a head the janitor never
+    passed.
+
+    THE CONSUMED BRIEF IS THE ASSERTION MOST EASILY LEFT OUT and it is what
+    bounds the capability to this ONE visit: the brief is the only thing that
+    distinguishes a repaired visit from an ordinary one, so a visit that left it
+    behind would grant every later visit of the same run the same rewrite.
+
+    The route is read off the graph, as everywhere in this module: the stage's
+    own exit says nothing about where the graph sends it, and the clause's last
+    assertion is that the repaired head reaches `proof_capture` rather than
+    `needs_human`.
+    """
+    repaired = _repaired_run(root=tmp_path, push_program=True)
+    world = repaired.world
+
+    result = _run_repaired_publish_draft(repaired=repaired)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_REPAIR_REPUBLISH" in result.stderr
+    assert repaired.published_head in result.stderr
+    assert world.remote_head(ref=_BRANCH) == repaired.repaired_head
+    assert world.head() == repaired.repaired_head
+    assert world.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{repaired.repaired_head}\n"
+    assert world.state(name=_BRIEF_FILENAME) is None
+    assert _routed(source="publish_draft", outcome="succeeded") == "proof_capture"
+
+
+def test_a_repair_round_may_establish_its_published_head_from_resume_provenance(
+    tmp_path: Path,
+) -> None:
+    """The second head source the clause names, beside the control that it is needed.
+
+    A run RESUMED from a published pull request may never have visited
+    `publish_draft`, so it holds no publication record of its own and the clause
+    names its validated resume provenance as the fallback. Both legs run on their
+    OWN repaired world rather than on one world twice, because the enabling
+    brief is CONSUMED at entry -- a second leg in the same world would be
+    deciding on a brief this test wrote rather than one a stage did.
+
+    THE CONTROL IS WHAT MAKES THE FALLBACK EVIDENCE. With the publication record
+    removed and no provenance supplied the head cannot be established at all,
+    and the clause requires the divergent-prior-run refusal there; without that
+    leg, "the provenance leg republished" is equally consistent with a build
+    that republishes over any non-ancestor tip it meets after a repair.
+    """
+    provenance = _repaired_run(root=tmp_path / "provenance", push_program=True)
+    (provenance.world.state_dir() / PUBLISH_HEAD_STATE_FILENAME).unlink()
+
+    resumed = _run_repaired_publish_draft(
+        repaired=provenance,
+        extra_env={"LIVESPEC_RESUME_PUBLISHED_HEAD": provenance.published_head},
+    )
+
+    assert resumed.returncode == 0, resumed.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_REPAIR_REPUBLISH" in resumed.stderr
+    assert provenance.world.remote_head(ref=_BRANCH) == provenance.repaired_head
+
+    unestablished = _repaired_run(root=tmp_path / "unestablished", push_program=True)
+    (unestablished.world.state_dir() / PUBLISH_HEAD_STATE_FILENAME).unlink()
+
+    refused = _run_repaired_publish_draft(repaired=unestablished)
+
+    assert refused.returncode != 0, refused.stdout
+    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED" in refused.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_REPAIR_REPUBLISH" not in refused.stderr
+    assert unestablished.world.remote_head(ref=_BRANCH) == unestablished.published_head
+
+
+def test_publish_draft_still_refuses_a_foreign_divergent_tip_after_a_repair(
+    tmp_path: Path,
+) -> None:
+    """The narrowing is a NARROWING: a tip this run did not publish still refuses.
+
+    This is the sub-scenario that keeps the new arm a POSITIVE reading of the
+    run's own provenance rather than a relaxation of the ancestry guard. The
+    world is the republication world with origin's publish branch moved to a head
+    no run of this item ever published, so the ONLY difference from the green
+    case above is which sha origin carries.
+
+    Origin's tip is asserted UNMOVED and the working branch too, because the
+    clause requires the refusal to push NOTHING -- a build that leased over a
+    foreign tip and then reported a failure would satisfy the exit code alone.
+    """
+    repaired = _repaired_run(root=tmp_path, push_program=True)
+    world = repaired.world
+    foreign = _foreign_publish_tip(world=world)
+
+    result = _run_repaired_publish_draft(repaired=repaired)
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED" in result.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_REPAIR_REPUBLISH" not in result.stderr
+    assert world.remote_head(ref=_BRANCH) == foreign
+    assert world.head() == repaired.repaired_head
+
+
+def test_a_repaired_visit_pushes_a_plain_fast_forward_when_it_owes_no_rewrite(
+    tmp_path: Path,
+) -> None:
+    """The two unchanged arms of the repaired visit, proved by WITHHOLDING the helper.
+
+    The clause keeps both pre-v146 arms: an absent remote tip and a tip that is
+    an ancestor of the repaired head are each published by a plain
+    fast-forward. "A plain fast-forward rather than a lease" is otherwise hard to
+    observe -- both arms move the ref to the same sha -- so the discriminator is
+    the exact-head push helper, WITHHELD from the sandbox plugins root. A build
+    that took the lease route on either arm fails closed naming the absent
+    helper, which is an assertion the moved ref cannot make on its own.
+
+    The two arms are one case because each is the other's control for that
+    discriminator: the absent-tip arm never reaches the ancestry test at all, so
+    on its own it would pass against a build whose ancestry arm leased.
+    """
+    absent = _repaired_run(root=tmp_path / "absent-tip", push_program=False)
+    _ = _git("push", "origin", "--delete", f"refs/heads/{_BRANCH}", cwd=absent.world.clone)
+    assert absent.world.remote_head(ref=_BRANCH) == ""
+
+    created = _run_repaired_publish_draft(repaired=absent)
+
+    assert created.returncode == 0, created.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_REPAIR_REPUBLISH" not in created.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_PROGRAM_ABSENT" not in created.stderr
+    assert absent.world.remote_head(ref=_BRANCH) == absent.repaired_head
+
+    ancestor = _repaired_run(root=tmp_path / "ancestor-tip", push_program=False)
+    _ = _git(
+        "push",
+        "--force",
+        "origin",
+        f"{ancestor.advanced_default}:refs/heads/{_BRANCH}",
+        cwd=ancestor.world.clone,
+    )
+    assert ancestor.world.remote_head(ref=_BRANCH) == ancestor.advanced_default
+
+    advanced = _run_repaired_publish_draft(repaired=ancestor)
+
+    assert advanced.returncode == 0, advanced.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_REPAIR_REPUBLISH" not in advanced.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_PROGRAM_ABSENT" not in advanced.stderr
+    assert ancestor.world.remote_head(ref=_BRANCH) == ancestor.repaired_head
+
+
+def test_a_visit_following_no_repair_round_never_rewrites_the_publish_branch(
+    tmp_path: Path,
+) -> None:
+    """Scenario 144's narrowed sub-scenario, as the republication world minus the brief.
+
+    A `publish_draft` visit reached through a review-fix round, or through any
+    other path, follows no refresh-repair round -- and it reaches the stage in
+    exactly this state, because the brief is the only artifact that marks a
+    repaired visit and no other route writes one. So the world here is the green
+    republication world with the brief REMOVED and nothing else changed, which
+    is what makes the refusal evidence about the brief rather than about
+    anything else the fixture happens to carry.
+
+    The exact-head helper is PRESENT, deliberately: the refusal has to come from
+    the absent brief and not from an unavailable lease, and a world without the
+    helper could not tell those apart.
+    """
+    repaired = _repaired_run(root=tmp_path, push_program=True)
+    world = repaired.world
+    (world.state_dir() / _BRIEF_FILENAME).unlink()
+
+    result = _run_repaired_publish_draft(repaired=repaired)
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED" in result.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_REPAIR_REPUBLISH" not in result.stderr
+    assert world.remote_head(ref=_BRANCH) == repaired.published_head
+    assert world.head() == repaired.repaired_head
+
+
+def test_the_fix_node_instructions_forbid_the_fix_turn_from_rewriting_any_ref() -> None:
+    """The fix turn's own permission is WITHDRAWN, and the prompt says so.
+
+    v134's prompt let the fix turn "rewrite no ref other than this run's own
+    publish branch under an explicit lease", which v146 withdraws: the
+    republication is `publish_draft`'s, under a lease against a head the fix turn
+    cannot establish, and a fix turn that rewrote the branch itself would move it
+    to a head no janitor had passed and no proof had been captured on.
+
+    BOTH DIRECTIONS ARE GRADED, because neither is sufficient. The positive
+    needle is a literal copied from the shipped prose and sits within ONE
+    physical line, since the prompt is hard-wrapped and a needle straddling a
+    break fails silently while the prose says exactly the thing. The absence
+    needle is the superseded clause's own opening, likewise one line: without
+    it, the positive assertion passes over a prompt that carries both sentences
+    and so permits what the clause forbids.
+    """
+    prose = (_GRAPH_PATH.parent / "prompts" / "fix.md").read_text(encoding="utf-8")
+
+    assert "and rewrite no ref at all" in prose
+    assert "rewrite no ref other than" not in prose
