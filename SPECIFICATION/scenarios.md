@@ -4624,6 +4624,13 @@ Feature: A published run is finished, not rebuilt
     Then the new run enters the workflow at proof_capture on that head and no dod_gate, implement or janitor stage precedes it
     And the resume record names the cancel record as the source that decided the stage
     And the dispatch journal carries neither a publish-branch-reclaim record nor a publish-branch-reclaim-held record for the resume
+  Scenario: A run that republished after its latest proof record resumes at proof_capture on the head it published
+    Given a ready item whose earlier run published a captured record naming one head, then completed review_fix and a second publish_draft that pushed a descendant of that head, and terminated while executing proof_capture
+    And the factory the earlier dispatch names still holds that run and the published head its terminal checkpoint carries equals the pull request's current head
+    When the operator drives resume for the item
+    Then the new run enters the workflow at proof_capture on the pull request's current head and no dod_gate, implement or janitor stage precedes it
+    And the resume record names the pull request's current head as the published head and the factory record as the source that decided the stage
+    And the dispatch journal carries neither a publish-branch-reclaim record nor a publish-branch-reclaim-held record for the resume
   Scenario: The earlier run's records are attributed to the resumed run and the pointer names both
     Given an item resumed from a pull request whose verified record carries the earlier run's identifier
     When the resumed run merges the pull request and the acceptance pass runs
@@ -4662,11 +4669,16 @@ Feature: A published run is finished, not rebuilt
 ```gherkin
 Feature: A resume never continues from a state the records do not describe
   Scenario: The pull request head no longer equals the head the record names
-    Given a ready item whose pull request head differs from the head its latest proof record names
+    Given a ready item whose pull request head differs from the head its latest proof record names, and whose earlier run's factory record does not show that run publishing the pull request head after that record
     When the operator drives resume for the item
     Then the resume refuses with exit code 3 before any run exists
     And the refusal names both heads and names a plain dispatch as the remedy
     And the item, the publish branch and the pull request are unchanged
+  Scenario: A republication the factory can no longer show does not anchor a resume
+    Given a ready item whose pull request head differs from the head its latest proof record names
+    And the factory the earlier dispatch names answers that it no longer holds the earlier run
+    When the operator drives resume for the item
+    Then the resume refuses with exit code 3 before any run exists, naming both heads and a plain dispatch as the remedy
   Scenario: The earlier run is still live
     Given an item active under a live claim whose journaled run its factory reports as not terminal after the preamble's reconciliation
     When the operator drives resume for the item
