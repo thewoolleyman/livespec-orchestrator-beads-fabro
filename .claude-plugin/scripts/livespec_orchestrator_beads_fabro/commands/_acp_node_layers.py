@@ -31,8 +31,9 @@ the thing the record exists to spare them.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidateIdentity
 from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
     ACP_NODES,
     NODE_INPUT_CANDIDATES,
@@ -105,11 +106,23 @@ class AcpNodeResolution:
     ACTUALLY declares rather than against an assumed shape. `run_inputs`
     is those pairs, rendered and VALIDATED at resolution time so the
     launcher has nothing left to fail on.
+
+    `candidates` is each node's SELECTED candidate identity, attached by
+    `_acp_chain_resolution` strictly AFTER this resolution is built --
+    which is why it carries a default rather than being a constructor
+    obligation. The merge above cannot know an identity, and the ordering
+    rule of `SPECIFICATION/contracts.md` section "Factory-configurable ACP
+    fallback priority" is that identity metadata may only attach to what
+    those layers produced. It is empty for a merge nobody attached a chain
+    to, which is the honest answer for every non-dispatch caller: a node
+    whose identity is unknown contributes no entitlement label rather than
+    a guessed one.
     """
 
     nodes: Mapping[str, ResolvedAcpNode]
     inputs: Mapping[str, str]
     run_inputs: tuple[str, ...]
+    candidates: Mapping[str, AcpCandidateIdentity] = field(default_factory=dict)
 
 
 def resolve_acp_nodes(
