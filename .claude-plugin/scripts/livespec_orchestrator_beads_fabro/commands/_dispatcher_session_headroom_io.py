@@ -16,6 +16,21 @@ at 03:39Z while `claude-cred-status` still returned condition `usable` / HTTP
 credential, and this clause exists precisely because the first cannot stand in
 for the second.
 
+WHY THE READING RIDES A MESSAGES REQUEST AND NOT THE OAUTH USAGE ENDPOINT
+(`bd-ib-nzp5ln`). The first build of this module read `GET /api/oauth/usage`.
+That endpoint requires the `user:profile` OAuth scope, which the projected
+inference-scoped subscription token does not hold: measured on this host
+2026-10-15 it answered 403 `permission_error` ("OAuth token does not meet scope
+requirement user:profile") and then 429 on every retry, so EVERY admission
+evaluation graded the reading unobservable and skipped every covered
+candidate. The same token on a one-output-token `POST /v1/messages` answered
+200 with `anthropic-ratelimit-unified-5h-utilization: 0.0`, so the five-hour
+window IS observable for this credential, from that response header. The
+header is a FRACTION of the allowance; it is multiplied by 100 here so the
+shared grader sees the percentage the clause measures. A refused response that
+still carries the header -- a 429 at the session limit does -- is graded from
+the header, because it answers the question exactly as a 200 would.
+
 NOTHING LEAVES THIS MODULE BUT A GRADED READING. The response body is read
 under a byte bound and decoded here; the only values that escape are a float,
 an unobservable REASON from the closed set below, and the opaque identity. So
@@ -40,7 +55,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import cast
+from email.message import Message
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -54,7 +69,10 @@ __all__: list[str] = [
     "ABSENT_CREDENTIAL_IDENTITY",
     "ABSENT_CREDENTIAL_REASON",
     "AUTHENTICATION_FAILED_REASON",
-    "CLAUDE_SESSION_USAGE_URL",
+    "CLAUDE_SESSION_HEADROOM_MAX_OUTPUT_TOKENS",
+    "CLAUDE_SESSION_HEADROOM_MODEL",
+    "CLAUDE_SESSION_HEADROOM_URL",
+    "FIVE_HOUR_UTILIZATION_HEADER",
     "SESSION_HEADROOM_READ_TIMEOUT_SECONDS",
     "TIMED_OUT_REASON",
     "TRANSPORT_FAILED_REASON",
@@ -62,7 +80,13 @@ __all__: list[str] = [
     "read_projected_session_headroom",
 ]
 
-CLAUDE_SESSION_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+CLAUDE_SESSION_HEADROOM_URL = "https://api.anthropic.com/v1/messages"
+
+# The cheapest request the Messages API answers, and the same one the sibling
+# credential probe spends: one output token on the smallest current model.
+CLAUDE_SESSION_HEADROOM_MODEL = "claude-haiku-4-5-20251001"
+CLAUDE_SESSION_HEADROOM_MAX_OUTPUT_TOKENS = 1
+FIVE_HOUR_UTILIZATION_HEADER = "anthropic-ratelimit-unified-5h-utilization"
 
 # Finite, as the clause requires in as many words, and the same bound the
 # sibling credential probe uses: both are one bounded request on the admission
@@ -84,11 +108,9 @@ TRANSPORT_FAILED_REASON = "transport-failed"
 # was ABSENT rather than handed a hash of nothing.
 ABSENT_CREDENTIAL_IDENTITY = "absent"
 
-_FIVE_HOUR_KEY = "five_hour"
-_UTILIZATION_KEY = "utilization"
+_PERCENT_PER_FRACTION = 100.0
 _FINGERPRINT_DOMAIN = "livespec-session-headroom-credential"
 _FINGERPRINT_HEX_LENGTH = 16
-_MAX_RESPONSE_BYTES = 65_536
 _ANTHROPIC_VERSION = "2023-06-01"
 _CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
 _AUTHENTICATION_STATUSES = frozenset({401, 403})
@@ -113,50 +135,63 @@ def read_projected_session_headroom(
             observed_at=observed_at,
             reason=ABSENT_CREDENTIAL_REASON,
         )
-    payload = _usage_payload(token=token)
-    if isinstance(payload, str):
+    utilization = _five_hour_utilization(token=token)
+    if isinstance(utilization, str):
         return unobservable_session_headroom(
-            credential_identity=identity, observed_at=observed_at, reason=payload
+            credential_identity=identity, observed_at=observed_at, reason=utilization
         )
     return session_headroom_reading(
         credential_identity=identity,
         observed_at=observed_at,
-        utilization=_five_hour_utilization(payload=payload),
+        utilization=utilization,
     )
 
 
-def _usage_payload(*, token: str) -> dict[str, object] | str:
-    """The decoded usage document, or the NAME of the measurement that failed.
+def _five_hour_utilization(*, token: str) -> float | None | str:
+    """The header's utilization percentage, `None`, or the NAME of the failure.
 
-    A `str` return is an unobservable reason rather than an error message: the
-    caller journals it verbatim, so it must be one of the closed reasons above
-    and must never carry the provider's own sentence, which is a raw provider
-    response.
+    `None` means the provider answered without a parseable header, which the
+    shared grader reports as an unreadable utilization. A `str` return is an
+    unobservable reason rather than an error message: the caller journals it
+    verbatim, so it must be one of the closed reasons above and must never
+    carry the provider's own sentence, which is a raw provider response.
     """
     try:
         with urlopen(  # noqa: S310 - fixed HTTPS endpoint, no caller-controlled URL.
-            _usage_request(token=token),
+            _headroom_request(token=token),
             timeout=SESSION_HEADROOM_READ_TIMEOUT_SECONDS,
         ) as response:
-            body = response.read(_MAX_RESPONSE_BYTES)
+            return _header_percent(headers=response.headers)
     except HTTPError as error:
+        percent = _header_percent(headers=error.headers)
+        if percent is not None:
+            return percent
         return _http_reason(status=error.code)
     except TimeoutError:
         return TIMED_OUT_REASON
     except (URLError, OSError):
         return TRANSPORT_FAILED_REASON
-    return _json_object(body=body)
 
 
-def _usage_request(*, token: str) -> Request:
+def _headroom_request(*, token: str) -> Request:
+    body = json.dumps(
+        {
+            "model": CLAUDE_SESSION_HEADROOM_MODEL,
+            "max_tokens": CLAUDE_SESSION_HEADROOM_MAX_OUTPUT_TOKENS,
+            "messages": [{"role": "user", "content": "hi"}],
+        },
+        separators=(",", ":"),
+    ).encode()
     return Request(  # noqa: S310 - fixed HTTPS endpoint, no caller-controlled URL.
-        CLAUDE_SESSION_USAGE_URL,
+        CLAUDE_SESSION_HEADROOM_URL,
+        data=body,
         headers={
             "Authorization": f"Bearer {token}",
             "anthropic-beta": _CLAUDE_OAUTH_BETA,
             "anthropic-version": _ANTHROPIC_VERSION,
+            "content-type": "application/json",
         },
-        method="GET",
+        method="POST",
     )
 
 
@@ -167,25 +202,18 @@ def _http_reason(*, status: int) -> str:
     return TRANSPORT_FAILED_REASON
 
 
-def _five_hour_utilization(*, payload: dict[str, object]) -> object:
-    """The five-hour window's utilization figure as the document carries it.
+def _header_percent(*, headers: Message | None) -> float | None:
+    """The five-hour header as a percentage, or `None` when it cannot be read.
 
-    Returned UNGRADED, as an `object`, because grading it is the reading's own
-    job: a shape this function rejected would have to be reported as some
-    sentinel, and every sentinel available is also a valid utilization.
+    Range and finiteness are NOT checked here: grading is the reading's own
+    job, and a value this function silently clamped would be a coerced reading.
     """
-    window = payload.get(_FIVE_HOUR_KEY)
-    if not isinstance(window, dict):
+    if headers is None:
         return None
-    return cast("dict[str, object]", window).get(_UTILIZATION_KEY)
-
-
-def _json_object(*, body: bytes) -> dict[str, object]:
-    """The body as a JSON object, or the empty object for anything else."""
+    raw = headers.get(FIVE_HOUR_UTILIZATION_HEADER)
+    if raw is None:
+        return None
     try:
-        parsed = json.loads(body)
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return {}
-    if not isinstance(parsed, dict):
-        return {}
-    return cast("dict[str, object]", parsed)
+        return float(raw) * _PERCENT_PER_FRACTION
+    except ValueError:
+        return None
