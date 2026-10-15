@@ -21,6 +21,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config im
     codex_otel_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_projection import (
+    CredentialUseDeclaration,
     CredentialUseProjection,
     credential_use_env_lines,
     credential_use_guard_prepare_steps_block,
@@ -217,7 +218,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     proof_store_env: str = "",
     proof_credentials_env: str = "",
     git_author: GitAuthor | None = None,
-    credential_use: CredentialUseProjection | None = None,
+    credential_use: CredentialUseDeclaration | None = None,
     resume_checkout: ResumeCheckout | None = None,
     publication_metadata: PublicationMetadata | None = None,
 ) -> str | None:
@@ -251,11 +252,16 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     and the lifetime this dispatch requires. A credential projected WITHOUT them
     is broken protection rather than a legitimate configuration — the sandbox
     would hold a live credential under no bound — so this returns None instead,
-    which the dispatch path reports as a pre-launch refusal. A caller projecting
-    NO Codex credential has nothing to bound and passes None for both, which
-    renders no guard and no enforcement and leaves ordinary execution untouched.
+    which the dispatch path reports as a pre-launch refusal. That refusal tests
+    for the PROTECTED value specifically, not merely for `None`: an
+    `UnprotectedCredentialUse` beside a projected snapshot is the same broken
+    protection spelled as a declaration, and a `None`-only test would admit it.
+    A caller projecting NO Codex credential passes a declaration saying so,
+    which installs the guard with no deadline for it to enforce; a caller
+    projecting nothing at all passes None for both, which renders no guard and
+    leaves ordinary execution untouched.
     """
-    if codex_auth_snapshot is not None and credential_use is None:
+    if codex_auth_snapshot is not None and not isinstance(credential_use, CredentialUseProjection):
         return None
     graph_value = toml_section_string(text=committed_text, section="workflow", key="graph")
     environment_id = toml_section_string(text=committed_text, section="run.environment", key="id")
