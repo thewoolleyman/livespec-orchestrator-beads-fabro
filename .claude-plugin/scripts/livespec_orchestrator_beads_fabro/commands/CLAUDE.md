@@ -93,9 +93,13 @@ public module per query-only skill:
   requires per tenant BEFORE those checks arm (NOT a contract CLI and
   NOT a skill surface). It writes the missing `plan_slug` tags, the
   missing `plan/<slug>/associated_work_item_id` anchors (`unassigned`
-  when no epic carries the slug), and the missing typed `next_action` +
-  `last_session` pointers, then reports what it wrote, skipped and
-  refused; a second run reports zero writes. Every ledger write goes
+  when no epic carries the slug), the missing typed `next_action` +
+  `last_session` pointers, and — as the SECOND of the two writes relay
+  research note 007 permits to start a plan epic's authority chain — the
+  missing GENESIS token of every live plan epic that carries no chain
+  (`_plan_record_genesis.py`, through `create_genesis_token`). It then
+  reports what it wrote, skipped and refused; a second run reports zero
+  writes. Every ledger write goes
   through the existing store bridge (`tag_epic_plan_slug`,
   `set_next_action`); the decisions — slug derivation, collision
   refusal, whether an anchor already stands, what a handoff seeds —
@@ -103,6 +107,18 @@ public module per query-only skill:
   the anchor files land through the repository's ordinary worktree →
   pull-request → merge discipline, and the fleet-wide run across
   tenants is an operator follow-up.
+  THE GENESIS LEG RUNS LAST, so every epic one run touches reaches the
+  same starting state: the pointer the seeding leg writes is the
+  migration's GUESS at a next action and carries no obligation, so
+  letting it commit the chain's first transition would start the
+  authority history with a record of nothing and would leave a
+  freshly-seeded epic at epoch 1 while an epic whose pointer already
+  stood sat at epoch 0. Its two findings are routed by CODE and not
+  interchangeably: an already-named chain is a SKIP, because running the
+  migration twice is an ordinary operator act whose whole claim is that
+  it changed nothing, while an unconfirmed genesis is REFUSED carrying
+  its remedy, because another writer may have migrated the epic in the
+  same minute and that is state a human resolves.
 
 Each public module exports `main(argv=None) -> int` (the supervisor
 the wrapper calls) plus its named helpers, all enumerated in
