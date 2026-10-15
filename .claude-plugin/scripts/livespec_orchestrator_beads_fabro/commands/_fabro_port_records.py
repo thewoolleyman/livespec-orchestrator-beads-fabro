@@ -49,6 +49,15 @@ class FabroFailureDetail:
     an exhaustion record is labelled with. It is set from the same single
     classification that sets the flag, so the two cannot disagree: it is
     non-None exactly when the flag is True.
+
+    `provider_usage_limit_entitlement` names WHAT ran on that vendor — the
+    failing attempt's recorded `candidate_key`. It is absent on the legacy
+    posture, where an identity-less adapter's provider comes from the cause
+    text and there is no entitlement anyone declared, so unlike the provider it
+    is NOT non-None whenever the flag is set. Both are re-attributed together
+    by `_fabro_executed_candidate` from the run's own labels, because a
+    provider read off a recorded identity and an entitlement read off anything
+    else would be two answers about one attempt.
     """
 
     cause: str | None
@@ -56,6 +65,7 @@ class FabroFailureDetail:
     signature: str | None
     provider_usage_limit: bool = False
     provider_usage_limit_provider: str | None = None
+    provider_usage_limit_entitlement: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

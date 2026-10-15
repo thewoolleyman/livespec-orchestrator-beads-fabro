@@ -75,6 +75,19 @@ Tests for the thin-transport command modules under
   defect these cases were added to close, where a merge nobody could read graded
   as a merge nobody recorded and the containment relation then did not run.
 
+- `test_fabro_executed_candidate_attribution.py` — the attribution of a
+  provider ceiling to the candidate that ran. Its two CONTROLS are the
+  load-bearing cases and neither works without the other: an unlabelled failing
+  node keeps the v107 cause-text provider, and a recorded identity cannot
+  MANUFACTURE a ceiling on a failure that reports none. Without the second, an
+  attribution that fired on every failure would satisfy the positive case while
+  labelling ordinary transport faults with a vendor; without the first, one that
+  fired only where an identity exists would strand the legacy posture. The
+  positive case asserts the ARRIVING attribution is `codex` before asserting the
+  attributed one is `anthropic`, which is what makes it able to fail — a fixture
+  whose cause text already named Anthropic would pass against no implementation
+  at all.
+
 - `test_dispatcher_fabro_currency.py`,
   `test_dispatcher_fabro_currency_sources.py`,
   `test_dispatcher_fabro_release_cache.py`,
