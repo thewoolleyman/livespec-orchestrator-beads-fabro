@@ -45,6 +45,26 @@ could not be found. Both are possible — the journal is a file, and an
 interrupted dispatch can end between the cancel and the disposition — and only
 the second is a fault.
 
+THE SECOND CANCEL IS A DIFFERENT DISPOSITION, AND THE ROW COUNT IS THE WHOLE
+DISCRIMINATOR. One cancellation says nothing about the slice, so it is released.
+An item whose FRESH run stalls again is either genuinely unrunnable or is being
+killed by something a re-dispatch will meet again, and releasing it a second
+time is an unbounded loop with no operator in it — so the second rests at
+`blocked` / `needs-human` and nothing automatic leaves that state.
+
+The count is read off the journal's own cancel rows rather than from a stored
+per-item counter, because the rows ARE the across-dispatch record: the cancel
+site appends exactly one per cancellation, so "how many times has this item been
+cancelled" is a question the journal already answers. Note what that does NOT
+claim to be. `contracts.md`'s "progress high-water mark" paragraph defines a
+CONSECUTIVE NON-PROGRESS COUNT with a committed `dispatcher.redispatch_no_progress_limit`
+refusing the next dispatch, and nothing in this repository implements that
+mechanism yet — so this routing does not increment it, does not reset it, and
+must not be read as having implemented it. A local counter no admission gate
+consults would be a field written and never read, which is the
+constant-reported-as-a-measurement failure `_dispatcher_non_convergence_cap`'s
+own docstring warns about.
+
 THE LEDGER WRITE IS FAIL-SOFT and the comment is written BEFORE it, which is the
 opposite order from `_dispatcher_loop_selection`'s needs-human pair and is
 deliberate. There the escalation owns the lifecycle write and the comment owns
@@ -79,10 +99,14 @@ from livespec_orchestrator_beads_fabro.errors import (
     WorkItemNotFoundError,
 )
 from livespec_orchestrator_beads_fabro.io import write_stderr
-from livespec_orchestrator_beads_fabro.store import update_work_item_status
+from livespec_orchestrator_beads_fabro.store import (
+    update_work_item_blocked_state,
+    update_work_item_status,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
+    "STALL_NEEDS_HUMAN_STAGE",
     "STALL_RELEASE_STAGE",
     "UNREAD_CANCEL_ROW",
     "dispose_stall_cancel",
@@ -92,6 +116,12 @@ __all__: list[str] = [
 # The journal stage a released first stall appends. One literal, shared by the
 # producer here and every reader, exactly as `NON_CONVERGENCE_BOUNCE_STAGE` is.
 STALL_RELEASE_STAGE = "stall-cancel-release"
+
+# The journal stage a second consecutive cancel appends. A SEPARATE stage rather
+# than a field on the release row, because the two are opposite dispositions and
+# a reader filtering for "was this item released" must not match the row that
+# parked it.
+STALL_NEEDS_HUMAN_STAGE = "stall-cancel-needs-human"
 
 # What the comment says in place of a fact the journal carried no row for. It
 # states the MEASUREMENT that failed rather than leaving a blank, because an
@@ -147,7 +177,7 @@ def dispose_stall_cancel(
     outcome: DispatchOutcome,
     journal: JournalFile,
 ) -> None:
-    """Release a first stall cancel back to `ready` with its claim dropped.
+    """Route one watchdog cancellation to the disposition its count calls for.
 
     A no-op for every outcome that is not a watchdog cancellation, which is
     every green run, every ordinary failure and every human-gate park. The
@@ -156,6 +186,31 @@ def dispose_stall_cancel(
     writer of `STALL_STATUS` and it writes it only after the run was
     `fabro rm -f`-ed.
 
+    A journal carrying NO cancel row routes to the RELEASE arm rather than
+    refusing, which is deliberate and is the fail-soft direction here. An
+    interrupted dispatch can end between the cancel and the disposition, and
+    those are exactly the dispatches most likely to have left the item
+    stranded; parking an item for a human because its own account could not be
+    read would turn a lost record into an operator interrupt.
+    """
+    if outcome.status != STALL_STATUS:
+        return
+    rows = item_stall_cancel_rows(journal=journal, item_id=item.id)
+    if len(rows) >= 2:
+        _rest_for_human(repo=repo, item=item, journal=journal, rows=rows)
+        return
+    _release_first_cancel(repo=repo, item=item, journal=journal, row=rows[-1] if rows else None)
+
+
+def _release_first_cancel(
+    *,
+    repo: Path,
+    item: WorkItem,
+    journal: JournalFile,
+    row: Mapping[str, object] | None,
+) -> None:
+    """Return the item to `ready` with its dispatch claim dropped.
+
     The claim is released through the SAME seam the pre-run release uses —
     `status="ready"` with `clear_assignee=True` — so a released stall and a
     released pre-run failure leave the ledger in one shape rather than two that
@@ -163,15 +218,11 @@ def dispose_stall_cancel(
     label, so no reason has to be cleared: the item was `active`, which is a
     status the escalation seam never writes a reason onto.
     """
-    if outcome.status != STALL_STATUS:
-        return
-    rows = item_stall_cancel_rows(journal=journal, item_id=item.id)
-    cancelled = rows[-1] if rows else None
     _ = attempt(
         action=lambda: append_work_item_comment(
             path=store_config(repo=repo),
             work_item_id=item.id,
-            body=_release_comment(item_id=item.id, row=cancelled),
+            body=_release_comment(item_id=item.id, row=row),
         ),
         exceptions=_LEDGER_WRITE_ERRORS,
     )
@@ -198,17 +249,136 @@ def dispose_stall_cancel(
             "stage": STALL_RELEASE_STAGE,
             "work_item_id": item.id,
             "status": "ready",
-            "run_id": _field(row=cancelled, key="run_id"),
-            "factory": _field(row=cancelled, key="factory"),
-            "executing_stage": _field(row=cancelled, key="executing_stage"),
+            "run_id": _field(row=row, key="run_id"),
+            "factory": _field(row=row, key="factory"),
+            "executing_stage": _field(row=row, key="executing_stage"),
         }
     )
     _ = write_stderr(
         text=(
             f"SURFACE: work-item {item.id} was released to ready after a stall-watchdog "
-            f"cancel of run {_field(row=cancelled, key='run_id')} on factory "
-            f"{_field(row=cancelled, key='factory')}; the cancellation is NOT "
+            f"cancel of run {_field(row=row, key='run_id')} on factory "
+            f"{_field(row=row, key='factory')}; the cancellation is NOT "
             f"non-convergence and the slice was not bounced to backlog.\n"
+        )
+    )
+
+
+def _rest_for_human(
+    *,
+    repo: Path,
+    item: WorkItem,
+    journal: JournalFile,
+    rows: tuple[Mapping[str, object], ...],
+) -> None:
+    """Park the item at `blocked` / `needs-human` on a repeat cancellation.
+
+    The LAST TWO rows are the pair that matters, not the whole history: the
+    clause asks for the item's own PRECEDING dispatch and its current one, and
+    an item cancelled five times would otherwise have its oldest cancellation
+    reported as the one a re-dispatch is being judged against.
+
+    `admission_policy="manual"` rides the same write for the same reason
+    `escalate_needs_human_block` carries it: `blocked` alone is a status the
+    drain could still be configured to admit, and the point of this terminal is
+    that no further dispatch happens without a human.
+    """
+    previous, current = rows[-2], rows[-1]
+    _ = attempt(
+        action=lambda: append_work_item_comment(
+            path=store_config(repo=repo),
+            work_item_id=item.id,
+            body=_needs_human_comment(item_id=item.id, previous=previous, current=current),
+        ),
+        exceptions=_LEDGER_WRITE_ERRORS,
+    )
+    rested = attempt(
+        action=lambda: update_work_item_blocked_state(
+            path=store_config(repo=repo),
+            item_id=item.id,
+            status="blocked",
+            blocked_reason="needs-human",
+            admission_policy="manual",
+        ),
+        exceptions=_LEDGER_WRITE_ERRORS,
+    )
+    if isinstance(rested, AttemptFailure):
+        journal.append(
+            record={
+                "stage": f"{STALL_NEEDS_HUMAN_STAGE}-error",
+                "work_item_id": item.id,
+                "reason": f"{type(rested.error).__name__}",
+            }
+        )
+        return
+    journal.append(
+        record={
+            "stage": STALL_NEEDS_HUMAN_STAGE,
+            "work_item_id": item.id,
+            "status": "blocked",
+            "blocked_reason": "needs-human",
+            "previous_run_id": _field(row=previous, key="run_id"),
+            "run_id": _field(row=current, key="run_id"),
+        }
+    )
+    _ = write_stderr(
+        text=(
+            f"SURFACE: work-item {item.id} stalled twice in a row — runs "
+            f"{_field(row=previous, key='run_id')} and "
+            f"{_field(row=current, key='run_id')} were both cancelled by the progress "
+            f"watchdog; it rests at blocked / needs-human and no further dispatch or "
+            f"resume is invoked automatically.\n"
+        )
+    )
+
+
+def _needs_human_comment(
+    *,
+    item_id: str,
+    previous: Mapping[str, object],
+    current: Mapping[str, object],
+) -> str:
+    """The durable account of BOTH cancellations, plus the way out.
+
+    Both runs are named with their factory and stage because that is what tells
+    an operator whether the two kills share a cause: the same factory twice
+    points at the host, the same stage twice points at a false kill inside one
+    open command node, and two unrelated stages point at the work.
+
+    The REMEDY is spelled as the valve rather than described, and the wording is
+    the resume ladder's own `resolve-blocked` clause, so the comment and the
+    refusal an operator meets next cannot say two different things. The
+    plain-dispatch line is the second applicable remedy: a cancel record whose
+    published head could not be read cannot anchor a resume, which is the
+    ladder's headless refusal, and its remedy is a plain dispatch.
+    """
+    return "\n".join(
+        (
+            "livespec-stall-cancel-needs-human",
+            "",
+            f"work-item: {item_id}",
+            "preceding cancelled run: "
+            f"{_field(row=previous, key='run_id')} on factory "
+            f"{_field(row=previous, key='factory')}, executing "
+            f"{_field(row=previous, key='executing_stage')}",
+            "current cancelled run: "
+            f"{_field(row=current, key='run_id')} on factory "
+            f"{_field(row=current, key='factory')}, executing "
+            f"{_field(row=current, key='executing_stage')}",
+            "",
+            "This item stalled twice in a row, so it rests at blocked /",
+            "needs-human and no further dispatch or resume is invoked",
+            "automatically. A stall cancel is still NOT factory non-convergence:",
+            "the item was not bounced to backlog and no slice-size calibration",
+            "observation was recorded for either run.",
+            "",
+            "Remedies:",
+            f"- release it with `resolve-blocked:{item_id}:ready`, which is the",
+            "  only route out of blocked and what the resume refusal ladder names",
+            "  for an item resting on a human decision.",
+            "- if a resume then refuses because no record names a publish-branch",
+            "  head, dispatch it plainly instead; a cancel record whose published",
+            "  head could not be read cannot anchor a resume.",
         )
     )
 
