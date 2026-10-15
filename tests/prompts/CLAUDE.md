@@ -59,6 +59,26 @@ instead.
   `tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_payload_implement_prompt.py`,
   per the rendering-seam convention below.
 
+- `test_committing_stage_commit_runner.py` — bd-ib-sufca7: every ACP node prompt
+  whose stage COMMITS routes each of its commits — Red, Green amend, any later
+  one — through the Dispatcher-materialized sandbox commit runner and its
+  bounded waits, and owes every commit run it started a terminal state or a stop
+  before its final message. The committing set is derived by CONTENT (a prompt
+  naming the `Red-Green-Replay` ritual), and the discriminator is measured rather
+  than assumed: the token appears in exactly `implement.md`, `fix.md` and
+  `review-fix.md` and in none of the other five ACP prompts, and it is
+  vocabulary those three carried BEFORE the runner section existed, so the
+  selection cannot be circular with what the cases assert. The runner PATH is
+  imported from `_dispatcher_sandbox_commit_runner` rather than transcribed — a
+  literal here would keep agreeing with itself while the prompt and the prepare
+  step diverged, leaving the stage reaching for a program that is not there. Two
+  controls carry the module: the derivation is asserted to have found exactly
+  those three (a drifted scan would select none and every parametrized case would
+  silently vanish), and every NON-committing ACP prompt is asserted NOT to carry
+  the section, because the detached commit run is the ONE exception a committing
+  stage makes to its rule against backgrounding a tool call and that carveout
+  must widen by ruling rather than by copy-paste.
+
 Conventions:
 
 - Read the prompt as COMMITTED BYTES. Never render it through a template engine
