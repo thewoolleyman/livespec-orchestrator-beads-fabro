@@ -213,7 +213,22 @@ def _forces(*, argument: str) -> bool:
 
 
 def _resolve(*, word: str, directory: str) -> str:
-    return word if word.startswith(_ROOT) else posixpath.join(directory, word)
+    """One operand as the single absolute path it names.
+
+    NORMALIZED rather than merely made absolute, and both halves are
+    load-bearing. A relative word means nothing without the directory it is
+    read from, so `rm -rf .` and `rm -rf ..` are the working directory and its
+    parent. And a path can be SPELLED many ways — a trailing slash, a `.`, a
+    `..` in the middle — so `/tmp/../workspace` is `/workspace` written the
+    long way, and a comparison against unnormalized text would miss every one
+    of those spellings while reporting a clean allow.
+
+    Symbolic links are deliberately NOT followed here: `livespec_shell_shape`
+    has no filesystem, and the link an agent made is resolved by the caller
+    that can read one.
+    """
+    absolute = word if word.startswith(_ROOT) else posixpath.join(directory, word)
+    return posixpath.normpath(absolute)
 
 
 def _refusable_targets(*, protected: Sequence[str]) -> tuple[tuple[str, str], ...]:
