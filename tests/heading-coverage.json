@@ -1785,5 +1785,13 @@
     "test": "TODO",
     "reason": "Ratified 2026-10-14 by the v134 revision (plan publish-draft-green-work-loss, epic bd-ib-acrr56). Hook reaping, the hook-over-limit record and the publish_draft timeout key are not implemented yet; an integration-tier test is owed for the five sub-scenarios, and work-item bd-ib-xi63mq implements them and owns that binding.",
     "work_item": "bd-ib-xi63mq"
+  },
+  {
+    "heading": "## Scenario 179 \u2014 A sandbox commit whose hook outlasts one tool call completes with the hook's own verdict",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified 2026-10-15 by the v137 revision (proposal sandbox-commit-leg-completion; plan sandbox-commit-gate-ceiling, epic bd-ib-qy5wol). The sandbox commit runner is not implemented yet; an integration-tier test is owed for the four sub-scenarios, and work-item bd-ib-sufca7 implements them and owns that binding.",
+    "work_item": "bd-ib-sufca7"
   }
 ]

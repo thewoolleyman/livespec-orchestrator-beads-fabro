@@ -6046,3 +6046,36 @@ Feature: Repository hooks inside a sandbox stay within, and are named against, t
     Then the needs-human cause recorded on the item names that later cause
     And the dispatch journal still carries the earlier hook-over-limit row
 ```
+
+## Scenario 179 — A sandbox commit whose hook outlasts one tool call completes with the hook's own verdict
+
+```gherkin
+Feature: A factory agent's commit leg is not bounded by one tool call
+  As the maintainer of a repository whose full gate runs in its commit hook
+  I want a sandbox commit to reach its hook's verdict however long the hook runs
+  So that a loaded factory host does not turn a verified change into a lost run
+
+  Scenario: A Green amend whose hook outlasts one tool call completes
+    Given an implement-stage agent whose Green amend fires a commit hook that runs longer than one of its tool calls
+    When the agent starts the amend through the sandbox commit runner and repeats bounded waits in later tool calls
+    Then the amend completes with the hook's own verdict
+    And the resulting commit carries every trailer the hook wrote
+    And the final wait reports the passed state, exit status zero and the resulting commit id
+
+  Scenario: A commit refused by its hook is reported as failed
+    Given a commit started through the sandbox commit runner whose hook refuses it
+    When the agent waits on it until it is terminal
+    Then the wait reports the failed state and the commit process's exit status
+    And HEAD is unchanged
+
+  Scenario: A commit that dies without a verdict is not a commit
+    Given a commit started through the sandbox commit runner whose process is ended by a signal before it exits on its own
+    When the agent waits on it
+    Then the wait reports the no-verdict state
+    And no passed state is reported for that commit run
+
+  Scenario: A second commit does not start while one is running
+    Given a commit started through the sandbox commit runner that is still running
+    When the agent starts another commit through the runner
+    Then the runner refuses the start and names the running commit run
+```
