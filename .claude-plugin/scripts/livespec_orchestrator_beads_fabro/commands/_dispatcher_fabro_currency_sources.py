@@ -148,7 +148,7 @@ def releases_argv() -> list[str]:
 
     `compare_argv` next door needs no such declaration because it carries no
     parameters, and a deliberate WRITE declares its verb the same way this read
-    does — see `_dispatcher_publish_branch_preserve._create_ref_argv`. The rule
+    does — see `_dispatcher_publish_branch_preserve.create_ref_argv`. The rule
     to preserve is the relationship, not this spelling: a `gh api` argv carrying
     body parameters MUST declare its method, because inference resolves them to
     a POST.
