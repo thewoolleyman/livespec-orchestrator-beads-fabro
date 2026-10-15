@@ -27,6 +27,7 @@ different question from how it measures PROGRESS (bd-ib-6pdigz).
 
 from __future__ import annotations
 
+import itertools
 import json
 import threading
 from collections.abc import Callable
@@ -784,7 +785,9 @@ class _ScriptedFabroRunner:
 
 def _advancing_clock() -> object:
     """A monotonic clock that jumps 600s per call (3 samples span 1200s)."""
-    ticks = iter(float(t) for t in range(0, 6_000_000, 600))
+    # Unbounded: a finite iterator raised StopIteration out of `launch`
+    # whenever the watch loop out-polled the run thread's return.
+    ticks = itertools.count(0.0, 600.0)
     return lambda: next(ticks)
 
 
@@ -1242,6 +1245,7 @@ def test_watched_launcher_treats_probe_failure_as_no_signal_never_cancels(
         polls["n"] += 1
         if polls["n"] >= 5:
             runner.run_done.set()
+            assert runner.run_returned.wait(timeout=1.0)
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
@@ -1311,6 +1315,7 @@ def test_watched_launcher_events_probe_error_is_no_signal_never_cancels(
         polls["n"] += 1
         if polls["n"] >= 5:
             runner.run_done.set()
+            assert runner.run_returned.wait(timeout=1.0)
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
