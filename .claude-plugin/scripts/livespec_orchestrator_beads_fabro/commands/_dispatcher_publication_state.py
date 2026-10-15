@@ -46,12 +46,14 @@ property of the container rather than a rule anything has to remember.
 from __future__ import annotations
 
 __all__: list[str] = [
+    "PR_VISIT_COUNT_STATE_FILENAME",
     "PUBLICATION_STATE_GIT_PATH",
     "PUBLISH_HEAD_STATE_FILENAME",
     "REFRESH_CHANGED_STATE_FILENAME",
     "REFRESH_COUNT_STATE_FILENAME",
     "REFRESH_REPAIR_BRIEF_STATE_FILENAME",
     "REFRESH_REPAIR_COUNT_STATE_FILENAME",
+    "REFRESH_ROUTE_MARKER_STATE_FILENAME",
     "publication_state_filenames",
     "publication_state_root_command",
 ]
@@ -87,6 +89,24 @@ REFRESH_CHANGED_STATE_FILENAME = "livespec-pr-refresh-changed"
 REFRESH_REPAIR_BRIEF_STATE_FILENAME = "livespec-refresh-repair-brief"
 REFRESH_REPAIR_COUNT_STATE_FILENAME = "livespec-refresh-repair-count"
 
+# The two REFRESH-ROUTE facts (v145, the `pr` to `pr_refresh` route): the `pr`
+# visit counter and the marker a rejected arming records for `pr_route` to read.
+#
+# The COUNT is written by `pr` at the top of every visit and read by both
+# stages, and it exists for one reason: the marker has to NAME the visit that
+# wrote it. `pr_route` consumes the marker on every visit, so an UNNAMED marker
+# would already be gone before a later visit could read it -- except on the one
+# path that matters, a `pr` visit that wrote a marker and then failed closed, or
+# any future edit that puts a node between the two. A marker naming its visit
+# cannot route a visit that did not write it, whatever the graph does around it.
+#
+# The MARKER's presence is the signal and its CONTENTS are the attribution, in
+# the same shape `REFRESH_REPAIR_BRIEF_STATE_FILENAME` uses -- and like that
+# brief it is deleted by its reader rather than by its writer, because the
+# reader is the node whose whole job is the one-visit decision.
+PR_VISIT_COUNT_STATE_FILENAME = "livespec-pr-visit-count"
+REFRESH_ROUTE_MARKER_STATE_FILENAME = "livespec-pr-refresh-route"
+
 
 def publication_state_root_command() -> str:
     """The command every publication stage resolves the state directory through.
@@ -114,4 +134,6 @@ def publication_state_filenames() -> tuple[str, ...]:
         REFRESH_CHANGED_STATE_FILENAME,
         REFRESH_REPAIR_BRIEF_STATE_FILENAME,
         REFRESH_REPAIR_COUNT_STATE_FILENAME,
+        PR_VISIT_COUNT_STATE_FILENAME,
+        REFRESH_ROUTE_MARKER_STATE_FILENAME,
     )
