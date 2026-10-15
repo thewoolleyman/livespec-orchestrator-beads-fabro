@@ -61,6 +61,7 @@ import posixpath
 from collections.abc import Mapping, Sequence
 
 from livespec_shell_shape import (
+    leading_assignments,
     leading_command_index,
     operands,
     shell_tokens,
@@ -144,15 +145,16 @@ def removal_targets(*, command: str, working_directory: str) -> tuple[str, ...]:
     if tokens is None:
         return ()
     directory = working_directory
+    assigned: dict[str, str] = {}
     found: list[str] = []
     for segment in token_segments(tokens=tokens):
+        assigned.update(leading_assignments(tokens=segment))
         verb, arguments = _executed(segment=segment)
+        words = [_expand(word=word, assigned=assigned) for word in operands(tokens=arguments)]
         if verb == _CHANGE_DIRECTORY:
-            directory = _changed_directory(arguments=arguments, directory=directory)
+            directory = _changed_directory(words=words, directory=directory)
         elif _is_destructive(verb=verb, arguments=arguments):
-            found.extend(
-                _resolve(word=word, directory=directory) for word in operands(tokens=arguments)
-            )
+            found.extend(_resolve(word=word, directory=directory) for word in words)
     return tuple(found)
 
 
@@ -217,7 +219,7 @@ def _executed(*, segment: list[str]) -> tuple[str, list[str]]:
     return segment[index].rsplit("/", 1)[-1], segment[index + 1 :]
 
 
-def _changed_directory(*, arguments: list[str], directory: str) -> str:
+def _changed_directory(*, words: list[str], directory: str) -> str:
     """Where a `cd` leaves the shell, so a later relative word means the right path.
 
     A `cd` with no operand goes somewhere this module cannot know. Keeping the
@@ -226,8 +228,28 @@ def _changed_directory(*, arguments: list[str], directory: str) -> str:
     those readings fiction, and the cost of keeping the known one is at worst a
     refusal of a removal that would have happened elsewhere.
     """
-    moved = operands(tokens=arguments)
-    return _resolve(word=moved[0], directory=directory) if moved else directory
+    return _resolve(word=words[0], directory=directory) if words else directory
+
+
+def _expand(*, word: str, assigned: Mapping[str, str]) -> str:
+    """One word with every variable THIS command assigned substituted into it.
+
+    LONGEST NAME FIRST, which is the one ordering here that is not
+    interchangeable: with both `d` and `dd` assigned, substituting `d` first
+    rewrites the `$d` inside `$dd` and leaves a stray `d` glued to the wrong
+    value — a word that then matches nothing, reported as a clean allow.
+
+    Only names this command assigned are substituted. A variable the
+    environment carries is deliberately left alone: its value is not in the
+    command, so expanding it would be the guard deciding against a value the
+    agent's own shell may never see, and leaving the reference intact is what
+    keeps the word from matching anything.
+    """
+    expanded = word
+    for name in sorted(assigned, key=len, reverse=True):
+        value = assigned[name]
+        expanded = expanded.replace("${" + name + "}", value).replace("$" + name, value)
+    return expanded
 
 
 def _is_destructive(*, verb: str, arguments: Sequence[str]) -> bool:

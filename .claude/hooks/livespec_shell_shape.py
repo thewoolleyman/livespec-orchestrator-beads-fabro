@@ -29,6 +29,7 @@ import re
 import shlex
 
 __all__: list[str] = [
+    "leading_assignments",
     "leading_command_index",
     "operands",
     "shell_tokens",
@@ -39,7 +40,11 @@ __all__: list[str] = [
 _HEREDOC_OPERATORS = ("<<", "<<-")
 _SEGMENT_OPERATORS = (";", "&", "&&", "|", "||", "(", ")")
 _ARGUMENT_TERMINATOR = "--"
-_ENV_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
+# Capturing, because `leading_assignments` needs the name and the value while
+# `leading_command_index` needs only to know the token IS one. One pattern
+# rather than two, so the two readings can never disagree about what counts as
+# an assignment.
+_ENV_ASSIGNMENT_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(.*)")
 # Wrappers that still leave a LATER word in command position, plus the
 # subcommand words those wrappers take before it. The EXECUTED leading command
 # is what classifies a segment, never a word that merely appears somewhere in
@@ -139,6 +144,26 @@ def leading_command_index(*, tokens: list[str]) -> int:
             continue
         return index
     return index
+
+
+def leading_assignments(*, tokens: list[str]) -> dict[str, str]:
+    """The `NAME=value` pairs a segment sets before the word that executes.
+
+    Recorded rather than merely skipped, because a value can BE the thing a
+    guard is looking for: in `d=/workspace; rm -rf "$d"` the protected path is
+    named once, in a word that is not an operand of the removal.
+
+    Only the LEADING run is read. An assignment cannot follow a command word —
+    after that the shell is parsing arguments — so the scan stops at the first
+    token that is not one.
+    """
+    assignments: dict[str, str] = {}
+    for token in tokens:
+        assignment = _ENV_ASSIGNMENT_RE.fullmatch(token)
+        if assignment is None:
+            break
+        assignments[assignment.group(1)] = assignment.group(2)
+    return assignments
 
 
 def operands(*, tokens: list[str]) -> list[str]:
