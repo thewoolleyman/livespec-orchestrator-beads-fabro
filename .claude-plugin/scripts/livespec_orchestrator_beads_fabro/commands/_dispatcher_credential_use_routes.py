@@ -107,6 +107,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
     CREDENTIAL_EXPIRY_ENV_VAR,
     CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
+    CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
     guarded_acp_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
@@ -141,12 +142,15 @@ _ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _GUARD_PREFIX: tuple[str, ...] = tuple(guarded_acp_command(argv=[]))
 
 # The variables the guard itself reads. A launch whose own env prefix sets one
-# would be choosing its own deadline, which is not a bound.
+# would be choosing its own deadline, which is not a bound -- and a launch
+# setting the unprotected DECLARATION would be choosing to have none at all,
+# which is the same hazard with the bound removed rather than moved.
 _ENFORCEMENT_ENV_VARS = frozenset(
     {
         CREDENTIAL_EXPIRY_ENV_VAR,
         CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
         CREDENTIAL_USE_DEADLINE_ENV_VAR,
+        CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
     }
 )
 

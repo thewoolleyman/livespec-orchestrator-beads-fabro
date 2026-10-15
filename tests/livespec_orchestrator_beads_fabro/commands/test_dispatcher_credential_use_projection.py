@@ -316,11 +316,20 @@ def test_the_credential_use_projection_is_its_own_cohesive_module() -> None:
     a producer: the dispatch that STAMPS a deadline needs the composer, and it is
     enumerated here rather than left implicit so a name arriving on this surface by
     accident still fails the cohesion assertion.
+
+    `UnprotectedCredentialUse` and the `CredentialUseDeclaration` alias over it
+    arrived with `bd-ib-meejjz`, which scoped the Codex credential away from a
+    dispatch that routes no node to Codex. They belong to this module's concern
+    rather than widening it: both name a SHAPE the two renderers below accept,
+    and the declaration is the third of exactly three -- protected, unprotected,
+    and nothing at all.
     """
     assert _module_path().is_file(), f"{_MODULE_NAME} is not a module yet"
     module = importlib.import_module(_MODULE_IMPORT)
     assert set(module.__all__) == {
+        "CredentialUseDeclaration",
         "CredentialUseProjection",
+        "UnprotectedCredentialUse",
         "credential_use_env_lines",
         "credential_use_guard_prepare_steps_block",
         "credential_use_projection_for",
