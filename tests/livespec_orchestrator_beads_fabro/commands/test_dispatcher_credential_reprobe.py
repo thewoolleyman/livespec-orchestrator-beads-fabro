@@ -37,14 +37,17 @@ value — so the sibling case holds the wrapper's value STILL and asserts the tw
 rows carry ONE identity. Both are taken with the same probe verdict on every
 round, so nothing about the refusal itself can be doing the distinguishing.
 
-THE TERMINATION CASE ALSO COMES AS A PAIR, for the same reason and with higher
-stakes. "A misconfigured wrapper terminates at the budget" is satisfied by an
-implementation that caps EVERY wait at the budget — which would exit a healthy
-wait while its `--budget` is unspent, the one thing the ratified re-probe clause
-forbids. The working-wrapper control runs past a budget of one and resumes only
-on the probe's own verdict, so the bound can only be keyed on rounds the wait
-could not re-resolve. Both use a sleep double that FAILS past a ceiling rather
-than letting an unbounded wait hang the suite into a stage timeout.
+THE RETIREMENT-SIGNAL CASES COME AS A PAIR, and both run at a budget of ONE
+because that is the budget this fleet actually dispatches with: `_drive_impl_
+dispatch` spawns every `drive --action impl:<id>` loop as `loop --budget 1`, so a
+bound keyed on the budget retires the wait after a SINGLE round, and the 2026-10-08
+incident this slice repairs was four such loops. One case re-resolves the wrapper
+on every round and one cannot re-resolve it at all; both are held on the same
+provider-limit verdict and both must run to the probe's own `usable` result,
+because a provider rate limit clears WITHOUT the credential changing. So an
+unresolvable wrapper is not a retirement signal, and neither case may be ended by
+anything that is not a probe result. Both use a sleep double that FAILS past a
+ceiling rather than letting an unbounded wait hang the suite into a stage timeout.
 """
 
 from __future__ import annotations
@@ -410,49 +413,66 @@ def test_the_bounded_sleep_guard_fails_once_past_its_ceiling() -> None:
         sleeps(5)
 
 
-def test_a_misconfigured_wrapper_terminates_at_the_reprobe_budget(
+def test_an_unresolvable_wrapper_still_waits_for_the_probes_own_next_result(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A wait that cannot observe a rotation ENDS instead of running forever.
+    """The ratified clause, at the ONE budget this fleet dispatches with.
 
     The declared wrapper cannot run, so every round falls back to the same
-    launch-time value — which no rotation can ever change while this process
-    lives. Continuing is then a wait on an event that cannot arrive, so the
-    invocation's own budget bounds the consecutive rounds it tolerates.
+    launch-time value. That makes the wait unable to observe a ROTATION — and
+    a rotation is not the only thing that retires it: the condition this wait
+    governs is a provider rate limit, which clears on its own with the
+    credential unchanged. So `contracts.md` section "Provider spend
+    containment" governs unchanged — the loop "MUST NOT exit on that refusal
+    while its `--budget` is unspent", and "the probe's OWN next result is the
+    retirement signal for the loop's wait, not a clock".
+
+    The budget is ONE because that is what `_drive_impl_dispatch` passes on
+    the fleet's primary path, so a bound keyed on it would end this wait after
+    a single round — and a transient `sudo` or network fault in the wrapper
+    would cost a whole drain. Here the wait runs three refused rounds against
+    an unresolvable wrapper and resumes only when the probe says usable.
     """
     reprobe = _reprobe()
     monkeypatch.setenv(CLAUDE_OAUTH_TOKEN_ENV, _STALE_TOKEN)
     repo = _repo(tmp_path=tmp_path, cadence=2, wrapper=_WRAPPER)
     journal = _journal(repo=repo)
-    probe = _Probe(statuses=[_status(condition="exhausted", usable=False)])
+    probe = _Probe(
+        statuses=[
+            _status(condition="exhausted", usable=False),
+            _status(condition="exhausted", usable=False),
+            _status(condition="exhausted", usable=False),
+            _status(condition="usable", usable=True),
+        ]
+    )
     sleeps = _BoundedSleep(ceiling=_UNBOUNDED_WAIT_CEILING)
 
     reprobe.await_usable_credential(
         repo=repo,
         journal=journal,
-        budget=3,
+        budget=1,
         probe=probe,
         sleep=sleeps,
         runner=_misconfigured_wrapper(),
     )
 
     assert sleeps.calls == [2, 2, 2]
-    assert probe.calls == 3
+    assert probe.calls == 4
     rows = _refusals(journal=journal, reprobe=reprobe)
     assert len(rows) == 3
     assert {row["credential_source"] for row in rows} == {LAUNCH_ENVIRONMENT_WRAPPER_UNRESOLVABLE}
 
 
-def test_a_working_wrapper_is_not_bounded_by_that_budget(
+def test_a_working_wrapper_is_retired_by_the_same_one_signal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The control, and the ratified clause: the wait does not exit on a refusal.
+    """The sibling: the same budget, the same verdicts, a wrapper that resolves.
 
-    Without this case the bound above is satisfied by capping EVERY wait at the
-    budget, which would exit a healthy wait while its `--budget` is unspent —
-    the one thing the re-probe clause forbids. Here the wrapper re-resolves on
-    every round, so the wait runs well past a budget of one and resumes only
-    when the probe itself says the credential is usable.
+    The pair is what says the retirement signal is the PROBE and nothing else.
+    Taken alone, the case above is satisfied by an implementation that keys its
+    bound on a re-resolution it happens to get right; taken together, the two
+    differ only in whether the wrapper could be read, and neither wait ends
+    before the probe itself reports the credential usable.
     """
     reprobe = _reprobe()
     monkeypatch.setenv(CLAUDE_OAUTH_TOKEN_ENV, _STALE_TOKEN)
@@ -578,10 +598,11 @@ def test_a_spent_budget_never_enters_the_wait(tmp_path: Path) -> None:
 def test_a_usable_probe_does_not_retire_an_unexpired_exhaustion_record(tmp_path: Path) -> None:
     """The wait adds no retirement route; the record outlives the resumed loop.
 
-    The budget is TWO and the usable probe is asserted to have been reached,
-    because this repository declares no wrapper in the fixture: a budget of one
-    would end the wait at its unresolvable-round bound BEFORE the usable result,
-    and the record would then survive a resumption that never happened.
+    The usable probe is asserted to have been REACHED, because this repository
+    declares no wrapper in the fixture and the reading therefore falls back to
+    the launch environment on every round: a bound keyed on rounds that could
+    not re-resolve would end this wait at the first refusal, and the record
+    would then survive a resumption that never happened.
     """
     reprobe = _reprobe()
     repo = _repo(tmp_path=tmp_path)
@@ -603,7 +624,7 @@ def test_a_usable_probe_does_not_retire_an_unexpired_exhaustion_record(tmp_path:
     )
 
     reprobe.await_usable_credential(
-        repo=repo, journal=journal, budget=2, probe=probe, sleep=lambda _seconds: None
+        repo=repo, journal=journal, budget=1, probe=probe, sleep=lambda _seconds: None
     )
 
     assert probe.calls == 2
