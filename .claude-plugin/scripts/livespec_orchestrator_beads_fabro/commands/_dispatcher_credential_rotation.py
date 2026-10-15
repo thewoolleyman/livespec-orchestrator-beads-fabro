@@ -28,9 +28,11 @@ zero having injected nothing, yields the LAUNCH-TIME value with `rotatable`
 False rather than the empty string. The two have opposite remedies — an absent
 credential is a misconfigured wrapper to fix, while a provider-limited one is a
 wait to leave running — so reporting a wrapper fault as an absent credential
-would retire the wait with a refusal about the wrong thing. What stops a
-PERSISTENT fault is the wait's own bound on consecutive unresolvable rounds, not
-a verdict manufactured here.
+would retire the wait with a refusal about the wrong thing. A PERSISTENT fault
+is surfaced rather than adjudicated here: the `source` label below travels into
+every refused-probe record, so the operator who can fix the wrapper sees which
+reading each round got, and the wait itself stays retirable by the probe's own
+next result exactly as the ratified clause requires.
 
 THE IDENTITY IS ONE-WAY BECAUSE THE QUESTION IS ONLY EVER ONE OF EQUALITY. The
 journal is asked whether this round's credential differs from the last round's,
@@ -92,11 +94,13 @@ LAUNCH_ENVIRONMENT_WRAPPER_UNRESOLVABLE = "launch-environment-wrapper-unresolvab
 class RotatedCredential:
     """One round's reading of the credential the dispatch would project.
 
-    `rotatable` is the fact the wait acts on: True means this value came from a
-    fresh wrapper re-resolution, so a rotation landing in the wrapper will reach
-    the next round. False means the reading fell back to the launch-time value,
-    which cannot change while the process lives — so a wait held on it can never
-    be retired by a rotation, however long it runs.
+    `rotatable` says which of the two readings this is: True means the value
+    came from a fresh wrapper re-resolution, so a rotation landing in the
+    wrapper reaches a later round. False means the reading fell back to the
+    launch-time value, which cannot change while the process lives — so no
+    rotation reaches a wait held on it. That is a reason to SURFACE the reading,
+    not to end the wait: the provider limit the wait governs clears with the
+    credential unchanged, so the probe's own next result retires it either way.
     """
 
     token: str
