@@ -11,6 +11,7 @@ created_at: 2026-10-15T02:23:35Z
 - SPECIFICATION/contracts.md
 - SPECIFICATION/scenarios.md
 - tests/heading-coverage.json
+- tests/heading-coverage-debt.json
 
 ### Summary
 
@@ -61,4 +62,6 @@ Feature: The run's protected paths survive the agent inside the factory sandbox
 
 3. In tests/heading-coverage.json, append an entry for the new heading "## Scenario 180 — A sandbox agent cannot remove the run's working tree, and ordinary removals still run" with spec_root "SPECIFICATION", spec_file "scenarios.md", test "TODO", work_item "bd-ib-jgedjo", and reason: "Ratified by the revision accepting proposal sandbox-path-protection (plan checkpoint-commit-hook-failures, epic bd-ib-hcwmnq). The sandbox path guard is not implemented yet; an integration-tier test is owed for the four sub-scenarios, and work-item bd-ib-jgedjo implements them and owns that binding."
 
-Numbering: Scenario 178 is reserved by the pending proposal pr-refresh-reproof-relevance and Scenario 179 is ratified, so this proposal takes 180. If the revise pass finds 180 taken, it takes the next free number and updates the contracts.md cross-reference and the heading-coverage entry to match.
+4. In tests/heading-coverage-debt.json, append a register row for the same heading with spec_root "SPECIFICATION", spec_file "scenarios.md", work_item "bd-ib-jgedjo" and first_seen set to the revision date, as the v137 revision did for Scenario 179 under the spec-first admission exception.
+
+Numbering: Scenario 178 is reserved by the pending proposal pr-refresh-reproof-relevance and Scenario 179 is ratified, so this proposal takes 180. If the revise pass finds 180 taken, it takes the next free number and updates the contracts.md cross-reference, the heading-coverage entry and the heading-coverage-debt register row to match.
