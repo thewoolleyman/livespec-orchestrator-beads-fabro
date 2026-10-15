@@ -228,6 +228,35 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   different ones. The root is projected UNCONDITIONALLY, because it is what
   keeps a sandbox-local `tmux kill-server` away from the host default
   under `/tmp`.
+- `_dispatcher_harness_shell_policy.py` — the Claude harness's own shell-tool
+  policy, as the TWO projections it needs: the `[environments.<id>.env]` lines
+  that put its keys in the sandbox PROCESS environment, and the
+  exclude-then-write prepare steps that put the SAME keys in the sandbox's own
+  `/workspace/.claude/settings.local.json`. Split out of `_dispatcher_overlay`
+  by cohesion once the policy stopped being one env table (`bd-ib-rv2jk4`);
+  `harness_shell_env_lines` is re-exported from the overlay because that is
+  where every caller already reaches for it. Four properties an editor must not
+  invert. BOTH projections render from the ONE `_HARNESS_SHELL_ENV` tuple,
+  which is the whole repair: the env table alone was NOT the effective ceiling,
+  because the sandbox agent starts the harness with `settingSources: ["user",
+  "project", "local"]`, so the governed repository's committed
+  `.claude/settings.json` is loaded and a settings-file `env` value overrides
+  the same variable inherited from the process environment — measured on run
+  01M4XWYERJEZ15GNMGHV66CSBY, whose `run.created` environment carries
+  `BASH_MAX_TIMEOUT_MS=3600000` and whose two final Green amends were ended at
+  1202366 ms and 1203117 ms by the committed file's 1200000 ms. It writes the
+  `local` source and never the committed `project` one, because `local`
+  outranks `project` (measured on the operator host) and because the committed
+  file is the interactive host sessions' setting. The write MERGES the `env`
+  members into whatever document the sandbox already carries, so a
+  `settings.local.json` an image or an earlier step left keeps its other keys;
+  a file holding no JSON object cannot be merged into, so that one arm writes a
+  fresh document and SAYS SO on stderr rather than failing the prepare step,
+  which would kill the run at launch over a per-sandbox file that no longer
+  parses. And the merge is shipped as the SANDBOX'S OWN BYTES with no host-side
+  twin — a twin would be a second account of one merge, and only the copy the
+  sandbox runs decides anything. This raises NO ceiling; it makes the ceiling
+  the overlay already declared the effective one.
 - `_dispatcher_default_branch_fetch.py` — the DISPATCH BASE every dispatch
   fetches into its sandbox clone, so `origin/<default_branch>` exists for the
   `implementation_diff` node and for every check that diffs the default branch
