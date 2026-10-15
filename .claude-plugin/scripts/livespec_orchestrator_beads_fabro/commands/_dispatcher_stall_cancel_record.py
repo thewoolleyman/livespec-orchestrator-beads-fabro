@@ -28,6 +28,20 @@ could not tell "this run published nothing" from "this build was never asked" �
 the same reason `_dispatcher_sandbox_image_source` writes all three of its keys
 on every launch.
 
+AND THE UNREADABLE HEAD IS STATED IN WORDS rather than left as a bare null. The
+clause requires that when the head "cannot be read, the record MUST say so
+rather than omit it", and the reason is that `published_head: null` on a record
+that DOES name a pull request is ambiguous in the EXPENSIVE direction. It reads
+as "this run published nothing" to a resume, whose remedy for no head is a plain
+dispatch — and a plain dispatch reclaims the publish branch, preserving the dead
+run's head to a ref and deleting the branch, so the one thing an unreadable head
+must not do is advise the act that destroys the publication nobody could name.
+
+`published_head_unreadable` therefore carries the statement, and it is present
+ONLY on the arm that MEASURED a publication without a head. An unpublished run
+reports null there, because nothing about it was unreadable: a statement on that
+arm would claim a failed measurement where none was attempted, which is the
+mirror-image error — a diagnostic reported as a finding.
 """
 
 from __future__ import annotations
@@ -38,12 +52,25 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_run_reading im
 
 __all__: list[str] = [
     "STALL_CANCEL_STAGE",
+    "UNREADABLE_PUBLISHED_HEAD",
     "stall_cancel_record",
 ]
 
 # The journal stage. One literal, shared by this producer and every reader —
 # the resume anchor, the stall disposition and an operator's `grep`.
 STALL_CANCEL_STAGE = "watchdog-stall-cancel"
+
+# The statement the record carries in place of a head it could not read. It
+# names the NODE whose push is unaccounted for, because that is what tells an
+# operator where to look: a `publish_draft` whose head is unknown still has a
+# pull request whose head can be read by hand. And it states the CONSEQUENCE —
+# that this record cannot anchor a resume — because the resume refusal ladder
+# computes that same conclusion from the absent head, and a record that reported
+# only the absence leaves the reader to re-derive it.
+UNREADABLE_PUBLISHED_HEAD = (
+    "the head this run's last completed publish_draft pushed could not be read "
+    "from the run's own record, so this record cannot anchor a resume"
+)
 
 
 def stall_cancel_record(
@@ -75,4 +102,18 @@ def stall_cancel_record(
         "executing_stage": executing_stage,
         "pull_request": None if publication is None else publication.pull_request,
         "published_head": None if publication is None else publication.published_head,
+        "published_head_unreadable": _unreadable_statement(publication=publication),
     }
+
+
+def _unreadable_statement(*, publication: StallPublication | None) -> str | None:
+    """The statement, on the one arm that measured a publication with no head.
+
+    An unpublished run reports `None` rather than the statement, and so does a
+    publication whose head WAS read: in the first nothing was unreadable, and in
+    the second nothing failed. Either would read as a failed measurement, which
+    is a diagnostic reported as a finding.
+    """
+    if publication is None or publication.published_head is not None:
+        return None
+    return UNREADABLE_PUBLISHED_HEAD
