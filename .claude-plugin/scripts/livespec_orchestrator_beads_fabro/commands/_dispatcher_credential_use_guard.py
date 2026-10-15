@@ -45,6 +45,21 @@ command when it could not read its own deadline would turn this whole mechanism
 into decoration the first time a projection changed shape. The script refuses
 when the variable is absent or unparseable, and says which.
 
+AND WHY AN UNPROTECTED ARM DOES NOT CONTRADICT THAT. A dispatch that routes no
+node to the Codex agent projects no Codex credential, so there is no
+credential use to bound -- while the adapter wrap stays unconditional at both
+launch sites, which means this script is still the thing that execs every
+coding agent and has to launch them. The difference from the refusing arm is
+that the guard is NOT BLINDED here: the host DECLARES, in the projection it
+wrote, that nothing was projected. Silence still refuses. The declaration and
+a deadline TOGETHER refuse too, because a projection asserting both leaves no
+reading of which governs; so does a declaration carrying any value but the one
+marker, which is how a half-written env table arrives. One explicit statement
+is the only thing that changes the answer, and `_acp_node_layers` plus
+`_dispatcher_credential_use_routes` both refuse a launch that tries to make
+that statement for itself -- a node able to declare itself unprotected would
+remove a protected dispatch's bound rather than merely move it.
+
 THE REAPER DISARMS WHEN ITS GROUP IS FINISHED, and this is a correctness
 requirement rather than hygiene. The first draft never cancelled the reaper --
 correctly, because the adapter is often not the process holding the credential,
@@ -80,6 +95,8 @@ __all__: list[str] = [
     "CREDENTIAL_EXPIRY_ENV_VAR",
     "CREDENTIAL_REQUIRED_REMAINING_ENV_VAR",
     "CREDENTIAL_USE_DEADLINE_ENV_VAR",
+    "CREDENTIAL_USE_UNPROTECTED_ENV_VAR",
+    "CREDENTIAL_USE_UNPROTECTED_VALUE",
     "GUARD_REFUSAL_EXIT_CODE",
     "GUARD_SCRIPT_PATH",
     "GUARD_TERM_GRACE_SECONDS",
@@ -111,6 +128,18 @@ CREDENTIAL_USE_DEADLINE_ENV_VAR = "LIVESPEC_CREDENTIAL_USE_DEADLINE_EPOCH"
 # while the credential underneath it expires.
 CREDENTIAL_EXPIRY_ENV_VAR = "LIVESPEC_CREDENTIAL_EXPIRY_EPOCH"
 CREDENTIAL_REQUIRED_REMAINING_ENV_VAR = "LIVESPEC_CREDENTIAL_REQUIRED_REMAINING_SECONDS"
+
+# The host's EXPLICIT statement that this dispatch projects no Codex credential,
+# so there is no credential use to bound. It is an affirmative declaration
+# rather than an absence because an absence is exactly what the guard must keep
+# refusing: silence is how a broken projection looks, and a guard that read it
+# as "nothing to protect" would disarm itself on the first shape change.
+CREDENTIAL_USE_UNPROTECTED_ENV_VAR = "LIVESPEC_CREDENTIAL_USE_UNPROTECTED"
+
+# The ONE value that declares it. Any other value refuses: a half-written or
+# hand-edited env table is not a statement, and treating one as a statement is
+# the same fail-open the absence arm exists to prevent.
+CREDENTIAL_USE_UNPROTECTED_VALUE = "1"
 
 # Where the prepare step writes the guard inside the sandbox.
 GUARD_SCRIPT_PATH = "/workspace/.livespec/credential-use-guard.sh"
@@ -250,6 +279,47 @@ def guard_script_text() -> str:
 set -u
 
 deadline="${{{CREDENTIAL_USE_DEADLINE_ENV_VAR}:-}}"
+unprotected="${{{CREDENTIAL_USE_UNPROTECTED_ENV_VAR}:-}}"
+
+mode="run"
+if [ "${{1:-}}" = "--check-start" ]; then
+    mode="check"
+    shift
+elif [ "${{1:-}}" = "--" ]; then
+    shift
+fi
+
+# THE UNPROTECTED ARM. The host declares here that this dispatch projects no
+# Codex credential, so there is nothing whose use needs bounding -- while the
+# launch wrap is unconditional, so this script still has to exec the agent.
+# Both contradictions refuse: a declaration beside a deadline says two things
+# at once, and any value but the one marker is a malformed table rather than a
+# statement. An ABSENT declaration never reaches this block at all, so silence
+# still falls through to the refusing arm below.
+if [ -n "$unprotected" ]; then
+    if [ "$unprotected" != "{CREDENTIAL_USE_UNPROTECTED_VALUE}" ] || [ -n "$deadline" ]; then
+        echo "credential-use guard refused: {CREDENTIAL_USE_UNPROTECTED_ENV_VAR} is" \\
+             "'$unprotected' and {CREDENTIAL_USE_DEADLINE_ENV_VAR} is '$deadline'," \\
+             "which is not a projection this guard can read: the declaration must be" \\
+             "'{CREDENTIAL_USE_UNPROTECTED_VALUE}' and must stand alone. The guard" \\
+             "fails closed." >&2
+        exit {GUARD_REFUSAL_EXIT_CODE}
+    fi
+    if [ "$mode" = "check" ]; then
+        echo "credential-use guard: this dispatch projects no Codex credential, so no" \\
+             "credential-use deadline is enforced."
+        exit 0
+    fi
+    if [ "$#" -eq 0 ]; then
+        echo "credential-use guard refused: no command was given to guard." >&2
+        exit {GUARD_REFUSAL_EXIT_CODE}
+    fi
+    # No reaper and no process group: there is no instant to signal at, and an
+    # unbounded reaper armed against a recyclable pgid is the multi-day hazard
+    # the polling reaper exists to avoid. `exec` also leaves stdin exactly as
+    # it arrived, which bidirectional ACP stdio requires.
+    exec "$@"
+fi
 
 if [ -z "$deadline" ]; then
     echo "credential-use guard refused: {CREDENTIAL_USE_DEADLINE_ENV_VAR} is not set," \\
@@ -266,14 +336,6 @@ case "$deadline" in
         exit {GUARD_REFUSAL_EXIT_CODE}
         ;;
 esac
-
-mode="run"
-if [ "${{1:-}}" = "--check-start" ]; then
-    mode="check"
-    shift
-elif [ "${{1:-}}" = "--" ]; then
-    shift
-fi
 
 # FRACTIONAL now, floored CONSERVATIVELY. `date +%s` floors the current instant,
 # so a guard starting at epoch+0.65 computed a whole extra second of budget and

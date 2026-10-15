@@ -47,6 +47,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
     CREDENTIAL_EXPIRY_ENV_VAR,
     CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
+    CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
 )
 
 __all__: list[str] = [
@@ -59,15 +60,19 @@ __all__: list[str] = [
     "resolve_acp_nodes",
 ]
 
-# The three names the credential-use projection owns. An adapter declaring ANY of
-# them is refused: the deadline is the bound itself, and the other two are what the
-# startup grade measures the credential against, so an adapter able to set them
-# could relax its own enforcement.
+# The four names the credential-use projection owns. An adapter declaring ANY of
+# them is refused: the deadline is the bound itself, and two of the others are what
+# the startup grade measures the credential against, so an adapter able to set them
+# could relax its own enforcement. The unprotected DECLARATION is the worst of the
+# four and is refused for a stronger version of the same reason -- those three MOVE
+# the bound, while that one tells the guard there is no bound at all, so an adapter
+# declaring it would disarm a protected dispatch outright.
 _CREDENTIAL_USE_ENV_VARS = frozenset(
     {
         CREDENTIAL_EXPIRY_ENV_VAR,
         CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
         CREDENTIAL_USE_DEADLINE_ENV_VAR,
+        CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
     }
 )
 
