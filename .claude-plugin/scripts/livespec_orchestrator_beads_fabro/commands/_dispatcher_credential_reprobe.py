@@ -30,6 +30,15 @@ remedy was to kill and re-dispatch all four. `_dispatcher_credential_rotation`
 is the re-resolution, and the record below names the credential it probed by a
 one-way identity so two consecutive rows show whether the value changed at all.
 
+AND EVERY ROUND PUBLISHES WHAT IT RESOLVED, which is the other half of the same
+property. The dispatch this wait admits does not consult the re-resolution: the
+sandbox overlay renders the credential from `os.environ[<selected name>]` and the
+pre-launch assessment re-reads the same entry. So retiring on the wrapper's
+rotated value while leaving that environment carrying the launch-time one would
+report a resume and then admit a run holding the credential the wait had been
+parked on. `publish_rotated_credential` is where the resolved value lands, and
+its own docstring records why a round that resolved NOTHING publishes nothing.
+
 THE WAIT ENGAGES ON EXACTLY ONE CONDITION. A provider-limit refusal is the
 `exhausted` condition `classify_claude_probe` assigns to HTTP 402/429 and to the
 `billing_error` / `rate_limit_error` types. Every other refusal — an absent
@@ -104,6 +113,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_env impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_rotation import (
     RotatedCredential,
     credential_identity,
+    publish_rotated_credential,
     resolve_rotated_credential,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
@@ -181,6 +191,12 @@ def await_usable_credential(  # noqa: PLR0913 — kw-only wait inputs; `runner` 
             launch_token=os.environ.get(env_name, ""),
             runner=command,
         )
+        # Published BEFORE the assessment and on every round, including the one
+        # that returns: the dispatch this wait admits reads its credential out of
+        # this environment, so publishing only on the way out would make the
+        # value the probe assessed and the value the run projects two different
+        # things on every round but the last.
+        publish_rotated_credential(env_name=env_name, rotated=rotated, environ=os.environ)
         status = assess_resolved_credential(repo=repo, token=rotated.token, probe=probe)
         if status.condition != PROVIDER_LIMIT_CONDITION:
             return
