@@ -65,9 +65,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_registered_install_c
 from livespec_orchestrator_beads_fabro.commands._dispatcher_staleness_gate import (
     apply_dispatcher_staleness_gate,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition import (
-    dispose_stall_cancel,
-)
 from livespec_orchestrator_beads_fabro.commands._ready_aging_order import ready_aging_order
 from livespec_orchestrator_beads_fabro.commands._sibling_status_lookup import (
     make_sibling_status_lookup,
@@ -363,13 +360,6 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
         # comment is that run's terminal record.
         record_needs_human_cause(repo=repo, item=item, outcome=outcome, journal=journal)
     bounce_non_convergence_to_backlog(repo=repo, item=item, outcome=outcome, journal=journal)
-    # The REPLACEMENT disposition for the bounce above, which declines a
-    # watchdog cancellation (`bd-ib-nfbyot`). It sits AFTER the bounce for the
-    # same reason the needs-human pair is ordered: the two are mutually
-    # exclusive by predicate, so the order cannot change which one fires, and
-    # keeping the replacement beside what it replaces is what makes a future
-    # reader see that no terminal is left with no disposition at all.
-    dispose_stall_cancel(repo=repo, item=item, outcome=outcome, journal=journal)
     emit_calibration(
         args=args,
         repo=repo,
