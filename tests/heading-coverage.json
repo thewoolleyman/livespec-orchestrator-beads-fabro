@@ -1788,8 +1788,8 @@
     "heading": "## Scenario 179 \u2014 A sandbox commit whose hook outlasts one tool call completes with the hook's own verdict",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified 2026-10-15 by the v137 revision (proposal sandbox-commit-leg-completion; plan sandbox-commit-gate-ceiling, epic bd-ib-qy5wol). The sandbox commit runner is not implemented yet; an integration-tier test is owed for the four sub-scenarios, and work-item bd-ib-sufca7 implements them and owns that binding.",
+    "test": "tests.integration.test_sandbox_commit_runner_scenario179.test_a_later_wait_reports_passed_with_status_zero_and_the_resulting_head",
+    "reason": "Integration-tier acceptance for the commit-leg-completion paragraph of contracts.md, implemented by bd-ib-sufca7. Every case EXECUTES the MATERIALIZED runner against a real local repository with real hooks installed, because each of the heading's four sub-scenarios is a property of real separate processes: an identity returned before a hook finishes, a bounded wait that returns while the hook still runs, a signal death reporting no-verdict rather than a pass, and a second start refused by name. Reading the program's text could establish none of them. The bound node id is the passed-state case, which carries the heading's FIRST sub-scenario end to end -- the bounded wait reporting running, then the later wait reporting passed with exit status zero and the resulting HEAD commit id. Its siblings in the same module carry the other three sub-scenarios plus the hook-written trailers, the hook-parity control and the prepare-time materialization. Two controls are load-bearing: the refusal case runs the SAME refused commit in the FOREGROUND first and compares exit statuses, so the reported status is measured against git's own rather than against a number the test chose; and the hook-parity case compares the hook set a foreground commit fires with the set the runner fires, so a runner that silently skipped a hook fails instead of reporting a clean pass over an empty recorded set.",
     "work_item": "bd-ib-sufca7"
   },
   {

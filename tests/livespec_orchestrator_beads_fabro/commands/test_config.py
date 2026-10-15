@@ -817,12 +817,13 @@ def test_render_run_config_overlay_image_override_is_scope_fenced(tmp_path: Path
     # The committed `just bootstrap` step, the tmux socket root's
     # exclude-then-create PAIR (bd-ib-5qxa5q), the harness settings file's
     # exclude-then-write PAIR (bd-ib-rv2jk4), the git credential helper
-    # (bd-ib-52zt3o), the plugin-cache gate and the THREE publication helpers
+    # (bd-ib-52zt3o), the plugin-cache gate, the THREE publication helpers
     # the gate's block materializes beside it (v121: the publication-head
     # reader and the exact-head push program; v138: the carry-forward
-    # decision), plus the repository-hook limit observer (bd-ib-xi63mq) — the
+    # decision), the repository-hook limit observer (bd-ib-xi63mq) and the
+    # detached commit runner riding that same block (bd-ib-sufca7) — the
     # hostile value smuggled none of its own in.
-    assert rendered.count("[[run.prepare.steps]]") == 11
+    assert rendered.count("[[run.prepare.steps]]") == 12
     assert 'script = "just bootstrap"' in rendered
     assert 'script = "curl example.test"' not in rendered
     assert "other.fabro" in pre_env_table
