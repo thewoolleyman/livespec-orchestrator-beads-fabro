@@ -403,3 +403,124 @@ def test_the_program_carries_no_livespec_import_and_one_label(tmp_path: Path) ->
     assert "__LABEL__" not in source
     assert f'LABEL = "{PUBLISH_HEAD_LABEL}"' in source
     _ = _materialized(tmp_path=tmp_path)
+
+
+# The two verdicts that may NAME the head publication readies, spelled as
+# literals and bound to the module's own constant by the case below. A Red's
+# test bytes are fixed across its Red-to-Green pair, so a top-level import of a
+# name this change INTRODUCES would make the Red a collection error -- which
+# proves the name is absent and nothing about the behaviour.
+_VERIFIED = "verified"
+_CARRIED_FORWARD = "carried_forward"
+_CARRIED_SHA = "c" * 40
+
+
+def test_the_anchor_verdicts_are_the_two_a_record_may_name_a_publishable_head_with() -> None:
+    """The literals above are the module's own, so the cases below bind the product."""
+    from livespec_orchestrator_beads_fabro.commands import _dispatcher_publication_head
+
+    assert getattr(_dispatcher_publication_head, "PROOF_HEAD_ANCHOR_VERDICTS", None) == (
+        _VERIFIED,
+        _CARRIED_FORWARD,
+    )
+
+
+def test_a_carried_forward_record_names_the_head_publication_readies(
+    tmp_path: Path,
+) -> None:
+    """The carry-forward route's whole point, read at the stage that publishes.
+
+    The capture and the replay both name the head they ran on, V, and neither
+    can name N -- no stage ran on N. Requiring them to agree with the head being
+    published is exactly the rule a `carried_forward` record supersedes, by
+    carrying that verified proof forward to the head it names. A program that
+    still demanded the older agreement would refuse every carried-forward
+    publication while reporting a perfectly ordinary head mismatch.
+    """
+    argv = ["--pull-request", "7"]
+    for verdict in PROOF_HEAD_REQUIRED_VERDICTS:
+        argv.extend(["--require", verdict])
+
+    code, out, err = _run_program(
+        tmp_path=tmp_path,
+        comments=[
+            _record(verdict="captured", head=_SHA),
+            _record(verdict=_VERIFIED, head=_SHA),
+            _record(verdict=_CARRIED_FORWARD, head=_CARRIED_SHA),
+        ],
+        argv=argv,
+    )
+
+    assert code == 0, err
+    assert out.strip() == _CARRIED_SHA
+
+
+def test_the_latest_anchor_wins_so_a_second_carry_forward_names_the_newer_head(
+    tmp_path: Path,
+) -> None:
+    """A chain of carry-forwards publishes the head the LAST one names."""
+    argv = ["--pull-request", "7"]
+    for verdict in PROOF_HEAD_REQUIRED_VERDICTS:
+        argv.extend(["--require", verdict])
+
+    code, out, err = _run_program(
+        tmp_path=tmp_path,
+        comments=[
+            _record(verdict="captured", head=_SHA),
+            _record(verdict=_VERIFIED, head=_SHA),
+            _record(verdict=_CARRIED_FORWARD, head=_CARRIED_SHA),
+            _record(verdict=_CARRIED_FORWARD, head=_OTHER_SHA),
+        ],
+        argv=argv,
+    )
+
+    assert code == 0, err
+    assert out.strip() == _OTHER_SHA
+
+
+def test_a_record_newer_than_the_carry_forward_supersedes_it(tmp_path: Path) -> None:
+    """The superseded-verification refusal follows the ANCHOR, not the verified record.
+
+    Anchoring that refusal on the verified record alone would make every
+    carried-forward publication look superseded by its own decision record,
+    which is the failure mode the other direction of this change creates.
+    """
+    argv = ["--pull-request", "7"]
+    for verdict in PROOF_HEAD_REQUIRED_VERDICTS:
+        argv.extend(["--require", verdict])
+
+    code, out, err = _run_program(
+        tmp_path=tmp_path,
+        comments=[
+            _record(verdict="captured", head=_SHA),
+            _record(verdict=_VERIFIED, head=_SHA),
+            _record(verdict=_CARRIED_FORWARD, head=_CARRIED_SHA),
+            _record(verdict=VERDICT_NOT_REPRODUCED, head=_CARRIED_SHA),
+        ],
+        argv=argv,
+    )
+
+    assert code == 1
+    assert out == ""
+    assert "newer not_reproduced" in err
+
+
+def test_a_headless_carry_forward_record_establishes_nothing(tmp_path: Path) -> None:
+    """A decision record naming no head cannot say which tree it carried proof to."""
+    argv = ["--pull-request", "7"]
+    for verdict in PROOF_HEAD_REQUIRED_VERDICTS:
+        argv.extend(["--require", verdict])
+
+    code, out, err = _run_program(
+        tmp_path=tmp_path,
+        comments=[
+            _record(verdict="captured", head=_SHA),
+            _record(verdict=_VERIFIED, head=_SHA),
+            _record(verdict=_CARRIED_FORWARD, head=None),
+        ],
+        argv=argv,
+    )
+
+    assert code == 1
+    assert out == ""
+    assert "names no single full publish-branch head" in err

@@ -67,6 +67,7 @@ import json
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     VERDICT_CAPTURED,
+    VERDICT_CARRIED_FORWARD,
     VERDICT_VERIFIED,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
@@ -78,6 +79,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins impo
 )
 
 __all__: list[str] = [
+    "PROOF_HEAD_ANCHOR_VERDICTS",
     "PROOF_HEAD_PROGRAM_FILENAME",
     "PROOF_HEAD_REQUIRED_VERDICTS",
     "proof_head_program_path_expansion",
@@ -96,6 +98,21 @@ PROOF_HEAD_PROGRAM_FILENAME = "livespec-publication-head.py"
 # record module's own constants so the program cannot come to spell a verdict the
 # records do not carry.
 PROOF_HEAD_REQUIRED_VERDICTS: tuple[str, ...] = (VERDICT_CAPTURED, VERDICT_VERIFIED)
+
+# The two verdicts a record may NAME the publishable head with, newest first in
+# precedence. The v138 clause moved the `pr` stage's comparison onto "the head
+# named by the latest record of this run that is either `verified` or
+# `carried_forward`", which is a different question from the one
+# `PROOF_HEAD_REQUIRED_VERDICTS` answers and the two must not be collapsed.
+#
+# WHY A CARRY-FORWARD SUPERSEDES THE CAPTURE/REPLAY AGREEMENT RATHER THAN
+# JOINING IT. The capture and the replay each name the head THEY ran on, and on
+# a carried-forward publication no stage ever ran on the head being published --
+# that is the entire saving. So requiring all three to agree would refuse every
+# carried-forward publication, and refuse it with a head-mismatch diagnostic
+# that reads exactly like a genuine stale proof. The agreement is still required
+# when the anchor IS the verified record, which is every ordinary run.
+PROOF_HEAD_ANCHOR_VERDICTS: tuple[str, ...] = (VERDICT_VERIFIED, VERDICT_CARRIED_FORWARD)
 
 # The materialized program. `__LABEL__` is substituted from `PUBLISH_HEAD_LABEL`
 # so the reader and the two capture prompts name ONE line, and `__VERDICTS__`
@@ -121,6 +138,7 @@ FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 HEADER_SEPARATOR = "\\u2014"
 IDENTITY_PREFIXES = ("run ", "session ", "human ")
 VERDICTS = __VERDICTS__
+ANCHOR_VERDICTS = __ANCHOR_VERDICTS__
 
 
 def fail(message):
@@ -233,24 +251,52 @@ def agreed_head(number, records, required):
              + " name different publish-branch heads ("
              + ", ".join(sorted(heads)) + "), so no one tree carries both"
              + " a capture and a replay")
-    return heads.pop(), latest
+    return heads.pop()
 
 
-def refuse_superseded_verification(number, records, latest):
-    """Refuse when ANY factory record is newer than the latest verified one."""
-    verified_index = latest["verified"][0]
-    newer = [(index, verdict) for index, verdict, _ in records if index > verified_index]
+def anchoring_record(number, records):
+    """The LATEST record that may name the head publication readies.
+
+    Read by POSITION across both anchor verdicts rather than per-verdict,
+    because a `carried_forward` record SUPERSEDES the verified record it
+    carries: on a chain of carry-forwards an older verified record still
+    exists, still names a head, and must not win.
+    """
+    anchors = [one for one in records if one[1] in ANCHOR_VERDICTS]
+    if not anchors:
+        fail("pull request #" + number + " carries no verified or carried_forward"
+             + " Proof of Done record, so no record names a head this stage may"
+             + " publish against")
+    index, verdict, head = anchors[-1]
+    if head is None:
+        fail("the latest " + verdict + " Proof of Done record on pull request #"
+             + number + " names no single full publish-branch head, so the tree"
+             + " it proved cannot be established")
+    return index, verdict, head
+
+
+def refuse_superseded_anchor(number, records, anchor_index):
+    """Refuse when ANY factory record is newer than the anchoring record."""
+    newer = [(index, verdict) for index, verdict, _ in records if index > anchor_index]
     if not newer:
         return
     index, verdict = newer[-1]
     fail("pull request #" + number + " carries a newer " + verdict
          + " Proof of Done record at position " + str(index) + ", after the"
-         + " verified record at position " + str(verified_index) + ", so that"
-         + " verification no longer describes the tree about to be published;"
+         + " anchoring record at position " + str(anchor_index) + ", so that"
+         + " proof no longer describes the tree about to be published;"
          + " a fresh capture and replay are owed")
 
 
 def main(argv):
+    """Establish the head to publish against, or fail closed naming the measurement.
+
+    The REQUIRED agreement is graded first and the ANCHOR second, and the order
+    is load-bearing rather than tidy: a pull request carrying no records at all
+    must report the missing capture, which is the first thing a run publishes
+    and the first thing an operator would look for, rather than reporting an
+    absent carry-forward decision that nothing in an ordinary run ever writes.
+    """
     if len(argv) < 2 or argv[0] != "--pull-request":
         fail("usage: --pull-request <number> [--require <verdict> ...]")
     number = argv[1]
@@ -258,9 +304,9 @@ def main(argv):
     if not required:
         fail("no --require <verdict> was named, so nothing would be established")
     records = factory_records(comment_bodies(number))
-    head, latest = agreed_head(number, records, required)
-    if "verified" in required:
-        refuse_superseded_verification(number, records, latest)
+    agreed_head(number, records, required)
+    anchor_index, _, head = anchoring_record(number, records)
+    refuse_superseded_anchor(number, records, anchor_index)
     sys.stdout.write(head + "\\n")
     return 0
 
@@ -278,8 +324,10 @@ def proof_head_program_source() -> str:
     able to see that the LABEL came from `PUBLISH_HEAD_LABEL` and the verdict
     set from `FACTORY_RECORD_VERDICTS`, not from literals typed twice.
     """
-    return _PROGRAM_SOURCE.replace("__LABEL__", PUBLISH_HEAD_LABEL).replace(
-        "__VERDICTS__", repr(FACTORY_RECORD_VERDICTS)
+    return (
+        _PROGRAM_SOURCE.replace("__LABEL__", PUBLISH_HEAD_LABEL)
+        .replace("__VERDICTS__", repr(FACTORY_RECORD_VERDICTS))
+        .replace("__ANCHOR_VERDICTS__", repr(PROOF_HEAD_ANCHOR_VERDICTS))
     )
 
 
