@@ -1235,6 +1235,29 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   the relay contract's and arrive AS GIVEN; nothing here computes, defaults or
   refreshes any of them, because that would be the second result model the same
   clause forbids.
+- The PROOF CARRY-FORWARD DECISION a changed-head `pr_refresh` takes
+  (`contracts.md` §"Definition-of-Done and Proof-of-Done stages" → "Proof
+  carry-forward across a refresh", "The observation scope" and "The decision";
+  `bd-ib-v4exlm`, Scenario 178). `_dispatcher_carry_forward_grammar` owns the
+  closed direct-read grammar and the two record lines the proof prompts write;
+  `_dispatcher_carry_forward_record` owns the verified-record parse and the
+  decision record's own rendering; `_dispatcher_carry_forward_program`
+  assembles both into the ONE stdlib-only program the Dispatcher materializes
+  into the sandbox, beside the publication-head reader and for the same reason.
+  Four properties an editor must not invert. The decision is taken ENTIRELY
+  inside the sandbox, so these modules ship a PROGRAM FRAGMENT and no host-side
+  implementation: a host-side twin would be a second account of one grammar
+  with no caller, which is the duplication `_dispatcher_publication_head`
+  records the cost of, and the paired tests therefore load the shipped bytes
+  rather than re-deriving them. Every arm that cannot MEASURE answers
+  `reproof_required` naming the input, because the decision's whole claim is
+  that the incoming commits CANNOT have affected the proof, and a blinded gauge
+  can make no such claim. The grammar's character test runs BEFORE its
+  production test, since POSIX splitting has already discarded the
+  metacharacters by the time words exist. And a REJECTED path operand is kept
+  apart from a command OUTSIDE the grammar even though both route identically:
+  the distinction buys the record, which must point its reader at the `..`
+  segment rather than at the command's shape.
 
 Rules an agent editing this tree must follow:
 
