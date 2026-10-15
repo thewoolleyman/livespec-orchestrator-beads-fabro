@@ -525,6 +525,37 @@ def test_a_protected_path_passed_to_echo_is_not_refused() -> None:
     assert _refused(policy=policy, command=f'echo "rm -rf {_SANDBOX_ROOT}"') is None
 
 
+def test_a_target_whose_resolution_is_a_protected_path_is_refused() -> None:
+    """What the caller resolved a target to counts as much as what was written.
+
+    The pairing is supplied rather than computed because this module has no
+    filesystem; the hook beside it reads the real links.
+    """
+    policy = _load_policy()
+
+    assert (
+        _refused(
+            policy=policy,
+            command="rm -rf /tmp/agent-made-link",
+            resolved={"/tmp/agent-made-link": _SANDBOX_ROOT},
+        )
+        == _SANDBOX_ROOT
+    )
+
+
+def test_a_target_whose_resolution_is_unprotected_is_not_refused() -> None:
+    policy = _load_policy()
+
+    assert (
+        _refused(
+            policy=policy,
+            command="rm -rf /tmp/agent-made-link",
+            resolved={"/tmp/agent-made-link": "/tmp/layout-sim"},
+        )
+        is None
+    )
+
+
 def test_a_removal_that_names_nothing_protected_is_not_refused() -> None:
     policy = _load_policy()
 
