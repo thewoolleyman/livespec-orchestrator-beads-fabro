@@ -2,8 +2,9 @@
 
 Covers the unmeasurable-input arms of `_acp_session_headroom_drain`
 (work-item `bd-ib-rszkjc`): "the five_hour_drain_percent_per_hour is null when
-no such baseline exists", and the record "carries null for that field rather
-than a coerced number".
+no such baseline exists, or when the current utilization is not higher than the
+baseline's", and the record "carries null for that field rather than a coerced
+number".
 
 WHY NULL AND NOT ZERO, which is the substitution a reader is most likely to
 find harmless. A drain of 0.0 is a perfectly plausible GENUINE reading -- it is
@@ -24,6 +25,7 @@ inside an admission evaluation rather than a reading.
 
 from __future__ import annotations
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands import _acp_session_headroom as headroom
 from livespec_orchestrator_beads_fabro.commands import _acp_session_headroom_drain as drain
 
@@ -70,6 +72,42 @@ def test_an_unobservable_current_reading_leaves_the_rate_null() -> None:
 
     assert attached.five_hour_drain_percent_per_hour is None
     assert attached.unobservable == "timed-out"
+
+
+@pytest.mark.parametrize("utilization", [10.0, 9.9, 4.0, 0.0])
+def test_a_window_that_did_not_rise_has_no_drain(utilization: float) -> None:
+    """EQUALITY IS INCLUDED: "not higher than the baseline's" is the wording.
+
+    An unmoved window has nothing to divide, and reporting 0.0 there would
+    claim a MEASURED rate of zero -- which is exactly what an unspent
+    credential genuinely reads as, so the two would be indistinguishable at the
+    record.
+
+    A DECREASE is null rather than negative, and it is a REAL state rather than
+    a defensive one: the five-hour window ROLLS, so an earlier spend ageing out
+    of it lowers utilization between two readings taken 40 minutes apart. A
+    negative rate would report a credential REFILLING at a measured pace, which
+    an operator judging a floor's adequacy would read as headroom arriving.
+    """
+    attached = drain.reading_with_drain_rate(
+        reading=_reading(utilization=utilization), baseline=_baseline(), now_iso=_NOW
+    )
+
+    assert attached.five_hour_drain_percent_per_hour is None
+
+
+def test_a_window_that_rose_by_the_smallest_amount_still_has_a_drain() -> None:
+    """The boundary from the other side, so "not higher" cannot creep upward.
+
+    Without this, a guard written as "not higher by some margin" -- or one that
+    rounded -- would satisfy every case above while silently discarding the
+    slow drains the figure exists to make visible.
+    """
+    attached = drain.reading_with_drain_rate(
+        reading=_reading(utilization=10.5), baseline=_baseline(), now_iso=_NOW
+    )
+
+    assert attached.five_hour_drain_percent_per_hour == 1.0
 
 
 def test_a_baseline_whose_instant_cannot_be_read_leaves_the_rate_null() -> None:

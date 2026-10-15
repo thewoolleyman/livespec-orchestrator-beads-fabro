@@ -128,11 +128,22 @@ def reading_with_drain_rate(
 
     Every null condition is kept in ONE place because they are
     indistinguishable at the record and a reader must not have to guess which
-    applied: no baseline to measure from, no current utilization to compare,
-    and no readable span between the two.
+    applied: no baseline to measure from, no current utilization to compare, a
+    window that did not RISE, and no readable span between the two.
+
+    "NOT HIGHER" INCLUDES EQUALITY, which is the clause's own wording. An
+    unmoved window has nothing to divide, and reporting 0.0 there would claim a
+    MEASURED rate of zero -- which is exactly what an unspent credential
+    genuinely reads as, so the two would be indistinguishable at the record.
+
+    A DECREASE is null rather than negative, and it is a REAL state rather than
+    a defensive one: the five-hour window ROLLS, so an earlier spend ageing out
+    of it lowers utilization between two readings taken 40 minutes apart. A
+    negative rate would report a credential REFILLING at a measured pace, which
+    an operator judging a floor's adequacy would read as headroom arriving.
     """
     utilization = reading.utilization_percent
-    if baseline is None or utilization is None:
+    if baseline is None or utilization is None or utilization <= baseline.utilization_percent:
         return reading
     hours = _elapsed_hours(baseline=baseline, now_iso=now_iso)
     if hours is None:
