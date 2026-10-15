@@ -2,9 +2,13 @@
 
 Scenario 174's dispatch-time sub-scenarios are bound at the integration tier by
 `tests/integration/test_dod_judgement_pre_dispatch_scenario174.py`, which drives
-the whole wall. This module covers the one arm that tier cannot reach: a
-repository whose ledger CONNECTION cannot be resolved at all, so neither surface
-has a record to read a standing verdict from.
+the whole wall. This module covers the arms that tier cannot reach: a repository
+whose ledger CONNECTION cannot be resolved at all, so neither surface has a
+record to read a standing verdict from, and the drain filter's GROOM exemption,
+which `tests/integration/test_groom_variant_dod_judgement.py` reaches only
+through `dod_judgement_refusal` — every dispatch there names an `--item`, and a
+named id is narrowed to rather than filtered, so the filter's own exemption is
+only observable from an unnarrowed enumeration.
 
 WHY THAT ARM IS WORTH ITS OWN CASE RATHER THAN BEING LEFT TO FAIL LOUDLY. Both
 surfaces run inside a pass composed of many others — the wall renders refusals
@@ -24,12 +28,14 @@ but whether the repository declares a connection.
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
+from livespec_orchestrator_beads_fabro._store_dispatch_workflow import record_dispatch_workflow
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_HELD,
     DodJudgement,
@@ -47,6 +53,13 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 _HEADING = "## Effective acceptance criteria"
 _FINDING = "bd-ib-wall: the References line omits the governing scenario; add that heading."
+
+_GROOM_VARIANT = "groom-cut"
+_GROOM_DIR = f".fabro/workflows/{_GROOM_VARIANT}"
+# The kind rides `[run.inputs]`, which is where `_workflow_variant_kind` reads it.
+_GROOM_WORKFLOW_TOML = (
+    '[workflow]\ngraph = "workflow.fabro"\n\n[run.inputs]\nworkflow_kind = "groom"\n'
+)
 
 
 @pytest.fixture(autouse=True)
@@ -85,6 +98,31 @@ def _connected_repo(*, tmp_path: Path) -> Path:
         '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
         encoding="utf-8",
     )
+    return repo
+
+
+def _groom_registering_repo(*, tmp_path: Path) -> Path:
+    """A connected repository that also REGISTERS a groom-kind variant.
+
+    The registry entry and the variant's own `workflow.toml` are both needed:
+    the kind is a property of the directory the entry names, not of the entry,
+    so a registered name whose manifest declares nothing reads as `implement`.
+    """
+    repo = _spec_tree(repo=tmp_path / "groom")
+    _ = (repo / ".livespec.jsonc").write_text(
+        json.dumps(
+            {
+                "livespec-orchestrator-beads-fabro": {
+                    "connection": {"prefix": "bd-ib"},
+                    "dispatcher": {"workflows": {_GROOM_VARIANT: _GROOM_DIR}},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    variant = repo / _GROOM_DIR
+    variant.mkdir(parents=True)
+    _ = (variant / "workflow.toml").write_text(_GROOM_WORKFLOW_TOML, encoding="utf-8")
     return repo
 
 
@@ -159,6 +197,28 @@ def test_an_unresolvable_connection_excludes_no_candidate_from_the_enumeration(
     assert dod_unrefused_candidates(items=[item], repo=_unresolvable_repo(tmp_path=tmp_path)) == [
         item
     ]
+
+
+def test_a_groom_pinned_candidate_survives_a_standing_refusing_verdict(tmp_path: Path) -> None:
+    """A groom target is retained however the recorded verdict reads.
+
+    The refusal no longer takes a judgement on such an item, but a verdict
+    recorded by an earlier build or at admission outlives the dispatch that
+    wrote it — and the one change that would retire it is the decomposition the
+    groom run has not been allowed to produce. The CONTROL is the same
+    repository and the same standing verdict with no pin written, which must
+    drop the row: without it, "the item was enumerated" is satisfied just as
+    well by a filter that never drops anything.
+    """
+    repo = _groom_registering_repo(tmp_path=tmp_path)
+    item = _item()
+    _record_held_verdict(repo=repo, item=item)
+
+    assert dod_unrefused_candidates(items=[item], repo=repo) == []
+
+    record_dispatch_workflow(path=_config(repo=repo), work_item_id=item.id, workflow=_GROOM_VARIANT)
+
+    assert dod_unrefused_candidates(items=[item], repo=repo) == [item]
 
 
 def test_an_unresolvable_connection_preserves_the_callers_order(tmp_path: Path) -> None:

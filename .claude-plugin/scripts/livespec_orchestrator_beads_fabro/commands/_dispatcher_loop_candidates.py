@@ -50,7 +50,10 @@ def candidates(
     REFUSES, which the clause requires "until its effective criteria or
     referenced headings change". That second filter takes no judgement of its
     own: it reads the verdict already recorded, so an unrepaired row cannot stop
-    the queue behind it and a drain pass costs no model call per candidate.
+    the queue behind it and a drain pass costs no model call per candidate. Both
+    filters are handed the SAME `workflow_name`, because both are scoped to an
+    implement-kind item and a groom candidate exempted by one of them while the
+    other dropped it would be invisible to the drain either way.
 
     A NAMED id is narrowed to and deliberately NOT filtered. The clause keeps the
     hand-picked path protected by the wall "even when candidate enumerations
@@ -68,4 +71,5 @@ def candidates(
             items=ranked, cwd=repo, workflow_name=args.workflow_name
         ),
         repo=repo,
+        workflow_name=args.workflow_name,
     )

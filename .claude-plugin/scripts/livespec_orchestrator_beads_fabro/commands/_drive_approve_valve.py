@@ -67,8 +67,20 @@ def _definition_of_done_refusal(
     rather than being routed to `backlog` or `blocked` on these grounds. The
     judgement does record its own verdict on the item, which is what carries
     the remedy past this invocation.
+
+    THE VARIANT IS READ OFF THE SAME DECISION RATHER THAN RESOLVED AGAIN, and
+    the early return is what keeps the two halves agreeing. "Judged before
+    admission" scopes the judgement to an "implement-kind item", and the
+    mechanical half has ALREADY exempted a groom-kind one — it returns no
+    refusal for it at all — so running the judgement regardless would hold at
+    `pending-approval` exactly the item the groom door is waiting for, which is
+    the inversion `_dispatcher_criteria_wall_variant`'s docstring exists to
+    prevent, reintroduced one line below the exemption. Discarding the
+    `.variant` the decision already carries is how that happened; binding the
+    result is the repair.
     """
-    refusal = acceptance_eligibility(item=item, cwd=repo).refusal
+    eligibility = acceptance_eligibility(item=item, cwd=repo)
+    refusal = eligibility.refusal
     if refusal is not None:
         return valve_refusal(
             aid=action_id,
@@ -76,6 +88,8 @@ def _definition_of_done_refusal(
             err="ungradeable-acceptance-criteria",
             msg=f"approve refused: {refusal}.",
         )
+    if eligibility.variant.exempt:
+        return None
     judgement = judge_item_definition_of_done(
         item=item, repo=repo, path=config, stage=STAGE_PRE_ADMISSION
     )
