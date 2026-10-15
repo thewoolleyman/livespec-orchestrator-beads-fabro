@@ -63,6 +63,29 @@ likely to need the bound re-chosen between the two figures, and the shipped
 figure plus `CODEX_FRESHNESS_MARGIN_SECONDS` now demands 640635 of a token's
 remaining life, so a ten-day Codex token has to be under about 2.59 days old
 to pass the freshness gate.
+
+THAT PREDICTED RE-CHOOSING HAPPENED AT v145 (the `pr` to `pr_refresh` route,
+work-item bd-ib-3hpdvm), and the mechanism is worth stating because the route's
+own four nodes are the SMALL half of the move. The route makes `pr_refresh`
+re-enterable, so its `max_visits` had to be sized at the entries the
+three-refresh bound actually admits — three counted refreshes, an uncounted
+entry around each, and the entry that refuses, i.e. 8 rather than 4 — and the
+derivation then propagates those visits into every node of the proof loop the
+refresh re-earns: `review` and `proof_verify` moved from 18 to 22 visits apiece,
+`proof_capture` to 19, `refresh_repair` to 20. So the 15m control moved to
+1132170 and the shipped 5m figure to 732570, and the bound moved to 800000 to
+stay between them. The derivation is an upper bound summed over distinct
+predecessors and no run reaches it, which is the correct direction for a
+credential floor.
+
+WHAT THAT COSTS, STATED RATHER THAN ABSORBED: the shipped figure plus the
+margin now demands about 8.5 days of a token's remaining life, so a ten-day
+Codex token has to be under roughly 1.5 days old to pass the freshness gate.
+This repository routes NO factory node to Codex (`.livespec.jsonc`'s `acp_nodes`
+put every node on a Claude adapter), so nothing here is refused by it; a
+repository that does route one and raises its node timeouts should expect that
+gate to bite, and the remedy is the gate's own — a shorter configured timeout or
+a fresher credential — not a visit cap sized below what the graph can reach.
 """
 
 from __future__ import annotations
@@ -87,8 +110,8 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # timeouts, so pinning it exactly would make every unrelated timeout edit fail
 # this case. The control below pins the 15m figure exactly, because that one is
 # the thing being moved away from and a drifting comparand would hide the move.
-_FRESHNESS_BOUND_SECONDS = 650_000
-_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 977_235
+_FRESHNESS_BOUND_SECONDS = 800_000
+_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_132_170
 
 
 def _checkpoint() -> dict[str, Any]:
@@ -151,7 +174,7 @@ def test_the_checkpoint_budget_holds_the_credential_freshness_floor_under_the_bo
     that happened to shrink -- a pass earned by something this item never
     touched. The control re-resolves the SAME payload with only the checkpoint
     budget restored to the retired `"15m"` and requires it to land ABOVE the
-    bound at exactly the measured 958455 seconds, which is what makes the first
+    bound at exactly the measured figure above, which is what makes the first
     assertion evidence about this declaration rather than about the graph.
 
     The replacement is asserted to match exactly once before it is applied: a

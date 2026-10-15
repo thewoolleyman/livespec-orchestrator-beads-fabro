@@ -19,12 +19,14 @@ import subprocess
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state import (
+    PR_VISIT_COUNT_STATE_FILENAME,
     PUBLICATION_STATE_GIT_PATH,
     PUBLISH_HEAD_STATE_FILENAME,
     REFRESH_CHANGED_STATE_FILENAME,
     REFRESH_COUNT_STATE_FILENAME,
     REFRESH_REPAIR_BRIEF_STATE_FILENAME,
     REFRESH_REPAIR_COUNT_STATE_FILENAME,
+    REFRESH_ROUTE_MARKER_STATE_FILENAME,
     publication_state_filenames,
     publication_state_root_command,
 )
@@ -107,7 +109,10 @@ def test_the_filename_set_is_complete_and_distinct() -> None:
     property that keeps the two counters apart: one bounds `pr_refresh`'s
     non-convergence at three refreshes, the other bounds repair rounds across
     both refreshing stages at two, and a shared file would make each budget
-    spend the other's.
+    spend the other's. The REFRESH-ROUTE pair is held apart from both for the
+    same reason: `PR_VISIT_COUNT_STATE_FILENAME` counts `pr` visits and decides
+    nothing about convergence, so a name shared with either refresh counter
+    would make a routed re-entry spend a refresh budget twice.
     """
     filenames = publication_state_filenames()
 
@@ -117,6 +122,8 @@ def test_the_filename_set_is_complete_and_distinct() -> None:
         REFRESH_CHANGED_STATE_FILENAME,
         REFRESH_REPAIR_BRIEF_STATE_FILENAME,
         REFRESH_REPAIR_COUNT_STATE_FILENAME,
+        PR_VISIT_COUNT_STATE_FILENAME,
+        REFRESH_ROUTE_MARKER_STATE_FILENAME,
     }
     assert len(filenames) == len(set(filenames))
     assert all(re.fullmatch(r"livespec-[a-z-]+", name) for name in filenames), filenames

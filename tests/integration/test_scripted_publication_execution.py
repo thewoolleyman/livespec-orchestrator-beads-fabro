@@ -405,13 +405,21 @@ def test_a_head_moving_between_observation_and_arming_is_refused(tmp_path: Path)
     the head this run proved while the forge then holds a different one. An
     unbound `gh pr merge` cannot tell the difference and would arm the new head
     while reporting the old one as proof-verified.
+
+    THE SENTINEL IS THE UNEXPECTED-HEAD ONE SINCE v145 (work-item
+    bd-ib-3hpdvm), which is a sharper refusal rather than a different one: the
+    stage now RE-READS the head after a rejected arming, so a moved head is
+    reported as the head mismatch it is instead of as the generic arming
+    failure that covered every cause at once. The arming is still asserted
+    below to have been issued bound to the proved head, and the moved head is
+    still unarmed, which is what makes the two readings the same fail-closed.
     """
     box = _sandbox(root=tmp_path, advance_head_on="ready")
 
     result = _run(box=box)
 
     assert result.returncode == 1, result.stdout
-    assert "LIVESPEC_PR_ARM_FAILED" in result.stderr
+    assert "LIVESPEC_PR_UNEXPECTED_HEAD" in result.stderr
     argv = box.merge_argv()
     assert argv is not None, "the stage never reached the arming command"
     assert argv[argv.index("--match-head-commit") + 1] == _HEAD
