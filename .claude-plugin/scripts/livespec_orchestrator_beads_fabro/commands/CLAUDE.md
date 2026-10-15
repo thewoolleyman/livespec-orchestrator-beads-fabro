@@ -779,6 +779,22 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   key is normalized because the two engines spell it differently — the pinned
   engine keys its outcome map `implement`, the Petri-era engine keys its stage
   map `002-implement@1` — while the label is keyed on the graph node id alone.
+  `_dispatcher_fabro_reattach.inspect_run` is where it is APPLIED, and the
+  venue is forced rather than chosen: MEASURED on both engines, an `inspect
+  --json` record carries no `labels` key at all (the pinned build answers
+  `run_id`, `status`, `checkpoint`; the candidate build answers nine keys, none
+  of them labels), while the `ps --json` run row carries them on every row. So
+  the attribution costs a SECOND read, and it is taken at the one function
+  every dispatch and every reconciliation reads a run through rather than at
+  each terminal mapper that consumes the failure. Three properties of that
+  read. It is spent ONLY on a failure already carrying the typed flag, because
+  `ps -a --json` lists every run the factory holds. The row is selected BY RUN
+  ID and never taken from the head of the list, since a factory serves every
+  repository on its host and another repository's row carries a well-formed
+  entitlement belonging to somebody else's dispatch. And it is journaled under
+  its own `fabro-run-labels` stage, because its SILENCE changes an answer — a
+  refused listing leaves the legacy attribution standing, which at the outcome
+  is indistinguishable from a dispatch that recorded no identity to read.
 - The ADMISSION SESSION-HEADROOM FILTER of `contracts.md`'s "Admission filters
   candidates by projected Claude session headroom" paragraph (`bd-ib-jwuxs4`,
   Scenario 60) lives in FOUR cohesive modules, split pure-from-impure the usual
