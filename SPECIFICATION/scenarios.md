@@ -6469,3 +6469,52 @@ Feature: The work of a run that ended on a failed engine checkpoint survives the
     Then no ref under refs/livespec/preserved-publish/<work-item-id>/ is created for that run
     And the existing preserve-by-reference pointer and the terminal patch's size and digest are recorded as before
 ```
+
+## Scenario 184 — The default branch advancing between pr_refresh and the arming re-enters pr_refresh, and an armed pull request it overtakes rests at needs-human with a named cause
+
+```gherkin
+Feature: Default-branch movement after pr_refresh is absorbed inside the run, and never merges an unproved head
+  As the maintainer of a repository dispatched to the factory
+  I want default-branch movement that arrives after the refresh handled like movement that arrives before it
+  So that a proof-verified run is not ended for a human because master moved a few seconds too late
+
+  Scenario: A refreshable advance before the arming re-enters pr_refresh and then arms
+    Given a run whose latest verified record names head H
+    And the default branch advances to tip T, which is not an ancestor of H, with a commit that does not conflict with the run's commits
+    When pr marks the draft ready and the forge rejects the head-bound arming as not rebaseable
+    Then pr records the refresh-route marker and pr_route routes the run to pr_refresh, which counts one refresh toward the three-refresh bound and takes no refresh-repair round
+    And the refreshed head takes the carry-forward decision before pr is entered again
+    And pr reports the pull request already ready and arms auto-merge for the head its latest verified or carried_forward record names
+
+  Scenario: A conflicting advance before the arming re-enters pr_refresh and takes refresh repair
+    Given a run whose latest verified record names head H
+    And the default branch advances to tip T with a commit that conflicts with the run's commits
+    When pr marks the draft ready and the forge rejects the head-bound arming as not rebaseable
+    Then the run enters pr_refresh, which restores head H and records a refresh-repair brief naming each conflicted path together with the run commit being applied, and routes to fix
+
+  Scenario: A rejected arming with no default-branch advance fails closed naming the forge's cause
+    Given a run whose latest verified record names head H, and the default branch's tip is an ancestor of H
+    When the forge rejects the head-bound arming
+    Then pr fails closed, and its output names the forge's rejection message, the pull request state, its mergeability, that the head equals H, and the default branch's tip
+    And the output does not state that the head differs from the verified head
+
+  Scenario: An armed pull request overtaken by a conflicting commit rests at needs-human with a named cause
+    Given a run that armed auto-merge for head H and terminated through exit
+    And a later default-branch commit conflicts with the pull request
+    When two consecutive merge-wait polls report the pull request OPEN and conflicting with the default branch
+    Then the dispatch ends blocked at stage merge-poll with the cause base-advanced-after-arming and exit code 4
+    And the item rests at blocked with blocked_reason needs-human, with one livespec-base-advanced-after-arming comment and one needs-human-blocked journal row
+    And the outcome detail names resolve-blocked for the item and then resume
+
+  Scenario: Resuming an overtaken armed pull request disarms it before refreshing
+    Given that item resolved to ready and resumed
+    When the resumed run enters pr_refresh at the default branch's advanced tip
+    Then pr_refresh disarms the pull request's auto-merge request before it rebases or routes to refresh repair
+    And the pull request is armed again only by pr, for a head named by a verified or carried_forward record of the resumed run
+
+  Scenario: A merge-hold release cannot arm a head that no proof record names
+    Given an item under a merge hold whose pull request head is H2
+    And the latest verified or carried_forward record of the item's latest run names H1, not H2
+    When the operator releases the hold
+    Then the release refuses, naming the head comparison that failed, and the pull request stays unarmed
+```
