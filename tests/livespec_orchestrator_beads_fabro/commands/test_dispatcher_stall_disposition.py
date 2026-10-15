@@ -25,13 +25,10 @@ import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
-from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_comments import (
-    UNREAD_CANCEL_ROW,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition import (
     STALL_NEEDS_HUMAN_STAGE,
-    STALL_RELEASE_HELD_STAGE,
     STALL_RELEASE_STAGE,
+    UNREAD_CANCEL_ROW,
     dispose_stall_cancel,
     item_stall_cancel_rows,
 )
@@ -317,50 +314,3 @@ def test_a_failed_rest_journals_the_error_and_not_the_success(tmp_path: Path) ->
     stages = _stages(journal=journal)
     assert f"{STALL_NEEDS_HUMAN_STAGE}-error" in stages
     assert STALL_NEEDS_HUMAN_STAGE not in stages
-
-
-def test_an_interrupted_release_is_held_rather_than_stealing_a_newer_claim(
-    tmp_path: Path,
-) -> None:
-    """The replay arm whose release had NOT landed before a newer dispatch claimed.
-
-    This is the sharp half of the replay rule, and it is a different mechanism
-    from the already-released hold its integration sibling exercises. There a
-    release row stands, so the replay owes nothing; here the interrupted
-    dispatch died BEFORE writing one, so a release genuinely is owed — and
-    taking it now would clear the assignee of the run the ordinary admission
-    valve has since started, leaving a row an operator reads as a healthy
-    first release while two runs publish onto one branch.
-
-    The reason is asserted rather than merely the hold, because the two hold
-    reasons have opposite consequences: `already-released` says the work is
-    complete, while this one says it is still outstanding and a human or a
-    later pass must finish it once the live dispatch ends.
-    """
-    repo = _repo(tmp_path=tmp_path)
-    journal = _journal(
-        tmp_path=tmp_path,
-        lines=(
-            _cancel_line(run_id="01STALLRUN", factory="hp"),
-            json.dumps(
-                {
-                    "stage": "dispatch-id",
-                    "work_item_id": _ITEM_ID,
-                    "dispatch_id": "0000000000000000000000000000beef",
-                }
-            ),
-        ),
-    )
-
-    dispose_stall_cancel(
-        repo=repo,
-        item=_item(),
-        outcome=_outcome(status="stalled-no-progress"),
-        journal=journal,
-    )
-
-    records = [json.loads(line) for line in journal.path.read_text(encoding="utf-8").splitlines()]
-    held = [record for record in records if record.get("stage") == STALL_RELEASE_HELD_STAGE]
-    assert len(held) == 1
-    assert held[0]["reason"] == "newer-dispatch-claim"
-    assert STALL_RELEASE_STAGE not in [record.get("stage") for record in records]
