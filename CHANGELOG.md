@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.199.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.198.5...v0.199.0) (2026-10-15)
+
+
+### Features
+
+* reconcile a partial launch by its stable operation identity ([d9dabd8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d9dabd80c126bba6be03fea8c558cc456a6c209b))
+* refuse an uncovered launch or completion as explicitly unmonitored ([a269d1b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a269d1bd8c93f4f4c6beab873a3f813024cf94c3))
+* register a durable launch obligation at the real launch boundaries ([7578a8a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7578a8ad1bf80d1ecd5c000f84c97133cd67d8ba))
+
 ## [0.198.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.198.4...v0.198.5) (2026-10-15)
 
 
