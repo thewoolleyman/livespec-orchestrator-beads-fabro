@@ -117,6 +117,12 @@ class SandboxContainerSweep:
     measurement of the fleet — the empty tuple of factory names is a
     deliberate "none named" that a caller states, not one it can omit.
 
+    `docker_host` is None ONLY for a factory whose daemon had no address to
+    reach, which is the one sweep that took no reading at all; it is never a
+    stand-in for the local daemon. That value travels with `observed` False,
+    so a reader never has to infer the absence of a reading from the absence
+    of an address.
+
     `detail` carries no default either: it is what tells a sweep that looked
     and found nothing apart from one that could not look, and a default would
     make the second borrow the first's words. `observed` defaults to False
@@ -125,7 +131,7 @@ class SandboxContainerSweep:
     which is the empty TUPLE of sweeps rather than any value of this type.
     """
 
-    docker_host: str
+    docker_host: str | None
     factory_names: tuple[str, ...]
     detail: str
     reclaimed: tuple[ReclaimedContainer, ...] = ()

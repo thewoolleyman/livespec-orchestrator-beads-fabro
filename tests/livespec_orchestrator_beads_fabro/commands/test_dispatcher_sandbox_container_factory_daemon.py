@@ -49,10 +49,17 @@ _HP_SERVER = "https://hp-xubuntu.example:32276"
 # address, which is what makes the sweep's reach a declaration rather than an
 # inference from the server url beside it.
 _HP_DOCKER_HOST = "ssh://cwoolley@hp-xubuntu.example"
+# A second factory on a second host — the upgrade-candidate shape — which is
+# what makes "that host's inventory" a claim with a control beside it.
+_CANDIDATE_SERVER = "https://hp-candidate.example:32278"
+_CANDIDATE_DOCKER_HOST = "ssh://cwoolley@hp-candidate.example"
 
 # One of the four containers the 2026-10-14 measurement found still running on
 # hp for a run the server had already reported `failed`.
 _FAILED_RUN = "01M4V0HPJBETC2M026JQ4WKR0S"
+# The pass-level record of one daemon's sweep, spelled out rather than
+# imported so this file keeps naming the record it means to read.
+_SWEEP_STAGE = "sandbox-container-sweep"
 _LIMIT = 4294967296
 
 
@@ -68,6 +75,10 @@ class _Runner:
     fabro_ps_json: str = "[]"
     docker_ps_stdout: str = ""
     docker_inspect_stdout: str = ""
+    # The daemon addresses whose `docker ps` fails, keyed by the address the
+    # argv names. Per-daemon rather than one flag because the claim under test
+    # is that one host's blindness is confined to that host's record.
+    unreachable_daemons: frozenset[str] = frozenset()
     calls: list[list[str]] = field(default_factory=list)
 
     def run(
@@ -89,6 +100,8 @@ class _Runner:
         return CommandResult(exit_code=0, stdout=self.fabro_ps_json, stderr="")
 
     def _docker(self, *, argv: list[str]) -> CommandResult:
+        if argv[2] in self.unreachable_daemons:
+            return CommandResult(exit_code=1, stdout="", stderr="cannot connect to the daemon")
         if "inspect" in argv:
             return CommandResult(exit_code=0, stdout=self.docker_inspect_stdout, stderr="")
         if "ps" in argv:
@@ -204,4 +217,90 @@ def test_a_factory_declaring_no_daemon_is_not_swept_through_the_local_one(
     summary = _reconcile(tmp_path=tmp_path, runner=runner, journal=_Journal())
 
     assert _docker_argv_heads(runner=runner) == []
-    assert [sweep.reclaimed for sweep in summary.containers] == []
+    assert [run for sweep in summary.containers for run in sweep.reclaimed] == []
+
+
+def _sweep_readings(*, journal: _Journal) -> list[tuple[object, object, object]]:
+    """Each sweep record's daemon, whether it was observed, and its count.
+
+    The three travel together because the pairing is the assertion: a daemon
+    nobody could reach and a factory with nothing leaked on it both report
+    zero containers, and only `inventory_observed` tells them apart.
+    """
+    return [
+        (record.get("docker_host"), record["inventory_observed"], record["containers_observed"])
+        for record in journal.written
+        if record["stage"] == _SWEEP_STAGE
+    ]
+
+
+def test_a_surveyed_factory_whose_daemon_cannot_be_addressed_reads_as_unobserved(
+    tmp_path: Path,
+) -> None:
+    """The acceptance assertion for the blind arm, with a seeing host beside it.
+
+    A factory declaring no daemon cannot be inventoried at all, and the one
+    answer it must not produce is a sweep reporting zero containers: that is
+    byte-identical to the record a clean factory writes, which is exactly the
+    reading that let twelve containers leak unremarked. It is reported as
+    unobserved, naming the key that would address it.
+
+    The declared sibling is the control. Without a host reading `true` in the
+    same pass, a build that reported every inventory unobserved would satisfy
+    the assertion while reclaiming nothing anywhere.
+    """
+    _write_config(
+        tmp_path=tmp_path,
+        factories={
+            "hp": {"server": _HP_SERVER, "docker_host": _HP_DOCKER_HOST},
+            "hp-candidate": {"server": _CANDIDATE_SERVER},
+        },
+    )
+    runner = _runner()
+    journal = _Journal()
+
+    _ = _reconcile(tmp_path=tmp_path, runner=runner, journal=journal)
+
+    assert _sweep_readings(journal=journal) == [
+        (_HP_DOCKER_HOST, True, 1),
+        (None, False, 0),
+    ]
+    unaddressed = [
+        record
+        for record in journal.written
+        if record["stage"] == _SWEEP_STAGE and record.get("docker_host") is None
+    ]
+    assert unaddressed[0]["factory_names"] == ["hp-candidate"]
+    assert "docker_host" in str(unaddressed[0]["detail"])
+
+
+def test_a_daemon_that_refused_the_listing_is_unobserved_only_for_its_own_host(
+    tmp_path: Path,
+) -> None:
+    """One host's blindness is confined to that host's record.
+
+    Two declared daemons, one of which will not answer. The pass must not fold
+    them into a single reading in either direction — neither reporting the
+    whole fleet unobserved, nor letting the answering host's inventory stand
+    as an answer about the silent one.
+    """
+    _write_config(
+        tmp_path=tmp_path,
+        factories={
+            "hp": {"server": _HP_SERVER, "docker_host": _HP_DOCKER_HOST},
+            "hp-candidate": {
+                "server": _CANDIDATE_SERVER,
+                "docker_host": _CANDIDATE_DOCKER_HOST,
+            },
+        },
+    )
+    runner = _runner()
+    runner.unreachable_daemons = frozenset({_CANDIDATE_DOCKER_HOST})
+    journal = _Journal()
+
+    _ = _reconcile(tmp_path=tmp_path, runner=runner, journal=journal)
+
+    assert _sweep_readings(journal=journal) == [
+        (_HP_DOCKER_HOST, True, 1),
+        (_CANDIDATE_DOCKER_HOST, False, 0),
+    ]
