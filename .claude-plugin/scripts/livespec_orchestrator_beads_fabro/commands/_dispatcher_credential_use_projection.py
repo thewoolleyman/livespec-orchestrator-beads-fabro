@@ -17,22 +17,31 @@ requirement in between. Projecting only the deadline would carry a bound on
 continuation while leaving that aging unobserved, which is the defect this module
 was first written with.
 
-THE DISCRIMINATOR IS PROTECTION, NOT THE PRESENCE OF A DEADLINE, and it cuts both
-ways, which is why both arms are spelled out here rather than left to a caller:
+THE DISCRIMINATOR IS PROTECTION, NOT THE PRESENCE OF A DEADLINE, and it cuts
+three ways, which is why every arm is spelled out here rather than left to a
+caller:
 
-- A dispatch that projects a Codex credential IS protected. The guard is
-  installed, all three inputs ride the env table, and the startup check refuses
-  before any coding-agent node runs.
-- A dispatch that projects NO Codex credential is NOT protected, and must keep
-  running normally. There is no credential whose use needs bounding, so
-  installing a guard would either write an empty script and abort the sandbox at
-  prepare time, or wrap an ordinary adapter into a launch that can only refuse.
-  Both break working execution and neither protects anything.
+- A dispatch that projects a Codex credential IS protected
+  (`CredentialUseProjection`). The guard is installed, all three inputs ride
+  the env table, and the startup check refuses before any coding-agent node
+  runs.
+- A dispatch that routes no node to Codex projects NO Codex credential and is
+  therefore UNPROTECTED (`UnprotectedCredentialUse`). The guard is still
+  installed and the startup check still runs, because the launch wrap is
+  unconditional at both sites and the guard is what execs every coding agent --
+  rendering nothing here would leave each adapter exec'ing a path that does not
+  exist. No deadline rides the env table and the guard enforces none. What DOES
+  ride it is the host's EXPLICIT declaration that nothing was projected, and
+  that is what keeps the guard's fail-closed rule intact: silence still
+  refuses, and only a statement changes the answer.
+- A caller projecting NOTHING (`None`) renders no guard and no enforcement at
+  all. That is the shape every direct caller of the overlay renderer passes,
+  and it leaves ordinary execution untouched.
 
-The third case -- a credential projected with NO enforcement -- is broken
+A FOURTH shape -- a credential projected with NO enforcement -- is broken
 protection rather than a legitimate configuration, and it is refused by the OVERLAY
 RENDERER rather than here: this module renders text, so the only refusal available
-to it would be an empty block, which is indistinguishable from the unprotected
+to it would be an empty block, which is indistinguishable from the no-guard
 shape above. The renderer declines to produce an overlay at all.
 
 WHY THE THREE INPUTS ARE ONE VALUE. A half-wired projection -- a deadline with no
@@ -68,6 +77,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
     CREDENTIAL_EXPIRY_ENV_VAR,
     CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
+    CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
+    CREDENTIAL_USE_UNPROTECTED_VALUE,
     GUARD_SCRIPT_PATH,
     credential_use_deadline_epoch_capped,
     guard_script_text,
@@ -81,7 +92,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_exc
 )
 
 __all__: list[str] = [
+    "CredentialUseDeclaration",
     "CredentialUseProjection",
+    "UnprotectedCredentialUse",
     "credential_use_env_lines",
     "credential_use_guard_prepare_steps_block",
     "credential_use_projection_for",
@@ -121,19 +134,53 @@ class CredentialUseProjection:
     required_remaining_seconds: int
 
 
-def credential_use_env_lines(*, projection: CredentialUseProjection | None) -> str:
+@dataclass(frozen=True, kw_only=True)
+class UnprotectedCredentialUse:
+    """This dispatch projects NO Codex credential, so no deadline is owed.
+
+    A VALUE rather than `None`, and the distinction is the whole safety
+    argument. `None` is what a caller passes when it says nothing at all, and
+    the guard must keep refusing on silence -- that is how a broken projection
+    looks, and reading it as "nothing to protect" would disarm the mechanism on
+    the first shape change. This type is the host STATING that it read the
+    dispatch's routing, found no node on the Codex agent, and projected no
+    credential. It carries no fields because there is nothing to carry: the
+    statement IS the content, and a field a caller could fill is a field a
+    caller could fill wrongly.
+    """
+
+
+# The three shapes the overlay renderer accepts. Named so a reader of a
+# signature sees the closed set rather than a union spelled out differently at
+# each site -- and so adding a fourth is one edit in one place.
+CredentialUseDeclaration = CredentialUseProjection | UnprotectedCredentialUse
+
+
+def credential_use_env_lines(*, projection: CredentialUseDeclaration | None) -> str:
     """Render the enforcement inputs as `[environments.<id>.env]` lines.
 
-    Empty string when `projection` is None -- the unprotected shape, which must
+    Empty string when `projection` is None -- the no-guard shape, which must
     carry none of these names. Every value is `json.dumps`-ed so the multi-line
     guard single-line-encodes with `\\n` escapes (valid TOML), exactly as the Codex
     auth snapshot beside it does.
+
+    An UNPROTECTED declaration carries the guard's text and the declaration, and
+    DELIBERATELY NOT the three enforcement names -- not even empty. The startup
+    grade treats exactly one of the expiry pair being present as a half-wired
+    projection and fails closed on it, so emitting them blank would refuse every
+    unprotected dispatch during preparation.
 
     The integers are rendered as STRINGS because a TOML env table carries strings
     and the guard reads them with `${...}`.
     """
     if projection is None:
         return ""
+    if isinstance(projection, UnprotectedCredentialUse):
+        return (
+            f"{CREDENTIAL_USE_UNPROTECTED_ENV_VAR} = "
+            f"{json.dumps(CREDENTIAL_USE_UNPROTECTED_VALUE)}\n"
+            f"{_GUARD_SCRIPT_ENV_VAR} = {json.dumps(guard_script_text())}\n"
+        )
     return (
         f"{CREDENTIAL_USE_DEADLINE_ENV_VAR} = {json.dumps(str(projection.deadline_epoch))}\n"
         f"{CREDENTIAL_EXPIRY_ENV_VAR} = "
@@ -144,10 +191,15 @@ def credential_use_env_lines(*, projection: CredentialUseProjection | None) -> s
     )
 
 
-def credential_use_guard_prepare_steps_block(*, projection: CredentialUseProjection | None) -> str:
+def credential_use_guard_prepare_steps_block(*, projection: CredentialUseDeclaration | None) -> str:
     """Render the exclude + install + startup-check `[[run.prepare.steps]]` blocks.
 
-    Empty string when `projection` is None. Three steps, in this order:
+    Empty string when `projection` is None. An UNPROTECTED declaration renders
+    the SAME three steps as a protected projection, because the launch wrap is
+    unconditional: the guard is what execs every coding agent either way, so
+    skipping the install would leave each adapter running a path that does not
+    exist. The steps differ only in what the guard then reads -- the startup
+    check admits and enforces nothing. Three steps, in this order:
 
     1. EXCLUDE -- hide the guard's own path from the run's git worktree, and its
        position is load-bearing. `GUARD_SCRIPT_PATH` is fixed at
