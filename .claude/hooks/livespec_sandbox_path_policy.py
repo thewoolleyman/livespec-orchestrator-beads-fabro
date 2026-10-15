@@ -66,6 +66,7 @@ from livespec_shell_shape import (
     operands,
     shell_tokens,
     token_segments,
+    without_heredoc_bodies,
 )
 
 __all__: list[str] = [
@@ -140,21 +141,35 @@ def removal_targets(*, command: str, working_directory: str) -> tuple[str, ...]:
     /workspace` destroys the root with its SECOND operand, and `mv /tmp/x
     /workspace` destroys it with its second as well. An operand list read
     head-first or tail-first misses one of those.
+
+    HERE-DOCUMENT BODIES GO FIRST, before the command is read at all. A body is
+    file data, so its words are not commands — and because a body can carry a
+    `&&`, reading one would split on that operator and take the body's second
+    half for something the shell would run. The case that makes that concrete
+    is a test fixture ABOUT this incident, which would otherwise be refused as
+    if it WERE the incident.
+
+    THEN LINE BY LINE, and only then by segment. Newline is not a shell control
+    operator, so a two-line command tokenizes into one flat word list whose
+    leading word belongs to the FIRST line: without the per-line split, `git
+    status` followed by `rm -rf /workspace` on the next line reads as a `git`
+    command and the removal is never seen. A line whose quoting does not close
+    is skipped, which happens only when a token legitimately spans lines.
+
+    The working directory and the assigned values carry ACROSS lines as well as
+    across segments, because a shell's state does.
     """
-    tokens = shell_tokens(command=command)
-    if tokens is None:
-        return ()
     directory = working_directory
     assigned: dict[str, str] = {}
     found: list[str] = []
-    for segment in token_segments(tokens=tokens):
-        assigned.update(leading_assignments(tokens=segment))
-        verb, arguments = _executed(segment=segment)
-        words = [_expand(word=word, assigned=assigned) for word in operands(tokens=arguments)]
-        if verb == _CHANGE_DIRECTORY:
-            directory = _changed_directory(words=words, directory=directory)
-        elif _is_destructive(verb=verb, arguments=arguments):
-            found.extend(_resolve(word=word, directory=directory) for word in words)
+    for line in without_heredoc_bodies(command=command).splitlines():
+        tokens = shell_tokens(command=line)
+        if tokens is None:
+            continue
+        for segment in token_segments(tokens=tokens):
+            assigned.update(leading_assignments(tokens=segment))
+            directory, targets = _walked(segment=segment, directory=directory, assigned=assigned)
+            found.extend(targets)
     return tuple(found)
 
 
@@ -204,6 +219,24 @@ def refusal_message(*, protected_path: str, command: str) -> str:
         "command. To simulate a sandbox layout, build the whole simulation under a "
         "scratch directory such as /tmp and leave this run's own paths alone."
     )
+
+
+def _walked(
+    *, segment: list[str], directory: str, assigned: Mapping[str, str]
+) -> tuple[str, list[str]]:
+    """One segment: where it leaves the shell, and what it would destroy.
+
+    The directory is returned rather than only the targets because a `cd`
+    destroys nothing and still changes what every later word means, so the two
+    answers are one reading.
+    """
+    verb, arguments = _executed(segment=segment)
+    words = [_expand(word=word, assigned=assigned) for word in operands(tokens=arguments)]
+    if verb == _CHANGE_DIRECTORY:
+        return _changed_directory(words=words, directory=directory), []
+    if not _is_destructive(verb=verb, arguments=arguments):
+        return directory, []
+    return directory, [_resolve(word=word, directory=directory) for word in words]
 
 
 def _executed(*, segment: list[str]) -> tuple[str, list[str]]:
