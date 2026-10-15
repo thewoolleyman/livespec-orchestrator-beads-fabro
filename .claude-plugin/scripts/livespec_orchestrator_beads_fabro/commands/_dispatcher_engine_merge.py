@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import (
+    CONSECUTIVE_CONFLICTING_REPORTS,
+    base_advanced_detail,
+    reports_base_advanced_after_arming,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import post_merge
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import journal_stage
 from livespec_orchestrator_beads_fabro.commands._dispatcher_merge_pr_association import (
@@ -140,10 +145,29 @@ def await_merge(
     sleep: SleepFn,
     poll: PollPolicy,
 ) -> PrView | DispatchOutcome | None:
+    # The streak of CONSECUTIVE polls that reported an armed, OPEN pull request
+    # conflicting with the default branch. Reset by any poll that reported
+    # otherwise AND by any poll whose view could not be read, per
+    # `_dispatcher_base_advance`'s own rule that an absent reading is not a
+    # report in either direction.
+    conflicting_reports = 0
     for attempt in range(poll.attempts):
         view = _view_pr(plan=plan, runner=runner, journal=journal)
         if view is not None and view.state == "MERGED":
             return view
+        if view is not None and _reports_overtaken_arming(view=view):
+            conflicting_reports += 1
+            if conflicting_reports >= CONSECUTIVE_CONFLICTING_REPORTS:
+                return outcome_type(
+                    work_item_id=plan.work_item_id,
+                    status="blocked",
+                    stage="merge-poll",
+                    pr_number=view.number,
+                    merge_sha=None,
+                    detail=base_advanced_detail(),
+                )
+        else:
+            conflicting_reports = 0
         if view is not None and view.merge_state_status == "BEHIND":
             update = runner.run(
                 argv=pr_update_branch_argv(plan=plan, number=view.number),
@@ -211,6 +235,15 @@ def outcome_after_await(  # noqa: PLR0913 — kw-only disposition; each field is
             fabro_run_id=run_id,
         )
     return merged
+
+
+def _reports_overtaken_arming(*, view: PrView) -> bool:
+    """One poll's reading, routed through the pure decision that owns the rule."""
+    return reports_base_advanced_after_arming(
+        state=view.state,
+        auto_merge_armed=view.auto_merge_armed,
+        merge_state_status=view.merge_state_status,
+    )
 
 
 def _view_pr(
