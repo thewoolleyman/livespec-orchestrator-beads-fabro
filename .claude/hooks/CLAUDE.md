@@ -40,14 +40,36 @@ because a crashing PreToolUse hook wedges every tool call in the session. The
 one sanctioned fail-open inside the decision is the Bash tokenizer, since a
 lexer error must not refuse legitimate work.
 
-## The sandbox path policy
+## The sandbox path guard
 
-`livespec_sandbox_path_policy.py` is the pure decision behind the `contracts.md`
-paragraph "The run's working tree survives the agent." (Scenario 180): which
-paths a factory run cannot survive losing, which paths an executed destructive
-segment of a shell command would act on, and whether either destroys the other.
+Two modules enforcing the `contracts.md` paragraph "The run's working tree
+survives the agent." (Scenario 180) for the Claude adapter:
 
-Three properties an editor must not invert. The protected set is DISCOVERED
+- `livespec_sandbox_path_guard.py` — the PreToolUse entry point and the only
+  IO: the environment, the sandbox-root listing, the symlink resolutions, and
+  the hook's stdout contract. Registered in `.claude/settings.json` on `Bash`.
+- `livespec_sandbox_path_policy.py` — the pure decision: which paths a factory
+  run cannot survive losing, which paths an executed destructive segment of a
+  shell command would act on, and whether either destroys the other.
+
+It is repo-local rather than plugin-distributed, and the reason is one step on
+from the test-first order guard's. The plugin reaches a consuming project
+through a PINNED CACHE build, so a hook registered there protects the build it
+was released in rather than the tree a run has checked out; this guard has to
+travel with that tree. It is also invoked with a bare `python3` and never
+through a resolved virtualenv, because a guard that fails to START is a guard
+that does not protect.
+
+Scope note, so the next reader does not take it for an omission: the governing
+paragraph applies to every ACP adapter whose runtime offers a hook that runs
+before each shell command, and the Codex adapter's runtime DOES offer one —
+`codex-acp` 0.16.0 embeds codex-rs's `hook_runtime`, whose `PreToolUse` event,
+`hooks/hooks.json` registration and per-project `trusted_hash` gate are all
+present in the shipped binary. Reaching it needs the Dispatcher to project a
+`hooks.json` into the sandbox `$CODEX_HOME`, which no assertion of this
+work-item covers. That projection is unbuilt, not refused.
+
+Three properties of the policy an editor must not invert. The protected set is DISCOVERED
 from the layout the caller can read rather than configured, because the two
 engine layouts put the clone in different places and nothing in the sandbox
 announces which. That discovery is also what makes the policy INERT outside a

@@ -387,6 +387,7 @@ supervisor_entry_files = [
     ".claude-plugin/scripts/bin/_bootstrap.py",
     ".claude/hooks/beads_access_guard.py",
     ".claude/hooks/livespec_footgun_guard.py",
+    ".claude/hooks/livespec_sandbox_path_guard.py",
     ".claude/hooks/livespec_tdd_order_guard.py",
     ".claude-plugin/hooks/codex_yolo_reapply.py",
     # Exact research entry points: the runner emits its evidence receipt and
