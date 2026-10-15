@@ -792,6 +792,36 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   string no import graph can see, and a rename on either side drops the node
   onto the stdin fallback — the placeholder on one engine, nothing on the other.
 
+- `test_sandbox_clone_git_identity.py` and
+  `test_needs_human_preservation_committer_identity.py` — bind work-item
+  bd-ib-lsr3vf against Scenario 176: on the Petri engine the sandbox clone
+  carries no `user.name` and no `user.email`, because the engine applies its
+  configured `git_identity` to its OWN per-node checkpoint commits only, so a
+  SCRIPT node that creates commits itself has no committer. The first module
+  runs the ACTUALLY RENDERED identity prepare steps in a real clone and then the
+  shipped `publish_draft` script against a default branch that advanced after
+  the clone was taken, which is what gives the refresh rebase a commit to
+  create; the second runs the shipped `needs_human` terminal and reads the
+  preserved commit's author AND committer off the pushed ref. Both execute
+  rather than match text, because a step that writes the right keys in the wrong
+  scope, or after the node that needs them, renders identically to one that
+  works. Three things are load-bearing. The fixtures leave the clone with NO
+  identity in ANY scope — `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` at
+  `/dev/null`, no `GIT_AUTHOR_*` or `GIT_COMMITTER_*` in the child environment,
+  and every provisioning commit supplying its identity per invocation with
+  `git -c` — since the host's own `~/.gitconfig` would make every case pass and
+  an agent-set identity is exactly what made the defect intermittent in
+  production (canary 12 passed only because a tool call had run `git config
+  user.name` first). The expected pair is read back off the rendered overlay's
+  OWN env table rather than off a constant, because a renderer projecting one
+  pair into the config and another into `LIVESPEC_GIT_AUTHOR_NAME` would
+  attribute one commit two ways. And each module's control is the measured
+  failure with only the identity steps withheld: for `publish_draft` that is
+  exit 128 on "Committer identity unknown", and for `needs_human` it is the
+  expensive shape rather than a visible one — `PRESERVED` is still reported and
+  the ref still exists, at the last commit the clone already had, so only the
+  preserved BLOB discriminates.
+
 - `test_watchdog_bound_run_poll_scenario173.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 173 and the `contracts.md` paragraph it
   exercises (the Dispatcher progress watchdog's "Observing the run"): once the
