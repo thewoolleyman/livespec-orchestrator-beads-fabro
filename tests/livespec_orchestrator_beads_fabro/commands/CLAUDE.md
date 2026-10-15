@@ -99,6 +99,22 @@ Tests for the thin-transport command modules under
   reply list would make that absence look like an unconsumed element, which is
   also what a reordered pair looks like.
 
+- `test_provider_exhaustion_executed_domain.py` and
+  `test_fabro_message_only_executed_candidate.py` complete that attribution's
+  grading, and both are CONTROLS: they pin consequences of the two cases above
+  rather than behaviour of their own, so neither could fail before the
+  attribution landed and both were committed on the suite-green leg. The first
+  grades the hold's SCOPE — a provider value is only right in so far as the
+  record written under it holds the right dispatches and admits the rest — and
+  its negative case sits on the SAME journal as its positive, because a hold
+  that refuses everything satisfies the positive edge exactly as well as a
+  correct one does. The second grades the Petri-era shape, where the failure
+  block is RUN-LEVEL and the failing attempt can only be read out of the
+  `stages` map; its own control is the list-shaped `stages` that carries no
+  per-stage state, which establishes no identity and is asserted to keep the
+  v107 attribution so a later reader does not mistake that degradation for a
+  defect.
+
 - `test_dispatcher_fabro_currency.py`,
   `test_dispatcher_fabro_currency_sources.py`,
   `test_dispatcher_fabro_release_cache.py`,
