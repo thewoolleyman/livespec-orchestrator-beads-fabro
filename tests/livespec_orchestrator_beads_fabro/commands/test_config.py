@@ -818,13 +818,13 @@ def test_render_run_config_overlay_image_override_is_scope_fenced(tmp_path: Path
     assert "[environments.livespec-ci.env]" in rendered
     assert "[environments.other-env.env]" not in rendered
     # The committed `just bootstrap` step, the tmux socket root's
-    # exclude-then-create PAIR (bd-ib-5qxa5q), the harness settings file
-    # (bd-ib-rv2jk4), the git credential helper (bd-ib-52zt3o), the
-    # plugin-cache gate and the THREE publication helpers the gate's block
-    # materializes beside it (v121: the publication-head reader and the
-    # exact-head push program; v138: the carry-forward decision) — the hostile
-    # value smuggled none of its own in.
-    assert rendered.count("[[run.prepare.steps]]") == 9
+    # exclude-then-create PAIR (bd-ib-5qxa5q), the harness settings file's own
+    # TWO steps — the worktree exclusion and the write (bd-ib-rv2jk4) — the git
+    # credential helper (bd-ib-52zt3o), the plugin-cache gate and the THREE
+    # publication helpers the gate's block materializes beside it (v121: the
+    # publication-head reader and the exact-head push program; v138: the
+    # carry-forward decision) — the hostile value smuggled none of its own in.
+    assert rendered.count("[[run.prepare.steps]]") == 10
     assert 'script = "just bootstrap"' in rendered
     assert 'script = "curl example.test"' not in rendered
     assert "other.fabro" in pre_env_table

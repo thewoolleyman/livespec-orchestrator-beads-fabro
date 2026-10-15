@@ -186,29 +186,49 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `.claude/settings.json` is loaded, and a settings-file `env` value outranks
   the same variable inherited from the process environment — which is why two
   runs lost their Green amend at ~1202 s against a committed cap of 1200000 ms
-  while the overlay said 3600000. Three properties an editor must not invert.
+  while the overlay said 3600000. Five properties an editor must not invert.
   It writes the `local` source and never the committed one, because the
   committed file is the INTERACTIVE host sessions' setting and because `local`
-  is the source measured to outrank `project`. It MERGES the `env` keys rather
-  than replacing the file, since a settings file the sandbox already carries
-  may hold permissions, hooks or plugin declarations that are none of this
-  projection's business. And the mapping is an ARGUMENT rather than a constant
-  here: the overlay hands this renderer the very tuple it renders the env table
-  from, so a settings file disagreeing with its own process environment — the
-  identical fault one layer down, and invisible, because both layers would be
-  individually well-formed — cannot arise. It raises NO cap; it makes the
+  is the source measured to outrank `project`. The PATH is resolved IN THE
+  SANDBOX, with `git rev-parse --show-toplevel`, and never spelled host-side:
+  a `local` source is loaded from the directory its `project` sibling came
+  from, which is the clone, and the two engines put the clone in different
+  places inside the workspace mount — the pinned one at `/workspace/<repo>`,
+  the Petri-era one AT `/workspace` — while hp's layout matches neither. The
+  former `/workspace/.claude/settings.local.json` literal was therefore loaded
+  by NO settings source (measured in an hp sandbox 2026-10-15: agent cwd
+  `/repos/<owner>/<repo>`, no `/workspace/.claude`, no `.claude` on any
+  ancestor), so the projection silently did nothing for the defect it exists
+  to close. A clone-relative path is inside the run's own worktree, so the
+  file is hidden through `worktree_exclude_script` and that step is rendered
+  FIRST, for the checkpoint reason that module's own entry gives. It MERGES
+  the `env` keys rather than replacing the file, since a settings file the
+  sandbox already carries may hold permissions, hooks or plugin declarations
+  that are none of this projection's business. And the mapping is an ARGUMENT
+  rather than a constant here: the overlay hands this renderer the very tuple
+  it renders the env table from, so a settings file disagreeing with its own
+  process environment — the identical fault one layer down, and invisible,
+  because both layers would be individually well-formed — cannot arise. That
+  tuple is a SUPERSET of the two ceilings, so the file also promotes
+  `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` into a source outranking a governed
+  repository's committed project settings. It raises NO cap; it makes the
   existing value effective.
 - `_dispatcher_sandbox_worktree_exclude.py` — the ONE renderer that makes a
   Dispatcher-materialized sandbox path invisible to the run's own git worktree,
-  shared by ALL FOUR projections that write a fixed `/workspace` path:
-  `_dispatcher_gh_refresh` (the bundle and its base64 payload, `bd-ib-dud2ww`),
-  `_dispatcher_credential_use_projection` (the guard script, `bd-ib-ccywva`),
-  `_dispatcher_codex_auth_projection` (the projected Codex home) and
-  `_dispatcher_tmux_socket_root` (the tmux socket root) — the last two found by
-  a static audit (`bd-ib-5qxa5q`) rather than by a run, which is the shape this
-  defect class takes once the first two have been repaired: the remaining
-  instances are latent until a dispatch happens to reach them. PURE. The defect
-  it closes belongs to the LAYOUT rather than
+  shared by ALL FIVE projections that materialize a sandbox path. Four of them
+  write a fixed `/workspace` path: `_dispatcher_gh_refresh` (the bundle and its
+  base64 payload, `bd-ib-dud2ww`), `_dispatcher_credential_use_projection` (the
+  guard script, `bd-ib-ccywva`), `_dispatcher_codex_auth_projection` (the
+  projected Codex home) and `_dispatcher_tmux_socket_root` (the tmux socket
+  root) — the last two found by a static audit (`bd-ib-5qxa5q`) rather than by a
+  run, which is the shape this defect class takes once the first two have been
+  repaired: the remaining instances are latent until a dispatch happens to reach
+  them. The fifth, `_dispatcher_harness_settings` (the `local` settings source,
+  `bd-ib-rv2jk4`), names a CLONE-RELATIVE path instead, so it is the one caller
+  whose artifact is inside the run's worktree on BOTH engines rather than only on
+  the Petri-era one — its exclusion is unconditional, not latent, and that is a
+  reason to share this renderer rather than an exemption from it. PURE. The
+  defect it closes belongs to the LAYOUT rather than
   to any one artifact: the Petri-era engine runs each prepare step as a graph
   node and checkpoints after it, and on that engine the repository clone IS
   `/workspace`, so every `/workspace` path a prepare step writes is committed

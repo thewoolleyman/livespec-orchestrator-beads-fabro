@@ -31,6 +31,13 @@ environment. This repository's committed file caps `BASH_MAX_TIMEOUT_MS` at
 1200000 ms, so that was the EFFECTIVE cap and two runs lost their Green amend to
 it at ~1202 s (`bd-ib-rv2jk4`). The Dispatcher therefore also writes the `local`
 source, which outranks `project`, leaving the committed file alone.
+
+THAT FILE IS CLONE-RELATIVE, SO IT IS INSIDE THE RUN'S OWN WORKTREE, and the
+assertions below bind the exclusion that hides it beside the write that needs
+it. The ordering is asserted against the ASSEMBLED overlay rather than against
+the block alone, because that is where it competes with every other
+Dispatcher-materialized step, and a file written before its exclusion stands is
+one the writing step's own checkpoint commits into the run branch.
 """
 
 from __future__ import annotations
@@ -70,8 +77,18 @@ _BASH_MAX_TIMEOUT_MS = "3600000"
 _BASH_DEFAULT_TIMEOUT_ENV_LINE = f'BASH_DEFAULT_TIMEOUT_MS = "{_BASH_DEFAULT_TIMEOUT_MS}"\n'
 _BASH_MAX_TIMEOUT_ENV_LINE = f'BASH_MAX_TIMEOUT_MS = "{_BASH_MAX_TIMEOUT_MS}"\n'
 # The `local` settings source the sandbox agent loads AFTER the committed
-# `project` one, so this is the file that decides the effective cap.
-_SETTINGS_LOCAL_PATH = "/workspace/.claude/settings.local.json"
+# `project` one, so this is the file that decides the effective cap. Its path is
+# resolved IN THE SANDBOX, from the clone root, because the two engines put the
+# clone in different places inside the workspace mount and the layout hp runs
+# puts it at neither — see `test_dispatcher_harness_settings`, which owns that
+# measurement. The writer's own word is the step selector here; the exclusion
+# beside it carries the same path as a shell expansion, which is why the two
+# markers differ.
+_SETTINGS_WRITE_MARKER = '"$toplevel/.claude/settings.local.json"'
+_SETTINGS_EXCLUDE_MARKER = "$(git rev-parse --show-toplevel)/.claude/settings.local.json"
+# The inert path the projection used to name, asserted ABSENT from the whole
+# overlay: a settings file there is loaded by no settings source on hp's layout.
+_WORKSPACE_ROOTED_SETTINGS_PATH = "/workspace/.claude/settings.local.json"
 _RAISED_TIMEOUT_ENV_LINES = (_BASH_DEFAULT_TIMEOUT_ENV_LINE, _BASH_MAX_TIMEOUT_ENV_LINE)
 _HARNESS_SHELL_ENV_LINES = (_NO_AUTO_BACKGROUND_ENV_LINE, *_RAISED_TIMEOUT_ENV_LINES)
 
@@ -187,8 +204,8 @@ def test_a_resume_overlay_raises_the_harness_shell_timeouts(tmp_path: Path) -> N
         assert rendered.index(line) > rendered.index(_ENV_TABLE_HEADER)
 
 
-def _settings_steps(*, rendered: str) -> list[str]:
-    """Every prepare step in `rendered` whose script writes the settings file.
+def _prepare_scripts(*, rendered: str) -> list[str]:
+    """Every prepare-step script the overlay carries, in order.
 
     Resolved by PARSING the overlay rather than by counting a substring: the
     block's own comment names the path too, so a substring count would report
@@ -202,7 +219,19 @@ def _settings_steps(*, rendered: str) -> list[str]:
 
     parsed: dict[str, Any] = tomli.loads(rendered)
     steps: list[dict[str, str]] = parsed["run"]["prepare"]["steps"]
-    return [step["script"] for step in steps if _SETTINGS_LOCAL_PATH in step["script"]]
+    return [step["script"] for step in steps]
+
+
+def _settings_steps(*, rendered: str) -> list[str]:
+    """Every prepare step in `rendered` whose script WRITES the settings file."""
+    scripts = _prepare_scripts(rendered=rendered)
+    return [script for script in scripts if _SETTINGS_WRITE_MARKER in script]
+
+
+def _settings_exclude_steps(*, rendered: str) -> list[str]:
+    """Every prepare step in `rendered` that hides the settings file from git."""
+    scripts = _prepare_scripts(rendered=rendered)
+    return [script for script in scripts if _SETTINGS_EXCLUDE_MARKER in script]
 
 
 def _settings_env(*, rendered: str) -> dict[str, str]:
@@ -228,9 +257,31 @@ def test_an_ordinary_dispatch_overlay_writes_the_sandbox_harness_settings_file(
     whatever the governed repository committed for its interactive sessions.
     """
     rendered = _ordinary_overlay(tmp_path=tmp_path)
+    assert _WORKSPACE_ROOTED_SETTINGS_PATH not in rendered
     settings_env = _settings_env(rendered=rendered)
     assert settings_env["BASH_DEFAULT_TIMEOUT_MS"] == _BASH_DEFAULT_TIMEOUT_MS
     assert settings_env["BASH_MAX_TIMEOUT_MS"] == _BASH_MAX_TIMEOUT_MS
+
+
+def test_an_ordinary_dispatch_overlay_hides_the_settings_file_before_writing_it(
+    tmp_path: Path,
+) -> None:
+    """The exclusion reaches a real overlay, and it precedes the writer.
+
+    `test_dispatcher_harness_settings` binds the exclusion to the shared
+    renderer; this binds it to the assembled overlay, where the ORDER against
+    every other materialized step is decided. A clone-relative path sits inside
+    the run's worktree, so the step that writes it is the step whose checkpoint
+    commits it into the run branch and the draft pull request unless the
+    exclusion already stands.
+    """
+    rendered = _ordinary_overlay(tmp_path=tmp_path)
+    scripts = _prepare_scripts(rendered=rendered)
+    excludes = _settings_exclude_steps(rendered=rendered)
+    writes = _settings_steps(rendered=rendered)
+    assert len(excludes) == 1, excludes
+    assert len(writes) == 1, writes
+    assert scripts.index(excludes[0]) < scripts.index(writes[0])
 
 
 def test_a_resume_overlay_writes_the_sandbox_harness_settings_file_exactly_once(
@@ -245,7 +296,9 @@ def test_a_resume_overlay_writes_the_sandbox_harness_settings_file_exactly_once(
     """
     rendered = _resume_overlay(tmp_path=tmp_path)
     assert f"refs/heads/{_RESUME_BRANCH}" in rendered
+    assert _WORKSPACE_ROOTED_SETTINGS_PATH not in rendered
     assert len(_settings_steps(rendered=rendered)) == 1
+    assert len(_settings_exclude_steps(rendered=rendered)) == 1
     settings_env = _settings_env(rendered=rendered)
     assert settings_env["BASH_DEFAULT_TIMEOUT_MS"] == _BASH_DEFAULT_TIMEOUT_MS
     assert settings_env["BASH_MAX_TIMEOUT_MS"] == _BASH_MAX_TIMEOUT_MS
