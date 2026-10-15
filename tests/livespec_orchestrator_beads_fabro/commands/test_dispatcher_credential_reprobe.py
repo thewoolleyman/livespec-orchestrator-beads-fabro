@@ -291,6 +291,17 @@ def test_a_rotation_in_the_wrapper_retires_a_parked_wait(
 
     `os.environ` keeps the stale value for the whole wait, exactly as a parked
     loop's process does, so the resumption can only have come from the wrapper.
+
+    The sleep is the BOUNDED guard rather than a plain collector, because this
+    case is the one whose detector the defect would otherwise disarm. The probe
+    here is keyed on the TOKEN, so an implementation that re-reads the launch
+    environment is handed the stale value every round and never reports usable
+    — and since the wait is retired by the probe alone, nothing else ends it.
+    With an unbounded sleep that is an infinite loop: measured by mutating this
+    module's `token=rotated.token` back to the launch-time read, the case did
+    not fail, it hung until the harness killed it at exit 143. A stage timeout
+    is the wrong report for a defect this test can name, so the ceiling turns
+    it back into one assertion.
     """
     reprobe = _reprobe()
     monkeypatch.setenv(CLAUDE_OAUTH_TOKEN_ENV, _STALE_TOKEN)
@@ -298,19 +309,19 @@ def test_a_rotation_in_the_wrapper_retires_a_parked_wait(
     journal = _journal(repo=repo)
     probed: list[str] = []
     runner = _wrapper_printing(tokens=[_STALE_TOKEN, _ROTATED_TOKEN])
-    slept: list[float] = []
+    slept = _BoundedSleep(ceiling=_UNBOUNDED_WAIT_CEILING)
 
     reprobe.await_usable_credential(
         repo=repo,
         journal=journal,
         budget=2,
         probe=_token_keyed_probe(usable_token=_ROTATED_TOKEN, probed=probed),
-        sleep=slept.append,
+        sleep=slept,
         runner=runner,
     )
 
     assert probed == [_STALE_TOKEN, _ROTATED_TOKEN]
-    assert slept == [11]
+    assert slept.calls == [11]
     assert runner.calls == [[*_WRAPPER, "printenv", CLAUDE_OAUTH_TOKEN_ENV]] * 2
     refused = _refusals(journal=journal, reprobe=reprobe)
     assert len(refused) == 1
