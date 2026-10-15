@@ -852,6 +852,7 @@
     "heading": "## Scenario 177 \u2014 A repository hook that outlives its limit is reaped and named, and publish_draft's limit is configurable",
     "work_item": "bd-ib-xi63mq",
     "first_seen": "2026-10-13"
+<<<<<<< HEAD
   },
   {
     "spec_root": "SPECIFICATION",
@@ -887,5 +888,7 @@
     "heading": "## Scenario 185 \u2014 A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch",
     "work_item": "bd-ib-qgcpoc",
     "first_seen": "2026-10-15"
+=======
+>>>>>>> 574c8112 (feat: complete a sandbox commit past one tool call (bd-ib-sufca7))
   }
 ]

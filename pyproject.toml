@@ -529,6 +529,7 @@ destructive_cli_allowlist = [
 #   `PATH`-free absolute paths, with an explicit `env` for every child of the
 #   stage; the fixture `git` calls, the only ones that inherit anything, scrub
 #   COVERAGE_PROCESS_START + COV_CORE_* through `_fixture_git_env`.
+<<<<<<< HEAD
 # - test_pr_refresh_carry_forward_scenario178.py runs the MATERIALIZED
 #   carry-forward decision program, for the publication-head reason above plus
 #   one of its own: the decision ITSELF spawns processes. Every input is a git
@@ -540,6 +541,19 @@ destructive_cli_allowlist = [
 #   it would exercise the ladder and leave the readings and the replay — the
 #   half a reader cannot check by eye — untested. It scrubs the child env
 #   exactly as an allowlisted spawn must, by passing an explicit `env`.
+=======
+# - test_sandbox_commit_runner_scenario179.py runs the MATERIALIZED sandbox
+#   commit runner the Dispatcher lands in the sandbox. The whole claim under
+#   test is that a commit SURVIVES the death of the process that started it:
+#   the runner detaches the commit into its own session, and an identity
+#   returned before the hook finishes, a bounded wait that returns while the
+#   hook still runs, and a signal death reporting `no-verdict` rather than a
+#   pass are each properties of real separate processes. There is no Python
+#   entry point for the program, and a Python reimplementation would grade a
+#   runner this repository does not ship. Every child gets an explicit `env`
+#   from `_child_env()`, which scrubs COVERAGE_PROCESS_START + COV_CORE_*
+#   exactly as an allowlisted spawn must.
+>>>>>>> 574c8112 (feat: complete a sandbox commit past one tool call (bd-ib-sufca7))
 #
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables
 # below (same TOML attachment reason as `destructive_cli_allowlist`).
@@ -565,7 +579,11 @@ subprocess_spawn_allowlist = [
     "tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_publication_head.py",
     "tests/integration/test_scripted_publication_execution.py",
     "tests/integration/test_scripted_refresh_execution.py",
+<<<<<<< HEAD
     "tests/integration/test_pr_refresh_carry_forward_scenario178.py",
+=======
+    "tests/integration/test_sandbox_commit_runner_scenario179.py",
+>>>>>>> 574c8112 (feat: complete a sandbox commit past one tool call (bd-ib-sufca7))
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]
