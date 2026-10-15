@@ -5846,6 +5846,33 @@ Feature: A judged Definition-of-Done defect is found before a dispatch is spent 
     Given an item held by the pre-admission judgement
     When needs-attention composes hygiene facts
     Then a hygiene fact names the item and its verdict's first remedy
+  Scenario: An item that reached ready without admission is judged before dispatch
+    Given an implement-kind item released to ready through resolve-blocked whose References line omits the scenario that governs its assertion
+    When the Dispatcher selects the item for a dispatch
+    Then the Definition-of-Done judgement runs before any claim is taken
+    And the dispatch is refused before any factory run is created, naming the judgement's finding text
+    And the verdict, with each remedy, is appended to the item as a ledger comment
+    And the item remains ready
+  Scenario: A judgement that cannot run before dispatch does not refuse the dispatch
+    Given the pre-dispatch judgement cannot run for a selected item
+    When the Dispatcher dispatches the item
+    Then the dispatch proceeds as it would without the judgement
+    And a ledger comment records that the pre-dispatch judgement did not run and why
+  Scenario: A refused item is not judged or commented again while it is unchanged
+    Given an item whose pre-dispatch judgement refused it and whose effective criteria and referenced headings are unchanged since
+    When the Dispatcher's drain enumerates dispatch candidates
+    Then the item is excluded from the candidates
+    And no further judgement runs and no further ledger comment is appended for it
+    And needs-attention lists the item with its verdict's first remedy
+  Scenario: A refused item re-enters enumeration and is judged once after its criteria change
+    Given an item excluded from drain candidates by a pre-dispatch refusal
+    And its effective criteria or referenced headings have changed since that verdict was taken
+    And the judgement of the changed criteria would still rest the item at needs-human
+    When the Dispatcher's drain enumerates dispatch candidates
+    Then the item is included among the candidates
+    And the pre-dispatch judgement runs exactly once against the changed criteria before any claim is taken
+    And the dispatch is refused before any factory run is created
+    And exactly one new verdict comment is appended to the item
 ```
 
 ## Scenario 175 — A run past the whole-run wall budget is exported, cancelled and rested for a human
