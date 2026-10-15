@@ -6531,3 +6531,55 @@ Feature: Default-branch movement after pr_refresh is absorbed inside the run, an
     When the operator releases the hold
     Then the release refuses, naming the head comparison that failed, and the pull request stays unarmed
 ```
+
+## Scenario 185 — A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch
+
+```gherkin
+Feature: Recovery routing for an automatically released item
+
+  Scenario: A first-stall-released item in a drain wave resumes while its wave-mates dispatch plainly
+    Given a ready item released after a first stall cancel whose cancel record anchors a resume
+    And a second ready item in the same drain wave with no earlier dispatch
+    When the drain routes, admits and launches the wave
+    Then the released item's resume preconditions are graded while it is ready, before admission
+    And the released item's run enters at the anchored node on the anchored head under the Dispatcher's own invoker identity
+    And the journal carries a resume record and neither a publish-branch-reclaim nor a publish-branch-reclaim-held record for it
+    And the second item's run starts at start on the default branch with no resume head
+
+  Scenario: An unanchorable released item is seeded from verified preserved work
+    Given a ready released item whose resume is inapplicable and whose failed run has a verified preserved commit
+    When the Dispatcher routes and launches it
+    Then its run checks out the recorded commit SHA
+    And its seed record names the source run, remote, immutable commit SHA and preservation reference
+    And the publish branch is reclaimed only after that preservation is verified
+
+  Scenario: A capacity-deferred released item is untouched
+    Given a ready released item that recovery routing assigned the resume route
+    When the admission valve defers it for capacity
+    Then its publish branch and pull request are unchanged and no resume record is journaled
+    And no recovery-held record is journaled for it
+
+  Scenario: An unobservable measurement holds the item without reclaim
+    Given a ready released item whose forge or factory measurement cannot be taken
+    When the Dispatcher routes it
+    Then the item stays ready and is not admitted in that pass
+    And the journal carries a recovery-held record naming the measurement
+    And no publish-branch reclaim runs for it
+
+  Scenario: A live ownership lock holds a released item that has preserved work
+    Given a ready released item whose resume is inapplicable and whose failed run has a verified preserved commit
+    And the item's dispatch-scoped ownership lock exists and its process is alive
+    When the Dispatcher routes it
+    Then the route is held, not seeded
+    And the journal carries a recovery-held record naming the live ownership lock, its age and the wait-or-confirm-liveness remedy
+    And the item is not admitted in that pass and no publish-branch reclaim runs for it
+    And under dispatch --item the dispatch exits with code 3 naming the live ownership lock before any run exists
+
+  Scenario: A merged pull request holds a released item and keeps the reconcile-merged remedy
+    Given a ready released item whose publish branch carries a merged pull request
+    And its failed run has a verified preserved commit
+    When the Dispatcher routes it
+    Then the route is held, neither seeded nor fresh
+    And the journal carries a recovery-held record naming the merged state and the remedy reconcile-merged --item
+    And no publish-branch reclaim runs for it
+```

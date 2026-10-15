@@ -1745,8 +1745,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Ratified 2026-10-12 by the stall-watchdog-cancel-recovery revision (plan stall-watchdog-false-kills, epic bd-ib-laf735). Integration-tier tests are owed for the watchdog liveness rule (bd-ib-qsk4o5), the not-non-convergence routing and second-cancel rest (bd-ib-nfbyot), and the release-and-resume recovery from a cancel record (bd-ib-3snvbf); bd-ib-3snvbf owns the binding.",
-    "work_item": "bd-ib-3snvbf"
+    "reason": "Ratified 2026-10-12 by the stall-watchdog-cancel-recovery revision (plan stall-watchdog-false-kills, epic bd-ib-laf735). Integration-tier tests are owed for the watchdog liveness rule (bd-ib-qsk4o5), the not-non-convergence routing and second-cancel rest (bd-ib-nfbyot), the cancel-record resume anchor (bd-ib-3snvbf), and the released item's resume or seeded re-dispatch (bd-ib-qgcpoc). Revision v147 re-pointed this binding from bd-ib-3snvbf to bd-ib-qgcpoc after bd-ib-3snvbf's Definition of Done was re-cut on 2026-10-15; bd-ib-qgcpoc, the last carrier to land, owns the binding.",
+    "work_item": "bd-ib-qgcpoc"
   },
   {
     "heading": "## Scenario 173 \u2014 The progress watchdog observes its bound run by id and never lists the factory's run history",
@@ -1830,5 +1830,13 @@
     "test": "TODO",
     "reason": "Ratified by the revision accepting proposal pr-arm-after-base-advance (plan pr-refresh-reproof-relevance, epic bd-ib-ku7phe). The pr_route routing, the rejected-arming diagnostic, the pr_refresh disarm and the base-advanced-after-arming ending are not implemented yet; an integration-tier test is owed for the six sub-scenarios, and work-item bd-ib-3hpdvm implements them and owns that binding.",
     "work_item": "bd-ib-3hpdvm"
+  },
+  {
+    "heading": "## Scenario 185 \u2014 A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by revision v147 accepting proposal released-item-recovery-routing (plan stall-watchdog-false-kills, epic bd-ib-laf735). Recovery routing is not implemented yet; an integration-tier test is owed for the six sub-scenarios, and work-item bd-ib-qgcpoc implements them and owns that binding. The same mechanism discharges the shared provider-limit carriers bd-ib-ogymgj and bd-ib-kn7ktk.",
+    "work_item": "bd-ib-qgcpoc"
   }
 ]
