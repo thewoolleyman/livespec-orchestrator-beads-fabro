@@ -507,7 +507,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 172 \u2014 A stall-watchdog cancel is never non-convergence: a first cancel is released and recovered, a second rests for a human",
-    "work_item": "bd-ib-3snvbf",
+    "work_item": "bd-ib-qgcpoc",
     "first_seen": "2026-10-12"
   },
   {
@@ -879,6 +879,13 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario 184 \u2014 The default branch advancing between pr_refresh and the arming re-enters pr_refresh, and an armed pull request it overtakes rests at needs-human with a named cause",
     "work_item": "bd-ib-3hpdvm",
+    "first_seen": "2026-10-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 185 \u2014 A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch",
+    "work_item": "bd-ib-qgcpoc",
     "first_seen": "2026-10-15"
   }
 ]
