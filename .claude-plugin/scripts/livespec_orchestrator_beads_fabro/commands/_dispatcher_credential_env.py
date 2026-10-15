@@ -33,7 +33,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
-    CLAUDE_OAUTH_TOKEN_ENV,
     ClaudeCredentialStatus,
     absent_claude_credential_status,
 )
@@ -41,6 +40,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential_io
     probe_claude_credential,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper import (
+    WRAPPER_INJECTED_CREDENTIAL_ENV_NAMES,
     credential_wrapper_text,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
@@ -55,16 +55,17 @@ __all__: list[str] = [
     "projected_credential_env_name",
 ]
 
-_DISPATCH_REQUIRED_CREDENTIALS = (
-    "GITHUB_APP_ID",
-    "GITHUB_PRIVATE_KEY",
-    "BEADS_DOLT_PASSWORD",
-    CLAUDE_OAUTH_TOKEN_ENV,
-)
-
 
 def dispatch_required_credentials_text() -> str:
-    return ", ".join(_DISPATCH_REQUIRED_CREDENTIALS)
+    """The per-wrapper credential set, as the refusal an operator reads names it.
+
+    Composed from the list `_dispatcher_credential_wrapper` owns, which is also
+    the set the loop's credential re-resolution empties for its child. ONE list,
+    so the refusal naming what the wrapper must inject and the re-resolution
+    emptying what it injected cannot come to disagree about which names those
+    are.
+    """
+    return ", ".join(WRAPPER_INJECTED_CREDENTIAL_ENV_NAMES)
 
 
 def projected_credential_env_name() -> str:

@@ -178,9 +178,18 @@ def test_credentials_cluster_importable_from_new_module_and_private_names_remove
     # injects its credential environment", which is a configuration read rather
     # than a credential projection. Pinned here, and pinned as GONE from the
     # module it left, so the move cannot regress into a re-export shim.
+    #
+    # WHAT the wrapper injects is public from here for the same cohesion reason,
+    # and as ONE list: the credential assessment names it in the refusal an
+    # operator reads, and the loop's credential re-resolution empties every name
+    # in it for the child it spawns. A second copy of that list drifts silently,
+    # and the direction it drifts in is a credential nobody empties — which is
+    # the near-empty cached wrapper diff the emptying exists to prevent.
     assert set(_dispatcher_credential_wrapper.__all__) == {
+        "WRAPPER_INJECTED_CREDENTIAL_ENV_NAMES",
         "credential_wrapper_text",
         "read_dispatch_target_credential_wrapper",
+        "wrapper_injected_child_env",
     }
     assert "read_dispatch_target_credential_wrapper" not in _dispatcher_credentials.__all__
     assert set(_dispatcher_credentials.__all__) == credential_public_names
