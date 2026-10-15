@@ -1793,5 +1793,13 @@
     "test": "TODO",
     "reason": "Ratified 2026-10-15 by the v137 revision (proposal sandbox-commit-leg-completion; plan sandbox-commit-gate-ceiling, epic bd-ib-qy5wol). The sandbox commit runner is not implemented yet; an integration-tier test is owed for the four sub-scenarios, and work-item bd-ib-sufca7 implements them and owns that binding.",
     "work_item": "bd-ib-sufca7"
+  },
+  {
+    "heading": "## Scenario 178 \u2014 A refresh that brings in only inert paths carries the verified proof forward, and anything else re-proves",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified 2026-10-14 by the pr-refresh-reproof-relevance revision (plan pr-refresh-reproof-relevance, epic bd-ib-ku7phe). The pr_refresh proof carry-forward decision is not implemented yet; an integration-tier test is owed for the thirty-one sub-scenarios, and work-item bd-ib-v4exlm implements the decision and owns that binding.",
+    "work_item": "bd-ib-v4exlm"
   }
 ]

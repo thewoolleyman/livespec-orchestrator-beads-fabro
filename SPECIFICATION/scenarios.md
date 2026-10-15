@@ -4124,6 +4124,7 @@ Feature: Proof of Done is captured and independently reproduced before publicati
   Scenario: Slow hooks after a post-draft rebase are command work
     Given a draft and verified proof on the run's own recorded head
     And the default branch advanced after publish_draft
+    And an incoming commit changes a path outside every inert class
     And the sandbox pre-push aggregate takes longer than the agent foreground timeout
     When pr_refresh rebases the branch
     Then the declared sandbox check suite completes as a foreground command
@@ -4648,6 +4649,7 @@ Feature: A published run is finished, not rebuilt
   Scenario: A resumed publication refreshes proof after a changed head
     Given a terminated run with verified proof on its published head
     And origin still names that head but the default branch has advanced
+    And an incoming commit changes a path outside every inert class
     When resume enters pr_refresh and rebases the publish branch
     Then the declared gate runs before the leased push
     And fresh capture, review and replay run for the new head before pr
@@ -6045,6 +6047,208 @@ Feature: Repository hooks inside a sandbox stay within, and are named against, t
     When a later stage ends the run at needs-human for a different cause
     Then the needs-human cause recorded on the item names that later cause
     And the dispatch journal still carries the earlier hook-over-limit row
+```
+
+## Scenario 178 — A refresh that brings in only inert paths carries the verified proof forward, and anything else re-proves
+
+```gherkin
+Feature: A pr_refresh re-proves only when the incoming commits could change what the proof observed
+  As the maintainer of a repository dispatched to the factory
+  I want a verified proof carried across a refresh whose incoming commits cannot affect it
+  So that a run is not sent round capture, review and replay for changes it cannot observe
+
+  Scenario: A refresh that brings in only plan notes carries a file-read proof forward
+    Given a run whose verified record on head V states Working directory: . and has the single reproduction step grep -n "ledger comment" AGENTS.md with its read identity line for AGENTS.md
+    And the item's diff changes only AGENTS.md
+    And the default branch advanced with commits that change only paths beneath plan/
+    When pr_refresh rebases the branch cleanly, the gate passes, the leased push yields head N with an unchanged patch identity, and the mechanical replay prints exactly the captured proof
+    Then the pull request carries one carried_forward record naming V, N, the incoming range and paths, the observation scope AGENTS.md and both patch identities
+    And the run proceeds from pr_refresh to pr without visiting proof_capture, review or proof_verify
+    And pr marks the draft ready for head N
+
+  Scenario: An incoming change outside the inert classes re-proves
+    Given a run whose verified record on head V reads only AGENTS.md
+    And the default branch advanced with a commit that changes a Python module the item does not touch
+    When pr_refresh rebases the branch cleanly and pushes head N
+    Then the pull request carries one reproof_required record naming that module as an incoming path outside every inert class
+    And the run enters proof_capture for head N, then review and proof_verify, before pr
+
+  Scenario: A proof that runs an operation is outside the direct-read grammar
+    Given a run whose verified record has a reproduction step that invokes list-plans --json
+    And the default branch advanced with commits that change only paths beneath plan/
+    When pr_refresh rebases the branch cleanly and pushes head N
+    Then the reproof_required record names that step as outside the direct-read grammar
+    And the run enters proof_capture for head N
+
+  Scenario: A recursive or directory read is outside the direct-read grammar
+    Given a run whose verified record has the reproduction step grep -rn "Scenario 178" SPECIFICATION/
+    When pr_refresh pushes a changed head
+    Then the reproof_required record names that step as outside the direct-read grammar
+
+  Scenario: A glob in a reproduction step is outside the direct-read grammar
+    Given a run whose verified record has the reproduction step cat plan/*/research/001.md
+    When pr_refresh pushes a changed head
+    Then the reproof_required record names that step as outside the direct-read grammar
+
+  Scenario: A non-canonical path is canonicalized before it is compared
+    Given a run whose verified record has the reproduction step cat ./plan//topic/research/001.md
+    And the default branch advanced with a commit that changes plan/topic/research/001.md
+    When pr_refresh pushes a changed head
+    Then the reproof_required record names plan/topic/research/001.md as an incoming path inside the observation scope
+
+  Scenario: A parent segment in a path operand is rejected
+    Given a run whose verified record has the reproduction step cat docs/../AGENTS.md
+    When pr_refresh pushes a changed head
+    Then the reproof_required record names that path operand as rejected
+
+  Scenario: A path read through a symbolic link is rejected
+    Given a run whose verified record has the reproduction step cat alias/note.md where alias is a symbolic link to plan/sub at both heads
+    When pr_refresh pushes a changed head
+    Then the reproof_required record names that path operand as rejected
+
+  Scenario: A substitution hidden in a double-quoted pattern is outside the direct-read grammar
+    Given a run whose verified record has the reproduction step grep -n "$(cat plan/topic/pattern.txt)" AGENTS.md
+    And the default branch advanced with a commit that changes only plan/topic/pattern.txt
+    When pr_refresh pushes a changed head
+    Then the reproof_required record names that step as outside the direct-read grammar
+    And the run enters proof_capture
+
+  Scenario: A verified record that does not state the repository root as its working directory re-proves
+    Given a run whose verified record has the reproduction step cat note.md and no Working directory: . line
+    When pr_refresh pushes a changed head
+    Then the reproof_required record names every step as outside the direct-read grammar
+
+  Scenario: A read with no file operand is outside the direct-read grammar
+    Given a run whose verified record has the reproduction step cat with no operand
+    When pr_refresh pushes a changed head
+    Then the reproof_required record names that step as outside the direct-read grammar
+
+  Scenario: An option-shaped grep pattern is outside the direct-read grammar
+    Given a run whose verified record has the reproduction step grep -F '-fplan/topic/pattern.txt' AGENTS.md
+    And the default branch advanced with a commit that changes only plan/topic/pattern.txt
+    When pr_refresh pushes a changed head
+    Then the reproof_required record names that step as outside the direct-read grammar
+
+  Scenario: A dash operand is outside the direct-read grammar
+    Given a run whose verified record has the reproduction step cat -
+    When pr_refresh pushes a changed head
+    Then the reproof_required record names that step as outside the direct-read grammar
+
+  Scenario: A git show of an unchanged file carries forward
+    Given a run whose verified record states Working directory: . and has the single reproduction step git show HEAD:AGENTS.md
+    And the item's diff changes only AGENTS.md
+    And the default branch advanced with commits that change only paths beneath plan/
+    When pr_refresh rebases cleanly and pushes head N with an unchanged patch identity
+    Then the carried_forward record names AGENTS.md as the observation scope
+    And the run proceeds from pr_refresh to pr
+
+  Scenario: A git show of a changed file re-proves
+    Given a run whose verified record has the reproduction step git show HEAD:plan/topic/note.md
+    And the default branch advanced with a commit that changes plan/topic/note.md
+    When pr_refresh pushes a changed head
+    Then the reproof_required record names plan/topic/note.md as an incoming path inside the observation scope
+
+  Scenario: A rebased diff that differs from the verified diff re-proves
+    Given a run whose verified record on head V reads only AGENTS.md
+    And the default branch advanced with commits that change only paths beneath plan/
+    When the rebased item diff's patch identity differs from the verified diff's
+    Then the reproof_required record names both patch identities
+    And the run enters proof_capture for the new head
+
+  Scenario: An observed file whose bytes changed re-proves even when the patch identity is equal
+    Given a run whose verified record states Working directory: . and has the single reproduction step wc -c AGENTS.md
+    And the default branch advanced with commits that change only paths beneath plan/
+    When pr_refresh rebases cleanly and the rebased AGENTS.md differs from the verified head's only in whitespace
+    Then the stable patch identities are equal but the blob identities of AGENTS.md differ
+    And the reproof_required record names AGENTS.md as a path whose blob identity differs
+    And the run enters proof_capture for the new head
+
+  Scenario: An observed file whose working-tree bytes differ from the verified read re-proves even when its blob is unchanged
+    Given a run whose verified record states Working directory: . and has the single reproduction step wc -c AGENTS.md with the read identity line for AGENTS.md
+    And the verified sandbox materialized AGENTS.md with CRLF line endings while the refreshed sandbox materializes it with LF
+    And the default branch advanced with commits that change only paths beneath plan/
+    When pr_refresh rebases cleanly and pushes head N with unchanged patch and blob identities
+    Then the reproof_required record names AGENTS.md as a path whose read identity differs from the new head's working-tree bytes
+    And the run enters proof_capture for head N
+
+  Scenario: A verified record without read identities re-proves
+    Given a run whose verified record states Working directory: . and has the reproduction step cat AGENTS.md but no read identity line for AGENTS.md
+    When pr_refresh pushes a changed head
+    Then the reproof_required record names AGENTS.md as a path whose read identity is missing
+
+  Scenario: A step whose mechanical replay output differs from its captured proof re-proves
+    Given a run whose verified record states Working directory: . and has the single reproduction step grep -i 'é' AGENTS.md with its read identity line and a captured proof of two lines
+    And the verified execution ran under a locale in which the search matched both lines
+    And the default branch advanced with commits that change only paths beneath plan/
+    When pr_refresh rebases cleanly and the mechanical replay under LC_ALL=C.UTF-8 prints output that differs from the captured proof
+    Then the reproof_required record names that step as one whose mechanical replay did not reproduce its captured proof
+    And the run enters proof_capture for the new head
+
+  Scenario: A step whose mechanical replay cannot execute re-proves
+    Given a changed-head pr_refresh whose path, patch, blob and read identities all match
+    When the mechanical replay cannot execute a step's command at the new head
+    Then the reproof_required record names that step as one whose mechanical replay did not reproduce its captured proof
+    And the run enters proof_capture for the new head
+
+  Scenario Outline: A step whose captured proof is not exactly one fenced text block re-proves
+    Given a parseable verified record whose step cat AGENTS.md is followed by <count> fenced text blocks
+    When pr_refresh pushes a changed head
+    Then the reproof_required record names that step as one whose captured proof is not exactly one fenced text block
+    And the run enters proof_capture for the new head
+
+    Examples:
+      | count |
+      | 0     |
+      | 2     |
+
+  Scenario: An unreadable input re-proves and names the input
+    Given a changed-head pr_refresh whose verified record cannot be parsed
+    When the stage decides whether the proof covers the new head
+    Then the decision is reproof_required and the record names the unparseable verified record as the unreadable input
+    And the run enters proof_capture
+
+  Scenario: A repaired refresh is never carried forward
+    Given a pr_refresh whose rebase conflicted and took a refresh-repair round
+    When the repaired run is published again
+    Then no carried_forward record is posted for the repaired head
+    And the run passes proof_capture, review and proof_verify before pr_refresh runs again
+
+  Scenario: A second carry-forward is measured against the verified diff
+    Given a run that carried its proof from verified head V to head N1
+    And the default branch advanced again with commits that change only paths beneath plan/
+    When pr_refresh pushes head N2
+    Then the carried_forward record for N2 names V as the verified head and compares N2's patch identity with V's
+    And pr marks the draft ready for head N2
+
+  Scenario: A carry-forward whose record cannot be posted re-proves
+    Given a changed-head pr_refresh whose decision inputs satisfy every carry-forward condition
+    When posting the carried_forward record on the pull request fails
+    Then the run enters proof_capture for the new head
+    And the stage output names the failed post
+
+  Scenario: A re-proof decision whose record cannot be posted still re-proves
+    Given a changed-head pr_refresh whose decision is reproof_required
+    When posting the reproof_required record on the pull request fails
+    Then the run still enters proof_capture for the new head
+    And the stage output names the failed post
+
+  Scenario: A carried-forward head anchors a resume and the pointer
+    Given a run that carried its proof from verified head V to head N and then terminated before pr
+    And the pull request's head is N and its latest proof record is the carried_forward record naming N
+    When the operator drives resume for the item
+    Then the resume anchors at head N and enters pr_refresh before pr
+    And after merge the Proof of Done pointer names both the verified record and the carried_forward record
+    And the acceptance pass grades the factory-captured assertions from the verified record
+
+  Scenario: A reproof_required record is skipped by every reader of the latest proof record
+    Given a pull request whose latest record is a reproof_required record that follows a verified record naming head V
+    When resume or the acceptance pass reads the latest proof record
+    Then it reads the verified record naming head V and not the reproof_required record
+
+  Scenario: pr refuses a head no proof record names
+    Given a run whose latest verified record names head V and whose pull request carries no carried_forward record for head N
+    When pr runs with the pull request at head N
+    Then pr does not mark the draft ready and fails closed naming head N
 ```
 
 ## Scenario 179 — A sandbox commit whose hook outlasts one tool call completes with the hook's own verdict

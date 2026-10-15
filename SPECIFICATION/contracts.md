@@ -3054,28 +3054,28 @@ missing-capability duty takes effect for a repository; that image change
 is sequenced ahead of the gate change. Scenario 139 in `scenarios.md`
 exercises this paragraph and the gate's capability duties below.
 
-**The stages.** The reserved `implement-work-item` workflow MUST carry
-three additional ACP nodes with these names and positions: `dod_gate`,
-the first node after `start` and before `implement`; `proof_capture`,
-entered from `publish_draft` or a changed-head `pr_refresh` and exiting only to `review`; and
-`proof_verify`, entered from `review` and exiting to `pr_refresh` on success. It
-MUST also carry the command node `publish_draft`, entered only from a
-green janitor outcome and exiting to `proof_capture`, which MUST push the
-item's publish branch and, when no pull request for that branch exists,
-open one as a DRAFT; it MUST be idempotent across janitor re-entries and
-MUST fail closed to `needs_human` when origin cannot be reached; a refresh
+**The stages.** The reserved `implement-work-item` workflow MUST carry three
+additional ACP nodes with these names and positions: `dod_gate`, the first node
+after `start` and before `implement`; `proof_capture`, entered from
+`publish_draft` or from a changed-head `pr_refresh` whose decision is
+`reproof_required` ("Proof carry-forward across a refresh" below) and exiting
+only to `review`; and `proof_verify`, entered from `review` and exiting to
+`pr_refresh` on success. It MUST also carry the command node `publish_draft`,
+entered only from a green janitor outcome and exiting to `proof_capture`, which
+MUST push the item's publish branch and, when no pull request for that branch
+exists, open one as a DRAFT; it MUST be idempotent across janitor re-entries
+and MUST fail closed to `needs_human` when origin cannot be reached; a refresh
 that conflicts, or a refreshed head that the repository's gate rejects, MUST
 instead take the refresh-repair route of "Refresh repair" below while that
-route's budget lasts. The command stages `pr_refresh` and `pr` MUST perform publication as specified
-below; the publish breaker (`verify_pr`) retains its existing obligations.
-Each of the three ACP nodes selects its
-adapter through exactly the mechanism the existing ACP nodes use, with
-its own adapter input (`dod_gate_adapter`, `proof_capture_adapter`,
-`proof_verify_adapter`), and migrates with them when that mechanism
-changes; the three nodes are named in the per-node timeout table of
-§"ACP node timeouts", the node list of §"ACP node adapter
-configuration", the defaults table of §"Built-in ACP node defaults", and
-the success-critical enumeration of §"Factory-configurable ACP fallback
+route's budget lasts. The command stages `pr_refresh` and `pr` MUST perform
+publication as specified below; the publish breaker (`verify_pr`) retains its
+existing obligations. Each of the three ACP nodes selects its adapter through
+exactly the mechanism the existing ACP nodes use, with its own adapter input
+(`dod_gate_adapter`, `proof_capture_adapter`, `proof_verify_adapter`), and
+migrates with them when that mechanism changes; the three nodes are named in
+the per-node timeout table of §"ACP node timeouts", the node list of §"ACP node
+adapter configuration", the defaults table of §"Built-in ACP node defaults",
+and the success-critical enumeration of §"Factory-configurable ACP fallback
 priority".
 
 **Scripted publication and proof-head integrity.** `pr_refresh` and `pr`
@@ -3091,18 +3091,22 @@ that the repository-declared gate rejects, MUST take the refresh-repair route of
 cause and recovery artifact pointer once that budget is spent. A previously completed refresh may be
 recognized idempotently from durable run provenance and matching remote state.
 
-When the default branch has advanced beyond the current base, `pr_refresh`
-MUST rebase, run the existing repository-declared `sandbox_check_suite` as a
+When the default branch has advanced beyond the current base, `pr_refresh` MUST
+rebase, run the existing repository-declared `sandbox_check_suite` as a
 foreground command with its own timeout, and push only after that gate passes.
 A rewrite MUST use an explicit lease against the recorded remote head of this
 run's own publish branch. Hooks MUST run normally. It MUST NOT use bare force,
-`--no-verify`, or rewrite another ref. A changed head MUST return to
-`proof_capture`, then `review` and `proof_verify`; only proof for the new head
-can reach final publication. Repeated default-branch movement is bounded to
-three refreshes per run, after which the run terminates with an explicit
-non-convergence cause and preserved work. An unchanged head proceeds to `pr`.
-All touched nodes MUST retain an unconditional outgoing edge accepted by the
-supported engine, and command nonzero exits MUST take their failure edge.
+`--no-verify`, or rewrite another ref. A changed head MUST take the decision of
+"Proof carry-forward across a refresh" below: on `reproof_required` the run
+MUST return to `proof_capture`, then `review` and `proof_verify`, and on
+`carried_forward` it MUST proceed to `pr`; in either case only a proof record
+naming the new head — a `verified` record taken on it, or a `carried_forward`
+record carrying an earlier `verified` record to it — can reach final
+publication. Repeated default-branch movement is bounded to three refreshes per
+run, after which the run terminates with an explicit non-convergence cause and
+preserved work. An unchanged head proceeds to `pr`. All touched nodes MUST
+retain an unconditional outgoing edge accepted by the supported engine, and
+command nonzero exits MUST take their failure edge.
 
 **Refresh repair.** When `publish_draft` or `pr_refresh` cannot refresh the run
 onto the advanced default branch — because the rebase or merge conflicts, or
@@ -3149,18 +3153,141 @@ allow. A refresh that applies cleanly and passes the gate is unchanged by this
 paragraph or the one before it. Scenario 176 in `scenarios.md` exercises both
 paragraphs.
 
+**Proof carry-forward across a refresh.** When `pr_refresh` has refreshed the
+run onto an advanced default branch cleanly — the rebase applied without
+conflict, the repository-declared gate passed, the leased push succeeded, and
+no refresh-repair round ran during this visit — and the head changed, the stage
+MUST decide, before routing, whether the run's verified proof still covers the
+new head. The decision MUST be computed by a deterministic rule from repository
+and record state alone; no language-model judgement MAY take part in it. Its
+inputs are: the *verified record*, the latest `verified` record on the pull
+request attributable to this run (including identifiers a resume links to it);
+the *verified head* and *verified base*, the head that record names and that
+head's merge base with the default branch; the *previous base* and *new base*,
+the default-branch commits the run was based on before and after this refresh;
+the *new head*; the *incoming paths*, the output of `git diff --name-only
+--no-renames <previous base> <new base>`; the *item paths*, the output of `git
+diff --name-only --no-renames <verified base> <verified head>`; the
+*observation scope* defined below; and the *inert classes*, which are exactly
+the plan store `plan/`, the directory `<spec_root>/history/` where
+`<spec_root>` is the `spec_root` value of `.livespec.jsonc`, and the directory
+`<spec_root>/templates/<name>/history/` for every `<name>` directory present at
+the head being examined. A path is *beneath* a class when it begins with that
+class's directory prefix. The *patch identity* of a range `<base>..<head>` is
+the first field printed by `git diff --no-color --no-ext-diff --no-renames
+--full-index <base> <head> | git patch-id --stable`, and is not computable when
+that prints nothing.
+
+**The observation scope.** The rule MUST establish the observation scope
+positively from the verified record's numbered reproduction steps, and MUST NOT
+infer it from paths the item's prose mentions or omits. Each step MUST carry
+exactly one command, which the rule splits into words by POSIX shell quoting
+rules so that every word is a literal argument. A step is *outside the
+direct-read grammar* when it has no command or more than one command; when,
+outside single quotes, its command contains any of `|`, `;`, `&`, `<`, `>`,
+`$`, a backtick, `\`, `!`, `*`, `?`, `[`, `~` or a newline; or when
+double-quoted text in it contains `$`, a backtick, `\` or `!`, so that no
+expansion, substitution or hidden read can occur anywhere in the command,
+quoted or not. The verified record MUST state, ahead of its numbered steps, the
+line `Working directory: .`, meaning every step ran from the repository root; a
+verified record without that line, or naming any other working directory, makes
+every step outside the grammar. `proof_capture` and `proof_verify` MUST write
+that line into their record exactly when every one of its steps ran from the
+repository root. A command is inside the grammar only when it matches one of
+these productions exactly, where a *file operand* is a word that does not begin
+with `-` and every `<count>` is a word of decimal digits: `cat` followed by one
+or more file operands; `head` or `tail`, optionally followed by `-n <count>`,
+then one or more file operands; `wc`, optionally followed by one of `-l`, `-w`
+or `-c`, then one or more file operands; `grep` followed by options drawn only
+from `-n`, `-c`, `-i`, `-F`, `-E`, `-x`, `-w`, `-v`, `-o`, `-A <count>`, `-B
+<count>` and `-C <count>`, then either `-e <pattern>` or one pattern word that
+does not begin with `-`, then one or more file operands; `sed -n '<script>'`
+whose script consists only of line numbers, line ranges and the `p` command,
+followed by one or more file operands; `diff`, optionally followed by `-u`,
+then exactly two file operands; or `git show HEAD:<path>` with exactly that one
+argument, whose file operand is the `<path>` component after `HEAD:`. A command
+that reads no file operand, and so would read standard input, is outside the
+grammar. The file operands are the step's *path operands*. Each path operand
+MUST be canonicalized by interpreting it relative to the repository root,
+rejecting it when it is absolute, empty or contains a `..` segment, and
+collapsing `.` segments and repeated separators; at both the verified head and
+the new head, every leading component of the canonical path MUST be a directory
+that is not a symbolic link, and the canonical path itself MUST name a regular
+file that is not a symbolic link, so the checked path is the path the command
+reads. The observation scope is the set of canonical path operands across every
+step. When `proof_verify` executes a working-tree read, it MUST record, for
+each of that command's path operands, one *read identity* line `Read:
+<canonical path> <identity>` in its record, where `<identity>` is the output of
+`git hash-object --no-filters <path>` for the working-tree file it read, taken
+in the same execution; a missing or unparseable read identity line makes the
+decision `reproof_required` naming that path. Any step outside the grammar, and
+any path operand rejected or not naming such a file, makes the decision
+`reproof_required` naming that step.
+
+**The decision.** The decision MUST be `carried_forward` only when all of the
+following hold: every step of the verified record is inside the direct-read
+grammar; every incoming path is beneath an inert class; no incoming path is in
+the observation scope or among the item paths; the patch identity of `<new
+base>..<new head>` equals the patch identity of `<verified base>..<verified
+head>`; and every path in the observation scope and every item path has the
+same blob identity, the output of `git rev-parse <head>:<path>`, at the
+verified head and at the new head, or is absent at both; and every path operand
+of a working-tree read — every production except `git show` — has a *read
+identity* line in the verified record whose identity equals the output of `git
+hash-object --no-filters <path>` for that working-tree file at the new head;
+and the *mechanical replay* reproduces every step: the stage executes each
+step's command at the new head from the repository root, with standard input
+closed and the environment variable `LC_ALL` set to `C.UTF-8`, and its standard
+output is byte for byte identical to that step's captured proof, which MUST be
+the single fenced text block the verified record gives for that step. The
+mechanical replay is part of the decision, not a substitute for `proof_verify`:
+it executes only commands inside the direct-read grammar, takes no
+language-model judgement, and any difference in output, any failure to execute,
+and any step whose captured proof is not exactly one fenced text block makes
+the decision `reproof_required` naming that step. Otherwise the decision MUST
+be `reproof_required`, and it MUST be `reproof_required` naming the input when
+any input cannot be read or computed — the verified record absent or
+unparseable, a base or head unresolvable, a path list or patch identity that
+cannot be computed. A refresh that took a refresh-repair round never reaches
+this decision: its repaired head re-enters `janitor`, `publish_draft` and
+`proof_capture` as "Refresh repair" requires. Before routing, the stage MUST
+post exactly one decision record on the pull request through the posting
+primitive of §"Proof of Done record": a `carried_forward` or `reproof_required`
+record naming the decision, the verified record's comment link, the verified
+head, the previous published head, the new head, the incoming range `<previous
+base>..<new base>` with its incoming paths, the observation scope, both patch
+identities, and, for `reproof_required`, each input that decided it — each
+incoming path outside every inert class or inside the observation scope or item
+paths, each step outside the grammar or rejected path operand, the differing
+patch identities, each path whose blob identity differs between the two heads,
+each path whose read identity is missing or differs from the new head's
+working-tree bytes, each step whose mechanical replay did not reproduce its
+captured proof or whose captured proof is not exactly one fenced text block, or
+the input that could not be read. A `carried_forward` decision whose record
+cannot be posted MUST be treated as `reproof_required`, and the stage output
+MUST name the failed post; a `reproof_required` decision still routes to
+`proof_capture` when its record cannot be posted, and the stage output MUST
+name the failed post. The verified head of a later carry-forward in the same
+run is still the head of the verified record, so a chain of carry-forwards is
+always measured against the diff that was actually verified. A carry-forward
+consumes no review-fix round and leaves the three-refresh non-convergence bound
+unchanged. Scenario 178 in `scenarios.md` exercises these three paragraphs.
+
 `pr` MUST query the exact pull request for the recorded branch, verify its
-current head against the head whose proof was verified, apply the Dispatcher-
-rendered title and body, mark the draft ready and arm auto-merge with the
-resolved merge method unless the item's merge hold is active. It MUST retain
-existing `PR_NUMBER` and merge-hold result markers. A pull request already
-merged is a recorded success; one closed without merging or carrying an
-unexpected head MUST fail closed. Publication metadata MUST be passed as data,
-not interpolated as shell syntax. A merge hold MUST preserve the ready pull
-request and leave auto-merge unarmed. Resume from an earlier verified head
-MUST enter `pr_refresh` before `pr`, preserving the existing exact-head and
-run-attribution refusals. A later head change requires fresh proof; publication
-MUST NOT reuse a verified record from before that change.
+current head against the head named by the latest record of this run that is
+either `verified` or `carried_forward`, and MUST refuse to mark the draft ready
+for a head that no such record names, apply the Dispatcher- rendered title and
+body, mark the draft ready and arm auto-merge with the resolved merge method
+unless the item's merge hold is active. It MUST retain existing `PR_NUMBER` and
+merge-hold result markers. A pull request already merged is a recorded success;
+one closed without merging or carrying an unexpected head MUST fail closed.
+Publication metadata MUST be passed as data, not interpolated as shell syntax.
+A merge hold MUST preserve the ready pull request and leave auto-merge unarmed.
+Resume from an earlier verified head MUST enter `pr_refresh` before `pr`,
+preserving the existing exact-head and run-attribution refusals. A later head
+change requires fresh proof or a `carried_forward` record for that head;
+publication MUST NOT reuse a verified record from before that change except
+through a `carried_forward` record that names the head being published.
 
 Groom-kind variants retain their existing filing-plan publication behavior:
 the ACP `pr` node validates and encodes the approved cut for host-side filing
@@ -3296,41 +3423,48 @@ the capture, replay and fix duties added to this section.
 ### Proof of Done record
 
 **The record.** Each execution of `proof_capture`, `proof_verify`, each
-host-leg capture or replay, and
-each human-attested leg MUST publish exactly one NEW comment on the work
-item's pull request, whose first line is `Proof of Done —
-<captured|not_captured|verified|not_reproduced|host_recorded|host_verified|host_not_reproduced|human_attested>
+host-leg capture or replay, and each human-attested leg MUST publish exactly
+one NEW comment on the work item's pull request, whose first line is `Proof of
+Done —
+<captured|not_captured|verified|not_reproduced|carried_forward|reproof_required|host_recorded|host_verified|host_not_reproduced|human_attested>
 — <run <run-id> | session <session-identity> | human <identity>> — <UTC
-timestamp>`. The host-leg verdict words are `host_recorded`,
-`host_verified` and `host_not_reproduced`, so that the proof MODE
-`host_captured` and a record verdict never share a word. `not_captured`
-is the verdict of a `proof_capture` execution that ended with
-`preferred_label=fix` (§"Definition-of-Done and Proof-of-Done stages");
-its body names the assertions it could not capture and the finding. The
-run identifier a factory record carries MUST be one the Dispatcher can
-attribute to the merging dispatch: the Fabro run id, or the dispatch id
-the Dispatcher declared to the sandbox, or, for a resumed dispatch, an
-identifier the journal's `resume` record links to it, transitively
-(§"Dispatcher loop invocation surface" → "Resume from a published pull
-request"). A factory record (`captured`, `not_captured`, `verified`,
-`not_reproduced`) MUST also name, once, the full commit sha of the
-publish-branch head the stage ran on; a record naming no head cannot
-anchor a resume. A record comment MUST NOT be edited after
-posting; a correction is a new record. The body MUST contain, per
-assertion in Definition of Done order: the assertion text, its proof
-mode, the governing scenario (the referenced heading and the scenario
-title the steps exercise) or the statement that no scenario governs it,
-the numbered reproduction steps (naming every credential by
-environment-variable name and the wrapper that supplies it, never a
-value), and the proof — an inline image reference for each screenshot
-and a fenced code block for each text capture. A `captured` or `verified`
-record on an item with `human_attested` assertions MUST list those
-assertions under a heading stating they are pending human attestation,
-and one on an item with `host_captured` assertions MUST list those
-assertions under a heading stating they are pending the host leg.
-The human-attested record MUST be posted by the attesting human on the
-same pull request in the same structure; images MAY be attached through
-the forge's own upload.
+timestamp>`. The host-leg verdict words are `host_recorded`, `host_verified`
+and `host_not_reproduced`, so that the proof MODE `host_captured` and a record
+verdict never share a word. `not_captured` is the verdict of a `proof_capture`
+execution that ended with `preferred_label=fix` (§"Definition-of-Done and
+Proof-of-Done stages"); its body names the assertions it could not capture and
+the finding. `carried_forward` and `reproof_required` are the decision records
+of a changed-head `pr_refresh` (§"Definition-of-Done and Proof-of-Done stages"
+→ "Proof carry-forward across a refresh"); their body carries the decision
+inputs that paragraph names in place of per-assertion reproduction steps, and a
+`carried_forward` record MUST link the `verified` record it carries. A
+`carried_forward` record anchors a resume exactly as the `verified` record it
+carries would, at the new head it names. A `reproof_required` record is not
+proof: it MUST NOT anchor a resume, and the acceptance pass and every reader of
+the latest proof record MUST skip it. The run identifier a factory record
+carries MUST be one the Dispatcher can attribute to the merging dispatch: the
+Fabro run id, or the dispatch id the Dispatcher declared to the sandbox, or,
+for a resumed dispatch, an identifier the journal's `resume` record links to
+it, transitively (§"Dispatcher loop invocation surface" → "Resume from a
+published pull request"). A factory record (`captured`, `not_captured`,
+`verified`, `not_reproduced`, `carried_forward`, `reproof_required`) MUST also
+name, once, the full commit sha of the publish-branch head the stage ran on,
+which for `carried_forward` and `reproof_required` is the new head; a record
+naming no head cannot anchor a resume. A record comment MUST NOT be edited
+after posting; a correction is a new record. The body MUST contain, per
+assertion in Definition of Done order: the assertion text, its proof mode, the
+governing scenario (the referenced heading and the scenario title the steps
+exercise) or the statement that no scenario governs it, the numbered
+reproduction steps (naming every credential by environment-variable name and
+the wrapper that supplies it, never a value), and the proof — an inline image
+reference for each screenshot and a fenced code block for each text capture. A
+`captured` or `verified` record on an item with `human_attested` assertions
+MUST list those assertions under a heading stating they are pending human
+attestation, and one on an item with `host_captured` assertions MUST list those
+assertions under a heading stating they are pending the host leg. The
+human-attested record MUST be posted by the attesting human on the same pull
+request in the same structure; images MAY be attached through the forge's own
+upload.
 
 **The host leg.** For an item with `host_captured` assertions, an agent
 session on an operator host MUST publish a `host_recorded` record after
@@ -3357,29 +3491,28 @@ which re-runs the acceptance pass. A `host_verified` record whose
 identity equals its `host_recorded` record's identity, however it was
 posted, is not evidence.
 
-**The pointer.** After merge, the Dispatcher MUST write a `## Proof of
-Done` section into the item's description, after the Definition of Done
-section and preserving it byte-for-byte, containing only: the pull
-request number, the comment link of the latest `verified` record, its
-run id and timestamp, its verdict, — when the item was resumed
-(§"Dispatcher loop invocation surface" → "Resume from a published pull
-request") — the resumed run's identifier, — when the item has
-`host_captured` assertions — the comment link of the latest
-`host_verified` record once it exists, and — when the item has
-`human_attested` assertions — the comment link of the human-attested
-record once it exists. The section MUST NOT copy proof content. The
-pointer MUST be written whenever a `verified` record exists for the
-merging run, independently of the acceptance verdict: a pass that parks
-the item still writes it. A pointer
-whose run id or comment id does not match the latest record OF THE SAME
-KIND (`verified`, `host_verified`, `human_attested`) on the pull
-request is stale and MUST be surfaced by `needs-attention` as a hygiene
-fact naming the item and the pull request; a later record of another
-kind does not make a pointer stale. An item in `acceptance` whose
-merging run has a `verified` record and whose description has no pointer
-MUST likewise be surfaced by `needs-attention` as a hygiene fact naming
-the item and the pull request, and `reconcile-merged` driven for that
-item MUST write the missing pointer.
+**The pointer.** After merge, the Dispatcher MUST write a `## Proof of Done`
+section into the item's description, after the Definition of Done section and
+preserving it byte-for-byte, containing only: the pull request number, the
+comment link of the latest `verified` record, its run id and timestamp, its
+verdict, — when the merged head was reached through a carry-forward — the
+comment link of the `carried_forward` record naming that head, — when the item
+was resumed (§"Dispatcher loop invocation surface" → "Resume from a published
+pull request") — the resumed run's identifier, — when the item has
+`host_captured` assertions — the comment link of the latest `host_verified`
+record once it exists, and — when the item has `human_attested` assertions —
+the comment link of the human-attested record once it exists. The section MUST
+NOT copy proof content. The pointer MUST be written whenever a `verified`
+record exists for the merging run, independently of the acceptance verdict: a
+pass that parks the item still writes it. A pointer whose run id or comment id
+does not match the latest record OF THE SAME KIND (`verified`,
+`carried_forward`, `host_verified`, `human_attested`) on the pull request is
+stale and MUST be surfaced by `needs-attention` as a hygiene fact naming the
+item and the pull request; a later record of another kind does not make a
+pointer stale. An item in `acceptance` whose merging run has a `verified`
+record and whose description has no pointer MUST likewise be surfaced by
+`needs-attention` as a hygiene fact naming the item and the pull request, and
+`reconcile-merged` driven for that item MUST write the missing pointer.
 
 **The proof asset store.** Binary proof MUST be stored through one
 implementation-owned store seam. The store MUST satisfy one requirement:
@@ -4038,33 +4171,34 @@ the resumed-at stage and the source that decided it. It MUST NOT run the
 stale publish-branch reclaim above: the surviving publish branch is the
 branch the run resumes on, and no preservation ref is created.
 
-The resumed run MUST run the workflow the earlier run's dispatch record
-names (`workflow_name`), with a sandbox that checks out the publish
-branch at the published head, entered at the resumed-at stage; it MUST
-NOT visit `dod_gate` or `implement`, or replay a completed node on an
-unchanged head. Its run record MUST distinguish entry from subsequent rework:
-a changed-head `pr_refresh` MUST run fresh capture, review and replay even if
-those nodes completed on the earlier head. The three-refresh bound starts at
-zero for each resumed run; the existing two-resume host bound still applies. A resume MUST NOT
-write or clear the item's `dispatch_workflow` metadata, so the next plain
-dispatch of the item re-runs the recorded workflow from `start` as
-§"Self-contained plugin dispatch" → "Named workflow variants" provides.
-Whether the engine is entered at the resumed-at node directly or through
-a graph the Dispatcher derives from that workflow for the one run is
-implementation surface, bounded by `constraints.md` §"Fabro runtime
-constraints"; a derived graph is not a registered variant, is never
-selectable by the variant precedence, and is never recorded as the item's
+The resumed run MUST run the workflow the earlier run's dispatch record names
+(`workflow_name`), with a sandbox that checks out the publish branch at the
+published head, entered at the resumed-at stage; it MUST NOT visit `dod_gate`
+or `implement`, or replay a completed node on an unchanged head. Its run record
+MUST distinguish entry from subsequent rework: a changed-head `pr_refresh` MUST
+take the decision of §"Definition-of-Done and Proof-of-Done stages" → "Proof
+carry-forward across a refresh", and on `reproof_required` MUST run fresh
+capture, review and replay even if those nodes completed on the earlier head.
+The three-refresh bound starts at zero for each resumed run; the existing
+two-resume host bound still applies. A resume MUST NOT write or clear the
+item's `dispatch_workflow` metadata, so the next plain dispatch of the item
+re-runs the recorded workflow from `start` as §"Self-contained plugin dispatch"
+→ "Named workflow variants" provides. Whether the engine is entered at the
+resumed-at node directly or through a graph the Dispatcher derives from that
+workflow for the one run is implementation surface, bounded by `constraints.md`
+§"Fabro runtime constraints"; a derived graph is not a registered variant, is
+never selectable by the variant precedence, and is never recorded as the item's
 workflow. Entering at the resumed-at stage means no node precedes it in the
-resumed run, so the latest record on the pull request when that stage
-starts is the one the earlier run left there. From the resumed-at stage
-onward the run behaves as the same stage does in a first run: a `review` that requests changes still
-re-enters `janitor`, `publish_draft` and `proof_capture` before `review`
+resumed run, so the latest record on the pull request when that stage starts is
+the one the earlier run left there. From the resumed-at stage onward the run
+behaves as the same stage does in a first run: a `review` that requests changes
+still re-enters `janitor`, `publish_draft` and `proof_capture` before `review`
 (§"Definition-of-Done and Proof-of-Done stages"), the `pr_refresh` node still
-rebases and force-pushes only its own branch, and the resumed run's
-outcome maps to §"Dispatcher exit codes" as a `dispatch --item` outcome
-does. Because the proof-loop caps of that section are per run, the chain
-is bounded on the host instead: the Dispatcher MUST refuse a THIRD resume
-of the same item from the same pull request (remedy: a plain dispatch).
+rebases and force-pushes only its own branch, and the resumed run's outcome
+maps to §"Dispatcher exit codes" as a `dispatch --item` outcome does. Because
+the proof-loop caps of that section are per run, the chain is bounded on the
+host instead: the Dispatcher MUST refuse a THIRD resume of the same item from
+the same pull request (remedy: a plain dispatch).
 
 **Attribution.** The earlier run's `captured` and `verified` records are
 the resumed dispatch's own: the `resume` record links the earlier run's
