@@ -17,11 +17,29 @@ because a runner double answers whatever it is asked and cannot tell a correct
 invocation from a plausible one — a re-resolution that asked the wrapper for the
 wrong variable name would return a perfectly well-formed `None` and read as a
 wrapper that is simply not injecting. And the child environment is asserted to
-carry the credential name EMPTIED, because the 1Password wrapper this fleet runs
-stores the DIFF between its caller's environment and what it injected: a nested
-caller that already holds the value produces a near-empty diff, which both hides
-the rotation from this reading and poisons the host-wide wrapper cache for every
-other caller (`AGENTS.md`, the wrapper-cache entry, measured 2026-10-01).
+carry EVERY name the wrapper injects emptied, because the 1Password wrapper this
+fleet runs stores the DIFF between its caller's environment and what it injected:
+a nested caller that already holds those values produces a near-empty diff, which
+both hides the rotation from this reading and poisons the host-wide wrapper cache
+for every other caller (`AGENTS.md`, the wrapper-cache entry, measured
+2026-10-01).
+
+THAT SECOND ASSERTION IS A SET RATHER THAN ONE NAME, and the difference is the
+whole defect it now closes. Emptying only the Claude name leaves the other three
+the wrapper injects at their inherited values, so the diff the wrapper computes
+and CACHES is genuine for one name and near-empty for three — the poisoning the
+claim says it prevents, still happening to every other caller on the host for
+those three. The expected names are spelled as LITERALS here rather than
+imported, because this module's Red predates the exported tuple it binds and a
+module-level import of a name that does not exist yet would make the Red a
+collection error instead of an assertion.
+
+THE SELECTED NAME IS ASSERTED THROUGH A caam POOL SLOT, which is the one shape
+that can fail for the right reason. The unnumbered `CLAUDE_CODE_OAUTH_TOKEN` is
+in the injected set already, so a re-resolution that emptied the set and ignored
+the name it was HANDED would pass every case keyed on that name while leaving a
+pool-slot dispatch's own credential inherited — and the slot is exactly what a
+caam pool selection resolves (`_dispatcher_factory_account_selector`).
 """
 
 from __future__ import annotations
@@ -42,6 +60,17 @@ _MODULE_FILE = "_dispatcher_credential_rotation.py"
 _WRAPPER = ("/usr/local/bin/with-livespec-env.sh", "--")
 _LAUNCH_TOKEN = "launch-time-token"
 _ROTATED_TOKEN = "rotated-token"
+# Every name the per-wrapper credential set injects, spelled literally (see the
+# module docstring). This is the set the refused-dispatch message already names
+# as what a target's `credential_wrapper` must inject.
+_WRAPPER_INJECTED_NAMES = (
+    "GITHUB_APP_ID",
+    "GITHUB_PRIVATE_KEY",
+    "BEADS_DOLT_PASSWORD",
+    CLAUDE_OAUTH_TOKEN_ENV,
+)
+# A caam pool slot, as `_dispatcher_factory_account_selector` renders one.
+_SLOT_ENV_NAME = f"{CLAUDE_OAUTH_TOKEN_ENV}__ANTHROPIC_3"
 
 
 def _rotation() -> Any:
@@ -92,12 +121,16 @@ def _repo(*, tmp_path: Path, wrapper: tuple[str, ...] | None) -> Path:
 
 
 def _resolved(
-    *, tmp_path: Path, runner: _Runner, wrapper: tuple[str, ...] | None = _WRAPPER
+    *,
+    tmp_path: Path,
+    runner: _Runner,
+    wrapper: tuple[str, ...] | None = _WRAPPER,
+    env_name: str = CLAUDE_OAUTH_TOKEN_ENV,
 ) -> Any:
     rotation = _rotation()
     return rotation.resolve_rotated_credential(
         repo=_repo(tmp_path=tmp_path, wrapper=wrapper),
-        env_name=CLAUDE_OAUTH_TOKEN_ENV,
+        env_name=env_name,
         launch_token=_LAUNCH_TOKEN,
         runner=runner,
     )
@@ -132,9 +165,26 @@ def test_a_declared_wrapper_is_asked_for_the_projected_name(tmp_path: Path) -> N
     assert len(runner.calls) == 1
     assert runner.calls[0]["argv"] == [*_WRAPPER, "printenv", CLAUDE_OAUTH_TOKEN_ENV]
     assert runner.calls[0]["timeout_seconds"] == rotation.CREDENTIAL_ROTATION_TIMEOUT_SECONDS
-    # The inherited value is EMPTIED for the child, so the wrapper's own diff is
-    # genuine rather than near-empty (see the module docstring).
-    assert runner.calls[0]["env"] == {CLAUDE_OAUTH_TOKEN_ENV: ""}
+    # Every inherited value the wrapper injects is EMPTIED for the child, so the
+    # wrapper's own diff is genuine rather than near-empty (see the docstring).
+    assert runner.calls[0]["env"] == dict.fromkeys(_WRAPPER_INJECTED_NAMES, "")
+
+
+def test_every_name_the_wrapper_injects_is_emptied_for_the_child(tmp_path: Path) -> None:
+    """A pool-slot selection empties the slot AND the whole injected set.
+
+    The slot is what discriminates: it is absent from the injected set, so a
+    re-resolution emptying only that set would ask the wrapper for a name the
+    child still holds — reproducing, for the one credential this dispatch
+    actually projects, the near-empty diff the emptying exists to prevent.
+    """
+    runner = _Runner(results=[CommandResult(exit_code=0, stdout=_ROTATED_TOKEN, stderr="")])
+
+    resolved = _resolved(tmp_path=tmp_path, runner=runner, env_name=_SLOT_ENV_NAME)
+
+    assert resolved.token == _ROTATED_TOKEN
+    assert runner.calls[0]["argv"] == [*_WRAPPER, "printenv", _SLOT_ENV_NAME]
+    assert runner.calls[0]["env"] == dict.fromkeys((*_WRAPPER_INJECTED_NAMES, _SLOT_ENV_NAME), "")
 
 
 def test_no_declared_wrapper_resolves_the_launch_value_and_spawns_nothing(
