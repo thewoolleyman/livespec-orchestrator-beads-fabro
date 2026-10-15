@@ -167,12 +167,20 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   2026-10-08, four loops on this host journaled `exhausted` from 08:54Z and
   11:42Z through 23:10Z while other repositories' dispatches ran on the same
   factory minutes after the rotation, and the only remedy was to kill and
-  re-dispatch all four. Four properties an editor must not invert. The child's
-  inherited credential name is EMPTIED, because the wrapper caches the DIFF
+  re-dispatch all four. Four properties an editor must not invert. EVERY name
+  the wrapper injects is emptied for the child — the whole per-wrapper
+  credential set plus the caam pool slot this dispatch projects, which
+  `_dispatcher_credential_wrapper.wrapper_injected_child_env` owns — because the
+  wrapper caches the DIFF
   between its caller's environment and what it injected and replays it to every
-  caller on the host: a nested invocation that already holds the value produces
+  caller on the host: a nested invocation that already holds those values
+  produces
   a near-empty diff, which both hides the rotation from this reading and poisons
-  that shared cache (`AGENTS.md`'s wrapper-cache entry, measured 2026-10-01). A
+  that shared cache (`AGENTS.md`'s wrapper-cache entry, measured 2026-10-01).
+  Emptying only the name under read is NOT a smaller version of that
+  protection: the cached diff covers everything the wrapper injected, so three
+  of the four names stayed inherited and the entry replayed to the rest of the
+  host was near-empty for those three. A
   wrapper fault is NEVER reported as an absent credential — it yields the
   launch-time value with `rotatable` False — because the two have opposite
   remedies and a wait retired by a refusal about a misconfigured wrapper reports
