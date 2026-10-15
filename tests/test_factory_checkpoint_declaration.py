@@ -48,6 +48,21 @@ node a repair round re-earns gains visits with it. The 15m control moved to
 stay between the two measured figures, which is the relation this case asserts.
 The ceiling that matters is unchanged: the shipped figure stays well inside a
 ten-day token's life, and only the 15m control does not.
+
+Completing that route for the second refreshing stage (`bd-ib-5oc2d3`) moved
+both once more, and the mechanism is worth stating because it adds NO node and
+changes NO attribute: `pr_refresh` now routes its failure through the shared
+`refresh_repair` classifier, which gives that node a SECOND predecessor, and
+the derivation sums a node's visits over its distinct predecessors. So the
+classifier and everything the repair round re-earns gain visits from an edge
+alone. The 15m control moved to 977235 and the shipped 5m figure to 637035 --
+still under the 650000 bound, so the bound is unchanged and the relation this
+case asserts still holds, with 12965 seconds of headroom. Two consequences to
+carry forward rather than rediscover: the next edit that widens this graph is
+likely to need the bound re-chosen between the two figures, and the shipped
+figure plus `CODEX_FRESHNESS_MARGIN_SECONDS` now demands 640635 of a token's
+remaining life, so a ten-day Codex token has to be under about 2.59 days old
+to pass the freshness gate.
 """
 
 from __future__ import annotations
@@ -68,12 +83,12 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 
 # The bound the freshness requirement has to sit under, and the figure the
 # RETIRED `"15m"` resolved. The bound is deliberately looser than the measured
-# 529925 seconds this budget yields: the requirement also sums the resolved node
+# 637035 seconds this budget yields: the requirement also sums the resolved node
 # timeouts, so pinning it exactly would make every unrelated timeout edit fail
 # this case. The control below pins the 15m figure exactly, because that one is
 # the thing being moved away from and a drifting comparand would hide the move.
 _FRESHNESS_BOUND_SECONDS = 650_000
-_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 958_455
+_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 977_235
 
 
 def _checkpoint() -> dict[str, Any]:
