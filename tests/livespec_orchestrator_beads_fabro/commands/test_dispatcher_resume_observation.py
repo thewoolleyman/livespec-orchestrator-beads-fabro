@@ -60,6 +60,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import
     SOURCE_FACTORY_RUN,
     SOURCE_LATEST_RECORD,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import (
+    resume_refusals,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _CANCEL_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_resume_cancel_anchor"
@@ -665,3 +668,42 @@ def test_a_proof_record_naming_the_cancelled_dispatch_id_still_anchors_the_resum
     assert gather.anchor.record is not None
     assert gather.anchor.run_id == _CANCELLED_DISPATCH
     assert gather.anchor.source != cancel.SOURCE_CANCEL_RECORD
+
+
+def test_a_rework_stage_cancel_refuses_naming_the_stage_and_a_plain_dispatch(
+    repo: Path,
+) -> None:
+    """ "A cancel in any other stage ... does not anchor, because its head would not carry the rework."
+
+    The state is the one the clause describes: an earlier `publish_draft`
+    completed, so the cancel record DOES name a head, and the cancel landed in a
+    rework stage, so that head is not the tree the resume would have to finish.
+    No proof record names a head either, so the resume refuses and the remedy is a
+    plain dispatch.
+
+    The refusal has to name the CANCEL RECORD's stage, not only the absent proof
+    records. For this state the second half of the clause's condition is the
+    load-bearing half: a record naming a head exists and an operator can see it on
+    the journal, so a refusal reporting that nothing names a head reads as a
+    resume path that never looked — and leaves the one question the operator has,
+    why a head-naming record did not anchor, unanswered by the surface whose job
+    is to name the mismatch.
+    """
+    assert _GATHER_PATH.is_file()
+    gather_module = importlib.import_module(_GATHER_MODULE)
+    for stage in ("janitor", "fix", "publish_draft"):
+        gather = gather_module.gather_resume(
+            args=_args(),
+            repo=repo,
+            item=_item(),
+            journal_path=_cancel_journal(
+                path=repo / "tmp" / "journal.jsonl", executing_stage=stage
+            ),
+            runner=_runner(view=_ok(stdout=json.dumps({"comments": []}))),
+        )
+        assert gather.anchor is None
+        refusals = resume_refusals(observation=gather.observation)
+        assert len(refusals) == 1
+        assert stage in refusals[0]
+        assert "dispatch it plainly instead" in refusals[0]
+        assert getattr(gather.observation, "unanchoring_cancel_stage", None) == stage

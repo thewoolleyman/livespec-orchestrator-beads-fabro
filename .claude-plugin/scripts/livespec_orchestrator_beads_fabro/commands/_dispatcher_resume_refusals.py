@@ -99,6 +99,15 @@ class ResumeObservation:
     `changed_assertions` is the Definition-of-Done difference as a LIST of the
     assertions the anchoring record does not carry, rather than a boolean, so the
     refusal can name the difference the clause requires it to name.
+
+    `unanchoring_cancel_stage` is the stage of a `watchdog-stall-cancel` record
+    that NAMES A HEAD and still could not anchor — the rework-stage case, whose
+    head "would not carry the rework". It is carried for the refusal's sake and
+    for no decision: the ladder never grades it, because the cancel reader already
+    settled whether that row anchors. It is `None` when the item has no such row,
+    which is deliberately the same value as "the row anchored fine": in both cases
+    there is nothing for the refusal to explain, and only the stage distinguishes
+    them, which is exactly what this field carries.
     """
 
     work_item_id: str
@@ -114,6 +123,7 @@ class ResumeObservation:
     lock_age_seconds: float | None = None
     changed_assertions: tuple[str, ...] = ()
     earlier_resumes: tuple[str, ...] = field(default=())
+    unanchoring_cancel_stage: str | None = None
 
 
 def resume_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
@@ -194,13 +204,32 @@ def _anchor_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
         )
         return (unpublished,)
     if observation.anchor_head is None:
-        headless = (
-            f"no Proof of Done record on pull request #{observation.pull_request}"
-            " names a publish-branch head, so no record can anchor a resume;"
-            " dispatch it plainly instead"
-        )
-        return (headless,)
+        return (_headless_refusal(observation=observation),)
     return ()
+
+
+def _headless_refusal(*, observation: ResumeObservation) -> str:
+    """The no-anchor refusal, stating whichever half of the condition decided it.
+
+    The clause's condition is a CONJUNCTION — "no proof record on it names a head
+    and no `watchdog-stall-cancel` record anchors one" — and which half an
+    operator needs named depends on what the item actually has. With no cancel
+    record at all, the proof records are the whole story. With a REWORK-STAGE
+    cancel there is a record naming a head, visible on the journal, so reporting
+    only the proof records reads as a resume path that never looked at it, and
+    the operator is left to rediscover the stage rule for themselves.
+    """
+    headless = (
+        f"no Proof of Done record on pull request #{observation.pull_request}"
+        " names a publish-branch head"
+    )
+    if observation.unanchoring_cancel_stage is None:
+        return f"{headless}, so no record can anchor a resume; dispatch it plainly instead"
+    return (
+        f"{headless}, and this item's latest stall cancel was executing"
+        f" {observation.unanchoring_cancel_stage}, so the head it names would not"
+        " carry the rework and cannot anchor a resume; dispatch it plainly instead"
+    )
 
 
 def _head_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:

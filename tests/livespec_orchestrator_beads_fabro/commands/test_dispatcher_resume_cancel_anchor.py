@@ -230,3 +230,30 @@ def test_a_row_naming_no_dispatch_id_still_anchors_on_its_run_id_alone() -> None
     )
     assert anchor is not None
     assert anchor.run_id == _RUN_ID
+
+
+def test_only_a_rework_stage_cancel_naming_a_head_reports_an_unanchoring_stage() -> None:
+    """The refusal explains a head-naming row it refused, and nothing else.
+
+    Each case below is a row that cannot anchor, and only the first leaves an
+    operator with a head-naming record to wonder about. The no-head cases are the
+    sharp ones: a `janitor` cancel whose head was unreadable is the NO-HEAD case,
+    so reporting its stage would offer the rework rule as the reason a resume
+    cannot proceed when the real reason is that nothing was measured.
+    """
+    module = _loaded()
+    assert (
+        module.unanchoring_cancel_stage(
+            records=(_cancel_row(executing_stage="janitor"),), work_item_id=_ITEM_ID
+        )
+        == "janitor"
+    )
+    for row in (
+        _cancel_row(executing_stage="janitor", published_head=None),
+        _cancel_row(executing_stage="janitor", published_head=""),
+        _cancel_row(executing_stage=None),
+        _cancel_row(executing_stage=""),
+        _cancel_row(),
+        _cancel_row(work_item_id=_OTHER_ITEM_ID, executing_stage="janitor"),
+    ):
+        assert module.unanchoring_cancel_stage(records=(row,), work_item_id=_ITEM_ID) is None
