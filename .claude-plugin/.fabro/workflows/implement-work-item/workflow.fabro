@@ -1356,15 +1356,31 @@ digraph ImplementWorkItem {
     // said in as many words that it expected the fix node, and this graph ended
     // the run at `needs_human` 8.7 seconds later.
     //
-    // DECLARATION ORDER IS THE WHOLE OF IT. Conditional arms are consulted in
-    // order, so the classifier arm has to precede the terminal's `outcome=failed`
-    // arm; behind it, it is an arm no run ever takes — present in the graph and
-    // invisible in every dispatch, which is the defect it repairs wearing a fix's
-    // clothes. The terminal arm is KEPT behind it as the node's declared
-    // fail-closed destination, and nothing is lost by it no longer firing: the
-    // classifier's own UNCONDITIONAL fallthrough is `needs_human`, so a failure
-    // that wrote no brief — an authentication failure, an unreachable origin, an
-    // exhausted repair budget — still lands there carrying this stage's own cause.
+    // EXACTLY ONE `outcome=failed` ARM, AND DECLARATION ORDER IS NOT WHY
+    // (work-item bd-ib-nyovwv). v134's successor added the classifier arm and
+    // KEPT the older `pr_refresh -> needs_human [condition="outcome=failed"]`
+    // arm behind it, on the reading that conditional arms are consulted in
+    // declaration order so the first matching one wins. THE ENGINE DOES NOT READ
+    // DECLARATION ORDER. Measured on hp, run 01M4ZMNCDR7FN8SKCC5J3YWPTF: the
+    // rebase of f899526c onto master fd9cbb94 conflicted in four files, this
+    // stage restored f899526c, wrote the brief and printed that it expected the
+    // fix node, and the engine's own `edge.selected` event then read `from_node
+    // pr_refresh, to_node needs_human, label "Refresh failed or did not
+    // converge", reason condition` — the SECOND of the two arms. The run ended
+    // about 50 seconds later having repaired nothing. So the duplicate arm is
+    // GONE rather than reordered: two arms carrying one condition determine no
+    // route at all, and a graph that relies on which one is written first is
+    // relying on something no dispatch consults.
+    //
+    // NOTHING FAIL-CLOSED IS LOST BY REMOVING IT, which is what makes the
+    // deletion safe rather than merely correct. The classifier deletes no cause:
+    // this stage CLEARS any stale brief at its start, and the classifier routes
+    // to `needs_human` whenever no brief exists. So a missing or unobservable
+    // origin, a missing or foreign publish head, a rejected lease, a failed gate,
+    // an exhausted repair budget and the non-convergence bound all still reach
+    // the terminal carrying this stage's own cause — one node later, through the
+    // classifier's own UNCONDITIONAL fallthrough, which is the single
+    // fail-closed destination `publish_draft` has always used.
     //
     // `pr_refresh_head` is where the THREE-way decision lands. Its failure edge
     // is the CHANGED-head route — a non-zero exit there is not a fault, it is the
@@ -1374,7 +1390,6 @@ digraph ImplementWorkItem {
     // never reuses a verified record from before a head change" a property of the
     // GRAPH rather than of a script's good intentions.
     pr_refresh -> refresh_repair [label="Blocked", condition="outcome=failed"]
-    pr_refresh -> needs_human [label="Refresh failed or did not converge", condition="outcome=failed"]
     pr_refresh -> pr_refresh_head
     pr_refresh_head -> proof_capture [label="head changed: fresh proof owed", condition="outcome=failed"]
     pr_refresh_head -> pr
