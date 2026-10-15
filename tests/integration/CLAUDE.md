@@ -844,6 +844,28 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   `fix` budget, because "the repair took nothing from review-fix" is otherwise
   equally consistent with a graph that widened nothing at all.
 
+- `test_tenant_client_backup_lane_scenario181.py` — binds the `Given` of
+  `SPECIFICATION/scenarios.md` Scenario 181 and the `contracts.md` §"Beads
+  connection model" bullet "Client backup lane disabled": this repository's
+  committed `.beads/config.yaml` sets `backup.enabled: false` and the comment
+  attached to that key names `dolt-backup.service` and
+  `DOLT_BACKUP('sync','s3')` as the hourly server-side lane the client lane
+  would duplicate. The subject is THIS repository's own committed file rather
+  than a fixture, which is what puts the case at this tier: `bd` opens the
+  committed file at the repository root on every call, so a fixture would grade
+  bytes no `bd` invocation ever reads. Two things are worth knowing before
+  editing. The comment is asserted as well as the key, because a bare disabled
+  backup setting on a ledger reads as "backups switched off" rather than
+  "backed up centrally, client lane redundant", and the second reading is the
+  correct one; the assertion is on the comment block ATTACHED to the key, since
+  a rationale parked elsewhere in a flat key-value file does not travel with
+  the line it explains. And the scenario's `When`/`Then` — a live `bd` write
+  whose stderr carries no `auto-backup failed` warning, and the next hourly
+  `dolt-backup.service` run reporting every tenant synced — is deliberately NOT
+  here: it needs the credential wrapper, the shared Dolt server and the backup
+  timer, so work-item `bd-ib-rxf` carries it as a HOST-CAPTURED assertion
+  instead. This file never connects to a tenant.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
