@@ -10,7 +10,26 @@ through 23:10Z while other repositories' dispatches started running on the same
 factory minutes after the maintainer rotated the credential.
 
 This module is the re-resolution, plus the non-secret IDENTITY a refused-probe
-record carries so two consecutive rows show whether the value changed at all.
+record carries so two consecutive rows show whether the value changed at all,
+plus the PUBLICATION that carries a resolved value to the dispatch.
+
+THE RESOLVED CREDENTIAL IS PUBLISHED WHERE THE DISPATCH READS ITS OWN, because a
+resume the dispatch cannot see is not a resume. The re-resolution answers a
+question `os.environ` cannot, but every seam the admitted dispatch projects
+through reads exactly that environment: `_dispatcher_credentials` renders the
+sandbox overlay from `os.environ[<selected name>]`, and the pre-launch
+`assess_credential_status` re-reads the same place. A wait that retired on a
+rotated value and left the environment holding the launch-time one would
+therefore admit a run carrying the credential it had just been parked on — a
+resume in the journal and a dispatch that cannot work. `publish_rotated_
+credential` closes that gap, so one round's reading is both the value assessed
+and the value projected.
+
+A ROUND THAT RESOLVED NOTHING PUBLISHES NOTHING. Every fallback reading hands
+back the launch-time value, so publishing it would be a no-op whenever the name
+is present — and would CREATE the name as the empty string when it is not, which
+the dispatch path reads as a credential it may project rather than as the absence
+the operator has to fix.
 
 EVERY CREDENTIAL THE WRAPPER INJECTS IS EMPTIED FOR THE CHILD, AND THAT IS THE
 LOAD-BEARING PART. The wrapper this fleet runs caches, in the invoker's keyring,
@@ -53,6 +72,7 @@ facts and a reader comparing two rows must not see them as one changed value.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -69,6 +89,7 @@ __all__: list[str] = [
     "WRAPPER_RESOLVED",
     "RotatedCredential",
     "credential_identity",
+    "publish_rotated_credential",
     "resolve_rotated_credential",
 ]
 
@@ -158,3 +179,32 @@ def resolve_rotated_credential(
             source=LAUNCH_ENVIRONMENT_WRAPPER_UNRESOLVABLE,
         )
     return RotatedCredential(token=resolved, rotatable=True, source=WRAPPER_RESOLVED)
+
+
+def publish_rotated_credential(
+    *, env_name: str, rotated: RotatedCredential, environ: MutableMapping[str, str]
+) -> None:
+    """Put a RESOLVED credential where the dispatch path reads its own.
+
+    The re-resolution's answer is useless to the run the wait admits unless it
+    reaches this environment: the sandbox overlay renders the credential from
+    `environ[env_name]` and the pre-launch assessment re-reads the same entry, so
+    a rotation observed only by the probe retires the wait and still projects the
+    credential it was parked on.
+
+    `environ` is a parameter rather than a reach for `os.environ` so the
+    publication is exercisable without mutating the test process's own
+    environment, and so the ONE caller that must publish to the real one says
+    which environment it means.
+
+    ONLY a `rotatable` reading is published. A fallback reading carries the
+    launch-time value the caller read out of this very mapping, so publishing it
+    changes nothing when the name is present — and when the name is ABSENT the
+    launch-time value is the empty string, which this would install as a
+    credential the dispatch path can read. "No credential was resolved" and "an
+    empty credential was resolved" have different remedies, and only the first
+    is true.
+    """
+    if not rotated.rotatable:
+        return
+    environ[env_name] = rotated.token
