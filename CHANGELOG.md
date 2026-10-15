@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.198.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.198.3...v0.198.4) (2026-10-15)
+
+
+### Bug Fixes
+
+* route a failed pr_refresh through refresh_repair to fix (bd-ib-5oc2d3) ([8c3d400](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8c3d400f752acfae0c13982d4e84e7f975af348c))
+
 ## [0.198.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.198.2...v0.198.3) (2026-10-15)
 
 
