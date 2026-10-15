@@ -1,4 +1,10 @@
-"""Dispatch-loop selection, preparation, and janitor ref helpers."""
+"""Dispatch-loop selection, preparation, and post-run disposition.
+
+The janitor ref and the `.livespec.jsonc` read this module used to carry now
+live in `_dispatcher_repo_config`, which that module's docstring explains; both
+are imported back here, so this module's `__all__` and every existing call site
+are unchanged.
+"""
 
 from __future__ import annotations
 
@@ -21,6 +27,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibili
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_result import (
     outcome_after_acceptance,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance_record import (
+    record_base_advanced_after_arming,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit import (
     emit_calibration,
@@ -50,9 +59,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     plugin_root,
     workflow_toml,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
-    janitor_core_ref_from_config,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference import (
     preserve_checkpointed_work_reference,
 )
@@ -61,6 +67,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_registered_install_currency import (
     default_install_record,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_repo_config import (
+    janitor_core_ref,
+    livespec_config_text,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_staleness_gate import (
     apply_dispatcher_staleness_gate,
@@ -150,27 +160,6 @@ def candidates(
     if requested:
         return [item for item in ranked if item.id in requested]
     return acceptance_eligible_candidates(items=ranked, cwd=repo, workflow_name=args.workflow_name)
-
-
-def janitor_core_ref(*, repo: Path) -> str:
-    return janitor_core_ref_from_config(config_text=livespec_config_text(repo=repo))
-
-
-def livespec_config_text(*, repo: Path) -> str:
-    """The target repository's committed `.livespec.jsonc`; `{}` when it has none.
-
-    A repository with no config declares nothing, which is the same input as an
-    empty object -- the resolver, not this reader, decides which fields that
-    leaves unresolved.
-
-    PUBLIC because plan build reads it too: the WHOLE integration contract now
-    resolves from this one text, so the reader that answers it crosses a module
-    boundary rather than staying private to the core-pin wrapper above.
-    """
-    config = repo / ".livespec.jsonc"
-    if not config.exists():
-        return "{}"
-    return config.read_text(encoding="utf-8")
 
 
 def ready_items(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
@@ -353,6 +342,15 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     groom_cut_filed = record_groom_draft(
         args=args, repo=repo, item=item, outcome=outcome, journal=journal
     )
+    # BEFORE the escalation, which is the opposite of the needs-human pair
+    # below and is the ratified clause's own choice. This record is the only
+    # account of which head was armed against which default-branch tip, so a
+    # lifecycle write that landed while the record was never attempted would
+    # leave an operator an item at needs-human with nothing to reconstruct the
+    # overtaking from. Neither write prevents the other — every arm of this one
+    # is fail-soft — so the order decides only which account survives a partial
+    # failure. A no-op for every outcome that is not this ending.
+    record_base_advanced_after_arming(repo=repo, item=item, outcome=outcome, journal=journal)
     if not groom_cut_filed:
         escalate_needs_human_block(repo=repo, item=item, outcome=outcome, journal=journal)
         # AFTER the escalation, because the escalation owns the lifecycle write

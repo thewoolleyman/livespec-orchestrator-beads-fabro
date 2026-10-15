@@ -66,6 +66,14 @@ __all__: list[str] = [
 # plan slice S4 (`bd-ib-tbgxm4`) records when the pull request opens, and they
 # ride this view rather than a probe of their own because the engine already
 # takes it at exactly that moment.
+#
+# `headRefOid` and `baseRefOid` ride it for the same reason and for ONE
+# consumer: the overtaken-arming ending's ledger record, which names the head
+# that was armed and the default-branch tip that overtook it. They are asked
+# for HERE rather than probed at the record, because the record is written in
+# the post-run disposition sequence — long after the poll — and a reading taken
+# there would describe a different moment from the mergeability the ending
+# routed on, with nothing saying the two disagreed.
 _PR_VIEW_JSON_FIELDS = ",".join(
     (
         "number",
@@ -76,6 +84,8 @@ _PR_VIEW_JSON_FIELDS = ",".join(
         "statusCheckRollup",
         "additions",
         "deletions",
+        "headRefOid",
+        "baseRefOid",
     )
 )
 
