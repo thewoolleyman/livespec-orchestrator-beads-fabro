@@ -82,6 +82,7 @@ _MOVED_HEAD = "a" * 40
 _EARLIER_RUN = "01M49TZ44210GSEC8VTFR8VHKP"
 _EARLIER_DISPATCH = "5088bcaff2aa4bad99d9d0cf4fbbbe2f"
 _CANCELLED_RUN = "01M4Q4XBZ5398FJAWQ131QER60"
+_CANCELLED_DISPATCH = "7a636b5e7d60425c942ebdaf10fe7e53"
 _PR = 2639
 _ASSERTION = "The resume enters at the unfinished stage."
 _COMMENT_URL = "https://github.test/c/1"
@@ -508,7 +509,7 @@ def _cancel_journal(
                 {
                     "stage": "watchdog-stall-cancel",
                     "work_item_id": _ITEM_ID,
-                    "dispatch_id": "7a636b5e7d60425c942ebdaf10fe7e53",
+                    "dispatch_id": _CANCELLED_DISPATCH,
                     "run_id": run_id,
                     "factory": "hp",
                     "executing_stage": executing_stage,
@@ -615,3 +616,52 @@ def test_a_cancel_anchor_inherits_no_proof_so_nothing_reads_as_changed(repo: Pat
         repo=repo, item=_item(assertion="An assertion no earlier record carries."), runner=_runner()
     )
     assert gather.observation.changed_assertions == ()
+
+
+def _cancelled_record_body(*, identity: str) -> str:
+    """The cancelled dispatch's OWN proof record, headed by the identity named.
+
+    The header's third field is the only place a record states whose dispatch it
+    belongs to, and the attribution pass accepts a dispatch id there exactly as it
+    accepts a run id (`_dispatcher_proof_attribution`'s widening). So the identity
+    is a parameter rather than a constant: the two forms are the same record to
+    every reader downstream, and a precedence rule that saw only one of them would
+    be silent about the other.
+    """
+    return (
+        f"Proof of Done — captured — run {identity} — 2026-10-12T06:30:00Z\n\n"
+        f"## Assertion 1 — {_ASSERTION}\n\n"
+        f"Publish-branch head: {_HEAD}\n\n"
+        "Proof mode: factory_captured.\n"
+    )
+
+
+def test_a_proof_record_naming_the_cancelled_dispatch_id_still_anchors_the_resume(
+    repo: Path,
+) -> None:
+    """ "A proof record that carries the dispatch's identifier always takes precedence."
+
+    The record here belongs to the CANCELLED dispatch and names it by its DISPATCH
+    id, which is one of the two identifiers the acceptance pass attributes to one
+    dispatch — so the cancel row must stand down and the proof record must anchor.
+
+    This case is separate from the run-id one because the two identifiers come
+    from different fields of the same journal row, and a precedence rule that
+    compared only `run_id` would pass the run-id case and silently take the cancel
+    anchor here. The consequence is not a refusal an operator would notice: the
+    resume would re-enter `proof_capture` for a dispatch whose capture had already
+    completed and been reviewed, re-publishing a record for work already proved.
+    """
+    assert _GATHER_PATH.is_file()
+    cancel = importlib.import_module(_CANCEL_MODULE)
+    gather = _gather_with_cancel(
+        repo=repo,
+        item=_item(),
+        runner=_runner(
+            view=_ok(stdout=_comments(body=_cancelled_record_body(identity=_CANCELLED_DISPATCH)))
+        ),
+    )
+    assert gather.anchor is not None
+    assert gather.anchor.record is not None
+    assert gather.anchor.run_id == _CANCELLED_DISPATCH
+    assert gather.anchor.source != cancel.SOURCE_CANCEL_RECORD

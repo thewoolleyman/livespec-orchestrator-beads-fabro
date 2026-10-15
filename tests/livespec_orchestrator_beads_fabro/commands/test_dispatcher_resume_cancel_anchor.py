@@ -188,3 +188,45 @@ def test_a_cancel_record_naming_no_run_anchors_nothing() -> None:
             )
             is None
         )
+
+
+_DISPATCH_ID = "7a636b5e7d60425c942ebdaf10fe7e53"
+
+
+def test_a_proof_record_carrying_the_cancelled_dispatch_id_also_takes_precedence() -> None:
+    """The second of the two identifiers one dispatch is attributed by.
+
+    `_dispatcher_proof_attribution` accepts a record naming a dispatch by either
+    its run id or its dispatch id, and the cancel row names both, so the
+    precedence test has to ask about both. A rule comparing only the run id
+    passes the run-id case above and silently anchors on the cancel row here —
+    re-entering `proof_capture` for a dispatch whose capture had completed.
+    """
+    module = _loaded()
+    row = _cancel_row()
+    row["dispatch_id"] = _DISPATCH_ID
+    assert (
+        module.cancel_anchor(
+            records=(row,),
+            work_item_id=_ITEM_ID,
+            proof_run_ids=frozenset({_DISPATCH_ID}),
+        )
+        is None
+    )
+
+
+def test_a_row_naming_no_dispatch_id_still_anchors_on_its_run_id_alone() -> None:
+    """An older row predating the dispatch-id field is still a good anchor.
+
+    The only thing an absent dispatch id costs is the second precedence
+    comparison, so the arm degrades to the run id rather than refusing — a row
+    that cannot be cross-checked both ways is not a row that anchors nothing.
+    """
+    module = _loaded()
+    row = _cancel_row()
+    row["dispatch_id"] = None
+    anchor = module.cancel_anchor(
+        records=(row,), work_item_id=_ITEM_ID, proof_run_ids=frozenset({_DISPATCH_ID})
+    )
+    assert anchor is not None
+    assert anchor.run_id == _RUN_ID
