@@ -194,6 +194,20 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   identity rather than a value, with the empty token fingerprinting to null:
   the only question two rows are asked is whether the value CHANGED, and "no
   credential was resolved" must not read as a changed one.
+  A FIFTH property, and it is what makes the other four reach a run:
+  `publish_rotated_credential` puts each round's RESOLVED value into the
+  process environment, because the dispatch the wait admits does not consult
+  this re-resolution at all — `_dispatcher_credentials` renders the sandbox
+  overlay from `os.environ[<selected name>]` and the pre-launch
+  `assess_credential_status` re-reads the same entry. A wait that retired on
+  the wrapper's rotated value while leaving that environment holding the
+  launch-time one reports a resume and then admits a run carrying the exact
+  credential it had been parked on. It publishes BEFORE the assessment and on
+  every round including the returning one, so one round's reading is both the
+  value assessed and the value projected; and a round that resolved NOTHING
+  publishes nothing, since every fallback reading is the launch-time value and
+  on an ABSENT name that is the empty string — which the dispatch path reads as
+  a credential to project rather than as the absence an operator must fix.
 - `_dispatcher_git_credential_helper.py` — the git credential helper every
   dispatch configures in the sandbox clone, so an in-sandbox push to
   github.com obtains an App installation token minted AT PUSH TIME from the

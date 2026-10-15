@@ -41,6 +41,19 @@ THE RETIREMENT-SIGNAL CASES COME AS A PAIR, and both run at a budget of ONE
 because that is the budget this fleet actually dispatches with: `_drive_impl_
 dispatch` spawns every `drive --action impl:<id>` loop as `loop --budget 1`, so a
 bound keyed on the budget retires the wait after a SINGLE round, and the 2026-10-08
+THE PUBLISHED-CREDENTIAL CASES COME AS A PAIR, and the control is what gives the
+first one meaning. A wait that retires on the credential the WRAPPER now holds
+while leaving the process environment carrying the launch-time one has not
+resumed anything: every seam the admitted dispatch projects through reads that
+environment, so the run it admits carries the credential the wait was parked on.
+Taken alone, "the environment holds the rotated value" is satisfied by an
+implementation that writes back whatever each round ended up holding — and since
+every fallback reading hands back the launch-time value, that is
+indistinguishable on a present credential. The control therefore takes the one
+shape where the two differ: with the name ABSENT and the wrapper unreadable, a
+write-back of the fallback would CREATE the name as the empty string, which the
+dispatch path reads as a credential it may project.
+
 incident this slice repairs was four such loops. One case re-resolves the wrapper
 on every round and one cannot re-resolve it at all; both are held on the same
 provider-limit verdict and both must run to the probe's own `usable` result,
@@ -54,6 +67,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -511,6 +525,78 @@ def test_a_working_wrapper_is_retired_by_the_same_one_signal(
     assert probe.calls == 4
     assert sleeps.calls == [2, 2, 2]
     assert len(_refusals(journal=journal, reprobe=reprobe)) == 3
+
+
+def test_the_credential_the_wait_retired_on_is_what_the_dispatch_then_projects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Resuming admission on a rotated credential the dispatch cannot see is not a resume.
+
+    The wait assesses the credential the WRAPPER holds, but every seam the
+    admitted dispatch then projects through reads the process environment:
+    `_dispatcher_credentials` renders the sandbox overlay from
+    `os.environ[<selected name>]`, and `assess_credential_status` re-reads the
+    same place before launch. So a wait that retired on a rotated value and left
+    that environment holding the launch-time one admits a dispatch carrying the
+    very credential the wait was parked on — the loop reports a resume and the
+    run dies on the dead token.
+
+    Asserted at the process environment rather than through the overlay
+    renderer because that environment IS the seam the two of them share; an
+    assertion on one renderer would leave the other reading the stale value.
+    The wait is driven exactly as the rotation case above drives it, with the
+    launch-time value held provider-limited throughout, so the published value
+    can only have come from the wrapper.
+    """
+    reprobe = _reprobe()
+    monkeypatch.setenv(CLAUDE_OAUTH_TOKEN_ENV, _STALE_TOKEN)
+    repo = _repo(tmp_path=tmp_path, cadence=3, wrapper=_WRAPPER)
+    probed: list[str] = []
+
+    reprobe.await_usable_credential(
+        repo=repo,
+        journal=_journal(repo=repo),
+        budget=2,
+        probe=_token_keyed_probe(usable_token=_ROTATED_TOKEN, probed=probed),
+        sleep=_BoundedSleep(ceiling=_UNBOUNDED_WAIT_CEILING),
+        runner=_wrapper_printing(tokens=[_STALE_TOKEN, _ROTATED_TOKEN]),
+    )
+
+    assert probed == [_STALE_TOKEN, _ROTATED_TOKEN]
+    assert os.environ[CLAUDE_OAUTH_TOKEN_ENV] == _ROTATED_TOKEN
+
+
+def test_a_round_that_resolved_no_credential_publishes_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control: an unresolvable reading must not invent a credential.
+
+    This is the one shape that separates "publish what this round RESOLVED" from
+    "publish whatever this round ended up holding". Every fallback reading hands
+    back the launch-time value, which already equals what the environment holds,
+    so on a present credential the two implementations are indistinguishable.
+    With the name ABSENT the difference is observable and it matters: publishing
+    the fallback would CREATE the name as the empty string, and the dispatch
+    path's own `os.environ[<selected name>]` read would then return a credential
+    it could project instead of raising on a name nobody injected.
+    """
+    reprobe = _reprobe()
+    monkeypatch.delenv(CLAUDE_OAUTH_TOKEN_ENV, raising=False)
+    repo = _repo(tmp_path=tmp_path, cadence=3, wrapper=_WRAPPER)
+    journal = _journal(repo=repo)
+
+    reprobe.await_usable_credential(
+        repo=repo,
+        journal=journal,
+        budget=2,
+        sleep=_BoundedSleep(ceiling=_UNBOUNDED_WAIT_CEILING),
+        runner=_misconfigured_wrapper(),
+    )
+
+    # The absent-credential refusal is not a condition this wait governs, so it
+    # returned at once and journaled nothing.
+    assert _refusals(journal=journal, reprobe=reprobe) == []
+    assert CLAUDE_OAUTH_TOKEN_ENV not in os.environ
 
 
 def test_the_default_cadence_is_three_hundred_seconds(tmp_path: Path) -> None:

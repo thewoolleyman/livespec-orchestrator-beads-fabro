@@ -34,6 +34,12 @@ imported, because this module's Red predates the exported tuple it binds and a
 module-level import of a name that does not exist yet would make the Red a
 collection error instead of an assertion.
 
+THE PUBLICATION IS COVERED AS A PAIR FOR THE SAME REASON. A fallback reading
+hands back the launch-time value the caller read out of the mapping it publishes
+into, so on a PRESENT name "publish only a resolved reading" and "publish
+whatever this round holds" are indistinguishable. The absent-name case is where
+they differ, and the difference is a credential the dispatch path would project.
+
 THE SELECTED NAME IS ASSERTED THROUGH A caam POOL SLOT, which is the one shape
 that can fail for the right reason. The unnumbered `CLAUDE_CODE_OAUTH_TOKEN` is
 in the injected set already, so a re-resolution that emptied the set and ignored
@@ -147,9 +153,49 @@ def test_the_module_exists_and_publishes_the_rotation_seam() -> None:
         "RotatedCredential",
         "WRAPPER_RESOLVED",
         "credential_identity",
+        "publish_rotated_credential",
         "resolve_rotated_credential",
     }
     assert rotation.CREDENTIAL_ROTATION_TIMEOUT_SECONDS > 0
+
+
+def test_a_resolved_credential_is_published_to_the_environment_it_is_handed() -> None:
+    """The publication writes the RESOLVED value under the projected name."""
+    rotation = _rotation()
+    environ = {CLAUDE_OAUTH_TOKEN_ENV: _LAUNCH_TOKEN}
+
+    rotation.publish_rotated_credential(
+        env_name=CLAUDE_OAUTH_TOKEN_ENV,
+        rotated=rotation.RotatedCredential(
+            token=_ROTATED_TOKEN, rotatable=True, source=rotation.WRAPPER_RESOLVED
+        ),
+        environ=environ,
+    )
+
+    assert environ == {CLAUDE_OAUTH_TOKEN_ENV: _ROTATED_TOKEN}
+
+
+def test_a_fallback_reading_publishes_nothing_at_all() -> None:
+    """An unresolvable reading leaves an ABSENT name absent.
+
+    The fallback token is the launch-time value the caller read out of this very
+    mapping, so on a PRESENT name publishing it would be a no-op and this guard
+    would be unobservable. An absent name is where it shows: the launch-time
+    value is then the empty string, and installing that would hand the dispatch
+    path a credential to project where the operator has an absent one to fix.
+    """
+    rotation = _rotation()
+    environ: dict[str, str] = {}
+
+    rotation.publish_rotated_credential(
+        env_name=CLAUDE_OAUTH_TOKEN_ENV,
+        rotated=rotation.RotatedCredential(
+            token="", rotatable=False, source=rotation.LAUNCH_ENVIRONMENT_WRAPPER_UNRESOLVABLE
+        ),
+        environ=environ,
+    )
+
+    assert environ == {}
 
 
 def test_a_declared_wrapper_is_asked_for_the_projected_name(tmp_path: Path) -> None:
