@@ -26,10 +26,19 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_credentials,
     _dispatcher_sibling_clones,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_routing import CodexRouting
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import GitAuthor
+
+# The routing these two scenarios declare. Both are about a dispatch that DOES
+# project a Codex credential, and since `bd-ib-meejjz` the overlay leg projects
+# one only for a dispatch routing a node to the `codex-acp` agent.
+_CODEX_ROUTED = CodexRouting(
+    routes_codex=True,
+    detail="resolved ACP candidate keys naming the codex-acp agent: codex-acp/openai/gpt-5.1",
+)
 
 # The review-fix VISIT cap the shipped default renders -- `DEFAULT_REVIEW_FIX_CAP`
 # of three repair rounds plus the initial review visit. Immaterial to what these
@@ -105,6 +114,15 @@ def _dispatcher_projection_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _FAKE_CLAUDE_TOKEN)
     monkeypatch.setattr(
         _dispatcher_sibling_clones, "fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT
+    )
+    # THE CODEX ROUTING IS DECLARED RATHER THAN RESOLVED. The `tmp_path`
+    # repository these cases build carries no node adapters, so it resolves to
+    # the workflow's built-in Anthropic defaults and would scope the projection
+    # away for a reason neither scenario is about. The scoping itself is asserted
+    # in `test_dispatcher_codex_overlay_leg_routing`, in BOTH directions, which
+    # is what keeps this stand-in from hiding it.
+    monkeypatch.setattr(
+        _dispatcher_credentials, "codex_routing_for_dispatch", lambda **_kwargs: _CODEX_ROUTED
     )
 
 

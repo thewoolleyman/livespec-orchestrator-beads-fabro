@@ -18,6 +18,24 @@ It renews NOTHING. The bounded in-place renewal belongs to the pre-claim gate,
 which has already run for the item by the time this leg is reached; a renewal
 here could only extend a credential whose shortfall can no longer be reported
 before a claim.
+
+WHICH DISPATCHES IT ASKS THAT QUESTION FOR, which is NOT all of them. A dispatch
+routing no node to the `codex-acp` agent projects no Codex credential, so all
+four steps above are about a credential that is not in the run: there is no
+lifetime to size, nothing to grade, no observed expiry to stamp a deadline from,
+and no credential whose use the graph's launches must reach a guard to bound.
+Such a dispatch is passed over before ANY of them runs -- which is why the
+`committed` file is never read on that path -- and the leg answers with the
+host's explicit declaration that it projected nothing.
+
+SCOPING THE PRE-CLAIM GATE ALONE WOULD HAVE BEEN WORSE THAN DOING NOTHING, which
+is why this leg is scoped by the SAME routing rather than left to that gate. The
+gate sits BEFORE the claim precisely so an insufficient credential can be
+reported while there is still nothing to strand; this leg sits after it. A build
+that skipped the pre-claim grade for an all-Claude dispatch while this leg still
+graded would therefore not have removed those refusals -- it would have MOVED
+each one from the only position that can report it safely into the position that
+leaves the row `active` with no factory run.
 """
 
 from __future__ import annotations
@@ -31,6 +49,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
     CodexProjectionRefusal,
     project_host_codex_auth,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_routing import CodexRouting
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement import (
     REVIEW_FIX_VISIT_CAP_INPUT,
     WorkflowFaultDeferral,
@@ -38,7 +57,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requireme
     requirement_refusal_text,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_projection import (
-    CredentialUseProjection,
+    CredentialUseDeclaration,
+    UnprotectedCredentialUse,
     credential_use_projection_for,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_routes import (
@@ -50,13 +70,21 @@ __all__: list[str] = ["CodexOverlayLeg", "project_codex_overlay_leg"]
 
 @dataclass(frozen=True, kw_only=True)
 class CodexOverlayLeg:
-    """The two projection inputs this leg resolves for the overlay renderer."""
+    """The two projection inputs this leg resolves for the overlay renderer.
 
-    snapshot: str
-    credential_use: CredentialUseProjection
+    `snapshot` is None for a dispatch that routes no node to Codex, which is
+    what renders no Codex auth into the sandbox at all. It is paired with an
+    `UnprotectedCredentialUse` declaration rather than with None, because the
+    overlay renderer treats a snapshot beside a non-projection as BROKEN
+    protection and declines to render -- so the two fields are only ever both
+    projected or both withheld, and no third combination is representable here.
+    """
+
+    snapshot: str | None
+    credential_use: CredentialUseDeclaration
 
 
-def project_codex_overlay_leg(
+def project_codex_overlay_leg(  # noqa: PLR0913 — kw-only projection leg; each is an independent input.
     *,
     committed: Path,
     block: dict[str, Any],
@@ -64,8 +92,31 @@ def project_codex_overlay_leg(
     graph_override: Path | None,
     adapter_inputs: frozenset[str],
     clock: Callable[[], int],
+    codex_routing: CodexRouting,
 ) -> CodexOverlayLeg | str:
-    """Resolve this dispatch's Codex projection, or the FIRST refusal in the leg."""
+    """Resolve this dispatch's Codex projection, or the FIRST refusal in the leg.
+
+    `codex_routing` is this dispatch's RESOLVED routing and is REQUIRED rather
+    than defaulted. The pre-claim gate takes the same answer as an optional
+    thunk, because the drain reaches that gate on every idle pass and must not
+    pay for a question it has already declined to ask; this leg is reached only
+    for a dispatch that is going ahead, so there is nothing to defer — and a
+    default here would be a silent one. A caller that forgot to wire a default
+    would grade a credential no node will use and stamp a deadline nothing
+    needs, which is the whole defect this parameter exists to retire, so the
+    type system refusing the call is better than an arm nobody notices.
+    """
+    # ROUTING DECIDES WHETHER THERE IS A CREDENTIAL TO PROJECT, and it is asked
+    # FIRST — before the requirement, the grade, the stamp and the route check —
+    # because every one of those is about a credential this dispatch does not
+    # project. Answered with the host's explicit declaration rather than with
+    # None: None is what a caller passes when it says nothing at all, and the
+    # sandbox guard must keep refusing on silence, since silence is how a broken
+    # projection looks. The declaration is the one statement that may disarm the
+    # deadline, and `_acp_node_layers` plus `_dispatcher_credential_use_routes`
+    # both refuse a launch that tries to make it for itself.
+    if not codex_routing.routes_codex:
+        return CodexOverlayLeg(snapshot=None, credential_use=UnprotectedCredentialUse())
     # The requirement for the workflow THIS dispatch resolved, derived from the
     # very file about to be overlaid and from the review-fix guard the plan
     # renders — not re-resolved from configuration, which would let the
