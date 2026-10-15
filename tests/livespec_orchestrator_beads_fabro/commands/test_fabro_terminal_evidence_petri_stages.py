@@ -37,10 +37,12 @@ pass the agent-request case.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import (
+    AGENT_REQUEST,
     STAGE_FAILURE,
+    UNESTABLISHED,
     causal_stage_failure,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_terminal_evidence import terminal_evidence
@@ -83,6 +85,17 @@ _STAGES_WITH_A_FAILURE: dict[str, Any] = {
     _TERMINAL_STAGE: _stage(handler="script", state="failed"),
 }
 
+# The SAME run with its one real failure removed: an agent rode a conditional
+# edge off a stage that succeeded and asked a question. The terminal still
+# records `failed`, because it always does.
+_STAGES_WITHOUT_A_FAILURE: dict[str, Any] = {
+    "implement@1": _stage(handler="agent", state="succeeded"),
+    "janitor@1": _stage(handler="script", state="succeeded"),
+    "proof_capture@1": _stage(handler="agent", state="succeeded"),
+    _FAILED_STAGE: _stage(handler="agent", state="succeeded"),
+    _TERMINAL_STAGE: _stage(handler="script", state="failed"),
+}
+
 
 def test_a_petri_stage_state_map_establishes_the_ending() -> None:
     """The stage states ground the verdict the absent outcome map cannot.
@@ -97,6 +110,82 @@ def test_a_petri_stage_state_map_establishes_the_ending() -> None:
     assert evidence is not None
     assert evidence.outcomes_observed is True
     assert causal_stage_failure(evidence=evidence).kind == STAGE_FAILURE
+
+
+def test_the_failed_petri_stage_is_named_and_the_terminal_stage_is_not() -> None:
+    """`proof_capture@2` is the cause; `needs_human@1` can never be one.
+
+    The terminal exclusion already existed and could not reach a Petri record,
+    because it compared against the bare node id while Petri keys its stages
+    `<node>@<visit>`. Naming the terminal is the worst available answer: it is
+    true of every needs-human ending there has ever been, so it reads as a
+    finding while carrying no information, and it displaces the stage that
+    actually failed.
+    """
+    evidence = terminal_evidence(payload=_petri_payload(stages=_STAGES_WITH_A_FAILURE))
+    assert evidence is not None
+    assert evidence.failed_stages == (_FAILED_STAGE,)
+    assert evidence.current_predecessor == _FAILED_STAGE
+    assert causal_stage_failure(evidence=evidence).stages == (_FAILED_STAGE,)
+
+
+def test_every_non_terminal_petri_stage_succeeding_is_an_agent_request() -> None:
+    """A question genuinely awaits a human, and the terminal must not hide it.
+
+    This is the same exclusion read from the other side, and it is the half
+    that fails toward inventing a fault: without it the terminal's own designed
+    `failed` state is the one failure on every such record, so EVERY Petri
+    agent request would be reported as a stage failure.
+    """
+    evidence = terminal_evidence(payload=_petri_payload(stages=_STAGES_WITHOUT_A_FAILURE))
+    assert evidence is not None
+    assert evidence.outcomes_observed is True
+    assert evidence.failed_stages == ()
+    assert causal_stage_failure(evidence=evidence).kind == AGENT_REQUEST
+
+
+def test_a_checkpoint_carrying_node_outcomes_is_still_graded_from_them() -> None:
+    """The stage map is a FALLBACK, never a merge — the outcome map still wins.
+
+    The two inputs are made to DISAGREE, which is the only shape that can fail
+    for the right reason: the outcome map records nothing failed while the
+    stage map records `proof_capture@2` failed, so a reader that preferred the
+    stage map, or merged the two, reports a stage failure here. A fixture whose
+    inputs agreed would pass whichever one was read.
+
+    There is no Red for this one and the implementation never had a defect
+    here: it is a preservation assertion, pinning the precedence an engine
+    carrying BOTH shapes depends on.
+    """
+    payload = _petri_payload(stages=_STAGES_WITH_A_FAILURE)
+    checkpoint = cast("dict[str, Any]", cast("dict[str, Any]", payload[0])["checkpoint"])
+    checkpoint["node_outcomes"] = {
+        "implement": {"status": "succeeded"},
+        "review": {"status": "succeeded"},
+    }
+    evidence = terminal_evidence(payload=payload)
+    assert evidence is not None
+    assert evidence.failed_stages == ()
+    assert causal_stage_failure(evidence=evidence).kind == AGENT_REQUEST
+
+
+def test_a_stages_field_that_is_not_a_map_still_reports_unestablished() -> None:
+    """A `stages` LIST is not a reading, and an absence must not become a verdict.
+
+    An earlier Petri nightly reported `stages` as a list of stage ids rather
+    than as a map — the shape
+    `tests/.../test_dispatcher_fabro_terminal_needs_human.py` transcribes from
+    `v0.378.0-nightly.0`. Neither input is then readable, so the ending is
+    honestly undetermined; the alternative, treating an unreadable field as
+    "graded, and nothing failed", would manufacture an agent nobody heard from.
+
+    Like the case above this has no Red: it is the honest-unknown arm being
+    pinned against the widening, not a defect that was fixed.
+    """
+    evidence = terminal_evidence(payload=_petri_payload(stages=["implement@1", _TERMINAL_STAGE]))
+    assert evidence is not None
+    assert evidence.outcomes_observed is False
+    assert causal_stage_failure(evidence=evidence).kind == UNESTABLISHED
 
 
 def test_a_stage_entry_carrying_no_state_grounds_nothing() -> None:
