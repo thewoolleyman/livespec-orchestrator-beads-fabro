@@ -6423,3 +6423,49 @@ Feature: The tenant's client backup lane stays disabled
     Then that write's stderr carries no auto-backup failed warning
     And the next hourly dolt-backup.service run still reports every tenant synced
 ```
+
+## Scenario 183 — A checkpoint-failed run whose tree nothing else carries is published to a preservation ref
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Failed engine checkpoint commit attribution".
+
+```gherkin
+Feature: The work of a run that ended on a failed engine checkpoint survives the run
+  As the maintainer of a repository dispatched through the factory
+  I want the changed files of a checkpoint-failed run published to a ref when no terminal patch carries them
+  So that finished work is recoverable after the run's sandbox is gone
+
+  Scenario: the changed files are published as one commit on a preservation ref
+    Given a dispatched run that ended on a failed engine checkpoint commit of node implement
+    And an earlier node of the run left a stage diff artifact
+    And its terminal run.failed event carries no terminal patch
+    When the Dispatcher reports the dispatch result
+    Then it reads the run's changed files from the dispatch's resolved factory target
+    And the forge carries a ref refs/livespec/preserved-publish/<work-item-id>/<commit-sha> whose commit's parent is the run's base commit and whose tree reflects every change the run made, removals included
+    And no git push and no repository hook ran for that publication
+    And a livespec-preserved-tree ledger comment names the run id, the factory, the preservation ref and its commit id
+    And the item rests blocked with blocked_reason needs-human
+    And the dispatch reports exit code 4
+
+  Scenario: a failed preservation is reported and the item still rests at needs-human
+    Given a dispatched run that ended on a failed engine checkpoint commit and whose terminal event carries no terminal patch
+    And the factory refuses the read of the run's changed files
+    When the Dispatcher reports the dispatch result
+    Then no preservation ref is created
+    And a livespec-preserved-tree ledger comment states that the tree was not preserved and names the files read as the step that failed
+    And the item rests blocked with blocked_reason needs-human
+    And the dispatch reports exit code 4
+
+  Scenario: a run whose events cannot be read is still published
+    Given a dispatched run that ended on a failed engine checkpoint commit
+    And the run's events cannot be read from the dispatch's resolved factory target
+    When the Dispatcher reports the dispatch result
+    Then it attempts the publication of the run's changed files to a ref under refs/livespec/preserved-publish/<work-item-id>/
+    And the item rests blocked with blocked_reason needs-human
+
+  Scenario: a run whose terminal patch carries its work gets no preservation ref
+    Given a dispatched run that ended on a failed engine checkpoint commit
+    And its terminal run.failed event carries a terminal patch
+    When the Dispatcher reports the dispatch result
+    Then no ref under refs/livespec/preserved-publish/<work-item-id>/ is created for that run
+    And the existing preserve-by-reference pointer and the terminal patch's size and digest are recorded as before
+```
