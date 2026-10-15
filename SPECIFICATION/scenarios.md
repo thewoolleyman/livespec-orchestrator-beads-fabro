@@ -6323,6 +6323,45 @@ Feature: A factory agent's commit leg is not bounded by one tool call
     Then the runner refuses the start and names the running commit run
 ```
 
+## Scenario 180 — A sandbox agent cannot remove the run's working tree, and ordinary removals still run
+
+```gherkin
+Feature: The run's protected paths survive the agent inside the factory sandbox
+  As the maintainer of a repository dispatched through the factory
+  I want an agent command that would delete the run's working tree refused before it runs
+  So that a finished implementation is not lost to a checkpoint that cannot find its working directory
+
+  Background:
+    Given the implement-stage agent's ACP adapter runtime offers a hook that runs before each shell command
+
+  Scenario: removing the sandbox root is refused before it runs
+    Given an implement-stage agent inside a factory sandbox whose working directory is /workspace/<repository>
+    When the agent runs a shell command "cd /tmp && rm -rf /workspace && mkdir -p /workspace"
+    Then the command is refused before any part of it executes
+    And the refusal names /workspace as the protected path
+    And the run's working directory still exists
+
+  Scenario: a relative removal from a parent directory is refused
+    Given an implement-stage agent inside a factory sandbox whose working directory is /workspace/<repository>
+    When the agent runs a shell command "cd / && rm -rf workspace/"
+    Then the command is refused and the refusal names /workspace as the protected path
+
+  Scenario: removals under a scratch directory and inside the repository still run
+    Given an implement-stage agent inside a factory sandbox
+    When the agent runs "rm -rf /tmp/layout-sim" and then removes a file inside the repository tree
+    Then neither command is refused
+
+  Scenario: a command that also removes a protected path is refused
+    Given an implement-stage agent inside a factory sandbox whose working directory is /workspace/<repository>
+    When the agent runs a shell command "rm -rf /tmp/layout-sim /workspace"
+    Then the command is refused and the refusal names /workspace as the protected path
+
+  Scenario: a protected path mentioned only as data is not refused
+    Given an implement-stage agent inside a factory sandbox
+    When the agent runs a shell command that passes "rm -rf /workspace" to echo, or writes it in a here-document body
+    Then the command is not refused
+```
+
 ## Scenario 181 — A ledger write from this repository prints no auto-backup warning
 
 ```gherkin

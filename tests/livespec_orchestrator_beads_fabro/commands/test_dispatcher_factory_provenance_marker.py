@@ -138,6 +138,14 @@ def test_render_run_config_overlay_without_a_dispatch_id_declares_no_marker(
 
     The production path always carries one; this arm keeps the projection
     honest for a direct caller rather than declaring an empty provenance.
+
+    The absence is asserted on the STEP rather than on the key's spelling,
+    because the key legitimately appears elsewhere in the overlay: the
+    carry-forward decision program materialized beside the plugin-cache gate
+    READS this config key to name the run its decision record is attributed to
+    (v138). A bare string search would therefore report a declared marker for a
+    dispatch that declared none — and it would do so for a reason that has
+    nothing to do with the projection under test.
     """
     rendered = render_run_config_overlay(
         committed_text=_COMMITTED_WORKFLOW_TOML,
@@ -147,7 +155,7 @@ def test_render_run_config_overlay_without_a_dispatch_id_declares_no_marker(
         siblings=None,
     )
     assert rendered is not None
-    assert _MARKER not in rendered
+    assert f"git config {_MARKER}" not in rendered
 
 
 def test_materialize_overlay_declares_the_pre_launch_dispatch_id(

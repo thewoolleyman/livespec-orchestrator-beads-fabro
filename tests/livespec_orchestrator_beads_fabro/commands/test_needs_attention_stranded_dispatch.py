@@ -5,6 +5,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import (
+    release_to_ready_command,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_stranded_dispatch import (
     stranded_dispatch_items,
 )
@@ -125,6 +128,28 @@ def test_a_merge_held_item_is_never_reported_as_stranded(tmp_path: Path) -> None
 def test_stranded_dispatch_items_render_release_handoff_for_pre_branch_death(
     tmp_path: Path,
 ) -> None:
+    """A pre-branch death hands over the move-to-ready ACTION, not a reconcile.
+
+    Both assertions below are scoped to the action, never to the whole
+    rendered command. `drive_command` interpolates `_wrapper_path`, which
+    resolves against the INSTALLED PACKAGE -- i.e. against the checkout
+    directory -- so a bare `"reconcile-merged" not in ...` also ranges over a
+    path this test neither controls nor intends to test, and fails for a
+    correct implementation whenever the repository is checked out under a
+    directory whose name carries that token. Measured: that form reported
+    `'reconcile-merged' is contained here: python3 /.../fix/
+    reconcile-merged-parked-recovery/.claude-plugin/scripts/bin/drive.py
+    --action move:bd-active:ready --json` -- the token came from the path and
+    the action under test was already correct.
+
+    The `--action` prefix anchors the first assertion to the flag rather than
+    to the path, and the identity comparison pins the whole argv to the
+    renderer that owns this action, so a handoff rendering
+    `reconcile_merged_command` here fails both. Note why the obvious repair
+    `"--action reconcile-merged" not in ...` was NOT taken: no reconcile
+    command carries an `--action` flag at all, so that assertion could never
+    match and would be an instrument incapable of returning a hit.
+    """
     _write_journal_lines(
         tmp_path,
         records=[
@@ -145,8 +170,10 @@ def test_stranded_dispatch_items_render_release_handoff_for_pre_branch_death(
     assert "dispatch-id" in stranded.summary
     assert "1 prior attempt" in stranded.summary
     assert stranded.handoff.kind == "shell"
-    assert "move:bd-active:ready" in stranded.handoff.command
-    assert "reconcile-merged" not in stranded.handoff.command
+    assert "--action move:bd-active:ready" in stranded.handoff.command
+    assert stranded.handoff.command == release_to_ready_command(
+        project_root=tmp_path, work_item="bd-active"
+    )
 
 
 def test_stranded_dispatch_items_render_pr_handoff_for_unmerged_pr_failure(

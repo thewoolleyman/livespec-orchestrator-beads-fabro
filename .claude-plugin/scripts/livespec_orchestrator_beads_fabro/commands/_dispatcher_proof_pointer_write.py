@@ -41,7 +41,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer import
     description_with_pointer,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
+    VERDICT_CARRIED_FORWARD,
     VERDICT_HUMAN_ATTESTED,
+    VERDICT_VERIFIED,
     ProofRecord,
     latest_proof_record,
 )
@@ -68,6 +70,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "PROOF_POINTER_STAGE",
+    "carried_forward_record_url",
     "host_only_record",
     "host_verified_record_url",
     "human_attested_record_url",
@@ -76,6 +79,13 @@ __all__: list[str] = [
 ]
 
 PROOF_POINTER_STAGE = "proof-pointer"
+# The two verdicts a record may anchor the published head with, read by POSITION
+# so the newest decides. Spelled here rather than imported from
+# `_dispatcher_publication_head` because that module is the SANDBOX side of the
+# same rule and importing it would pull a program renderer into the host-side
+# pointer writer; the two are held to one reading by `carried_forward_record_url`
+# naming that module in its own docstring and by the pointer's paired test.
+_ANCHOR_VERDICTS = (VERDICT_VERIFIED, VERDICT_CARRIED_FORWARD)
 _SKIPPED_STAGE = "proof-pointer-skipped"
 _ERROR_STAGE = "proof-pointer-error"
 _LEDGER_WRITE_ERRORS = (
@@ -140,6 +150,10 @@ def write_proof_pointer(
                 outcome=outcome,
                 pull_request=pr_number,
             ),
+            # The carry-forward link follows the newest ANCHOR record rather than
+            # the presence of a carry-forward anywhere on the pull request, for
+            # the reason that resolver's own docstring gives.
+            carried_forward_url=carried_forward_record_url(proof=proof),
             # The host link comes off the leg's OWN verdict rather than from a scan
             # of the records: the leg populates it only for a `host_verified` record
             # that actually passed an assertion, so the pointer can never cite a
@@ -222,6 +236,28 @@ def host_only_record(*, proof: ProofLeg) -> ProofRecord | None:
     if not proof.host_captured_only:
         return None
     return proof.host_verified_record
+
+
+def carried_forward_record_url(*, proof: ProofLeg) -> str | None:
+    """The `carried_forward` record's link, when the merged head was reached by one.
+
+    The clause adds the link "when the merged head was reached through a
+    carry-forward", and that is a question about the NEWEST ANCHOR rather than
+    about whether such a record exists anywhere on the pull request. A run may
+    carry its proof forward, be sent back round capture and replay by a later
+    refresh, and merge on a freshly VERIFIED head; the carry-forward is then a
+    superseded decision, and citing it would advertise — in the item's own
+    description — proof of a tree that is not the one that merged.
+
+    So the two ANCHOR verdicts are read by POSITION and the last one decides,
+    which is the identical reading `_dispatcher_publication_head` takes when it
+    establishes which head `pr` may ready. Reading it any other way here would
+    make the pointer and the publication gate disagree about the same chain.
+    """
+    anchors = [one for one in proof.records if one.verdict in _ANCHOR_VERDICTS]
+    if not anchors or anchors[-1].verdict != VERDICT_CARRIED_FORWARD:
+        return None
+    return anchors[-1].url
 
 
 def host_verified_record_url(*, proof: ProofLeg) -> str | None:

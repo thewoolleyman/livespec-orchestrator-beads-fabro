@@ -317,17 +317,59 @@ using the run id you resolved in Step 3 and an ISO-8601 UTC timestamp.
 The SECOND line must declare, exactly once, the publish-branch head YOUR
 replay ran on:
 
-    Publish-branch head: <the full 40-character commit sha of HEAD>
+    Publish-branch head: <the full 40-character commit sha of the pull request's head>
 
-Read it with `git rev-parse HEAD` in the sandbox clone and paste the full
-sha — your own reading, never the one the captured record declares, even
-when the two agree. It is what lets a later `resume` finish this run from
+Read it from the FORGE, not from the clone: `gh pr view <number> --json
+headRefOid --jq .headRefOid`, and paste the full sha — your own reading,
+never the one the captured record declares, even when the two agree. The
+engine commits a checkpoint after every node, so the clone's own `git
+rev-parse HEAD` is usually UNPUSHED commits above what the pull request
+carries. Then confirm the pull request's head is the TREE your replay ran
+on: run `git fetch --quiet origin "refs/pull/<number>/head"` and then `git
+diff --quiet FETCH_HEAD HEAD`. Exit status 0 means the clone differs from
+the pull request's head only by commits that change no file — declare that
+head. Any other status means the clone carries changes the pull request
+does not: then do NOT write the label at all, and say in one prose
+sentence that no head is declared because the clone's HEAD (give its full
+sha) carries changes the pull request's head (give its full sha) does not. It is what lets a later `resume` finish this run from
 this pull request instead of re-implementing it, and the resume compares it
 against the pull request's current head. Declare it in PROSE, outside every
 fenced block. Your replay re-prints the captured record's own lines, this
 label among them, so a fenced occurrence is proof OUTPUT and is
 deliberately ignored — and naming two different shas in prose makes the
 record anchor nothing.
+
+Then, **ahead of every numbered step in the body**, declare the directory
+your replay ran those steps from — in PROSE, outside every fenced block:
+
+    Working directory: .
+
+Write that line
+**exactly when every one of its steps ran from the repository root**.
+Where any step ran somewhere else, name that directory
+on the same `Working directory:` line instead and do NOT write the root
+form: a later `pr_refresh` reads this line mechanically and carries this
+proof across a refresh only when it can re-run every step from the root
+itself, so a root declaration over steps that ran elsewhere would have it
+re-run them in the wrong place. Declaring another directory costs nothing
+but that carry-forward; it never fails the record.
+
+For every step whose command READ A FILE OUT OF THE WORKING TREE — a
+`cat`, `head`, `tail`, `wc`, `grep`, `sed` or `diff` of a path, as opposed
+to a `git show` of an object — also declare, in PROSE and outside every
+fenced block, one line per path that command read:
+
+    Read: <canonical path> <identity>
+
+The identity is the output of `git hash-object --no-filters <path>` for
+the working-tree file your replay actually read, taken in the SAME
+execution as the step — not afterwards, and never the `git rev-parse
+HEAD:<path>` blob id, which is the committed object rather than the bytes
+on disk. The canonical path is the path as it is reached from the
+repository root, with any `./` and repeated separators collapsed. These
+lines are what lets a later `pr_refresh` establish that the file it would
+re-read is byte-for-byte the file you read; a path with no line, or a line
+whose identity does not match, simply re-proves.
 
 The body then carries, **per assertion in Definition of Done order**:
 

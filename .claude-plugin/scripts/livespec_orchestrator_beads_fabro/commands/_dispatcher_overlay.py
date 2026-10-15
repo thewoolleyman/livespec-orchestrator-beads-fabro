@@ -38,6 +38,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import (
     GitAuthor,
     git_author_env_lines,
+    git_identity_prepare_steps_block,
     resolve_workflow_git_author,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_credential_helper import (
@@ -316,6 +317,11 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # agent happened to reach first.
     dispatch_base_steps = default_branch_fetch_prepare_steps_block(prepare_inputs=prepare_inputs)
     author_env_lines = git_author_env_lines(author=git_author)
+    # Rendered immediately after the dispatch base, so EVERY later step and every
+    # node that commits — publish_draft's refresh rebase, the needs_human
+    # preservation commit — finds the clone already carrying a committer. The
+    # Petri-era engine configures only its own checkpoint commits (bd-ib-lsr3vf).
+    git_identity_steps = git_identity_prepare_steps_block(author=git_author)
     # Rendered LAST among the prepare steps, so the startup check observes the
     # time preparation itself consumed. Placed earlier it would forgive exactly
     # the queue-and-prepare aging it exists to catch.
@@ -335,6 +341,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     return (
         rewritten
         + dispatch_base_steps
+        + git_identity_steps
         + factory_provenance_steps
         + sibling_steps
         + tmux_steps

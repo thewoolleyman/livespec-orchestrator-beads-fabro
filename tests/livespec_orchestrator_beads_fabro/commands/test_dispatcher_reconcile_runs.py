@@ -39,8 +39,21 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _HP_DEV_TOKEN_VALUE = "hp-fixture-dev-token"
 _VPS_DEV_TOKEN_VALUE = "vps-fixture-dev-token"
-_HP = FactoryTarget(name="hp", server="https://hp.example:32276", dev_token=_HP_DEV_TOKEN_VALUE)
-_VPS = FactoryTarget(name="vps", server="https://vps.example:32276", dev_token=_VPS_DEV_TOKEN_VALUE)
+# Each factory also declares the Docker daemon running ITS sandbox containers,
+# which is the daemon the container lane of a pass addresses. A factory that
+# declares none is reported rather than swept through the reconciling host's.
+_HP = FactoryTarget(
+    name="hp",
+    server="https://hp.example:32276",
+    dev_token=_HP_DEV_TOKEN_VALUE,
+    docker_host="ssh://cwoolley@hp.example",
+)
+_VPS = FactoryTarget(
+    name="vps",
+    server="https://vps.example:32276",
+    dev_token=_VPS_DEV_TOKEN_VALUE,
+    docker_host="ssh://cwoolley@vps.example",
+)
 # The factory an operator host has NOT exported a dev token for, and which no
 # `~/.fabro/auth.json` entry covers either: every HTTP route it offers is 401.
 _UNAUTHENTICATED = FactoryTarget(name="hp", server="https://hp.example:32276", dev_token=None)
@@ -409,10 +422,11 @@ def test_a_factory_without_a_server_url_is_refused_rather_than_surveyed(tmp_path
     assert runner.calls == []
     assert [error.reason for error in summary.errors] == ["factory-server-url-missing"]
     # And the container sweep did not run either. A pass that surveyed no
-    # factory holds no inventory to grade against, so it reports that no
-    # sweep happened rather than reporting a host with nothing on it.
+    # factory holds no inventory to grade against, so it reports that no sweep
+    # happened — the empty TUPLE of sweeps — rather than reporting one sweep
+    # over a factory with nothing on it.
     assert runner.docker_calls == []
-    assert (summary.containers.observed, summary.containers.held) == (False, ())
+    assert summary.containers == ()
 
 
 def test_no_bare_fabro_target_is_ever_constructed(
@@ -474,7 +488,7 @@ def test_a_dry_run_emits_the_orphan_set_and_mutates_nothing(tmp_path: Path) -> N
     # The container sweep rides this pass too, and a dry run may READ the
     # daemon while writing nothing to it. So the claim is about the verbs:
     # the inventory was listed and no container was removed.
-    assert [call[1] for call in runner.docker_calls] == ["ps"]
+    assert [call[3] for call in runner.docker_calls] == ["ps"]
 
 
 def test_an_item_missing_orphan_preserves_its_pointer_in_the_journal(tmp_path: Path) -> None:

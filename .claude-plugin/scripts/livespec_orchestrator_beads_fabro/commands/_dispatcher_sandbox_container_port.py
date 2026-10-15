@@ -1,10 +1,15 @@
 """The ONE place this package knows a sandbox container is a Docker container.
 
-The sandbox containers run where the Fabro server runs, so this port speaks
-to the LOCAL daemon through the Dispatcher's ordinary subprocess seam rather
-than to any factory URL. That is also why there is one port per pass and not
-one per factory: a host has a single daemon, whatever number of factories the
-pass surveyed.
+The sandbox containers run where the Fabro server runs, so every port is
+opened onto ONE NAMED DAEMON — the factory's, carried as `docker_host` and
+rendered as the Docker CLI's own `--host` option. It is required rather than
+optional because a port that could be built without one is a port that
+reaches whichever daemon the Dispatcher happens to be running beside, which
+on this fleet is a host that has never started a sandbox container: the
+sweep then journals `containers_observed: 0` for a factory leaking twelve of
+them, and that record is indistinguishable at every field from a clean
+factory. `_dispatcher_reconcile_runs_containers.py` owns which daemons a
+pass addresses and why an undeclared one is reported rather than guessed.
 
 TWO READS RATHER THAN ONE, because `docker ps --format` exposes no memory
 limit at all. The listing answers which containers exist and the inspect
@@ -54,6 +59,10 @@ __all__: list[str] = [
 
 DOCKER_BIN = "docker"
 
+# The CLI's global daemon-address option. It precedes the verb; passed after
+# one, the CLI reads it as that verb's own flag and refuses.
+_HOST_OPTION = "--host"
+
 _PS_TIMEOUT_SECONDS = 60.0
 _INSPECT_TIMEOUT_SECONDS = 60.0
 _REMOVE_TIMEOUT_SECONDS = 120.0
@@ -81,23 +90,30 @@ class SandboxContainerInventory:
 
 @dataclass(frozen=True, kw_only=True)
 class SandboxContainerPort:
-    """The Docker CLI face the sandbox-container sweep acts through."""
+    """The Docker CLI face the sandbox-container sweep acts through.
+
+    `docker_host` is the daemon every verb on this port is addressed to, as
+    the Docker CLI spells one. It is rendered as the GLOBAL `--host` option
+    ahead of the verb, which is the only position the CLI accepts it in.
+    """
 
     runner: CommandRunner
     cwd: Path
+    docker_host: str
     docker_bin: str = DOCKER_BIN
 
     def inventory(self) -> SandboxContainerInventory:
         """List the running `fabro-run-*` containers with their memory limits."""
         listed = self.runner.run(
-            argv=[
-                self.docker_bin,
-                "ps",
-                "--filter",
-                f"name={SANDBOX_CONTAINER_NAME_PREFIX}",
-                "--format",
-                "{{.Names}}",
-            ],
+            argv=self._argv(
+                verb="ps",
+                arguments=[
+                    "--filter",
+                    f"name={SANDBOX_CONTAINER_NAME_PREFIX}",
+                    "--format",
+                    "{{.Names}}",
+                ],
+            ),
             cwd=self.cwd,
             timeout_seconds=_PS_TIMEOUT_SECONDS,
         )
@@ -125,7 +141,7 @@ class SandboxContainerPort:
     def remove(self, *, name: str) -> CommandResult:
         """Stop and remove one container, which `docker rm -f` does as one act."""
         return self.runner.run(
-            argv=[self.docker_bin, "rm", "-f", name],
+            argv=self._argv(verb="rm", arguments=["-f", name]),
             cwd=self.cwd,
             timeout_seconds=_REMOVE_TIMEOUT_SECONDS,
         )
@@ -134,13 +150,16 @@ class SandboxContainerPort:
         if not names:
             return {}
         inspected = self.runner.run(
-            argv=[self.docker_bin, "inspect", "--format", _INSPECT_FORMAT, *names],
+            argv=self._argv(verb="inspect", arguments=["--format", _INSPECT_FORMAT, *names]),
             cwd=self.cwd,
             timeout_seconds=_INSPECT_TIMEOUT_SECONDS,
         )
         if inspected.exit_code != 0:
             return {}
         return _memory_limits_from_inspect(stdout=inspected.stdout)
+
+    def _argv(self, *, verb: str, arguments: list[str]) -> list[str]:
+        return [self.docker_bin, _HOST_OPTION, self.docker_host, verb, *arguments]
 
 
 def _container_names(*, stdout: str) -> tuple[str, ...]:

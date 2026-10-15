@@ -31,6 +31,18 @@ instead.
   prompt carrying both the record title and the post call), with a control
   asserting it reached the two publishers known today.
 
+- `test_proof_record_observation_scope_discipline.py` — bd-ib-v4exlm: both proof
+  stages write the `Working directory: .` line ahead of their numbered steps,
+  and only when every step ran from the repository root; `proof_verify` also
+  writes one `Read: <path> <identity>` line per working-tree path operand, whose
+  identity is the RAW bytes (`git hash-object --no-filters`) rather than the
+  filtered hash. Both spellings are imported from
+  `_dispatcher_carry_forward_grammar`, the module whose shipped program parses
+  them, so a re-wording on either side fails here. A prompt test because neither
+  line is rendered by any Python caller — and a reader whose writer never writes
+  the line reports a correct observation while permanently retiring the
+  carry-forward route.
+
 - `test_implement_coverage_before_green.py` — bd-ib-z6fmp: the implement-stage
   prompt requires the repository's per-file coverage check to be run over the
   FULL suite, with every gap closed, BEFORE any Green commit or amend — the hook

@@ -77,6 +77,10 @@ _COVERAGE_ENV_PREFIXES = ("COVERAGE_PROCESS_START", "COV_CORE_")
 _BRIEF_FILENAME = "livespec-refresh-repair-brief"
 _REPAIR_COUNT_FILENAME = "livespec-refresh-repair-count"
 
+# The one edge condition this module grades. Spelled once, because the routing
+# claims below are claims about WHICH arm carries it.
+_FAILED = "outcome=failed"
+
 
 def _graph_text() -> str:
     return _GRAPH_PATH.read_text(encoding="utf-8")
@@ -90,6 +94,42 @@ def _successors() -> dict[str, list[tuple[str, str | None]]]:
     for edge in graph.edges:
         edges[edge.source].append((edge.destination, edge.attributes.get("condition")))
     return edges
+
+
+def _arms(*, source: str) -> list[tuple[str, dict[str, str]]]:
+    """One node's outgoing arms in DECLARATION ORDER, with every attribute.
+
+    `_successors` above projects away everything but the condition, which is all
+    a reachability claim needs. An ORDER claim needs the sequence itself, and a
+    MIRRORING claim needs the attributes -- two edges that merely share a
+    destination and a condition are not the same edge.
+    """
+    graph = parse_dot_graph(text=_graph_text())
+    assert not isinstance(graph, str), graph
+    return [
+        (edge.destination, dict(edge.attributes)) for edge in graph.edges if edge.source == source
+    ]
+
+
+def _routed(*, source: str, outcome: str) -> str:
+    """The successor the graph picks for one node's reported outcome.
+
+    Conditional edges outrank the unconditional fallthrough, in declaration
+    order, which is the routing the pinned engine applies and the reason every
+    inserted node leaves its ordinary route unconditional. Nothing here models a
+    term beyond `outcome=`, because the two nodes this grades -- a command stage
+    and the classifier -- report nothing else, and a richer evaluator would be
+    an evaluator this module never exercises.
+    """
+    arms = _arms(source=source)
+    conditional = [
+        destination
+        for destination, attributes in arms
+        if attributes.get("condition") == f"outcome={outcome}"
+    ]
+    fallthrough = [destination for destination, attributes in arms if "condition" not in attributes]
+    assert fallthrough, f"{source} declares no unconditional fallthrough"
+    return conditional[0] if conditional else fallthrough[0]
 
 
 def _acyclic_routes(
@@ -366,6 +406,77 @@ def test_a_repair_round_re_earns_janitor_publish_draft_and_capture_before_pr() -
             assert route.index(earlier) < route.index(later), route
 
 
+def test_a_failed_pr_refresh_is_routed_to_the_classifier_ahead_of_needs_human() -> None:
+    """The SECOND refreshing stage reaches the classifier, and reaches it FIRST.
+
+    v134 built the repair route for `publish_draft` alone, so the clause's other
+    named stage kept routing every failure straight to the terminal: measured on
+    hp, run 01M4YT2Z7PFF07D353YN2KBKEA restored its pre-refresh head, recorded a
+    brief and said in as many words that it expected the fix node, and the graph
+    ended the run at `needs_human` 8.7 seconds later.
+
+    ORDER IS THE ASSERTION, not mere presence. Conditional arms are consulted in
+    declaration order, so a `refresh_repair` arm declared BEHIND the terminal's
+    `outcome=failed` arm is an arm nothing ever takes -- present in the graph,
+    invisible in every run, and indistinguishable from this defect. The index
+    comparison is therefore read off the parsed sequence rather than inferred
+    from the destination set.
+
+    The unconditional fallthrough is asserted UNCHANGED beside it, because that
+    is the arm an inserted edge is most likely to consume: a node whose every
+    outgoing edge carries a condition is the `all_conditional_edges` shape the
+    pinned engine rejects outright, before any node runs.
+    """
+    arms = _arms(source="pr_refresh")
+    failed = [
+        index
+        for index, (_, attributes) in enumerate(arms)
+        if attributes.get("condition") == _FAILED
+    ]
+    terminal = [
+        index for index, (destination, _) in enumerate(arms) if destination == "needs_human"
+    ]
+
+    assert failed, "pr_refresh declares no failed-outcome arm at all"
+    assert arms[failed[0]][0] == _REPAIR_NODE
+    assert terminal, "pr_refresh no longer declares its fail-closed terminal arm"
+    assert failed[0] < min(terminal), arms
+    assert [destination for destination, attributes in arms if "condition" not in attributes] == [
+        "pr_refresh_head"
+    ]
+
+
+def test_both_refreshing_stages_declare_the_same_failed_outcome_arm() -> None:
+    """One classifier, entered the same way from both stages the clause names.
+
+    The clause names `publish_draft` or `pr_refresh` in one breath and the
+    classifier is shared, so the two entries have to be the SAME edge rather than
+    two edges that happen to agree on a destination -- a differing condition
+    would route one stage's conflict to repair and the other's to the terminal
+    while every reachability assertion stayed green. The attribute mappings are
+    therefore compared whole.
+
+    `publish_draft`'s arms are asserted UNCHANGED, in order, as the control: the
+    clause requires the already-shipped half to be untouched, and "both stages
+    declare the arm" is satisfied just as well by a change that rewrote the
+    working one into agreement with a new mistake.
+    """
+    draft = _arms(source="publish_draft")
+    refresh = _arms(source="pr_refresh")
+    entries = {
+        source: [attributes for destination, attributes in arms if destination == _REPAIR_NODE]
+        for source, arms in (("publish_draft", draft), ("pr_refresh", refresh))
+    }
+
+    assert len(entries["publish_draft"]) == 1, draft
+    assert len(entries["pr_refresh"]) == 1, refresh
+    assert entries["pr_refresh"][0] == entries["publish_draft"][0]
+    assert draft == [
+        (_REPAIR_NODE, {"label": "Blocked", "condition": _FAILED}),
+        ("proof_capture", {}),
+    ]
+
+
 def test_a_conflicted_draft_refresh_restores_the_head_janitor_passed(tmp_path: Path) -> None:
     """The conflict is UNDONE, not merely reported, and nothing is published.
 
@@ -614,6 +725,86 @@ def test_a_conflicted_pr_refresh_restores_its_published_head_and_counts_a_refres
     assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
     assert world.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
     assert world.remote_head(ref=_BRANCH) == published
+
+
+def _refresh_repair_script() -> str:
+    """The shipped classifier's own script bytes; it consumes no engine token."""
+    graph = parse_dot_graph(text=_graph_text())
+    assert not isinstance(graph, str), graph
+    script: str = graph.nodes[_REPAIR_NODE]["script"]
+    assert "{{" not in script, script
+    return script
+
+
+def _run_refresh_repair(*, world: _World) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", "-c", _refresh_repair_script()],
+        cwd=world.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": str(world.clone.parent / "home")},
+    )
+
+
+def test_a_conflicted_pr_refresh_resolves_through_the_classifier_to_fix(tmp_path: Path) -> None:
+    """END TO END across the seam the defect sat in: stage, route, classifier, route.
+
+    Neither half can establish this alone, which is why they are composed here
+    rather than asserted apart. The stage's own exit says nothing about where the
+    graph sends it -- the measured failure is a stage that did everything right
+    and was routed to the terminal anyway -- and the graph says nothing about
+    whether a real conflicted refresh leaves the artifact the classifier reads.
+    So the shipped `pr_refresh` bytes run against a real conflicted origin, its
+    real non-zero outcome picks a real arm, the shipped classifier bytes then run
+    in THAT world, and its real zero outcome picks the next arm. `fix` is the
+    node that composition has to land on.
+
+    THE CONTROL IS THE SAME CLASSIFIER IN THE SAME WORLD WITH THE BRIEF REMOVED,
+    and it is load-bearing twice over. "Resolves to `fix` rather than
+    `needs_human`" is a claim about a choice, so the terminal has to be reachable
+    for the choice to exist -- without the control, a classifier hard-wired to
+    exit zero would satisfy every assertion above it. And it is what keeps the
+    new arm a POSITIVE reading: an authentication failure or an unreachable
+    origin exits non-zero exactly as a conflict does and writes no brief, and
+    those causes must still reach a human with their own account.
+    """
+    world, published, _advanced = _published_run(root=tmp_path)
+
+    refresh = subprocess.run(
+        ["bash", "-c", _pr_refresh_script(check_suite="true")],
+        cwd=world.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "HOME": str(world.clone.parent / "home"),
+            "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
+            "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
+        },
+    )
+
+    # The stage really failed, really restored, and really left the one artifact
+    # the classifier routes on -- the premise every assertion below rides on.
+    assert refresh.returncode != 0, refresh.stdout
+    assert world.head() == published
+    brief = world.state_dir() / _BRIEF_FILENAME
+    assert brief.is_file()
+
+    assert _routed(source="pr_refresh", outcome="failed") == _REPAIR_NODE
+
+    classifier = _run_refresh_repair(world=world)
+    assert classifier.returncode == 0, classifier.stderr
+    assert "LIVESPEC_REFRESH_REPAIR_PENDING" in classifier.stderr
+    assert _routed(source=_REPAIR_NODE, outcome="succeeded") == "fix"
+
+    # The control: the brief gone, everything else identical.
+    brief.unlink()
+    absent = _run_refresh_repair(world=world)
+    assert absent.returncode != 0
+    assert "LIVESPEC_REFRESH_REPAIR_ABSENT" in absent.stderr
+    assert _routed(source=_REPAIR_NODE, outcome="failed") == "needs_human"
 
 
 def test_a_repair_round_is_budgeted_apart_from_the_review_fix_rounds() -> None:

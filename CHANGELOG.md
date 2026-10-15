@@ -1,5 +1,63 @@
 # Changelog
 
+## [0.200.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.199.0...v0.200.0) (2026-10-15)
+
+
+### Features
+
+* **pointer:** name the carried_forward record that reached the merged head ([632ce55](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/632ce55214343b3bb76448e53be2ef1b6e2d14fa))
+* **proof:** write the observation-scope record lines a carry-forward decision reads ([4fcea96](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4fcea9660fb480cdcb49059af1c4f3ec6d1db738))
+* **publication:** ready a draft for the head a carried_forward record names ([d424254](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d424254e2793b006780168311e21ec69beac8609))
+* **refresh:** decide whether a refreshed head is still covered by the verified proof ([2c0f95f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2c0f95f884a607e1f5bf77f18de6841db0a6067f))
+
+
+### Bug Fixes
+
+* keep a stall-cancelled dispatch out of the calibration non-convergence count ([9163a09](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9163a0945f379586350936709855922bd11b6b74))
+* make a first stall release replayable without stealing a newer claim ([3762917](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/37629171cb2132de6ec8941d67d2b6e472227c70))
+* name the daemon each sandbox-container record was read from ([558cf74](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/558cf74e5fdda89ec58a6a316ec27bb129b2c788))
+* name the dispatch, factory, stage and publication on a stall-cancel record ([a933ff9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a933ff98f50ae2bab8d514d781bee6fd72ff1557))
+* record an unaddressable factory daemon as unobserved ([9523de3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9523de3ceacab1c1f4e17dff51c04b3bfe84887f))
+* release a first stall-watchdog cancel instead of stranding the item ([07e205b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/07e205bdddfab69443bd876000bc68469d7ccda4))
+* rest a second consecutive stall-watchdog cancel for a human ([edd5d48](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/edd5d48da1bf87c5870088893f19b9541e06e660))
+* route a stall cancel by the preceding dispatch, not a lifetime count ([bbe5ee9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bbe5ee9c43d631db35cc3720bfa7839a4887ed39))
+* state on the cancel record when the published head could not be read ([c28fff6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c28fff68f5bea6c7cd6cb22c5d29f398ce7d24e8))
+* stop reading a stall-watchdog cancel as factory non-convergence ([bb9d7b6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bb9d7b65ee445050af6f8e5b5ddfad4ac94e36c0))
+* stop the calibration pass counting a stall cancel as non-convergence ([7bfc392](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7bfc3925b3c7a213484daf74825a561453fde84d))
+* sweep each factory host's own Docker daemon ([b42b01c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b42b01c18b583ac6a6026cac1eb35e191ab45eaf))
+
+## [0.199.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.198.5...v0.199.0) (2026-10-15)
+
+
+### Features
+
+* reconcile a partial launch by its stable operation identity ([d9dabd8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d9dabd80c126bba6be03fea8c558cc456a6c209b))
+* refuse an uncovered launch or completion as explicitly unmonitored ([a269d1b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a269d1bd8c93f4f4c6beab873a3f813024cf94c3))
+* register a durable launch obligation at the real launch boundaries ([7578a8a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7578a8ad1bf80d1ecd5c000f84c97133cd67d8ba))
+
+## [0.198.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.198.4...v0.198.5) (2026-10-15)
+
+
+### Bug Fixes
+
+* **dispatcher:** classify a Petri needs-human ending from its stage states ([4e27046](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4e27046e5505682fa2369eef7f6b63bc129be961))
+* **dispatcher:** exclude the Petri terminal stage from causal attribution ([cbecffc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cbecffc71c67ed5262084024969a56633c271d5e))
+* **dispatcher:** grade a Petri stage map by latest visit, not per entry ([0ea5b52](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0ea5b52823dc585643c33c38845aa18c0469bff0))
+
+## [0.198.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.198.3...v0.198.4) (2026-10-15)
+
+
+### Bug Fixes
+
+* route a failed pr_refresh through refresh_repair to fix (bd-ib-5oc2d3) ([8c3d400](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8c3d400f752acfae0c13982d4e84e7f975af348c))
+
+## [0.198.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.198.2...v0.198.3) (2026-10-15)
+
+
+### Bug Fixes
+
+* give the Petri sandbox clone a repository-local git identity ([ecce613](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ecce6134761ea18119d7c98a2f40fa42ac13d03b))
+
 ## [0.198.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.198.1...v0.198.2) (2026-10-15)
 
 

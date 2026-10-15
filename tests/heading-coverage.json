@@ -1798,16 +1798,21 @@
     "heading": "## Scenario 178 \u2014 A refresh that brings in only inert paths carries the verified proof forward, and anything else re-proves",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified 2026-10-14 by the pr-refresh-reproof-relevance revision (plan pr-refresh-reproof-relevance, epic bd-ib-ku7phe). The pr_refresh proof carry-forward decision is not implemented yet; an integration-tier test is owed for the thirty-one sub-scenarios, and work-item bd-ib-v4exlm implements the decision and owns that binding.",
-    "work_item": "bd-ib-v4exlm"
+    "test": "tests.integration.test_pr_refresh_carry_forward_scenario178"
   },
   {
     "heading": "## Scenario 181 \u2014 A ledger write from this repository prints no auto-backup warning",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "test": "tests.integration.test_tenant_client_backup_lane_scenario181.test_scenario181_committed_tenant_config_disables_the_client_backup_lane",
+    "reason": "Integration-tier acceptance for the scenario's Given and for the contracts.md \"Beads connection model\" bullet \"Client backup lane disabled\": this repository's OWN committed .beads/config.yaml is read (not a synthesized fixture, because bd opens the committed file at the repository root on every call) and asserted to set backup.enabled: false with the attached comment naming dolt-backup.service and DOLT_BACKUP('sync','s3') as the hourly server-side lane the client lane would duplicate. The scenario's When/Then -- a live bd write whose stderr carries no auto-backup warning, and the next hourly dolt-backup.service run reporting every tenant synced -- needs the credential wrapper, the shared Dolt server and the backup timer, none of which a sandboxed or CI process can reach; work-item bd-ib-rxf carries that half as a HOST-CAPTURED assertion proved on the ledger host against the released build."
+  },
+  {
+    "heading": "## Scenario 180 \u2014 A sandbox agent cannot remove the run's working tree, and ordinary removals still run",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Ratified 2026-10-15 by the v139 revision (plan dolt-server-failures, epic bd-ib-etfwwx, assertion 5). The committed backup.enabled: false key and the warning-free ledger write are not landed yet; an integration-tier test is owed for the scenario, and work-item bd-ib-rxf implements the key and owns that binding.",
-    "work_item": "bd-ib-rxf"
+    "reason": "Ratified by the revision accepting proposal sandbox-path-protection (plan checkpoint-commit-hook-failures, epic bd-ib-hcwmnq). The sandbox path guard is not implemented yet; an integration-tier test is owed for the five sub-scenarios, and work-item bd-ib-jgedjo implements them and owns that binding.",
+    "work_item": "bd-ib-jgedjo"
   }
 ]

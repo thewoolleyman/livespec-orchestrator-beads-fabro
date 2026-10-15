@@ -58,6 +58,7 @@ from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     VERDICT_CAPTURED,
+    VERDICT_CARRIED_FORWARD,
     VERDICT_NOT_CAPTURED,
     VERDICT_NOT_REPRODUCED,
     VERDICT_VERIFIED,
@@ -101,22 +102,40 @@ RESUMED_AT_PROOF_CAPTURE = "proof_capture"
 SOURCE_FACTORY_RUN = "factory-run-record"
 SOURCE_LATEST_RECORD = "pull-request-latest-record"
 
-# The four verdicts a FACTORY stage publishes. A host-leg or human-attested
-# record is not an anchor: it carries a session identity or a forge login rather
-# than a run the journal can attribute, and it names no publish-branch head
-# because no factory stage ran to have one.
+# The five verdicts a FACTORY stage publishes that can ANCHOR a resume. A
+# host-leg or human-attested record is not an anchor: it carries a session
+# identity or a forge login rather than a run the journal can attribute, and it
+# names no publish-branch head because no factory stage ran to have one.
+#
+# `carried_forward` is here because the v138 clause says outright that such a
+# record "anchors a resume exactly as the `verified` record it carries would, at
+# the new head it names" -- and the head it names is the one the pull request
+# actually carries, so leaving it out would anchor the resume at the pre-refresh
+# head and refuse for a head that moved exactly as designed.
+#
+# `reproof_required` is DELIBERATELY ABSENT, and its absence is the whole of
+# "the acceptance pass and every reader of the latest proof record MUST skip
+# it". It parses as a record (`PROOF_RECORD_VERDICTS` admits it) so the posting
+# primitive and the size budget see one; it is not proof, so the reader walking
+# back for the latest anchor steps over it and reaches the `verified` record
+# naming the head that WAS proved. Adding it here would make the decision to
+# re-prove into the anchor for finishing the run.
 FACTORY_RECORD_VERDICTS = (
     VERDICT_CAPTURED,
     VERDICT_NOT_CAPTURED,
     VERDICT_VERIFIED,
     VERDICT_NOT_REPRODUCED,
+    VERDICT_CARRIED_FORWARD,
 )
 
 # The stage each factory verdict implies, for the fallback the clause spells out.
 # `not_captured` and `not_reproduced` share `fix` because both are findings a code
-# change has to answer, which is the node that owns one.
+# change has to answer, which is the node that owns one. `carried_forward` shares
+# `pr_refresh` with `verified` because it carries exactly that verdict's proof
+# onward: the run it anchors has the same work left to do.
 _RESUMED_AT_BY_VERDICT = {
     VERDICT_VERIFIED: RESUMED_AT_PR_REFRESH,
+    VERDICT_CARRIED_FORWARD: RESUMED_AT_PR_REFRESH,
     VERDICT_CAPTURED: RESUMED_AT_REVIEW,
     VERDICT_NOT_CAPTURED: RESUMED_AT_FIX,
     VERDICT_NOT_REPRODUCED: RESUMED_AT_FIX,

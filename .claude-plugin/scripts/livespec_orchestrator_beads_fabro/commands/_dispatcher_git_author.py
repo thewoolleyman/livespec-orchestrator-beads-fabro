@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,7 @@ __all__: list[str] = [
     "GitAuthorPolicy",
     "apply_workflow_git_author",
     "git_author_env_lines",
+    "git_identity_prepare_steps_block",
     "read_dispatch_git_author",
     "resolve_workflow_git_author",
     "workflow_git_author_error",
@@ -110,6 +112,71 @@ def git_author_env_lines(*, author: GitAuthor | None) -> str:
         f"LIVESPEC_GIT_AUTHOR_NAME = {json.dumps(author.name)}\n"
         f"LIVESPEC_GIT_AUTHOR_EMAIL = {json.dumps(author.email)}\n"
     )
+
+
+def git_identity_prepare_steps_block(*, author: GitAuthor | None) -> str:
+    """Render the sandbox clone's own `user.name` / `user.email` prepare steps.
+
+    WHY THE CLONE NEEDS ITS OWN IDENTITY (work-item bd-ib-lsr3vf). The
+    `[run.git.author]` section `apply_workflow_git_author` writes governs the
+    ENGINE's commits, and on the Petri engine that is all it governs: the engine
+    applies its configured `git_identity` to its own per-node checkpoint commits
+    and leaves the clone at `/workspace` with no `user.name` and no `user.email`.
+    A SCRIPT node that creates commits itself therefore has no COMMITTER, and
+    `publish_draft`'s first refresh runs `git rebase origin/<default_branch>`,
+    which must create commits whenever the default branch has advanced. Measured
+    2026-10-15 on hp-candidate canary 13 (run 01M4YV4YJ30J5ABBGJWR4KYWKX, item
+    bd-ib-o6aeji): that rebase exited 128 on "Committer identity unknown" after a
+    green implement and a green janitor, and the run ended at needs_human.
+
+    WHY A PREPARE STEP AND NOT AN AGENT INSTRUCTION. Canary 12 (run
+    01M4Y7EJWTQWK5CWWS0NKDHY7T) passed the same refresh only because an agent tool
+    call had happened to run `git config user.name` / `git config user.email`
+    first. A graph whose scripted publication stages depend on a model having
+    chosen to configure git is one that publishes by luck, so the identity is
+    provisioned before the first agent node runs.
+
+    WHY THE OVERLAY AND NOT `workflow.toml`. The committed run config is FORKED
+    per repository — `_dispatcher_paths.workflow_toml` prefers a dispatch target's
+    own copy — so a step written into one fork covers one consumer and silently
+    omits the rest. Only the overlay reaches every dispatch, which is the same
+    reason `_dispatcher_factory_provenance` and `_dispatcher_default_branch_fetch`
+    are rendered there.
+
+    WHY THE SAME PAIR THE ENV TABLE CARRIES. `git_author_env_lines` projects this
+    author for the needs_human node's emergency commit, so a clone configured with
+    a DIFFERENT pair would attribute one run's commits two ways. One resolved
+    `GitAuthor` is projected into all three positions — the `[run.git.author]`
+    section, the env table and these steps — rather than each resolving its own.
+
+    Empty string when `author` is None, which is a direct caller that resolved no
+    author policy: it renders exactly the overlay it rendered before these steps
+    existed, mirroring `git_author_env_lines`' own absent-input arm.
+
+    `--local` is spelled rather than relied on. `git config` writes the repository
+    config by default, so the scope is already right; naming it makes the step
+    refuse outright if it is ever reached outside a work tree, instead of silently
+    writing a config no node will read. Each value is `shlex.quote`-ed because the
+    step body is a shell command line and an operator name legitimately carries
+    spaces and apostrophes, and each script is then `json.dumps`-ed to TOML-quote
+    it, matching every sibling block in the overlay.
+    """
+    if author is None:
+        return ""
+    lines = [
+        "",
+        "# --- Dispatcher-materialized sandbox git identity: configure the clone's",
+        "# --- own user.name/user.email, because the Petri-era engine applies its",
+        "# --- git_identity only to its OWN checkpoint commits and leaves a script",
+        "# --- node that commits — publish_draft's refresh rebase, the needs_human",
+        "# --- preservation commit — with no committer at all (bd-ib-lsr3vf) ---",
+        "[[run.prepare.steps]]",
+        f"script = {json.dumps(f'git config --local user.name {shlex.quote(author.name)}')}",
+        "",
+        "[[run.prepare.steps]]",
+        f"script = {json.dumps(f'git config --local user.email {shlex.quote(author.email)}')}",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def resolve_workflow_git_author(*, committed_text: str, author: GitAuthor | None) -> str | None:

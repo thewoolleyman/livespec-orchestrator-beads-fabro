@@ -11,6 +11,11 @@ from math import isfinite
 from pathlib import Path
 from typing import Protocol, cast
 
+from livespec_orchestrator_beads_fabro.commands._session_obligation_cli import (
+    add_obligation_parsers,
+    complete_command,
+    launch_command,
+)
 from livespec_orchestrator_beads_fabro.commands._session_wait_ack import ack_wait
 from livespec_orchestrator_beads_fabro.commands._session_wait_gate import (
     resolve_primary_repository,
@@ -93,6 +98,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _ = ack.add_argument("--repo", required=True)
     _ = ack.add_argument("--session-id", required=True)
     _ = ack.add_argument("--wait-id", required=True)
+    add_obligation_parsers(add_parser=subparsers.add_parser)
     return parser
 
 
@@ -276,4 +282,13 @@ def main(*, argv: list[str] | None = None, seams: SessionWaitCliSeams = _DEFAULT
             wait_store_root=wait_store_root,
             seams=seams,
         )
+    if command == "launch":
+        return launch_command(
+            args=args,
+            primary=primary,
+            gate_store_root=gate_store_root,
+            wall_clock=seams.wall_clock,
+        )
+    if command == "complete":
+        return complete_command(primary=primary)
     return _ack_command(args=args, wait_store_root=wait_store_root, seams=seams)

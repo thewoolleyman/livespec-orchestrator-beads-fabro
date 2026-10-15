@@ -23,6 +23,8 @@ _MODULE_PATH = Path(
 )
 _HP = "https://hp.example.test"
 _VPS = "https://vps.example.test"
+_HP_DOCKER_HOST = "ssh://cwoolley@hp.example"
+_VPS_DOCKER_HOST = "ssh://cwoolley@vps.example"
 _QUESTIONS = json.dumps([{"id": "q-1", "options": ["[A] Abandon (leave open for triage)"]}])
 
 
@@ -310,7 +312,17 @@ def _journal_dispatch(*, repo: Path, item_id: str, run_id: str) -> None:
 def _repo(*, tmp_path: Path, factories: dict[str, str] | None = None) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir(exist_ok=True)
-    declared = {"hp": {"server": _HP}, "vps": {"server": _VPS}} if factories is None else factories
+    # Each declares the daemon running ITS sandbox containers, which the
+    # container lane of each pass addresses. A factory declaring none is
+    # reported as unobserved rather than swept through the reconciling host's.
+    declared = (
+        {
+            "hp": {"server": _HP, "docker_host": _HP_DOCKER_HOST},
+            "vps": {"server": _VPS, "docker_host": _VPS_DOCKER_HOST},
+        }
+        if factories is None
+        else factories
+    )
     dispatcher_block: dict[str, object] = {"factories": declared}
     if declared:
         dispatcher_block["default_factory"] = "hp"

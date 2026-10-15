@@ -174,14 +174,20 @@ def _stage_record(*, journal: _RecordingJournal, stage: str) -> dict[str, object
 # --- the cap classification ------------------------------------------------
 
 
-def test_a_watchdog_stall_names_the_stall_window_and_the_duration_it_measured() -> None:
-    """The window IS the measured quiet duration: the watchdog fires on nothing less."""
+def test_a_watchdog_stall_names_no_cap_and_observes_nothing() -> None:
+    """`bd-ib-nfbyot`: a stall is not a non-convergence, so it trips no cap.
+
+    This asserted the opposite — the resolved window as the cap and the figure
+    as its observation — until `contracts.md`'s "Dispatcher progress watchdog"
+    ruled that "the calibration analysis pass MUST NOT count it as a
+    non-convergence observation". The window still reaches an operator, on the
+    `watchdog-stall-cancel` record the cancel journals.
+    """
     module = _module()
 
     cap = module.non_convergence_cap(outcome=_stalled(), stall_seconds=1800.0)
 
-    assert cap.cap == module.STALL_WINDOW_CAP
-    assert cap.observed == 1800
+    assert cap == module.UNTRIGGERED_NON_CONVERGENCE_CAP
 
 
 def test_a_fix_loop_exhaustion_names_its_cap_and_observes_nothing() -> None:
@@ -212,23 +218,37 @@ def test_the_cap_flattens_to_two_sibling_journal_keys() -> None:
     """Flat scalars, so the egress leg promotes each without unwrapping a map."""
     module = _module()
 
-    record = module.non_convergence_cap(outcome=_stalled(), stall_seconds=900.0).as_record()
+    record = module.non_convergence_cap(outcome=_cap_exhausted(), stall_seconds=900.0).as_record()
 
-    assert record == {_CAP_KEY: module.STALL_WINDOW_CAP, _OBSERVED_KEY: 900}
+    assert record == {_CAP_KEY: module.FIX_LOOP_VISIT_CAP, _OBSERVED_KEY: None}
     assert module.UNTRIGGERED_NON_CONVERGENCE_CAP.as_record() == {
         _CAP_KEY: None,
         _OBSERVED_KEY: None,
     }
 
 
-def test_the_stall_window_cap_names_the_setting_an_operator_would_tune(tmp_path: Path) -> None:
-    """The cap identity is the committed key the stall-window resolver reads."""
+def test_the_fix_loop_cap_names_the_graph_guard_an_operator_would_tune() -> None:
+    """The one cap identity a bounce can name points at the guard that enforces it.
+
+    `STALL_WINDOW_CAP` was asserted here beside the resolver that reads its
+    committed key, until `bd-ib-nfbyot` removed the stall arm. The resolver is
+    still asserted — in `test_the_stall_window_still_resolves_its_committed_key`
+    below — because the key did not stop existing; it stopped being a cap.
+    """
     module = _module()
 
-    assert module.STALL_WINDOW_CAP == "dispatcher.stall_timeout_seconds"
-    # And the resolver the Dispatcher passes it is the one that reads that key:
-    # a record naming a knob that moves nothing is worse than no name at all.
+    assert module.FIX_LOOP_VISIT_CAP == "workflow.janitor_fix_loop_visit_cap"
+
+
+def test_the_stall_window_still_resolves_its_committed_key(tmp_path: Path) -> None:
+    """The window the cancel record names is read from the key an operator writes.
+
+    Retained from the removed cap assertion: a cancel record pointing at a knob
+    that moves nothing is worse than no name at all, and that remains true now
+    that the window rides the cancel record instead of a bounce cap.
+    """
     _write_stall_timeout(repo=tmp_path, seconds=60)
+
     assert resolve_stall_window(cwd=tmp_path).seconds == 60.0
 
 
@@ -240,8 +260,16 @@ def test_a_cap_triggered_bounce_is_reported_as_bounced_to_regroom() -> None:
     assert bounced_to_regroom(outcome=_cap_exhausted()) is True
 
 
-def test_a_watchdog_stall_is_still_reported_as_bounced_to_regroom() -> None:
-    assert bounced_to_regroom(outcome=_stalled()) is True
+def test_a_watchdog_stall_is_not_reported_as_bounced_to_regroom() -> None:
+    """`bd-ib-nfbyot`: a hang is not a slice that would not converge.
+
+    This test asserted the opposite until the watchdog status was removed from
+    `is_non_convergence_outcome`. `contracts.md`'s "Dispatcher progress
+    watchdog" says a `stalled-no-progress` outcome "is NOT factory
+    non-convergence", and the flag reads the same predicate the bounce reads,
+    so the two surfaces move together by construction rather than by promise.
+    """
+    assert bounced_to_regroom(outcome=_stalled()) is False
 
 
 def test_a_run_the_dispatcher_does_not_bounce_is_not_reported_as_bounced() -> None:
@@ -275,18 +303,23 @@ def test_a_cap_triggered_bounce_writes_backlog_through_the_lifecycle_seam(
     assert record[_OBSERVED_KEY] is None
 
 
-def test_a_stalled_bounce_records_the_window_it_measured(
+def test_a_stall_cancel_reaches_no_bounce_and_so_writes_no_record(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    module = _module()
+    """`bd-ib-nfbyot`: the bounce declines a stall before touching the ledger.
+
+    Both halves are asserted because they fail independently: a build that
+    journals the row but skips the status write, and one that moves the item
+    while journaling nothing, each satisfy exactly one of them. The stall
+    window is still declared so a build that resolved it and then bounced
+    anyway cannot pass for a build that declined.
+    """
     _write_stall_timeout(repo=tmp_path, seconds=1200)
 
     journal, writes = _bounce(monkeypatch=monkeypatch, outcome=_stalled(), tmp_path=tmp_path)
 
-    assert writes[0]["status"] == "backlog"
-    record = _stage_record(journal=journal, stage=_BOUNCE_STAGE)
-    assert record[_CAP_KEY] == module.STALL_WINDOW_CAP
-    assert record[_OBSERVED_KEY] == 1200
+    assert writes == []
+    assert [record.get("stage") for record in journal.records] == []
 
 
 def test_a_failed_ledger_write_still_records_which_cap_tripped(

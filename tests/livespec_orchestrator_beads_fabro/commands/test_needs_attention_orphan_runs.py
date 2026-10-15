@@ -26,6 +26,8 @@ _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._needs_attention_orph
 
 _HP_SERVER = "https://hp.example:32276"
 _VPS_SERVER = "https://vps.example:32276"
+_HP_DOCKER_HOST = "ssh://cwoolley@hp.example"
+_VPS_DOCKER_HOST = "ssh://cwoolley@vps.example"
 
 
 @dataclass(kw_only=True)
@@ -212,9 +214,20 @@ def _repo(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
                     "connection": {"prefix": "bd-ib"},
                     "dispatcher": {
                         "default_factory": "hp",
+                        # Each declares the daemon running ITS sandbox
+                        # containers, which the container lane of each pass
+                        # addresses. A factory declaring none is reported as
+                        # unobserved rather than swept through the reconciling
+                        # host's own daemon.
                         "factories": {
-                            "hp": {"server": _HP_SERVER},
-                            "vps": {"server": _VPS_SERVER},
+                            "hp": {
+                                "server": _HP_SERVER,
+                                "docker_host": _HP_DOCKER_HOST,
+                            },
+                            "vps": {
+                                "server": _VPS_SERVER,
+                                "docker_host": _VPS_DOCKER_HOST,
+                            },
                         },
                     },
                 }

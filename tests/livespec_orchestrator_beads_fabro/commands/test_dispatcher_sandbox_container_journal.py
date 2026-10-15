@@ -25,12 +25,13 @@ from pathlib import Path
 from typing import Any
 
 from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient
+from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
     journaled_runs,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_containers import (
-    pass_container_sweep,
+    pass_container_sweeps,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_inputs import (
     ReconcileInputs,
@@ -59,10 +60,27 @@ _PS_STDOUT = f"fabro-run-{_TERMINAL_RUN}\nfabro-run-{_LIVE_RUN}\n"
 _INSPECT_STDOUT = f"/fabro-run-{_TERMINAL_RUN}\t{_LIMIT}\n/fabro-run-{_LIVE_RUN}\t{_LIMIT}\n"
 _STATUSES = {_TERMINAL_RUN: "failed", _LIVE_RUN: "running"}
 
+# The daemon every port in this file is opened onto. The sweep addresses the
+# surveyed FACTORY's daemon rather than the reconciling host's, so a port
+# cannot be built without naming one.
+_DOCKER_HOST = "ssh://cwoolley@hp-xubuntu.example"
+_HP = FactoryTarget(
+    name="hp",
+    server="https://hp-xubuntu.example:32276",
+    dev_token=None,
+    docker_host=_DOCKER_HOST,
+)
+
 
 @dataclass(kw_only=True)
 class _Docker:
-    """One fake `docker` CLI, keyed by the verb the argv names."""
+    """One fake `docker` CLI, keyed by the verb the argv names.
+
+    The verb is MEMBERSHIP-tested rather than read at a fixed index: every
+    argv now opens with the global `--host <daemon>` pair, so an index-keyed
+    fake would read the daemon address as the verb and answer every call the
+    same way.
+    """
 
     ps_stdout: str = ""
     ps_exit_code: int = 0
@@ -81,9 +99,9 @@ class _Docker:
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
         self.calls.append(argv)
-        if argv[1] == "ps":
+        if "ps" in argv:
             return CommandResult(exit_code=self.ps_exit_code, stdout=self.ps_stdout, stderr="")
-        if argv[1] == "inspect":
+        if "inspect" in argv:
             return CommandResult(exit_code=0, stdout=self.inspect_stdout, stderr="")
         return CommandResult(exit_code=self.rm_exit_code, stdout="", stderr="")
 
@@ -115,7 +133,7 @@ def _journalled(
     module = _reclaim_module()
     journal = _Journal()
     sweep = module.reclaim_terminal_run_containers(
-        port=SandboxContainerPort(runner=runner, cwd=tmp_path),
+        port=SandboxContainerPort(runner=runner, cwd=tmp_path, docker_host=_DOCKER_HOST),
         status_by_run=status_by_run,
         dry_run=dry_run,
     )
@@ -207,6 +225,64 @@ def test_the_pass_record_totals_what_the_sweep_did_and_what_it_reclaimed(
     assert summary["reclaimed_limits_unmeasured"] == 0
 
 
+def test_the_pass_record_names_the_factory_host_whose_daemon_it_inventoried(
+    tmp_path: Path,
+) -> None:
+    """The acceptance assertion: whose inventory is this a record of?
+
+    One pass writes one sweep record per surveyed factory daemon, and every
+    field those records carry — the counts, the reclaimed bytes,
+    `inventory_observed` — is a measurement of ONE host. Without the daemon
+    named beside them, two records are indistinguishable, so a leaking factory
+    and a clean one average into a reading about neither; and a reader cannot
+    tell which host a reclaim gave its envelope back to.
+
+    The factories sharing that daemon are named too, because the daemon is
+    what a sweep is addressed to while a factory is what an operator
+    configures, and only the second is a name they can act on.
+    """
+    runner = _Docker(ps_stdout=_PS_STDOUT, inspect_stdout=_INSPECT_STDOUT)
+    journal = _Journal()
+
+    _ = pass_container_sweeps(
+        inputs=_inputs(tmp_path=tmp_path, runner=runner, journal=journal),
+        factories=(_HP,),
+        run_statuses=_STATUSES,
+        dry_run=False,
+    )
+
+    summary = _record(records=journal.written, stage=_SWEEP_STAGE)
+    assert summary.get("docker_host") == _DOCKER_HOST
+    assert summary.get("factory_names") == [_HP.name]
+
+
+def test_every_per_container_record_names_the_daemon_it_was_read_from(
+    tmp_path: Path,
+) -> None:
+    """A container name is unique to its daemon only by convention, not by fact.
+
+    Two factory hosts can each run a `fabro-run-<id>` container for the same
+    run id — a re-dispatch of one work-item is a routine way to get one — so a
+    reclaim or a hold that named only the container would be a record nobody
+    can place. Each is stamped with the daemon its reading came from.
+    """
+    runner = _Docker(ps_stdout=_PS_STDOUT, inspect_stdout=_INSPECT_STDOUT)
+    journal = _Journal()
+
+    _ = pass_container_sweeps(
+        inputs=_inputs(tmp_path=tmp_path, runner=runner, journal=journal),
+        factories=(_HP,),
+        run_statuses=_STATUSES,
+        dry_run=False,
+    )
+
+    assert [(record["stage"], record.get("docker_host")) for record in journal.written] == [
+        (_RECLAIMED_STAGE, _DOCKER_HOST),
+        (_HELD_STAGE, _DOCKER_HOST),
+        (_SWEEP_STAGE, _DOCKER_HOST),
+    ]
+
+
 def test_a_refused_removal_is_counted_as_refused_and_not_as_reclaimed(tmp_path: Path) -> None:
     """A daemon that would not remove the container gave no envelope back.
 
@@ -284,21 +360,21 @@ def test_a_dry_run_writes_nothing_to_the_journal(tmp_path: Path) -> None:
 def test_the_pass_level_sweep_records_through_the_passes_own_journal(tmp_path: Path) -> None:
     """The wiring: the reconciliation pass's own composer does the recording.
 
-    Asserted at `pass_container_sweep` rather than at the journal function,
+    Asserted at `pass_container_sweeps` rather than at the journal function,
     because a record-shaped function nobody calls passes every test above
     while journaling nothing in production.
     """
     runner = _Docker(ps_stdout=_PS_STDOUT, inspect_stdout=_INSPECT_STDOUT)
     journal = _Journal()
 
-    sweep = pass_container_sweep(
+    sweeps = pass_container_sweeps(
         inputs=_inputs(tmp_path=tmp_path, runner=runner, journal=journal),
-        surveyed=True,
+        factories=(_HP,),
         run_statuses=_STATUSES,
         dry_run=False,
     )
 
-    assert [run.run_id for run in sweep.reclaimed] == [_TERMINAL_RUN]
+    assert [run.run_id for sweep in sweeps for run in sweep.reclaimed] == [_TERMINAL_RUN]
     assert [record["stage"] for record in journal.written] == [
         _RECLAIMED_STAGE,
         _HELD_STAGE,
@@ -307,17 +383,21 @@ def test_the_pass_level_sweep_records_through_the_passes_own_journal(tmp_path: P
 
 
 def test_a_pass_that_surveyed_nothing_neither_sweeps_nor_records(tmp_path: Path) -> None:
-    """No inventory to grade against: no daemon call, no record, and it says so."""
+    """No inventory to grade against: no daemon call and no record at all.
+
+    The empty tuple of sweeps is what says so. A single sweep value reporting
+    zero containers would be the claim this pass is least entitled to make.
+    """
     runner = _Docker(ps_stdout=_PS_STDOUT, inspect_stdout=_INSPECT_STDOUT)
     journal = _Journal()
 
-    sweep = pass_container_sweep(
+    sweeps = pass_container_sweeps(
         inputs=_inputs(tmp_path=tmp_path, runner=runner, journal=journal),
-        surveyed=False,
+        factories=(),
         run_statuses={},
         dry_run=False,
     )
 
     assert runner.calls == []
     assert journal.written == []
-    assert (sweep.observed, sweep.reclaimed, sweep.held) == (False, (), ())
+    assert sweeps == ()

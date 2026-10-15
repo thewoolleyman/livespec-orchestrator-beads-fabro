@@ -792,6 +792,36 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   string no import graph can see, and a rename on either side drops the node
   onto the stdin fallback — the placeholder on one engine, nothing on the other.
 
+- `test_sandbox_clone_git_identity.py` and
+  `test_needs_human_preservation_committer_identity.py` — bind work-item
+  bd-ib-lsr3vf against Scenario 176: on the Petri engine the sandbox clone
+  carries no `user.name` and no `user.email`, because the engine applies its
+  configured `git_identity` to its OWN per-node checkpoint commits only, so a
+  SCRIPT node that creates commits itself has no committer. The first module
+  runs the ACTUALLY RENDERED identity prepare steps in a real clone and then the
+  shipped `publish_draft` script against a default branch that advanced after
+  the clone was taken, which is what gives the refresh rebase a commit to
+  create; the second runs the shipped `needs_human` terminal and reads the
+  preserved commit's author AND committer off the pushed ref. Both execute
+  rather than match text, because a step that writes the right keys in the wrong
+  scope, or after the node that needs them, renders identically to one that
+  works. Three things are load-bearing. The fixtures leave the clone with NO
+  identity in ANY scope — `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` at
+  `/dev/null`, no `GIT_AUTHOR_*` or `GIT_COMMITTER_*` in the child environment,
+  and every provisioning commit supplying its identity per invocation with
+  `git -c` — since the host's own `~/.gitconfig` would make every case pass and
+  an agent-set identity is exactly what made the defect intermittent in
+  production (canary 12 passed only because a tool call had run `git config
+  user.name` first). The expected pair is read back off the rendered overlay's
+  OWN env table rather than off a constant, because a renderer projecting one
+  pair into the config and another into `LIVESPEC_GIT_AUTHOR_NAME` would
+  attribute one commit two ways. And each module's control is the measured
+  failure with only the identity steps withheld: for `publish_draft` that is
+  exit 128 on "Committer identity unknown", and for `needs_human` it is the
+  expensive shape rather than a visible one — `PRESERVED` is still reported and
+  the ref still exists, at the last commit the clone already had, so only the
+  preserved BLOB discriminates.
+
 - `test_watchdog_bound_run_poll_scenario173.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 173 and the `contracts.md` paragraph it
   exercises (the Dispatcher progress watchdog's "Observing the run"): once the
@@ -843,6 +873,28 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   `review_fix`/`disposition` budgets are asserted UNCHANGED beside the widened
   `fix` budget, because "the repair took nothing from review-fix" is otherwise
   equally consistent with a graph that widened nothing at all.
+
+- `test_tenant_client_backup_lane_scenario181.py` — binds the `Given` of
+  `SPECIFICATION/scenarios.md` Scenario 181 and the `contracts.md` §"Beads
+  connection model" bullet "Client backup lane disabled": this repository's
+  committed `.beads/config.yaml` sets `backup.enabled: false` and the comment
+  attached to that key names `dolt-backup.service` and
+  `DOLT_BACKUP('sync','s3')` as the hourly server-side lane the client lane
+  would duplicate. The subject is THIS repository's own committed file rather
+  than a fixture, which is what puts the case at this tier: `bd` opens the
+  committed file at the repository root on every call, so a fixture would grade
+  bytes no `bd` invocation ever reads. Two things are worth knowing before
+  editing. The comment is asserted as well as the key, because a bare disabled
+  backup setting on a ledger reads as "backups switched off" rather than
+  "backed up centrally, client lane redundant", and the second reading is the
+  correct one; the assertion is on the comment block ATTACHED to the key, since
+  a rationale parked elsewhere in a flat key-value file does not travel with
+  the line it explains. And the scenario's `When`/`Then` — a live `bd` write
+  whose stderr carries no `auto-backup failed` warning, and the next hourly
+  `dolt-backup.service` run reporting every tenant synced — is deliberately NOT
+  here: it needs the credential wrapper, the shared Dolt server and the backup
+  timer, so work-item `bd-ib-rxf` carries it as a HOST-CAPTURED assertion
+  instead. This file never connects to a tenant.
 
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
