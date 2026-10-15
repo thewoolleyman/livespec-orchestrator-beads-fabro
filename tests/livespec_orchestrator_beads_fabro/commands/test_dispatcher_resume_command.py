@@ -61,10 +61,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
     VERDICT_VERIFIED,
     ProofRecord,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_reclaim import (
+    PUBLISH_BRANCH_RECLAIM_HELD_STAGE,
+    PUBLISH_BRANCH_RECLAIM_STAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
     RESUMED_AT_PR,
     SOURCE_FACTORY_RUN,
     ResumeAnchor,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_cancel_anchor import (
+    SOURCE_CANCEL_RECORD,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import RESUME_STAGE
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation import ResumeGather
@@ -79,6 +86,7 @@ _ITEM_ID = "bd-ib-fngpwg"
 _HEAD = "0" * 39 + "a"
 _PULL_REQUEST = 2639
 _EARLIER_RUN = "01M49TZ44210GSEC8VTFR8VHKP"
+_CANCELLED_RUN = "01M4Q4XBZ5398FJAWQ131QER60"
 _WORKFLOW = "implement-work-item"
 _EXIT_PRECONDITION_ERROR = 3
 
@@ -133,7 +141,11 @@ def _record() -> ProofRecord:
 
 def _anchor() -> ResumeAnchor:
     return ResumeAnchor(
-        record=_record(), head=_HEAD, resumed_at=RESUMED_AT_PR, source=SOURCE_FACTORY_RUN
+        record=_record(),
+        run_id=_EARLIER_RUN,
+        head=_HEAD,
+        resumed_at=RESUMED_AT_PR,
+        source=SOURCE_FACTORY_RUN,
     )
 
 
@@ -563,3 +575,57 @@ def test_the_resume_never_pins_the_items_dispatch_workflow_metadata() -> None:
 
     assert "args_with_dispatch_workflow_name" not in source
     assert "record_dispatch_workflow" not in source
+
+
+def _cancel_anchor() -> ResumeAnchor:
+    """The anchor a stall-cancel record provides: no proof record, capture entry."""
+    return ResumeAnchor(
+        record=None,
+        run_id=_CANCELLED_RUN,
+        head=_HEAD,
+        resumed_at="proof_capture",
+        source=SOURCE_CANCEL_RECORD,
+    )
+
+
+def test_a_cancel_anchored_resume_names_its_source_and_reclaims_no_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario 172: the `resume` record names the cancel record, and no ref moves.
+
+    Both halves are asserted together because together they are the recovery: the
+    record is what links the cancelled run's identifiers to this dispatch, and the
+    ABSENT reclaim is what leaves the publish branch standing for the resumed run
+    to check out. A build that journaled the record and reclaimed anyway would
+    preserve the head to a ref, delete the branch, and leave a journal reading
+    exactly like a healthy recovery.
+    """
+    assert _module_path().is_file()
+    module = importlib.import_module(_MODULE)
+    journal = _RecordingJournal()
+    log = _Log()
+    _stub_resume(
+        module=module,
+        monkeypatch=monkeypatch,
+        journal=journal,
+        item=_item(),
+        log=log,
+        anchor=_cancel_anchor(),
+        observation=_observation(),
+        refusals=(),
+    )
+
+    exit_code = module.run_resume_command(args=_args(repo=tmp_path))
+
+    assert exit_code == 0
+    resume_records = [one for one in journal.records if one["stage"] == RESUME_STAGE]
+    assert len(resume_records) == 1
+    assert resume_records[0]["resumed_at"] == "proof_capture"
+    assert resume_records[0]["resumed_at_source"] == SOURCE_CANCEL_RECORD
+    assert resume_records[0]["head"] == _HEAD
+    stages = {one["stage"] for one in journal.records}
+    assert PUBLISH_BRANCH_RECLAIM_STAGE not in stages
+    assert PUBLISH_BRANCH_RECLAIM_HELD_STAGE not in stages
+    dispatched = log.dispatched_args[0]
+    assert dispatched.resume_entry_node == "proof_capture"
+    assert dispatched.resume_head == _HEAD

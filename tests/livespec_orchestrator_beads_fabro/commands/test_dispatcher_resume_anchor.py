@@ -255,7 +255,7 @@ def test_the_latest_factory_record_anchors_and_earlier_ones_do_not() -> None:
         executing_node=None,
     )
     assert anchor is not None
-    assert anchor.record.run_id == "run-new"
+    assert anchor.run_id == "run-new"
     assert anchor.head == _HEAD
 
 

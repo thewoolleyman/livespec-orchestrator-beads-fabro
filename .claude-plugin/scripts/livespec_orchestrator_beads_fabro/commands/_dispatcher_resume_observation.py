@@ -21,6 +21,14 @@ call builds the answer. Both calls are pure and deterministic over the same
 records, so the second cannot disagree with the first about WHICH record anchors;
 only about the stage, which is the point.
 
+WHY THE CANCEL ANCHOR IS RESOLVED BEFORE THE FACTORY IS ASKED, AND WINS ON SIGHT.
+`cancel_anchor` already applied every bound the clause puts on that anchor — the
+proof-record precedence among them — so a row it returns is one the clause admits
+and there is nothing left for this module to re-decide. Resolving it FIRST is what
+lets the factory be asked about the right run: the stage question is asked of the
+EARLIER run, and under this anchor that is the cancelled dispatch rather than
+whichever run the pull request's older record happens to name.
+
 WHY THE DEFINITION-OF-DONE DIFFERENCE IS MEASURED AGAINST THE RECORD RATHER THAN
 THE JOURNAL. The clause refuses when the item's current section "differs from the
 earlier run's dispatch-time snapshot", and gives its reason outright: "so the
@@ -69,6 +77,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
     ResumeAnchor,
     resume_anchor,
+    resume_anchor_from_cancel,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_cancel_anchor import (
+    CancelAnchor,
+    cancel_anchor,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_forge import (
     branch_pull_request,
@@ -155,17 +168,26 @@ def gather_resume(
         if pull_request is not None
         else None
     )
+    journaled = read_journal_records(journal_path=journal_path)
+    cancel = cancel_anchor(
+        records=journaled,
+        work_item_id=item.id,
+        proof_run_ids=frozenset(one.run_id for one in records or ()),
+    )
     provisional = resume_anchor(records=records or (), executing_node=None)
     factory = _factory_reading(
         args=args,
         repo=repo,
         item=item,
         journal_path=journal_path,
-        earlier_run_id=None if provisional is None else provisional.record.run_id,
+        earlier_run_id=_earlier_run_id(cancel=cancel, provisional=provisional),
         runner=runner,
     )
-    anchor = resume_anchor(records=records or (), executing_node=factory.executing_node)
-    journaled = read_journal_records(journal_path=journal_path)
+    anchor = (
+        resume_anchor(records=records or (), executing_node=factory.executing_node)
+        if cancel is None
+        else resume_anchor_from_cancel(cancel=cancel, executing_node=factory.executing_node)
+    )
     return ResumeGather(
         observation=ResumeObservation(
             work_item_id=item.id,
@@ -179,9 +201,7 @@ def gather_resume(
             live_runs=factory.live_runs,
             liveness_observed=factory.observed,
             lock_age_seconds=_lock_age_seconds(repo=repo, work_item_id=item.id),
-            changed_assertions=(
-                () if anchor is None else unproved_assertions(item=item, record=anchor.record)
-            ),
+            changed_assertions=_changed_assertions(item=item, anchor=anchor),
             earlier_resumes=(
                 ()
                 if pull_request is None
@@ -232,6 +252,34 @@ def earlier_workflow_name(
     return found
 
 
+def _earlier_run_id(*, cancel: CancelAnchor | None, provisional: ResumeAnchor | None) -> str | None:
+    """Which run the factory is asked the stage question about.
+
+    The CANCEL anchor's run when there is one, because that anchor has already
+    won: asking about the run the pull request's older record names would read a
+    stage off a dispatch this resume is not finishing, and the answer would be a
+    perfectly plausible node name.
+    """
+    if cancel is not None:
+        return cancel.run_id
+    return None if provisional is None else provisional.run_id
+
+
+def _changed_assertions(*, item: WorkItem, anchor: ResumeAnchor | None) -> tuple[str, ...]:
+    """The item's assertions the anchoring record does not carry; none without one.
+
+    An anchor carrying NO record inherits no proof — the resumed run enters at
+    `proof_capture` and captures afresh — so there is no record for an assertion
+    to be missing from. Measuring against the pull request's older record anyway
+    would refuse every cancel-anchored resume whose item had been re-groomed since
+    that record was published, and the refusal names a plain dispatch, which
+    reclaims the branch the resume exists to finish.
+    """
+    if anchor is None or anchor.record is None:
+        return ()
+    return unproved_assertions(item=item, record=anchor.record)
+
+
 def _earlier_run_ids(
     *, records: tuple[dict[str, object], ...], item: WorkItem, anchor: ResumeAnchor | None
 ) -> tuple[str, ...]:
@@ -248,7 +296,7 @@ def _earlier_run_ids(
     can attribute", and a record published by a different stage of the same run may
     carry the dispatch id instead.
     """
-    named = [] if anchor is None else [anchor.record.run_id]
+    named = [] if anchor is None else [anchor.run_id]
     named.extend(journaled_run_ids(records=records, work_item_id=item.id))
     named.extend(dispatch_ids_for(records=records, work_item_id=item.id))
     return tuple(dict.fromkeys(named))
