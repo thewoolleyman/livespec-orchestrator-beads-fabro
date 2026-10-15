@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.201.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.0...v0.201.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* republish the repaired head over this run's own published head (bd-ib-c435hh) ([e5ae93f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e5ae93faa1d3ac0335a750cbdb21d36a268944c2))
+
 ## [0.201.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.200.0...v0.201.0) (2026-10-15)
 
 
