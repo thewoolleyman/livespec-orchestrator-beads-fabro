@@ -12,16 +12,23 @@ factory minutes after the maintainer rotated the credential.
 This module is the re-resolution, plus the non-secret IDENTITY a refused-probe
 record carries so two consecutive rows show whether the value changed at all.
 
-THE CHILD'S INHERITED CREDENTIAL IS EMPTIED, AND THAT IS THE LOAD-BEARING PART.
-The wrapper this fleet runs caches, in the invoker's keyring, the DIFF between
-its caller's environment and what it injected, and replays that diff to every
-caller until the entry times out (`AGENTS.md`, the wrapper-cache entry, measured
-2026-10-01). A NESTED invocation that already holds the credential therefore
-produces a near-empty diff, which fails in both directions at once: this reading
-sees the stale value it started with, and the near-empty diff is stored where
-every other caller on the host then reads it. Emptying the name for the child is
-what makes the diff genuine, so the re-resolution observes the rotation and
-leaves the shared cache carrying real values.
+EVERY CREDENTIAL THE WRAPPER INJECTS IS EMPTIED FOR THE CHILD, AND THAT IS THE
+LOAD-BEARING PART. The wrapper this fleet runs caches, in the invoker's keyring,
+the DIFF between its caller's environment and what it injected, and replays that
+diff to every caller until the entry times out (`AGENTS.md`, the wrapper-cache
+entry, measured 2026-10-01). A NESTED invocation that already holds those values
+therefore produces a near-empty diff, which fails in both directions at once:
+this reading sees the stale value it started with, and the near-empty diff is
+stored where every other caller on the host then reads it. Emptying the names
+for the child is what makes the diff genuine, so the re-resolution observes the
+rotation and leaves the shared cache carrying real values.
+
+The emptied set is the WHOLE per-wrapper credential set plus the caam pool slot
+this dispatch projects, which `wrapper_injected_child_env` owns and documents.
+Emptying only the name under read is the shape this module shipped with and is
+not a smaller version of the same protection: the cached diff covers everything
+the wrapper injected, so three of the four names were still inherited and the
+entry replayed to the rest of the host was near-empty for those three.
 
 IT NEVER REPORTS AN ABSENT CREDENTIAL. A wrapper that exits non-zero, or exits
 zero having injected nothing, yields the LAUNCH-TIME value with `rotatable`
@@ -51,6 +58,7 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper import (
     read_dispatch_target_credential_wrapper,
+    wrapper_injected_child_env,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 
@@ -140,7 +148,7 @@ def resolve_rotated_credential(
         argv=[*wrapper, _PRINTENV, env_name],
         cwd=repo,
         timeout_seconds=CREDENTIAL_ROTATION_TIMEOUT_SECONDS,
-        env={env_name: ""},
+        env=wrapper_injected_child_env(env_name=env_name),
     )
     resolved = result.stdout.strip()
     if result.exit_code != 0 or resolved == "":
