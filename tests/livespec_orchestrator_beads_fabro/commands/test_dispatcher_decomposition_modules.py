@@ -242,6 +242,43 @@ def test_calibration_emit_cluster_importable_from_new_module_and_private_names_r
         assert not hasattr(dispatcher, name)
 
 
+def test_repo_config_cluster_importable_from_new_module_and_re_exported() -> None:
+    """The `.livespec.jsonc` read, moved out of the dispatch-loop selection pass.
+
+    The move is only safe if BOTH halves hold, so both are asserted here. The
+    new module must DEFINE the two names — `_dispatcher_loop_selection`
+    importing them back is what keeps every existing call site working, and a
+    file that merely re-exported them would satisfy an `__all__` check while
+    the LLOC they cost stayed where it was. And `dispatcher`,
+    `_dispatcher_loop_selection` and the new module must all name the SAME
+    function objects, because four other modules reach for
+    `livespec_config_text` through the selection module and a second definition
+    would let one caller read a repository's configuration differently from the
+    next.
+    """
+    commands_dir = Path(dispatcher.__file__).parent
+    repo_config_path = commands_dir / "_dispatcher_repo_config.py"
+    assert repo_config_path.is_file()
+
+    repo_config = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_repo_config"
+    )
+    dispatch_loop_selection = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection"
+    )
+
+    assert set(repo_config.__all__) == {"janitor_core_ref", "livespec_config_text"}
+    # DEFINED here, not merely re-exported: the qualified name is what tells a
+    # moved function from a forwarded one.
+    for name in repo_config.__all__:
+        moved = getattr(repo_config, name)
+        assert moved.__module__ == repo_config.__name__, name
+        assert getattr(dispatch_loop_selection, name) is moved, name
+    assert dispatcher.janitor_core_ref is repo_config.janitor_core_ref
+    assert "janitor_core_ref" in dispatch_loop_selection.__all__
+    assert "livespec_config_text" in dispatch_loop_selection.__all__
+
+
 def test_dispatch_loop_cluster_importable_from_new_module_and_private_names_removed() -> None:
     commands_dir = Path(dispatcher.__file__).parent
     loop_path = commands_dir / "_dispatcher_loop.py"

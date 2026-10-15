@@ -78,7 +78,7 @@ def test_the_ending_takes_two_consecutive_reports() -> None:
 
 
 def test_the_detail_names_the_cause_and_leaves_the_pull_request_standing() -> None:
-    detail = base_advanced_detail()
+    detail = base_advanced_detail(work_item_id="bd-ib-overtaken")
 
     assert detail.startswith(f"{BASE_ADVANCED_AFTER_ARMING}:")
     assert "left as it stands" in detail

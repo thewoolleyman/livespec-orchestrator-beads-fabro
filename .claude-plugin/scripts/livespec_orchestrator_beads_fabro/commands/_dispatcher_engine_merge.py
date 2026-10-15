@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import (
     CONSECUTIVE_CONFLICTING_REPORTS,
+    BaseAdvancedAfterArming,
     base_advanced_detail,
     reports_base_advanced_after_arming,
 )
@@ -164,7 +165,12 @@ def await_merge(
                     stage="merge-poll",
                     pr_number=view.number,
                     merge_sha=None,
-                    detail=base_advanced_detail(),
+                    detail=base_advanced_detail(work_item_id=plan.work_item_id),
+                    base_advanced=BaseAdvancedAfterArming(
+                        factory=plan.fabro_factory_name,
+                        pr_head=view.head,
+                        default_branch_tip=view.base,
+                    ),
                 )
         else:
             conflicting_reports = 0

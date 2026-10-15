@@ -42,9 +42,12 @@ reports nothing.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 __all__: list[str] = [
     "BASE_ADVANCED_AFTER_ARMING",
     "CONSECUTIVE_CONFLICTING_REPORTS",
+    "BaseAdvancedAfterArming",
     "base_advanced_detail",
     "reports_base_advanced_after_arming",
 ]
@@ -74,18 +77,52 @@ def reports_base_advanced_after_arming(
     return state == _OPEN and auto_merge_armed and merge_state_status == _CONFLICTING
 
 
-def base_advanced_detail() -> str:
-    """The outcome detail, naming the cause the clause ratifies.
+@dataclass(frozen=True, kw_only=True)
+class BaseAdvancedAfterArming:
+    """The three measurements the ending's ledger comment names, as the poll read them.
+
+    Carried as a typed field on the outcome rather than left for the record
+    writer to re-derive, for the seam reason `dead_implementer_condition` and
+    `provider_usage_limit_provider` are: the writer runs in the post-run
+    disposition sequence, long after the poll that took these readings, and the
+    only other way to reach them there is to re-match the rendered detail
+    prose — which is exactly what this field set exists to stop.
+
+    THE RUN ID AND THE PULL-REQUEST NUMBER ARE DELIBERATELY NOT HERE. Both
+    already ride the outcome, and two accounts of one measurement is how a
+    record comes to disagree with the result printed beside it.
+
+    `pr_head` and `default_branch_tip` are `None` when the forge's view did not
+    report them — NOT when the pull request has no head, and not as a sentinel
+    a comparison would accept. The record states such a reading as unreported
+    rather than silently omitting it, because an omitted line and a line
+    reporting an unpassable name are different facts with different remedies.
+    """
+
+    factory: str
+    pr_head: str | None
+    default_branch_tip: str | None
+
+
+def base_advanced_detail(*, work_item_id: str) -> str:
+    """The outcome detail, naming the cause and then the recovery chain.
 
     It says the pull request is left AS IT STANDS, because the clause forbids
     the Dispatcher from disarming, closing or rewriting it: a reader who sees
     the ending must not go looking for a disarm that deliberately did not
     happen, and must not perform one by hand before the resumed run's
     `pr_refresh` takes it.
+
+    THE CHAIN'S ORDER IS LOAD-BEARING, not stylistic. `resolve-blocked` is what
+    releases the item, and a `resume` issued before it meets an item that is
+    still blocked; naming them the other way round reads as a two-step recipe
+    whose first step cannot work.
     """
     return (
         f"{BASE_ADVANCED_AFTER_ARMING}: the default branch advanced after this run armed "
         "auto-merge, and two consecutive merge-wait polls reported the pull request OPEN and "
         "conflicting with it, so the armed request can no longer merge the head a proof record "
-        "names; the pull request is left as it stands."
+        "names; the pull request is left as it stands. Recover with "
+        f"`resolve-blocked:{work_item_id}:ready`, then `resume --item {work_item_id}`, which "
+        "re-enters pr_refresh and disarms the pull request before refreshing it."
     )

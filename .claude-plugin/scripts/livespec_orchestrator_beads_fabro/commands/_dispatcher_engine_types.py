@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import (
+    BaseAdvancedAfterArming,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit import HookOverLimit
 
 if TYPE_CHECKING:
@@ -156,6 +159,7 @@ class DispatchOutcome:
     needs_human_stages: tuple[str, ...] | None = None
     needs_human_reason: str | None = None
     hook_over_limit: HookOverLimit | None = None
+    base_advanced: BaseAdvancedAfterArming | None = None
 
 
 SleepFn = Callable[[float], None]
