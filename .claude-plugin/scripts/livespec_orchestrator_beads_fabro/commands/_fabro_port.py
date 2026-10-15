@@ -83,17 +83,24 @@ class FabroPort:
     http: FabroHttpTransport = field(default_factory=UrllibFabroHttpTransport)
     fabro_version: str | None = None
 
-    def run(
+    def run(  # noqa: PLR0913 — kw-only launch assembly, the same reasoning `launch_fabro_run` and `fabro_run_argv` below it carry: each argument is one INDEPENDENT operand of the one invocation, and grouping any pair into a carrier would invent a relationship the argv does not have.
         self,
         *,
         workflow_toml: Path,
         goal_file: Path,
         inputs: tuple[str, ...],
         timeout_seconds: float,
+        labels: tuple[str, ...] = (),
         correlation: DispatchCorrelation | None = None,
         runner: FabroRunner | None = None,
     ) -> FabroRunResult:
         """Launch one `fabro run`, carrying this dispatch's correlation.
+
+        `labels` are the already-rendered `KEY=VALUE` run labels the
+        dispatch resolved beside that correlation — the repository and each
+        ACP node's candidate entitlement. Rendered pairs rather than a
+        carrier for the reason `inputs` is: the values come from a plan
+        this facade does not read.
 
         An injected runner changes only this launch's source venue. Every other
         verb retains the port's bound runner, including watchdog inspection.
@@ -109,6 +116,7 @@ class FabroPort:
             goal_file=goal_file,
             inputs=inputs,
             timeout_seconds=timeout_seconds,
+            labels=labels,
             correlation=correlation,
         )
 

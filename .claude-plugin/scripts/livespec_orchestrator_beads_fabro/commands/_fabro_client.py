@@ -6,6 +6,7 @@ from pathlib import Path
 
 __all__: list[str] = [
     "fabro_input_args",
+    "fabro_label_args",
     "fabro_uses_workflow_package",
     "materialized_workflow_config",
     "overlay_graph_reference",
@@ -73,4 +74,17 @@ def fabro_input_args(*, inputs: tuple[str, ...]) -> list[str]:
     argv: list[str] = []
     for item in inputs:
         argv.extend(["--input", item])
+    return argv
+
+
+def fabro_label_args(*, labels: tuple[str, ...]) -> list[str]:
+    """Render resolved run labels as repeated CLI arguments.
+
+    The FLAG and its operand are two argv tokens, as they are for
+    `--input` above: the engine reads them as a pair, so a value spliced
+    onto the flag is rejected at argument parsing rather than carried.
+    """
+    argv: list[str] = []
+    for label in labels:
+        argv.extend(["--label", label])
     return argv
