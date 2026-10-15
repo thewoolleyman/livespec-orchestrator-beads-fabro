@@ -177,6 +177,27 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   URL already carrying a username and a password, so the token Fabro embeds in
   the origin URL still wins there. That precedence is git's own, not something
   arranged here, which is why both cases are asserted as a pair.
+- `_dispatcher_harness_settings.py` — the `settings.local.json` every dispatch
+  writes into the sandbox, which is what makes `_dispatcher_overlay`'s harness
+  shell-tool policy the EFFECTIVE one (`bd-ib-rv2jk4`). PURE. The env table
+  that policy already rides ARRIVES and is then overridden one layer down: the
+  sandbox agent starts the Claude harness with `settingSources: ["user",
+  "project", "local"]`, so the governed repository's committed
+  `.claude/settings.json` is loaded, and a settings-file `env` value outranks
+  the same variable inherited from the process environment — which is why two
+  runs lost their Green amend at ~1202 s against a committed cap of 1200000 ms
+  while the overlay said 3600000. Three properties an editor must not invert.
+  It writes the `local` source and never the committed one, because the
+  committed file is the INTERACTIVE host sessions' setting and because `local`
+  is the source measured to outrank `project`. It MERGES the `env` keys rather
+  than replacing the file, since a settings file the sandbox already carries
+  may hold permissions, hooks or plugin declarations that are none of this
+  projection's business. And the mapping is an ARGUMENT rather than a constant
+  here: the overlay hands this renderer the very tuple it renders the env table
+  from, so a settings file disagreeing with its own process environment — the
+  identical fault one layer down, and invisible, because both layers would be
+  individually well-formed — cannot arise. It raises NO cap; it makes the
+  existing value effective.
 - `_dispatcher_sandbox_worktree_exclude.py` — the ONE renderer that makes a
   Dispatcher-materialized sandbox path invisible to the run's own git worktree,
   shared by `_dispatcher_gh_refresh` (the bundle and its base64 payload,
