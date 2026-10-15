@@ -752,6 +752,33 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   gate owes them opposite treatments. `_dispatcher_acp_preflight.
   resolve_dispatch_candidates` is the one place the resolution is read off
   disk, and `_dispatcher_admission_eligibility` spends it ONCE PER PASS.
+- `_fabro_executed_candidate` attributes a classified provider-limit failure to
+  the candidate that RAN, from the `livespec.acp.<node>.*` labels the dispatch
+  stamped (`contracts.md` §"Provider-limit permanence and root-cause
+  surfacing": "The provider is attributed from the recorded executed candidate
+  identity, never inferred from a shared message literal"; Scenario 65). PURE,
+  and the repair of a misattribution that is wrong in BOTH directions at once:
+  Claude and Codex both say "You've hit your usage limit", the measured hint
+  maps that sentence to `codex`, so a failing Claude attempt wrote a record
+  under a vendor nothing spent — refusing later dispatches on an intact
+  allowance while the exhausted one stayed unheld. Four properties an editor
+  must not invert. RECOGNITION IS NOT TOUCHED: whether the failure is a ceiling
+  stays with `_fabro_port_permanent_failure`'s cause-text classification, and
+  only WHOSE ceiling it was moves here, which is what lets one message literal
+  recognise a ceiling for either vendor without naming one. The typed flag is
+  the GATE, because a dispatch stamps these labels on every run while a ceiling
+  is rare, so an attribution firing on any failure would name a vendor for an
+  ordinary transport fault. An ABSENT identity keeps the v107 cause-text
+  attribution rather than refusing — `dispatch_run_label_pairs` emits a pair
+  only for a node that resolved one, so an identity-less legacy adapter leaves
+  its node unlabelled, and the contract keeps that adapter on the conservative
+  legacy posture with no entitlement a typed hold could be scoped by. And the
+  label keys are IMPORTED from `_dispatcher_run_labels` rather than respelled:
+  a reader spelling a key its writer does not would find nothing and report an
+  absent identity, which is the same misattribution arriving silently. The node
+  key is normalized because the two engines spell it differently — the pinned
+  engine keys its outcome map `implement`, the Petri-era engine keys its stage
+  map `002-implement@1` — while the label is keyed on the graph node id alone.
 - The ADMISSION SESSION-HEADROOM FILTER of `contracts.md`'s "Admission filters
   candidates by projected Claude session headroom" paragraph (`bd-ib-jwuxs4`,
   Scenario 60) lives in FOUR cohesive modules, split pure-from-impure the usual
