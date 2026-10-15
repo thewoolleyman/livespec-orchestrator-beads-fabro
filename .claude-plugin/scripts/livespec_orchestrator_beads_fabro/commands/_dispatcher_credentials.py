@@ -15,9 +15,6 @@ from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._config import (
     dispatcher_block,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config import (
-    codex_otel_config_toml,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_overlay_leg import (
     project_codex_overlay_leg,
 )
@@ -274,11 +271,15 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     siblings = resolve_sibling_clones(repo=repo)
     if isinstance(siblings, str):
         return siblings
-    # The Codex credential leg: the run budget, the graded host snapshot, the
-    # sandbox's credential-use enforcement inputs, and the launch-route guard.
-    # One unit because the order between them is load-bearing, and refused HERE —
-    # before the proof-credential mint below — so no refusal in it can leave a
-    # live provider credential behind.
+    sandbox_otel_endpoint = resolve_sandbox_otel_endpoint(environ=dict(os.environ))
+    # EVERYTHING THIS DISPATCH PROJECTS INTO ITS SANDBOX `$CODEX_HOME`: the run
+    # budget, the graded host snapshot, the credential-use enforcement inputs, the
+    # launch-route guard, and the Codex telemetry table. One unit because the order
+    # between them is load-bearing, because the credential and the telemetry table
+    # must be scoped by ONE routing decision (that module's docstring records the
+    # preparation abort that scoping them apart produced), and refused HERE — before
+    # the proof-credential mint below — so no refusal in it can leave a live
+    # provider credential behind.
     codex_leg = project_codex_overlay_leg(
         committed=committed,
         block=dispatcher_block(cwd=repo),
@@ -289,34 +290,29 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # path has a single place a test stands time still.
         clock=lambda: int(time.time()),
         # WHETHER THIS DISPATCH ROUTES ANY NODE TO CODEX, which decides whether
-        # there is a credential for the leg to grade and stamp a deadline from.
-        # Resolved from the SAME pure function the pre-dispatch wall's gate
-        # consults, against the same host-side checkout, so the pre-claim and
-        # post-claim halves cannot scope themselves differently; it is read here
-        # rather than threaded down from the wall because the wall grades a
-        # whole selection while this runs per dispatch, and a value carried
-        # across that boundary would have to ride every plan and seam between
-        # them to reach one call site.
+        # there is a credential for the leg to grade and stamp a deadline from,
+        # and whether there is a `$CODEX_HOME` for its telemetry table to be
+        # written into. Resolved from the SAME pure function the pre-dispatch
+        # wall's gate consults, against the same host-side checkout, so the
+        # pre-claim and post-claim halves cannot scope themselves differently; it
+        # is read here rather than threaded down from the wall because the wall
+        # grades a whole selection while this runs per dispatch, and a value
+        # carried across that boundary would have to ride every plan and seam
+        # between them to reach one call site.
         codex_routing=codex_routing_for_dispatch(repo=repo),
+        # The telemetry table's three inputs. The endpoint is the SAME reading the
+        # Claude-Code OTel overlay below is rendered from, resolved once above, so
+        # the sandbox's two exporters cannot be pointed at different receivers.
+        sandbox_otel_endpoint=sandbox_otel_endpoint,
+        work_item_id=work_item_id,
+        dispatch_id=dispatch_id,
     )
     if isinstance(codex_leg, str):
         return codex_leg
-    sandbox_otel_endpoint = resolve_sandbox_otel_endpoint(environ=dict(os.environ))
     otel_env = cc_otel_overlay_env(
         work_item_id=work_item_id,
         dispatch_id=dispatch_id,
         endpoint=sandbox_otel_endpoint,
-    )
-    # Codex honors no `OTEL_*` variable, so the overlay above reaches Claude
-    # Code only. Codex resolves its exporters from `$CODEX_HOME/config.toml`
-    # alone, and projecting that file is what makes Codex spend telemetry
-    # exist at all (work-item bd-ib-dbzp). Rendered unconditionally, exactly
-    # like the credential snapshot beside it: this path has already returned
-    # on a projection refusal, so `$CODEX_HOME` is always provisioned here.
-    codex_otel_config = codex_otel_config_toml(
-        endpoint=sandbox_otel_endpoint,
-        work_item_id=work_item_id,
-        dispatch_id=dispatch_id,
     )
     credential_choice = select_factory_credential(
         environ=os.environ,
@@ -344,7 +340,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         siblings=siblings,
         otel_env=otel_env,
         codex_auth_snapshot=codex_leg.snapshot,
-        codex_otel_config=codex_otel_config,
+        codex_otel_config=codex_leg.otel_config,
         # WHERE this dispatch's sandbox image comes from, resolved ONCE with the
         # plan and forwarded rather than re-read here. The dispatch record names
         # the same decision, and a second read of the same configuration cannot

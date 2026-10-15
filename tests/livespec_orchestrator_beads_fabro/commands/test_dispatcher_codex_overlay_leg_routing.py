@@ -78,6 +78,15 @@ _ALL_CLAUDE_DETAIL = (
 )
 _CODEX_DETAIL = "resolved ACP candidate keys naming the codex-acp agent: codex-acp/openai/gpt-5.1"
 
+# The telemetry table's three inputs, each a value the leg cannot derive. They are
+# distinguishable literals so the Codex-routed control can assert the table was
+# rendered FROM WHAT THE CALLER HANDED IN: a leg resolving the endpoint or either
+# correlation id for itself would render a well-formed table that attributes every
+# Codex span to the wrong dispatch, which no shape assertion can see.
+_OTEL_ENDPOINT = "http://127.0.0.1:44318"
+_WORK_ITEM_ID = "bd-ib-meejjz"
+_DISPATCH_ID = "01M50FM0207FG8V82VBE1TTDT8"
+
 
 def _modules() -> tuple[ModuleType, ModuleType, ModuleType, ModuleType]:
     """The four modules under test, imported inside the body.
@@ -167,6 +176,9 @@ def test_an_all_claude_dispatch_is_neither_graded_nor_projected(
         adapter_inputs=frozenset({"implement_adapter"}),
         clock=lambda: _NOW,
         codex_routing=routing.CodexRouting(routes_codex=False, detail=_ALL_CLAUDE_DETAIL),
+        sandbox_otel_endpoint=_OTEL_ENDPOINT,
+        work_item_id=_WORK_ITEM_ID,
+        dispatch_id=_DISPATCH_ID,
     )
 
     assert calls == [], (
@@ -180,6 +192,12 @@ def test_an_all_claude_dispatch_is_neither_graded_nor_projected(
     assert isinstance(resolved.credential_use, projection.UnprotectedCredentialUse), (
         "the leg must carry the host's EXPLICIT declaration that nothing was "
         "projected; None is silence, and the guard fails closed on silence"
+    )
+    assert resolved.otel_config is None, (
+        "the Codex telemetry table must be withheld on the SAME arm as the "
+        "credential: it is written into the $CODEX_HOME only the credential "
+        "projection declares, so a table projected here renders a prepare step "
+        'that runs as `mkdir -p ""` and aborts preparation'
     )
 
 
@@ -205,6 +223,9 @@ def test_a_codex_routed_dispatch_is_graded_and_projected_exactly_as_before(
         adapter_inputs=frozenset({"implement_adapter"}),
         clock=lambda: _NOW,
         codex_routing=routing.CodexRouting(routes_codex=True, detail=_CODEX_DETAIL),
+        sandbox_otel_endpoint=_OTEL_ENDPOINT,
+        work_item_id=_WORK_ITEM_ID,
+        dispatch_id=_DISPATCH_ID,
     )
 
     assert calls == ["requirement", "grade", "project", "route-check"], (
@@ -220,3 +241,18 @@ def test_a_codex_routed_dispatch_is_graded_and_projected_exactly_as_before(
         "is what installs the guard's deadline"
     )
     assert resolved.credential_use.deadline_epoch == _DEADLINE_EPOCH
+    # The telemetry table, carried on the arm that declares the $CODEX_HOME it is
+    # written into. Read for the correlation pair rather than pinned whole: the
+    # document's own shape is pinned by `test_dispatcher_codex_otel_config`, while
+    # what this leg decides is WHETHER it is rendered and from WHICH inputs — and
+    # a leg resolving the endpoint or the ids for itself would produce a
+    # well-formed table correlating to the wrong dispatch.
+    assert resolved.otel_config is not None, (
+        "a Codex-routed dispatch still carries the [otel] table codex-core reads "
+        "its trace exporter from; without it Codex exports no span at all"
+    )
+    for expected in (_OTEL_ENDPOINT, _WORK_ITEM_ID, _DISPATCH_ID):
+        assert expected in resolved.otel_config, (
+            "the table must be rendered from the inputs the caller handed in; "
+            f"missing {expected!r} in: {resolved.otel_config}"
+        )
