@@ -71,6 +71,37 @@ the engine that supplies both. Only the `state` field is read, and an entry
 carrying none is dropped rather than counted — the honest-unknown lever above
 is what distinguishes "graded, and nothing failed" from "nothing to grade", so
 an ungradeable entry must not make the map look readable.
+
+BEING THE WHOLE HISTORY, THAT MAP IS COLLAPSED TO ONE VISIT PER NODE BEFORE IT
+IS GRADED, and this is the second reading of the recovered-stage measurement
+above rather than a new concern. `node_outcomes` is keyed by NODE and carries
+that node's CURRENT status, which is why `_node_failed` can say a retried node
+reports `succeeded`; the stage map is keyed `<node>@<visit>` and the engine
+never retires an entry, so a visit that failed and was then repaired by the
+graph's bounded fix loop keeps its own `failed` entry for the life of the
+record. Grading entry-by-entry therefore attributes a repaired node on the
+ORDINARY shape of every run the fix loop rescued — `janitor@1` failed, `fix@1`
+succeeded, `janitor@2` succeeded — which blames a stage nobody should look at
+and reports that no answer is owed on a run where one is. That per-visit
+entries persist is measured rather than supposed: the run this reading was
+filed from carries `proof_capture@1` succeeded beside `proof_capture@2` failed.
+
+The latest visit is chosen by the suffix AS A NUMBER, because neither
+alternative holds. Map order is this module's ordering fallback for SEQUENCE
+but is not evidence of visit order, and a text comparison puts `@10` before
+`@9` — both agree with the numeric answer on the measured record and disagree
+on a longer loop, so a fixture that never crossed ten would pass against either
+wrong rule. A suffix carrying no number is left to document order, which is the
+only ordering evidence such a record offers; retaining both entries because
+neither can be ranked would be the attribution defect returning through the one
+shape no engine writes.
+
+The collapse runs AFTER the ungradeable entries are dropped, which keeps one
+rule rather than two: an entry with no readable `state` is not a reading at
+all, so it is not a visit that can outlive an earlier one. Collapsing first
+would let an unreadable latest entry suppress its node's last readable state,
+and a node suppressed that way reads downstream as a node that did not fail —
+the direction that invents an agent, which the lever above exists to refuse.
 """
 
 from __future__ import annotations
@@ -185,12 +216,45 @@ def _stage_state_outcomes(*, record: dict[str, Any]) -> dict[str, dict[str, Any]
     what order, which `state` answers exactly as `status` does. The stage KEY is
     carried whole, visit suffix included, because `proof_capture@2` says which
     visit failed and `proof_capture` would discard a fact the engine recorded.
+
+    The map is per VISIT, so only each node's newest visit survives the
+    projection — the module docstring records why, and why that step runs here
+    rather than against the already-graded outcomes.
     """
-    return {
+    graded = {
         stage: {"status": state}
         for stage, entry in _mapping_entries(raw=record.get("stages")).items()
         if (state := _text(value=entry.get("state"))) is not None
     }
+    newest = _newest_visits(stages=tuple(graded))
+    return {stage: outcome for stage, outcome in graded.items() if stage in newest}
+
+
+def _newest_visits(*, stages: tuple[str, ...]) -> frozenset[str]:
+    """One stage key per node — the newest visit of each, by visit number.
+
+    A frozenset of the SURVIVING KEYS rather than a node-to-key map, so the
+    caller filters its own already-ordered mapping and each retained entry
+    keeps its own position in the record. Carrying the node half out of here
+    would place every multi-visit node at its FIRST visit's position instead.
+    """
+    newest: dict[str, str] = {}
+    for stage in stages:
+        held = newest.get(_stage_node(stage=stage))
+        if held is None or _stage_visit(stage=stage) >= _stage_visit(stage=held):
+            newest[_stage_node(stage=stage)] = stage
+    return frozenset(newest.values())
+
+
+def _stage_visit(*, stage: str) -> int:
+    """The visit number of a `<node>@<visit>` key; 0 for one carrying none.
+
+    `>=` at the call site is what makes the no-number case fall back to
+    document order: two unnumbered visits of one node compare equal, so the
+    later-written entry replaces the earlier one.
+    """
+    visit = stage.partition("@")[2].strip()
+    return int(visit) if visit.isdigit() else 0
 
 
 def _mapping_entries(*, raw: object) -> dict[str, dict[str, Any]]:
@@ -302,11 +366,14 @@ def _history_signatures(
 def _stage_node(*, stage: str) -> str:
     """The node half of a `<node>@<visit>` stage key, or the key as it stands.
 
-    This exists for the terminal exclusion alone, and it is the whole reason
-    that exclusion reaches a Petri record: the excluded value is a NODE id,
-    while Petri keys its stages by node AND visit, so a direct comparison
-    silently matched nothing and let the dead-end terminal be attributed on
-    every ending. A pinned-engine key carries no `@` and is returned unchanged.
+    It is the whole reason the terminal exclusion reaches a Petri record: the
+    excluded value is a NODE id, while Petri keys its stages by node AND visit,
+    so a direct comparison silently matched nothing and let the dead-end
+    terminal be attributed on every ending. `_newest_visits` reads it for the
+    other question a visit-keyed map raises — which entries describe one node —
+    and the two must agree on where that key divides, which is why there is one
+    reading of it rather than a split in each caller. A pinned-engine key
+    carries no `@` and is returned unchanged.
     """
     return stage.split("@", maxsplit=1)[0].strip()
 
