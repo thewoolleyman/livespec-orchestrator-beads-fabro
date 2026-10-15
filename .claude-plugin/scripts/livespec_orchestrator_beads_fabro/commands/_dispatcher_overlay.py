@@ -304,10 +304,12 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # The same policy as the env table above, written into the sandbox's `local`
     # settings source — because the governed repository's committed `project`
     # settings outrank the process environment, so without this the table's
-    # values are projected and then ignored (bd-ib-rv2jk4).
-    harness_settings_steps = harness_settings_prepare_steps_block(
-        harness_env=(("BASH_DEFAULT_TIMEOUT_MS", "600000"), ("BASH_MAX_TIMEOUT_MS", "3600000")),
-    )
+    # values are projected and then ignored (bd-ib-rv2jk4). Rendered from the
+    # SAME tuple the table is, which is what makes the file a projection of the
+    # table rather than a second copy of the same numbers: a settings file
+    # saying something the table did not would be the original fault one layer
+    # down, and invisible, because both layers would be well-formed.
+    harness_settings_steps = harness_settings_prepare_steps_block(harness_env=_HARNESS_SHELL_ENV)
     gh_refresh_steps = refreshing_gh_prepare_steps_block()
     gh_refresh_env_lines = refreshing_gh_env_lines()
     # Rendered immediately after the wrapper it routes to, and unconditionally:

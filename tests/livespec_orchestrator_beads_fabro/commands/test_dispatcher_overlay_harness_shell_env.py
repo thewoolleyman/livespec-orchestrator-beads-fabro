@@ -251,6 +251,44 @@ def test_a_resume_overlay_writes_the_sandbox_harness_settings_file_exactly_once(
     assert settings_env["BASH_MAX_TIMEOUT_MS"] == _BASH_MAX_TIMEOUT_MS
 
 
+def test_a_changed_env_table_ceiling_changes_the_settings_file_ceiling_too(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ONE tuple renders BOTH layers, so the two cannot disagree.
+
+    This is the assertion that makes the settings file a projection of the env
+    table rather than a second, independently-maintained copy of the same
+    numbers. A settings file that said something the env table did not would be
+    the original fault one layer down — and it would be invisible, because both
+    layers would be individually well-formed and each would pass its own test
+    above.
+
+    The tuple is reached by NAME through `monkeypatch`, which is this suite's
+    sanctioned way of binding a module's own constant, and the env-table
+    assertion beside the settings one is the positive control: it shows the
+    substitution actually took, so a settings file that happened to match for
+    some other reason cannot pass this.
+    """
+    changed_max = "2700000"
+    assert changed_max != _BASH_MAX_TIMEOUT_MS
+    module = importlib.import_module(_OVERLAY_MODULE)
+    monkeypatch.setattr(
+        module,
+        "_HARNESS_SHELL_ENV",
+        (
+            ("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1"),
+            ("BASH_DEFAULT_TIMEOUT_MS", _BASH_DEFAULT_TIMEOUT_MS),
+            ("BASH_MAX_TIMEOUT_MS", changed_max),
+        ),
+    )
+    rendered = _ordinary_overlay(tmp_path=tmp_path)
+    assert f'BASH_MAX_TIMEOUT_MS = "{changed_max}"\n' in rendered
+    settings_env = _settings_env(rendered=rendered)
+    assert settings_env["BASH_MAX_TIMEOUT_MS"] == changed_max
+    assert settings_env["BASH_DEFAULT_TIMEOUT_MS"] == _BASH_DEFAULT_TIMEOUT_MS
+
+
 def test_both_overlay_shapes_carry_the_three_lines_once_beside_tmux_tmpdir(
     tmp_path: Path,
 ) -> None:
