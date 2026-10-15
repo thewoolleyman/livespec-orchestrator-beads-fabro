@@ -70,8 +70,12 @@ _BASH_MAX_TIMEOUT_MS = "3600000"
 _BASH_DEFAULT_TIMEOUT_ENV_LINE = f'BASH_DEFAULT_TIMEOUT_MS = "{_BASH_DEFAULT_TIMEOUT_MS}"\n'
 _BASH_MAX_TIMEOUT_ENV_LINE = f'BASH_MAX_TIMEOUT_MS = "{_BASH_MAX_TIMEOUT_MS}"\n'
 # The `local` settings source the sandbox agent loads AFTER the committed
-# `project` one, so this is the file that decides the effective cap.
-_SETTINGS_LOCAL_PATH = "/workspace/.claude/settings.local.json"
+# `project` one, so this is the file that decides the effective cap. Spelled as
+# the suffix RELATIVE to the run's own checkout root, because that root is what
+# the harness resolves both of its file-based sources against: an absolute
+# `/workspace` spelling names a file no harness opens, and the step that wrote
+# one exited 0 while the committed cap stayed in force (bd-ib-rv2jk4).
+_SETTINGS_LOCAL_PATH = ".claude/settings.local.json"
 _RAISED_TIMEOUT_ENV_LINES = (_BASH_DEFAULT_TIMEOUT_ENV_LINE, _BASH_MAX_TIMEOUT_ENV_LINE)
 _HARNESS_SHELL_ENV_LINES = (_NO_AUTO_BACKGROUND_ENV_LINE, *_RAISED_TIMEOUT_ENV_LINES)
 

@@ -186,10 +186,17 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `.claude/settings.json` is loaded, and a settings-file `env` value outranks
   the same variable inherited from the process environment — which is why two
   runs lost their Green amend at ~1202 s against a committed cap of 1200000 ms
-  while the overlay said 3600000. Three properties an editor must not invert.
+  while the overlay said 3600000. Four properties an editor must not invert.
   It writes the `local` source and never the committed one, because the
   committed file is the INTERACTIVE host sessions' setting and because `local`
-  is the source measured to outrank `project`. It MERGES the `env` keys rather
+  is the source measured to outrank `project`. It writes that file INSIDE THE
+  RUN'S OWN CHECKOUT, at a path RESOLVED from `git rev-parse --show-toplevel`
+  rather than spelled absolutely: the harness resolves both of its file-based
+  sources against its own working directory and walks no parent, so the `local`
+  file is read only as a SIBLING of the committed one — and the first
+  implementation's `/workspace/.claude/settings.local.json` was a file no
+  harness opens, which exited 0 with the cap still at 1200000. It MERGES the
+  `env` keys rather
   than replacing the file, since a settings file the sandbox already carries
   may hold permissions, hooks or plugin declarations that are none of this
   projection's business. And the mapping is an ARGUMENT rather than a constant
