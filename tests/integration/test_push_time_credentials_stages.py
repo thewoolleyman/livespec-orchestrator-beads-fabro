@@ -20,8 +20,18 @@ push_sandbox = fixtures.push_sandbox
 
 @pytest.fixture(autouse=True)
 def isolate_push_mints(push_sandbox: PushSandbox) -> None:
-    """The PR API double must not add gh mints to the push-attempt count."""
-    executable(path=push_sandbox.root / "bin/gh", source="#!/bin/sh\nexit 0\n")
+    """The PR API double must not add gh mints to the push-attempt count.
+
+    It answers `null` because `pr_refresh` reads the pull request's auto-merge
+    request before it rebases (v145) and fails closed on an empty answer, so a
+    stub printing nothing refuses the stage before any push — and the subject of
+    every case here is the PUSH. `null` reports the arming absent, which is the
+    state that reaches the push with no forge write in between.
+    """
+    executable(
+        path=push_sandbox.root / "bin/gh",
+        source="#!/bin/sh\nprintf 'null\\n'\nexit 0\n",
+    )
 
 
 def prepare_stage(*, box: PushSandbox, node: str) -> str:

@@ -249,6 +249,24 @@ def _world(*, root: Path) -> _World:
     return _World(origin=origin, clone=clone)
 
 
+def _unarmed_forge_bin(*, world: _World) -> Path:
+    """A `gh` on PATH reporting the publish branch's pull request as UNARMED.
+
+    `pr_refresh` reads the auto-merge request before it rebases (v145) and fails
+    closed when it cannot, so every case that drives the stage needs a forge that
+    answers. Reporting `null` is the state these cases are about: the repair
+    route is what is under test here, not the disarm, and an ARMED fixture would
+    add a forge write to every assertion about what the repair rewrote. The
+    disarm itself is driven in `test_scripted_refresh_execution.py`.
+    """
+    bin_dir = world.clone.parent / "forge-bin"
+    bin_dir.mkdir(exist_ok=True)
+    stub = bin_dir / "gh"
+    _ = stub.write_text("#!/bin/sh\nprintf 'null\\n'\n", encoding="utf-8")
+    stub.chmod(0o755)
+    return bin_dir
+
+
 def _advance_default(*, world: _World, path: str, text: str) -> str:
     """Move origin's default branch through a SEPARATE clone.
 
@@ -724,7 +742,7 @@ def test_a_conflicted_pr_refresh_restores_its_published_head_and_counts_a_refres
         text=True,
         check=False,
         env={
-            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "PATH": f"{_unarmed_forge_bin(world=world)}:/usr/local/bin:/usr/bin:/bin",
             "HOME": str(world.clone.parent / "home"),
             "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
             "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
@@ -797,7 +815,7 @@ def test_a_conflicted_pr_refresh_resolves_through_the_classifier_to_fix(tmp_path
         text=True,
         check=False,
         env={
-            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "PATH": f"{_unarmed_forge_bin(world=world)}:/usr/local/bin:/usr/bin:/bin",
             "HOME": str(world.clone.parent / "home"),
             "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
             "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
