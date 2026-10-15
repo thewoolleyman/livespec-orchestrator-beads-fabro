@@ -82,6 +82,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_cancel_anchor import (
     CancelAnchor,
     cancel_anchor,
+    unanchoring_cancel_stage,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_forge import (
     branch_pull_request,
@@ -210,6 +211,9 @@ def gather_resume(
                     work_item_id=item.id,
                     pull_request=pull_request.number,
                 )
+            ),
+            unanchoring_cancel_stage=unanchoring_cancel_stage(
+                records=journaled, work_item_id=item.id
             ),
         ),
         anchor=anchor,
