@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.198.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.198.4...v0.198.5) (2026-10-15)
+
+
+### Bug Fixes
+
+* **dispatcher:** classify a Petri needs-human ending from its stage states ([4e27046](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4e27046e5505682fa2369eef7f6b63bc129be961))
+* **dispatcher:** exclude the Petri terminal stage from causal attribution ([cbecffc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cbecffc71c67ed5262084024969a56633c271d5e))
+* **dispatcher:** grade a Petri stage map by latest visit, not per entry ([0ea5b52](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0ea5b52823dc585643c33c38845aa18c0469bff0))
+
 ## [0.198.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.198.3...v0.198.4) (2026-10-15)
 
 
