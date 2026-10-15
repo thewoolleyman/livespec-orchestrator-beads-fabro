@@ -157,7 +157,11 @@ def test_a_wrapper_that_refuses_falls_back_to_the_launch_value(tmp_path: Path) -
 
     Falling back rather than reporting absence is what keeps a transient wrapper
     fault from being reported as a revoked credential — the two have opposite
-    remedies, and the wait's own bound is what stops a persistent fault.
+    remedies. A PERSISTENT fault ends no wait either: the `source` label this
+    reading carries travels into every refused-probe record, so the operator who
+    can fix the wrapper sees which reading each round got, while the BOUNDED
+    re-resolution is what stops a round from hanging. The probe's own next result
+    remains the only retirement signal.
     """
     rotation = _rotation()
     runner = _Runner(results=[CommandResult(exit_code=1, stdout="", stderr="sudo: not found")])
