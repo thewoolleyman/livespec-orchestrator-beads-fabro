@@ -278,8 +278,26 @@ def _scrubbed_env() -> dict[str, str]:
     `.coverage.*` that races the parallel check dispatcher. The git config
     redirects keep the runner's own global and system config -- which may well
     carry a credential helper of its own -- out of the measurement.
+
+    Dropping every `GIT_CONFIG*` variable completes that same isolation at the
+    PROCESS scope, which the two redirects above cannot reach. A Petri-era
+    sandbox is handed `GIT_CONFIG_COUNT` plus the matching
+    `GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` pairs, and that scope outranks the
+    clone's own config: measured in-sandbox, the inherited set carried
+    `credential.https://github.com.helper` twice -- once EMPTY, which resets
+    the accumulated helper list, then once naming the runner's own
+    `credential-store`. The clone-scoped `!gh auth git-credential` this test
+    configures was therefore discarded before git ever consulted it, and
+    `git credential fill` died `could not read Username` with the fixture
+    perfectly sound. Explicitly NOT a claim about the production push path:
+    what a real in-sandbox push resolves is the work-item's Host-captured
+    assertion, and this helper only keeps the host out of THIS measurement.
     """
-    env = {key: value for key, value in os.environ.items() if not key.startswith("COV")}
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("COV") and not key.startswith("GIT_CONFIG")
+    }
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
     env["GIT_CONFIG_NOSYSTEM"] = "1"
