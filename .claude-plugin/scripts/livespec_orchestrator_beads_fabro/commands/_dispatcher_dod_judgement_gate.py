@@ -47,6 +47,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
     run_dod_judgement,
 )
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
+from livespec_orchestrator_beads_fabro.errors import (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -132,27 +139,53 @@ def judge_item_definition_of_done(
     runner: CommandRunner | None = None,
     payload_root: Path | None = None,
 ) -> DodJudgementDecision:
-    """The decision above, bound to this item's own ledger comment sidecar."""
+    """The decision above, bound to this item's own ledger comment sidecar.
+
+    An UNREADABLE sidecar reports `did-not-run` and records NOTHING, which is
+    the only honest answer available: the comments are both where a reusable
+    verdict is read from and where the once-per-cause cap is read from, so a
+    judgement taken without them would re-comment on every pass — and the
+    write that would say so is the one that cannot be deduplicated. The item
+    then routes exactly as it would without the judgement, which is what the
+    clause asks of every condition under which it cannot run.
+    """
 
     def append(*, body: str) -> None:
         append_work_item_comment(path=path, work_item_id=item.id, body=body)
 
+    bodies = item_comment_bodies(path=path, work_item_id=item.id)
+    if bodies is None:
+        return DodJudgementDecision(work_item_id=item.id, outcome=JUDGEMENT_UNAVAILABLE)
     return judge_definition_of_done(
         item=item,
         repo=repo,
         stage=stage,
-        comments=item_comment_bodies(path=path, work_item_id=item.id),
+        comments=bodies,
         append=append,
         runner=runner,
         payload_root=payload_root,
     )
 
 
-def item_comment_bodies(*, path: StoreConfig, work_item_id: str) -> tuple[str, ...]:
-    """One item's comment bodies, oldest-first, as every reader here wants them."""
-    return tuple(
-        comment.text for comment in read_work_item_comments(path=path, work_item_id=work_item_id)
+def item_comment_bodies(*, path: StoreConfig, work_item_id: str) -> tuple[str, ...] | None:
+    """One item's comment bodies oldest-first, or `None` when they cannot be read.
+
+    `None` and the empty tuple are deliberately different answers: an item with
+    no comments has no recorded verdict and must be judged, while an item whose
+    sidecar could not be read is one nothing can be concluded about.
+    """
+    read = attempt(
+        action=lambda: read_work_item_comments(path=path, work_item_id=work_item_id),
+        exceptions=(
+            BeadsCommandError,
+            BeadsConnectionError,
+            BeadsMappingError,
+            BeadsTenantMissingError,
+        ),
     )
+    if isinstance(read, AttemptFailure):
+        return None
+    return tuple(comment.text for comment in read)
 
 
 def held_judgement(

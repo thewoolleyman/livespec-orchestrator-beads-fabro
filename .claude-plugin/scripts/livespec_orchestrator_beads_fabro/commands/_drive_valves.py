@@ -2,39 +2,29 @@
 
 The `reject` valve lives in `_drive_reject_valve`, the `accept` valve in
 `_drive_accept_valve`, the merge-hold valve in `_drive_merge_hold_valve`, the
-policy / cap / queue / blocked-state valves in `_drive_policy_valves`, and the
-action-id grammar the router dispatches on in `_drive_valve_grammar`; what stays
-here is that router, and `approve`.
+policy / cap / queue / blocked-state valves in `_drive_policy_valves`, the
+`approve` valve in `_drive_approve_valve`, and the action-id grammar the router
+dispatches on in `_drive_valve_grammar`; what stays here is that router.
 
-`accept` moved out when the human-attested leg gave it a forge read: it had been
-a ledger-only sibling of `approve`, and leaving it here would have put a pull
-request read inside the module whose whole job is routing.
+`approve` moved to `_drive_approve_valve` once the pre-admission
+Definition-of-Done judgement gave it a model call, for the same reason `accept`
+moved out when the human-attested leg gave it a forge read: a module whose whole
+job is routing must not also be the one that reaches a provider or a forge.
 """
 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from returns.pipeline import is_successful
-from returns.unsafe import unsafe_perform_io
-
 from livespec_orchestrator_beads_fabro import store
-from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
-    route_factory_size_decomposition,
-)
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
-from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
-    acceptance_eligibility,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
-    resolved_stored_factory_size_decision,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     InvokerIdentity,
     default_invoker_identity,
 )
 from livespec_orchestrator_beads_fabro.commands._drive_accept_valve import accept_item
 from livespec_orchestrator_beads_fabro.commands._drive_answer import answer_delivery
+from livespec_orchestrator_beads_fabro.commands._drive_approve_valve import approve_item
 from livespec_orchestrator_beads_fabro.commands._drive_factory_safety_valve import (
     FACTORY_SAFETY_ACTION,
     set_factory_safety,
@@ -56,12 +46,7 @@ from livespec_orchestrator_beads_fabro.commands._drive_reject_valve import (
 from livespec_orchestrator_beads_fabro.commands._drive_valve_grammar import (
     parse_human_valve_action,
 )
-from livespec_orchestrator_beads_fabro.commands._drive_valve_predicates import can_approve_item
-from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
-    invalid_source_state,
-    valve_refusal,
-    valve_success,
-)
+from livespec_orchestrator_beads_fabro.commands._drive_valve_result import valve_refusal
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = ["run_human_valve_action"]
@@ -152,7 +137,7 @@ def _route(*, call: _ValveCall, answer: str | None) -> dict[str, Any]:
             delivery=answer_delivery(answer=answer, identity=call.identity, repo=call.repo),
         )
     if call.action == "approve":
-        return _approve_item(
+        return approve_item(
             repo=call.repo, config=call.config, item=call.item, action_id=call.action_id
         )
     if call.action == "accept":
@@ -230,63 +215,3 @@ def _policy_edit(*, call: _ValveCall) -> dict[str, Any] | None:
 
 def _find_item(*, items: list[WorkItem], item_id: str) -> WorkItem | None:
     return next((item for item in items if item.id == item_id), None)
-
-
-def _approve_item(
-    *, repo: Path, config: StoreConfig, item: WorkItem, action_id: str
-) -> dict[str, Any]:
-    if item.status != "pending-approval":
-        return invalid_source_state(aid=action_id, item=item, expected="pending-approval")
-    if not can_approve_item(item=item, cwd=repo):
-        return valve_refusal(
-            aid=action_id,
-            wid=item.id,
-            err="invalid-source-state",
-            msg="approve requires an effective-manual pending-approval item.",
-        )
-    size_result = resolved_stored_factory_size_decision(
-        cwd=repo,
-        path_factory=lambda: config,
-        item=item,
-    )
-    if not is_successful(size_result):
-        failure = unsafe_perform_io(size_result.failure())
-        return valve_refusal(
-            aid=action_id,
-            wid=item.id,
-            err="policy-setting-unreadable",
-            msg=failure.detail,
-        )
-    size = unsafe_perform_io(size_result.unwrap())
-    if size.disposition == "decompose":
-        reason = cast("str", size.reason)
-        route_factory_size_decomposition(path=config, work_item_id=item.id, reason=reason)
-        return valve_refusal(
-            aid=action_id,
-            wid=item.id,
-            err="size-decomposition",
-            msg=reason,
-        ) | {"target_status": "backlog", "message": reason}
-    # The entry-to-`ready` wall (the effective-acceptance-criteria clause of contracts.md).
-    # It consumes the SAME shared eligibility decision the pre-dispatch wall
-    # does, so an item this valve admits is one the dispatch path will accept —
-    # the two disagreeing is exactly what that clause's single decision prevents.
-    # The refusal writes NOTHING: the item rests at `pending-approval` rather
-    # than being routed to `backlog` or `blocked` on these grounds.
-    refusal = acceptance_eligibility(item=item, cwd=repo).refusal
-    if refusal is not None:
-        return valve_refusal(
-            aid=action_id,
-            wid=item.id,
-            err="ungradeable-acceptance-criteria",
-            msg=f"approve refused: {refusal}.",
-        )
-    store.update_work_item_status(path=config, item_id=item.id, status="ready")
-    return valve_success(
-        aid=action_id,
-        wid=item.id,
-        stage="human-valve-approve",
-        status="ready",
-        assignee=None,
-        msg=f"Approved {item.id}: pending-approval -> ready.",
-    )
