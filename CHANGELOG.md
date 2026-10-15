@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.198.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.198.1...v0.198.2) (2026-10-15)
+
+
+### Bug Fixes
+
+* hide the projected Codex home from the run's own git worktree ([3211147](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3211147bc44b39c0ededc021465dbe9faf729010))
+* hide the sandbox tmux state from the run's own git worktree ([1c1ed34](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1c1ed3419c362cfbec7a5fbb4583007510a1596a))
+
 ## [0.198.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.198.0...v0.198.1) (2026-10-15)
 
 
