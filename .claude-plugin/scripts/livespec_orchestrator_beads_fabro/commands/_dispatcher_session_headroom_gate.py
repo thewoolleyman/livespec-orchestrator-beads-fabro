@@ -35,6 +35,7 @@ separate functions.
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
@@ -52,8 +53,8 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_records import (
     session_headroom_assessment_record,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
-    CLAUDE_OAUTH_TOKEN_ENV,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
+    select_factory_credential,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     PolicySettingUnreadable,
@@ -112,10 +113,25 @@ def session_headroom_policy(
 
     def read_once() -> SessionHeadroomReading:
         if not taken:
-            taken.append(read(token=os.environ.get(CLAUDE_OAUTH_TOKEN_ENV), observed_at=now_iso))
+            taken.append(read(token=_projected_token(), observed_at=now_iso))
         return taken[0]
 
     return SessionHeadroomPolicy(floor_percent=floor, read=read_once)
+
+
+def _projected_token() -> str | None:
+    """The token the dispatch would project: the caam-selected slot, else unnumbered.
+
+    The same selector the projection and the usability probe call, so all three
+    name ONE account (`bd-ib-nzp5ln`: reading the unnumbered variable here
+    assessed anthropic-1 while the projection billed anthropic-3).
+    """
+    choice = select_factory_credential(
+        environ=os.environ,
+        home=Path.home(),
+        warn=lambda message: sys.stderr.write(f"livespec-dispatch: {message}\n"),
+    )
+    return os.environ.get(choice.env_name)
 
 
 def _floor_value(*, value: object) -> Result[int, PolicySettingUnreadable]:
