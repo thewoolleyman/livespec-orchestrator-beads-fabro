@@ -1175,7 +1175,7 @@ def _repaired_run(*, root: Path, push_program: bool) -> _Repaired:
         text=True,
         check=False,
         env={
-            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "PATH": f"{_unarmed_forge_bin(world=world)}:/usr/local/bin:/usr/bin:/bin",
             "HOME": str(world.clone.parent / "home"),
             "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
             "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),

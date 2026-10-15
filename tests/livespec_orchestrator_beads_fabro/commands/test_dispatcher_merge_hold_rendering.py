@@ -346,8 +346,11 @@ def test_the_fallback_arming_never_fires_for_a_held_pull_request(tmp_path: Path)
             # `additions,deletions` ride this one view: plan slice S4
             # (`bd-ib-tbgxm4`) sizes the branch against its base from the view
             # the engine already takes, never from a second forge round trip.
+            # `headRefOid,baseRefOid` ride it for the same reason and for the
+            # overtaken-arming record, which names the head that was armed and
+            # the default-branch tip that overtook it (`bd-ib-3hpdvm`).
             "number,state,autoMergeRequest,mergeStateStatus,mergeCommit,"
-            "statusCheckRollup,additions,deletions",
+            "statusCheckRollup,additions,deletions,headRefOid,baseRefOid",
         ]
     ]
     assert [record["stage"] for record in journal.records] == ["pr-view"]
