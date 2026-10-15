@@ -329,6 +329,38 @@ label among them, so a fenced occurrence is proof OUTPUT and is
 deliberately ignored — and naming two different shas in prose makes the
 record anchor nothing.
 
+Then, **ahead of every numbered step in the body**, declare the directory
+your replay ran those steps from — in PROSE, outside every fenced block:
+
+    Working directory: .
+
+Write that line
+**exactly when every one of its steps ran from the repository root**.
+Where any step ran somewhere else, name that directory
+on the same `Working directory:` line instead and do NOT write the root
+form: a later `pr_refresh` reads this line mechanically and carries this
+proof across a refresh only when it can re-run every step from the root
+itself, so a root declaration over steps that ran elsewhere would have it
+re-run them in the wrong place. Declaring another directory costs nothing
+but that carry-forward; it never fails the record.
+
+For every step whose command READ A FILE OUT OF THE WORKING TREE — a
+`cat`, `head`, `tail`, `wc`, `grep`, `sed` or `diff` of a path, as opposed
+to a `git show` of an object — also declare, in PROSE and outside every
+fenced block, one line per path that command read:
+
+    Read: <canonical path> <identity>
+
+The identity is the output of `git hash-object --no-filters <path>` for
+the working-tree file your replay actually read, taken in the SAME
+execution as the step — not afterwards, and never the `git rev-parse
+HEAD:<path>` blob id, which is the committed object rather than the bytes
+on disk. The canonical path is the path as it is reached from the
+repository root, with any `./` and repeated separators collapsed. These
+lines are what lets a later `pr_refresh` establish that the file it would
+re-read is byte-for-byte the file you read; a path with no line, or a line
+whose identity does not match, simply re-proves.
+
 The body then carries, **per assertion in Definition of Done order**:
 
 1. The assertion text, verbatim.

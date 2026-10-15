@@ -321,6 +321,23 @@ ignored. If any proof below happens to print this label, that printed line
 is ignored too — so the declaration above is the only one that counts, and
 naming two different shas in prose makes the record anchor nothing.
 
+Then, **ahead of every numbered step in the body**, declare the directory
+those steps ran from — in PROSE, outside every fenced block:
+
+    Working directory: .
+
+Write that line
+**exactly when every one of its steps ran from the repository root**,
+which is where a reproduction step should run unless the behaviour under
+proof is about somewhere else. Where any step ran
+somewhere else, say so by naming that directory on the same `Working
+directory:` line instead, and do NOT write the root form: the line is read
+mechanically by a later `pr_refresh`, which carries this proof across a
+refresh only when it can re-run every step from the root itself, so a
+root declaration over steps that ran elsewhere would have it re-run them
+in the wrong place. Declaring another directory costs nothing but that
+carry-forward; it never fails the record.
+
 The body then carries, **per assertion in Definition of Done order**:
 
 1. The assertion text, verbatim.
