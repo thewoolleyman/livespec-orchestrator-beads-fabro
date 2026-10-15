@@ -1,20 +1,33 @@
-"""Which ACP nodes a run CANNOT reach its green terminal without.
+"""The TWO node sets one workflow graph yields, and why they differ.
 
 `SPECIFICATION/contracts.md` section "Factory-configurable ACP fallback
 priority": "The workflow MUST expose the ACP nodes that dominate every green
-terminal path. Those success-critical nodes are admission-required; for the
-current graph they are `implement`, `review`, and `pr`. ... An unsupported or
-ambiguous workflow graph MUST refuse fallback-enabled dispatch instead of
-guessing."
+terminal path. Those are the success-critical nodes ... The admission-required
+set is wider: every ACP node potentially reachable in the submitted graph is
+admission-required, success-critical or not. ... An unsupported or ambiguous
+workflow graph MUST refuse fallback-enabled dispatch instead of guessing."
 
-DOMINANCE IS THE DEFINITION, AND IT IS NOT REACHABILITY. A node that merely
-appears on SOME green path is not success-critical: `fix` and `review_fix` sit
-on real green paths and a run that never goes Red reaches `exit` without
-either. The admission-required set is the set of nodes on EVERY green path,
-which is exactly the classical dominator set of the green terminal. Computing
-it as a dominator set rather than enumerating paths also terminates on a cyclic
-graph, which this one is -- `janitor -> fix -> janitor` and
-`review -> disposition -> review_fix -> janitor -> review` are both live loops.
+DOMINANCE IS NOT REACHABILITY, AND THAT DISTINCTION IS NOW LOAD-BEARING TWICE
+OVER. A node that merely appears on SOME green path does not dominate the green
+terminal: `fix` and `review_fix` sit on real green paths and a run that never
+goes Red reaches `exit` without either. So the SUCCESS-CRITICAL set is the
+nodes on EVERY green path -- exactly the classical dominator set of the green
+terminal -- while the ADMISSION-REQUIRED set is every ACP node a run could
+visit at all. Computing dominance by iteration rather than by enumerating paths
+also terminates on a cyclic graph, which this one is -- `janitor -> fix ->
+janitor` and `review -> disposition -> review_fix -> janitor -> review` are
+both live loops.
+
+THE WIDER SET IS WHAT ADMISSION GRADES, AND THE NARROWER ONE IS STILL REPORTED.
+The two answer different questions and both are needed: admission must refuse
+before claim when ANY reachable node has no renderable candidate, because
+"MUST NOT render or start a candidate covered by a live hold, including for
+conditional repair or adjudication nodes" means a held `fix` leaves a Red run
+with nowhere to go; while the per-node selection record and the refusal journal
+still name the dominator set, which is the set whose loss makes a GREEN
+terminal unreachable. Keeping both derivations in one module is what keeps that
+difference legible -- a widening applied to the wrong one of them is the silent
+failure, since each wrong answer is individually plausible.
 
 WHY THE REFUSALS ARE SHAPED AROUND COUNTING. Every fault this can meet is a
 graph that does not have exactly one entry and exactly one green exit, and the
@@ -43,6 +56,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_workflow_graph import (
 
 __all__: list[str] = [
     "SuccessCriticalNodes",
+    "derive_admission_required",
     "derive_success_critical",
     "dominators",
 ]
@@ -89,6 +103,26 @@ def derive_success_critical(*, graph: WorkflowGraph) -> SuccessCriticalNodes | s
         green_terminal=terminal,
         nodes=tuple(name for name in graph.names if name in acp and name in dominating),
     )
+
+
+def derive_admission_required(*, graph: WorkflowGraph, start: str) -> tuple[str, ...]:
+    """Every ACP node POTENTIALLY REACHABLE from the start, in declaration order.
+
+    `start` is supplied rather than re-derived, and that is deliberate: the one
+    caller has already resolved it through `derive_success_critical`, whose
+    refusal ladder is the single place a graph's two ends are counted. A second
+    ladder here would be a second account of the same faults, and the two could
+    then disagree about which graph shapes are unsupported.
+
+    Total by construction, because every fault this could meet has already been
+    refused by that ladder. A node nothing points at is simply absent from the
+    reachable set, which is the clause's "a node proven unreachable in that
+    graph imposes no candidate requirement" expressed as the derivation rather
+    than as a rule applied afterwards.
+    """
+    reachable = frozenset(_reachable(graph=graph, start=start))
+    acp = graph.acp_names
+    return tuple(name for name in graph.names if name in acp and name in reachable)
 
 
 def dominators(*, graph: WorkflowGraph, start: str) -> Mapping[str, frozenset[str]]:
