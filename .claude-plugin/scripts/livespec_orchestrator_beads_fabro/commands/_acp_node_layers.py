@@ -31,7 +31,7 @@ the thing the record exists to spare them.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidateIdentity
 from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
@@ -57,6 +57,7 @@ __all__: list[str] = [
     "AcpNodeResolution",
     "ResolvedAcpNode",
     "acp_nodes_journal_record",
+    "resolution_with_adapters",
     "resolve_acp_nodes",
 ]
 
@@ -167,6 +168,32 @@ def resolve_acp_nodes(
     if isinstance(run_inputs, str):
         return run_inputs
     return AcpNodeResolution(nodes=nodes, inputs=inputs, run_inputs=run_inputs)
+
+
+def resolution_with_adapters(
+    *, resolution: AcpNodeResolution, adapters: Mapping[str, AcpAdapter]
+) -> AcpNodeResolution:
+    """The same resolution with each named node's adapter replaced.
+
+    THE LAYER PROVENANCE IS LEFT ALONE ON PURPOSE. Per-node selection may replace
+    a node's resolved primary with a later candidate of the same committed
+    `dispatcher.acp_nodes` entry, and the per-field layer record answers a
+    different question -- which of the workflow, repository and dispatch layers
+    supplied each field of the PRIMARY the chain attached to. Overwriting it with
+    the selected candidate's origin would make every selection read as a
+    repository override of a node nobody overrode.
+
+    A node this mapping does not name is returned UNTOUCHED rather than rebuilt,
+    which is what keeps the no-verdict and legacy paths byte-identical: the object
+    a reader compares is the very one the layer merge produced.
+    """
+    return replace(
+        resolution,
+        nodes={
+            node: replace(resolved, adapter=adapters[node]) if node in adapters else resolved
+            for node, resolved in resolution.nodes.items()
+        },
+    )
 
 
 def _unconfigurable_node(

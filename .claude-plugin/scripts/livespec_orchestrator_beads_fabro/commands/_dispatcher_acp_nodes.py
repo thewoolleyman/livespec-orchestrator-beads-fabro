@@ -53,6 +53,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_repository import (
     repository_acp_chains,
     repository_acp_overlays,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._acp_structured_render import READ_ONLY_NODES
 from livespec_orchestrator_beads_fabro.commands._acp_structured_text import (
     is_structured_text,
@@ -65,6 +66,9 @@ from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget, di
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
     GROOM_ONLY_ACP_NODES,
     scoped_repository_block,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_selection import (
+    select_acp_node_adapters,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     workflow_declared_inputs,
@@ -179,7 +183,7 @@ def _dispatch_overlay(*, node: str, value: str, catalogs: AcpCatalogs) -> AcpNod
     return overlay_from_string(text=rendered, replaces_env=True)
 
 
-def prepare_acp_nodes(
+def prepare_acp_nodes(  # noqa: PLR0913 — kw-only dispatch inputs; each is one INDEPENDENT operand of the one resolution, and grouping any pair into a carrier would invent a relationship the dispatch does not have.
     *,
     repo: Path,
     committed: Path,
@@ -187,6 +191,7 @@ def prepare_acp_nodes(
     journal: JournalWriter,
     work_item_id: str,
     factory: FactoryTarget | None = None,
+    verdict: AcpPreflightVerdict | None = None,
 ) -> AcpNodeResolution | str:
     """Resolve every node's adapter through the three layers and journal it.
 
@@ -203,12 +208,10 @@ def prepare_acp_nodes(
         return configured
     catalogs, workflow_inputs, workflow_kind = configured
     scoped_block, not_applied = scoped_repository_block(block=block, workflow_kind=workflow_kind)
-    repository = repository_acp_overlays(block=scoped_block, catalogs=catalogs)
-    if isinstance(repository, str):
-        return repository
-    dispatch = dispatch_acp_overlays(overrides=overrides, catalogs=catalogs)
-    if isinstance(dispatch, str):
-        return dispatch
+    layers = _overlay_layers(block=scoped_block, catalogs=catalogs, overrides=overrides)
+    if isinstance(layers, str):
+        return layers
+    repository, dispatch = layers
     resolution = resolve_acp_nodes(
         workflow_inputs=workflow_inputs,
         repository=repository,
@@ -226,13 +229,16 @@ def prepare_acp_nodes(
     )
     if isinstance(chains, str):
         return chains
-    # The SELECTED candidate identity per node, folded onto the finished
-    # resolution rather than resolved beside it, so the launch reads the
-    # entitlement from the same object it reads the adapters from. A launch
-    # that resolved its own would be a second read of one configuration,
-    # and the disagreement would be invisible: both reads produce a
-    # perfectly well-formed identity.
-    resolution = replace(resolution, candidates=chains.selected_identities)
+    # WHICH candidate of each node's chain this dispatch renders, folded onto
+    # the finished resolution rather than resolved beside it, so the launch
+    # reads the adapters from the same object the record was projected from. A
+    # launch that selected its own would be a second read of one configuration,
+    # and the disagreement would be invisible: both reads produce a perfectly
+    # well-formed candidate.
+    selected = select_acp_node_adapters(resolution=resolution, chains=chains, verdict=verdict)
+    if isinstance(selected, str):
+        return selected
+    resolution = replace(selected.resolution, candidates=chains.selected_identities)
     record: dict[str, object] = {
         "stage": ACP_NODES_STAGE,
         "work_item_id": work_item_id,
@@ -242,6 +248,27 @@ def prepare_acp_nodes(
         record["not_applied"] = list(not_applied)
     journal.append(record=record)
     return resolution
+
+
+def _overlay_layers(
+    *, block: dict[str, object], catalogs: AcpCatalogs, overrides: tuple[str, ...]
+) -> tuple[Mapping[str, AcpNodeOverlay], Mapping[str, AcpNodeOverlay]] | str:
+    """The two overlay layers, read against ONE catalog snapshot, or a refusal.
+
+    They travel together because they are the same concern -- what, above the
+    workflow default, this dispatch has been told to run -- and because both
+    render their structured entries through the catalogs the caller resolved
+    once. Resolving either against its own catalog read would let a repository
+    entry and a `--acp-node` argument for one node resolve through two
+    snapshots of one file, and nothing could prove the two agree.
+    """
+    repository = repository_acp_overlays(block=block, catalogs=catalogs)
+    if isinstance(repository, str):
+        return repository
+    dispatch = dispatch_acp_overlays(overrides=overrides, catalogs=catalogs)
+    if isinstance(dispatch, str):
+        return dispatch
+    return repository, dispatch
 
 
 def _dispatch_workflow_configuration(

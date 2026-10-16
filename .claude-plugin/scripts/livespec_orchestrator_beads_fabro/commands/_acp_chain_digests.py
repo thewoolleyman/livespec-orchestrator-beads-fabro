@@ -45,6 +45,7 @@ __all__: list[str] = [
     "full_chain_digest",
     "primary_generation_digest",
     "redacted_structural_record",
+    "selection_identity_digest",
 ]
 
 _DIGEST_LENGTH = 32
@@ -83,6 +84,28 @@ def full_chain_digest(*, primary: AcpCandidate, fallbacks: tuple[AcpCandidate, .
         payload={
             "primary": candidate_fingerprint(candidate=primary),
             "fallbacks": [candidate_fingerprint(candidate=entry) for entry in fallbacks],
+        }
+    )
+
+
+def selection_identity_digest(*, node: str, candidate: AcpCandidate, full_chain: str) -> str:
+    """The STABLE identity of one node's selection of one candidate.
+
+    THREE INPUTS AND NO FOURTH. The node says where the selection applies, the
+    candidate fingerprint says what was chosen, and the full-chain digest says
+    which configured chain it was chosen out of -- so re-prioritising the tail of
+    a chain changes the identity even when the same candidate is still selected,
+    which is the discrimination "Warning clearance is ordered and
+    generation-safe" needs. Nothing about the MOMENT enters it: an identity
+    carrying a timestamp or a run id would be unique rather than comparable, and
+    comparing one dispatch's selection with another's is the only thing it is
+    for.
+    """
+    return _digest(
+        payload={
+            "node": node,
+            "candidate": candidate_fingerprint(candidate=candidate),
+            "full_chain": full_chain,
         }
     )
 
