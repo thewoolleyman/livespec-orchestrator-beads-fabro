@@ -80,6 +80,7 @@ __all__: list[str] = [
     "AvailabilityWait",
     "GoverningHold",
     "availability_wait",
+    "availability_wait_delay_seconds",
     "availability_wait_refusal_fields",
 ]
 
@@ -215,6 +216,36 @@ def availability_wait_refusal_fields(*, wait: AvailabilityWait | None) -> dict[s
             for hold in wait.holds
         ],
     }
+
+
+def availability_wait_delay_seconds(*, wait: AvailabilityWait, now_iso: str) -> int | None:
+    """How long is left of this wait, or `None` when there is nothing to sleep for.
+
+    `None` IS NOT ZERO, and conflating them is the defect this function exists
+    to prevent. Zero is a SCHEDULED IMMEDIATE RETRY: a loop reading it sleeps
+    for no time, reevaluates, finds the chain still empty and reads zero again
+    -- the busy loop the bounded cadence exists to replace. `None` says the
+    scheduled instant has arrived, so this pass's own reevaluation is the one
+    the schedule asked for and the loop's ordinary cadence governs what happens
+    next. The clause's "reevaluated once per loop pass" is exactly that
+    distinction.
+
+    THE EXACT INSTANT COUNTS AS DUE. A wait whose instant equals now is over,
+    not still running, so the comparison is `<=` -- the same direction
+    `hold_expired` takes for the record this instant was usually derived from,
+    which is what keeps a hold's retirement and its wait's expiry from
+    disagreeing by one second.
+
+    An unreadable clock yields `None` rather than a delay, because the only
+    values available to compute one from are the ones that did not parse, and
+    holding a loop for a duration derived from unparseable text is strictly
+    worse than reevaluating once.
+    """
+    scheduled = parse_hold_instant(text=wait.reevaluate_at)
+    now = parse_hold_instant(text=now_iso)
+    if scheduled is None or now is None or scheduled <= now:
+        return None
+    return int((scheduled - now).total_seconds())
 
 
 def _governing_condition(*, emptied: tuple[NodePreflight, ...]) -> str:
