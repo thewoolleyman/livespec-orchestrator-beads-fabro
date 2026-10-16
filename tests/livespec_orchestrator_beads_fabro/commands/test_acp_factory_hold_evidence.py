@@ -34,6 +34,33 @@ _COMMANDS = (
 )
 _PACKAGE = "livespec_orchestrator_beads_fabro.commands"
 _MODULE = "_acp_factory_hold_evidence"
+_RECORDS_MODULE = "_acp_factory_hold_records"
+
+# What each module owns after the split, as the exact public surface. The
+# RECORD concern is the leaf -- one derived attempt, its typed hold and its
+# journal line -- and the EVIDENCE concern is the host-wide read that produces
+# those attempts. The pairing mirrors `_acp_hold_records` / `_acp_hold_ledger`
+# one level down, and the direction is what keeps it acyclic: the reader
+# imports the record, never the other way round.
+_RECORDS_SURFACE = (
+    "AUDIT_REFERENCE_KEY",
+    "FACTORY_EVIDENCE_KIND",
+    "FACTORY_EVIDENCE_SOURCE",
+    "PROVIDER_LIMIT_CAUSE",
+    "FactoryHoldObservation",
+    "attempt_expiry",
+    "factory_hold_observation_record",
+    "observation_hold",
+)
+_EVIDENCE_SURFACE = (
+    "EMPTY_FACTORY_HOLD_EVIDENCE",
+    "INSPECT_UNREADABLE",
+    "LISTING_UNREADABLE",
+    "OCCURRENCE_UNREADABLE",
+    "FactoryHoldEvidence",
+    "FactoryRunReader",
+    "factory_hold_evidence",
+)
 
 _NOW = "2026-10-16T12:00:00Z"
 
@@ -146,6 +173,13 @@ def _module() -> Any:
     """Import the slice's module, proving its file exists first."""
     assert (_COMMANDS / f"{_MODULE}.py").is_file(), f"{_MODULE}.py is not implemented yet"
     return importlib.import_module(f"{_PACKAGE}.{_MODULE}")
+
+
+def _records() -> Any:
+    """Import the derived-record leaf, proving its file exists first."""
+    path = _COMMANDS / f"{_RECORDS_MODULE}.py"
+    assert path.is_file(), f"{_RECORDS_MODULE}.py is not implemented yet"
+    return importlib.import_module(f"{_PACKAGE}.{_RECORDS_MODULE}")
 
 
 def _repo(*, tmp_path: Path) -> Path:
@@ -292,7 +326,7 @@ def test_every_declared_factory_is_read_and_a_failed_attempt_is_one_identified_o
     assert observation.availability_key == "codex"
     assert observation.candidate_key == "primary"
     assert observation.occurred_at == _OCCURRED_AT
-    assert observation.cause == module.PROVIDER_LIMIT_CAUSE
+    assert observation.cause == _records().PROVIDER_LIMIT_CAUSE
 
 
 def test_a_failure_that_is_not_an_eligible_availability_cause_yields_no_observation(
@@ -507,11 +541,11 @@ def test_an_observation_stands_for_a_domain_hold_on_the_spent_allowance(tmp_path
     assert hold.scope == classifier.DOMAIN_SCOPE
     assert hold.hold_key == "codex"
     assert hold.candidate_key is None
-    assert hold.cause == module.PROVIDER_LIMIT_CAUSE
+    assert hold.cause == _records().PROVIDER_LIMIT_CAUSE
     assert hold.occurred_at == _OCCURRED_AT
     # The id digests the FACTORY's own record, so two Dispatchers deriving one
     # attempt mint one id rather than two records of the same outage.
-    assert module.observation_hold(observation=evidence.observations[0]) == hold
+    assert _records().observation_hold(observation=evidence.observations[0]) == hold
 
 
 def test_a_peer_repositorys_recorded_outage_skips_this_repositorys_covered_candidate(
@@ -694,21 +728,20 @@ def test_an_unreadable_occurrence_is_carried_through_rather_than_given_a_bound()
     derivation here can produce one, and why the arm exists for a hand-built
     value rather than as a safety net.
     """
-    module = _module()
-    observation = module.FactoryHoldObservation(
+    observation = _records().FactoryHoldObservation(
         factory="hp",
         repository=_PEER_REPOSITORY,
         run_id=_RUN_ID,
         node_attempt="implement",
         availability_key="codex",
         candidate_key="primary",
-        cause=module.PROVIDER_LIMIT_CAUSE,
+        cause=_records().PROVIDER_LIMIT_CAUSE,
         occurred_at="not-an-instant",
     )
 
-    assert module.attempt_expiry(occurred_at="not-an-instant") == "not-an-instant"
+    assert _records().attempt_expiry(occurred_at="not-an-instant") == "not-an-instant"
     assert observation.expires_at == "not-an-instant"
-    assert module.observation_hold(observation=observation).expires_at == "not-an-instant"
+    assert _records().observation_hold(observation=observation).expires_at == "not-an-instant"
 
 
 def test_derived_holds_are_reconstructed_identically_once_the_journal_is_removed(
@@ -775,12 +808,12 @@ def test_a_journaled_derived_record_carries_its_factory_run_as_the_audit_referen
     )
     evidence = module.factory_hold_evidence(repo=repo, reader=reader, now_iso=_NOW)
 
-    record = module.factory_hold_observation_record(
+    record = _records().factory_hold_observation_record(
         observation=evidence.observations[0], work_item_id="bd-ib-hyuqv6"
     )
 
     assert isinstance(record, dict)
-    assert record[module.AUDIT_REFERENCE_KEY] == f"hp:{_RUN_ID}:implement"
+    assert record[_records().AUDIT_REFERENCE_KEY] == f"hp:{_RUN_ID}:implement"
     assert records.parse_hold_record(record=record) == evidence.holds[0]
 
 
@@ -791,21 +824,47 @@ def test_a_record_whose_observation_cannot_be_dated_refuses_rather_than_appendin
     nothing: the hold it claims to mirror cannot be re-derived from it, which
     is the one property the journal copy exists to preserve.
     """
-    module = _module()
-    observation = module.FactoryHoldObservation(
+    observation = _records().FactoryHoldObservation(
         factory="hp",
         repository=_PEER_REPOSITORY,
         run_id=_RUN_ID,
         node_attempt="implement",
         availability_key="codex",
         candidate_key="primary",
-        cause=module.PROVIDER_LIMIT_CAUSE,
+        cause=_records().PROVIDER_LIMIT_CAUSE,
         occurred_at="not-an-instant",
     )
 
-    refusal = module.factory_hold_observation_record(
+    refusal = _records().factory_hold_observation_record(
         observation=observation, work_item_id="bd-ib-hyuqv6"
     )
 
     assert isinstance(refusal, str)
     assert "not-an-instant" in refusal
+
+
+def test_the_derived_record_concern_is_its_own_module_beneath_the_host_wide_read() -> None:
+    """The two concerns, and the direction of the one edge between them.
+
+    `_acp_factory_hold_records` owns ONE derived attempt -- its identity, its
+    bounded expiry, the typed hold it stands for and the journal line that
+    audits it -- and nothing about reading a factory. `_acp_factory_hold_
+    evidence` owns the host-wide read that produces those attempts. The
+    reader imports the record; the record imports no reader, which is what
+    keeps the pair acyclic and what lets every record decision be exercised
+    without a factory at all.
+
+    The surfaces are asserted as EXACT sets rather than as membership: a
+    split that left the moved names re-exported from their old home would
+    satisfy every other case in this module while the file was no smaller.
+    """
+    evidence = _module()
+    records = _records()
+
+    assert tuple(records.__all__) == _RECORDS_SURFACE
+    assert tuple(evidence.__all__) == _EVIDENCE_SURFACE
+    # The reader genuinely USES three of the moved names, so it imports them
+    # back; what it must not do is advertise them as its own.
+    assert evidence.factory_hold_evidence.__module__.endswith(_MODULE)
+    assert records.observation_hold.__module__.endswith(_RECORDS_MODULE)
+    assert records.FactoryHoldObservation.__module__.endswith(_RECORDS_MODULE)
