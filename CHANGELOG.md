@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.204.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.203.3...v0.204.0) (2026-10-16)
+
+
+### Features
+
+* **headroom:** journal how fast the five-hour window is draining ([7e13fe0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7e13fe014b7dadaa9a40714a5721fad62ae5a58d))
+
+
+### Bug Fixes
+
+* **headroom:** attempt no drain projection where the floor settled the reading ([aeff814](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/aeff8143d392ea14f5191c1903f72645c07a056c))
+* **headroom:** write the drain rate on every assessment record, null included ([500010d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/500010db7f0182980f0479580132f98917d6038b))
+
 ## [0.203.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.203.2...v0.203.3) (2026-10-16)
 
 
