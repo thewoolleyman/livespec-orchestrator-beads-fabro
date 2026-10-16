@@ -175,24 +175,35 @@ def live_provider_exhaustions(
     one vendor are two records.
 
     The walk is newest-first, so the operator's early clearance costs one
-    branch: a `provider-exhaustion-cleared` line met BEFORE any observation
+    branch: a `provider-exhaustion-cleared` line met BEFORE an observation
     means that observation is already retired, and nothing is held for it.
     Meeting it AFTER an unexpired observation is a clearance an operator has
     since re-observed past, so it retires nothing. An EXPIRED observation
     decides nothing either way and the walk continues past it, which is what
     lets an older live record for the same key still answer.
+
+    THE CLEARANCE IS KEYED ON THE PROVIDER AND NOT ON THE PAIR, and that
+    asymmetry against the observations above is the contract's: "The provider
+    valve retires every live provider-exhaustion record of the named provider,
+    whether or not the record carries a credential identity." It is also the
+    one place per-account keying can quietly break the valve — the clearance
+    line names no account, so a pair-keyed clearance would retire exactly the
+    provider-only record and leave every account-named record of that vendor
+    live, after telling the operator the provider was cleared.
     """
     now = _parse_journal_iso(text=now_iso)
     if journal_path is None or not journal_path.is_file():
         return ()
     live: list[ProviderExhaustionRecord] = []
     decided: set[object] = set()
+    cleared: set[object] = set()
     for record in reversed(_records(text=journal_path.read_text(encoding="utf-8"))):
-        key = (record.get("provider"), _record_identity(record=record))
-        if key in decided:
-            continue
+        provider = record.get("provider")
         if record.get("stage") == _CLEARED_STAGE:
-            decided.add(key)
+            cleared.add(provider)
+            continue
+        key = (provider, _record_identity(record=record))
+        if provider in cleared or key in decided:
             continue
         parsed = _provider_record(record=record)
         if _parse_journal_iso(text=parsed.record_expires_at) > now:
