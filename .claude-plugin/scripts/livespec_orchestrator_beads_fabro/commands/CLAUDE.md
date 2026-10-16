@@ -840,6 +840,48 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   its own `fabro-run-labels` stage, because its SILENCE changes an answer — a
   refused listing leaves the legacy attribution standing, which at the outcome
   is indistinguishable from a dispatch that recorded no identity to read.
+- The HOST-WIDE AVAILABILITY EVIDENCE of `contracts.md`'s "Holds are per
+  provider domain and discoverable host-wide from factory-native run records"
+  paragraph (`bd-ib-hyuqv6`, Scenario 127) lives in TWO cohesive modules, split
+  record-from-read the way `_acp_hold_records` / `_acp_hold_ledger` are one
+  level down, and the dependency direction reads bottom-up:
+  `_acp_factory_hold_records` (PURE: ONE derived attempt — its six identifying
+  fields, its bounded expiry, the typed hold it stands for and the journal line
+  that audits it) → `_acp_factory_hold_evidence` (the read: every factory under
+  `dispatcher.factories`, each one's `fabro ps -a --json` listing, and one
+  `fabro inspect --json` per failed row inside the hold window).
+  `_dispatcher_acp_preflight.resolve_acp_preflight` is the one consumer; the
+  reader is an injected seam defaulting to ABSENT, exactly as `probe` and
+  `headroom` beside it, so wait attention and idle-factory compose a verdict
+  that reaches no factory.
+  SEVEN PROPERTIES AN EDITOR MUST NOT INVERT. Neither module reads, writes, or
+  can be HANDED a repository-local dispatch journal, which is how "Hold
+  observations ... MUST remain reconstructible after any repository-local
+  dispatch journal is removed" holds structurally — there is no parameter a
+  journal could arrive in, and the journal copy is an AUDIT reference carrying
+  the factory run it is re-derivable from. The scan is bounded by the LISTING
+  ROW, before any per-run read is spent: a factory serving this fleet listed
+  1626 rows on 2026-10-12, and a failure older than `HOLD_INTERVAL` can only
+  re-derive an already-expired record. The occurrence time is the run's own
+  COMPLETION instant (`start_time` advanced by `wall_time_ms`) and a row
+  missing either figure is UNOBSERVABLE rather than dated from its start — a
+  run that began four hours before it failed would mint holds born expired, so
+  the mechanism would report a clean empty answer on exactly the outage it
+  exists to catch, which is the same reason `_dispatcher_reconcile_runs_grace`
+  excludes `start_time` from its own park measurement. Expiry is computed from
+  that occurrence and from no other input, so a re-derivation cannot push a
+  hold forward. Every read that could not be TAKEN is surfaced as unobservable
+  and rides the verdict, because "An unreadable or incomplete evidence source
+  is unavailable, not an empty hold set" — while a failure the cause chain does
+  not classify, and a failing node the run recorded no entitlement for, are NOT
+  surfaced: both were measured, and the second is the conservative legacy
+  posture where no entitlement exists for a typed record to be scoped by. The
+  derived record is DOMAIN-scoped on the spent allowance, as Scenario 127
+  requires. And an entitlement key that arrives DIGESTED is read as it stands,
+  exactly as `_fabro_executed_candidate` reads it: the digest is one-way, so
+  such a record covers only a candidate whose own key the engine would have
+  recorded the same way, and broadening it would name an entitlement nobody
+  declared.
 - The ADMISSION SESSION-HEADROOM FILTER of `contracts.md`'s "Admission filters
   candidates by projected Claude session headroom" paragraph (`bd-ib-jwuxs4`,
   Scenario 60) lives in SIX cohesive modules, split pure-from-impure the usual
