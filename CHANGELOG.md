@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.201.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.4...v0.201.5) (2026-10-16)
+
+
+### Bug Fixes
+
+* **dispatcher:** anchor a resume on a stall-cancel record between publication and capture ([166f28e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/166f28e888d2ccf0b3d9b937276055c6b4f1f354))
+* **dispatcher:** fail a resume closed when a pull request's records cannot be read ([8aef86b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8aef86b9052855afdfb58959a6ee250480a0d8ce))
+* **dispatcher:** let a proof record named by dispatch id outrank a cancel row ([da01e5d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/da01e5d6c75d71fe2b9c628f210a51e122d49beb))
+* **dispatcher:** name the rework-stage cancel in the nothing-to-anchor refusal ([5413930](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/54139304f172962156deb001cb57efc986c1f193))
+* **dispatcher:** name the stall-cancel record as the source a resume entered at ([b52e806](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b52e8068099244ece24e9a8c439ac7e22576a12a))
+* **dispatcher:** scope the cancel anchor to the item's latest journaled dispatch ([071bb65](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/071bb656172f3519fc349799af825d1f9b600208))
+
 ## [0.201.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.3...v0.201.4) (2026-10-16)
 
 
