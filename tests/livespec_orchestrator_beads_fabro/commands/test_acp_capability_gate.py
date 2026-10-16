@@ -1,50 +1,46 @@
-"""The factory-capability gate on a chain carrying ACP new grammar.
+"""The ONE factory capability an ACP chain still owes: `config_options`.
 
 Binds `SPECIFICATION/contracts.md` section "Factory-configurable ACP fallback
-priority". Scenario 127's "New grammar is version-gated against the resolved
-factory" is the whole-gate case -- "Given a node carries identity, signature,
-pricing, or a non-empty fallback field / When ... the resolved factory server
-lacks the pinned Fabro capability / Then dispatch refuses before claim or run
-creation" -- and the section's "In-protocol model and effort selection" clause
-is the narrower second arm: "The Fabro server MUST advertise the additive
-capability `acp.candidate_config_options.v1` alongside `acp.fallback_chain.v1`,
-and the Dispatcher MUST refuse before claim a chain carrying `config_options`
-when the resolved factory server does not advertise it, exactly as the existing
-capability gate does."
+priority": "Because the Dispatcher renders exactly one literal adapter per node,
+a new-grammar-enabled dispatch requires NO Fabro engine capability for fallback.
+The Dispatcher MUST NOT refuse a dispatch because the resolved factory server
+does not advertise a fallback-chain capability; the only engine capability gate
+that remains is the `config_options` gate of "In-protocol model and effort
+selection" below, which applies only to a dispatch whose selected candidates use
+it." Scenario 127 states the same thing from the other side: "a resolved factory
+server that advertises no fallback-chain capability does not refuse the
+dispatch".
 
-THE GATE FAILS CLOSED WHEN IT CANNOT OBSERVE ITS INPUT, and that is asserted
-in its own right, for both arms. A capability gauge that passes when the
-capability list is unreadable is the standing temptation this repository's own
-agent instructions name: blinding the input converts a refusal into a pass, and
-the resulting record reads as a healthy dispatch. An unreachable factory and a
-factory that genuinely lacks the capability are both "not advertised", so both
-refuse.
+THE RETIRED ARM IS ASSERTED AS AN ADMISSION, not merely omitted. A gate that
+still read the base string would refuse every fallback-enabled dispatch in this
+fleet, and the refusal would look exactly like a factory that needs a deployment
+-- so the clause is only honoured if an advertised set WITHOUT that string
+admits. The case is run against a factory advertising an unrelated capability
+AND against one advertising nothing at all, because the second is what a server
+with no ACP support answers.
 
-THE GAUGE IS NOT CONSULTED WHEN IT HAS NOTHING TO GATE, and that is asserted
-too, because it is the half that keeps the gate free. Only a NEW-GRAMMAR chain
-needs the capability; a legacy node entry -- no identity, no signature, no
-pricing, no non-empty `fallbacks` -- is the byte-identical v107 posture the
-first acceptance condition protects, so reading the factory's capability list
-on one would add a network round trip per dispatch for an answer nothing
-consumes. The reader is therefore passed as a CALLABLE and the legacy case
-asserts it was never called -- a property no assertion about the returned value
-could establish.
+WHY THE ENGINE NO LONGER NEEDS IT. The Dispatcher now consumes the chain itself:
+it chooses one candidate per node and writes that candidate's adapter in as the
+node's only adapter, so the engine runs a single adapter with no knowledge of the
+others. Ordered fallback happens BETWEEN runs, through provider-limit release and
+re-dispatch, never inside one node visit. There is nothing left for an engine
+capability to enable.
 
-THE TWO ARMS ARE ORDERED, AND THE ORDER IS ASSERTED. `config_options` can only
-ride a chain that is already new-grammar-enabled, so a factory advertising
-NEITHER string owes the base capability first: that is the deployment an
-operator actually has to perform, and naming the narrower string first would
-send them after a capability that cannot arrive on its own. Each arm is
-therefore exercised with the other arm's capability PRESENT, so a passing
-assertion is about the arm it names rather than about whichever refusal
-happened to fire.
+THE REMAINING ARM FAILS CLOSED WHEN IT CANNOT OBSERVE ITS INPUT, and that is
+asserted in its own right. `config_options` asks the engine to read the agent's
+advertised options and set each requested one after `session/new`; an engine that
+cannot do it ignores the request and runs the node on whatever model it would
+have chosen anyway -- a green run that silently skipped the request, with nothing
+in the record disagreeing. So an unreachable factory and a factory that genuinely
+lacks the capability are one answer: not advertised.
 
-BOTH POSITIONS CARRY THE OBLIGATION. A fallback carrying `config_options`
-needs the capability exactly as a primary does, because the handler sets the
-options for whichever candidate it runs. A gate reading only the primary would
-pass a chain whose second candidate the server cannot configure, and the
-failure would surface mid-run after the first candidate had already been
-spent.
+THE GAUGE IS NOT CONSULTED WHEN IT HAS NOTHING TO GATE, and that is asserted on
+the reader's CALL COUNT rather than on the returned value. An assertion that the
+refusal is `None` would pass just as well against a gate that read the capability
+list on every dispatch and happened to find the capability; only the call count
+separates the two. Both the legacy spelling and a new-grammar chain whose agent
+takes its model in the ENVIRONMENT owe no read at all, which is the second half
+of what retiring the base arm buys.
 """
 
 from __future__ import annotations
@@ -54,7 +50,7 @@ from typing import Any
 
 _PACKAGE = "livespec_orchestrator_beads_fabro.commands"
 _CAPABILITY = "acp.candidate_config_options.v1"
-_FALLBACK_CAPABILITY = "acp.fallback_chain.v1"
+_RETIRED_CAPABILITY = "acp.fallback_chain.v1"
 _FACTORY = "hp"
 _NODE = "implement"
 
@@ -106,97 +102,127 @@ def _refusal(*, entry: dict[str, Any], reader: _Reader) -> str | None:
     )
 
 
-def test_a_new_grammar_chain_refuses_when_the_factory_lacks_the_fallback_capability() -> None:
-    """The base arm: the refusal names the node, the factory and the string.
+def test_a_new_grammar_chain_is_admitted_without_the_fallback_chain_capability() -> None:
+    """The retired arm: no engine capability is owed for ordered fallback.
 
     The entry carries identity and a resolved model but NO `config_options` --
-    `claude-acp` takes its model in the environment -- so the only obligation it
-    owes is the base `acp.fallback_chain.v1` one, and this case cannot pass by
-    way of the narrower arm.
+    `claude-acp` takes its model in the environment -- so the only capability it
+    could ever owe is the retired one, and an admission here cannot be an
+    accident of the remaining arm.
     """
     reader = _Reader(capabilities=frozenset({"some.unrelated.capability.v1"}))
 
-    refusal = _refusal(entry=dict(_ENV_ENTRY), reader=reader)
-
-    assert refusal is not None
-    assert _FALLBACK_CAPABILITY in refusal
-    assert _FACTORY in refusal
-    assert _NODE in refusal
-    assert reader.calls == 1
-
-
-def test_a_new_grammar_chain_proceeds_when_the_factory_advertises_the_capability() -> None:
-    """The base arm's control: the gate refuses the MISSING string, not the grammar."""
-    reader = _Reader(capabilities=frozenset({_FALLBACK_CAPABILITY}))
-
     assert _refusal(entry=dict(_ENV_ENTRY), reader=reader) is None
-    assert reader.calls == 1
 
 
-def test_an_unobservable_capability_list_refuses_the_new_grammar() -> None:
-    """Fail CLOSED on the base arm: "could not establish" is not "advertised"."""
-    reader = _Reader(capabilities=None)
+def test_a_factory_advertising_nothing_at_all_still_admits_ordered_fallback() -> None:
+    """The same claim against an engine advertising an EMPTY capability set.
 
-    refusal = _refusal(entry=dict(_ENV_ENTRY), reader=reader)
-
-    assert refusal is not None
-    assert _FALLBACK_CAPABILITY in refusal
-    assert "could not be read" in refusal
-
-
-def test_a_non_empty_fallback_field_alone_opts_the_node_into_the_gate() -> None:
-    """`fallbacks` is new grammar on its own, with no identity field in sight.
-
-    The contract's enabling predicate is identity OR signature OR pricing OR a
-    NON-EMPTY fallback array, and a chain whose only new-grammar field is the
-    array is the one spelling a gate keyed on identity alone would wave through.
+    This is what a server with no ACP capability surface answers, and it is the
+    shape a gate keyed on "the string is absent" refuses most readily.
     """
     reader = _Reader(capabilities=frozenset())
 
-    refusal = _refusal(entry={**_LEGACY_ENTRY, "fallbacks": [dict(_ENV_ENTRY)]}, reader=reader)
-
-    assert refusal is not None
-    assert _FALLBACK_CAPABILITY in refusal
+    assert _refusal(entry=dict(_ENV_ENTRY), reader=reader) is None
 
 
-def test_a_primary_carrying_options_refuses_when_the_factory_lacks_the_capability() -> None:
-    """The refusal names the factory and the capability string it wants.
+def test_a_non_empty_fallback_field_alone_is_admitted_too() -> None:
+    """`fallbacks` is new grammar on its own, and owes no capability either.
 
-    The base capability IS advertised here, which is what isolates the arm: a
-    reader advertising neither string would refuse on the base arm and this
-    assertion would pass without the narrower gate existing at all.
+    The contract's enabling predicate is identity OR signature OR pricing OR a
+    NON-EMPTY fallback array. A chain whose only new-grammar field is the array
+    is the spelling a retired gate keyed on the array would still refuse.
     """
-    reader = _Reader(capabilities=frozenset({_FALLBACK_CAPABILITY}))
+    reader = _Reader(capabilities=frozenset())
+
+    assert _refusal(entry={**_LEGACY_ENTRY, "fallbacks": [dict(_ENV_ENTRY)]}, reader=reader) is None
+
+
+def test_an_unreadable_capability_list_does_not_refuse_ordered_fallback() -> None:
+    """An unreachable factory refuses nothing when nothing is owed.
+
+    Fail-closed is a property of the capability that IS owed; it cannot
+    manufacture an obligation that the clause retired.
+    """
+    reader = _Reader(capabilities=None)
+
+    assert _refusal(entry=dict(_ENV_ENTRY), reader=reader) is None
+
+
+def test_a_chain_carrying_options_refuses_when_the_factory_lacks_the_capability() -> None:
+    """The remaining arm: the refusal names the factory and the capability string.
+
+    The retired string is asserted ABSENT from the refusal, against a factory
+    that advertises neither: that is the one combination a surviving base arm
+    would answer differently, so the assertion names the capability an operator
+    is sent to deploy rather than merely that some refusal fired.
+    """
+    reader = _Reader(capabilities=frozenset({"some.unrelated.capability.v1"}))
 
     refusal = _refusal(entry=dict(_PROTOCOL_ENTRY), reader=reader)
 
     assert refusal is not None
     assert _CAPABILITY in refusal
+    assert _RETIRED_CAPABILITY not in refusal
     assert _FACTORY in refusal
+    assert _NODE in refusal
     assert reader.calls == 1
 
 
-def test_a_primary_carrying_options_proceeds_when_the_factory_advertises_it() -> None:
+def test_a_chain_carrying_options_proceeds_when_the_factory_advertises_it() -> None:
     """The control: the gate refuses the MISSING capability, not every chain."""
-    reader = _Reader(capabilities=frozenset({_FALLBACK_CAPABILITY, _CAPABILITY}))
+    reader = _Reader(capabilities=frozenset({_CAPABILITY}))
 
     assert _refusal(entry=dict(_PROTOCOL_ENTRY), reader=reader) is None
     assert reader.calls == 1
 
 
-def test_an_unobservable_capability_list_refuses_rather_than_passing() -> None:
-    """Fail CLOSED: "could not establish" is not "advertised"."""
+def test_an_unobservable_capability_list_refuses_an_options_chain() -> None:
+    """Fail CLOSED on the arm that is owed: "could not establish" is not "advertised"."""
     reader = _Reader(capabilities=None)
 
     refusal = _refusal(entry=dict(_PROTOCOL_ENTRY), reader=reader)
 
     assert refusal is not None
-    assert _FACTORY in refusal
+    assert _CAPABILITY in refusal
+    assert "could not be read" in refusal
 
 
-def test_a_fallback_carrying_options_is_gated_too() -> None:
-    """A chain's later candidates carry the obligation exactly as its first does."""
-    reader = _Reader(capabilities=frozenset({_FALLBACK_CAPABILITY}))
+def test_an_advertised_set_without_the_capability_says_what_it_did_advertise() -> None:
+    """The two causes are separated because the remedies differ.
+
+    A server that answered a list without the capability needs a deployment; one
+    whose capabilities could not be read may simply be down, and an operator
+    cannot tell them apart from the outcome.
+    """
+    reader = _Reader(capabilities=frozenset({"some.unrelated.capability.v1"}))
+
+    refusal = _refusal(entry=dict(_PROTOCOL_ENTRY), reader=reader)
+
+    assert refusal is not None
+    assert "some.unrelated.capability.v1" in refusal
+    assert "could not be read" not in refusal
+
+
+def test_an_empty_advertised_set_is_reported_as_nothing() -> None:
+    """An engine that advertised an empty list says so, rather than reading blank."""
+    reader = _Reader(capabilities=frozenset())
+
+    refusal = _refusal(entry=dict(_PROTOCOL_ENTRY), reader=reader)
+
+    assert refusal is not None
+    assert "(nothing)" in refusal
+
+
+def test_a_chain_whose_fallback_carries_options_is_gated_too() -> None:
+    """Every candidate that could be rendered carries the obligation.
+
+    The Dispatcher renders exactly one candidate per node, but a chain's later
+    candidates are rendered by a LATER dispatch after a provider-limit release,
+    so a chain whose second candidate the server cannot configure is
+    misconfigured now rather than mid-sequence.
+    """
+    reader = _Reader(capabilities=frozenset())
 
     refusal = _refusal(entry={**_ENV_ENTRY, "fallbacks": [dict(_PROTOCOL_ENTRY)]}, reader=reader)
 
@@ -204,33 +230,22 @@ def test_a_fallback_carrying_options_is_gated_too() -> None:
     assert _CAPABILITY in refusal
 
 
-def test_a_factory_advertising_neither_string_is_told_the_base_one_first() -> None:
-    """Ordering, asserted rather than left to the call site.
-
-    `config_options` cannot ride a chain that is not already new-grammar-enabled,
-    so a factory missing both strings needs the base deployment; naming only the
-    narrower string would send an operator after a capability the engine cannot
-    gain on its own.
-    """
-    reader = _Reader(capabilities=frozenset())
-
-    refusal = _refusal(entry=dict(_PROTOCOL_ENTRY), reader=reader)
-
-    assert refusal is not None
-    assert _FALLBACK_CAPABILITY in refusal
-    assert _CAPABILITY not in refusal
-
-
 def test_a_legacy_chain_never_consults_the_gauge() -> None:
-    """No obligation, no round trip -- asserted on the reader, not the answer.
-
-    An assertion that the refusal is `None` would pass just as well against a
-    gate that read the capability list on every dispatch and happened to find
-    the capability; only the call count separates the two. The entry is the
-    LEGACY spelling, because since the base arm exists every new-grammar chain
-    does owe a read.
-    """
+    """No obligation, no round trip -- asserted on the reader, not the answer."""
     reader = _Reader(capabilities=None)
 
     assert _refusal(entry=dict(_LEGACY_ENTRY), reader=reader) is None
+    assert reader.calls == 0
+
+
+def test_a_new_grammar_chain_without_options_never_consults_the_gauge_either() -> None:
+    """The second half of retiring the base arm: no read for the common case.
+
+    Every dispatch in this fleet resolves an environment-mechanism agent, so a
+    gate that still read the capability list for any new-grammar chain would add
+    a network round trip per dispatch for an answer nothing consumes.
+    """
+    reader = _Reader(capabilities=None)
+
+    assert _refusal(entry=dict(_ENV_ENTRY), reader=reader) is None
     assert reader.calls == 0

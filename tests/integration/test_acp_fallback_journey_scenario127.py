@@ -54,7 +54,6 @@ from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._acp_capability_gate import (
     CONFIG_OPTIONS_CAPABILITY,
-    FALLBACK_CHAIN_CAPABILITY,
     acp_capability_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import resolve_acp_catalogs
@@ -397,11 +396,11 @@ def test_the_gate_reads_the_resolved_factorys_system_info_once_and_admits_it(
 
     The URL is asserted because "a local Fabro binary is not evidence of the
     remote capability": the read has to reach the resolved factory's own server,
-    and the single entry proves the per-dispatch memoization holds across both of
-    the gate's arms rather than issuing a round trip each.
+    and the single entry proves the per-dispatch memoization holds across every
+    node that owes the capability rather than issuing a round trip each.
     """
     refusal, transport = _refusal(
-        capabilities=[FALLBACK_CHAIN_CAPABILITY, CONFIG_OPTIONS_CAPABILITY],
+        capabilities=[CONFIG_OPTIONS_CAPABILITY],
         repo=_repo(tmp_path=tmp_path),
     )
 
@@ -409,26 +408,31 @@ def test_the_gate_reads_the_resolved_factorys_system_info_once_and_admits_it(
     assert transport.urls == [f"GET {_SERVER}{SYSTEM_INFO_PATH}"]
 
 
-def test_a_factory_without_the_fallback_capability_refuses_naming_it(tmp_path: Path) -> None:
-    """New grammar against an engine that cannot advance candidates."""
-    refusal, _ = _refusal(capabilities=[], repo=_repo(tmp_path=tmp_path))
+def test_a_factory_advertising_no_fallback_capability_does_not_refuse_the_dispatch(
+    tmp_path: Path,
+) -> None:
+    """Scenario 127: ordered fallback owes the engine no capability at all.
 
-    assert refusal is not None
-    assert FALLBACK_CHAIN_CAPABILITY in refusal
-    assert _FACTORY_NAME in refusal
-    assert _NODE in refusal
+    The Dispatcher renders exactly one candidate per node, so an engine with no
+    fallback-chain capability runs this chain exactly as a capable one would.
+    The advertised set carries the `config_options` capability alone, which is
+    what isolates the retired arm: a surviving base arm would refuse here.
+    """
+    refusal, _ = _refusal(capabilities=[CONFIG_OPTIONS_CAPABILITY], repo=_repo(tmp_path=tmp_path))
+
+    assert refusal is None
 
 
 def test_a_factory_without_the_config_options_capability_refuses_naming_it(
     tmp_path: Path,
 ) -> None:
-    """The narrower arm, isolated by advertising the base capability.
+    """The one surviving arm, against a factory that advertises nothing.
 
-    Without the base string present this chain would refuse on the base arm and
-    this assertion would pass against a build with no `config_options` gate at
-    all -- the arm has to be reached to be proven.
+    This repository's own chain resolves a protocol-mechanism candidate, so the
+    refusal must name the `config_options` capability and nothing else: there is
+    no other capability left for an operator to deploy.
     """
-    refusal, _ = _refusal(capabilities=[FALLBACK_CHAIN_CAPABILITY], repo=_repo(tmp_path=tmp_path))
+    refusal, _ = _refusal(capabilities=[], repo=_repo(tmp_path=tmp_path))
 
     assert refusal is not None
     assert CONFIG_OPTIONS_CAPABILITY in refusal
@@ -444,7 +448,7 @@ def test_an_unreachable_factory_server_is_refused_rather_than_passed(tmp_path: P
     refusal, transport = _refusal(capabilities=None, repo=_repo(tmp_path=tmp_path))
 
     assert refusal is not None
-    assert FALLBACK_CHAIN_CAPABILITY in refusal
+    assert CONFIG_OPTIONS_CAPABILITY in refusal
     assert "could not be read" in refusal
     assert transport.urls == [f"GET {_SERVER}{SYSTEM_INFO_PATH}"]
 
