@@ -43,10 +43,12 @@ host-local janitor has a `janitor-env-degraded` outcome that is GREEN -- the
 merge is confirmed on the remote and what failed was host provisioning -- and
 that shape must never reach this path. A cluster that returned no verdict has
 not gated the merged tree, so reporting it green would publish a gate nobody
-ran; it is red. A host that cannot read the gates credential, a mirror push
-that was refused, a Job that never reached a terminal condition and an entry
-point that could not even be invoked all arrive here identically, which is
-correct: each of them is the cluster saying nothing.
+ran; it is red, and its detail SAYS no verdict was reached rather than
+describing a Job that reported a result, because a plumbing fault and a red tree
+are repaired in different places. A host that cannot read the gates credential,
+a mirror push that was refused, a Job that never reached a terminal condition
+and an entry point that could not even be invoked all arrive here identically,
+which is correct: each of them is the cluster saying nothing.
 
 THE GATE DIFFS AGAINST THIS FLEET'S DEFAULT BRANCH, WHICH IS A LIMITATION RATHER
 THAN A CHOICE. Eight members of the gated aggregate judge a commit RANGE, and
@@ -211,11 +213,21 @@ def cluster_janitor_red(
 
 
 def _red_detail(*, plan: DispatchPlan, verdict: ClusterJanitorVerdict) -> str:
-    """The operator's line for a merge the cluster did not pass.
+    """The operator's line, which NAMES a missing verdict as a missing verdict.
 
     Nothing here is ever green: a merge the cluster did not pass has not been
-    gated, whichever way the cluster declined to pass it.
+    gated, whichever way the cluster declined to pass it. But the two red states
+    have different REMEDIES -- a red tree is repaired in the repository, while an
+    absent verdict is repaired on the cluster or in the credential that reaches
+    it -- so a no-verdict line says the merge was not gated rather than
+    describing a Job that reported a result. Reporting the second as the first
+    sends an operator to read a check that never ran.
     """
+    if verdict.state == GATE_NO_VERDICT:
+        return (
+            f"post-merge janitor red: the cluster gate reached NO VERDICT on the merged tree "
+            f"in {plan.janitor_checkout}, so nothing gated this merge: {verdict.detail}"
+        )
     return (
         f"post-merge janitor red: the cluster gate Job reported {verdict.state} on the merged "
         f"tree in {plan.janitor_checkout}: {verdict.detail}"
