@@ -4,7 +4,14 @@ Covers `_plan_proof_leg`. The leg is pure, so each case is one timeline graded
 against one parsed Definition of Done — which is what makes the states the clause
 separates reachable at all: a verified record that precedes a later capture, a
 `not_reproduced` latest replay sitting over an earlier `verified` one, a replay
-published by the capturing identity, and the two release-identity rejections.
+published by the capturing identity, and the three release-identity rejections.
+
+THE RELEASE INPUT IS A STUB READER, which is what lets the leg be graded against
+a release repository without a forge. The reader is keyed on the BODY it is
+handed, because the leg's seam is one record body in and one reading out — it
+never learns that a repository name is parsed out of a build identity. The
+resolution behind that seam is covered by `test_plan_release_reader`, and the gate
+that composes both by `test_plan_archive_release_identity`.
 
 EVERY CASE CARRIES THE PASSING CONTROL IT IS THE NEGATION OF, because "the leg
 reported this assertion unproved" is otherwise equally consistent with a leg that
@@ -13,6 +20,8 @@ one offending property removed.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     PROOF_MODE_HOST_CAPTURED,
@@ -40,22 +49,40 @@ from livespec_orchestrator_beads_fabro.commands._plan_proof_leg import (
     NOT_EVIDENCE_NO_RELEASE,
     NOT_EVIDENCE_SELF_VERIFIED,
     NOT_EVIDENCE_UNKNOWN_RELEASE,
+    NOT_EVIDENCE_UNREADABLE_RELEASE,
     plan_proof_leg,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_proof_record import (
     PLAN_PROOF_RECORD_TITLE,
     plan_proof_entries,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_release_repository import (
+    ReleaseReading,
+    ReleaseTags,
+    UnreadableRelease,
+)
 
 _HOST = "The released build runs in a real operator session."
 _HUMAN = "The maintainer agrees the console reads well."
 _TAG = "v0.167.0"
 _TAGS = frozenset({_TAG, "v0.166.0"})
+_REPOSITORY = "thewoolleyman/livespec"
 
 _ASSERTIONS = (
     DefinitionOfDoneAssertion(text=_HOST, proof_mode=PROOF_MODE_HOST_CAPTURED),
     DefinitionOfDoneAssertion(text=_HUMAN, proof_mode=PROOF_MODE_HUMAN_ATTESTED),
 )
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Reader:
+    """A stub release reader: one reading for every record body it is handed."""
+
+    answer: ReleaseReading
+
+    def reading(self, *, body: str) -> ReleaseReading:
+        del body
+        return self.answer
 
 
 def _record(
@@ -91,14 +118,16 @@ def _record(
 def _leg(
     *,
     comments: list[dict[str, object]],
-    tags: frozenset[str] = _TAGS,
+    reading: ReleaseReading | None = None,
     assertions: tuple[DefinitionOfDoneAssertion, ...] = _ASSERTIONS,
 ) -> object:
     return plan_proof_leg(
         assertions=assertions,
         entries=plan_proof_entries(comments=comments),
         carrier_map_position=last_carrier_map_position(comments=comments),
-        release_tags=tags,
+        release_reader=_Reader(
+            answer=ReleaseTags(repository=_REPOSITORY, tags=_TAGS) if reading is None else reading
+        ),
     )
 
 
@@ -197,10 +226,19 @@ def test_a_record_stating_release_none_is_rejected_where_a_release_applies() -> 
 
     assert leg.unproved == (_HOST,)
     assert [NOT_EVIDENCE_NO_RELEASE in one for one in leg.rejected] == [True]
-    # The control: the SAME record against a repository carrying no release tag
-    # at all is admitted, because the clause attaches the whole rule to that
-    # condition.
-    assert _leg(comments=timeline, tags=frozenset()).unproved == ()
+    # The refusal names the release repository it judged, which is what tells an
+    # operator which repository the gate asked about.
+    assert [_REPOSITORY in one for one in leg.rejected] == [True]
+    # The control: the SAME record against a repository the forge reports carries
+    # no release tag at all is admitted, because the clause attaches the whole
+    # rule to that condition.
+    assert (
+        _leg(
+            comments=timeline,
+            reading=ReleaseTags(repository=_REPOSITORY, tags=frozenset()),
+        ).unproved
+        == ()
+    )
 
 
 def test_a_record_naming_an_unknown_tag_is_rejected() -> None:
@@ -211,6 +249,28 @@ def test_a_record_naming_an_unknown_tag_is_rejected() -> None:
 
     assert leg.unproved == (_HOST,)
     assert [NOT_EVIDENCE_UNKNOWN_RELEASE in one for one in leg.rejected] == [True]
+    # Both halves the clause requires: the missing release identity, and the
+    # release repository the gate judged it against.
+    assert [("v9.9.9" in one and _REPOSITORY in one) for one in leg.rejected] == [True]
+
+
+def test_a_release_repository_the_gate_could_not_read_rejects_every_record_on_it() -> None:
+    # The reversal v148 landed. The retired reading answered an empty tag set for
+    # a failed read, and an empty set MEANS "no release applies" — so an
+    # unreachable forge made every record evidence. The control directly above is
+    # that empty-set case, and it is admitted; this one is refused.
+    leg = _leg(
+        comments=_proved(),
+        reading=UnreadableRelease(
+            repository=_REPOSITORY, failure="the forge read exited 1: gh: Bad credentials"
+        ),
+    )
+
+    assert leg.unproved == (_HOST, _HUMAN)
+    assert all(NOT_EVIDENCE_UNREADABLE_RELEASE in one for one in leg.rejected)
+    # The failure line rides into the refusal, because "name a tag the repository
+    # carries" and "give the gate a forge it can read" are different remedies.
+    assert all("Bad credentials" in one for one in leg.rejected)
 
 
 def test_a_record_predating_the_last_carrier_map_event_does_not_prove_anything() -> None:

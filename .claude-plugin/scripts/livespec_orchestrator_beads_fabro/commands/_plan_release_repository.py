@@ -12,7 +12,7 @@ governed repository's `origin` remote."
 
 This module owns that CONCEPT end to end on the pure side: which repository one
 record names, and the vocabulary a reading of that repository comes back in. The
-forge reads live in `_plan_release_tags` and the resolution ladder that composes
+forge reads live in `_plan_release_forge` and the resolution ladder that composes
 them in `_plan_release_reader`, for the usual reason — a parse that reached for a
 subprocess could not be exercised across the forms the clause distinguishes.
 
