@@ -66,10 +66,21 @@ pre-push:
   commands:
     00-install-worktree-pack:
       run: just install-worktree-pack
+    # `use_stdin: true` is load-bearing (work-item bd-ib-qy5wol.1; the rule is
+    # SPECIFICATION/constraints.md §"Pre-push gate refinements", v151). git
+    # writes one `<local ref> <local oid> <remote ref> <remote oid>` line per
+    # ref update to the pre-push hook's standard input, and the gate reads it to
+    # recognise a push whose every update is a DELETION — which publishes no
+    # tree, so there is nothing for the aggregate to judge. lefthook forwards a
+    # hook's standard input to a command ONLY when that command declares this
+    # flag; without it the gate is handed nothing, every push reads as
+    # no-input, and the skip can never fire — silently, because the gate still
+    # runs and still passes.
     01-check-pre-push:
       run: just check-pre-push
+      use_stdin: true
     # ALWAYS-RUN, standalone from `01-check-pre-push` so it is never subject to
-    # check-pre-push's green-token / doc-only skips: the beads tenant's state
+    # check-pre-push's green-token / deletion-only skips: the beads tenant's state
     # is not tree-derived, so a tree-identical push can still carry a drifted
     # tenant. FAIL-SOFT — blocks only on POSITIVELY confirmed out-of-lifecycle
     # work-items; any creds/server/parse problem skips (exit 0). See the

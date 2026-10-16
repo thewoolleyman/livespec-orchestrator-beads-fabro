@@ -894,19 +894,5 @@
     "heading": "## Scenario 186 \u2014 A provider exhaustion observed on one credential account does not refuse dispatch on another account of the same vendor",
     "work_item": "bd-ib-b53dhr",
     "first_seen": "2026-10-16"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "constraints.md",
-    "heading": "## Pre-push gate refinements",
-    "work_item": "bd-ib-qy5wol.1",
-    "first_seen": "2026-10-16"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 188 \u2014 A push that only deletes refs skips the pre-push aggregate, and any other push runs it",
-    "work_item": "bd-ib-qy5wol.1",
-    "first_seen": "2026-10-16"
   }
 ]
