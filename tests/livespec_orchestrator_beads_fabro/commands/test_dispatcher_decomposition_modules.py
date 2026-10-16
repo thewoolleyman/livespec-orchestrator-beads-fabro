@@ -256,7 +256,9 @@ def test_dispatch_loop_cluster_importable_from_new_module_and_private_names_remo
         "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection"
     )
     selection_public_names = {
-        "candidates",
+        # `candidates` moved to `_dispatcher_loop_candidates` when the
+        # pre-dispatch Definition-of-Done judgement gave the enumeration a
+        # second filter; the readiness predicates stay here.
         "is_dispatch_candidate",
         "janitor_core_ref",
         "post_run_dispositions",
@@ -282,7 +284,12 @@ def test_dispatch_loop_cluster_importable_from_new_module_and_private_names_remo
     assert hasattr(dispatch_loop_selection, "MERGE_HELD_STAGE")
     assert hasattr(dispatch_loop_selection, "record_groom_draft")
     assert dispatcher.dispatch_one is dispatch_loop.dispatch_one
-    assert dispatcher.candidates is dispatch_loop_selection.candidates
+    assert (
+        dispatcher.candidates
+        is importlib.import_module(
+            "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_candidates"
+        ).candidates
+    )
     assert dispatcher.is_dispatch_candidate is dispatch_loop_selection.is_dispatch_candidate
     assert dispatcher.janitor_core_ref is dispatch_loop_selection.janitor_core_ref
     assert dispatcher.post_run_dispositions is dispatch_loop_selection.post_run_dispositions

@@ -31,6 +31,7 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_currency_stalen
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_definition_of_done import (
     advisory_definition_of_done_items,
+    held_definition_of_done_items,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_detection_staleness import (
     detection_staleness_items,
@@ -236,6 +237,13 @@ def build_attention(
         # Such an item is dispatchable, is silent on every lane here, and becomes
         # visible only through the sandbox it spends discovering the finding.
         + advisory_definition_of_done_items(
+            project_root=project_root, repo=repo_name, items=materialized
+        )
+        # Its neighbour, and the row the advisory lane cannot produce: an item
+        # the Definition-of-Done judgement HELD is not dispatchable at all, so
+        # it is silent on that lane by construction and on every other lane
+        # here, because nothing about it is stranded, aging or claimed.
+        + held_definition_of_done_items(
             project_root=project_root, repo=repo_name, items=materialized
         )
         # The three Proof of Done hygiene rows. A parked item awaiting its host

@@ -45,8 +45,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import
     live_dispatch_lock,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
-from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_candidates import (
     candidates,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     is_dispatch_candidate,
     ready_items,
 )

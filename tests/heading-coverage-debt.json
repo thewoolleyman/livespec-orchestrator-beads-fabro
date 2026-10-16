@@ -835,13 +835,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 174 \u2014 The Definition-of-Done judgement runs before admission and holds an item it would rest at needs-human",
-    "work_item": "bd-ib-7f66ar",
-    "first_seen": "2026-10-13"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 175 \u2014 A run past the whole-run wall budget is exported, cancelled and rested for a human",
     "work_item": "bd-ib-sdxfsn",
     "first_seen": "2026-10-13"
