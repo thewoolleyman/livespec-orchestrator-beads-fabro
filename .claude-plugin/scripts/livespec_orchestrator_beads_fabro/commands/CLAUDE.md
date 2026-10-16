@@ -797,18 +797,24 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   is indistinguishable from a dispatch that recorded no identity to read.
 - The ADMISSION SESSION-HEADROOM FILTER of `contracts.md`'s "Admission filters
   candidates by projected Claude session headroom" paragraph (`bd-ib-jwuxs4`,
-  Scenario 60) lives in FOUR cohesive modules, split pure-from-impure the usual
+  Scenario 60) lives in SIX cohesive modules, split pure-from-impure the usual
   way, and the dependency direction reads bottom-up: `_acp_session_headroom`
   (PURE: the reading value, its validation, the coverage predicate and the skip
-  predicate, plus the per-evaluation policy type) → `_acp_session_headroom_
+  predicate, plus the per-evaluation policy type) → `_acp_session_headroom_drain`
+  (PURE: the five-hour drain rate — the inclusive age window, the earliest-prior
+  selection and the rate itself) and `_acp_session_headroom_
   records` (PURE: the journal projections — the per-item assessment record, the
   per-node selection fields, and the fields a headroom-governed refusal adds) and
   `_dispatcher_session_headroom_io` (the ONE bounded usage request plus the
-  opaque credential fingerprint) → `_dispatcher_session_headroom_gate` (the
+  opaque credential fingerprint) and `_dispatcher_session_headroom_baseline`
+  (the dispatch-journal read that projects one credential's prior readings) →
+  `_dispatcher_session_headroom_gate` (the
   committed floor, the per-evaluation policy its memo lives in, and the journal
   writer). The filter itself is the FOURTH filter of
   `_acp_candidate_preflight`; `_dispatcher_admission` is the only caller that
-  supplies a policy.
+  supplies a policy, and it hands the policy the SAME journal path it resolves
+  the verdict against, because `dispatcher.py` accepts a `--journal` override
+  and a re-derived path cannot be proven to name the file this pass appends to.
   SIX PROPERTIES AN EDITOR MUST NOT INVERT. This is NOT the credential probe:
   `claude-cred-status` answers "can this credential call the provider" and
   reported `usable` two minutes after a run was refused mid-implement on the
@@ -835,6 +841,21 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   the filter assessed nothing this repository's own eight ACP nodes run.
   `test_acp_session_headroom_primary_coverage.py` keeps the live control that
   caught it.
+  THREE PROPERTIES OF THE DRAIN RATE an editor must not invert, and each is a
+  different kind of claim. A PRIOR READING and a BASELINE are deliberately
+  different types: the baseline carries the elapsed hours MEASURED during
+  selection, which is the only place both instants are in hand, so the rate
+  divides by a span that cannot be zero or inverted rather than by one guarded
+  on an arm no dispatch could reach. The baseline is the EARLIEST in-window
+  prior and never the newest — the earliest gives the longest span the window
+  supports, while the newest reports the last few minutes, which is the quantity
+  the level already tells you — and it is selected on the PARSED instant, never
+  on journal position, because the journal is appended to by concurrent passes
+  and `_dispatcher_io.JournalFile` stamps its envelope `at` at APPEND time. And
+  the rate is NULL and never 0.0 wherever it cannot be measured: a drain of zero
+  is what an unspent credential genuinely reads as, so a coerced zero is
+  indistinguishable at the record from a measurement — the same argument the
+  reading's own `unobservable` field rests on, one level down.
 - The **TDD order calibration** modules (plan `factory-test-first-enforcement`
   slice S3, `bd-ib-3h5vfq`) put seven `tdd.*` fields plus the implement
   adapter on the terminal `dispatcher.calibration` span, so "is the factory

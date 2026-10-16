@@ -138,7 +138,7 @@ def test_this_repositorys_own_claude_routing_is_assessed_by_the_filter(
         journal_path=None,
         now_iso=_NOW,
         headroom=headroom_gate.session_headroom_policy(
-            repo=tmp_path, now_iso=_NOW, read=counting_read
+            repo=tmp_path, now_iso=_NOW, journal_path=None, read=counting_read
         ),
     )
 
