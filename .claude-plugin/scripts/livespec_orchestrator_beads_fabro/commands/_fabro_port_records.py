@@ -92,6 +92,14 @@ class FabroRunSummary:
     reason `wall_time_ms` does: a row carrying no labels carries no `labels`
     key, and a projection that invented one would report an entitlement
     nobody recorded.
+
+    `start_time` is the engine's own ISO-8601 instant for when the run began,
+    and it is exposed for ONE purpose: beside `wall_time_ms` it is what dates
+    a run's COMPLETION, which is when a terminal availability failure
+    occurred. It is read rather than derived, and absent rather than defaulted,
+    for the same reason as the two above — `_acp_factory_hold_evidence` treats
+    a row missing either figure as unobservable rather than dating the attempt
+    from a run that may have begun hours earlier.
     """
 
     run_id: str
@@ -99,6 +107,7 @@ class FabroRunSummary:
     goal: str | None
     total_usd_micros: int | None
     wall_time_ms: int | None = None
+    start_time: str | None = None
     labels: Mapping[str, str] = field(default_factory=dict)
     repo_origin_url: str | None = None
     work_item_id: str | None = field(default=None, compare=False)
@@ -207,6 +216,7 @@ def _run_summary(*, run: object) -> FabroRunSummary | None:
         work_item_id=_work_item_id(goal=goal),
         total_usd_micros=_optional_int(value=record.get("total_usd_micros")),
         wall_time_ms=_optional_int(value=record.get("wall_time_ms")),
+        start_time=_optional_str(value=record.get("start_time")),
         labels=_labels(value=record.get("labels")),
         repo_origin_url=_optional_str(value=record.get("repo_origin_url")),
     )
