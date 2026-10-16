@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.203.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.203.0...v0.203.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* flatten the arming rejection with two tr operands (bd-ib-m4cspa) ([8af1d6b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8af1d6bac87bebd2d60e4cbf2a8bf7b37234a7fe))
+
 ## [0.203.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.202.2...v0.203.0) (2026-10-16)
 
 
