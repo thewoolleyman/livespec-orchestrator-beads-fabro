@@ -1,0 +1,159 @@
+"""Matcher control for tests_no_real_time — one of every form, plus the near-misses.
+
+NOT a test and NOT collected: the `.py.txt` suffix keeps it out of pytest, ruff
+and pyright, so the offending forms below can be written exactly as a real test
+would write them. The check reads this file and requires its own markers to
+match what the matcher found, which is what makes a clean scan of the suite
+evidence rather than a silence.
+
+Two markers, because detecting an offence and reporting it are different
+questions. The DETECT marker says the matcher must find the line; the REPORT
+marker says the finding must also survive the exemption pass. A line carrying
+only the detect marker is an offence a stand-down marker retired. Neither
+marker is spelled out in this docstring: the check locates them by substring,
+so naming one in prose would mark this line as an expectation of its own.
+"""
+
+from __future__ import annotations
+
+import threading
+import time
+
+_BUDGET_SECONDS = 5.0
+
+
+def test_a_real_sleep_is_an_offence() -> None:
+    time.sleep(0.05)  # EXPECT-OFFENCE EXPECT-REPORTED
+
+
+def test_a_real_sleep_may_be_stood_down_with_a_reason() -> None:
+    # The subject here is real time itself, so there is nothing to inject.
+    time.sleep(0.05)  # EXPECT-OFFENCE real-time-required: the subject is the host clock
+
+
+def test_a_marker_on_the_line_above_also_stands_an_occurrence_down() -> None:
+    # real-time-required: a reason rarely fits after the call it explains
+    time.sleep(0.05)  # EXPECT-OFFENCE
+
+
+def test_a_marker_two_lines_above_does_not_reach_the_occurrence() -> None:
+    # real-time-required: too far above to bind
+    _ = len("one line of lead-in, and no more")
+    time.sleep(0.05)  # EXPECT-OFFENCE EXPECT-REPORTED
+
+
+def test_a_marker_with_no_reason_is_itself_the_finding() -> None:
+    time.sleep(0.05)  # EXPECT-OFFENCE EXPECT-REPORTED real-time-required:
+
+
+def test_an_elapsed_difference_assertion_is_an_offence() -> None:
+    started = time.monotonic()
+    elapsed = time.monotonic() - started
+    assert elapsed < _BUDGET_SECONDS  # EXPECT-OFFENCE EXPECT-REPORTED
+
+
+def test_an_inline_elapsed_difference_is_an_offence() -> None:
+    started = time.perf_counter()
+    assert time.perf_counter() - started < _BUDGET_SECONDS  # EXPECT-OFFENCE EXPECT-REPORTED
+
+
+def test_a_wrapped_elapsed_assertion_is_reported_at_its_first_line() -> None:
+    started = time.time()
+    elapsed = time.time() - started
+    assert (  # EXPECT-OFFENCE EXPECT-REPORTED
+        elapsed < _BUDGET_SECONDS
+    ), f"took {elapsed:.2f}s"
+
+
+def test_an_exempted_elapsed_assertion_is_stood_down() -> None:
+    started = time.monotonic()
+    elapsed = time.monotonic() - started
+    assert (  # EXPECT-OFFENCE
+        elapsed < _BUDGET_SECONDS
+        # real-time-required: a wrapped assertion takes the marker on any of its own lines
+    ), f"took {elapsed:.2f}s"
+
+
+def test_an_elapsed_name_rebound_to_something_ordinary_is_not_an_offence() -> None:
+    started = time.monotonic()
+    elapsed = time.monotonic() - started
+    elapsed = len("not a measurement")
+    assert elapsed > 0
+
+
+def test_a_clock_reading_used_as_fixture_data_is_not_an_offence() -> None:
+    deadline = int(time.time()) + 3600
+    assert deadline > 0
+    assert time.time() < deadline
+    assert deadline - 3600 > 0
+
+
+def test_an_injected_clock_is_not_an_offence() -> None:
+    readings = iter((0.0, 1.0, 9.0))
+    monotonic = readings.__next__
+    started = monotonic()
+    assert monotonic() - started < _BUDGET_SECONDS
+
+
+def test_a_sibling_scope_does_not_inherit_a_tracked_name() -> None:
+    elapsed = len("a local that merely shares the name")
+    assert elapsed < _BUDGET_SECONDS
+
+
+def test_a_deterministic_wait_is_not_an_offence() -> None:
+    ready = threading.Event()
+    worker = threading.Thread(target=ready.set)
+    worker.start()
+    worker.join(timeout=_BUDGET_SECONDS)
+    assert ready.is_set()
+
+
+def test_a_sleep_inside_a_child_process_source_string_is_out_of_scope() -> None:
+    child = "import time; time.sleep(30)"
+    assert "sleep" in child
+
+
+def test_every_compound_statement_body_is_descended() -> None:
+    started = time.monotonic()
+    if started >= 0.0:
+        elapsed = time.monotonic() - started
+        assert elapsed < _BUDGET_SECONDS  # EXPECT-OFFENCE EXPECT-REPORTED
+    else:
+        assert started < 0.0
+    while False:
+        assert started == 0.0
+    for _ in range(0):
+        assert started == 0.0
+    with threading.Lock():
+        inner = time.monotonic() - started
+        assert inner < _BUDGET_SECONDS  # EXPECT-OFFENCE EXPECT-REPORTED
+    try:
+        assert started >= 0.0
+    except AssertionError:
+        assert started < 0.0
+    else:
+        guarded = time.monotonic() - started
+        assert guarded < _BUDGET_SECONDS  # EXPECT-OFFENCE EXPECT-REPORTED
+    finally:
+        trailing = time.monotonic() - started
+        assert trailing < _BUDGET_SECONDS  # EXPECT-OFFENCE EXPECT-REPORTED
+    match int(started):
+        case 0:
+            matched = time.monotonic() - started
+            assert matched < _BUDGET_SECONDS  # EXPECT-OFFENCE EXPECT-REPORTED
+        case _:
+            assert started > 0.0
+
+
+class _AnnotatedScope:
+    budget: float = _BUDGET_SECONDS
+
+    def measure(self) -> None:
+        started: float = time.monotonic()
+        elapsed: float = time.monotonic() - started
+        assert elapsed < self.budget  # EXPECT-OFFENCE EXPECT-REPORTED
+
+    def declared_only(self) -> None:
+        later: float
+        later = 0.0
+        assert later == 0.0

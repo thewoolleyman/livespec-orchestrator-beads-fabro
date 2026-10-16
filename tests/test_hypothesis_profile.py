@@ -48,7 +48,14 @@ def test_an_example_slower_than_the_retired_deadline_still_passes(*, size: int) 
     default deadline in force this body raises `DeadlineExceeded` and the test
     reports as `FlakyFailure`; it passes here because the profile retired the
     timing verdict, not because the stall got faster.
+
+    THE REAL SLEEP IS THE SUBJECT, so `check-tests-no-real-time` is stood down
+    here rather than satisfied. What is asserted is that a body which genuinely
+    outruns hypothesis's retired 200ms ceiling still passes, and hypothesis
+    measures that ceiling on the host clock: an injected clock would leave
+    nothing for the retired deadline to have declined to enforce.
     """
+    # real-time-required: the retired wall-clock deadline IS what this asserts
     time.sleep(_PAST_THE_RETIRED_DEADLINE_SECONDS)
 
     assert str(size).isdigit()

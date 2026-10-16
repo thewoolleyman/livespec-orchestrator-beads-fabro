@@ -136,6 +136,15 @@ def _child_env(*, install_root: Path) -> dict[str, str]:
 
 
 def _wait_for(*, path: Path, timeout: float, process: subprocess.Popen[str]) -> None:
+    """Block until a REAL child process writes the handshake file, or fail.
+
+    The event is deterministic — the file either exists or it does not — but
+    the child is a separate process, so nothing in this interpreter can be
+    joined or waited on to learn that it has written. The loop also checks
+    whether the child DIED, which is why it cannot be a single blocking read
+    on a pipe: an early exit must be reported as the child's own output rather
+    than as a timeout.
+    """
     deadline = time.monotonic() + timeout
     while not path.exists():
         if process.poll() is not None:
@@ -144,6 +153,7 @@ def _wait_for(*, path: Path, timeout: float, process: subprocess.Popen[str]) -> 
             raise AssertionError(message)
         if time.monotonic() > deadline:
             raise AssertionError(f"timed out after {timeout}s waiting for {path}")
+        # real-time-required: an out-of-process write has no in-process event to join
         time.sleep(_POLL_SECONDS)
 
 
