@@ -6,9 +6,12 @@ would write them. The check reads this file and requires its own markers to
 match what the matcher found, which is what makes a clean scan of the suite
 evidence rather than a silence.
 
-ONE marker, on every line the matcher must find. It is deliberately not
-spelled out in this docstring: the check locates it by substring, so naming it
-in prose would mark this line as an expectation of its own.
+Two markers, because detecting an offence and reporting it are different
+questions. The DETECT marker says the matcher must find the line; the REPORT
+marker says the finding must also survive the exemption pass. A line carrying
+only the detect marker is an offence a stand-down marker retired. Neither
+marker is spelled out in this docstring: the check locates them by substring,
+so naming one in prose would mark this line as an expectation of its own.
 """
 
 from __future__ import annotations
@@ -20,25 +23,54 @@ _BUDGET_SECONDS = 5.0
 
 
 def test_a_real_sleep_is_an_offence() -> None:
+    time.sleep(0.05)  # EXPECT-OFFENCE EXPECT-REPORTED
+
+
+def test_a_real_sleep_may_be_stood_down_with_a_reason() -> None:
+    # The subject here is real time itself, so there is nothing to inject.
+    time.sleep(0.05)  # EXPECT-OFFENCE real-time-required: the subject is the host clock
+
+
+def test_a_marker_on_the_line_above_also_stands_an_occurrence_down() -> None:
+    # real-time-required: a reason rarely fits after the call it explains
     time.sleep(0.05)  # EXPECT-OFFENCE
+
+
+def test_a_marker_two_lines_above_does_not_reach_the_occurrence() -> None:
+    # real-time-required: too far above to bind
+    _ = len("one line of lead-in, and no more")
+    time.sleep(0.05)  # EXPECT-OFFENCE EXPECT-REPORTED
+
+
+def test_a_marker_with_no_reason_is_itself_the_finding() -> None:
+    time.sleep(0.05)  # EXPECT-OFFENCE EXPECT-REPORTED real-time-required:
 
 
 def test_an_elapsed_difference_assertion_is_an_offence() -> None:
     started = time.monotonic()
     elapsed = time.monotonic() - started
-    assert elapsed < _BUDGET_SECONDS  # EXPECT-OFFENCE
+    assert elapsed < _BUDGET_SECONDS  # EXPECT-OFFENCE EXPECT-REPORTED
 
 
 def test_an_inline_elapsed_difference_is_an_offence() -> None:
     started = time.perf_counter()
-    assert time.perf_counter() - started < _BUDGET_SECONDS  # EXPECT-OFFENCE
+    assert time.perf_counter() - started < _BUDGET_SECONDS  # EXPECT-OFFENCE EXPECT-REPORTED
 
 
 def test_a_wrapped_elapsed_assertion_is_reported_at_its_first_line() -> None:
     started = time.time()
     elapsed = time.time() - started
+    assert (  # EXPECT-OFFENCE EXPECT-REPORTED
+        elapsed < _BUDGET_SECONDS
+    ), f"took {elapsed:.2f}s"
+
+
+def test_an_exempted_elapsed_assertion_is_stood_down() -> None:
+    started = time.monotonic()
+    elapsed = time.monotonic() - started
     assert (  # EXPECT-OFFENCE
         elapsed < _BUDGET_SECONDS
+        # real-time-required: a wrapped assertion takes the marker on any of its own lines
     ), f"took {elapsed:.2f}s"
 
 
@@ -85,7 +117,7 @@ def test_every_compound_statement_body_is_descended() -> None:
     started = time.monotonic()
     if started >= 0.0:
         elapsed = time.monotonic() - started
-        assert elapsed < _BUDGET_SECONDS  # EXPECT-OFFENCE
+        assert elapsed < _BUDGET_SECONDS  # EXPECT-OFFENCE EXPECT-REPORTED
     else:
         assert started < 0.0
     while False:
@@ -94,21 +126,21 @@ def test_every_compound_statement_body_is_descended() -> None:
         assert started == 0.0
     with threading.Lock():
         inner = time.monotonic() - started
-        assert inner < _BUDGET_SECONDS  # EXPECT-OFFENCE
+        assert inner < _BUDGET_SECONDS  # EXPECT-OFFENCE EXPECT-REPORTED
     try:
         assert started >= 0.0
     except AssertionError:
         assert started < 0.0
     else:
         guarded = time.monotonic() - started
-        assert guarded < _BUDGET_SECONDS  # EXPECT-OFFENCE
+        assert guarded < _BUDGET_SECONDS  # EXPECT-OFFENCE EXPECT-REPORTED
     finally:
         trailing = time.monotonic() - started
-        assert trailing < _BUDGET_SECONDS  # EXPECT-OFFENCE
+        assert trailing < _BUDGET_SECONDS  # EXPECT-OFFENCE EXPECT-REPORTED
     match int(started):
         case 0:
             matched = time.monotonic() - started
-            assert matched < _BUDGET_SECONDS  # EXPECT-OFFENCE
+            assert matched < _BUDGET_SECONDS  # EXPECT-OFFENCE EXPECT-REPORTED
         case _:
             assert started > 0.0
 
@@ -119,7 +151,7 @@ class _AnnotatedScope:
     def measure(self) -> None:
         started: float = time.monotonic()
         elapsed: float = time.monotonic() - started
-        assert elapsed < self.budget  # EXPECT-OFFENCE
+        assert elapsed < self.budget  # EXPECT-OFFENCE EXPECT-REPORTED
 
     def declared_only(self) -> None:
         later: float

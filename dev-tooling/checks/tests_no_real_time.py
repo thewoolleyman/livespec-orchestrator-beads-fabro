@@ -10,36 +10,22 @@ itself. A test waits on a DETERMINISTIC EVENT (a joined thread, a set
 `threading.Event`, a written file) and asserts on an INJECTED clock's readings
 or on the ORDERING of those events.
 
-TWO FORMS ARE REFUSED, and they are refused for different reasons.
+TWO FORMS ARE REFUSED — a `time.sleep` call, and an `assert` reading a
+DIFFERENCE of real clock readings. WHAT COUNTS AS EITHER, and what the
+instrument deliberately cannot see, belongs to the sibling private module
+`_tests_real_time_matcher`: the two concerns change for different reasons, so
+that one owns the AST question and this one owns which files are looked at, how
+an occurrence is stood down, and the controls. Read its docstring before
+widening or narrowing the match.
 
-A `time.sleep` call is refused because it is a wait whose length the host
-decides: under load the thing being waited for may not have happened yet when
-the sleep returns, and nothing in the test says so.
-
-An `assert` reading a DIFFERENCE of real clock readings is refused because the
-verdict it renders is about the host's scheduler rather than about the code. The
-difference is tracked through local names, so the ordinary two-line spelling —
-`started = time.monotonic()` then `elapsed = time.monotonic() - started` — is
-seen as the one expression it is. Name tracking is PER SCOPE: a module that
-assigns `elapsed` inside one function must not taint an identically-named local
-in the next, which is exactly the over-reporting that makes a gate get switched
-off.
-
-WHAT THIS INSTRUMENT CANNOT SEE, stated so an absence is not read as coverage.
-It matches the SUBTRACTION, so the rearranged form `observed_at >= started +
-budget` is out of scope by construction, as is a bare instant comparison such
-as `assert time.time() < deadline` — neither is a difference. A clock read
-passed as FIXTURE DATA is deliberately not an offence either (`deadline =
-int(time.time()) + 3600` seeds a value; it renders no timing verdict), and that
-exclusion is what keeps the gate pointed at the flaky class instead of at every
-test that mentions time. A sleep reached through an alias, or spelled inside a
-string handed to a child process, is also unseen: the string case is
-deliberate, since a subprocess fixture's own sleep is that fixture's business.
-
-THERE IS NO STAND-DOWN YET. Every offence this finds is reported, and a test
-whose subject genuinely IS real time therefore has nowhere to say so. That is
-the next slice's job; until it lands, this gate refuses and names, and nothing
-more.
+THE EXEMPTION IS PER OCCURRENCE AND CARRIES ITS REASON IN THE SOURCE. A test
+whose SUBJECT is real time — a shipped guard enforcing an absolute wall-clock
+epoch against real processes, a poll of a live external server, a retired
+hypothesis deadline — cannot be written against an injected clock, so the
+marker `real-time-required: <reason>` on one of the offending expression's own
+lines stands it down. A marker with NO reason is a finding of its own rather
+than a pass: an exemption nobody justified is the shape this gate exists to
+stop, and accepting a bare marker would make the written reason advisory.
 
 TWO POSITIVE CONTROLS, because this check reports an ABSENCE for a living and a
 scan that walked the wrong tree prints exactly what a clean suite prints. The
@@ -54,7 +40,6 @@ diagnostics flow through structlog (JSON to stderr).
 
 from __future__ import annotations
 
-import ast
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -78,13 +63,20 @@ if str(_DT_VENDOR) not in sys.path:
     sys.path.append(str(_DT_VENDOR))
 
 import structlog  # noqa: E402
+from _tests_real_time_matcher import offences  # noqa: E402
 
 __all__: list[str] = [
+    "EXEMPTION_MARKER",
     "MINIMUM_SCANNED_FILES",
     "file_findings",
     "findings",
     "main",
 ]
+
+# The per-occurrence stand-down. It is matched as a substring of a source line
+# so it works in a `#` comment wherever the offending expression reaches, and
+# the text after it IS the written reason.
+EXEMPTION_MARKER = "real-time-required:"
 
 # The discovery control's floor. The tests tree held 860 `.py` files when this
 # gate landed, so a walk returning fewer than half that has lost the tree rather
@@ -93,192 +85,73 @@ MINIMUM_SCANNED_FILES = 400
 
 _TESTS_TREE = "tests"
 _CONTROL_FIXTURE = Path("dev-tooling") / "checks" / "fixtures" / "real_time_control.py.txt"
-# Every line the matcher must flag in the control fixture carries this marker.
+# Every line the matcher must flag in the control fixture carries the first
+# marker; every line that must also survive exemption carries the second.
 _EXPECT_OFFENCE = "EXPECT-OFFENCE"
+_EXPECT_REPORTED = "EXPECT-REPORTED"
 
-# The three readings whose DIFFERENCE is a verdict about the host.
-_CLOCK_READS = frozenset({"monotonic", "perf_counter", "time"})
-# Wrapping a reading in one of these keeps it a reading.
-_COERCIONS = frozenset({"int", "float", "round"})
-
-_SLEEP_FINDING = "waits in real time through time.sleep"
-_ELAPSED_FINDING = "asserts on a difference of real clock readings"
+_UNREASONED_FINDING = "carries an exemption marker with no written reason"
 
 
-def _reads_clock(*, node: ast.AST, attribute: str) -> bool:
-    """Whether `node` is a `time.<attribute>()` call on the stdlib module."""
-    return (
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == attribute
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "time"
-    )
+def _exemption(*, lines: Sequence[str], first: int, last: int) -> tuple[bool, bool]:
+    """Whether a marker binds to this occurrence, and whether it carries a reason.
 
-
-def _is_sleep(*, node: ast.AST) -> bool:
-    return _reads_clock(node=node, attribute="sleep")
-
-
-def _is_instant(*, node: ast.expr, instants: frozenset[str]) -> bool:
-    """Whether this expression denotes an instant read from the real clock.
-
-    An instant plus or minus something that is NOT an instant is still an
-    instant — which is what makes `int(time.time()) + 3600` fixture data rather
-    than a measurement, and keeps it out of the elapsed rule below.
+    The binding region is the offending expression's own lines PLUS the one line
+    immediately above it. The lead-in line is not laxity: a reason worth reading
+    rarely fits after `time.sleep(_SETTLE_SECONDS)` inside this repository's
+    100-column limit, and the alternative authors reach for is a reason trimmed
+    until it says nothing. One line of lead-in keeps the marker bound to the
+    single occurrence it stands down, which a file-level pragma would not.
     """
-    if any(_reads_clock(node=node, attribute=reading) for reading in _CLOCK_READS):
-        return True
-    if isinstance(node, ast.Name):
-        return node.id in instants
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-        return node.func.id in _COERCIONS and any(
-            _is_instant(node=argument, instants=instants) for argument in node.args
-        )
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add | ast.Sub):
-        return _is_instant(node=node.left, instants=instants) != _is_instant(
-            node=node.right, instants=instants
-        )
-    return False
-
-
-def _is_elapsed(*, node: ast.AST, instants: frozenset[str], elapsed: frozenset[str]) -> bool:
-    """Whether this expression IS a difference of two real clock instants."""
-    if isinstance(node, ast.Name):
-        return node.id in elapsed
-    return (
-        isinstance(node, ast.BinOp)
-        and isinstance(node.op, ast.Sub)
-        and _is_instant(node=node.left, instants=instants)
-        and _is_instant(node=node.right, instants=instants)
-    )
-
-
-def _holds_elapsed(*, node: ast.expr, instants: frozenset[str], elapsed: frozenset[str]) -> bool:
-    return any(
-        _is_elapsed(node=inner, instants=instants, elapsed=elapsed) for inner in ast.walk(node)
-    )
-
-
-def _assigned(*, statement: ast.stmt) -> tuple[tuple[str, ...], ast.expr | None]:
-    """The simple names this statement binds, and the expression it binds them to."""
-    if isinstance(statement, ast.Assign):
-        return (
-            tuple(target.id for target in statement.targets if isinstance(target, ast.Name)),
-            statement.value,
-        )
-    if isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name):
-        return ((statement.target.id,), statement.value)
-    return ((), None)
-
-
-def _learn(*, statement: ast.stmt, instants: set[str], elapsed: set[str]) -> None:
-    """Record what each name this statement binds now denotes.
-
-    Rebinding a tracked name to something ordinary CLEARS it. Without that, a
-    helper reusing the name `started` for an unrelated value would keep the
-    earlier reading's taint and report an assertion that measures nothing.
-    """
-    names, value = _assigned(statement=statement)
-    if value is None:
-        return
-    for name in names:
-        if _holds_elapsed(node=value, instants=frozenset(instants), elapsed=frozenset(elapsed)):
-            _ = instants.discard(name)
-            elapsed.add(name)
-        elif _is_instant(node=value, instants=frozenset(instants)):
-            _ = elapsed.discard(name)
-            instants.add(name)
-        else:
-            _ = instants.discard(name)
-            _ = elapsed.discard(name)
-
-
-def _nested_statements(*, statement: ast.stmt) -> tuple[Sequence[ast.stmt], ...]:
-    """Every statement list this compound statement owns, in source order."""
-    if isinstance(statement, ast.If | ast.While | ast.For | ast.AsyncFor):
-        return (statement.body, statement.orelse)
-    if isinstance(statement, ast.With | ast.AsyncWith):
-        return (statement.body,)
-    if isinstance(statement, ast.Try):
-        return (
-            statement.body,
-            *(handler.body for handler in statement.handlers),
-            statement.orelse,
-            statement.finalbody,
-        )
-    if isinstance(statement, ast.Match):
-        return tuple(case.body for case in statement.cases)
-    return ()
-
-
-def _span(*, node: ast.AST) -> tuple[int, int]:
-    first = getattr(node, "lineno", 0)
-    return (first, getattr(node, "end_lineno", None) or first)
-
-
-def _scan(
-    *,
-    statements: Sequence[ast.stmt],
-    instants: set[str],
-    elapsed: set[str],
-    offences: list[tuple[int, int, str]],
-) -> None:
-    """Collect every elapsed-assertion offence, learning names as they bind.
-
-    A function or class body gets a COPY of the enclosing scope, so a name
-    bound there cannot leak sideways into a sibling definition.
-    """
-    for statement in statements:
-        if isinstance(statement, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-            _scan(
-                statements=statement.body,
-                instants=set(instants),
-                elapsed=set(elapsed),
-                offences=offences,
-            )
-            continue
-        _learn(statement=statement, instants=instants, elapsed=elapsed)
-        if isinstance(statement, ast.Assert) and _holds_elapsed(
-            node=statement.test, instants=frozenset(instants), elapsed=frozenset(elapsed)
-        ):
-            first, last = _span(node=statement)
-            offences.append((first, last, _ELAPSED_FINDING))
-        for nested in _nested_statements(statement=statement):
-            _scan(statements=nested, instants=instants, elapsed=elapsed, offences=offences)
-
-
-def _offences(*, source: str) -> list[tuple[int, int, str]]:
-    """Every offending expression in this source, as (first line, last line, what)."""
-    tree = ast.parse(source)
-    offences: list[tuple[int, int, str]] = [
-        (*_span(node=node), _SLEEP_FINDING) for node in ast.walk(tree) if _is_sleep(node=node)
+    reasons = [
+        line.partition(EXEMPTION_MARKER)[2].strip()
+        for line in lines[max(0, first - 2) : last]
+        if EXEMPTION_MARKER in line
     ]
-    _scan(statements=tree.body, instants=set(), elapsed=set(), offences=offences)
-    return sorted(set(offences))
+    return (bool(reasons), any(reasons))
 
 
 def file_findings(*, source: str, label: str) -> list[str]:
-    """Every offence in one test file, each naming its file and line."""
-    return [f"{label}:{first}: {what}" for first, _, what in _offences(source=source)]
+    """Every surviving offence in one test file, each naming its file and line."""
+    lines = source.splitlines()
+    found: list[str] = []
+    for first, last, what in offences(source=source):
+        marked, reasoned = _exemption(lines=lines, first=first, last=last)
+        if reasoned:
+            continue
+        reason = _UNREASONED_FINDING if marked else what
+        found.append(f"{label}:{first}: {reason}")
+    return found
 
 
 def _matcher_control(*, repo_root: Path) -> list[str]:
-    """The fixture's own marked lines must be exactly what the matcher finds."""
+    """The fixture's own marked lines must be found, and only those reported."""
     path = repo_root / _CONTROL_FIXTURE
     if not path.is_file():
         return [f"control: the matcher control fixture {_CONTROL_FIXTURE} is missing"]
     source = path.read_text(encoding="utf-8")
-    marked = sorted(
-        number
-        for number, line in enumerate(source.splitlines(), start=1)
-        if _EXPECT_OFFENCE in line
+    lines = source.splitlines()
+    marked = {
+        marker: frozenset(number for number, line in enumerate(lines, start=1) if marker in line)
+        for marker in (_EXPECT_OFFENCE, _EXPECT_REPORTED)
+    }
+    detected = frozenset(first for first, _, _ in offences(source=source))
+    reported = frozenset(
+        int(finding.split(":")[1]) for finding in file_findings(source=source, label="control")
     )
-    detected = sorted({first for first, _, _ in _offences(source=source)})
+    disagreements = [
+        (verb, sorted(observed), sorted(marked[marker]))
+        for verb, observed, marker in (
+            ("detected", detected, _EXPECT_OFFENCE),
+            ("reported", reported, _EXPECT_REPORTED),
+        )
+        if observed != marked[marker]
+    ]
     fixture = _CONTROL_FIXTURE
-    if detected == marked:
-        return []
-    return [f"control: the matcher found {detected} in {fixture}; its markers say {marked}"]
+    return [
+        f"control: the matcher {verb} {found} in {fixture}; its markers say {marks}"
+        for verb, found, marks in disagreements
+    ]
 
 
 def findings(*, repo_root: Path) -> list[str]:

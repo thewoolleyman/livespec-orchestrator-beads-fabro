@@ -227,6 +227,40 @@ Current checks:
   read is a seam (comments have no on-disk export shape) defaulting to the
   ordinary store client, and the scope filter runs AHEAD of the timeline read so
   a tenant's many non-plan epics cost no round trip.
+- `tests_no_real_time.py` — the door behind the flaky-master class
+  (`bd-ib-ke5wkf`): a test may not wait on, or assert about, the host clock.
+  Flaky master tests accounted for 9 of 37 defective factory endings after the
+  factory stability freeze, and every instance shared ONE shape — a real sleep
+  plus a tight elapsed bound, which passes on an idle laptop and fails on a
+  loaded factory host. AST-scans every `.py` under `tests/` and reports, by
+  file and line, a `time.sleep` call or an `assert` reading a DIFFERENCE of
+  real `time.monotonic` / `time.perf_counter` / `time.time` readings. The
+  difference is tracked through local names, so the ordinary two-line spelling
+  is seen as the one expression it is, and tracking is PER SCOPE — a flat
+  module-wide reading reports an identically-named local in the next function,
+  which is the over-reporting that gets a gate switched off. A reading used as
+  FIXTURE DATA is deliberately not an offence (it seeds a value and renders no
+  verdict); so is the rearranged form `observed_at >= started + budget`, since
+  the rule matches the SUBTRACTION — both exclusions are stated in the module
+  docstring rather than left for a reader to infer. A test whose SUBJECT is
+  real time stands an occurrence down with `real-time-required: <reason>` on
+  one of the offending expression's own lines or the ONE line above it; the
+  lead-in line exists because a reason rarely fits after
+  `time.sleep(_SETTLE_SECONDS)` in 100 columns, and it is bounded at one line
+  so the marker cannot degrade into a file-level pragma. A marker with NO
+  reason is a finding of its own, because an advisory reason is one that stops
+  being written. It reports an ABSENCE, so it carries two positive controls and
+  refuses to report clean when either fails — a DISCOVERY floor on the tests
+  walk, and a MATCHER control over `fixtures/real_time_control.py.txt`, whose
+  own `EXPECT-OFFENCE` / `EXPECT-REPORTED` markers must equal what the matcher
+  detected and what survived exemption. Editing that fixture means editing the
+  markers with it: a form whose marker is removed stops being checked, and a
+  marker with no form fails the control. Two modules, because the concerns
+  change for different reasons: this one owns which files are looked at, how an
+  occurrence is stood down, and the controls; the sibling private
+  `_tests_real_time_matcher.py` owns what counts as an offence at all, and
+  carries the record of what its match deliberately excludes. Only the public
+  `offences` / `SLEEP_FINDING` / `ELAPSED_FINDING` cross that boundary.
 - `work_item_state_invariants.py` — the beads-private work-item-state
   doctor check (SPECIFICATION/contracts.md §"Work-item beads-issue
   mapping" invariants block; L1a slice S6). Walks every materialized

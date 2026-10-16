@@ -452,6 +452,7 @@ check:
         check-no-workflow-edits
         check-fresh-clone-setup
         check-doctor-static
+        check-tests-no-real-time
     )
     LIVESPEC_AGGREGATE_TARGETS
     bash dev-tooling/just-check.sh
@@ -1003,6 +1004,22 @@ check-no-direct-tool-invocation:
 # wrapper) stays for the Dispatcher engine's programmatic use.
 check-no-workflow-edits:
     bash dev-tooling/check-no-workflow-edits.sh
+
+# `check-tests-no-real-time` — the door behind the flaky-master class
+# (bd-ib-ke5wkf). Refuses a test under `tests/` that waits by sleeping in real
+# time, or that asserts on a DIFFERENCE of real `time.monotonic` /
+# `time.perf_counter` / `time.time` readings, naming each offending file and
+# line. That one shape — a real sleep plus a tight elapsed bound — accounted
+# for 9 of 37 defective factory endings after the stability freeze, and the
+# remedy is never a wider bound: a wider bound keeps the real-time dependence
+# and only moves the threshold. A test whose SUBJECT is real time stands an
+# occurrence down with `real-time-required: <reason>`, per occurrence and with
+# the reason in the source; a marker carrying no reason is a finding of its
+# own. Pure-filesystem (no beads / no store / no network), and it carries a
+# discovery control over the tests walk plus a matcher control over its own
+# committed fixture, because it reports an absence for a living.
+check-tests-no-real-time:
+    uv run python dev-tooling/checks/tests_no_real_time.py
 
 # ADOPTION gate for a livespec-dev-tooling release (livespec-dev-tooling-wvuefu
 # / bd-ib-u46hcv). Replays the dispatch workflow's conformance setup steps —
