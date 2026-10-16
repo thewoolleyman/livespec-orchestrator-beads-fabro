@@ -261,6 +261,36 @@ Current checks:
   `_tests_real_time_matcher.py` owns what counts as an offence at all, and
   carries the record of what its match deliberately excludes. Only the public
   `offences` / `SLEEP_FINDING` / `ELAPSED_FINDING` cross that boundary.
+
+  READING THE STAND-DOWN CENSUS IS NOT THE SAME AS READING THE GATE, and
+  getting that wrong has already put a false number into a proof record.
+  `file_findings` DISCARDS a reason-bearing occurrence silently, so a clean
+  exit says nothing about how many stand-downs the tree carries or what they
+  are. Ask `offences` and `_exemption` directly and KEEP what the gate drops.
+  Measured on the delivered tree at the landing of `bd-ib-ke5wkf`: THIRTEEN
+  stood-down occurrences, twelve of them `time.sleep` calls and ONE of them an
+  elapsed bound — the `_BOUNDED_CEILING_SECONDS` assertion in
+  `tests/livespec_orchestrator_beads_fabro/commands/`
+  `test_dispatcher_codex_app_server_io.py`, whose reason reads "a blocking
+  readline on a pipe a real grandchild holds". Twelve is the sleep count, not
+  the census.
+
+  AND DO NOT CLASSIFY A CLOCK READ BY ASKING WHETHER ITS OWN LINE SITS INSIDE
+  AN OFFENCE SPAN. An elapsed offence's span is the `assert` STATEMENT, so in
+  the ordinary two-line spelling the reads that feed it live on the lines
+  ABOVE it and fall OUTSIDE the span entirely; a containment test is therefore
+  structurally incapable of returning an asserted verdict for the spelling the
+  matcher's own docstring calls the ordinary one, and it reports that
+  incapacity as a zero. That is exactly how a capture certified "no exempted
+  elapsed bound survives" over a tree holding one. Decide instead by ABLATION
+  against the delivered matcher — blind one read (`time.<read>(` rewritten to
+  `object(`, which `_is_instant` cannot see and which still parses) and re-ask
+  `offences`; a read whose blinding makes a flagged `assert` disappear is
+  load-bearing for it, and the matcher's own per-scope name tracking rather
+  than a second copy of it decided so. Any such inventory needs a POSITIVE
+  CONTROL over `fixtures/real_time_control.py.txt`, whose markers carry both
+  reported and stood-down elapsed assertions, because a zero from an
+  instrument that cannot return a hit reads identically to a clean tree.
 - `work_item_state_invariants.py` — the beads-private work-item-state
   doctor check (SPECIFICATION/contracts.md §"Work-item beads-issue
   mapping" invariants block; L1a slice S6). Walks every materialized
