@@ -107,14 +107,15 @@ CLUSTER_GATE_ARGV: tuple[str, ...] = JANITOR_CLUSTER_GATE_DEFAULT
 _JANITOR_BLOCK = "janitor"
 _VENUE_FIELD = "venue"
 
-# The ONE delegated-gate state that means the Job completed, LOCKSTEP WITH the
-# shared dev-tooling package's `gate_remote_verdict`. Neither file can see the
-# other, and a drifted word is not a syntax error anywhere: it is a PASSED gate
-# read as a red one, at post-merge time, on an item whose work has already
-# landed. It is written as an equality against this single word rather than as a
-# set of rejected words, so a state the package adds later is refused by default
-# instead of falling through the gaps of a rejection list.
+# The two AFFIRMATIVE delegated-gate states, LOCKSTEP WITH the shared
+# dev-tooling package's `gate_remote_verdict`. Neither file can see the other,
+# and a drifted word is not a syntax error anywhere: it is a PASSED gate read as
+# a red one, at post-merge time, on an item whose work has already landed. Both
+# are written as equalities against a single word rather than as a set of
+# rejected words, so a state the package adds later lands on the no-verdict arm
+# by default instead of falling through the gaps of a rejection list.
 _GATE_PASSED = "PASSED"
+_GATE_FAILED = "FAILED"
 _STATE_FIELD = "state"
 
 
@@ -165,12 +166,27 @@ def cluster_janitor_red(*, result: CommandResult, checkout: Path) -> str | None:
     The state word decides, never the exit code: a gate that PASSED and could
     not write its green token exits non-zero, and that token authorises a push
     rather than closing a post-merge gate.
+
+    The two non-pass arms are worded apart because their remedies are opposite.
+    A `Failed` Job is a RED TREE, and the operator's next move is in the gate's
+    own log. Anything else -- the package's no-verdict state, a client that
+    never started, an output nothing can be read out of -- is a gate that
+    DECIDED NOTHING, and the operator's next move is the cluster. Reporting the
+    second as the first sends them to read a verdict that does not exist;
+    reporting the first as the second tells them their red tree was plumbing.
     """
-    if _gate_state(text=result.stderr) == _GATE_PASSED:
+    state = _gate_state(text=result.stderr)
+    if state == _GATE_PASSED:
         return None
+    if state == _GATE_FAILED:
+        return (
+            f"post-merge janitor RED: the cluster gate Job reported a FAILED verdict for the "
+            f"fresh checkout {checkout} (kept for diagnosis): {tail(text=result.stderr)}"
+        )
     return (
-        f"post-merge janitor red from the cluster gate for fresh checkout {checkout}: "
-        f"{tail(text=result.stderr)}"
+        f"post-merge janitor RED: the cluster gate reached no verdict for the fresh checkout "
+        f"{checkout}, so nothing green may be concluded -- the missing cluster verdict is the "
+        f"finding, not the tree: {tail(text=result.stderr)}"
     )
 
 
