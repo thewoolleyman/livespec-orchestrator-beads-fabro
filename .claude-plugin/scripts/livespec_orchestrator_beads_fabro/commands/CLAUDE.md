@@ -430,6 +430,29 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   construction and its value is one the Dispatcher itself supplies. The
   projection is fail-closed in both arms: a declaration the parse refuses, or a
   name whose value is absent, renders NO overlay line.
+- `_dispatcher_janitor_check_venue.py` — WHERE the post-merge janitor's check
+  suite EXECUTES (`bd-ib-26deyw`): the dispatching host, or the maintainer-owned
+  k3s cluster through the shared delegated gate. Do not confuse it with
+  `_dispatcher_janitor_venue.py`, which answers WHICH REF the fresh checkout is
+  made at. Five properties an editor must not invert. The two venues are not
+  symmetrical in what an exit code MEANS — a host-local suite's exit code IS its
+  verdict, while a delegated gate has THREE outcomes, so the lost-verdict case
+  has to stay distinguishable from a red tree. A lost verdict is RED at
+  `janitor-post-merge` and never the `janitor-env-degraded` outcome, which
+  reports `green` at its own stage: a gate that was asked and did not answer is
+  not a venue that failed to provision, and an item must not close on a reading
+  nobody took. The gate client is INVOKED as a subprocess in the janitor
+  checkout rather than imported, because the shared dev-tooling package is a
+  governed repository's development dependency and not part of this plugin's
+  vendored runtime — the installed plugin root carries no virtual environment,
+  so a module-level import would resolve under this repository's own test run
+  and raise on every real dispatch. The verdict is read off the client's own
+  JSON log line rather than its exit code, which answers a PUSH question (0 only
+  when the gate passed AND a green token was written) that a post-merge gate is
+  not asking. And every doubt resolves to the HOST-LOCAL venue — an absent
+  block, an absent key, a wrong type, an unrecognised word — the mirror of the
+  fail-closed verdict, landing in the same place: both defaults reduce to "run
+  the checks".
 - `_dispatcher_open_command_node.py` — which COMMAND node of the phase graph a run
   is inside, read off one `fabro events` output (`bd-ib-qsk4o5`). PURE, and the
   repair of a measured false-kill: a command node (`janitor`, `publish_draft`,

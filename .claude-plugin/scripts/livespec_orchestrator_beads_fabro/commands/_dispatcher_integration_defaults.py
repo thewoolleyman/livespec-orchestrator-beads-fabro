@@ -56,6 +56,7 @@ __all__: list[str] = [
     "JANITOR_BOOTSTRAP_RECIPE_DEFAULT",
     "JANITOR_CHECKOUT_PROVISION_DEFAULT",
     "JANITOR_CHECK_SUITE_DEFAULT",
+    "JANITOR_CLUSTER_GATE_DEFAULT",
     "JANITOR_TRUST_DEFAULT",
     "MASTER_CI_JOB_DEFAULT",
     "MASTER_CI_WORKFLOW_DEFAULT",
@@ -133,6 +134,35 @@ JANITOR_CHECK_SUITE_DEFAULT: tuple[str, ...] = (
 JANITOR_CHECKOUT_PROVISION_DEFAULT: tuple[str, ...] = (
     *_FLEET_RECIPE_INVOCATION,
     "install-worktree-pack",
+)
+
+# How this fleet reaches the DELEGATED CLUSTER GATE: the shared dev-tooling
+# package's own delegated-gate client, which pushes the tree under test to the
+# gates mirror, renders and submits the gate Job, waits for its terminal
+# condition, streams its logs and reports a three-state verdict. The janitor's
+# CLUSTER venue runs this instead of the check-suite default above, in the same
+# fresh checkout, so the suite itself executes in a pod rather than on the
+# dispatching host.
+#
+# It is invoked rather than imported because the shared package is a development
+# dependency of a governed repository and is NOT part of this plugin's vendored
+# runtime, so the only venue that can resolve it is a checkout of that
+# repository. The tool runner carries the prefix for the same reason every other
+# host-venue default does: `uv` reaches these hosts through mise.
+#
+# Spelled HERE because the fleet-toolchain-literal ban admits this fleet's
+# shared dev-tooling package name in no other module -- the same reason the
+# three conformance invocations above live here.
+JANITOR_CLUSTER_GATE_DEFAULT: tuple[str, ...] = (
+    FLEET_TOOL_RUNNER,
+    "exec",
+    "--",
+    "uv",
+    "run",
+    "python",
+    "-m",
+    "livespec_dev_tooling.gate_remote_delegate",
+    "run",
 )
 
 # The HOST-JANITOR venue's mise-trust step, which is a PREMISE of that venue's
