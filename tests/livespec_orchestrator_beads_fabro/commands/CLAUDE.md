@@ -187,6 +187,18 @@ Tests for the thin-transport command modules under
   `getattr` assertion, because each module's Red predates the constants it
   binds and a Red's test bytes are fixed across its Red-to-Green pair.
 
+- `test_dispatcher_canary.py` covers the committed canary fixture
+  (`orchestrator-image/canary-fixture.md`) and the four ways a committed
+  fixture can be malformed, graded through the SAME ratified
+  Definition-of-Done parse the gate's host-side wall reads — a second parse
+  here is the drift that produced the two refused canaries this fixture
+  exists to prevent. The recipe that files and dispatches from it lives at
+  `tests/test_canary_dispatch_recipe.py`, one tier up, because its subject is
+  the justfile recipe and the shell script rather than this module; the
+  intake-refusal arms are HERE rather than there because they were found by a
+  coverage measurement taken after that module's Red was authored, and a Red's
+  test bytes are fixed across its Red-to-Green pair.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr
