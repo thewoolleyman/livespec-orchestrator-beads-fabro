@@ -225,6 +225,7 @@ def _refusal(*, records: list[dict[str, Any]]) -> dict[str, Any]:
                 "remaining_percent": 5.0,
                 "unobservable": None,
                 "observed_at": _NOW,
+                "five_hour_drain_percent_per_hour": None,
             },
         ),
         (
@@ -235,6 +236,7 @@ def _refusal(*, records: list[dict[str, Any]]) -> dict[str, Any]:
                 "remaining_percent": None,
                 "unobservable": headroom.UNREADABLE_UTILIZATION,
                 "observed_at": _NOW,
+                "five_hour_drain_percent_per_hour": None,
             },
         ),
     ],
