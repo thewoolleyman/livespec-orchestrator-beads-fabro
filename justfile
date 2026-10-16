@@ -47,8 +47,7 @@ acceptance-live-preflight:
 acceptance-live item:
     bash orchestrator-image/tier2-dispatch-proof.sh --run --item "$1"
 
-# `canary-dispatch <factory>` — take a candidate canary. Files a FRESH canary
-# work-item from the committed fixture template
+# Files a FRESH canary work-item from the committed fixture template
 # (orchestrator-image/canary-fixture.md), whose Definition of Done is validated
 # through the same ratified parse the gate's host-side wall reads, then
 # dispatches that item to the NAMED factory. Every canary it files carries the
@@ -58,6 +57,8 @@ acceptance-live item:
 #   with-livespec-env.sh -- mise exec -- just canary-dispatch hp
 # The runbook section "Taking a candidate canary" in orchestrator-image/README.md
 # is the operator-facing account of when and why.
+#
+# take a candidate canary: file one work-item from the committed fixture and dispatch it
 [positional-arguments]
 canary-dispatch factory:
     bash dev-tooling/just-canary-dispatch.sh "$1"
