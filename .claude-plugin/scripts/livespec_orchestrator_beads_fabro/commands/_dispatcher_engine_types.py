@@ -131,6 +131,10 @@ class DispatchOutcome:
     printed an empty one; both arrive here as None because the distinction is
     not one any reader of this field acts on.
 
+    `needs_human_preservation` carries the terminal's measured preservation
+    account to the durable ledger writer: preserved on a named ref, explicitly
+    not pushed, or unknown. None means this outcome never read that account.
+
     `hook_over_limit` is the `hook-over-limit` event this run's output reported,
     if it reported one. It is carried here rather than re-parsed by the cause
     writer for the reason `journal_hook_over_limit` records: the journal row and
@@ -158,6 +162,7 @@ class DispatchOutcome:
     needs_human_kind: str | None = None
     needs_human_stages: tuple[str, ...] | None = None
     needs_human_reason: str | None = None
+    needs_human_preservation: str | None = None
     hook_over_limit: HookOverLimit | None = None
     base_advanced: BaseAdvancedAfterArming | None = None
 

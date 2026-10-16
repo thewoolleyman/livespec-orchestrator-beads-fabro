@@ -49,6 +49,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_transport_fault import (
 
 __all__: list[str] = [
     "needs_human_terminal_detail",
+    "needs_human_terminal_preservation",
     "needs_human_terminal_reason",
 ]
 
@@ -110,7 +111,7 @@ def needs_human_terminal_detail(
         _head(run_label=run_label, causal=causal),
         *_attribution(causal=causal, failure=failure),
         _reason(text=text),
-        _preservation(text=text),
+        needs_human_terminal_preservation(text=text),
         _decision(work_item_id=work_item_id, causal=causal),
     )
     return "; ".join(clauses)
@@ -223,7 +224,7 @@ def _attribution(
     return tuple(clauses)
 
 
-def _preservation(*, text: str) -> str:
+def needs_human_terminal_preservation(*, text: str) -> str:
     """What a rework can start FROM — the fact the ledger answer turns on.
 
     THE INVARIANT IS THREE-WAY AND EVERY ARM NEEDS ITS OWN EVIDENCE: a POSITIVE

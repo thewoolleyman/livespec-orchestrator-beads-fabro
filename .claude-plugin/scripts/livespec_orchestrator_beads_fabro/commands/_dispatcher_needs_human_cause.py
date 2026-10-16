@@ -19,13 +19,10 @@ reached and nothing beyond it: no stage for an ending that recorded none, no
 transport-fault classification a cause does not support, no pending question
 when no agent asked, and no denial of one when an agent did. Every one of those
 is a claim a reader ACTS on, and this record outlives everything that could
-correct it — `bd comments` offers add and list, with no edit and no delete. For
-the same reason it claims nothing about PRESERVATION: whether a ref was pushed
-is read from the terminal's own sentinels by `_dispatcher_needs_human_detail`,
-which has the run output this writer does not. The terminal's own REASON line is
-the one thing out of that output this record does carry, and it arrives already
-parsed on the outcome rather than re-derived here, precisely because this writer
-never sees the text.
+correct it — `bd comments` offers add and list, with no edit and no delete.
+Preservation and the terminal's own reason arrive already read from the
+terminal's sentinels by `_dispatcher_needs_human_detail`, carried on the
+outcome rather than re-derived here: this writer never sees the run output.
 
 TWO HAZARDS COME FROM THE TEXT BEING ENGINE-AUTHORED RATHER THAN OURS, and both
 are closed by primitives that already exist rather than by local copies.
@@ -171,6 +168,7 @@ def needs_human_cause_body(*, outcome: DispatchOutcome) -> str:
         f"ending: {outcome.needs_human_kind}",
         *_attribution(outcome=outcome),
         *_terminal_reason(outcome=outcome),
+        *_preservation(outcome=outcome),
         *_provider(outcome=outcome),
         "",
         _decision(outcome=outcome),
@@ -332,3 +330,10 @@ def _safe(*, text: str) -> str:
     if CREDENTIAL_URL_RE.search(text) is not None:
         return REDACTION_MARKER
     return comment_safe_external_text(text=text)
+
+
+def _preservation(*, outcome: DispatchOutcome) -> tuple[str, ...]:
+    """Carry the same measured preservation account as the transient result."""
+    if outcome.needs_human_preservation is None:
+        return ()
+    return (f"preservation: {_safe(text=outcome.needs_human_preservation)}",)
