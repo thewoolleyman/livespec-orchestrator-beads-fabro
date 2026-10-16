@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
-    CLAUDE_OAUTH_TOKEN_ENV,
     ClaudeCredentialStatus,
     absent_claude_credential_status,
 )
@@ -46,7 +45,23 @@ def assess_claude_credential(
 
 
 def run_claude_cred_status(*, args: argparse.Namespace) -> int:
-    """Probe the exact OAuth token projected to the Claude review adapter."""
+    """Probe the exact OAuth token projected to the Claude review adapter.
+
+    The token is the one `select_factory_credential` resolves — the SAME
+    selector the admission-time probe and the session-headroom gate call, so
+    all four surfaces name ONE account. Reading the unnumbered
+    `CLAUDE_CODE_OAUTH_TOKEN` here instead assessed anthropic-1 while every
+    dispatch billed the published anthropic-3 slot (`bd-ib-6zfayy`, measured
+    2026-10-16 04:00Z-04:20Z: this command reported HTTP 429 while the selected
+    slot read HTTP 200 with about 88% five-hour headroom left, and every
+    operator gate consulting it held for an account nothing was spending). Do
+    NOT add a second resolution path: a fourth surface resolving its own
+    credential is how the three that agree come to disagree again.
+
+    The resolved NAME rides into both renderings, because a verdict that always
+    named the unnumbered variable is unattributable — HTTP 429 says nothing
+    about which pool slot answered for it.
+    """
     choice = select_factory_credential(
         environ=os.environ,
         home=Path.home(),
@@ -57,7 +72,7 @@ def run_claude_cred_status(*, args: argparse.Namespace) -> int:
         probe=probe_claude_credential,
         wrapper_text=_WRAPPER_HINT,
     )
-    payload = _payload(status=status)
+    payload = _payload(status=status, credential_env=choice.env_name)
     if args.as_json:
         _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
     else:
@@ -65,10 +80,10 @@ def run_claude_cred_status(*, args: argparse.Namespace) -> int:
     return 0 if status.usable else 1
 
 
-def _payload(*, status: ClaudeCredentialStatus) -> dict[str, Any]:
+def _payload(*, status: ClaudeCredentialStatus, credential_env: str) -> dict[str, Any]:
     return {
         "condition": status.condition,
-        "credential_env": CLAUDE_OAUTH_TOKEN_ENV,
+        "credential_env": credential_env,
         "error_type": status.error_type,
         "http_status": status.http_status,
         "input_tokens": status.input_tokens,

@@ -237,6 +237,36 @@ def test_status_falls_back_to_the_unnumbered_token_and_says_so_once_on_stderr(
     assert reason_fragment in announced[0]
 
 
+def test_status_names_the_env_var_it_actually_probed_in_both_renderings(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """`credential_env` reports the probed variable, not a fixed constant.
+
+    This is what makes the verdict attributable: a report that always named
+    `CLAUDE_CODE_OAUTH_TOKEN` said nothing about which of several pool slots
+    answered for it, so an operator reading HTTP 429 could not tell that the
+    account being billed was a different one. Both renderings are asserted
+    because the `--json` field and the human line are read by different
+    consumers and each could drift alone.
+    """
+    _publish_selected_profile(monkeypatch=monkeypatch, home=tmp_path, profile=_SLOT_PROFILE)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _TEST_TOKEN)
+    monkeypatch.setenv(_SLOT_ENV, _SLOT_TOKEN)
+    seen: list[str] = []
+    monkeypatch.setattr(command, "probe_claude_credential", _recording_probe(seen=seen))
+
+    assert command.run_claude_cred_status(args=argparse.Namespace(as_json=True)) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert command.run_claude_cred_status(args=argparse.Namespace(as_json=False)) == 0
+    human = capsys.readouterr().out
+
+    assert payload["credential_env"] == _SLOT_ENV
+    assert f"credential_env: {_SLOT_ENV}" in human
+    assert seen == [_SLOT_TOKEN, _SLOT_TOKEN]
+
+
 def test_dispatcher_routes_claude_status_command(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
