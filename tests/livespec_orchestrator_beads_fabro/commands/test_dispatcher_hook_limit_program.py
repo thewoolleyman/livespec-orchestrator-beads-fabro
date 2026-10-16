@@ -93,12 +93,31 @@ def _observe(*, program: Path, push_pid: int, extra: tuple[str, ...] = ()) -> tu
     return result.returncode, result.stderr
 
 
+def _await_ready(*, push: subprocess.Popen[str]) -> None:
+    """Block until the stand-in reports that the process it names is running.
+
+    Each stand-in writes `ready` from INSIDE the process the observer must find,
+    so reading that line is a deterministic event rather than a guess at how long
+    a fork takes on a loaded host.
+    """
+    assert push.stdout is not None
+    assert push.stdout.readline() == "ready\n"
+
+
+def _stop(*, push: subprocess.Popen[str]) -> None:
+    """Reap the stand-in push and release the readiness pipe it held."""
+    push.kill()
+    _ = push.wait()
+    assert push.stdout is not None
+    push.stdout.close()
+
+
 def _hook_script(*, tmp_path: Path, seconds: int) -> Path:
     """A stand-in pre-push hook, at a path whose argv names `hooks/pre-push`."""
     hooks = tmp_path / ".git" / "hooks"
     hooks.mkdir(parents=True, exist_ok=True)
     hook = hooks / "pre-push"
-    _ = hook.write_text(f"#!/bin/sh\nsleep {seconds}\n", encoding="utf-8")
+    _ = hook.write_text(f"#!/bin/sh\necho ready\nsleep {seconds}\n", encoding="utf-8")
     hook.chmod(0o755)
     return hook
 
@@ -117,7 +136,7 @@ def _delegating_hook_script(*, tmp_path: Path, seconds: int) -> Path:
     hooks = tmp_path / ".git" / "hooks"
     hooks.mkdir(parents=True, exist_ok=True)
     delegate = tmp_path / "hook-runner-stand-in"
-    _ = delegate.write_text(f"#!/bin/sh\nsleep {seconds}\n", encoding="utf-8")
+    _ = delegate.write_text(f"#!/bin/sh\necho ready\nsleep {seconds}\n", encoding="utf-8")
     delegate.chmod(0o755)
     hook = hooks / "pre-push"
     _ = hook.write_text(
@@ -136,20 +155,22 @@ def test_a_hook_still_running_at_the_limit_is_reported_with_its_elapsed_time(
     # A stand-in push: a shell that runs the hook as a CHILD. The trailing
     # `true` is what stops the shell exec-ing into the hook and collapsing the
     # two into one process, which is the shape a real `git push` never has.
-    push = subprocess.Popen(["sh", "-c", f"{hook}; true"])
+    push = subprocess.Popen(["sh", "-c", f"{hook}; true"], stdout=subprocess.PIPE, text=True)
     try:
+        _await_ready(push=push)
+        # The subject is the observer's REAL /proc starttime-to-boot-clock conversion.
+        # real-time-required: the hook must age on the real clock for the band to discriminate.
         time.sleep(2)
         code, stderr = _observe(program=_program(tmp_path=tmp_path), push_pid=push.pid)
     finally:
-        push.kill()
-        _ = push.wait()
+        _stop(push=push)
 
     assert code == 0, stderr
     event = hook_over_limit_from_text(text=stderr)
     assert event is not None, stderr
     assert (event.node, event.operation, event.limit_seconds) == ("publish_draft", "push", 3600)
     # A real measurement rather than a constant: the hook had been running for
-    # about two seconds, and an implementation that reported zero, or the
+    # at least two seconds, and an implementation that reported zero, or the
     # push's own age, or the limit, would all fail this band.
     assert 1_000 <= event.hook_elapsed_ms <= 20_000, event.hook_elapsed_ms
 
@@ -169,13 +190,15 @@ def test_a_hook_that_execs_into_a_delegate_is_still_found_and_named(
     traded for another: both shapes must be reported.
     """
     hook = _delegating_hook_script(tmp_path=tmp_path, seconds=30)
-    push = subprocess.Popen(["sh", "-c", f"{hook}; true"])
+    push = subprocess.Popen(["sh", "-c", f"{hook}; true"], stdout=subprocess.PIPE, text=True)
     try:
+        _await_ready(push=push)
+        # The subject is the observer's REAL /proc starttime-to-boot-clock conversion.
+        # real-time-required: the delegate must age on the real clock for the band to discriminate.
         time.sleep(2)
         code, stderr = _observe(program=_program(tmp_path=tmp_path), push_pid=push.pid)
     finally:
-        push.kill()
-        _ = push.wait()
+        _stop(push=push)
 
     assert code == 0, stderr
     event = hook_over_limit_from_text(text=stderr)
@@ -189,13 +212,17 @@ def test_a_hook_that_execs_into_a_delegate_is_still_found_and_named(
 
 def test_a_push_with_no_hook_running_reports_no_event(tmp_path: Path) -> None:
     """Scenario 177: a push ended after its hook finished is not this event."""
-    push = subprocess.Popen(["sh", "-c", "sleep 30; true"])
+    # The push has a live NON-hook child when the observer walks it: the
+    # background `sleep` is forked before `ready` is written, so the walk has a
+    # descendant to look at and must still find no hook among them.
+    push = subprocess.Popen(
+        ["sh", "-c", "sleep 30 & echo ready; wait; true"], stdout=subprocess.PIPE, text=True
+    )
     try:
-        time.sleep(1)
+        _await_ready(push=push)
         code, stderr = _observe(program=_program(tmp_path=tmp_path), push_pid=push.pid)
     finally:
-        push.kill()
-        _ = push.wait()
+        _stop(push=push)
 
     assert code == 1
     assert HOOK_OVER_LIMIT_SENTINEL not in stderr
@@ -213,11 +240,11 @@ def test_an_unmeasurable_elapsed_time_reports_no_invented_figure(tmp_path: Path)
     carries the process table it needs and NO `uptime`.
     """
     hook = _hook_script(tmp_path=tmp_path, seconds=30)
-    push = subprocess.Popen(["sh", "-c", f"{hook}; true"])
+    push = subprocess.Popen(["sh", "-c", f"{hook}; true"], stdout=subprocess.PIPE, text=True)
     proc_root = tmp_path / "proc"
     proc_root.mkdir()
     try:
-        time.sleep(1)
+        _await_ready(push=push)
         # SYMLINK each process entry rather than copying its bytes: a symlink
         # never reads the file, so this loop needs no "the process exited while
         # I was walking" arm -- an arm whose execution the case could not
@@ -232,8 +259,7 @@ def test_an_unmeasurable_elapsed_time_reports_no_invented_figure(tmp_path: Path)
             extra=("--proc-root", str(proc_root)),
         )
     finally:
-        push.kill()
-        _ = push.wait()
+        _stop(push=push)
 
     assert code == 1
     assert HOOK_OVER_LIMIT_SENTINEL not in stderr
