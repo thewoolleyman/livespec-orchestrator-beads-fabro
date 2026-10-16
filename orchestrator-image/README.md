@@ -323,6 +323,44 @@ the image the same way. The current rollback artifact is
 through `.1 fork half`); `fabro.8de6611-pre-wave-a.bak` is the pre-Wave-A build
 and `fabro.b9b63a8-pre-checkpoint-timeout.bak` the pre-#552 build.
 
+### Taking a candidate canary
+
+A CANDIDATE CANARY is one dispatch taken to find out whether a candidate engine
+runs this repository's factory end to end. Take it with:
+
+```bash
+with-livespec-env.sh -- mise exec -- just canary-dispatch <factory>
+```
+
+`just canary-dispatch <factory>` is the ONLY sanctioned way to take one. It
+files a FRESH canary work-item from the committed fixture template
+`orchestrator-image/canary-fixture.md` and dispatches that item to the factory
+you name — `hp` for the pinned production factory, or whichever name
+`dispatcher.factories` declares. Every canary it files carries the label
+`canary:fixture-dispatch`, so a reader surveying the tenant can separate the
+canaries from ordinary filed work with one label filter.
+
+The canary's whole deliverable is one appended line in
+`orchestrator-image/canary-marker.md`, a plain Markdown file outside every tree
+the check suite points a scanner at, so the change the canary makes cannot
+itself fail a gate and be read as an engine fault.
+
+**The canary's subject is the committed fixture — never a real backlog item.**
+That is the failure this recipe retires, and it cost two canaries. Canaries 5
+and 6 of plan `fabro-currency` (hp-candidate runs `01M4NWARSD8T` and
+`01M4PBFW4MP8`, 2026-10-11) were taken by hand against the real backlog item
+`bd-ib-o6aeji`, whose `References:` line named a heading governing something
+else. Both reached `dod_gate` and were refused there — an ITEM-QUALITY failure
+that reads exactly like an ENGINE failure, which is why canary 6 repeated it.
+The fixture's Definition of Done is validated at filing time through the same
+ratified parse the gate's host-side wall reads, so a canary that reaches the
+gate reaches it with a brief already known to pass.
+
+A refusal before any run names the fixture's own fault on stderr, prefixed
+`LIVESPEC_CANARY_FIXTURE_UNUSABLE:`, and files nothing. A canary that is filed
+but cannot be routed by intake reports with its minted id in the message, so the
+record is findable rather than orphaned.
+
 ### Candidate build + Enemy Unit Test comparison
 
 The Enemy Unit Test comparison harness checks a candidate Fabro build against
