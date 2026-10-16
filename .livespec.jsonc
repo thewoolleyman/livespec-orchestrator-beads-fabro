@@ -228,6 +228,40 @@
       "wip_cap": 10,
       "acceptance_mode": "ai-only",
       "default_factory": "hp",
+      // WHERE the post-merge janitor's fresh-checkout check suite RUNS. Two
+      // values, each naming the machine rather than ranking a tier:
+      // "host_process" runs it as a process on the Dispatcher's own host (the
+      // VPS), and "cluster_job" delegates it to the maintainer-owned k3s
+      // cluster through the delegated gate livespec-dev-tooling ships — the
+      // same client, the same gates namespace and the same Job the delegated
+      // pre-push gate uses, pointed at the janitor checkout.
+      //
+      // "cluster_job" HERE, and an absent key means "host_process", so this
+      // key moves THIS repository and nothing else. Every merge's mechanical
+      // gate is the heaviest recurring job on the VPS, and R4 — that same gate
+      // running as a cluster Job — has been live-exercised with independent
+      // replays, which was the precondition the archived k3s plan set before
+      // this one could move.
+      //
+      // THE DELEGATION IS FAIL-CLOSED AND NEVER DEGRADES TO GREEN. A cluster
+      // that returns no verdict — an unreadable gates credential, a refused
+      // mirror push, a Job that reached no terminal condition — reports the
+      // janitor RED naming the missing verdict. That is deliberately unlike
+      // the host-local path's `janitor-env-degraded` outcome, which is green
+      // because what failed there was host provisioning after a confirmed
+      // merge; a merge the cluster did not gate has not been gated at all.
+      //
+      // ONE LIMITATION, stated because it bounds who may select this value:
+      // the shared gate client resolves its range base from a constant naming
+      // this fleet's default branch, so a repository whose default branch
+      // differs would get a gate about a range it does not use. Widening that
+      // constant belongs to the package that owns it.
+      //
+      // NOT API-configurable, for the same reason `minimum_release` and
+      // `require_invoker` are not: a dial that decides WHERE a merge's gate
+      // runs — and therefore whether a gate ran at all — is not one an
+      // automated surface may flip. Edit it by hand.
+      "janitor_gate_venue": "cluster_job",
       // THE DELIBERATE OPERATOR FLOOR, and the only currency form with any
       // blocking authority at admission: a dispatch refuses before claim when
       // the EXECUTING plugin release is below this value. Ambient staleness

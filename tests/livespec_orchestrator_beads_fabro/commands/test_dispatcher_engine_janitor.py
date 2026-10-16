@@ -1,5 +1,6 @@
 """Tests for the Dispatcher's post-merge janitor engine slice."""
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -91,6 +92,58 @@ def _provisioning_queue() -> list[CommandResult]:
     return [_ok(), _branch(), *[_ok() for _ in range(9)]]
 
 
+def _gate_reply(*, state: str, detail: str) -> CommandResult:
+    """What the delegated cluster gate's own structured output looks like.
+
+    The gate client streams the Job's pod logs to its caller BEFORE it renders
+    its verdict, so the verdict object is the last structured line on the
+    stream rather than the only thing on it. The fake reply carries an
+    unstructured line ahead of it for that reason: a reader that took the first
+    line, or that required the whole stream to parse, would pass against a
+    stream that never happens in production.
+    """
+    verdict_line = json.dumps(
+        {
+            "state": state,
+            "detail": detail,
+            "event": "delegated gate",
+            "level": "info",
+            "timestamp": "2026-10-16T00:00:00Z",
+        }
+    )
+    return CommandResult(
+        exit_code=0 if state == "PASSED" else 1,
+        stdout="",
+        stderr=f"a pod log line that is not structured\n{verdict_line}\n",
+    )
+
+
+def _cluster_queue(*, reply: CommandResult) -> list[CommandResult]:
+    """`_provisioning_queue` with the cluster gate where the local suite ran.
+
+    The gate stands at the same position in the queue the host-local check
+    suite occupied, which is the point: the stages BEFORE it provision the
+    fresh checkout either way, and the stage after it removes that checkout.
+    """
+    return [_ok(), _branch(), *[_ok() for _ in range(6)], reply, _ok()]
+
+
+# The index of the janitor gate's own call in `_cluster_queue`, named rather
+# than counted at each use so a provisioning stage added later moves one
+# constant instead of silently re-aiming every assertion at its neighbour.
+_GATE_CALL_INDEX = 8
+
+
+def _cluster_repo(*, tmp_path: Path) -> Path:
+    """A target repository whose committed configuration selects the cluster."""
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"dispatcher": '
+        '{"janitor_gate_venue": "cluster_job"}}}',
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
 def _merged() -> PrView:
     return PrView(
         number=7,
@@ -100,6 +153,88 @@ def _merged() -> PrView:
         merge_sha="cafe08",
         terminal_required_check_failures=(),
     )
+
+
+def test_post_merge_green_comes_from_the_cluster_jobs_passed_verdict(tmp_path: Path) -> None:
+    """A cluster-venue merge is gated by a Job, and its green IS that verdict.
+
+    Both halves are asserted because either alone is satisfied by the wrong
+    implementation: a green outcome alone is what the host-local suite already
+    produces, and a cluster stage alone would be satisfied by a stage whose
+    verdict nothing read. The host-local check-suite stage is asserted ABSENT
+    for the same reason — a janitor that ran both would report a green the
+    cluster had no part in.
+    """
+    plan = _plan(repo=_cluster_repo(tmp_path=tmp_path))
+    runner = Runner(
+        queue=_cluster_queue(reply=_gate_reply(state="PASSED", detail="the gate passed on cafe08"))
+    )
+    journal = Journal()
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        merged=_merged(),
+    )
+
+    stages = [record["stage"] for record in journal.records]
+    assert (outcome.status, outcome.stage) == ("green", "done")
+    assert "janitor-post-merge-cluster" in stages
+    assert "janitor-post-merge" not in stages
+    gate_argv, gate_cwd = runner.calls[_GATE_CALL_INDEX]
+    assert gate_cwd == plan.janitor_checkout
+    assert tuple(gate_argv) != plan.janitor
+
+
+def test_post_merge_reports_red_when_the_cluster_jobs_verdict_is_failed(tmp_path: Path) -> None:
+    """A red Job is the janitor's red, and it carries the Job's own reason."""
+    runner = Runner(
+        queue=_cluster_queue(
+            reply=_gate_reply(
+                state="FAILED", detail="the gate Job gate-abc ended Failed on tree cafe08"
+            )
+        )
+    )
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=_cluster_repo(tmp_path=tmp_path)),
+        runner=runner,
+        journal=Journal(),
+        merged=_merged(),
+    )
+
+    assert (outcome.status, outcome.stage) == ("failed", "janitor-post-merge-cluster")
+    assert "ended Failed on tree cafe08" in outcome.detail
+
+
+def test_post_merge_keeps_the_host_process_venue_when_none_is_declared(tmp_path: Path) -> None:
+    """A repository that declares no venue keeps the host-local check suite.
+
+    The opt-out is what makes the cluster path this repository's SETTING rather
+    than every governed repository's new premise, so it is asserted here rather
+    than left to the venue resolver's own unit coverage: a default that only
+    held inside the resolver would still move every adopter's janitor.
+    """
+    plan = _plan(repo=tmp_path)
+    runner = Runner(queue=_provisioning_queue())
+    journal = Journal()
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        merged=_merged(),
+    )
+
+    stages = [record["stage"] for record in journal.records]
+    assert (outcome.status, outcome.stage) == ("green", "done")
+    assert "janitor-post-merge" in stages
+    assert "janitor-post-merge-cluster" not in stages
+    assert tuple(runner.calls[_GATE_CALL_INDEX][0]) == plan.janitor
 
 
 def test_post_merge_degraded_detail_truncates_long_checkout_error(tmp_path: Path) -> None:

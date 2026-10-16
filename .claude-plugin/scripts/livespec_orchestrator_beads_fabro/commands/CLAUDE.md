@@ -997,6 +997,34 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   while silence would read as a reading that was taken and succeeded. Do NOT
   turn that last one into a configurable exemption — the discriminator is the
   structural absence of a server to ask.
+- `_dispatcher_janitor_cluster.py` — WHICH MACHINE the post-merge janitor's
+  check suite runs on, selected by `dispatcher.janitor_gate_venue`
+  (`host_process` / `cluster_job`). Orthogonal to `_dispatcher_janitor_venue`,
+  which answers which REF the fresh checkout is made at. The cluster mechanism
+  is the delegated pre-push gate livespec-dev-tooling ships, REUSED rather than
+  re-implemented, pointed at the janitor checkout. Four properties an editor
+  must not invert. The gate is INVOKED through its own entry point and never
+  imported, which is forced rather than preferred: this plugin declares no
+  runtime dependencies and a dispatch runs under the ambient `python3`, which
+  resolves nothing of that dev-group package — so an imported gate would reach
+  no cluster from any real dispatch while passing every unit test. The verdict
+  is read from the gate's own structured `state`/`detail` line and NEVER from
+  the exit code, because a PASSED gate whose push-specific green token could
+  not be written exits non-zero and that token is a fact about a push this
+  janitor is not making. EVERY non-pass is red, including every way the cluster
+  can say nothing: the host-local path's `janitor-env-degraded` outcome is green
+  because what failed there was host provisioning after a confirmed merge, and
+  that shape must never reach this one — a merge the cluster did not gate has
+  not been gated, so an unreadable credential, a refused mirror push, a Job that
+  reached no terminal condition and an entry point that could not be invoked all
+  land on the same red naming the missing verdict. And OFF is the strict path:
+  only the literal `cluster_job` delegates, so an absent key, an unknown value,
+  a wrong type and an unparseable `.livespec.jsonc` all keep the host-local
+  suite — the direction whose cost is one locally-run aggregate rather than
+  every merge of an unconfigured repository turning red. One LIMITATION bounds
+  who may select the cluster: the shared client resolves the gated commit
+  range's base from a constant naming this fleet's default branch, so an adopter
+  whose default branch differs would get a gate about a range it does not use.
 - `_plan_completeness_identity.py` — the identity each party to the plan
   archive's completeness leg is computed under, through the SAME primitive the
   proof-record surfaces publish under (`_dispatcher_proof_identity`). ONE

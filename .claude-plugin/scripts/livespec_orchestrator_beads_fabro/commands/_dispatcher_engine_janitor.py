@@ -14,6 +14,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_install_recipe 
     JanitorBootstrapRecipe,
     resolve_janitor_bootstrap_recipe,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_cluster import (
+    cluster_janitor_red,
+    janitor_runs_on_cluster,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_degraded import (
     DegradedStep,
     degraded_step,
@@ -120,34 +124,15 @@ def _post_merge_locked(
     )
     if degraded is not None:
         return degraded
-    janitor = run_stage(
+    red = _janitor_gate(
+        outcome_type=outcome_type,
+        plan=plan,
         runner=runner,
         journal=journal,
-        plan=plan,
-        stage="janitor-post-merge",
-        command=(
-            list(plan.janitor),
-            plan.janitor_checkout,
-            _JANITOR_TIMEOUT_SECONDS,
-            {CORE_PLUGIN_ROOT_ENV_VAR: str(plan.janitor_core_checkout / ".claude-plugin")},
-        ),
-        # The check suite is the command whose red the retention clause exists
-        # for: its excerpt names the suite, and the failing target it reports
-        # is on the stream the excerpt did not keep.
-        journal_options=StageJournalOptions(retention=plan.janitor_retention),
+        merged=merged,
     )
-    if janitor.exit_code != 0:
-        return outcome_type(
-            work_item_id=plan.work_item_id,
-            status="failed",
-            stage="janitor-post-merge",
-            pr_number=merged.number,
-            merge_sha=merged.merge_sha,
-            detail=(
-                f"post-merge janitor red in fresh checkout {plan.janitor_checkout} "
-                f"(kept for diagnosis): {tail(text=janitor.stderr)}"
-            ),
-        )
+    if red is not None:
+        return red
     cleanup = run_stage(
         runner=runner,
         journal=journal,
@@ -171,4 +156,81 @@ def _post_merge_locked(
         pr_number=merged.number,
         merge_sha=merged.merge_sha,
         detail="merged, post-merge janitor green",
+    )
+
+
+def _janitor_gate(
+    *,
+    outcome_type: type[DispatchOutcome],
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    journal: JournalWriter,
+    merged: PrView,
+) -> DispatchOutcome | None:
+    """Gate the provisioned checkout, at the venue the repository selected.
+
+    The branch is taken HERE rather than inside either venue, because the venue
+    is the whole difference between the two: both are handed the same fresh
+    checkout and both answer the same question, and `None` from either means
+    the merged tree passed and the flow may go on to remove the checkout.
+
+    The venue is read from the target repository, which `pull-primary` has just
+    refreshed to the merged default-branch tip -- so the setting a merge is
+    gated under is the one the merged tree itself carries, rather than whatever
+    this host happened to have on disk when the dispatch started.
+    """
+    if janitor_runs_on_cluster(cwd=plan.repo):
+        return cluster_janitor_red(
+            outcome_type=outcome_type,
+            plan=plan,
+            runner=runner,
+            journal=journal,
+            merged=merged,
+        )
+    return _host_process_janitor_red(
+        outcome_type=outcome_type,
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        merged=merged,
+    )
+
+
+def _host_process_janitor_red(
+    *,
+    outcome_type: type[DispatchOutcome],
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    journal: JournalWriter,
+    merged: PrView,
+) -> DispatchOutcome | None:
+    """Run the resolved check suite as a process on this host; `None` if green."""
+    janitor = run_stage(
+        runner=runner,
+        journal=journal,
+        plan=plan,
+        stage="janitor-post-merge",
+        command=(
+            list(plan.janitor),
+            plan.janitor_checkout,
+            _JANITOR_TIMEOUT_SECONDS,
+            {CORE_PLUGIN_ROOT_ENV_VAR: str(plan.janitor_core_checkout / ".claude-plugin")},
+        ),
+        # The check suite is the command whose red the retention clause exists
+        # for: its excerpt names the suite, and the failing target it reports
+        # is on the stream the excerpt did not keep.
+        journal_options=StageJournalOptions(retention=plan.janitor_retention),
+    )
+    if janitor.exit_code == 0:
+        return None
+    return outcome_type(
+        work_item_id=plan.work_item_id,
+        status="failed",
+        stage="janitor-post-merge",
+        pr_number=merged.number,
+        merge_sha=merged.merge_sha,
+        detail=(
+            f"post-merge janitor red in fresh checkout {plan.janitor_checkout} "
+            f"(kept for diagnosis): {tail(text=janitor.stderr)}"
+        ),
     )

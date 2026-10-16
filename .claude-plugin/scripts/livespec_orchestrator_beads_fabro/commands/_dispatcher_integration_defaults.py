@@ -42,6 +42,7 @@ ban exists to catch, so they are spelled here.
 from __future__ import annotations
 
 __all__: list[str] = [
+    "CLUSTER_JANITOR_GATE_ARGV",
     "CONFORMANCE_HOOK_INSTALL_INTERNAL_ARGV",
     "CONFORMANCE_MODES",
     "CONFORMANCE_MODE_INTERNAL",
@@ -237,6 +238,33 @@ CONFORMANCE_VERIFY_PLUGIN_RESOLUTION_INTERNAL_ARGV: tuple[str, ...] = (
     "python",
     "-m",
     "livespec_dev_tooling.checks.plugin_resolution",
+)
+
+# The delegated CLUSTER GATE: this fleet's shared dev-tooling package, asked to
+# gate the tree in its working directory as a Job on the maintainer-owned
+# cluster. It is spelled here for exactly the reason the three invocations above
+# are -- it names that package, and this module is the one place in the
+# dispatcher package a fleet-toolchain name may be spelled.
+#
+# It is a FLEET NAME rather than a resolver answer, like the runner names and
+# this plugin's own release identity: no governed repository may declare an
+# alternative gate client, because the Job template, the mirror and the verdict
+# grammar it drives are the cluster's, not a per-repository integration point.
+# What a repository DOES declare is whether its janitor uses it at all --
+# `dispatcher.janitor_gate_venue`, read by `_dispatcher_janitor_cluster`.
+#
+# The gate is reached through its own `__main__` entry point rather than by
+# importing the package, and that is forced rather than preferred: this plugin
+# declares no runtime dependencies and ships its own vendored runtime, so the
+# interpreter a dispatch runs under resolves nothing of this package. An
+# invocation does resolve it, through the gated checkout's own environment.
+CLUSTER_JANITOR_GATE_ARGV: tuple[str, ...] = (
+    "uv",
+    "run",
+    "python",
+    "-m",
+    "livespec_dev_tooling.gate_remote_delegate",
+    "run",
 )
 
 # The closed value space of `dispatcher.merge_mode`, and the member default. A
