@@ -165,7 +165,9 @@ def test_the_ceiling_and_its_vendor_survive_the_terminal_and_reach_the_hold(
     outcome = _outcome(tmp_path=tmp_path, cause=cause)
     journal = _RecordingJournal()
 
-    record_provider_exhaustion_if_observed(outcome=outcome, journal=journal, now_iso=_NOW)
+    record_provider_exhaustion_if_observed(
+        outcome=outcome, journal=journal, journal_path=None, now_iso=_NOW
+    )
 
     assert outcome.provider_usage_limit is True
     assert outcome.provider_usage_limit_provider == provider
@@ -174,12 +176,17 @@ def test_the_ceiling_and_its_vendor_survive_the_terminal_and_reach_the_hold(
     assert outcome.fabro_failure_signature == _RECLASSIFIED_SIGNATURE
     assert outcome.fabro_failure_cause == cause
     # The consumer that turns the observation into the next dispatch's refusal.
+    # `credential_identity` is an explicit null here, because no journal was
+    # handed in and so no admission assessment could have named an account --
+    # the key is still written, so a reader can tell that from a record minted
+    # before accounts were named at all.
     assert journal.records == [
         {
             "at": _NOW,
             "stage": "provider-exhaustion-observed",
             "work_item_id": _ITEM,
             "provider": provider,
+            "credential_identity": None,
             "governing_condition": "provider_usage_limit",
             "record_expires_at": "2026-10-09T12:15:00Z",
         }

@@ -13,6 +13,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import (
     legacy_record_covers_dispatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_exhaustion_credential_identity import (
+    journaled_admission_credential_identity,
+)
 from livespec_orchestrator_beads_fabro.effects import parse_iso_datetime
 
 __all__: list[str] = [
@@ -76,12 +79,14 @@ class ProviderExhaustionRecord:
     governing_condition: str
     record_expires_at: str
     work_item_id: str
+    credential_identity: str | None = None
 
 
 def record_provider_exhaustion_if_observed(
     *,
     outcome: _Outcome,
     journal: _Journal,
+    journal_path: Path | None,
     now_iso: str,
 ) -> None:
     """Persist a short dispatcher-owned hold from a typed provider limit outcome.
@@ -90,6 +95,23 @@ def record_provider_exhaustion_if_observed(
     one. The outcome's provider field is the trigger as well as the label, so
     there is no second condition that could disagree with it and no path on
     which a record is written under a vendor nothing was measured against.
+
+    IT IS ALSO LABELLED WITH THE ACCOUNT, read from what this dispatch's own
+    admission session-headroom assessment journaled. `journal_path` is the
+    journal this disposition is APPENDING to rather than one re-derived from a
+    repository root, because `dispatcher.py` accepts a `--journal` override and
+    a second derivation cannot be proven to name the file the assessment was
+    written into -- the wrong-population reading that would silently label
+    every record with no account at all. It is a required parameter rather
+    than a defaulted one for the same reason: `None` is the honest answer for
+    a caller holding no journal, while a default would let a caller that
+    simply forgot to thread it through mint vendor-only records forever.
+
+    THE KEY IS WRITTEN EVEN WHEN THERE IS NO IDENTITY, null included, exactly
+    as the session-headroom reading writes its own nulls: an omitted key is
+    what a record from a build predating this clause looks like, so a reader
+    could not tell "this dispatch projected no account" from "this record was
+    minted before accounts were named".
     """
     provider = outcome.provider_usage_limit_provider
     if provider is None:
@@ -102,6 +124,9 @@ def record_provider_exhaustion_if_observed(
             "stage": _RECORD_STAGE,
             "work_item_id": outcome.work_item_id,
             "provider": provider,
+            "credential_identity": journaled_admission_credential_identity(
+                journal_path=journal_path, work_item_id=outcome.work_item_id
+            ),
             "governing_condition": _GOVERNING_CONDITION,
             "record_expires_at": expires_at,
         }
@@ -319,9 +344,15 @@ def _provider_record(*, record: dict[str, object]) -> ProviderExhaustionRecord:
     condition = record.get("governing_condition")
     expires_at = record.get("record_expires_at")
     work_item_id = record.get("work_item_id")
+    # A record minted before accounts were named carries no key at all, and one
+    # minted for a dispatch that projected none carries an explicit null. Both
+    # are the vendor-wide record the clause keeps effective, so both read as
+    # `None` rather than as a label matching nothing.
+    identity = record.get("credential_identity")
     return ProviderExhaustionRecord(
         provider=cast("str", provider),
         governing_condition=cast("str", condition),
         record_expires_at=cast("str", expires_at),
         work_item_id=cast("str", work_item_id),
+        credential_identity=identity if isinstance(identity, str) else None,
     )
