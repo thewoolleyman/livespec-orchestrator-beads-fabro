@@ -912,6 +912,24 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   here: it needs the credential wrapper, the shared Dolt server and the backup
   timer, so work-item `bd-ib-rxf` carries it as a HOST-CAPTURED assertion
   instead. This file never connects to a tenant.
+- `test_pre_push_deletion_only_scenario188.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 188 and `constraints.md` §"Pre-push
+  gate refinements": a push whose every ref update is a deletion (an all-zero
+  local object id on the pre-push hook's standard input) skips the green-token
+  probe and the `just check` aggregate, and every other input shape — a
+  create, an update, a deletion travelling beside one, and no input at all —
+  still runs the full gate. The subject is this repository's own committed
+  `dev-tooling/just-check-pre-push.sh`, `lefthook.yml` and `justfile` rather
+  than a fixture, which is what puts the case at this tier: the script is
+  executed as the SHIPPED BYTES with `uv` and `just` stubbed on `PATH`, so what
+  it INVOKES is the observable — the only thing that can tell a real skip from
+  a gate that ran and happened to pass. Three halves are asserted because any
+  one alone leaves the skip dead: the script's own branch, lefthook's
+  `use_stdin: true` (lefthook forwards a hook's standard input ONLY to a
+  command declaring it), and the recipe passing that input through. The
+  always-run `02-ledger-conformance` step is asserted to stay a separate
+  pre-push command the skip cannot reach. This file never connects to a tenant
+  and never pushes.
 
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
