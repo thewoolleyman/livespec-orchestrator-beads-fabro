@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.202.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.202.1...v0.202.2) (2026-10-16)
+
+
+### Bug Fixes
+
+* prune an orphaned declaration whose script carries a bracket ([4c86863](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4c868638132a50c5b3460d26664b7c49590b9389))
+* prune the edges a resumed run's orphaned nodes appear on ([1d46cdf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1d46cdf28c5054192bb276de3c738056c5e58b18))
+* prune the resumed run's orphaned nodes from its derived graph ([326aedd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/326aedd75a45014f9874ba66a98e2a2d2b8dccd9))
+
 ## [0.202.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.202.0...v0.202.1) (2026-10-16)
 
 
