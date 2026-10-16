@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.202.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.8...v0.202.0) (2026-10-16)
+
+
+### Features
+
+* **dispatcher:** bound a passed reevaluation instant to one pass, not a busy loop ([3a9c753](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3a9c753b2d91dc316104189c8ba4bd757797650b))
+* **dispatcher:** name the condition, node and reevaluation instant on a containment refusal ([950e8ba](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/950e8ba3f9907081ed5a5b483522481779aee678))
+* **dispatcher:** require an eligible candidate for every reachable ACP node ([a020e5c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a020e5c528e310e1fb3ae1fafd93c3c4c226b4df))
+* **dispatcher:** schedule the admission reevaluation an emptied chain waits for ([63010a9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/63010a9183b87b54d3efeb51ed7b83abc132f318))
+
 ## [0.201.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.7...v0.201.8) (2026-10-16)
 
 
