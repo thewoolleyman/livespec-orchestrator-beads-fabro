@@ -70,6 +70,7 @@ from datetime import datetime
 
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     SessionHeadroomReading,
+    headroom_skips_candidate,
 )
 from livespec_orchestrator_beads_fabro.effects import IsoDatetimeParseFailure, parse_iso_datetime
 
@@ -79,6 +80,7 @@ __all__: list[str] = [
     "SessionHeadroomBaseline",
     "SessionHeadroomPriorReading",
     "baseline_assessment",
+    "drain_rate_attempted",
     "parse_session_headroom_instant",
     "reading_with_drain_rate",
 ]
@@ -120,6 +122,34 @@ class SessionHeadroomBaseline:
     utilization_percent: float
     observed_at: str
     elapsed_hours: float
+
+
+def drain_rate_attempted(*, reading: SessionHeadroomReading, floor_percent: int) -> bool:
+    """Whether a drain rate is computed for this reading AT ALL.
+
+    The clause names three conditions under which no projection is attempted --
+    "the floor is 0, the reading was skipped by the floor, or the reading was
+    unobservable" -- and the last two collapse into `headroom_skips_candidate`,
+    which is exactly the predicate that decided the skip. Asking it rather than
+    re-deriving either condition is what keeps this from becoming a second
+    account of the filter: a reading whose remaining headroom sits below the
+    floor and a reading that failed to measure are the SAME skip there, and
+    they are the same not-attempted answer here.
+
+    THE FLOOR TEST CANNOT BE DELEGATED TO THAT PREDICATE, and the asymmetry is
+    the whole reason this is a separate function. A non-positive floor makes
+    `headroom_skips_candidate` answer `False` -- the dial disables every kind
+    of skip -- so a predicate written as "attempted unless skipped" would
+    attempt a projection on precisely the dial setting that switched the clause
+    off, which is the one setting with no admission question left to inform.
+
+    NOTHING HERE DECIDES AN ADMISSION OUTCOME. This answers whether a figure is
+    MEASURED, and the skip it reads was already decided by the filter; a
+    candidate's fate is unchanged by what this returns.
+    """
+    if floor_percent <= 0:
+        return False
+    return not headroom_skips_candidate(reading=reading, floor_percent=floor_percent)
 
 
 def baseline_assessment(
