@@ -337,6 +337,45 @@ def test_nodes_sharing_one_input_refuse_when_they_resolve_differently() -> None:
     assert "fix" in refusal
 
 
+def test_replacing_one_node_of_a_shared_input_refuses_rather_than_picking_a_winner() -> None:
+    """Per-node selection cannot split a shared workflow input either.
+
+    `resolution_with_adapters` re-renders the `--input` pairs so the submitted
+    graph carries the SELECTED candidate rather than the resolved primary, and
+    the same arithmetic applies: three nodes riding `acp_adapter` cannot be sent
+    two values. The refusal is asserted to name the input AND both disagreeing
+    nodes, because the remedy is to give each of them its own adapter input, and
+    a message naming only one of them leaves the operator to find the other.
+
+    The CONTROL is the same replacement applied to every node sharing that
+    input: it must succeed and must move the rendered pair, or this case would
+    pass against an implementation that refused every replacement.
+    """
+    layers = _module(name="_acp_node_layers")
+    adapters = _module(name="_acp_node_adapters")
+    shared = {
+        "acp_adapter": _WORKFLOW_DEFAULT,
+        "pr_adapter": _CLAUDE,
+        "review_adapter": _CLAUDE,
+        "disposition_adapter": _CLAUDE,
+    }
+    resolution = _resolve(workflow_inputs=shared)
+    chosen = adapters.AcpAdapter(command="fallback-acp", env={}, args=("--stdio",))
+
+    refusal = layers.resolution_with_adapters(resolution=resolution, adapters={"implement": chosen})
+    every = layers.resolution_with_adapters(
+        resolution=resolution,
+        adapters={node: chosen for node in ("implement", "fix", "review_fix")},
+    )
+
+    assert isinstance(refusal, str), refusal
+    assert "acp_adapter" in refusal
+    assert "implement" in refusal
+    assert "fix" in refusal
+    assert not isinstance(every, str), every
+    assert "acp_adapter=fallback-acp --stdio" in every.run_inputs
+
+
 def test_the_journal_record_names_the_supplying_layer_per_field() -> None:
     """The dispatch record answers "which layer supplied this" without re-deriving."""
     layers = _module(name="_acp_node_layers")

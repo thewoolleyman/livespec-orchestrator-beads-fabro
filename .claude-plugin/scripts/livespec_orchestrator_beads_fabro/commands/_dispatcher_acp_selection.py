@@ -74,10 +74,10 @@ def select_acp_node_adapters(
     selected = select_acp_candidates(chains=chains.chains, verdict=verdict)
     if isinstance(selected, str):
         return selected
-    return SelectedAcpNodes(
-        resolution=resolution_with_adapters(
-            resolution=resolution,
-            adapters={node: one.candidate.adapter for node, one in selected.items()},
-        ),
-        selected=selected,
+    rendered = resolution_with_adapters(
+        resolution=resolution,
+        adapters={node: one.candidate.adapter for node, one in selected.items()},
     )
+    if isinstance(rendered, str):
+        return rendered
+    return SelectedAcpNodes(resolution=rendered, selected=selected)
