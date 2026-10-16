@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.202.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.202.0...v0.202.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* find an exec-replaced pre-push hook at the publication limit ([e888ffe](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e888ffe1e4605ca20768ecf5ec27fe6482118a45))
+* name a repository hook that outlives its publication limit ([7b96b77](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7b96b776b74a06450e48ecabb8327d92aed3cef6))
+
 ## [0.202.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.8...v0.202.0) (2026-10-16)
 
 
