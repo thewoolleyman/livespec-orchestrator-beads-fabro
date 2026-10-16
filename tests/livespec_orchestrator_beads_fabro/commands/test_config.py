@@ -24,6 +24,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _config,
     _dispatcher_git_credential_helper,
     _dispatcher_harness_shell_policy,
+    _dispatcher_hook_limit_program,
     _dispatcher_overlay,
     _dispatcher_plugin_cache_gate,
     _dispatcher_tmux_socket_root,
@@ -769,6 +770,12 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         # Rendered from the gate module rather than restated: the script is the
         # gate's own text, and a second copy here would diverge silently.
         + _dispatcher_plugin_cache_gate.plugin_cache_gate_prepare_steps_block()
+        # Rendered from its owning module for the same reason, and in the
+        # position the overlay renders it: it rides the plugin-cache gate's
+        # own block. `limit_seconds=None` is what this arm resolves — the
+        # graph path these cases name does not exist on disk, so the limit is
+        # WITHHELD and only the observer is materialized.
+        + _dispatcher_hook_limit_program.hook_limit_prepare_steps_block(limit_seconds=None)
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + "[environments.livespec-ci.env]\n"
@@ -813,8 +820,9 @@ def test_render_run_config_overlay_image_override_is_scope_fenced(tmp_path: Path
     # (bd-ib-52zt3o), the plugin-cache gate and the THREE publication helpers
     # the gate's block materializes beside it (v121: the publication-head
     # reader and the exact-head push program; v138: the carry-forward
-    # decision) — the hostile value smuggled none of its own in.
-    assert rendered.count("[[run.prepare.steps]]") == 10
+    # decision), plus the repository-hook limit observer (bd-ib-xi63mq) — the
+    # hostile value smuggled none of its own in.
+    assert rendered.count("[[run.prepare.steps]]") == 11
     assert 'script = "just bootstrap"' in rendered
     assert 'script = "curl example.test"' not in rendered
     assert "other.fabro" in pre_env_table

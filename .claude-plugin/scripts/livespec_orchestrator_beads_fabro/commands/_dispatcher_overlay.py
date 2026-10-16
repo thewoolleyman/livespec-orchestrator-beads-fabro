@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth_projection import (
@@ -53,6 +53,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_credential_helpe
 from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy import (
     harness_settings_prepare_steps_block,
     harness_shell_env_lines,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program import (
+    hook_limit_prepare_steps_block,
+    resolve_publish_draft_limit,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_sandbox_image import (
     resolve_sandbox_image,
@@ -185,6 +189,8 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     codex_otel_config: str | None = None,
     sandbox_image: SandboxImageSource = COMMITTED_RUN_CONFIG_IMAGE,
     graph_override: Path | None = None,
+    graph_artifact: Path | None = None,
+    warn: Callable[[str], object] | None = None,
     prepare_inputs: Mapping[str, str] | None = None,
     dispatch_id: str | None = None,
     proof_store_env: str = "",
@@ -205,6 +211,27 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     literal durations — instead of the committed file. Absent (a direct
     caller that materialized no payload), the committed graph is absolutized
     exactly as before.
+
+    `graph_artifact` is WHERE that same graph can be READ, as distinct from
+    the name `graph_override` WRITES. The two differ for a package-era client:
+    `overlay_graph_reference` names the graph relative to the collected
+    package, because the engine refuses an absolute path in an inline file
+    reference — and a relative name means "beside the config the engine will
+    read", which is not a path this process can open. Reading the limit off
+    the written name therefore resolves it against the Dispatcher's own
+    working directory, where a repository's OWN `workflow.fabro` is waiting:
+    measured pre-fix, that read armed the push at a 900s decoy's duration
+    inside a 3600s stage, a bound no dispatch rendered and the node would then
+    have named as the limit that ended the push. So only an ABSOLUTE path is
+    read, and a reference this process cannot resolve withholds the figure
+    rather than resolving it against wherever it happens to be standing.
+
+    `warn` receives the ONE line a withheld figure writes. Withholding stays
+    correct — an invented bound would be enforced and then reported as the
+    limit that ended the push — but every step of the degradation is silent by
+    design (no figure, so no figures file, so the node's own guard pushes
+    unbounded), which is what let a bound that never armed look exactly like
+    one that did. A caller passing none keeps the pure-projection behaviour.
 
     `dispatch_id` is the PRE-LAUNCH id the sandbox declares as its
     factory-provenance marker. It is injected here rather than in the
@@ -289,7 +316,20 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     codex_env_lines = codex_auth_env_lines(codex_auth_snapshot=codex_auth_snapshot)
     codex_otel_steps = codex_otel_prepare_steps_block(codex_otel_config=codex_otel_config)
     codex_otel_env = codex_otel_env_lines(codex_otel_config=codex_otel_config)
-    plugin_cache_steps = plugin_cache_gate_prepare_steps_block()
+    # The hook-limit observer rides the SAME root as the plugin-cache gate's
+    # publication helpers, and its limit is read back off the very file this run
+    # will execute, whose `publish_draft` attribute carries the literal duration
+    # the engine will enforce. Reading the artifact is what keeps the bound the
+    # node puts on its own push and the bound the engine imposes from being two
+    # numbers nothing proves agree -- which is why it reads `graph_artifact`
+    # rather than `resolved_graph`: the latter is the NAME the config carries,
+    # and for a package-era client that name is relative to a directory this
+    # process is not standing in.
+    plugin_cache_steps = plugin_cache_gate_prepare_steps_block() + hook_limit_prepare_steps_block(
+        limit_seconds=resolve_publish_draft_limit(
+            graph_artifact=graph_artifact, written_graph=resolved_graph, warn=warn
+        )
+    )
     factory_provenance_steps = factory_run_id_prepare_steps_block(dispatch_id=dispatch_id)
     # Rendered FIRST among the Dispatcher-materialized steps, which puts it
     # immediately after the committed `git fetch --unshallow` whose single-branch

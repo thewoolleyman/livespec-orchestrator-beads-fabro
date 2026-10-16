@@ -342,6 +342,13 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # reached the parser are both None, so an explicit null would read as a
     # positive finding about a terminal nobody observed.
     "needs_human_reason",
+    # The hook-over-limit event, dropped on the same terms. The reason is the
+    # ATTRIBUTION one again, and at its sharpest: an explicit null here would
+    # read as "this run's hooks stayed inside their limits", which is a positive
+    # finding about an observation that is only ever taken inside `publish_draft`
+    # and is therefore absent from every other outcome for reasons that have
+    # nothing to do with hooks.
+    "hook_over_limit",
     "provider_usage_limit_provider",
     "remedy",
     "step",
