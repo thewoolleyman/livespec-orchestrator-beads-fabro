@@ -156,7 +156,7 @@ def live_provider_exhaustions(
     journal_path: Path | None,
     now_iso: str,
 ) -> tuple[ProviderExhaustionRecord, ...]:
-    """Every provider's newest unexpired record, newest observation first.
+    """Every (provider, account)'s newest unexpired record, newest first.
 
     WHICH PROVIDERS EXIST IS A FACT ABOUT THE JOURNAL, not about any list this
     build carries. A record naming a vendor nothing here anticipated is read
@@ -164,13 +164,23 @@ def live_provider_exhaustions(
     the observed failure and a reader enumerating names of its own can only
     report a plausible absence for the ones it never thought of.
 
+    THE ACCOUNT IS PART OF THE KEY, not a field hanging off a per-vendor
+    record: "Records are distinct per provider and credential identity: a newer
+    record for one identity neither supersedes nor retires a live record for
+    another." Keyed on the vendor alone, four runs meeting one account's
+    ceiling within six minutes each retired their predecessor, and a record
+    minted a minute later for a DIFFERENT account retired all of them -- while
+    every one of those accounts still held its own ceiling. An absent identity
+    is itself a key, so a provider-only record and an account-named record of
+    one vendor are two records.
+
     The walk is newest-first, so the operator's early clearance costs one
-    branch: a `provider-exhaustion-cleared` line met BEFORE any observation for
-    a provider means that provider's newest observation is already retired, and
-    nothing is held for it. Meeting it AFTER an unexpired observation is a
-    clearance an operator has since re-observed past, so it retires nothing.
-    An EXPIRED observation decides nothing either way and the walk continues
-    past it, which is what lets a provider's older live record still answer.
+    branch: a `provider-exhaustion-cleared` line met BEFORE any observation
+    means that observation is already retired, and nothing is held for it.
+    Meeting it AFTER an unexpired observation is a clearance an operator has
+    since re-observed past, so it retires nothing. An EXPIRED observation
+    decides nothing either way and the walk continues past it, which is what
+    lets an older live record for the same key still answer.
     """
     now = _parse_journal_iso(text=now_iso)
     if journal_path is None or not journal_path.is_file():
@@ -178,15 +188,15 @@ def live_provider_exhaustions(
     live: list[ProviderExhaustionRecord] = []
     decided: set[object] = set()
     for record in reversed(_records(text=journal_path.read_text(encoding="utf-8"))):
-        provider = record.get("provider")
-        if provider in decided:
+        key = (record.get("provider"), _record_identity(record=record))
+        if key in decided:
             continue
         if record.get("stage") == _CLEARED_STAGE:
-            decided.add(provider)
+            decided.add(key)
             continue
         parsed = _provider_record(record=record)
         if _parse_journal_iso(text=parsed.record_expires_at) > now:
-            decided.add(provider)
+            decided.add(key)
             live.append(parsed)
     return tuple(live)
 
@@ -366,15 +376,27 @@ def _provider_record(*, record: dict[str, object]) -> ProviderExhaustionRecord:
     condition = record.get("governing_condition")
     expires_at = record.get("record_expires_at")
     work_item_id = record.get("work_item_id")
-    # A record minted before accounts were named carries no key at all, and one
-    # minted for a dispatch that projected none carries an explicit null. Both
-    # are the vendor-wide record the clause keeps effective, so both read as
-    # `None` rather than as a label matching nothing.
-    identity = record.get("credential_identity")
     return ProviderExhaustionRecord(
         provider=cast("str", provider),
         governing_condition=cast("str", condition),
         record_expires_at=cast("str", expires_at),
         work_item_id=cast("str", work_item_id),
-        credential_identity=identity if isinstance(identity, str) else None,
+        credential_identity=_record_identity(record=record),
     )
+
+
+def _record_identity(*, record: dict[str, object]) -> str | None:
+    """The account one journal line names, or `None` when it names none.
+
+    ONE reader for both the parsed record and the liveness walk's key, because
+    the two must agree about what a record's account IS: a walk that computed
+    the key differently would file a record under one account and report it as
+    another, and every surface downstream reads the second.
+
+    A record minted before accounts were named carries no key at all, and one
+    minted for a dispatch that projected none carries an explicit null. Both
+    are the vendor-wide record the clause keeps effective, so both read as
+    `None` rather than as a label matching nothing.
+    """
+    identity = record.get("credential_identity")
+    return identity if isinstance(identity, str) else None
