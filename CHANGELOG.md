@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.201.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.3...v0.201.4) (2026-10-16)
+
+
+### Bug Fixes
+
+* journal the Codex credential gate it did not apply, naming the routing ([8f4622b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8f4622b6be2993e34f24dfa070020e33eec4f0e4))
+* launch each adapter unbounded when no Codex credential is projected ([a43c1e7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a43c1e74920da667737cf5a27a3c2fd330a25d2d))
+* route a built-in Codex adapter to Codex despite its digest key ([bd52508](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bd525089d6f93d2beabe8dff210b458deba08383))
+* scope the Codex credential gate to dispatches that route to Codex ([8027c21](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8027c21c9510bad351c05e8f31ead5ff77bff163))
+* scope the Codex telemetry projection to dispatches routing to Codex ([c218506](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c218506c231a19f88733032c959f88484c0000be))
+* scope the post-claim Codex overlay leg to dispatches routing to Codex ([86d50d5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/86d50d54b64ea5f26cd9d23dc696bb419d3ecaa7))
+* stop grading the Codex credential for an all-Claude dispatch ([10aa286](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/10aa286604e7377bd6c2e2fa4cca98ba0c755f31))
+
 ## [0.201.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.2...v0.201.3) (2026-10-16)
 
 
