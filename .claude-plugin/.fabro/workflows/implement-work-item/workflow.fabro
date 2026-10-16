@@ -583,7 +583,7 @@ digraph ImplementWorkItem {
     // on a non-numeric value, which an `if` reads as "below the bound", so the
     // natural coding of that comparison lets a corrupt counter refresh forever.
     //
-    // `max_visits=4` BELOW IS THE ENGINE-SIDE CUT, AND IT IS WHAT MAKES THE RUN
+    // `max_visits=8` BELOW IS THE ENGINE-SIDE CUT, AND IT IS WHAT MAKES THE RUN
     // BUDGETABLE AT ALL. The refresh loop — pr_refresh -> pr_refresh_head ->
     // proof_capture -> review -> proof_verify -> pr_refresh — is a NEW cycle that
     // passes through none of the nodes whose `max_visits` cut the pre-existing
