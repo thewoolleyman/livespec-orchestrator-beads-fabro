@@ -37,6 +37,20 @@ WHAT IS SIMULATED, AND WHY EACH SUBSTITUTION IS SAFE.
 THE SCRIPT BYTES ARE READ THROUGH THE CANONICAL PARSER, NEVER RETYPED, with
 `parse_dot_graph` — the same reader the Dispatcher's own graph consumers use.
 
+AND THEY ARE READ TWICE, BECAUSE THE TWO ENGINES DECODE THEM DIFFERENTLY
+(work-item bd-ib-m4cspa). `parse_dot_graph` models the PINNED reader, which
+drops the backslash from every escape it meets. A Petri-era reader decodes a
+DOT escString instead, where a backslash before a backslash or a double quote
+is an escape and every OTHER backslash travels on into the shell. A case
+rendered the pinned way alone therefore cannot see a quoting fault that only
+the strict reader produces, and that is exactly what hid the measured defect:
+on hp-candidate run 01M52P4NC0JV the arming rejection reached this stage's own
+diagnostic EMPTY, under `tr: extra operand`, while every case in this module
+passed. So the rendering is a PARAMETER of the cases that read the formatted
+rejection, and the property they assert is that ONE set of committed bytes
+formats it identically on the engine the factory runs today and on the one it
+is migrating to.
+
 THE ENCLOSING RUN'S STATE IS NEVER TOUCHED: every control builds its own
 throwaway origin and clone under `tmp_path`, and both stages resolve their state
 directory inside THAT clone's `$GIT_DIR`.
@@ -46,12 +60,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     VERDICT_CAPTURED,
@@ -86,12 +103,57 @@ _IMPLEMENT_GRAPH = (
 _BRANCH = "feat/bd-ib-3hpdvm"
 _DEFAULT_BRANCH = "master"
 _PR_NUMBER = 5184
+
+# The PINNED reader's unescape, restated here as the CROSS-CHECK that binds a
+# raw attribute value to the canonical parser's decoded one, never as an
+# independent model of it: `_raw_node_script` keeps the raw candidate whose
+# pinned decode EQUALS what `parse_dot_graph` returned, so a restatement that
+# drifted from the parser leaves no candidate and fails loudly rather than
+# rendering something else.
+_PINNED_UNESCAPE_RE = re.compile(r"\\(.)")
+
+# How the shipped graph declares a node's script: one attribute, on one line,
+# opened by this prefix and closed by the quote that ends the line.
+_SCRIPT_ATTRIBUTE_PREFIX = 'script="'
+
+# Where the escString decode parks a backslash it has already produced, so that
+# backslash cannot be re-read as the opener of the NEXT escape. A NUL can appear
+# in neither the graph text nor a shell script, which is what makes it safe.
+_DECODED_BACKSLASH = "\x00"
+
+# The two renderings, named so a failure reports which engine it modelled.
+_RENDERINGS = (
+    pytest.param(False, id="pinned-drops-every-escapes-backslash"),
+    pytest.param(True, id="petri-era-decodes-escstring-only"),
+)
 _OWNED_FILE = "owned.txt"
 _SHARED_FILE = "shared.txt"
 # The forge's own wording for the rejection this scenario is about. Carried as a
 # constant because two controls assert it reaches the diagnostic line VERBATIM,
 # which is the clause's own word.
 _REJECTION = "failed to merge: Pull request is not mergeable"
+
+# The forge's own wording for the rejection the measured defect LOST, carried
+# across TWO LINES because the newline is what the formatting has to flatten
+# and a single-line message cannot tell a working `tr` from a dead one. The
+# first line is what run 01M52E8Q9QZH printed before this line existed; the
+# apostrophe in it is deliberate, since a single quote inside the rejection is
+# the character a re-introduced backslash-quote formatting breaks on.
+_MULTILINE_REJECTION = (
+    "GraphQL: This branch can't be rebased (mergePullRequest)\n"
+    "failed to merge: Base branch was modified"
+)
+_FLATTENED_REJECTION = (
+    "GraphQL: This branch can't be rebased (mergePullRequest) "
+    "failed to merge: Base branch was modified"
+)
+
+# The two operands the formatting owes `tr`: the newline it translates, in the
+# two-character form the shell hands `tr`, and the space it translates that to.
+_TR_OPERANDS = ["\\n", " "]
+# What `tr` says when it is given a THIRD, which is the measured defect's own
+# first line of output.
+_TR_EXTRA_OPERAND = "extra operand"
 
 # The two state filenames this route adds, spelled here as the LITERALS the
 # shipped shell spells them with — a stage script cannot import a Python
@@ -219,6 +281,26 @@ sys.stderr.write("unstubbed gh invocation: %%s\n" %% " ".join(argv))
 sys.exit(2)
 """
 
+# A `tr` that RECORDS the operands it was handed and then delegates to the real
+# one, so "exactly two operands" is MEASURED rather than inferred from the
+# formatted output. It changes nothing the stage computes: a wrong operand count
+# still reaches the genuine `tr` and still fails there exactly as it did before,
+# which is what keeps every other case in this module reading the real thing.
+_TR_RECORDER = """#!%(python)s
+import json, os, sys
+
+with open(os.environ["LIVESPEC_TR_OPERANDS"], "a") as handle:
+    _ = handle.write(json.dumps(sys.argv[1:]) + "\\n")
+os.execv(%(tr)r, ["tr", *sys.argv[1:]])
+"""
+
+
+def _real_tr() -> str:
+    """The genuine `tr`, resolved BEFORE a fixture's bin directory shadows it."""
+    found = shutil.which("tr")
+    assert found is not None, "no tr on PATH, so the recorder has nothing to delegate to"
+    return found
+
 
 def _fixture_git_env() -> dict[str, str]:
     """The fixture environment, coverage-scrubbed, with an explicit git identity."""
@@ -250,16 +332,68 @@ def _commit(*, cwd: Path, path: str, text: str, subject: str) -> str:
     return _git("rev-parse", "HEAD", cwd=cwd).stdout.strip()
 
 
-def _node_script(*, node: str) -> str:
-    """One shipped node's script, with only the engine's own tokens bound."""
+def _declared_script(*, node: str) -> str:
+    """One shipped node's `script` attribute, read through the canonical parser."""
     graph = parse_dot_graph(text=_IMPLEMENT_GRAPH.read_text(encoding="utf-8"))
     assert not isinstance(graph, str), graph
-    script = graph.nodes[node]["script"]
+    return graph.nodes[node]["script"]
+
+
+def _bind_engine_tokens(*, script: str) -> str:
+    """Bind the engine's OWN tokens, to the values `workflow.toml` declares."""
     return (
         script.replace("{{ inputs.merge_mode }}", "rebase")
         .replace("{{ inputs.merge_hold }}", "false")
         .replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH)
     )
+
+
+def _node_script(*, node: str) -> str:
+    """One shipped node's script, with only the engine's own tokens bound."""
+    return _bind_engine_tokens(script=_declared_script(node=node))
+
+
+def _raw_node_script(*, node: str) -> str:
+    """One node's `script` value as the FILE carries it, its escapes UNDECODED.
+
+    Attributed by DECODE rather than by position: the candidate kept is the one
+    whose pinned decode equals what `parse_dot_graph` returned for this node, so
+    a line read that missed the value, or sliced it wrongly, leaves no candidate
+    and fails here instead of quietly rendering something else.
+    """
+    text = _IMPLEMENT_GRAPH.read_text(encoding="utf-8")
+    declared = _declared_script(node=node)
+    candidates = [
+        raw
+        for raw in (
+            line.strip()[len(_SCRIPT_ATTRIBUTE_PREFIX) : -1]
+            for line in text.splitlines()
+            if line.strip().startswith(_SCRIPT_ATTRIBUTE_PREFIX)
+        )
+        if _PINNED_UNESCAPE_RE.sub(r"\1", raw) == declared
+    ]
+    assert len(candidates) == 1, f"{node}: {len(candidates)} raw script candidates, expected 1"
+    return candidates[0]
+
+
+def _petri_node_script(*, node: str) -> str:
+    """One shipped node's script as a PETRI-ERA engine renders it.
+
+    The raw value is decoded as a DOT escString — a backslash before a backslash
+    or a double quote, and nothing else — so every other backslash reaches the
+    shell exactly as the candidate engine delivers it.
+    """
+    raw = _raw_node_script(node=node)
+    return _bind_engine_tokens(
+        script=raw.replace("\\\\", _DECODED_BACKSLASH)
+        .replace('\\"', '"')
+        .replace(_DECODED_BACKSLASH, "\\")
+    )
+
+
+def _rendered_pr_script(*, petri: bool) -> str:
+    """The `pr` node's script as the engine under test renders it."""
+    return _petri_node_script(node="pr") if petri else _node_script(node="pr")
 
 
 def _record(*, verdict: str, head: str) -> dict[str, str]:
@@ -281,6 +415,17 @@ class _Route:
     plugins_root: Path
     forge_state: Path
     bin_dir: Path
+    tr_record: Path
+
+    def tr_operands(self) -> list[list[str]]:
+        """Every `tr` argv the stage issued, in order, as the recorder saw it.
+
+        The record file is created EMPTY by `_build`, so an arm that formats no
+        rejection reads an empty list through the same accessor rather than
+        through a branch no case here takes.
+        """
+        lines = self.tr_record.read_text(encoding="utf-8").splitlines()
+        return [cast("list[str]", json.loads(line)) for line in lines]
 
     def state_dir(self) -> Path:
         return self.clone / ".git" / PUBLICATION_STATE_GIT_PATH
@@ -343,6 +488,11 @@ def _build(
     stub = bin_dir / "gh"
     _ = stub.write_text(_GH_STUB % {"python": sys.executable}, encoding="utf-8")
     stub.chmod(0o755)
+    recorder = bin_dir / "tr"
+    _ = recorder.write_text(
+        _TR_RECORDER % {"python": sys.executable, "tr": _real_tr()}, encoding="utf-8"
+    )
+    recorder.chmod(0o755)
 
     plugins_root = root / "plugins"
     _ = plugins_root.mkdir()
@@ -356,7 +506,9 @@ def _build(
         plugins_root=plugins_root,
         forge_state=root / "forge.json",
         bin_dir=bin_dir,
+        tr_record=root / "tr-operands.jsonl",
     )
+    _ = box.tr_record.write_text("", encoding="utf-8")
     box.state_dir().mkdir(parents=True)
     _ = (box.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(head, encoding="utf-8")
     _ = box.forge_state.write_text(
@@ -413,21 +565,27 @@ def _env(*, box: _Route) -> dict[str, str]:
         "PATH": f"{box.bin_dir}:/usr/local/bin:/usr/bin:/bin",
         "HOME": str(box.clone.parent / "home"),
         "LIVESPEC_FAKE_FORGE": str(box.forge_state),
+        "LIVESPEC_TR_OPERANDS": str(box.tr_record),
         "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
         "LIVESPEC_PR_TITLE": "feat: a scripted publication",
         SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(box.plugins_root),
     }
 
 
-def _run(*, box: _Route, node: str) -> subprocess.CompletedProcess[str]:
+def _run_rendered(*, box: _Route, script: str) -> subprocess.CompletedProcess[str]:
+    """Run one already-rendered stage script in this control's own clone."""
     return subprocess.run(
-        ["bash", "-c", _node_script(node=node)],
+        ["bash", "-c", script],
         cwd=box.clone,
         capture_output=True,
         text=True,
         check=False,
         env=_env(box=box),
     )
+
+
+def _run(*, box: _Route, node: str) -> subprocess.CompletedProcess[str]:
+    return _run_rendered(box=box, script=_node_script(node=node))
 
 
 def _diagnostic(*, stderr: str) -> str:
@@ -640,3 +798,37 @@ def test_a_marker_left_by_an_earlier_pr_visit_can_never_route_a_later_one(
     assert route.returncode == 0, route.stderr
     assert "LIVESPEC_PR_ROUTE_STALE_MARKER" in route.stderr
     assert box.state(name=_ROUTE_MARKER_FILENAME) is None
+
+
+@pytest.mark.parametrize("petri", _RENDERINGS)
+def test_the_arming_rejection_is_flattened_by_two_tr_operands_on_both_renderings(
+    *,
+    petri: bool,
+    tmp_path: Path,
+) -> None:
+    """The formatting hands `tr` two operands, so the forge's text survives.
+
+    THE PETRI LEG IS THE ONE THAT WAS FAILING, and it failed in the direction
+    that reads as an UNEXPLAINED forge refusal rather than as a quoting bug: the
+    stage still exited 1 under its own fail-closed sentinel, still printed all
+    seven measurements, and named the one field an operator would act on as
+    EMPTY. So the operand count is measured off the recorder rather than
+    inferred, and the flattened text is asserted beside it — a line carrying the
+    rejection proves nothing about the count, and a count proves nothing about
+    what the line ended up carrying.
+
+    `tr: extra operand` is asserted ABSENT because that string is the whole of
+    what the measured defect emitted before the empty field, and the pinned leg
+    is the control: the same bytes behave this way on the engine the factory runs
+    today, which is what makes one committed formatting enough for both.
+    """
+    box = _build(root=tmp_path, reject_merge=_MULTILINE_REJECTION)
+
+    pr = _run_rendered(box=box, script=_rendered_pr_script(petri=petri))
+
+    assert pr.returncode == 1, pr.stdout
+    assert "LIVESPEC_PR_ARM_FAILED" in pr.stderr
+    assert _TR_EXTRA_OPERAND not in pr.stderr
+    assert box.tr_operands() == [_TR_OPERANDS]
+    line = _diagnostic(stderr=pr.stderr)
+    assert f"forge rejection: {_FLATTENED_REJECTION} |" in line
