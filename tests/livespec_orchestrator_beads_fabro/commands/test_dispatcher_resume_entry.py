@@ -12,18 +12,29 @@ variant, is never selectable by the variant precedence, and is never recorded as
 the item's workflow."
 
 THIS MODULE IS THAT DERIVATION, and the two halves it owns are the two ways the
-entry can be wrong. The graph rewrite moves the `start` edge, which is what makes
-`dod_gate` and `implement` unreachable rather than merely unvisited; the prepare
-step puts the sandbox clone on the published head, which is what makes the stage
-it enters at operate on the tree the records describe.
+entry can be wrong. The graph rewrite moves the `start` edge and PRUNES what that
+move orphans, which is what makes `dod_gate` and `implement` absent rather than
+merely unvisited; the prepare step puts the sandbox clone on the published head,
+which is what makes the stage it enters at operate on the tree the records
+describe.
 
-WHY THE REWRITE IS ASSERTED TO MOVE THE `start` EDGE AND NOT TO DELETE NODES. A
-derivation that deleted `dod_gate` and `implement` would satisfy "no visit" and
-break every edge pointing at them — `implement -> needs_human`,
-`implementation_diff -> dead_implementer` — so the graph would stop validating.
-Moving the one edge leaves every node declared and simply unreachable from
-`start`, which is the minimum change that makes the clause's "no such visit" a
-property of the graph rather than a hope about the engine.
+WHY THE REWRITE IS ASSERTED TO PRUNE THE ORPHANED NODES AND NOT MERELY TO LEAVE
+THEM DECLARED. Moving the one edge and leaving every node declared was the
+earlier shape here, and it was accepted by the pinned 0.254 engine. The Petri-era
+engine's graph validator REJECTS it: measured 2026-10-15T23:36Z against the
+hp-candidate server, a `resume --item` died at run-create with
+`attractor.unreachable_node: dod_gate is not reachable from the start node`, and
+three further nodes named the same way, so no run was ever created. A declared
+node with no route from `start` is therefore not a harmless leftover, and these
+cases assert the derived graph declares none — the clause's "no such visit"
+becomes a property of the graph on BOTH engines rather than a hope about either.
+
+WHY THE COMMITTED GRAPH IS THE SUBJECT OF THAT CASE. The derivation is asserted
+against `.claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro`
+itself, read with `parse_dot_graph` rather than with the derivation's own
+patterns: the four nodes the engine named are reachable only through that graph's
+real edge set, and a hand-authored fixture carrying a tidier shape cannot fail
+for the reason the live dispatch did.
 
 WHY AN UNDECLARED NODE REFUSES. The resumed-at stage can arrive from a factory
 run record, which names whatever node that engine was executing — including a
@@ -52,6 +63,8 @@ import importlib
 from pathlib import Path
 from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
+
 _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry"
 _MODULE_PATH = Path(
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_resume_entry.py"
@@ -59,6 +72,19 @@ _MODULE_PATH = Path(
 
 _HEAD = "a" * 40
 _BRANCH = "feat/bd-ib-fngpwg"
+
+_IMPLEMENT_GRAPH = Path(".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro")
+# The stages a resume actually enters at: `pr_refresh` is what an earlier `pr`
+# normalizes to, and the other three are the post-implement stages a run that
+# died after publishing reports. Each is exercised because the orphaned set
+# differs per entry, and a single stage would prove the prune for one shape only.
+_RESUMED_AT_STAGES = (
+    "publish_draft",
+    "proof_capture",
+    "proof_verify",
+    "pr_refresh",
+)
+_START_NODE = "start"
 
 _GRAPH = """digraph ImplementWorkItem {
     graph [
@@ -95,23 +121,60 @@ def _entry_module() -> Any:
     return importlib.import_module(_MODULE_NAME)
 
 
+def _reachable(*, graph: Any) -> set[str]:
+    """Every name a walk from `start` arrives at, over the PARSED edge set.
+
+    Walked here rather than asked of the derivation, so the case is a second
+    instrument and not the derivation's own answer read back: a prune computed
+    from an edge set a scan had under-read would agree with itself exactly.
+    """
+    reached = {_START_NODE}
+    frontier = [_START_NODE]
+    while frontier:
+        source = frontier.pop()
+        for edge in graph.edges:
+            if edge.source == source and edge.destination not in reached:
+                reached.add(edge.destination)
+                frontier.append(edge.destination)
+    return reached
+
+
 def test_the_start_edge_is_moved_to_the_resumed_at_node() -> None:
-    """`start -> dod_gate` becomes `start -> pr`, and nothing else moves."""
+    """`start -> dod_gate` becomes `start -> pr`, and the resumed node survives."""
     module = _entry_module()
     derived = module.graph_entered_at(graph_text=_GRAPH, node="pr")
     assert derived is not None
     assert "start -> pr" in derived
     assert "start -> dod_gate" not in derived
-    assert "dod_gate -> implement" in derived
+    assert "pr [" in derived
 
 
-def test_every_node_stays_declared_so_the_graph_still_validates() -> None:
-    """Unreachable, never deleted: a deleted node breaks the edges pointing at it."""
+def test_the_orphaned_declarations_are_pruned_rather_than_left_unreachable() -> None:
+    """A node with no route from `start` is what the Petri-era validator rejects."""
     module = _entry_module()
     derived = module.graph_entered_at(graph_text=_GRAPH, node="pr")
     assert derived is not None
-    for declaration in ("dod_gate [", "implement [", "pr ["):
-        assert declaration in derived
+    for declaration in ("dod_gate [", "implement ["):
+        assert declaration not in derived
+
+
+def test_the_committed_graph_derives_with_no_unreachable_declared_node() -> None:
+    """Every stage a real resume enters at, read back with the shared parser."""
+    module = _entry_module()
+    committed = _IMPLEMENT_GRAPH.read_text(encoding="utf-8")
+    for node in _RESUMED_AT_STAGES:
+        derived = module.graph_entered_at(graph_text=committed, node=node)
+        assert derived is not None, node
+        graph = parse_dot_graph(text=derived)
+        assert not isinstance(graph, str), graph
+        assert _reachable(graph=graph) == set(graph.nodes), node
+
+
+def test_a_graph_the_shared_parser_refuses_is_not_derived_from() -> None:
+    """A graph nobody can read is a refusal, not a text edit taken on faith."""
+    module = _entry_module()
+    unreadable = _GRAPH.replace("    pr [", "    subgraph cluster_pr {}\n    pr [")
+    assert module.graph_entered_at(graph_text=unreadable, node="pr") is None
 
 
 def test_a_node_the_workflow_does_not_declare_refuses() -> None:

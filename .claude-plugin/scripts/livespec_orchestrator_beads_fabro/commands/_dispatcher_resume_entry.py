@@ -17,13 +17,29 @@ neither: entering at `pr` on the default branch publishes nothing the records
 describe, and checking out the published head while entering at `dod_gate` spends
 a whole sandbox re-implementing work that is already on the branch.
 
-WHY THE REWRITE MOVES THE `start` EDGE RATHER THAN DELETING NODES. Deleting
-`dod_gate` and `implement` would satisfy "no visit" and break every edge pointing
-at them — `implement -> needs_human`, `implementation_diff -> dead_implementer` —
-so the graph would stop validating and the dispatch would die at run-create with
-an error about a graph the operator never wrote. Moving the one edge leaves every
-node declared and simply UNREACHABLE from `start`, which makes the clause's "no
-such visit" a property of the graph rather than a hope about the engine.
+WHY THE REWRITE PRUNES WHAT THE MOVED EDGE ORPHANS. Moving the `start` edge and
+leaving every node declared was the earlier shape, and it was accepted by the
+pinned 0.254 engine. The Petri-era engine's graph validator REJECTS a declared
+node with no route from the start node: measured 2026-10-15T23:36Z against the
+hp-candidate server, a `resume --item` died at run-create with
+`attractor.unreachable_node: dod_gate is not reachable from the start node`, and
+three further nodes named the same way, so no run was ever created and the item
+went back to `ready`. The move is therefore paired with a PRUNE of every node the
+move orphans, which makes the clause's "no such visit" a property of the graph on
+both engines rather than a hope about either.
+
+WHY THE REACHABLE SET IS COMPUTED BY THE SHARED PARSER AND NOT BY A SCAN. This is
+the derivation `_dispatcher_dot_graph`'s own docstring warns about: an edge a
+line-anchored pattern fails to see makes the reachable set SMALLER, and a smaller
+reachable set PRUNES A LIVE NODE — a graph that is not merely unvalidated but
+wrong, with nothing announcing the omission. So the node and edge sets come from
+`parse_dot_graph`, which tokenizes the grammar, and a graph that parser REFUSES
+refuses the derivation too rather than being edited on faith.
+
+The text edit itself is still a span splice, because the derived graph must be the
+committed graph MINUS what the prune removes — every surviving node keeps its own
+attributes and its own comments, which a re-render from the parsed form would
+discard.
 
 WHY AN UNDECLARED NODE REFUSES HERE. The resumed-at stage can come from a factory
 run record, which names whatever node THAT engine was executing — possibly a node
@@ -49,6 +65,11 @@ import re
 import shlex
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import (
+    DotGraph,
+    parse_dot_graph,
+)
+
 __all__: list[str] = [
     "RESUME_ENTRY_NODE_ARG",
     "RESUME_HEAD_ARG",
@@ -73,13 +94,20 @@ RESUME_HEAD_ARG = "resume_head"
 # `start` edge is a graph that could never have run.
 _START_EDGE = re.compile(r"(?m)^(?P<indent>[ \t]*)start[ \t]*->[ \t]*(?P<target>\w+)[ \t]*$")
 
-# A node DECLARATION: a bare name at line start followed directly by its
-# attribute bracket. The same shape `_dispatcher_graph_render` matches, and for
-# the same reason — an edge line never matches, because the name must be followed
-# by the bracket with nothing between.
-_NODE_DECLARATION = r"(?m)^[ \t]*{name}[ \t]*\["
+# A node DECLARATION and its whole attribute body: a bare name at line start
+# followed directly by its attribute bracket. The same shape
+# `_dispatcher_graph_render` matches, and for the same reason — an edge line never
+# matches, because the name must be followed by the bracket with nothing between.
+# Used only to LOCATE the span of a node the parser has already decided to prune,
+# never to decide whether a node exists.
+_NODE_DECLARATION = r"(?ms)^[ \t]*{name}[ \t]*\[[^\]]*\]"
 
 _NODE_NAME = re.compile(r"^\w+$")
+
+# The graph's own start node, which is never a prune candidate: it is the root the
+# reachability walk starts from, so asking whether it is reachable from itself is
+# not a question the derivation has.
+_START_NODE = "start"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -100,21 +128,79 @@ class ResumeCheckout:
 def graph_entered_at(*, graph_text: str, node: str) -> str | None:
     """The one run's derived graph, entered at `node`, or `None` when it cannot be.
 
-    `None` for three conditions, each of which would otherwise produce a graph
+    `None` for four conditions, each of which would otherwise produce a graph
     that fails at run-create time rather than a refusal an operator can read: a
-    node this workflow does not declare, a node name that is not a bare
-    identifier (so it could never be one), and a graph carrying no unconditional
-    `start` edge to move.
+    node name that is not a bare identifier (so it could never be one), a graph
+    the shared parser refuses, a node this workflow does not declare, and a graph
+    carrying no unconditional `start` edge to move.
     """
     if _NODE_NAME.match(node) is None:
         return None
-    if re.search(_NODE_DECLARATION.format(name=re.escape(node)), graph_text) is None:
+    graph = parse_dot_graph(text=graph_text)
+    if isinstance(graph, str) or node not in graph.nodes:
         return None
     edge = _START_EDGE.search(graph_text)
     if edge is None:
         return None
-    replacement = f"{edge.group('indent')}start -> {node}"
-    return graph_text[: edge.start()] + replacement + graph_text[edge.end() :]
+    orphaned = _orphaned_by_entering(graph=graph, entry=node)
+    return _spliced(
+        text=graph_text,
+        edits=[
+            (edge.start(), edge.end(), f"{edge.group('indent')}start -> {node}"),
+            *_declaration_spans(graph_text=graph_text, names=orphaned),
+        ],
+    )
+
+
+def _orphaned_by_entering(*, graph: DotGraph, entry: str) -> frozenset[str]:
+    """Every declared node the moved `start` edge leaves with no route to it.
+
+    The walk runs from `entry` rather than from `start`, because `start`'s one
+    outgoing edge is the one being rewritten and the committed text still carries
+    its old destination. `start` itself is excluded from the result for the reason
+    the constant records.
+    """
+    reached = {entry}
+    frontier = [entry]
+    while frontier:
+        source = frontier.pop()
+        for edge in graph.edges:
+            if edge.source == source and edge.destination not in reached:
+                reached.add(edge.destination)
+                frontier.append(edge.destination)
+    return frozenset(graph.nodes) - reached - {_START_NODE}
+
+
+def _declaration_spans(*, graph_text: str, names: frozenset[str]) -> list[tuple[int, int, str]]:
+    """A deletion edit for each declaration of each named node.
+
+    Each name is matched as a LITERAL, and every occurrence is taken rather than
+    the first: DOT lets a node be declared more than once, and the parser merges
+    those declarations into the one node this prune removes.
+    """
+    spans: list[tuple[int, int, str]] = []
+    for name in names:
+        pattern = _NODE_DECLARATION.format(name=re.escape(name))
+        spans.extend((found.start(), found.end(), "") for found in re.finditer(pattern, graph_text))
+    return spans
+
+
+def _spliced(*, text: str, edits: list[tuple[int, int, str]]) -> str:
+    """`text` with each `(start, end, replacement)` edit applied, in offset order.
+
+    Sorted here rather than at each caller because the edits are COLLECTED by
+    concern — the moved edge, then the orphaned declarations — and a splice walks
+    the text once, so the collection order and the offset order are different
+    things.
+    """
+    pieces: list[str] = []
+    cursor = 0
+    for start, end, replacement in sorted(edits):
+        pieces.append(text[cursor:start])
+        pieces.append(replacement)
+        cursor = end
+    pieces.append(text[cursor:])
+    return "".join(pieces)
 
 
 def resume_checkout_prepare_steps_block(*, checkout: ResumeCheckout | None) -> str:
