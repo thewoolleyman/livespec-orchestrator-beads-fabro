@@ -36,6 +36,12 @@ Inherited (verbatim, NOT re-stated here):
 - Vendored dependencies in `.claude-plugin/scripts/_vendor/`; no PyPI
   runtime dependencies.
 
+## Pre-push gate refinements
+
+This section refines the pre-push step ordering inherited from livespec; it adds no step and reorders none.
+
+**A deletion-only push skips the pre-push aggregate.** The repository's pre-push gate (`01-check-pre-push`, run through `just check-pre-push`) MUST read the ref updates git supplies on the hook's standard input, one per line as `<local ref> <local object id> <remote ref> <remote object id>`. When there is at least one line and every line's local object id consists only of zeros, the push only deletes refs: the gate MUST then exit zero without running the green-token check or the `just check` aggregate, and MUST print one line saying the gate was skipped because the push only deletes refs. Any other input, including no input at all and any push that creates or updates even one ref beside its deletions, MUST run the full gate exactly as before. The lefthook pre-push entry MUST pass the hook's standard input through to the gate. This skip MUST NOT be reachable by `--no-verify`, by an environment variable, or by any flag; the ref updates themselves are its only input. The repository's always-run ledger-conformance pre-push step (`02-ledger-conformance`) is a separate step this skip does not reach: it MUST still run on a deletion-only push, so the skip MUST live inside `just check-pre-push` and never at the lefthook level. Scenario 188 in `scenarios.md` exercises this section.
+
 ## Beads substrate constraints
 
 - The plugin reaches its tenant DB ONLY through the pinned `bd` CLI in
