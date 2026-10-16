@@ -164,6 +164,14 @@ _TR_EXTRA_OPERAND = "extra operand"
 _VISIT_COUNT_FILENAME = "livespec-pr-visit-count"
 _ROUTE_MARKER_FILENAME = "livespec-pr-refresh-route"
 
+# The jq program the merge-commit read owes `jq`: a BARE field path, carrying no
+# quote character of its own. A jq field path needs no quoting, and the quote
+# characters a backslash-escaped spelling leaves behind are a parse error rather
+# than a filter (work-item bd-ib-be5r7o).
+_MERGE_COMMIT_FIELD_PATH = ".mergeCommit.oid"
+# The `--json` field that read asks for, which is how the recorder attributes it.
+_MERGE_COMMIT_FIELD = "mergeCommit"
+
 # The coverage hooks an allowlisted spawn must scrub, so no child of this file
 # self-instruments and races the concurrent coverage run.
 _COVERAGE_ENV_PREFIXES = ("COVERAGE_PROCESS_START", "COV_CORE_")
@@ -188,6 +196,13 @@ _COVERAGE_ENV_PREFIXES = ("COVERAGE_PROCESS_START", "COV_CORE_")
 # a `pr merge` has been issued, which is the real shape of a forge that answered
 # the observation and then stopped answering: the arming is reached, rejected,
 # and the RE-READ is what cannot be taken.
+#
+# `merged_while_arming` is the race the ratified clause names: the forge rejects
+# the arming command AND the pull request is already MERGED when the stage
+# re-reads its state, which is the one arm that reaches the merge-commit read. It
+# cannot be arranged with `reject_merge` alone, because a pull request that is
+# MERGED before the stage runs takes the EARLIER already-merged branch and never
+# issues an arming at all.
 _GH_STUB = r"""#!%(python)s
 import json, os, sys
 
@@ -270,6 +285,9 @@ if verb == "merge":
         )
         sys.exit(1)
     if state["reject_merge"]:
+        if state["merged_while_arming"]:
+            state["state"] = "MERGED"
+            state["mergeCommit"] = state["merged_while_arming"]
         save(state)
         sys.stderr.write(state["reject_merge"] + "\n")
         sys.exit(1)
@@ -451,6 +469,23 @@ class _Route:
         recorded = cast("list[list[str]]", self.forge()["calls"])
         return [call for call in recorded if call[:2] == ["pr", "merge"]]
 
+    def view_argvs(self, *, field: str) -> list[list[str]]:
+        """Every `gh pr view --json <field>` argv the stage issued, in order.
+
+        Keyed on the `--json` field rather than on the `--jq` operand, because
+        the operand is the thing under assertion: a filter keyed on it would
+        return nothing for the very spelling a case exists to reject, and an
+        empty list reads as "the stage never asked" rather than as a finding.
+        """
+        recorded = cast("list[list[str]]", self.forge()["calls"])
+        return [
+            call
+            for call in recorded
+            if call[:2] == ["pr", "view"]
+            and "--json" in call
+            and call[call.index("--json") + 1] == field
+        ]
+
 
 def _build(
     *,
@@ -460,6 +495,7 @@ def _build(
     unreadable_fields: tuple[str, ...] = (),
     unreadable_after_merge: tuple[str, ...] = (),
     merge_state_status: str = "DIRTY",
+    merged_while_arming: str | None = None,
 ) -> _Route:
     """A real origin and clone whose publish head carries a conforming proof chain.
 
@@ -530,6 +566,7 @@ def _build(
                 "advance_head_to": "2" * 40,
                 "unreadable_fields": list(unreadable_fields),
                 "unreadable_after_merge": list(unreadable_after_merge),
+                "merged_while_arming": merged_while_arming,
                 "calls": [],
             }
         ),
@@ -832,3 +869,48 @@ def test_the_arming_rejection_is_flattened_by_two_tr_operands_on_both_renderings
     assert box.tr_operands() == [_TR_OPERANDS]
     line = _diagnostic(stderr=pr.stderr)
     assert f"forge rejection: {_FLATTENED_REJECTION} |" in line
+
+
+@pytest.mark.parametrize("petri", _RENDERINGS)
+def test_the_merge_commit_read_hands_jq_a_bare_field_path_on_both_renderings(
+    *,
+    petri: bool,
+    tmp_path: Path,
+) -> None:
+    """One committed spelling of the merge-commit read works on BOTH engines.
+
+    This is the `pr` node's half of the quoting family bd-ib-m4cspa opened and
+    bd-ib-be5r7o closed: a single quote written backslash-escaped inside the DOT
+    attribute string is not an escape, so the pinned reader drops the backslash
+    while a Petri-era reader hands it to the shell, where a backslashed quote is
+    a LITERAL quote character. `gh` forwards the `--jq` operand verbatim, so a
+    quote-wrapped field path reaches `jq` as a program beginning with a quote
+    token and jq refuses to parse it.
+
+    THE ARM UNDER TEST IS THE ONLY ONE THAT REACHES THIS READ, and it is the
+    merge-DETECTION arm: the arming command is rejected and the pull request
+    turns out to have merged while it was being issued, which is the outcome the
+    arming was for. A stage that cannot read the merge commit there reports no
+    `MERGE_LANDED` for a pull request that landed — so the run's own record loses
+    the sha of the merge it produced, on the one path where nothing downstream
+    can recover it.
+
+    The operand is read off the recorder rather than inferred from the outcome,
+    for the reason the sibling case in `test_scripted_refresh_execution` gives:
+    the forge double answers the field without consulting `--jq` at all, because
+    it holds no JSON document to filter, so the recorded operand is the only
+    instrument here that can tell the two spellings apart. The pinned leg is the
+    control.
+    """
+    landed = "3" * 40
+    box = _build(root=tmp_path, merged_while_arming=landed)
+
+    pr = _run_rendered(box=box, script=_rendered_pr_script(petri=petri))
+
+    assert pr.returncode == 0, pr.stderr
+    assert "LIVESPEC_PR_MERGED_WHILE_ARMING" in pr.stderr
+    assert f"MERGE_LANDED={landed}" in pr.stdout
+    reads = box.view_argvs(field=_MERGE_COMMIT_FIELD)
+    assert reads, "the stage read no merge commit"
+    argv = reads[-1]
+    assert argv[argv.index("--jq") + 1] == _MERGE_COMMIT_FIELD_PATH
