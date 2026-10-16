@@ -244,6 +244,7 @@ def test_a_disabled_floor_still_journals_the_reading_it_took(
             "remaining_percent": None,
             "unobservable": "timed-out",
             "observed_at": _NOW,
+            "five_hour_drain_percent_per_hour": None,
         }
     ]
     assert record["node_selections"]["implement"]["headroom_skipped"] == []

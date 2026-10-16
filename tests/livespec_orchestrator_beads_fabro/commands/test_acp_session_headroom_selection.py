@@ -201,6 +201,7 @@ def _reading_fields(*, utilization: float, remaining: float) -> dict[str, object
         "remaining_percent": remaining,
         "unobservable": None,
         "observed_at": _NOW,
+        "five_hour_drain_percent_per_hour": None,
     }
 
 
