@@ -45,18 +45,15 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import 
     SkippedCandidate,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
-from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
-    SessionHeadroomProjection,
-    SessionHeadroomReading,
-)
+from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import SessionHeadroomReading
 
 __all__: list[str] = [
     "SESSION_HEADROOM_STAGE",
     "headroom_refusal_fields",
     "session_headroom_assessment_record",
-    "session_headroom_projection_fields",
     "session_headroom_reading_fields",
     "session_headroom_selection_fields",
+    "session_headroom_skip_fields",
 ]
 
 # The journal stage one admission evaluation's headroom readings are recorded
@@ -108,27 +105,33 @@ def session_headroom_selection_fields(*, node: NodePreflight) -> dict[str, objec
         "selected_availability_key": None if identity is None else identity.availability_key,
         "selected_candidate_key": None if identity is None else identity.candidate_key,
         "headroom_skipped": [
-            _skipped_fields(skip=skip) for skip in node.skipped if skip.reason == HEADROOM_SKIP
+            session_headroom_skip_fields(skip=skip)
+            for skip in node.skipped
+            if skip.reason == HEADROOM_SKIP
         ],
     }
 
 
-def _skipped_fields(*, skip: SkippedCandidate) -> dict[str, object]:
+def session_headroom_skip_fields(*, skip: SkippedCandidate) -> dict[str, object]:
     """One headroom-skipped candidate: who it was, what was read, and both dials.
 
-    THE KIND IS WHAT NAMES A PROJECTION SKIP AS A PROJECTION SKIP, which the
-    clause requires of this very surface. It is written beside BOTH dials rather
-    than instead of them: a reader asking why a candidate left the set needs the
-    kind to know which test fired and both dials to know what it fired against,
-    and the embedded reading carries the credential identity that joins the skip
-    to the assessment holding its projection.
+    PUBLIC because TWO surfaces must describe one skip identically -- the
+    containment refusal below, and the per-node selection record the ACP
+    fallback-priority clause of `SPECIFICATION/contracts.md` requires. That
+    clause requires both to name "governing floor and governing horizon", and a
+    second spelling of these keys is how one surface comes to report
+    `session_headroom_floor_percent` while the other reports `floor` and no
+    reader can join them.
+
+    The two DIALS are carried from the skip rather than resolved here, because a
+    projection that read the repository would report the configuration as it
+    stands at WRITE time against a skip taken at READ time.
     """
     return {
         "availability_key": skip.availability_key,
         "candidate_key": skip.candidate_key,
         "session_headroom_floor_percent": skip.headroom_floor_percent,
         "session_headroom_horizon_minutes": skip.headroom_horizon_minutes,
-        "headroom_skip_kind": skip.headroom_skip_kind,
         "headroom": (
             None
             if skip.headroom is None
@@ -138,79 +141,13 @@ def _skipped_fields(*, skip: SkippedCandidate) -> dict[str, object]:
 
 
 def session_headroom_reading_fields(*, reading: SessionHeadroomReading) -> dict[str, object]:
-    """One reading's six journaled facts, with nulls written rather than omitted.
-
-    THE LAST KEY IS A RATE AND NOT A LEVEL, and that is why it is here at all.
-    The five-hour REMAINING figure the floor decides on cannot see how fast the
-    window is emptying, and a dispatch keeps its dispatch-time credential to
-    the end of the run -- so a credential losing 15 points of its allowance
-    every half hour reads as ample headroom at the instant of admission and is
-    spent well before the run it admitted finishes.
-
-    IT IS WRITTEN ON EVERY READING, NULL INCLUDED, for the same reason the
-    original five are, and the reason bites harder here: the rate is not taken
-    at all on a reading the floor settled, so an omitted key would make "no
-    rate was measured" indistinguishable from "this build does not measure
-    rates". And the null is an explicit null rather than a zero, because 0.0 is
-    exactly what a credential nobody is spending measures at -- a coerced zero
-    would report a measurement nobody took to the one reader using the figure
-    to judge whether the floor is adequate.
-
-    THE LAST KEY IS THE ONE FACT THE PROVIDER ASSERTED RATHER THAN THE ONE THIS
-    BUILD MEASURED, and its name says so. The clause permits journaling "a reset
-    instant the response carries" as "an unverified provider claim" and forbids
-    it from changing the projection skip; nothing reads it, and a key spelled
-    `resets_at` would sit beside a measured drain rate with nothing to tell a
-    reader which of the two anybody checked.
-    """
+    """One reading's five journaled facts, with nulls written rather than omitted."""
     return {
         "credential_identity": reading.credential_identity,
         "utilization_percent": reading.utilization_percent,
         "remaining_percent": reading.remaining_percent,
         "unobservable": reading.unobservable,
         "observed_at": reading.observed_at,
-        "five_hour_drain_percent_per_hour": reading.five_hour_drain_percent_per_hour,
-        "projection": session_headroom_projection_fields(projection=reading.projection),
-        "unverified_provider_reset_claim": reading.provider_reset_claim,
-    }
-
-
-def session_headroom_projection_fields(
-    *, projection: SessionHeadroomProjection | None
-) -> dict[str, object] | None:
-    """The ONE projection result a reading carries, or an explicit null.
-
-    EXACTLY ONE RESULT, UNDER ONE KEY, which is the clause's own requirement:
-    "the journal record MUST additionally carry exactly one projection result".
-    Three parallel optional blocks -- a projected one, an unavailable one and a
-    not-projected one -- would let a record carry two, and a reader joining on
-    whichever it found first would report the wrong one with no way to notice.
-    So the result KIND is a field inside the single block, and the figures that
-    do not apply to that kind are written as nulls beside it.
-
-    A reading carrying NO projection renders an explicit `null` rather than a
-    fourth result value. That is a different claim from any of the three: it
-    says this reading was never projected AT ALL, which is what a record from a
-    build predating this clause looks like, and what a verdict composed with no
-    policy produces. Collapsing it onto `not-projected` would report the three
-    conditions the clause enumerates for a reading nothing assessed.
-
-    The drain rate appears BOTH here and as the reading's own sibling key, and
-    they cannot diverge because both are rendered from the one reading this
-    projection was taken from. The sibling key is what `bd-ib-rszkjc` shipped
-    and what the baseline reader joins on; the copy inside the block is what
-    makes the result self-contained for a reader grading one projection.
-    """
-    if projection is None:
-        return None
-    return {
-        "result": projection.result,
-        "reason": projection.reason,
-        "five_hour_drain_percent_per_hour": projection.five_hour_drain_percent_per_hour,
-        "baseline_observed_at": projection.baseline_observed_at,
-        "projected_exhaustion_at": projection.projected_exhaustion_at,
-        "session_headroom_horizon_minutes": projection.horizon_minutes,
-        "projection_skip_applied": projection.skip_applied,
     }
 
 
@@ -227,7 +164,7 @@ def headroom_refusal_fields(*, verdict: AcpPreflightVerdict) -> dict[str, object
     if floor is None:
         return {}
     skipped = {
-        node.node: [_skipped_fields(skip=skip) for skip in node.skipped]
+        node.node: [session_headroom_skip_fields(skip=skip) for skip in node.skipped]
         for node in verdict.nodes
         if node.node in verdict.exhausted
         and any(skip.reason == HEADROOM_SKIP for skip in node.skipped)
@@ -236,7 +173,6 @@ def headroom_refusal_fields(*, verdict: AcpPreflightVerdict) -> dict[str, object
         return {}
     return {
         "session_headroom_floor_percent": floor,
-        "session_headroom_horizon_minutes": verdict.session_headroom_horizon_minutes,
         "session_headroom_assessments": [
             session_headroom_reading_fields(reading=reading)
             for reading in verdict.headroom_assessments

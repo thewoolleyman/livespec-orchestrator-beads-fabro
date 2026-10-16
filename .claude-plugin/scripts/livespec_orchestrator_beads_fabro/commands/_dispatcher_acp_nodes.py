@@ -53,6 +53,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_repository import (
     repository_acp_chains,
     repository_acp_overlays,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_node_selection import (
+    acp_node_selection_record,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._acp_structured_render import READ_ONLY_NODES
 from livespec_orchestrator_beads_fabro.commands._acp_structured_text import (
@@ -247,6 +250,16 @@ def prepare_acp_nodes(  # noqa: PLR0913 — kw-only dispatch inputs; each is one
     if not_applied:
         record["not_applied"] = list(not_applied)
     journal.append(record=record)
+    # The per-node selection, as its own record and after the resolution's. The
+    # two answer different questions -- what each node's CHAIN resolved to, and
+    # which position of it this dispatch ran -- and a reader triaging a fallback
+    # needs the first to make sense of the second.
+    journal.append(
+        record={
+            **acp_node_selection_record(selected=selected.selected),
+            "work_item_id": work_item_id,
+        }
+    )
     return resolution
 
 

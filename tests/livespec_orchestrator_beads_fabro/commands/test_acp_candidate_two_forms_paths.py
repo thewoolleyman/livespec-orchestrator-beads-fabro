@@ -304,7 +304,11 @@ def test_the_dispatch_seam_refuses_an_unparseable_catalog_before_any_run(
     )
 
     assert not isinstance(resolution, str), resolution
-    assert [record["stage"] for record in written] == [seam.ACP_NODES_STAGE]
+    selection = _module(name="_acp_node_selection")
+    assert [record["stage"] for record in written] == [
+        seam.ACP_NODES_STAGE,
+        selection.ACP_NODE_SELECTION_STAGE,
+    ]
 
 
 def test_the_preflight_refuses_an_unparseable_catalog_before_claim(tmp_path: Path) -> None:
