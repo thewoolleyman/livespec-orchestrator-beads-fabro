@@ -368,3 +368,57 @@ def test_post_merge_cluster_venue_reports_green_from_the_gate_jobs_verdict(
     assert gate_cwd == plan.janitor_checkout
     assert (outcome.status, outcome.stage) == ("green", "done")
     assert outcome.detail == "merged, post-merge janitor green"
+
+
+def test_post_merge_cluster_venue_no_verdict_is_red_naming_the_missing_verdict(
+    tmp_path: Path,
+) -> None:
+    """A gate that was asked and did not answer is RED, and says so as that.
+
+    It is deliberately NOT the `janitor-env-degraded` outcome, which reports
+    `green` at its own stage for a venue that could not be provisioned: a
+    submitted gate whose verdict was lost is a gate that decided nothing, and
+    an item must never close on a reading nobody took.
+    """
+    _write_cluster_venue(repo=tmp_path)
+    runner = Runner(queue=_cluster_queue(gate=_gate(state="NO_VERDICT")))
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path),
+        runner=runner,
+        journal=Journal(),
+        merged=_merged(),
+    )
+
+    assert (outcome.status, outcome.stage) == ("failed", "janitor-post-merge")
+    assert (outcome.pr_number, outcome.merge_sha) == (7, "cafe08")
+    detail = outcome.detail.lower()
+    assert "reached no verdict" in detail
+    assert "missing cluster verdict" in detail
+
+
+def test_post_merge_cluster_venue_failed_job_is_red_naming_the_jobs_own_verdict(
+    tmp_path: Path,
+) -> None:
+    """The CONTROL for the case above: a real red verdict is reported as one.
+
+    Without it, a no-verdict wording that fired on every non-pass would satisfy
+    the missing-verdict assertion while telling an operator their red tree was
+    a plumbing fault -- two conditions whose remedies are opposite.
+    """
+    _write_cluster_venue(repo=tmp_path)
+    runner = Runner(queue=_cluster_queue(gate=_gate(state="FAILED")))
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path),
+        runner=runner,
+        journal=Journal(),
+        merged=_merged(),
+    )
+
+    assert (outcome.status, outcome.stage) == ("failed", "janitor-post-merge")
+    detail = outcome.detail.lower()
+    assert "reported a failed verdict" in detail
+    assert "missing cluster verdict" not in detail
