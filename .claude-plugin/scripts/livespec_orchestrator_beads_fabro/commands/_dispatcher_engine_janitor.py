@@ -14,6 +14,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_install_recipe 
     JanitorBootstrapRecipe,
     resolve_janitor_bootstrap_recipe,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_check_venue import (
+    CLUSTER_GATE_ARGV,
+    cluster_janitor_red,
+    host_janitor_red,
+    janitor_runs_on_the_cluster,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_degraded import (
     DegradedStep,
     degraded_step,
@@ -83,6 +89,45 @@ def post_merge(
         )
 
 
+def _check_suite_red(
+    *,
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    journal: JournalWriter,
+) -> str | None:
+    """Run the janitor's check suite in the DECLARED venue; `None` when it is green.
+
+    The venue is read here rather than carried on the plan because it decides
+    only what this one stage runs: no earlier seam needs it, and nothing is
+    journaled about the janitor before the flow reaches this point.
+
+    The cluster venue passes NO environment: the core plugin root exists so a
+    HOST-LOCAL suite can resolve this plugin inside the fresh checkout, and the
+    pod re-derives its own checkout from the pushed tree.
+    """
+    on_the_cluster = janitor_runs_on_the_cluster(cwd=plan.repo)
+    argv = list(CLUSTER_GATE_ARGV) if on_the_cluster else list(plan.janitor)
+    env = (
+        None
+        if on_the_cluster
+        else {CORE_PLUGIN_ROOT_ENV_VAR: str(plan.janitor_core_checkout / ".claude-plugin")}
+    )
+    result = run_stage(
+        runner=runner,
+        journal=journal,
+        plan=plan,
+        stage="janitor-post-merge",
+        command=(argv, plan.janitor_checkout, _JANITOR_TIMEOUT_SECONDS, env),
+        # The check suite is the command whose red the retention clause exists
+        # for: its excerpt names the suite, and the failing target it reports
+        # is on the stream the excerpt did not keep.
+        journal_options=StageJournalOptions(retention=plan.janitor_retention),
+    )
+    if on_the_cluster:
+        return cluster_janitor_red(result=result, checkout=plan.janitor_checkout)
+    return host_janitor_red(result=result, checkout=plan.janitor_checkout)
+
+
 def _post_merge_locked(
     *,
     outcome_type: type[DispatchOutcome],
@@ -120,33 +165,15 @@ def _post_merge_locked(
     )
     if degraded is not None:
         return degraded
-    janitor = run_stage(
-        runner=runner,
-        journal=journal,
-        plan=plan,
-        stage="janitor-post-merge",
-        command=(
-            list(plan.janitor),
-            plan.janitor_checkout,
-            _JANITOR_TIMEOUT_SECONDS,
-            {CORE_PLUGIN_ROOT_ENV_VAR: str(plan.janitor_core_checkout / ".claude-plugin")},
-        ),
-        # The check suite is the command whose red the retention clause exists
-        # for: its excerpt names the suite, and the failing target it reports
-        # is on the stream the excerpt did not keep.
-        journal_options=StageJournalOptions(retention=plan.janitor_retention),
-    )
-    if janitor.exit_code != 0:
+    red = _check_suite_red(plan=plan, runner=runner, journal=journal)
+    if red is not None:
         return outcome_type(
             work_item_id=plan.work_item_id,
             status="failed",
             stage="janitor-post-merge",
             pr_number=merged.number,
             merge_sha=merged.merge_sha,
-            detail=(
-                f"post-merge janitor red in fresh checkout {plan.janitor_checkout} "
-                f"(kept for diagnosis): {tail(text=janitor.stderr)}"
-            ),
+            detail=red,
         )
     cleanup = run_stage(
         runner=runner,
