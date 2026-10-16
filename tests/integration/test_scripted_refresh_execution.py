@@ -437,6 +437,11 @@ _FAILING_GATE = "false"
 # than a filter (work-item bd-ib-be5r7o).
 _AUTO_MERGE_FIELD_PATH = ".autoMergeRequest"
 
+# The first token of the non-convergence cause, which is what the reason file
+# must OPEN with: a quote-wrapped format puts a quote character there instead,
+# and the existing non-convergence case's `in` reading cannot see a leading one.
+_NON_CONVERGED_PREFIX = "pr-refresh-non-converged:"
+
 # The forge stub, a PROGRAM on `PATH` rather than an in-process mock because the
 # stage reaches `gh` as a subprocess. It serves exactly the two calls the v145
 # disarm leg makes -- the auto-merge read and the `--disable-auto` write -- and
@@ -1246,3 +1251,47 @@ def test_the_refresh_route_visit_caps_admit_the_worst_case_the_bound_allows(
         declared = graph.nodes[node].get("max_visits")
         assert declared is not None, node
         assert int(declared) >= worst_case, (node, declared, worst_case)
+
+
+@pytest.mark.parametrize("petri", _RENDERINGS)
+def test_the_non_convergence_reason_carries_no_quote_character_on_both_renderings(
+    *,
+    petri: bool,
+    tmp_path: Path,
+) -> None:
+    """The recorded cause is the cause, on BOTH engines, with nothing wrapped round it.
+
+    The fourth span of the same quoting family (work-item bd-ib-be5r7o). The
+    non-convergence refusal writes its reason with a backslash-escaped `printf`
+    format; a Petri-era reader hands the backslash to the shell, where a
+    backslashed quote is a literal quote character and the `\\n` beside it is a
+    bare `n`, so the format `printf` receives is a quote-wrapped literal and the
+    reason file ends up holding the cause wrapped in quote characters with its
+    newline turned into a trailing `n`.
+
+    WHAT THAT COSTS IS THE DURABLE SURFACE, not the stage. The refusal still
+    exits 1 under its own sentinel and the run still ends at `needs_human`, so
+    nothing looks wrong; the damage is that the cause the Dispatcher turns into
+    the item's recorded question arrives punctuated by stray quote characters and
+    with no line ending, which is the one artifact an operator reads after the
+    run record is gone.
+
+    The file is graded on its WHOLE text rather than its first line, because the
+    lost newline is exactly what a `splitlines()[0]` reading cannot see. The
+    pinned leg is the control.
+    """
+    reason_filename = _needs_human_reason_filename()
+    box = _build(root=tmp_path)
+    _ = (box.state_dir() / REFRESH_COUNT_STATE_FILENAME).write_text("3", encoding="utf-8")
+    _ = _advance_default(box=box)
+
+    refused = _run(box=box, petri=petri)
+
+    assert refused.returncode == 1, refused.stdout
+    assert "LIVESPEC_PR_REFRESH_NON_CONVERGED" in refused.stderr
+    recorded = box.clone / ".git" / reason_filename
+    assert recorded.is_file(), sorted(p.name for p in (box.clone / ".git").iterdir())
+    body = recorded.read_text(encoding="utf-8")
+    assert "'" not in body, body
+    assert body.startswith(_NON_CONVERGED_PREFIX), body
+    assert body.endswith("\n"), body
