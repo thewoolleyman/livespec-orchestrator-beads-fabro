@@ -97,14 +97,16 @@ against a tree carrying BOTH that route AND the hour-each publication budget of
 the paragraph above, because the two compound: the hour-each budget raises what
 one `pr_refresh` visit costs and this route raises how many of those visits the
 bound admits, so neither side's separately-measured figure survives the
-integration. Measured against THIS tree: 1_204_770 at the retired `"15m"` and
-805_170 shipped, so the bound moves to 880000 to stay between them. The
-derivation is an upper bound summed over distinct predecessors and no run
-reaches it, which is the correct direction for a credential floor.
+integration. Measured against THIS tree: 1168170 at the retired `"15m"` and
+768570 shipped, so the bound moves to 800000 to stay between them, with 31430
+seconds of headroom. The derivation is an upper bound summed over distinct
+predecessors and no run reaches it, which is the correct direction for a
+credential floor.
 
-WHAT THAT COSTS, STATED RATHER THAN ABSORBED: the shipped figure plus the
-margin now demands about 8.5 days of a token's remaining life, so a ten-day
-Codex token has to be under roughly 1.5 days old to pass the freshness gate.
+WHAT THAT COSTS, STATED RATHER THAN ABSORBED: the shipped figure plus
+`CODEX_FRESHNESS_MARGIN_SECONDS` now demands 772170 of a token's remaining
+life -- about 8.94 days -- so a ten-day Codex token has to be under roughly
+1.06 days old to pass the freshness gate.
 This repository routes NO factory node to Codex (`.livespec.jsonc`'s `acp_nodes`
 put every node on a Claude adapter), so nothing here is refused by it; a
 repository that does route one and raises its node timeouts should expect that
@@ -130,12 +132,12 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 
 # The bound the freshness requirement has to sit under, and the figure the
 # RETIRED `"15m"` resolved. The bound is deliberately looser than the measured
-# 805170 seconds this budget yields: the requirement also sums the resolved node
+# 768570 seconds this budget yields: the requirement also sums the resolved node
 # timeouts, so pinning it exactly would make every unrelated timeout edit fail
 # this case. The control below pins the 15m figure exactly, because that one is
 # the thing being moved away from and a drifting comparand would hide the move.
-_FRESHNESS_BOUND_SECONDS = 880_000
-_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_204_770
+_FRESHNESS_BOUND_SECONDS = 800_000
+_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_168_170
 
 
 def _checkpoint() -> dict[str, Any]:
