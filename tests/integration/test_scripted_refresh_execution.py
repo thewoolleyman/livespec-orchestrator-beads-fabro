@@ -56,6 +56,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -967,3 +968,139 @@ def test_the_executed_bytes_are_the_committed_bytes(tmp_path: Path) -> None:
     ) == publication_push_program_source()
     assert (box.plugins_root / PLUGIN_GATE_PROGRAM_FILENAME).is_file()
     assert sys.executable, "the control needs an interpreter to have resolved"
+
+
+def _needs_human_reason_filename() -> str:
+    """The reason file the committed `needs_human` terminal reads, off its own bytes.
+
+    Derived rather than spelled, because the whole claim below is that the
+    refusal writes the file the TERMINAL reads. A literal here would be a
+    second account of that name, and the defect it would hide is the one this
+    binding exists to catch: a rename on either side leaves the refusal writing
+    a file nothing reads, at which point the terminal silently falls back to its
+    generic reason and the non-convergence cause is lost from every durable
+    surface.
+    """
+    graph = parse_dot_graph(text=_IMPLEMENT_GRAPH.read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+    terminal = graph.nodes["needs_human"]["script"]
+    match = re.search(r"git rev-parse --git-path (livespec-[a-z-]+reason)", terminal)
+    assert match is not None, terminal
+    return match.group(1)
+
+
+def _generic_terminal_reason() -> str:
+    """The terminal's own fallback wording, off its own bytes.
+
+    This is what an operator reads when no stage recorded a cause, so it is the
+    exact string the non-convergence ending must NOT produce.
+    """
+    graph = parse_dot_graph(text=_IMPLEMENT_GRAPH.read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+    terminal = graph.nodes["needs_human"]["script"]
+    match = re.search(r"reason='([^']+)'", terminal)
+    assert match is not None, terminal
+    return match.group(1)
+
+
+def test_the_non_convergence_refusal_records_its_cause_for_the_terminal(
+    tmp_path: Path,
+) -> None:
+    """The ratified non-convergence cause has to OUTLIVE the stage that found it.
+
+    Scenario 184's last `pr` clause requires a run that keeps meeting an
+    advanced default branch to end with "the ratified non-convergence cause",
+    and the only durable surface that carries a cause is the reason file the
+    `needs_human` terminal reads and the Dispatcher turns into the item's
+    question. The stage's own stderr sentinel is not that surface: it scrolls
+    away with the run record.
+
+    THE PAIR IS THE POINT. At the bound the file must name non-convergence; the
+    refresh-repair-exhausted arm beside it already writes one, so a case
+    asserting only presence would pass for a build that wrote the WRONG arm's
+    cause. And the below-bound control must write NOTHING, because a stage that
+    recorded a non-convergence cause on an ordinary successful refresh would
+    poison the next needs-human ending of the same run with a cause that was
+    never true.
+
+    The first line is what the terminal reads (`head -n 1`), so that is the
+    line graded rather than the file.
+    """
+    reason_filename = _needs_human_reason_filename()
+    bounded = _build(root=tmp_path / "bounded")
+    _ = (bounded.state_dir() / REFRESH_COUNT_STATE_FILENAME).write_text("3", encoding="utf-8")
+    _ = _advance_default(box=bounded)
+
+    refused = _run(box=bounded)
+
+    assert refused.returncode == 1, refused.stdout
+    assert "LIVESPEC_PR_REFRESH_NON_CONVERGED" in refused.stderr
+    recorded = bounded.clone / ".git" / reason_filename
+    assert recorded.is_file(), sorted(p.name for p in (bounded.clone / ".git").iterdir())
+    first_line = recorded.read_text(encoding="utf-8").splitlines()[0]
+    assert "non-converg" in first_line, first_line
+    # Not the OTHER arm's cause: that one is about a two-round repair budget and
+    # points an operator at a conflict this ending never had.
+    assert "refresh-repair-exhausted" not in first_line, first_line
+    # And not the terminal's own fallback, which is what a lost cause looks like.
+    assert _generic_terminal_reason() not in first_line, first_line
+
+    below = _build(root=tmp_path / "below")
+    _ = (below.state_dir() / REFRESH_COUNT_STATE_FILENAME).write_text("2", encoding="utf-8")
+    _ = _advance_default(box=below)
+
+    allowed = _run(box=below)
+
+    assert allowed.returncode == 0, allowed.stderr
+    assert not (below.clone / ".git" / reason_filename).is_file()
+
+
+def test_the_refresh_route_visit_caps_admit_the_worst_case_the_bound_allows(
+    tmp_path: Path,
+) -> None:
+    """No engine visit cap can abort a run before the non-convergence cause fires.
+
+    `max_visits` ABORTS rather than routes — it emits no outcome, so no edge
+    can carry the exhaustion onward — which is why the clause demands the
+    ratified cause and not a cap. A cap sized below the entries the bound
+    admits turns every one of those runs into a run that simply stops, with no
+    terminal, no preserved reference and no ledger question.
+
+    THE BOUND IS MEASURED, NOT RESTATED. `_bound` is probed off the shipped
+    script: the counter value at which the refusal fires is the bound, so the
+    arithmetic below is a function of what the stage enforces rather than of a
+    number copied beside it.
+
+    THE WORST CASE, DERIVED. A refresh ENTRY and a COUNTED refresh differ: an
+    entry finding the publish head already containing the authoritative default
+    exits zero and counts nothing. An uncounted entry leaves no changed marker,
+    so `pr_refresh_head` sends it straight to `pr`; a counted one changes the
+    head, so the proof trio runs and returns to the refresh. The `pr` to
+    `pr_refresh` route then makes those uncounted entries reachable in a LOOP.
+    So the longest run alternates one uncounted entry, one `pr` visit, one
+    counted refresh, up to the bound, and ends on the entry that refuses:
+
+      * `pr_refresh`      — `bound` counted + `bound + 1` uncounted + 1 refusing
+      * `pr_refresh_head` — every entry but the refusing one
+      * `pr` and `pr_route` — one per uncounted entry
+    """
+    box = _build(root=tmp_path / "probe")
+    _ = (box.state_dir() / REFRESH_COUNT_STATE_FILENAME).write_text("2", encoding="utf-8")
+    _ = _advance_default(box=box)
+    assert _run(box=box).returncode == 0, "the probe's premise is a refresh that proceeds"
+    bound = int(str(box.state(name=REFRESH_COUNT_STATE_FILENAME)).strip())
+
+    entries = 2 * bound + 2
+    required = {
+        "pr_refresh": entries,
+        "pr_refresh_head": entries - 1,
+        "pr": bound + 1,
+        "pr_route": bound + 1,
+    }
+
+    graph = parse_dot_graph(text=_IMPLEMENT_GRAPH.read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+    for node, worst_case in required.items():
+        declared = graph.nodes[node].get("max_visits")
+        assert declared is not None, node
+        assert int(declared) >= worst_case, (node, declared, worst_case)
