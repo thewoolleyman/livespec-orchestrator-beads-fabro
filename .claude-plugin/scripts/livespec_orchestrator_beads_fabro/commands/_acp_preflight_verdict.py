@@ -1,9 +1,17 @@
-"""ONE pure verdict: can every success-critical ACP chain still be run?
+"""ONE pure verdict: can every admission-required ACP chain still be run?
 
 `SPECIFICATION/contracts.md` section "Factory-configurable ACP fallback
-priority": "Admission and rework admission refuse before claim only when at
-least one such chain has no candidate. ... Idle-factory and wait attention
-consume this identical verdict."
+priority": "every ACP node potentially reachable in the submitted graph is
+admission-required, success-critical or not. Before submission, every ACP node
+potentially reachable in the submitted graph MUST have an eligible candidate.
+... Idle-factory and wait attention consume this identical verdict."
+
+TWO SETS RIDE THE VERDICT AND ONLY ONE OF THEM GRADES. `exhausted` is computed
+against `admission_required` -- the reachable set -- because that is what
+decides a dispatch; `success_critical` is the dominator set, carried because
+the refusal journal and the per-node selection record name it and because the
+two facts are not interchangeable. A reader that joined on the wrong one would
+report a conditional repair node's outage as a loss of the green terminal.
 
 FOUR CONSUMERS, ONE ANSWER, AND THAT IS THE POINT. Admission, rework admission,
 wait attention and idle-factory each need to know whether the factory can run
@@ -54,6 +62,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import Res
 from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import AcpHoldLedger
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import SessionHeadroomReading
 from livespec_orchestrator_beads_fabro.commands._acp_success_critical import (
+    derive_admission_required,
     derive_success_critical,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_workflow_graph import parse_workflow_graph
@@ -66,7 +75,7 @@ __all__: list[str] = [
 
 _MISSING_GRAPH_REFUSAL = (
     "workflow graph is unsupported for fallback: the dispatch's workflow graph could not "
-    "be read, so the success-critical ACP nodes cannot be derived"
+    "be read, so the admission-required ACP nodes cannot be derived"
 )
 
 
@@ -77,6 +86,7 @@ class AcpPreflightVerdict:
     fallback_enabled: bool
     nodes: tuple[NodePreflight, ...] = ()
     success_critical: tuple[str, ...] = ()
+    admission_required: tuple[str, ...] = ()
     exhausted: tuple[str, ...] = ()
     unobservable: tuple[Mapping[str, object], ...] = ()
     refusal: str | None = None
@@ -95,7 +105,7 @@ class AcpPreflightVerdict:
         if self.refusal is not None:
             return self.refusal
         return (
-            "no candidate remains for success-critical ACP "
+            "no candidate remains for admission-required ACP "
             f"{'node' if len(self.exhausted) == 1 else 'nodes'} "
             f"{', '.join(self.exhausted)}"
         )
@@ -134,13 +144,15 @@ def build_acp_preflight_verdict(
             unobservable=ledger.unobservable,
             refusal=_MISSING_GRAPH_REFUSAL,
         )
-    critical = derive_success_critical(graph=parse_workflow_graph(text=graph_text))
+    graph = parse_workflow_graph(text=graph_text)
+    critical = derive_success_critical(graph=graph)
     if isinstance(critical, str):
         return AcpPreflightVerdict(
             fallback_enabled=True,
             unobservable=ledger.unobservable,
             refusal=critical,
         )
+    required = derive_admission_required(graph=graph, start=critical.start)
     assessed: dict[str, str] = {}
     preflights = tuple(
         filter_node_candidates(chain=chains[node], inputs=inputs, assessed=assessed)
@@ -150,7 +162,8 @@ def build_acp_preflight_verdict(
         fallback_enabled=True,
         nodes=preflights,
         success_critical=critical.nodes,
-        exhausted=_exhausted(preflights=preflights, critical=critical.nodes),
+        admission_required=required,
+        exhausted=_exhausted(preflights=preflights, required=required),
         unobservable=ledger.unobservable,
         assessed_credentials=dict(assessed),
         headroom_assessments=_headroom_assessments(preflights=preflights),
@@ -178,14 +191,15 @@ def _headroom_assessments(
 
 
 def _exhausted(
-    *, preflights: tuple[NodePreflight, ...], critical: tuple[str, ...]
+    *, preflights: tuple[NodePreflight, ...], required: tuple[str, ...]
 ) -> tuple[str, ...]:
-    """The success-critical nodes left with no candidate, in graph order.
+    """The admission-required nodes left with no candidate, in graph order.
 
-    A success-critical node the chain table does not mention is NOT exhausted:
-    it resolved through the existing layers to exactly one candidate, which no
-    typed record can cover because it carries no typed identity. Only a node
-    this evaluation actually filtered can report an empty chain.
+    An admission-required node the chain table does not mention is NOT
+    exhausted: it resolved through the existing layers to exactly one
+    candidate, which no typed record can cover because it carries no typed
+    identity. Only a node this evaluation actually filtered can report an empty
+    chain.
     """
     empty = {preflight.node for preflight in preflights if preflight.exhausted}
-    return tuple(node for node in critical if node in empty)
+    return tuple(node for node in required if node in empty)

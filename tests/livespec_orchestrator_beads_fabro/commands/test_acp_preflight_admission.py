@@ -1,20 +1,23 @@
-"""Success-critical ACP preflight: filtering, derivation, admission, attention.
+"""ACP candidate preflight: filtering, derivation, admission, attention.
 
 Binds the S3 half of `SPECIFICATION/contracts.md` section
 "Factory-configurable ACP fallback priority" -- the per-node candidate
 preflight, the success-critical derivation from green-terminal dominators, the
 one verdict admission / rework admission / wait attention / idle-factory all
 consume, and the typed termination a REACHED empty chain produces -- together
-with the Scenario 127 scenario that governs them, "Only an exhausted
-success-critical chain refuses admission".
+with the Scenario 127 scenario that governs them, "Ordered ACP fallback
+preserves primary resolution and failure honesty".
 
 FIVE CONTROLS CARRY MOST OF THE WEIGHT, because each is a claim an
 almost-correct implementation gets backwards:
 
 - The success-critical set is the DOMINATORS of the green terminal, not the
   nodes on some green path. `fix` and `review_fix` sit on real green paths and
-  must NOT be admission-required; a derivation that walked one path would
-  include them and would then park healthy work on a conditional node's outage.
+  must NOT be success-critical; a derivation that walked one path would include
+  them and would then report a conditional node's outage as a loss of the green
+  terminal. (They ARE admission-required, which spec v127 widened to every
+  potentially reachable ACP node -- `test_acp_admission_required_nodes.py`
+  carries that distinction.)
 - A locally unusable PRIMARY with a viable fallback leaves the chain viable. A
   preflight that refused on the primary alone passes every single-candidate
   test and defeats the entire feature.
@@ -201,14 +204,16 @@ def test_the_committed_graph_resolves_exactly_the_nodes_dominating_every_green_p
 
     This is the one control that ties the derivation to the real workflow. It
     also proves the negative half that matters: `fix`, `review_fix` and
-    `disposition` are ACP nodes on green paths and are NOT admission-required,
-    because a run that never goes Red reaches `exit` without any of them.
+    `disposition` are ACP nodes on green paths and are NOT success-critical,
+    because a run that never goes Red reaches `exit` without any of them. All
+    three are still admission-required under the wider reachable set that
+    `test_acp_admission_required_nodes.py` asserts.
 
     `dod_gate` joins the set for the opposite reason, and it is the sharpest
     case in the graph: it sits on the ONLY edge out of `start`, so no green path
     can avoid it. A gate that could not start its own adapter would therefore
     strand every run at its first node, which is exactly the condition
-    admission-required exists to refuse before claim.
+    the preflight exists to refuse before claim.
 
     `proof_capture` joins it on the same ground (S5 / bd-ib-b4u6b7): it is the
     only route from a green janitor to `review`, so no green path avoids it
@@ -559,12 +564,20 @@ def test_an_exhausted_success_critical_chain_makes_the_verdict_refuse() -> None:
 
     assert verdict.viable is False
     assert verdict.exhausted == ("implement",)
-    assert verdict.detail == "no candidate remains for success-critical ACP node implement"
+    assert verdict.detail == "no candidate remains for admission-required ACP node implement"
     assert modules["_dispatcher_acp_preflight"].credential_reprobe_wait_applies(verdict=verdict)
 
 
-def test_an_exhausted_conditional_chain_alone_still_admits() -> None:
-    """Scenario 127: a conditional node with no candidate does not refuse admission."""
+def test_an_exhausted_conditional_chain_refuses_without_joining_the_dominator_set() -> None:
+    """Spec v127 widened admission to every POTENTIALLY REACHABLE ACP node.
+
+    A conditional repair node such as `fix` dominates no green path, so it is
+    still absent from `success_critical`; it is nonetheless admission-required,
+    so an exhausted `fix` refuses. The paired claim -- that the dominator set
+    did NOT grow to match -- is what tells the widening apart from a derivation
+    that simply started returning reachability for both sets.
+    `test_acp_admission_required_nodes.py` carries that pairing in full.
+    """
     modules = _modules()
     held = (_hold(scope="availability-domain", hold_key="codex"),)
     verdict = modules["_acp_preflight_verdict"].build_acp_preflight_verdict(
@@ -580,7 +593,10 @@ def test_an_exhausted_conditional_chain_alone_still_admits() -> None:
         inputs=_inputs(holds=held),
     )
 
-    assert verdict.viable is True
+    assert verdict.viable is False
+    assert verdict.exhausted == ("fix",)
+    assert verdict.success_critical == ("implement",)
+    assert verdict.admission_required == ("implement", "fix")
     assert verdict.node_preflight(node="fix").exhausted is True
     assert verdict.node_preflight(node="missing") is None
 
@@ -701,7 +717,7 @@ def test_two_exhausted_nodes_render_a_plural_deterministic_explanation() -> None
         inputs=_inputs(holds=held),
     )
 
-    assert verdict.detail.startswith("no candidate remains for success-critical ACP nodes ")
+    assert verdict.detail.startswith("no candidate remains for admission-required ACP nodes ")
     assert set(verdict.exhausted) == {"implement", "review"}
 
 
