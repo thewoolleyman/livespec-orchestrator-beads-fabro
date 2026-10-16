@@ -106,9 +106,10 @@ def test_this_repositorys_own_claude_routing_is_assessed_by_the_filter(
 ) -> None:
     """The live control that caught the gap, kept as a standing one.
 
-    Every success-critical node of this repository resolves to a `claude-acp`
-    primary today, so a below-floor reading must empty every one of them and
-    the whole chain set must be refused.
+    Every admission-required node of this repository -- all eight potentially
+    reachable ACP nodes -- resolves to a `claude-acp` primary today, so a
+    below-floor reading must empty every one of them and the whole chain set
+    must be refused.
 
     THE POLICY IS BUILT BY THE PRODUCTION BUILDER, with only the provider read
     injected, and the count of provider reads is asserted across all eight
@@ -152,7 +153,11 @@ def test_this_repositorys_own_claude_routing_is_assessed_by_the_filter(
 
     assert reads == ["projected-token"]
     assert [reading.credential_identity for reading in verdict.headroom_assessments] == ["cred-1"]
-    assert set(verdict.exhausted) == set(verdict.success_critical)
+    # The graded set is the ADMISSION-REQUIRED one -- every potentially
+    # reachable ACP node -- so a below-floor reading on the one shared
+    # credential empties all eight, the three conditional nodes included.
+    assert set(verdict.exhausted) == set(verdict.admission_required)
+    assert set(verdict.success_critical) < set(verdict.admission_required)
     assert verdict.viable is False
     assert all(
         skip.reason == preflight.HEADROOM_SKIP for node in verdict.nodes for skip in node.skipped
