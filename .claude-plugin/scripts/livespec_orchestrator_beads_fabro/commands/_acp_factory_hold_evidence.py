@@ -78,6 +78,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_records import (
     HOLD_INTERVAL,
     HOLD_SCHEMA_VERSION,
     AcpAvailabilityHold,
+    hold_observation_record,
     observation_id,
     parse_hold_instant,
 )
@@ -96,6 +97,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
 from livespec_orchestrator_beads_fabro.commands._fabro_terminal_evidence import terminal_evidence
 
 __all__: list[str] = [
+    "AUDIT_REFERENCE_KEY",
     "EMPTY_FACTORY_HOLD_EVIDENCE",
     "FACTORY_EVIDENCE_KIND",
     "FACTORY_EVIDENCE_SOURCE",
@@ -108,8 +110,14 @@ __all__: list[str] = [
     "FactoryRunReader",
     "attempt_expiry",
     "factory_hold_evidence",
+    "factory_hold_observation_record",
     "observation_hold",
 ]
+
+# The journal key a derived record's AUDIT reference lands under. The journal
+# is never the authority for these holds, so the line names the factory run
+# the record can be re-derived from rather than standing on its own.
+AUDIT_REFERENCE_KEY = "audit_reference"
 
 # The evidence kind a TERMINAL-failure-derived hold is minted under. Read off
 # the hold writer's own closed set rather than spelled again, exactly as
@@ -268,6 +276,36 @@ def observation_hold(*, observation: FactoryHoldObservation) -> AcpAvailabilityH
         occurred_at=observation.occurred_at,
         expires_at=observation.expires_at,
     )
+
+
+def factory_hold_observation_record(
+    *, observation: FactoryHoldObservation, work_item_id: str
+) -> dict[str, object] | str:
+    """The appendable AUDIT line one derived observation writes, or a refusal.
+
+    "Dispatch journals MAY record audit references but MUST NOT be the sole
+    authority for holds." The line is therefore the ORDINARY v1 observation --
+    it reads back through `parse_hold_record` to the very hold the evidence
+    stands for -- plus the factory run it was derived from, so a reader of the
+    journal is pointed at the authority rather than left holding the only
+    copy.
+
+    The writer's own refusal is RETURNED rather than swallowed into a record.
+    A line whose occurrence nobody can read is an audit reference to nothing:
+    the hold it claims to mirror cannot be re-derived from it, which is the
+    one property this copy exists to preserve.
+    """
+    record = hold_observation_record(
+        failure=_observation_failure(observation=observation),
+        evidence_kind=FACTORY_EVIDENCE_KIND,
+        evidence_id=observation.run_reference,
+        occurred_at=observation.occurred_at,
+        work_item_id=work_item_id,
+        node=observation.node_attempt,
+    )
+    if isinstance(record, str):
+        return record
+    return {**record, AUDIT_REFERENCE_KEY: observation.run_reference}
 
 
 def _observation_failure(*, observation: FactoryHoldObservation) -> AcpAvailabilityFailure:
