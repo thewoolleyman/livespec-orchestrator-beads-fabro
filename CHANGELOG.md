@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.201.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.7...v0.201.8) (2026-10-16)
+
+
+### Bug Fixes
+
+* **dispatcher:** announce the claude-cred-status credential fallback on stderr ([fbe9968](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fbe9968973cb4baf159fd1ee06e205683d352d31))
+* **dispatcher:** probe the caam-selected credential slot in claude-cred-status ([1af0fb7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1af0fb70f9f1963bf2e3b485edd96f0df4cac76c))
+* **dispatcher:** report the probed credential env var in claude-cred-status ([4e3fef5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4e3fef53e84490e8ef23d5494a8053df9b9fe026))
+
 ## [0.201.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.6...v0.201.7) (2026-10-16)
 
 
