@@ -114,10 +114,17 @@ def _processes_naming(*, guard: Path) -> list[int]:
 
 
 def _await_no_guard_process(*, guard: Path, budget_seconds: float) -> list[int]:
-    """Poll until no process names the guard, returning whatever still does."""
+    """Poll until no process names the guard, returning whatever still does.
+
+    The population is `/proc`, and the thing being waited for is a DETACHED
+    reaper shell exiting. It is not this interpreter's child, so there is no
+    handle to wait on and no clock to inject; the only observable is the
+    process table, and reading it is a sample rather than an event.
+    """
     deadline = time.monotonic() + budget_seconds
     remaining = _processes_naming(guard=guard)
     while remaining and time.monotonic() < deadline:
+        # real-time-required: a detached reaper's exit is visible only in /proc
         time.sleep(_POLL_SECONDS)
         remaining = _processes_naming(guard=guard)
     return remaining

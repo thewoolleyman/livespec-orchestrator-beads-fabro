@@ -219,10 +219,19 @@ class _HerdrServer:
         return str(observed["result"]["agent"]["agent_status"])
 
     def await_status(self, *, pane_id: str, state: str) -> None:
+        """Poll a LIVE herdr server until it reports the state, or give up.
+
+        The server is a separate real process this fixture started, so there is
+        no clock to inject and no event in this process to wait on: the only
+        observable is what the next `agent.get` round trip answers. The bound
+        is a failure bound rather than an assertion — the case asserts the
+        state, never the duration.
+        """
         observed = ""
         deadline = time.monotonic() + 30.0
         while observed != state and time.monotonic() < deadline:
             observed = self.agent_status(pane_id=pane_id)
+            # real-time-required: a live external server offers no injectable clock
             time.sleep(0.05)
         assert observed == state, f"pane {pane_id} settled at {observed!r}, not {state!r}"
 
@@ -320,6 +329,7 @@ def _isolated_herdr_server(*, directory: Path):
         deadline = time.monotonic() + 90.0
         while not live and time.monotonic() < deadline:
             live = socket_path.exists() and server.session_is_live()
+            # real-time-required: readiness of a real server process, polled over its socket
             time.sleep(0.02)
         assert live, _readiness_diagnostic(
             socket_path=socket_path,

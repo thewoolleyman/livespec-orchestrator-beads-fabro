@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -64,6 +63,13 @@ class _ObservationSeams:
 
 class _Pollable(Protocol):
     def poll(self, *, now: float) -> GateObservation | None: ...
+
+
+# The observation instant handed to the gate adapter below. A fixed value,
+# because nothing here grades WHEN the observation was taken — the adapter
+# records whatever instant it is given, so a clock reading would make the
+# recorded value unpredictable without strengthening any assertion.
+_FIXED_OBSERVED_AT = 110.0
 
 
 def _target(*, gate_store_root: Path, run_id: str) -> GateTarget:
@@ -375,12 +381,17 @@ def _assert_cli(
     assert json.loads(capsys.readouterr().out)["status"] == "receipt-acknowledged"
 
 
-def _poll_until_observed(*, probe: _Pollable) -> GateObservation:
-    observation: GateObservation | None = None
-    deadline = time.monotonic() + 2.0
-    while observation is None and time.monotonic() < deadline:
-        observation = probe.poll(now=time.monotonic())
-        time.sleep(0.01)
+def _observed(*, probe: _Pollable) -> GateObservation:
+    """The gate adapter's answer, which it computes ON THE POLLING THREAD.
+
+    `GateStatusProbe.poll` reads the run directory and returns an observation
+    every time; it schedules no work and never answers `None`. So there is
+    nothing to wait for here, and the poll loop this replaced was pure
+    ceremony — it sampled the host clock to decide when to ask a question that
+    was already answered. The `None` check stays as a type narrowing, which is
+    what the `_Pollable` protocol's optional return needs.
+    """
+    observation = probe.poll(now=_FIXED_OBSERVED_AT)
     assert observation is not None
     return observation
 
@@ -394,18 +405,18 @@ def _assert_gate_status_adapter(*, context: _InventoryContext) -> None:
     adapter = GateStatusLauncher(repository=context.repository)
     exit_file.write_text("23\n", encoding="utf-8")
     finished = adapter.launch(target=target, timeout_seconds=2.0)
-    observation = _poll_until_observed(probe=finished)
+    observation = _observed(probe=finished)
     assert (observation.state, observation.exit_code) == ("FAILED", 23)
     finished.cancel(timeout_seconds=0.0)
     exit_file.unlink()
     (run_dir / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
     running = adapter.launch(target=target, timeout_seconds=2.0)
-    assert _poll_until_observed(probe=running).state == "RUNNING"
+    assert _observed(probe=running).state == "RUNNING"
     running.cancel(timeout_seconds=0.0)
     assert running.active is False
     exit_file.write_text("malformed\n", encoding="utf-8")
     unavailable = adapter.launch(target=target, timeout_seconds=2.0)
-    assert _poll_until_observed(probe=unavailable).state == "UNAVAILABLE"
+    assert _observed(probe=unavailable).state == "UNAVAILABLE"
     started_at = target.gate_store_root / target.run_id / "started_at"
     _ = started_at.write_text("replacement-generation\n", encoding="utf-8")
     replaced = adapter.launch(target=target, timeout_seconds=2.0).poll(now=115.0)

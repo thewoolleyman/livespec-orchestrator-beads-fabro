@@ -381,9 +381,14 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   else. The exhaustion-record case reads BOTH the re-probe stage and the
   provider-exhaustion refusal stage, because an empty launch list alone cannot
   separate "the record still governs" from "nothing happened at all". The
-  fixture commits a one-second cadence and the wait sleeps for real, so elapsed
-  time is evidence the committed dial was read — a stubbed sleep would prove
-  only that some number reached some stand-in.
+  fixture commits a one-second cadence and the evidence that the committed dial
+  was read is the `reprobe_interval_seconds` the refusal record carries, read
+  off production's own journal. An elapsed bound on the invocation used to
+  carry that claim and has been retired under `check-tests-no-real-time`: it
+  graded how long the HOST took, which a loaded factory satisfies for the wrong
+  reason, while the thing it reached for — one sleep of exactly the committed
+  interval per refused round — is asserted against the injected sleeper at the
+  unit tier, where the argument is a value rather than a duration.
 
 - `test_ledger_adoption_rank_scenario126.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 126 — Ledger normalization adopts a
