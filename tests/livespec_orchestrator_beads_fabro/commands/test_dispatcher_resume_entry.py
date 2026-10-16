@@ -239,10 +239,20 @@ def _committed_graph() -> str:
 def _reachable_from_start(*, graph_text: str) -> set[str]:
     """Every node a run of this graph can visit, walking edges out of `start`.
 
-    REACHABILITY rather than a text search for the forbidden names: every node
-    stays DECLARED in a derived graph — deleting one would break the edges
-    pointing at it — so a name search finds `dod_gate` in both the derived graph
-    and the original and could never fail.
+    REACHABILITY rather than a text search for the forbidden names, and the
+    reason has CHANGED since this helper was written. It read: every node stays
+    declared in a derived graph, because deleting one would break the edges
+    pointing at it, so a name search could never fail. That was true of the
+    move-the-`start`-edge derivation, and the Petri-era validator rejecting an
+    unreachable declaration is exactly what retired it — the derivation now
+    PRUNES what the move orphans, so `dod_gate` is genuinely gone from the
+    declarations.
+
+    Reachability is still the right instrument, for a different reason: the prune
+    preserves COMMENTS, and this graph names `publish_draft` in twenty-one of
+    them, so a name search now fails in the opposite direction — reporting a
+    pruned node as present. Walking the edges answers what a run can VISIT, which
+    is the claim, under either derivation.
     """
     edges: dict[str, set[str]] = {}
     for line in graph_text.splitlines():
