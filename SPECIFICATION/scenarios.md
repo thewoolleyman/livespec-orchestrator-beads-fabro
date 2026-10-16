@@ -6688,3 +6688,27 @@ Scenario: A queued run or an unobservable board yields no finding
   And when instead the board cannot be read it is reported unobservable with unknown live and queued counts, and no finding line is printed
 ```
 
+## Scenario 188 — A push that only deletes refs skips the pre-push aggregate, and any other push runs it
+
+```gherkin
+Feature: A ref deletion is not gated like a change to the tree
+  As the Dispatcher deleting a run's source branch after the run
+  I want a push that only deletes refs to return without running the full check aggregate
+  So that a pure deletion does not hold an item's ownership lock for the length of a full check
+
+  Scenario: A push whose every ref update is a deletion skips the gate
+    Given a push whose pre-push standard input lists only ref updates with an all-zero local object id
+    When the repository's pre-push gate runs
+    Then it exits zero without running the green-token check or the just check aggregate
+    And it prints that the gate was skipped because the push only deletes refs
+
+  Scenario: A push that updates a ref beside deletions runs the gate
+    Given a push whose pre-push standard input lists a deletion and an update with a non-zero local object id
+    When the repository's pre-push gate runs
+    Then it runs the full pre-push gate
+
+  Scenario: A push with no ref updates on standard input runs the gate
+    Given a pre-push invocation whose standard input is empty
+    When the repository's pre-push gate runs
+    Then it runs the full pre-push gate
+```

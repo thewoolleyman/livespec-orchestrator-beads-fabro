@@ -1854,5 +1854,21 @@
     "test": "TODO",
     "reason": "Ratified by revision v149 accepting proposal idle-slot-audit (plan factory-idle-with-ready-work, epic bd-ib-opbzv3). The priority-epic idle-slot audit and its hygiene:idle-slot attention fact are not implemented yet; an integration-tier test is owed for the four sub-scenarios, and work-item bd-ib-irh4js implements them and owns that binding.",
     "work_item": "bd-ib-irh4js"
+  },
+  {
+    "heading": "## Pre-push gate refinements",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "test": "TODO",
+    "reason": "Ratified by revision v151 accepting proposal pre-push-deletion-only (plan sandbox-commit-gate-ceiling, epic bd-ib-qy5wol, freeze-driver ruling R79). The deletion-only pre-push skip is not implemented yet; a test is owed asserting the skip, that 02-ledger-conformance still runs and that the lefthook entry passes standard input through, and work-item bd-ib-qy5wol.1 implements it and owns that binding.",
+    "work_item": "bd-ib-qy5wol.1"
+  },
+  {
+    "heading": "## Scenario 188 \u2014 A push that only deletes refs skips the pre-push aggregate, and any other push runs it",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by revision v151 accepting proposal pre-push-deletion-only (plan sandbox-commit-gate-ceiling, epic bd-ib-qy5wol, freeze-driver ruling R79). The deletion-only pre-push skip is not implemented yet; an integration-tier test is owed for the three sub-scenarios, and work-item bd-ib-qy5wol.1 implements them and owns that binding.",
+    "work_item": "bd-ib-qy5wol.1"
   }
 ]
