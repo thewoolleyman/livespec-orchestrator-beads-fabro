@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     PROOF_MODE_HOST_CAPTURED,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity import (
     BuildIdentity,
 )
@@ -33,6 +35,9 @@ from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import 
 )
 from livespec_orchestrator_beads_fabro.commands._plan_proof_record import (
     PLAN_PROOF_RECORD_TITLE,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_release_forge import (
+    governed_repository_argv,
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
@@ -62,6 +67,38 @@ def _fake() -> FakeBeadsClient:
     client = make_beads_client(config=_config())
     assert isinstance(client, FakeBeadsClient)
     return client
+
+
+@dataclass(kw_only=True)
+class _UnreleasedForge:
+    """A forge that names this checkout's repository and reports it carries no tag.
+
+    Every archive here reaches the proof leg, whose release rule reads release tags
+    by an authenticated forge read. These cases are about the child, working-tree
+    and review legs, so the forge answer they want is the one that makes the
+    release rule not fire: a repository the forge SAYS carries no release tag.
+
+    It is supplied rather than left to the default `ShellCommandRunner`, which
+    would shell out to `gh` from a `tmp_path` that is no checkout. That read fails,
+    and a failed read now REJECTS — the fail-closed reversal of the v148 plan-record
+    clause. The archives here used to pass on the retired reading's fail-open empty
+    set, so the stub is what makes them hermetic rather than dependent on a `gh`
+    that happens to be absent.
+    """
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        del cwd, timeout_seconds, env, stdin
+        if argv == governed_repository_argv():
+            return CommandResult(exit_code=0, stdout="thewoolleyman/livespec", stderr="")
+        return CommandResult(exit_code=0, stdout="", stderr="")
 
 
 def _parse_utc_timestamp(*, value: str) -> datetime:
@@ -528,6 +565,7 @@ def test_archive_after_reviewer_records_valid_durable_evidence(tmp_path: Path) -
 
     result = plan.archive_thread(
         env=_ARCHIVING_SESSION_ENV,
+        runner=_UnreleasedForge(),
         project_root=tmp_path,
         config=_config(),
         slug="archive-thread",
@@ -711,6 +749,7 @@ def test_archive_refuses_a_self_review_and_accepts_an_independent_one(tmp_path: 
 
     accepted = plan.archive_thread(
         env=_ARCHIVING_SESSION_ENV,
+        runner=_UnreleasedForge(),
         project_root=tmp_path,
         config=_config(),
         slug="archive-thread",
@@ -819,6 +858,7 @@ def test_archive_with_no_outside_references_closes_and_stamps_the_epic_once(
 
     result = plan.archive_thread(
         env=_ARCHIVING_SESSION_ENV,
+        runner=_UnreleasedForge(),
         project_root=tmp_path,
         config=_config(),
         slug="archive-thread",
@@ -871,6 +911,7 @@ def test_archive_moves_thread_and_closes_epic_after_two_gates(tmp_path: Path) ->
 
     result = plan.archive_thread(
         env=_ARCHIVING_SESSION_ENV,
+        runner=_UnreleasedForge(),
         project_root=tmp_path,
         config=_config(),
         slug="archive-thread",

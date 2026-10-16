@@ -36,6 +36,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     PROOF_MODE_HOST_CAPTURED,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity import (
     BuildIdentity,
 )
@@ -64,6 +65,9 @@ from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import 
 )
 from livespec_orchestrator_beads_fabro.commands._plan_proof_record import (
     PLAN_PROOF_RECORD_TITLE,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_release_forge import (
+    governed_repository_argv,
 )
 from livespec_orchestrator_beads_fabro.commands.plan import create_thread
 from livespec_orchestrator_beads_fabro.types import StoreConfig
@@ -227,7 +231,38 @@ def _archive(
         completeness_review_comment_id=evidence_id,
         review_launcher=review_launcher,
         env=_ARCHIVING_SESSION_ENV,
+        runner=_UnreleasedForge(),
     )
+
+
+class _UnreleasedForge:
+    """A forge that names this checkout's repository and reports it carries no tag.
+
+    Every case here reaches the proof leg, whose release rule reads release tags by
+    an authenticated forge read. These cases are about the COMPLETENESS leg, so the
+    forge answer they want is the one that makes the release rule not fire: a
+    repository the forge SAYS carries no release tag.
+
+    It is supplied rather than left to the default `ShellCommandRunner`, which
+    would shell out to `gh` from a `tmp_path` that is no checkout. That read fails,
+    and a failed read now REJECTS — the fail-closed reversal of the v148 plan-record
+    clause — so without this stub these cases would refuse for a release reason and
+    report it as a completeness verdict.
+    """
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        del cwd, timeout_seconds, env, stdin
+        if argv == governed_repository_argv():
+            return CommandResult(exit_code=0, stdout="thewoolleyman/livespec", stderr="")
+        return CommandResult(exit_code=0, stdout="", stderr="")
 
 
 def test_evidence_is_accepted_only_when_it_names_the_epics_current_child_set(
