@@ -71,6 +71,7 @@ __all__: list[str] = [
     "ExecutedCandidate",
     "attributed_provider_limit_failure",
     "executed_candidate_identity",
+    "graph_node_id",
 ]
 
 # The Petri-era stage key's leading execution ordinal, as the only prefix this
@@ -112,7 +113,7 @@ def executed_candidate_identity(
     """
     if node is None:
         return None
-    graph_node = _graph_node(node=node)
+    graph_node = graph_node_id(node=node)
     availability = _label(labels=labels, node=graph_node, suffix=AVAILABILITY_LABEL_SUFFIX)
     if graph_node == "" or availability is None:
         return None
@@ -157,11 +158,17 @@ def _label(*, labels: Mapping[str, str], node: str, suffix: str) -> str | None:
     return value.strip() or None
 
 
-def _graph_node(*, node: str) -> str:
+def graph_node_id(*, node: str) -> str:
     """The graph node id a recorded node or stage key names.
 
     The visit suffix is removed before the ordinal prefix so each affix is
     read off the end it was written on; neither step depends on the other
     having found anything.
+
+    PUBLIC because a second surface now has to ask the same question of the
+    same two engine spellings. `_dispatcher_terminal_events` matches a stage
+    key taken off one engine's record against a node id taken off the other's
+    event stream, and a reader spelling that normalization for itself would be
+    a third copy of a rule whose whole job is that every caller agrees on it.
     """
     return _STAGE_ORDINAL_PREFIX.sub("", node.split("@", maxsplit=1)[0].strip())

@@ -27,6 +27,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_events import (
+    routing_stage_failure,
     terminal_event_output,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import causal_stage_failure
@@ -180,6 +181,18 @@ def _needs_human_terminal_outcome(
     to the inspect payload — so a second derivation there could only read the
     rendered prose back, which is the coupling every typed field above exists
     to avoid. One verdict, two surfaces, no reparse.
+
+    AND ON AN ENGINE-ROUTED ENDING THE CAUSE IS RE-READ FROM THE STAGE THAT
+    ROUTED IT. The observed failure comes from the run CONCLUSION, which on
+    exactly these endings describes the terminal's own deliberate exit — so
+    `_head` above names the routing stage while `_attribution` quoted a
+    sentence about the graph's shape beside it, and the two read as one
+    account. The re-read is gated on the causal verdict having named a stage,
+    because that verdict is the only thing that establishes an engine-routed
+    ending; an agent-request ending has no predecessor to ask, and an
+    unestablished one has nothing to ask it with. What the re-read may not
+    retract is the provider ceiling, which `_dispatcher_terminal_events`
+    records in full.
     """
     emitted = terminal_event_output(payload=None if inspect is None else inspect.events_payload)
     text = f"{emitted}\n{text}"
@@ -188,6 +201,13 @@ def _needs_human_terminal_outcome(
     causal = causal_stage_failure(
         evidence=None if inspect is None else terminal_evidence(payload=inspect.payload)
     )
+    if inspect is not None and causal.stages:
+        failure = routing_stage_failure(
+            observed=failure,
+            inspect_payload=inspect.payload,
+            events_payload=inspect.events_payload,
+            stage=causal.stages[-1],
+        )
     return outcome_type(
         work_item_id=plan.work_item_id,
         status="blocked",
