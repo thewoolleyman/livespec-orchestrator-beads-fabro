@@ -166,8 +166,14 @@ def test_the_providers_a_dispatch_can_be_refused_on_come_from_its_own_adapters(
     )
 
     def covering(*, candidates: tuple[Any, ...] | None) -> Any:
+        # Every record on this journal is provider-only, so the ACCOUNT axis
+        # (`test_dispatcher_exhaustion_identity_scoped_coverage`) is vacuous
+        # here and the projected set it is compared against is empty.
         return exhaustion.covering_provider_exhaustion(
-            journal_path=journal, now_iso=_NOW, candidates=candidates
+            journal_path=journal,
+            now_iso=_NOW,
+            candidates=candidates,
+            projected_identities=frozenset(),
         )
 
     anthropic_only = (_rendered(pair=_BUILTIN_ANTHROPIC, builtin=True),)
@@ -214,6 +220,7 @@ def test_the_refusal_fires_only_on_a_record_covering_a_rendered_candidate(
             journal_path=journal_path,
             now_iso=_NOW,
             candidates=candidates,
+            projected_identities=frozenset(),
         )
         return outcome, journal.records
 

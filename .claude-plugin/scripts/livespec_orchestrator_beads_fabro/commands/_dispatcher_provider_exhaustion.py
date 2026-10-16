@@ -15,6 +15,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_exhaustion_credential_identity import (
     journaled_admission_credential_identity,
+    record_identity_covers_dispatch,
 )
 from livespec_orchestrator_beads_fabro.effects import parse_iso_datetime
 
@@ -233,22 +234,35 @@ def covering_provider_exhaustion(
     journal_path: Path | None,
     now_iso: str,
     candidates: tuple[RenderedCandidate, ...] | None,
+    projected_identities: frozenset[str],
 ) -> ProviderExhaustionRecord | None:
-    """The newest live record COVERING a candidate this dispatch renders.
+    """The newest live record COVERING a candidate and an ACCOUNT this dispatch uses.
 
     `candidates` is the dispatch's resolved node adapters, projected into the
     candidates they render; the providers this dispatch can be refused on are
     derived from them, which is what replaced the hard-coded vendor tuple
     described at the top of this module.
 
-    `None` means the resolution could not be READ, and it is deliberately not
-    the empty tuple: an empty set of candidates is an answer -- this dispatch
-    renders nothing the record covers -- while an unreadable one is the absence
-    of a measurement. A gauge that admitted when blinded would turn every
-    unreadable configuration into a pass, so the unreadable arm FAILS CLOSED
-    onto the pre-scoping behaviour, where any live record refuses.
+    `projected_identities` is the SECOND axis, and it is the one a vendor label
+    alone cannot express: the accounts this dispatch's own admission
+    session-headroom assessment projected for its covered candidates. A record
+    naming an account none of them uses covers nothing, which is how a
+    credential rotation stops being defeated by records its predecessor minted.
+
+    `None` candidates means the resolution could not be READ, and it is
+    deliberately not the empty tuple: an empty set of candidates is an answer
+    -- this dispatch renders nothing the record covers -- while an unreadable
+    one is the absence of a measurement. A gauge that admitted when blinded
+    would turn every unreadable configuration into a pass, so the unreadable
+    arm FAILS CLOSED onto the pre-scoping behaviour, where any live record
+    refuses.
     """
     for record in live_provider_exhaustions(journal_path=journal_path, now_iso=now_iso):
+        if not record_identity_covers_dispatch(
+            record_identity=record.credential_identity,
+            projected_identities=projected_identities,
+        ):
+            continue
         if candidates is None or legacy_record_covers_dispatch(
             provider=record.provider, candidates=candidates
         ):
@@ -263,6 +277,7 @@ def provider_exhaustion_refusal(
     journal_path: Path | None,
     now_iso: str,
     candidates: tuple[RenderedCandidate, ...] | None,
+    projected_identities: frozenset[str],
 ) -> DispatchOutcome | None:
     """Refuse this dispatch when a COVERED provider's ceiling is still held.
 
@@ -276,13 +291,18 @@ def provider_exhaustion_refusal(
     could not have hit is the plausible wrong answer Scenario 60's "A hold on
     one provider does not refuse an item wholly on another" exists to forbid.
 
-    The refusal names the vendor from the RECORD — the one that actually
-    refused — so an operator reading the journal is told which allowance is
-    gone rather than a constant that may name a vendor nothing was observed
-    against.
+    The refusal names the vendor AND THE ACCOUNT from the RECORD — the one that
+    actually refused — so an operator reading the journal is told which
+    allowance is gone rather than a constant that may name a vendor nothing was
+    observed against. The account matters most where the vendor is least
+    informative: a factory rotating between accounts of one vendor produces
+    refusals whose provider field is identical and whose remedies are not.
     """
     record = covering_provider_exhaustion(
-        journal_path=journal_path, now_iso=now_iso, candidates=candidates
+        journal_path=journal_path,
+        now_iso=now_iso,
+        candidates=candidates,
+        projected_identities=projected_identities,
     )
     if record is None:
         return None
@@ -295,6 +315,7 @@ def provider_exhaustion_refusal(
         detail=(
             "provider exhaustion refusal: "
             f"provider={record.provider} "
+            f"credential_identity={record.credential_identity} "
             f"governing_condition={record.governing_condition} "
             f"record_expires_at={record.record_expires_at}"
         ),
@@ -305,6 +326,7 @@ def provider_exhaustion_refusal(
             "stage": _REFUSAL_STAGE,
             "work_item_id": work_item_id,
             "provider": record.provider,
+            "credential_identity": record.credential_identity,
             "governing_condition": record.governing_condition,
             "record_expires_at": record.record_expires_at,
         }

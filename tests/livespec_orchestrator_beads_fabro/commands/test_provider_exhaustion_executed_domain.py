@@ -234,15 +234,21 @@ def test_the_hold_refuses_the_executed_domain_and_admits_the_other(*, tmp_path: 
     """
     journal_path = _recorded_hold(repo=tmp_path)
 
+    # This dispatch's admission journaled no session-headroom assessment, so
+    # the minted record names no account and the vendor axis alone decides --
+    # which is this module's question. The ACCOUNT axis is bound by
+    # `test_dispatcher_exhaustion_identity_scoped_coverage`.
     held = covering_provider_exhaustion(
         journal_path=journal_path,
         now_iso=_NOW,
         candidates=(_rendered(availability="anthropic", candidate=_ANTHROPIC_CANDIDATE),),
+        projected_identities=frozenset(),
     )
     admitted = covering_provider_exhaustion(
         journal_path=journal_path,
         now_iso=_NOW,
         candidates=(_rendered(availability="codex", candidate=_CODEX_CANDIDATE),),
+        projected_identities=frozenset(),
     )
 
     assert held is not None
