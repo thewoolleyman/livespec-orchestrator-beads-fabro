@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
@@ -18,6 +19,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential_io
     CLAUDE_CREDENTIAL_PROBE_MODEL,
     CLAUDE_CREDENTIAL_PROBE_TIMEOUT_SECONDS,
     probe_claude_credential,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
+    select_factory_credential,
 )
 from livespec_orchestrator_beads_fabro.io import write_stdout
 
@@ -43,8 +47,13 @@ def assess_claude_credential(
 
 def run_claude_cred_status(*, args: argparse.Namespace) -> int:
     """Probe the exact OAuth token projected to the Claude review adapter."""
+    choice = select_factory_credential(
+        environ=os.environ,
+        home=Path.home(),
+        warn=lambda _message: None,
+    )
     status = assess_claude_credential(
-        token=os.environ.get(CLAUDE_OAUTH_TOKEN_ENV),
+        token=os.environ.get(choice.env_name),
         probe=probe_claude_credential,
         wrapper_text=_WRAPPER_HINT,
     )

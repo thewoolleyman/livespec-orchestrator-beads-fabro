@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Callable
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -16,8 +18,19 @@ from livespec_orchestrator_beads_fabro.commands import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
     ClaudeCredentialStatus,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
+    selected_account_record_path,
+)
 
 _TEST_TOKEN = "test-oauth-token"
+# The caam-published profile and the pool slot the credential wrapper injects for
+# it, spelled literally the way an operator reading `printenv` sees them. The
+# values are stand-ins bound to module locals so ruff's hardcoded-credential
+# rules do not flag the literals, the same indirection the sibling
+# slot-isolation module uses.
+_SLOT_PROFILE = "anthropic-3"
+_SLOT_ENV = "CLAUDE_CODE_OAUTH_TOKEN__ANTHROPIC_3"
+_SLOT_TOKEN = "slot-oauth-token"
 
 
 def _status(*, usable: bool) -> ClaudeCredentialStatus:
@@ -37,6 +50,29 @@ def _status(*, usable: bool) -> ClaudeCredentialStatus:
 def _status_for_token(*, token: str, usable: bool) -> ClaudeCredentialStatus:
     assert token == _TEST_TOKEN
     return _status(usable=usable)
+
+
+def _recording_probe(*, seen: list[str]) -> Callable[..., ClaudeCredentialStatus]:
+    """A usable probe recording every token it was handed, in order."""
+
+    def probe(*, token: str) -> ClaudeCredentialStatus:
+        seen.append(token)
+        return _status(usable=True)
+
+    return probe
+
+
+def _publish_selected_profile(*, monkeypatch: pytest.MonkeyPatch, home: Path, profile: str) -> None:
+    """Plant the caam selection record under a private HOME the selector reads.
+
+    The path is composed through the selector's own
+    `selected_account_record_path` rather than restated, so the fixture cannot
+    drift from the location the product actually reads.
+    """
+    record = selected_account_record_path(home=home)
+    record.parent.mkdir(parents=True, exist_ok=True)
+    _ = record.write_text(json.dumps({"profile": profile}), encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
 
 
 def test_assess_distinguishes_absence_without_calling_probe() -> None:
@@ -128,6 +164,32 @@ def test_status_human_refuses_an_exhausted_token(
     assert "error_type: rate_limit_error" in out
     assert "input_tokens: null" in out
     assert "remedy: Wait before retrying." in out
+
+
+def test_status_probes_the_caam_selected_slot_not_the_unnumbered_token(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The probe reads the slot `select_factory_credential` resolves.
+
+    Measured 2026-10-16 04:00Z-04:20Z (work-item bd-ib-6zfayy): this command
+    reported the unnumbered token's anthropic-1 account as HTTP 429 while the
+    published selection `CLAUDE_CODE_OAUTH_TOKEN__ANTHROPIC_3` read HTTP 200
+    with about 88% five-hour headroom left, so every operator gate consulting
+    it held for an account no dispatch was billing. Both variables are set
+    here, with DISTINCT values: a probe handed the unnumbered one cannot be
+    mistaken for a correct selection.
+    """
+    _publish_selected_profile(monkeypatch=monkeypatch, home=tmp_path, profile=_SLOT_PROFILE)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _TEST_TOKEN)
+    monkeypatch.setenv(_SLOT_ENV, _SLOT_TOKEN)
+    seen: list[str] = []
+    monkeypatch.setattr(command, "probe_claude_credential", _recording_probe(seen=seen))
+
+    exit_code = command.run_claude_cred_status(args=argparse.Namespace(as_json=True))
+
+    assert exit_code == 0
+    assert seen == [_SLOT_TOKEN]
 
 
 def test_dispatcher_routes_claude_status_command(
