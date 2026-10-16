@@ -306,6 +306,22 @@ lives in the INVOKER's persistent keyring (uid 1000 — the wrapper drops
 privileges before stage 2), so inspecting root's keyring reports "empty" with
 perfect confidence about the wrong population.
 
+**`[ERROR] <timestamp> (500) Internal Server Error: Server experienced a fatal
+error.` from a wrapped `bd` call comes from the WRAPPER's 1Password call, not
+from Dolt — `bd` never ran.** The wrapper calls the 1Password CLI to fetch the
+credential before `bd` starts. When the 1Password service answers HTTP 500,
+the wrapper fails. The string is compiled into the 1Password CLI
+(`strings /usr/local/bin/op` contains it), while a Dolt failure reads
+`Error NNNN (SQLSTATE)`. Remedy: check whether the write landed (read it back,
+with stderr kept separate), retry once, and do not diagnose the server.
+Measured 2026-10-16 at 23:02:07Z and 23:10:31Z on two `bd comment` writes to
+the `livespec-dev-tooling` tenant. Neither landed, an immediate retry of each
+succeeded, reads kept working (the wrapper serves most calls from its cache),
+and `doltdb.service` logged no error, fatal or panic in either window. If it
+recurs often, route it to the 1password-env-wrapper owner (retry with backoff
+when `op` returns a 5xx). It is distinct from the cache-poisoning signature
+above, which injects an EMPTY password and so surfaces as a Dolt `Error 1045`.
+
 **`bd list --status open` matches NOTHING here.** This store holds livespec
 lifecycle statuses — `backlog`, `ready`, `blocked`, `active`, `acceptance`,
 `pending-approval`, `closed`. The beads-native `open` / `in_progress` names are
