@@ -403,6 +403,41 @@ def test_selection_reports_the_position_it_chose(
     assert one.selection_identity != ""
 
 
+def test_a_selection_that_splits_a_shared_workflow_input_refuses(tmp_path: Path) -> None:
+    """One workflow input cannot carry two adapters, selected or resolved.
+
+    A four-input workflow shares `acp_adapter` across `implement`, `fix` and
+    `review_fix`, so moving ONE of them to a fallback leaves that input with two
+    values. The dispatch refuses naming the input, exactly as the first
+    rendering does -- silently picking a winner would send the run an adapter
+    nobody selected while the journal reported the one that was.
+
+    All three nodes are configured IDENTICALLY so the first rendering succeeds:
+    a configuration that already split the input would refuse before any
+    selection ran, and this case would then prove nothing about the second
+    rendering. Only `implement` carries a fallback, so only it moves.
+    """
+    _assert_slice_exists()
+    repo = _repo(
+        tmp_path=tmp_path,
+        acp_nodes={
+            _NODE: _chained_entry(),
+            "fix": _primary_entry(),
+            "review_fix": _primary_entry(),
+        },
+    )
+    workflow = repo / ".fabro" / "workflows" / "implement-work-item"
+    _ = (workflow / "workflow.toml").write_text(
+        _WORKFLOW_TOML.replace("implement_adapter =", "acp_adapter ="), encoding="utf-8"
+    )
+    verdict = _verdict(repo=repo, holds=(_domain_hold(hold_key=_PRIMARY_DOMAIN),))
+
+    refusal = _prepare(repo=repo, verdict=verdict, journal=_RecordingJournal())
+
+    assert isinstance(refusal, str), refusal
+    assert "acp_adapter" in refusal
+
+
 def test_one_selection_identity_is_stable_across_two_resolutions(tmp_path: Path) -> None:
     """The identity is a function of the selection, not of the moment it was taken.
 

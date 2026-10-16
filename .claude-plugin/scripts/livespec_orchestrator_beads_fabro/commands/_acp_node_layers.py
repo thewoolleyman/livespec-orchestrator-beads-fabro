@@ -172,8 +172,24 @@ def resolve_acp_nodes(
 
 def resolution_with_adapters(
     *, resolution: AcpNodeResolution, adapters: Mapping[str, AcpAdapter]
-) -> AcpNodeResolution:
-    """The same resolution with each named node's adapter replaced.
+) -> AcpNodeResolution | str:
+    """The same resolution with each named node's adapter replaced, or a refusal.
+
+    BOTH RENDERINGS MOVE, AND THAT IS THE WHOLE REASON THIS IS A FUNCTION. A
+    resolution carries each node's adapter twice: as a `ResolvedAcpNode`, and as
+    the `--input <name>=<adapter>` pair the submitted graph's `acp.command`
+    attribute is rewritten from. Replacing only the first yields a resolution
+    that REPORTS one candidate while the engine runs another, and nothing
+    downstream disagrees, because both strings are well-formed adapters of
+    candidates the node really declares. So the run inputs are re-rendered here,
+    through the SAME `_run_inputs` the first resolution used -- a second
+    renderer is how the two would come to disagree about one adapter.
+
+    Re-rendering can REFUSE, for the reason it can refuse the first time: several
+    nodes may ride ONE workflow input, and a selection that moved one of them and
+    not another leaves that input with two values. The refusal names the input and
+    the disagreeing nodes exactly as the first rendering does, because the remedy
+    is the same -- give each node its own adapter input in the workflow.
 
     THE LAYER PROVENANCE IS LEFT ALONE ON PURPOSE. Per-node selection may replace
     a node's resolved primary with a later candidate of the same committed
@@ -187,13 +203,14 @@ def resolution_with_adapters(
     which is what keeps the no-verdict and legacy paths byte-identical: the object
     a reader compares is the very one the layer merge produced.
     """
-    return replace(
-        resolution,
-        nodes={
-            node: replace(resolved, adapter=adapters[node]) if node in adapters else resolved
-            for node, resolved in resolution.nodes.items()
-        },
-    )
+    nodes = {
+        node: replace(resolved, adapter=adapters[node]) if node in adapters else resolved
+        for node, resolved in resolution.nodes.items()
+    }
+    run_inputs = _run_inputs(nodes=nodes, inputs=resolution.inputs)
+    if isinstance(run_inputs, str):
+        return run_inputs
+    return replace(resolution, nodes=nodes, run_inputs=run_inputs)
 
 
 def _unconfigurable_node(
