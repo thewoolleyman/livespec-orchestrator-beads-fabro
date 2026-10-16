@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.203.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.203.1...v0.203.2) (2026-10-16)
+
+
+### Bug Fixes
+
+* **workflow:** drop the engine's empty checkpoint commits from a first publication ([e15af4b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e15af4b86d5fdac4888df17a17d14efe12379366))
+* **workflow:** drop the engine's empty commits in pr_refresh and carry the proof ([6ee78f9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6ee78f9f4fca0c9d0d4a4b359d5cb9ffccbdca3a))
+* **workflow:** drop the engine's empty commits on the republish merge path too ([d51c84d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d51c84d39269df44aa34f0e918041b40e1d1824d))
+
 ## [0.203.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.203.0...v0.203.1) (2026-10-16)
 
 
