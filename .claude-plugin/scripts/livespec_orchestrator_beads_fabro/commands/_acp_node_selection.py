@@ -60,7 +60,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import 
     NodePreflight,
     SkippedCandidate,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import (
+    AcpCandidate,
+    AcpCandidateIdentity,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_chain_digests import (
     selection_identity_digest,
 )
@@ -75,6 +78,7 @@ __all__: list[str] = [
     "SelectedAcpCandidate",
     "acp_node_selection_record",
     "select_acp_candidates",
+    "selected_candidate_identities",
 ]
 
 # The journal stage one dispatch's per-node selections are recorded under.
@@ -186,6 +190,32 @@ def _selection(
         full_chain=chain.full_chain,
         skipped=skipped,
     )
+
+
+def selected_candidate_identities(
+    *, selected: Mapping[str, SelectedAcpCandidate]
+) -> Mapping[str, AcpCandidateIdentity]:
+    """Each node's SELECTED candidate identity, for the run's entitlement labels.
+
+    THE SELECTED CANDIDATE AND NEVER POSITION ZERO. The labels are the only
+    venue a provider-limit attribution can read the executed candidate off, so
+    a label naming the candidate this dispatch SKIPPED would record a ceiling
+    against an allowance nothing spent -- holding an intact account while the
+    exhausted one stayed unheld. Both identities are well-formed, so no surface
+    downstream could tell the two apart; the only defence is taking the
+    identity from the selection rather than from the chain.
+
+    A node whose selected candidate carries NO identity contributes nothing.
+    That is the conservative legacy posture of `AcpCandidate.identity`: an
+    identity-less arbitrary adapter has no stable entitlement, so there is no
+    key to record and a guessed one would join a run to an allowance nobody
+    declared.
+    """
+    return {
+        node: one.candidate.identity
+        for node, one in sorted(selected.items())
+        if one.candidate.identity is not None
+    }
 
 
 def acp_node_selection_record(*, selected: Mapping[str, SelectedAcpCandidate]) -> dict[str, object]:
