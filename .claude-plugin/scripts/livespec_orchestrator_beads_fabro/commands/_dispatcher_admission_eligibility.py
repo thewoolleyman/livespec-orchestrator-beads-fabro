@@ -130,6 +130,14 @@ def filter_eligible_candidates(
     # two different instants a later pass would then disagree about.
     now_iso = utc_now_iso()
     wait = resolve_availability_wait(repo=repo, verdict=preflight, now_iso=now_iso)
+    # The ACCOUNTS this pass projects, which is the second axis the legacy
+    # provider gate is scoped on. They belong to the pass for the same reason
+    # the rendered candidates do: one admission evaluation takes at most one
+    # reading per distinct projected credential, so every row of the wave is
+    # graded against the very accounts that reading named.
+    projected_identities = frozenset(
+        reading.credential_identity for reading in preflight.headroom_assessments
+    )
     admittable: list[WorkItem] = []
     refused: list[DispatchOutcome] = []
     for item in candidates:
@@ -147,6 +155,7 @@ def filter_eligible_candidates(
             journal=journal,
             adopted_ceiling=adopted_ceiling,
             rendered=rendered,
+            projected_identities=projected_identities,
             now_iso=now_iso,
             wait=wait,
         )
@@ -165,6 +174,7 @@ def _refusal_for(  # noqa: PLR0913 -- one kw-only condition ladder; every input 
     journal: JournalFile,
     adopted_ceiling: int | None,
     rendered: tuple[RenderedCandidate, ...] | None,
+    projected_identities: frozenset[str],
     now_iso: str,
     wait: AvailabilityWait | None,
 ) -> DispatchOutcome | None:
@@ -175,6 +185,7 @@ def _refusal_for(  # noqa: PLR0913 -- one kw-only condition ladder; every input 
         journal_path=getattr(journal, "path", None),
         now_iso=now_iso,
         candidates=rendered,
+        projected_identities=projected_identities,
     )
     if exhaustion_refusal is not None:
         return exhaustion_refusal

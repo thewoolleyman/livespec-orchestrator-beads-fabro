@@ -4,7 +4,9 @@
 post-merge acceptance" -> "Every observed availability record is scoped,
 versioned, and expires": a provider-exhaustion record "MUST also carry the
 opaque non-secret credential identity that the dispatch's admission
-session-headroom assessment journaled ... when that assessment journaled one".
+session-headroom assessment journaled ... when that assessment journaled one",
+and "A record carrying a credential identity covers only a dispatch whose
+admission projects that same identity for a covered candidate".
 
 WHY THE VENDOR LABEL WAS NOT ENOUGH, which is the measurement this module
 exists for. The account the factory spends is swapped BEHIND one vendor by a
@@ -15,6 +17,11 @@ selection rotated from `anthropic-1` to `anthropic-3` at 16:52Z, four in-flight
 records their closes minted refused every `anthropic-3` dispatch until
 17:50:19Z. Every one of those refusals was correct about the vendor and wrong
 about the allowance, and nothing in the record said which.
+
+A RECORD NAMING NO ACCOUNT KEEPS ITS VENDOR-WIDE REACH, which the clause
+grants in as many words -- "including every record minted before this clause".
+An identity it never recorded is not evidence that the vendor's other accounts
+were fine, so the predicate below admits nothing on the strength of an absence.
 
 THE IDENTITY IS THE ADMISSION'S, NOT A FRESH READING. The label is taken from
 what the session-headroom assessment ALREADY JOURNALED for the dispatch, never
@@ -46,6 +53,7 @@ from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_js
 
 __all__: list[str] = [
     "journaled_admission_credential_identity",
+    "record_identity_covers_dispatch",
 ]
 
 
@@ -79,6 +87,24 @@ def journaled_admission_credential_identity(
             continue
         return _named_identity(assessments=record.get("assessments"))
     return None
+
+
+def record_identity_covers_dispatch(
+    *, record_identity: str | None, projected_identities: frozenset[str]
+) -> bool:
+    """Whether a record naming `record_identity` reaches this dispatch's accounts.
+
+    `projected_identities` is what the dispatch's own admission assessment
+    projected for its covered candidates, which is the quantity the clause
+    compares against: "covers only a dispatch whose admission projects that
+    same identity for a covered candidate".
+
+    A record naming NO account answers yes to every dispatch of its vendor,
+    which is the vendor-wide reach the clause preserves for it.
+    """
+    if record_identity is None:
+        return True
+    return record_identity in projected_identities
 
 
 def _named_identity(*, assessments: object) -> str | None:

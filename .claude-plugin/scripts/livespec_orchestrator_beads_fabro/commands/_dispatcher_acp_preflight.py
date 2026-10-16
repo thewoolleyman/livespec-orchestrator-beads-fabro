@@ -410,14 +410,35 @@ def _host_wide_ledger(
 
 
 def _legacy_providers(*, journal_path: Path | None, now_iso: str) -> frozenset[str]:
-    """The vendors still carrying an unexpired LEGACY provider-exhaustion record.
+    """The vendors still carrying an unexpired PROVIDER-ONLY exhaustion record.
 
     Read off the journal's own live records rather than by asking about a list
     of vendor names, so the per-candidate filter below sees a record naming a
     provider this build never anticipated. Asking name by name could only ever
     return the names it already held.
+
+    PROVIDER-ONLY IS THE WHOLE QUALIFICATION, and it is what the contract's own
+    wording grants the blanket to: "Legacy provider-only records remain
+    readable and effective until retirement as domain holds against candidates
+    whose built-in compatibility alias names that provider". A record carrying
+    a credential identity is not provider-only -- it names the one account that
+    observed the ceiling -- and the blanket cannot express that, because the
+    candidate filter sees vendor strings and knows nothing about which account
+    a dispatch projects. So an account-named record is excluded here and
+    scoped where the account IS known: the provider-exhaustion admission gate,
+    which is handed this pass's projected credential identities.
+
+    Leaving it in would make the account scoping inert rather than merely
+    incomplete. Measured 2026-10-16 on this repository's node shape, one
+    `anthropic` record naming an account emptied seven of eight
+    admission-required nodes through this set, so the dispatch was refused by
+    the chain-exhaustion condition one step after the gate had admitted it --
+    and, because a legacy skip is taken BEFORE the headroom reading, no
+    reading was taken either, leaving the gate with no projected account to
+    scope on at all.
     """
     return frozenset(
         record.provider
         for record in live_provider_exhaustions(journal_path=journal_path, now_iso=now_iso)
+        if record.credential_identity is None
     )
