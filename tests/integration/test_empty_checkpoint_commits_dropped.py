@@ -46,12 +46,21 @@ own tree differs from its parent's, which is the property the flag is about.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_program import (
+    CARRY_FORWARD_PROGRAM_FILENAME,
+    carry_forward_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
+    plugin_cache_gate_script,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
     PUBLICATION_PUSH_PROGRAM_FILENAME,
     publication_push_program_source,
@@ -59,6 +68,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state import (
     PUBLICATION_STATE_GIT_PATH,
     PUBLISH_HEAD_STATE_FILENAME,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
+    PUBLISH_HEAD_LABEL,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
@@ -131,6 +143,7 @@ def _commit(*, cwd: Path, path: str, text: str, subject: str) -> str:
     """Write one file and commit it, returning the resulting head."""
     _ = _git("config", "user.email", "t@example.invalid", cwd=cwd)
     _ = _git("config", "user.name", "Test", cwd=cwd)
+    (cwd / path).parent.mkdir(parents=True, exist_ok=True)
     _ = (cwd / path).write_text(text, encoding="utf-8")
     _ = _git("add", path, cwd=cwd)
     _ = _git("commit", "--quiet", "-m", subject, cwd=cwd)
@@ -231,7 +244,7 @@ def _advance_default(*, world: _World, path: str = _SHARED_FILE, text: str = "mo
     the stage's own fetch, which is the state a real dispatch is in when the
     default branch advances underneath it.
     """
-    mover = world.clone.parent / f"mover-{path}"
+    mover = world.clone.parent / f"mover-{path.replace(chr(47), chr(45))}"
     _ = _git("clone", "--quiet", str(world.origin), str(mover), cwd=world.clone.parent)
     advanced = _commit(cwd=mover, path=path, text=text, subject=f"feat: advance {path}")
     _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_DEFAULT_BRANCH}", cwd=mover)
@@ -404,6 +417,17 @@ def _materialized_push_program(*, root: Path) -> Path:
     _ = program.write_text(publication_push_program_source(), encoding="utf-8")
     program.chmod(0o700)
     return plugins_root
+
+
+def _blob_identity(*, world: _World, head: str, path: str) -> str:
+    """The blob one path carries at one commit, asked of git rather than of the tree.
+
+    The decision's own measure of "the tree the proof observed is unchanged" is
+    per-path rather than whole-tree, and it has to be: a refresh onto an
+    advanced default branch brings that branch's own paths in, so the root tree
+    differs on every refresh that did anything at all.
+    """
+    return _git("rev-parse", f"{head}:{path}", cwd=world.clone).stdout.strip()
 
 
 def _ancestor_of(*, world: _World, earlier: str, later: str) -> bool:
@@ -591,3 +615,311 @@ def test_a_published_tip_carrying_empties_fails_closed_without_the_lease_helper(
     assert result.returncode != 0, result.stdout
     assert "LIVESPEC_PUBLISH_DRAFT_PUSH_PROGRAM_ABSENT" in result.stderr
     assert world.remote_head(ref=_BRANCH) == published
+
+
+# The four decision inputs `pr_refresh` records beside its changed marker, and
+# that `pr_refresh_head` hands the carry-forward program. Spelled as LITERALS
+# here because the package exports no names for them: a Red's test bytes are
+# fixed across its Red-to-Green pair, so a top-level import of a name that does
+# not exist would make the Red a collection error, which proves the name absent
+# and nothing about the behaviour.
+_PREVIOUS_HEAD_FILENAME = "livespec-pr-refresh-previous-head"
+_PREVIOUS_BASE_FILENAME = "livespec-pr-refresh-previous-base"
+_NEW_BASE_FILENAME = "livespec-pr-refresh-new-base"
+_NEW_HEAD_FILENAME = "livespec-pr-refresh-new-head"
+
+# The inert class the carry-forward decision derives from `plan/`, and the spec
+# root the world declares. `SPEC` rather than this repository's own
+# `SPECIFICATION`, so the classes derived from the declaration can only be right
+# by having been READ.
+_INERT_PATH = "plan/topic/note.md"
+_SPEC_ROOT = "SPEC"
+
+# The `gh` a `pr_refresh` needs: it reads whether the pull request carries an
+# auto-merge request before it rebases (v145) and fails closed when it cannot.
+# `null` is the state these cases are about -- the disarm itself is driven in
+# `test_scripted_refresh_execution.py`.
+_UNARMED_GH_LINES = ("#!/bin/sh", "printf 'null\\n'", "")
+
+# The `gh` the DECISION needs: the pull request's comments going in, and the
+# record it posts coming back out, captured so the verdict is read off the
+# durable artifact rather than off stderr alone.
+_DECISION_GH_LINES = (
+    "#!/usr/bin/env python3",
+    "import os, pathlib, sys",
+    "argv = sys.argv[1:]",
+    "if argv[:2] == ['pr', 'view']:",
+    "    sys.stdout.write(pathlib.Path(os.environ['GH_COMMENTS']).read_text())",
+    "    raise SystemExit(0)",
+    "if argv[:2] == ['pr', 'comment']:",
+    "    body = argv[argv.index('--body-file') + 1]",
+    "    out = pathlib.Path(os.environ['GH_POSTED'])",
+    "    target = out / (str(len(list(out.iterdir()))) + '.md')",
+    "    target.write_text(pathlib.Path(body).read_text())",
+    "    sys.stdout.write('https://forge.invalid/pull/3116#issuecomment-1\\n')",
+    "    raise SystemExit(0)",
+    "sys.stderr.write('unexpected gh invocation: ' + repr(argv))",
+    "raise SystemExit(2)",
+    "",
+)
+
+
+def _published_run(*, root: Path) -> tuple[_World, str]:
+    """A run whose publish branch is already published, with empties above it.
+
+    The state a `pr_refresh` is entered in: `publish_draft` pushed a head, and
+    the engine has checkpointed once per node since -- `proof_capture` and
+    `proof_verify` -- so HEAD carries empty commits the published tip does not.
+    That is the shape whose empties `pr_refresh` is the only stage positioned to
+    drop, because publication has already happened by the time they exist.
+
+    The world also declares a spec root and carries an inert-classed path, so
+    the SAME fixture can be handed to the carry-forward decision.
+    """
+    world = _world(root=root)
+    _ = _commit(
+        cwd=world.clone,
+        path=".livespec.jsonc",
+        text='{\n  // a comment\n  "spec_root": "' + _SPEC_ROOT + '"\n}\n',
+        subject="chore: declare the spec root",
+    )
+    _ = _commit(
+        cwd=world.clone, path=_OWNED_FILE, text="this run's work\n", subject="feat: the run's work"
+    )
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=world.clone)
+    published = world.head()
+    world.state_dir().mkdir(parents=True, exist_ok=True)
+    _ = (world.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(
+        f"{published}\n", encoding="utf-8"
+    )
+    _ = _checkpoint(cwd=world.clone, subject="fabro(run): proof_capture (succeeded)")
+    _ = _checkpoint(cwd=world.clone, subject="fabro(run): proof_verify (succeeded)")
+    return world, published
+
+
+def _refresh_plugins_root(*, root: Path) -> Path:
+    """The sandbox plugins root `pr_refresh` resolves, carrying both helpers.
+
+    The exact-head push program AND the plugin-cache gate, each written from its
+    own production source. The gate's own prepare-step body is RUN here, which
+    records this case's plugin pin -- so the stage's later re-entry is the
+    ENFORCEMENT arm rather than a first recording, and a gate that refused would
+    stop the refresh before its push.
+    """
+    plugins_root = _materialized_push_program(root=root)
+    gate_script = root / "install-plugin-gate.sh"
+    _ = gate_script.write_text(plugin_cache_gate_script(), encoding="utf-8")
+    _ = subprocess.run(
+        ["bash", str(gate_script)],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={
+            **_fixture_env(),
+            SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins_root),
+            "HOME": str(root / "home"),
+        },
+    )
+    return plugins_root
+
+
+def _run_pr_refresh(*, world: _World, plugins_root: Path) -> subprocess.CompletedProcess[str]:
+    """Execute the shipped `pr_refresh` bytes in this world's clone."""
+    bin_dir = world.clone.parent / "refresh-bin"
+    bin_dir.mkdir(exist_ok=True)
+    gh = bin_dir / "gh"
+    _ = gh.write_text("\n".join(_UNARMED_GH_LINES), encoding="utf-8")
+    gh.chmod(0o755)
+    return subprocess.run(
+        ["bash", "-c", _node_script(node="pr_refresh", check_suite="true")],
+        cwd=world.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            "PATH": f"{bin_dir}:/usr/local/bin:/usr/bin:/bin",
+            "HOME": str(world.clone.parent / "home"),
+            "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
+            "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
+            SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins_root),
+        },
+    )
+
+
+def _verified_record(*, world: _World, head: str) -> str:
+    """One `verified` Proof of Done record the carry-forward decision can read.
+
+    Its single reproduction step is a direct read of the one path the ITEM
+    changed, with the read identity taken from the working tree AFTER the
+    refresh -- which is the comparison the decision makes, so taking it any
+    earlier would assert against a file the stage had already re-materialized.
+    """
+    identity = _git("hash-object", "--no-filters", _OWNED_FILE, cwd=world.clone).stdout.strip()
+    return "\n".join(
+        [
+            "Proof of Done — verified — run run-1 — 2026-10-16T00:00:00Z",
+            "",
+            f"{PUBLISH_HEAD_LABEL}: {head}",
+            "Working directory: .",
+            f"Read: {_OWNED_FILE} {identity}",
+            "",
+            "## Assertion 1 — the owned file says what it says.",
+            "",
+            f"1. Run `cat {_OWNED_FILE}`.",
+            "",
+            "```",
+            "this run's work",
+            "```",
+            "",
+        ]
+    )
+
+
+def _run_carry_forward_decision(
+    *, world: _World, root: Path, record: str
+) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    """Run the decision program as `pr_refresh_head` runs it, over the refresh's own state.
+
+    The four inputs are READ OFF the state files `pr_refresh` wrote rather than
+    recomputed here: the claim is about the decision the stage's own refresh
+    leads to, and a test that supplied its own heads would be grading a refresh
+    it had described rather than the one that happened.
+    """
+    program = root / CARRY_FORWARD_PROGRAM_FILENAME
+    _ = program.write_text(carry_forward_program_source(), encoding="utf-8")
+    bin_dir = root / "decision-bin"
+    bin_dir.mkdir(exist_ok=True)
+    gh = bin_dir / "gh"
+    _ = gh.write_text("\n".join(_DECISION_GH_LINES), encoding="utf-8")
+    gh.chmod(0o755)
+    comments = root / "comments.json"
+    _ = comments.write_text(json.dumps({"comments": [{"url": "u", "body": record}]}), "utf-8")
+    posted_dir = root / "posted"
+    posted_dir.mkdir(exist_ok=True)
+    inputs = {
+        "--previous-head": _PREVIOUS_HEAD_FILENAME,
+        "--previous-base": _PREVIOUS_BASE_FILENAME,
+        "--new-base": _NEW_BASE_FILENAME,
+        "--new-head": _NEW_HEAD_FILENAME,
+    }
+    argv: list[str] = [
+        sys.executable,
+        str(program),
+        "--pull-request",
+        "3116",
+        "--default-branch",
+        _DEFAULT_BRANCH,
+    ]
+    for flag, filename in inputs.items():
+        recorded = world.state(name=filename)
+        assert recorded is not None, f"pr_refresh recorded no {filename}"
+        argv.extend([flag, recorded.strip()])
+    result = subprocess.run(
+        argv,
+        cwd=world.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            "PATH": f"{bin_dir}:/usr/local/bin:/usr/bin:/bin",
+            "HOME": str(root / "home"),
+            "GH_COMMENTS": str(comments),
+            "GH_POSTED": str(posted_dir),
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_SYSTEM": "/dev/null",
+        },
+    )
+    return result, [path.read_text(encoding="utf-8") for path in sorted(posted_dir.iterdir())]
+
+
+def test_pr_refresh_republishes_without_the_empty_commits_it_inherited(
+    tmp_path: Path,
+) -> None:
+    """The third refresh site, and the only one positioned to reach these empties.
+
+    By the time `pr_refresh` runs, the branch has been published and the engine
+    has checkpointed once per node since — so the empties above the published
+    tip exist only after publication, and no earlier stage can drop them. This
+    stage's rebase is the one that can, and it is already a REWRITING stage: it
+    republishes under an explicit lease, so dropping the empties costs it no new
+    capability.
+
+    FIVE INSTRUMENTS. The published branch must carry no empty commit and must
+    still carry the run's work; origin's publish branch must be what the clone
+    now holds; the publication record must be rewritten to it, or the NEXT
+    refresh refuses its own push as foreign; and the changed marker must be set,
+    or `pr_refresh_head` routes a rewritten head to `pr` on proof of the old one.
+    """
+    world, published = _published_run(root=tmp_path)
+    plugins_root = _refresh_plugins_root(root=tmp_path)
+    assert (
+        len(_commits_that_started_empty(world=world, base=published, head="HEAD")) == 2
+    ), "the fixture carries no empty commits above the published tip"
+    advanced = _advance_default(world=world, path=_INERT_PATH, text="a plan note\n")
+
+    result = _run_pr_refresh(world=world, plugins_root=plugins_root)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_REFRESH_CHANGED" in result.stderr
+    assert _published_empties(world=world) == []
+    republished = world.remote_head(ref=_BRANCH)
+    assert republished == world.head()
+    assert republished != published
+    assert (
+        _git("show", f"{republished}:{_OWNED_FILE}", cwd=world.clone).stdout == "this run's work\n"
+    )
+    assert world.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{republished}\n"
+    assert _ancestor_of(world=world, earlier=advanced, later=republished)
+
+
+def test_a_refresh_that_only_dropped_empty_commits_carries_the_proof_forward(
+    tmp_path: Path,
+) -> None:
+    """The rewritten head is still the tree the proof was verified on.
+
+    Dropping the empties makes the refresh REWRITE every commit of the run,
+    which is exactly the shape a carry-forward decision could mistake for new
+    work: the head differs, the previous published head is no longer contained,
+    and nothing about the shas says the tree is unchanged. The decision has to
+    reach `carried_forward` anyway, from the readings rather than the shas — the
+    patch identity of the item's own diff, the blob of every observed path, the
+    recorded read identity against the new working tree, and the replay.
+
+    THE DECISION RUNS OVER THE REFRESH'S OWN STATE FILES, not over heads this
+    case computed, so the claim is about the refresh that happened. Each half of
+    the premise is asserted independently of the verdict, because "it carried
+    forward" over work that had genuinely changed would be the wrong answer
+    reached for the wrong reason: the republished branch carries no empty
+    commit, the path the proof observed carries the same blob it did at the
+    verified head, and the verified head is no longer contained -- which is the
+    rewrite, and without it there would be nothing for the decision to survive.
+
+    THE PREMISE IS PER-PATH AND NOT WHOLE-TREE, which is not a weakening. A
+    refresh onto an advanced default branch brings that branch's own paths into
+    the tree, so the root tree differs on every refresh that did anything; the
+    question the decision answers is whether the incoming commits could have
+    affected what the proof OBSERVED, and the observed path's blob is that
+    question's own instrument.
+    """
+    world, published = _published_run(root=tmp_path)
+    plugins_root = _refresh_plugins_root(root=tmp_path)
+    _ = _advance_default(world=world, path=_INERT_PATH, text="a plan note\n")
+
+    refresh = _run_pr_refresh(world=world, plugins_root=plugins_root)
+    assert refresh.returncode == 0, refresh.stderr
+    assert _published_empties(world=world) == []
+    republished = world.head()
+    assert _blob_identity(world=world, head=published, path=_OWNED_FILE) == _blob_identity(
+        world=world, head=republished, path=_OWNED_FILE
+    ), "the refresh changed the observed path, so this is not the drop-only case"
+    assert not _ancestor_of(world=world, earlier=published, later=republished)
+
+    decision, posted = _run_carry_forward_decision(
+        world=world, root=tmp_path, record=_verified_record(world=world, head=published)
+    )
+
+    assert decision.returncode == 0, decision.stderr
+    assert "LIVESPEC_CARRY_FORWARD_CARRIED" in decision.stderr
+    assert len(posted) == 1
+    assert "Decision: carried_forward" in posted[0]
+    assert f"{PUBLISH_HEAD_LABEL}: {republished}" in posted[0]

@@ -540,6 +540,16 @@ destructive_cli_allowlist = [
 #   it would exercise the ladder and leave the readings and the replay — the
 #   half a reader cannot check by eye — untested. It scrubs the child env
 #   exactly as an allowlisted spawn must, by passing an explicit `env`.
+# - test_empty_checkpoint_commits_dropped.py drives the two publishing stages'
+#   OWN script bytes against a real origin, which spawns `bash` and `git` and
+#   nothing this check scans for. Its ONE python spawn is the same materialized
+#   carry-forward decision program as the entry above, run for the same reason:
+#   that program decides whether a refresh whose only change was dropping the
+#   engine's empty commits still covers the verified proof, and every input to
+#   that decision is a git reading of a repository the stage itself has just
+#   rewritten. No in-process call can stand in, because the head under decision
+#   does not exist until the shipped shell has produced it. It scrubs the child
+#   env exactly as an allowlisted spawn must, by passing an explicit `env`.
 #
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables
 # below (same TOML attachment reason as `destructive_cli_allowlist`).
@@ -567,6 +577,7 @@ subprocess_spawn_allowlist = [
     "tests/integration/test_scripted_publication_execution.py",
     "tests/integration/test_scripted_refresh_execution.py",
     "tests/integration/test_pr_refresh_carry_forward_scenario178.py",
+    "tests/integration/test_empty_checkpoint_commits_dropped.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]
