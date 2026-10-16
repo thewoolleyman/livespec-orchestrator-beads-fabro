@@ -19,11 +19,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_reattach impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_detail import (
     needs_human_terminal_detail,
+    needs_human_terminal_preservation,
     needs_human_terminal_reason,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     NEEDS_HUMAN_MARKER,
     DispatchPlan,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_events import (
+    terminal_event_output,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import causal_stage_failure
 from livespec_orchestrator_beads_fabro.commands._fabro_escalation import (
@@ -141,9 +145,9 @@ def _needs_human_terminal_outcome(
     the dispatch reports exit code 4 — so the sentinel produces the very same
     `blocked` outcome the gate did, with a detail that names the preserved
     ref and the ledger valve instead of a `fabro attach` that would find no
-    run to attach to. The sentinel is read from BOTH the raw stderr and the
-    structured detail, for the same reason the dead-implementer breaker
-    does: neither channel is guaranteed to carry a node's own output.
+    run to attach to. The terminal's stage event supplies its emitted output;
+    client stderr and structured detail remain fallbacks for legacy records.
+    Neither fallback is guaranteed to carry a node's own output.
 
     EVERY STRUCTURED FAILURE FIELD IS CARRIED, exactly as the sibling `failed`
     outcome below carries them. Passing none of them is what made the
@@ -177,6 +181,8 @@ def _needs_human_terminal_outcome(
     rendered prose back, which is the coupling every typed field above exists
     to avoid. One verdict, two surfaces, no reparse.
     """
+    emitted = terminal_event_output(payload=None if inspect is None else inspect.events_payload)
+    text = f"{emitted}\n{text}"
     if NEEDS_HUMAN_MARKER not in text:
         return None
     causal = causal_stage_failure(
@@ -198,6 +204,7 @@ def _needs_human_terminal_outcome(
         needs_human_kind=causal.kind,
         needs_human_stages=causal.stages,
         needs_human_reason=needs_human_terminal_reason(text=text),
+        needs_human_preservation=needs_human_terminal_preservation(text=text),
         fabro_run_id=run_id,
         fabro_failure_cause=None if failure is None else failure.cause,
         fabro_failure_category=None if failure is None else failure.category,

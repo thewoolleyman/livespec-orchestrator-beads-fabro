@@ -121,6 +121,7 @@ def test_failed_dispatch_reinspects_when_terminal_inspect_has_no_failure_yet(
                 stdout=json.dumps([{"status": {"kind": "failed"}}]),
                 stderr="",
             ),
+            CommandResult(exit_code=0, stdout="[]", stderr=""),
             CommandResult(
                 exit_code=0,
                 stdout=json.dumps(
@@ -140,6 +141,7 @@ def test_failed_dispatch_reinspects_when_terminal_inspect_has_no_failure_yet(
                 ),
                 stderr="",
             ),
+            CommandResult(exit_code=0, stdout="[]", stderr=""),
         ]
     )
     journal = _RecordingJournal()
@@ -157,17 +159,26 @@ def test_failed_dispatch_reinspects_when_terminal_inspect_has_no_failure_yet(
     assert outcome.fabro_failure_category == "deterministic"
     assert outcome.fabro_failure_cause == "You've hit your usage limit."
     assert outcome.fabro_failure_signature == "implement|deterministic|provider limit"
-    # `fabro-run-labels` closes the sequence because this failure IS a provider
-    # ceiling, and the entitlement it spent is recorded on the factory's run row
-    # rather than in the inspect payload. The read is taken once, after the
-    # re-inspection that finally produced a failure block — so its position here
-    # is also what says the re-inspection ran first.
+    # `fabro-run-labels` appears because this failure IS a provider ceiling, and
+    # the entitlement it spent is recorded on the factory's run row rather than
+    # in the inspect payload. The read is taken once, after the re-inspection
+    # that finally produced a failure block — so its position here is also what
+    # says the re-inspection ran first.
+    #
+    # `fabro-terminal-events` closes each observation of a run the engine
+    # reports FAILED, because the needs-human terminal writes its preservation
+    # sentinel to its own stage output and that output reaches neither the
+    # client's stderr nor the run conclusion. Two reads appear because
+    # `inspect_after_run` observes this run twice: a provider ceiling leaves the
+    # first observation with no failure block, so it re-inspects.
     assert [record["stage"] for record in journal.records] == [
         "fabro-run",
         "fabro-inspect",
         "fabro-reattach",
+        "fabro-terminal-events",
         "fabro-inspect",
         "fabro-run-labels",
+        "fabro-terminal-events",
     ]
 
 

@@ -182,6 +182,10 @@ def _recorded_hold(*, repo: Path) -> Path:
         replies={
             "inspect": CommandResult(exit_code=0, stdout=_INSPECT_STDOUT, stderr=""),
             "ps": CommandResult(exit_code=0, stdout=_PS_STDOUT, stderr=""),
+            # Every case here observes a FAILED run, which also spends the
+            # terminal event-stream read that recovers a needs-human
+            # terminal's emitted preservation sentinel.
+            "events": CommandResult(exit_code=0, stdout="[]", stderr=""),
         }
     )
     plan = _plan(repo=repo)
