@@ -4,9 +4,18 @@
 post-merge acceptance": "The floor is a committed-only
 `dispatcher.session_headroom_floor_percent` (integer from 0 through 100
 inclusive, default 20) ... It is NOT declared API-configurable, and is
-therefore committed-only", and "One assessment per distinct projected
-credential per admission evaluation MUST be reused across nodes and candidates
-sharing that credential."
+therefore committed-only"; "The admission horizon is a committed-only
+`dispatcher.session_headroom_horizon_minutes` (integer from 0 through 1440
+inclusive, default 180)"; and "One assessment per distinct projected credential
+per admission evaluation MUST be reused across nodes and candidates sharing
+that credential."
+
+BOTH DIALS ARE RESOLVED HERE, ONCE, AND RIDE THE POLICY TOGETHER. The floor
+decides on the LEVEL this reading carries and the horizon decides on the
+PROJECTION taken from it, so a filter holding one without the other can grade
+only half the clause -- and the two are read from one repository at one instant,
+which is what keeps a dispatch from being graded against a floor and a horizon
+that were never committed together.
 
 THE MEMO LIVES HERE, IN THE POLICY, AND NOT IN THE FILTER. The filter runs once
 per NODE against one `PreflightInputs`, so a memo threaded through it would
@@ -47,6 +56,7 @@ from returns.unsafe import unsafe_perform_io
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT,
+    DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES,
     SessionHeadroomPolicy,
     SessionHeadroomReading,
 )
@@ -73,8 +83,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_io 
 
 __all__: list[str] = [
     "SESSION_HEADROOM_FLOOR_PERCENT_KEY",
+    "SESSION_HEADROOM_HORIZON_MINUTES_KEY",
     "journal_session_headroom",
     "resolve_session_headroom_floor_percent",
+    "resolve_session_headroom_horizon_minutes",
     "session_headroom_policy",
 ]
 
@@ -86,9 +98,12 @@ class JournalWriter(Protocol):
 
 
 SESSION_HEADROOM_FLOOR_PERCENT_KEY = "session_headroom_floor_percent"
+SESSION_HEADROOM_HORIZON_MINUTES_KEY = "session_headroom_horizon_minutes"
 
 _FLOOR_MINIMUM = 0
 _FLOOR_MAXIMUM = 100
+_HORIZON_MINIMUM_MINUTES = 0
+_HORIZON_MAXIMUM_MINUTES = 1440
 
 
 def resolve_session_headroom_floor_percent(*, cwd: Path) -> IOResult[int, PolicySettingUnreadable]:
@@ -101,7 +116,46 @@ def resolve_session_headroom_floor_percent(*, cwd: Path) -> IOResult[int, Policy
     """
     return read_dispatcher_config_value(
         cwd=cwd, key=SESSION_HEADROOM_FLOOR_PERCENT_KEY
-    ).bind_result(lambda value: _floor_value(value=value))
+    ).bind_result(
+        lambda value: _bounded_dial(
+            value=value,
+            setting=SESSION_HEADROOM_FLOOR_PERCENT_KEY,
+            default=DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT,
+            minimum=_FLOOR_MINIMUM,
+            maximum=_FLOOR_MAXIMUM,
+        )
+    )
+
+
+def resolve_session_headroom_horizon_minutes(
+    *, cwd: Path
+) -> IOResult[int, PolicySettingUnreadable]:
+    """Read the committed horizon, bounded to the clause's inclusive 0..1440 range.
+
+    The SECOND dial that needs a maximum as well as a minimum, and it needs one
+    for the mirror-image reason the floor does: an unbounded horizon is not a
+    stricter dial, it is one no projected exhaustion can ever fall outside, so a
+    committed 4000 would refuse every covered candidate whose drain is
+    measurable at all -- while reading, in the record, exactly like a horizon
+    somebody chose.
+
+    COMMITTED-ONLY, as the clause ratifies it, so -- like the floor -- it is
+    deliberately NOT a member of `_drive_config_schema.CONFIG_KEYS`. That
+    manifest is what makes a setting reachable over the `drive --action
+    set-config` write surface, so the absent declaration IS the mechanism
+    rather than a documentation choice.
+    """
+    return read_dispatcher_config_value(
+        cwd=cwd, key=SESSION_HEADROOM_HORIZON_MINUTES_KEY
+    ).bind_result(
+        lambda value: _bounded_dial(
+            value=value,
+            setting=SESSION_HEADROOM_HORIZON_MINUTES_KEY,
+            default=DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES,
+            minimum=_HORIZON_MINIMUM_MINUTES,
+            maximum=_HORIZON_MAXIMUM_MINUTES,
+        )
+    )
 
 
 def session_headroom_policy(
@@ -111,7 +165,7 @@ def session_headroom_policy(
     journal_path: Path | None,
     read: Callable[..., SessionHeadroomReading] = read_projected_session_headroom,
 ) -> SessionHeadroomPolicy:
-    """This evaluation's floor plus its at-most-once reading of the projection.
+    """This evaluation's two dials plus its at-most-once reading of the projection.
 
     `journal_path` is the history the DRAIN RATE is measured against, and it is
     a required parameter rather than a defaulted one: `None` is the honest
@@ -130,6 +184,11 @@ def session_headroom_policy(
             DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT
         )
     )
+    horizon = unsafe_perform_io(
+        resolve_session_headroom_horizon_minutes(cwd=repo).value_or(
+            DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES
+        )
+    )
     taken: list[SessionHeadroomReading] = []
 
     def read_once() -> SessionHeadroomReading:
@@ -145,7 +204,7 @@ def session_headroom_policy(
             )
         return taken[0]
 
-    return SessionHeadroomPolicy(floor_percent=floor, read=read_once)
+    return SessionHeadroomPolicy(floor_percent=floor, horizon_minutes=horizon, read=read_once)
 
 
 def _projected_drain_rate(
@@ -195,22 +254,27 @@ def _projected_token() -> str | None:
     return os.environ.get(choice.env_name)
 
 
-def _floor_value(*, value: object) -> Result[int, PolicySettingUnreadable]:
-    """The declared floor, or the refusal naming the range it fell outside."""
+def _bounded_dial(
+    *, value: object, setting: str, default: int, minimum: int, maximum: int
+) -> Result[int, PolicySettingUnreadable]:
+    """One declared dial, or the refusal naming the range it fell outside.
+
+    ONE grader for both dials rather than one apiece. They differ only in their
+    bounds, and a second hand-rolled copy is how two dials written from the same
+    clause come to disagree about whether "inclusive" includes its endpoints --
+    which is exactly the boundary the clause states twice and an almost-correct
+    implementation moves.
+    """
     if value is None:
-        return Success(DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT)
-    if (
-        isinstance(value, int)
-        and not isinstance(value, bool)
-        and _FLOOR_MINIMUM <= value <= _FLOOR_MAXIMUM
-    ):
+        return Success(default)
+    if isinstance(value, int) and not isinstance(value, bool) and minimum <= value <= maximum:
         return Success(value)
     return Failure(
         PolicySettingUnreadable(
-            setting=SESSION_HEADROOM_FLOOR_PERCENT_KEY,
+            setting=setting,
             detail=(
-                f"dispatcher.{SESSION_HEADROOM_FLOOR_PERCENT_KEY} must be an integer from "
-                f"{_FLOOR_MINIMUM} through {_FLOOR_MAXIMUM} inclusive; got {value!r}"
+                f"dispatcher.{setting} must be an integer from "
+                f"{minimum} through {maximum} inclusive; got {value!r}"
             ),
         )
     )

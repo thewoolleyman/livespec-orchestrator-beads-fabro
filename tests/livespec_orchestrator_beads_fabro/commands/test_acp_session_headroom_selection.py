@@ -115,7 +115,11 @@ def _policy(*, utilization: object = 90) -> headroom.SessionHeadroomPolicy:
     reading = headroom.session_headroom_reading(
         credential_identity="cred-1", observed_at=_NOW, utilization=utilization
     )
-    return headroom.SessionHeadroomPolicy(floor_percent=_FLOOR, read=lambda: reading)
+    return headroom.SessionHeadroomPolicy(
+        floor_percent=_FLOOR,
+        horizon_minutes=headroom.DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES,
+        read=lambda: reading,
+    )
 
 
 def _verdict(*, chains: dict[str, ResolvedAcpChain]) -> AcpPreflightVerdict:

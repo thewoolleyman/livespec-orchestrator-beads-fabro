@@ -149,14 +149,22 @@ def _policy(
             )
         return taken[0]
 
-    return headroom.SessionHeadroomPolicy(floor_percent=floor_percent, read=read_once)
+    return headroom.SessionHeadroomPolicy(
+        floor_percent=floor_percent,
+        horizon_minutes=headroom.DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES,
+        read=read_once,
+    )
 
 
 def _unobservable_policy(*, floor_percent: int = _FLOOR) -> headroom.SessionHeadroomPolicy:
     reading = headroom.unobservable_session_headroom(
         credential_identity="cred-1", observed_at=_NOW, reason="timed-out"
     )
-    return headroom.SessionHeadroomPolicy(floor_percent=floor_percent, read=lambda: reading)
+    return headroom.SessionHeadroomPolicy(
+        floor_percent=floor_percent,
+        horizon_minutes=headroom.DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES,
+        read=lambda: reading,
+    )
 
 
 def _filter(

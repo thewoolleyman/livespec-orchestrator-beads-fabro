@@ -108,7 +108,11 @@ def _reading(*, utilization: object) -> headroom.SessionHeadroomReading:
 
 
 def _policy(*, reading: headroom.SessionHeadroomReading) -> headroom.SessionHeadroomPolicy:
-    return headroom.SessionHeadroomPolicy(floor_percent=_FLOOR, read=lambda: reading)
+    return headroom.SessionHeadroomPolicy(
+        floor_percent=_FLOOR,
+        horizon_minutes=headroom.DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES,
+        read=lambda: reading,
+    )
 
 
 def _verdict(
