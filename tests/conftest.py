@@ -163,27 +163,41 @@ def _hermetic_state_home(
 
 _FACTORY_CREDENTIAL_SLOT_PREFIX = "CLAUDE_CODE_OAUTH_TOKEN__"
 
-_PROJECTED_CREDENTIAL_GRADE_ENV = (
+_PROJECTED_CREDENTIAL_USE_ENV = (
     "LIVESPEC_CREDENTIAL_EXPIRY_EPOCH",
     "LIVESPEC_CREDENTIAL_REQUIRED_REMAINING_SECONDS",
+    "LIVESPEC_CREDENTIAL_USE_UNPROTECTED",
 )
 
 
 @pytest.fixture(autouse=True)
-def _hermetic_projected_credential_grade(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep worker-only credential grades out of the test process.
+def _hermetic_projected_credential_use(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep worker-only credential-use projections out of the test process.
 
-    The factory projects these two values for a real dispatched worker. They
-    are ambient runtime inputs, not repository test configuration. If they
-    reach pytest, a deadline-only guard test silently becomes a credential-
-    grade test and its synthetic one-hour deadline is judged against the
-    factory run's longer required lifetime.
+    The factory projects these values for a real dispatched worker. They are
+    ambient runtime inputs, not repository test configuration. If they reach
+    pytest, a deadline-only guard test silently becomes a credential-grade
+    test and its synthetic one-hour deadline is judged against the factory
+    run's longer required lifetime.
 
-    Tests that exercise the grade can set the pair explicitly after this
-    fixture runs. Every other test starts from the same absent state on a
-    developer host, in CI, and inside a factory sandbox.
+    THE UNPROTECTED DECLARATION IS THE THIRD MEMBER OF THAT SET, and it was
+    missing here until 2026-10-16 because it was added to the projection after
+    this fixture was written. The guard refuses when it is set ALONGSIDE a
+    deadline -- "the declaration must be '1' and must stand alone" -- and it
+    fails CLOSED, so an unprotected sandbox leaked the declaration into every
+    child these cases spawn and 27 of them refused at startup instead of
+    exercising the deadline. Measured in a factory sandbox whose PID 1 carries
+    `LIVESPEC_CREDENTIAL_USE_UNPROTECTED=1`: 27 failed with the var ambient, 91
+    passed with it removed, on a tree whose eight credential-use modules are
+    byte-identical to master. `test_dispatcher_credential_use_unprotected.py`
+    was unaffected throughout -- it pops the name in its own `_hermetic_env`
+    and sets it explicitly per case, which is the precedent this follows.
+
+    Tests that exercise the grade or the unprotected route set the names they
+    need explicitly after this fixture runs. Every other test starts from the
+    same absent state on a developer host, in CI, and inside a factory sandbox.
     """
-    for name in _PROJECTED_CREDENTIAL_GRADE_ENV:
+    for name in _PROJECTED_CREDENTIAL_USE_ENV:
         monkeypatch.delenv(name, raising=False)
 
 
