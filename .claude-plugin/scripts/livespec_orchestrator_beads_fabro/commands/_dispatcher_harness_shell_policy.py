@@ -34,18 +34,40 @@ file is therefore what makes the overlay's declaration effective, and it leaves
 the committed project file alone, which is right for a second reason: that file
 is the interactive host sessions' setting and is not the factory's to rewrite.
 
+AND WHY THE PATH IS ASKED OF GIT RATHER THAN SPELLED. The harness resolves the
+`local` source against the PROJECT DIRECTORY, which is the clone root -- and the
+clone root is NOT a fixed `/workspace` path on any layout this fleet has
+measured. `_dispatcher_sandbox_worktree_exclude` records two
+(`/workspace/<repo>` on the pinned engine, `/workspace` itself on the Petri-era
+engine) and a live hp sandbox measured on 2026-10-16 is a third: the clone is
+`/repos/<owner>/<repo>`, with `/workspace/<repo>` a symlink to it and
+`/workspace` its parent. So a `/workspace/.claude/settings.local.json` is a file
+no harness loads, and that is the failure this projection was first shipped
+with: the write was correct, the merge was correct, exactly one step ran it, and
+a shell tool call in that same sandbox still reported
+`BASH_MAX_TIMEOUT_MS=1200000` -- the committed project value -- while its own
+process environment carried 3600000 and the `/workspace` file holding 3600000
+had been on disk since before the harness started. Both steps therefore ask
+`git rev-parse --show-toplevel`, which is how the sibling exclude script already
+answers the same question, and the write FAILS CLOSED when git cannot answer:
+there is nowhere to put the file the harness reads, so proceeding would leave
+the sandbox capped at the committed value with nothing but a log line to say so.
+
 THIS RAISES NO CEILING. It makes the ceiling the env table already declares the
 EFFECTIVE one. Both projections render from the ONE `_HARNESS_SHELL_ENV` tuple
 below, because the whole defect is two sources of truth for one cap disagreeing:
 a second spelling inside the fix would be the same fault one layer along.
 
-THE WRITE MERGES rather than replacing. A sandbox that already carries a
-`settings.local.json` keeps every other key it holds -- hooks, permissions,
-anything a prepare step or an image put there -- and only the `env` members this
-projection names are replaced. A file holding no JSON object cannot be merged
-into, so that one arm writes a fresh document and SAYS SO on stderr: the
-alternative is a prepare-step failure, which kills the run at launch before any
-work is driven, over a per-sandbox file that no longer parses.
+THE WRITE MERGES rather than replacing, and at the clone root that is REQUIRED
+rather than defensive: the harness writes its OWN permission approvals into this
+very file while the run is driving -- the live hp sandbox's copy already held 29
+`permissions.allow` entries -- so an overwrite there would discard live session
+state. A sandbox that already carries a `settings.local.json` keeps every other
+key it holds, and only the `env` members this projection names are replaced. A
+file holding no JSON object cannot be merged into, so that one arm writes a fresh
+document and SAYS SO on stderr: the alternative is a prepare-step failure, which
+kills the run at launch before any work is driven, over a per-sandbox file that
+no longer parses.
 """
 
 from __future__ import annotations
@@ -58,7 +80,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_exc
 
 __all__: list[str] = [
     "HARNESS_SETTINGS_MARKER",
-    "SANDBOX_HARNESS_SETTINGS_PATH",
+    "SANDBOX_HARNESS_SETTINGS_PATH_EXPRESSION",
+    "SANDBOX_HARNESS_SETTINGS_RELATIVE_PATH",
     "harness_settings_merge_program",
     "harness_settings_prepare_steps_block",
     "harness_shell_env_lines",
@@ -91,9 +114,30 @@ _HARNESS_SHELL_ENV: tuple[tuple[str, str], ...] = (
     ("BASH_MAX_TIMEOUT_MS", "3600000"),
 )
 
-# The `local` settings source, inside the sandbox. The Claude harness resolves it
-# relative to the project directory, which is the clone root on both engines.
-SANDBOX_HARNESS_SETTINGS_PATH = "/workspace/.claude/settings.local.json"
+# The `local` settings source, spelled RELATIVE to the clone root, because the
+# clone root is what the harness resolves that source against and it is not a
+# fixed path on any layout this fleet has measured (see the module docstring:
+# `/workspace/<repo>`, `/workspace`, and `/repos/<owner>/<repo>` with
+# `/workspace/<repo>` a symlink to it, all three in service today).
+SANDBOX_HARNESS_SETTINGS_RELATIVE_PATH = ".claude/settings.local.json"
+
+# The clone root as the QUESTION rather than as an answer. One spelling, shared
+# by both prepare steps, so they cannot come to name different files -- the same
+# reason both projections render from the one env tuple above.
+_CLONE_ROOT_COMMAND = "git rev-parse --show-toplevel"
+
+# The settings source as ONE shell word, for the exclude step, whose shared
+# renderer takes paths as literals and quotes them into the script it emits. The
+# fallback keeps an unanswerable `git` from pointing the renderer's own `mkdir`
+# at the filesystem root: with it, the probe resolves inside the step's working
+# directory and the exclusion reports its labelled pass-over, which is what that
+# renderer owes a path it cannot place. The WRITE step owes the opposite and
+# refuses; the two differ because an exclusion nobody could write concerns a path
+# git was never going to stage, while a write nobody could place is this
+# projection failing silently.
+SANDBOX_HARNESS_SETTINGS_PATH_EXPRESSION = (
+    f"$({_CLONE_ROOT_COMMAND} 2>/dev/null || echo .)/{SANDBOX_HARNESS_SETTINGS_RELATIVE_PATH}"
+)
 
 # Prefixes every line the projection emits, so a line in a prepare-step log is
 # attributable to this projection rather than to whichever of the several
@@ -180,16 +224,23 @@ def harness_settings_prepare_steps_block() -> str:
     reason it is at the sibling call sites: the Petri-era engine runs each prepare
     step as a graph node and checkpoints after it, so a step that writes inside
     the clone before the exclusion is in place is a step whose checkpoint commits
-    what it wrote. The path IS inside the clone on that engine, where the clone is
-    `/workspace` itself. This fleet's repositories already gitignore
-    `.claude/settings.local.json`, which would cover it here -- but that is a
-    fact about the GOVERNED repository's own file, and the overlay serves
-    repositories that have made no such commitment, so the exclusion is what
-    makes the projection safe without depending on one.
+    what it wrote. Here the path is inside the clone on EVERY engine, because the
+    clone root is exactly where it is resolved to -- which is what makes this
+    exclusion load-bearing rather than latent. At the fixed `/workspace` path
+    this projection first shipped with, the same step could never write an entry
+    at all: `/workspace/.claude` is inside no worktree on the measured layout, so
+    the shared script took its pass-over arm and exited 0, and that sandbox's
+    `info/exclude` held only the default template. This fleet's repositories
+    already gitignore `.claude/settings.local.json`, which would cover it here --
+    but that is a fact about the GOVERNED repository's own file, and the overlay
+    serves repositories that have made no such commitment, so the exclusion is
+    what makes the projection safe without depending on one.
 
     ONE FILE is named, not the `.claude` directory around it: that directory is
     one a governed repository legitimately tracks (its committed settings, its
     hooks), and excluding it would hide the repository's own content from git.
+    That narrowness matters more now than it did at a `/workspace` path, since
+    the directory this names IS the governed repository's own.
 
     The write runs under `python3` rather than in shell, because the merge reads
     a JSON document the sandbox may already carry and preserving its other keys
@@ -198,12 +249,19 @@ def harness_settings_prepare_steps_block() -> str:
     it -- so this adds no new one.
     """
     exclude = worktree_exclude_script(
-        paths=(SANDBOX_HARNESS_SETTINGS_PATH,),
+        paths=(SANDBOX_HARNESS_SETTINGS_PATH_EXPRESSION,),
         label=HARNESS_SETTINGS_MARKER,
     )
     script = (
         "set -eu\n"
-        f'settings="{SANDBOX_HARNESS_SETTINGS_PATH}"\n'
+        f'toplevel="$({_CLONE_ROOT_COMMAND} 2>/dev/null || true)"\n'
+        'if [ -z "$toplevel" ]; then\n'
+        f'  echo "{HARNESS_SETTINGS_MARKER}: no clone root resolved from'
+        " '$PWD', so the harness shell ceilings could not be written to a"
+        ' settings source the harness loads" >&2\n'
+        "  exit 1\n"
+        "fi\n"
+        f'settings="$toplevel/{SANDBOX_HARNESS_SETTINGS_RELATIVE_PATH}"\n'
         'mkdir -p "$(dirname "$settings")"\n'
         "python3 - \"$settings\" <<'PY'\n"
         f"{harness_settings_merge_program()}"

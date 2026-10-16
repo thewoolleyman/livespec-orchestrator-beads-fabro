@@ -232,11 +232,23 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   policy, as the TWO projections it needs: the `[environments.<id>.env]` lines
   that put its keys in the sandbox PROCESS environment, and the
   exclude-then-write prepare steps that put the SAME keys in the sandbox's own
-  `/workspace/.claude/settings.local.json`. Split out of `_dispatcher_overlay`
+  `<clone root>/.claude/settings.local.json`. Split out of `_dispatcher_overlay`
   by cohesion once the policy stopped being one env table (`bd-ib-rv2jk4`);
   `harness_shell_env_lines` is re-exported from the overlay because that is
-  where every caller already reaches for it. Four properties an editor must not
-  invert. BOTH projections render from the ONE `_HARNESS_SHELL_ENV` tuple,
+  where every caller already reaches for it. Five properties an editor must not
+  invert. The settings path is ASKED OF GIT (`git rev-parse --show-toplevel`)
+  and never spelled, because the harness resolves the `local` source against the
+  PROJECT DIRECTORY and the clone root is not a fixed path on any layout this
+  fleet runs: `/workspace/<repo>` on the pinned engine, `/workspace` itself on
+  the Petri-era engine, and `/repos/<owner>/<repo>` with `/workspace/<repo>` a
+  symlink to it in a live hp sandbox measured 2026-10-16 — where a
+  `/workspace/.claude/settings.local.json` holding 3600000 sat on disk from
+  before harness start while a shell tool call still reported the committed
+  1200000, so the first shipped path wrote correct bytes somewhere nothing
+  loads. The WRITE fails closed when git cannot answer, where the paired
+  exclusion passes over, because a write nobody can place is this projection
+  failing silently while an exclusion nobody can write concerns a path git was
+  never going to stage. BOTH projections render from the ONE `_HARNESS_SHELL_ENV` tuple,
   which is the whole repair: the env table alone was NOT the effective ceiling,
   because the sandbox agent starts the harness with `settingSources: ["user",
   "project", "local"]`, so the governed repository's committed
@@ -248,8 +260,12 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `local` source and never the committed `project` one, because `local`
   outranks `project` (measured on the operator host) and because the committed
   file is the interactive host sessions' setting. The write MERGES the `env`
-  members into whatever document the sandbox already carries, so a
-  `settings.local.json` an image or an earlier step left keeps its other keys;
+  members into whatever document the sandbox already carries, which at the clone
+  root is REQUIRED rather than defensive — the harness writes its own permission
+  approvals into that same file while the run is driving (39 `permissions.allow`
+  entries in the measured sandbox), so an overwrite would discard live session
+  state — so a `settings.local.json` an image, an earlier step or the harness
+  itself left keeps its other keys;
   a file holding no JSON object cannot be merged into, so that one arm writes a
   fresh document and SAYS SO on stderr rather than failing the prepare step,
   which would kill the run at launch over a per-sandbox file that no longer
