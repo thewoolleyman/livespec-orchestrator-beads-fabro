@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.205.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.204.0...v0.205.0) (2026-10-16)
+
+
+### Features
+
+* **dispatcher:** bound a derived hold from its attempt's occurrence time ([85a44d3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/85a44d30bd2e8aafb20ef7c028e6e8a72d6c2852))
+* **dispatcher:** derive availability observations from factory-native run records ([9e1086e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9e1086e7f0c8771880691b213f6123652c1a186c))
+* **dispatcher:** filter admission candidates by host-wide factory evidence ([7824541](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7824541825eb085ce1bdbf03d64aec3316c697de))
+* **dispatcher:** name the factory run a journaled derived hold is audited by ([e65dd06](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e65dd06269e31302fb5d3b9086b34451f680b3dd))
+
+
+### Refactoring
+
+* **dispatcher:** split the derived availability record from its host-wide read ([d5d1cde](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d5d1cde2c206565ab4da0517d57ffbd87ea9584b))
+
 ## [0.204.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.203.3...v0.204.0) (2026-10-16)
 
 
