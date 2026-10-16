@@ -2139,14 +2139,42 @@ and named `<epic-id>__<session-identity>__<capture|verify>__<NN>__<slug>.<ext>`
 a ledger comment) — and the BUILD IDENTITY exercised: the release tag
 and the installed build identifier of every artifact the steps ran, or
 the literal `release: none` with the default-branch commit exercised.
-Where a release applies to the plan's work — the governed repository
-carries at least one release tag — a `captured` record taken against an
-unreleased tree is not evidence: the steps MUST run against the released
-artifact installed through its normal installation path, and the archive
-gate MUST reject a record that states `release: none` for such a
-repository, or names a release tag the repository does not carry, naming
-the missing release identity. The installed build identifier is
-recorded, not verified. A `verified` or `not_reproduced` record MUST be
+The release rule is judged against the RELEASE REPOSITORY of each
+record. Except where a later sentence of this paragraph names the
+governed repository instead, the release repository is named by the
+first whitespace-delimited word of the first installed build identifier
+the record names when that word has the form `<owner>/<repository>`
+(exactly one `/`, neither part empty) or the form of a bare
+`<repository>` (no `/`), the bare form denoting the same forge owner as
+the governed repository's `origin` remote. Every repository's release
+tags — the governed repository's included — MUST be read by an
+authenticated read of its remote on the forge that hosts the governed
+repository, and MUST NOT be read from any local clone or worktree. When
+the governed repository has no `origin` remote, the forge cannot be
+reached, or the gate holds no credentials the forge accepts, the archive
+gate MUST reject the record, naming the repository it tried to read and
+the failure. When the record carries no installed build identifier, when
+that first word has neither form, or when it is a bare `<repository>`
+that the authenticated forge reports does not exist, the release
+repository is the plan's governed repository. When the first word has
+the `<owner>/<repository>` form and the authenticated forge reports that
+repository does not exist, or when any read the release rule makes — of
+the governed repository, of a named release repository, or of whether a
+bare `<repository>` exists — fails in any other way, the archive gate
+MUST reject the record, naming the repository it tried to read and the
+failure, and MUST NOT fall back to the governed repository. Where a
+release applies to the plan's work — the release repository carries at
+least one release tag — a `captured` record taken against an unreleased
+tree is not evidence: the steps MUST run against the released artifact
+installed through its normal installation path, and the archive gate
+MUST reject a record that states `release: none` for such a repository,
+or names, as its first release tag, a tag the release repository does
+not carry, naming the missing release identity and the release
+repository it judged. The gate MUST NOT accept a tag merely because some
+repository carries it: the tag MUST be carried by the record's release
+repository. The installed build identifier is recorded, not verified,
+save for the repository name the release rule reads from it. A
+`verified` or `not_reproduced` record MUST be
 published by a party with no role in the plan's implementation,
 replaying the captured steps verbatim. The implementation MUST provide
 one posting primitive that renders plan records, so that no session

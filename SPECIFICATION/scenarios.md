@@ -4309,9 +4309,31 @@ Feature: A plan is done when its stated outcome was observed, not when its child
     And the plan directory and the epic are unchanged
   Scenario: A record captured against an unreleased tree is not evidence
     Given a plan whose governed repository carries a release tag
-    And a captured plan Proof of Done record whose build identity states release none
+    And a captured plan Proof of Done record with no installed build identifier whose build identity states release none
     When the archive gate evaluates the proof leg
     Then the record is rejected naming the missing release identity
+  Scenario: A record names a sibling repository's release
+    Given a plan whose governed repository does not carry the release tags its records name
+    And plan Proof of Done records whose installed build identifier begins with the name of a sibling repository on the same forge owner
+    And no clone of the sibling repository exists on the host running the archive gate
+    When the archive gate evaluates the proof leg
+    Then the record's release tag is judged against the sibling repository's release tags read from its remote
+    And a record naming a tag the sibling repository's remote carries is accepted as evidence
+    And a record naming a tag the sibling repository's remote does not carry is rejected naming the missing release identity and the sibling repository
+  Scenario: An unreachable or unauthenticated forge does not fall back to the governed repository
+    Given a plan Proof of Done record whose installed build identifier names a sibling repository
+    And the forge cannot be reached or the archive gate holds no credentials it accepts
+    When the archive gate evaluates the proof leg
+    Then the record is rejected naming the repository it tried to read and the failure
+  Scenario: An explicitly named repository that does not exist is rejected
+    Given a plan Proof of Done record whose installed build identifier begins with an owner and repository the authenticated forge reports does not exist
+    When the archive gate evaluates the proof leg
+    Then the record is rejected naming that repository
+    And the record is not judged against the governed repository
+  Scenario: A first word that names no repository falls back to the governed repository
+    Given a plan Proof of Done record whose installed build identifier begins with a bare word the authenticated forge reports is not a repository of the governed repository's owner
+    When the archive gate evaluates the proof leg
+    Then the record's release tag is judged against the governed repository's release tags read from its remote
   Scenario: A self-verified record is refused
     Given a captured plan Proof of Done record published by one session identity
     When the same session drives the posting primitive to publish a verified record replaying it
