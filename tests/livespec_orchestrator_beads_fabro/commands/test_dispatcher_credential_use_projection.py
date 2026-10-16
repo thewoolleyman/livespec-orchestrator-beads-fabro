@@ -63,6 +63,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
     CREDENTIAL_EXPIRY_ENV_VAR,
     CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
+    CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
     GUARD_REFUSAL_EXIT_CODE,
     GUARD_SCRIPT_PATH,
 )
@@ -180,6 +181,28 @@ def _rebased(*, text: str, sandbox: Path) -> str:
     return text.replace(_SANDBOX_ROOT, str(sandbox))
 
 
+def _hermetic_env() -> dict[str, str]:
+    """This process's environment with every credential-use projection removed.
+
+    A factory stage running this suite carries its OWN projection of all four
+    names the guard reads; inherited, they would grade the stage's credential
+    instead of the case's. The unprotected DECLARATION is the one no case here
+    assigns over, so inherited from a dispatch that routed no Codex credential
+    it stands beside the case's own deadline and the guard refuses the
+    contradictory pair -- at the startup check AND at the launch that follows
+    it, which are separate observations and must agree.
+    """
+    env = dict(os.environ)
+    for name in (
+        CREDENTIAL_USE_DEADLINE_ENV_VAR,
+        CREDENTIAL_EXPIRY_ENV_VAR,
+        CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
+        CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
+    ):
+        env.pop(name, None)
+    return env
+
+
 def _run_step(
     *,
     script: str,
@@ -187,15 +210,7 @@ def _run_step(
     sandbox: Path,
 ) -> subprocess.CompletedProcess[str]:
     """Execute ONE generated prepare step exactly as the engine's shell would."""
-    child_env = dict(os.environ)
-    # A factory stage running this suite carries its OWN projection of all three;
-    # inherited, they would grade the stage's credential instead of the case's.
-    for name in (
-        CREDENTIAL_USE_DEADLINE_ENV_VAR,
-        CREDENTIAL_EXPIRY_ENV_VAR,
-        CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
-    ):
-        child_env.pop(name, None)
+    child_env = _hermetic_env()
     child_env.update({key: _rebased(text=value, sandbox=sandbox) for key, value in env.items()})
     return subprocess.run(
         ["/bin/sh", "-c", _rebased(text=script, sandbox=sandbox)],
@@ -297,7 +312,7 @@ def _prepare_then_launch(
         text=True,
         timeout=_STEP_TIMEOUT_SECONDS,
         env={
-            **os.environ,
+            **_hermetic_env(),
             **{key: _rebased(text=value, sandbox=sandbox) for key, value in env.items()},
         },
         check=False,

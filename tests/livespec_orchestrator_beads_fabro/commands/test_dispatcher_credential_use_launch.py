@@ -62,6 +62,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
+    CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
     GUARD_REFUSAL_EXIT_CODE,
     GUARD_SCRIPT_PATH,
     GUARD_TERM_GRACE_SECONDS,
@@ -184,6 +185,12 @@ def _launch(
     """Execute one rendered launch string as the engine would."""
     adapter_env, argv = _engine_launch(rendered=rendered, sandbox=sandbox)
     child_env = dict(os.environ)
+    # The deadline below replaces an inherited one; the unprotected DECLARATION
+    # has no assignment here to displace it, and a factory stage running this
+    # suite under a dispatch that routed no Codex credential carries it. Left
+    # standing, the guard refuses every launch below for a cause no case chose
+    # -- including the refusal cases, which would stop asserting their own.
+    child_env.pop(CREDENTIAL_USE_UNPROTECTED_ENV_VAR, None)
     child_env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = str(deadline)
     child_env.update(extra_env or {})
     # The adapter's own assignments are applied AFTER the projected ones, exactly

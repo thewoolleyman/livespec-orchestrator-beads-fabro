@@ -55,6 +55,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
     CREDENTIAL_EXPIRY_ENV_VAR,
     CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
+    CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
     GUARD_REFUSAL_EXIT_CODE,
     GUARD_TERM_GRACE_SECONDS,
     credential_use_deadline_epoch_capped,
@@ -99,12 +100,21 @@ def _hermetic_env() -> dict[str, str]:
     a case's verdict depends on which node happens to run the suite: a `review_fix`
     stage requiring 7200 seconds refused the "fresh" one-hour case on 2026-10-10
     while the host and CI, which project nothing, passed it.
+
+    The unprotected DECLARATION is scrubbed for a sharper reason than the other
+    three, each of which a case overrides by setting its own value: no case here
+    sets that name, so an inherited one simply stands. A dispatch routing no
+    Codex credential projects it, and the guard refuses a deadline standing
+    beside it, so every case below -- the refusal cases included, which would
+    then refuse for a cause no case chose -- would grade the SUITE's own launch
+    posture rather than the one it set up.
     """
     env = dict(os.environ)
     for name in (
         CREDENTIAL_USE_DEADLINE_ENV_VAR,
         CREDENTIAL_EXPIRY_ENV_VAR,
         CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
+        CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
     ):
         env.pop(name, None)
     return env

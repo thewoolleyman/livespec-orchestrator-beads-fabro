@@ -53,6 +53,7 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
+    CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
     guard_script_text,
 )
 
@@ -85,7 +86,16 @@ def _guard_script(*, tmp_path: Path) -> Path:
 
 
 def _env_with(*, deadline: int) -> dict[str, str]:
+    """This case's deadline over an environment carrying no other projection.
+
+    The deadline below replaces any inherited one, but the unprotected
+    DECLARATION has no such assignment to displace it: a factory stage running
+    this suite under a dispatch that routed no Codex credential carries it, and
+    the guard refuses a deadline standing beside it. Scrubbed, so a case here
+    observes the reaper it armed rather than a refusal at launch.
+    """
     env = dict(os.environ)
+    env.pop(CREDENTIAL_USE_UNPROTECTED_ENV_VAR, None)
     env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = str(deadline)
     return env
 

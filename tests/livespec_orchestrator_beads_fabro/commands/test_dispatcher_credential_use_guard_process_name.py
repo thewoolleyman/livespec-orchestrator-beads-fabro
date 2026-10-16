@@ -50,6 +50,7 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
+    CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
     GUARD_TERM_GRACE_SECONDS,
     guard_script_text,
 )
@@ -180,6 +181,12 @@ def _stop_instant_under_guard(*, tmp_path: Path, name: str) -> tuple[float, int]
     pid_file = tmp_path / "pid"
     deadline = int(time.time()) + _SOON_SECONDS
     env = dict(os.environ)
+    # The deadline below replaces an inherited one; the unprotected DECLARATION
+    # has no assignment here to displace it, and a factory stage running this
+    # suite under a dispatch that routed no Codex credential carries it. Left
+    # standing it refuses this launch, so the case would measure a refusal
+    # rather than the instant an adversarially named child stopped.
+    env.pop(CREDENTIAL_USE_UNPROTECTED_ENV_VAR, None)
     env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = str(deadline)
 
     with _owned_processes(guard=guard, pid_file=pid_file):

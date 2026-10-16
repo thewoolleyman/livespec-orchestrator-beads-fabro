@@ -44,6 +44,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
     CREDENTIAL_EXPIRY_ENV_VAR,
     CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
+    CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
     GUARD_SCRIPT_PATH,
     guarded_acp_command,
 )
@@ -206,16 +207,20 @@ def _rendered_env(*, sandbox_root: Path) -> dict[str, str]:
 
     Read through a real TOML parser from the production renderer, so the
     transport the guard reads its inputs through is the one under test. The
-    three credential names are scrubbed from the inherited environment
+    four names the guard reads are scrubbed from the inherited environment
     first: a factory stage running this suite carries its OWN projection of
-    all three, and inherited they would grade the stage's credential rather
-    than this case's.
+    them, and inherited they would grade the stage's credential rather
+    than this case's. The unprotected DECLARATION is the one no rendered
+    table here replaces, so inherited from a dispatch that routed no Codex
+    credential it stands beside this case's deadline and the guard refuses
+    the pair.
     """
     child = dict(os.environ)
     for name in (
         CREDENTIAL_USE_DEADLINE_ENV_VAR,
         CREDENTIAL_EXPIRY_ENV_VAR,
         CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
+        CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
     ):
         child.pop(name, None)
     table = tomli.loads(credential_use_env_lines(projection=_projection()))
