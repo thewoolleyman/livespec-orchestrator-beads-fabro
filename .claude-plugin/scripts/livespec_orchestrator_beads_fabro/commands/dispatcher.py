@@ -48,6 +48,7 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
                                  --verdict <captured|verified|not_reproduced|
                                             human_attested>
                                  --record <path> [--invoker <id>]
+  dispatcher.py file-canary --repo <path>
   dispatcher.py probe --repo <path> --item <id> [common flags]
   dispatcher.py dispatch --repo <path> --item <id> [common flags]
   dispatcher.py resume --repo <path> --item <id> [common flags]
@@ -299,6 +300,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit import (
     emit_calibration,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_canary import (
+    add_file_canary_arguments,
+    run_file_canary_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential_command import (
     run_claude_cred_status,
 )
@@ -423,6 +428,7 @@ __all__: list[str] = [
     "run_clear_provider_exhaustion_command",
     "run_codex_cred_refresh",
     "run_codex_cred_status",
+    "run_file_canary_command",
     "run_id",
     "run_janitor_check",
     "run_ledger_check",
@@ -443,6 +449,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "codex-cred-refresh": run_codex_cred_refresh,
     "codex-cred-status": run_codex_cred_status,
     "dispatch": run_dispatch_command,
+    "file-canary": run_file_canary_command,
     "janitor-check": run_janitor_check,
     "ledger-check": run_ledger_check,
     "ledger-normalize": run_ledger_normalize,
@@ -486,6 +493,7 @@ def _build_parser() -> argparse.ArgumentParser:
     add_reconcile_merged_arguments(parser=subparsers.add_parser("reconcile-merged"))
     add_post_host_record_arguments(parser=subparsers.add_parser("post-host-record"))
     add_post_plan_record_arguments(parser=subparsers.add_parser("post-plan-record"))
+    add_file_canary_arguments(parser=subparsers.add_parser("file-canary"))
     add_probe_arguments(parser=subparsers.add_parser("probe"))
     dispatch = subparsers.add_parser("dispatch")
     add_dispatch_common(parser=dispatch)
