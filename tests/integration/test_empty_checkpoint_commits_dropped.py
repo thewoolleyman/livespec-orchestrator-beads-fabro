@@ -52,9 +52,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
+    PUBLICATION_PUSH_PROGRAM_FILENAME,
+    publication_push_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state import (
     PUBLICATION_STATE_GIT_PATH,
     PUBLISH_HEAD_STATE_FILENAME,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
+    SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -382,3 +389,205 @@ def test_an_unmoved_default_branch_still_drops_the_empty_checkpoint_commits(
     published = world.remote_head(ref=_BRANCH)
     assert published == world.head()
     assert _git("show", f"{published}:{_OWNED_FILE}", cwd=world.clone).stdout == "this run's work\n"
+
+
+def _materialized_push_program(*, root: Path) -> Path:
+    """A sandbox plugins root carrying the PRODUCTION exact-head push helper.
+
+    Written from its own source rather than restated here, so the lease a
+    republication performs is the lease the Dispatcher ships. The root reaches
+    the stage through the env var the stage itself resolves.
+    """
+    plugins_root = root / "plugins"
+    plugins_root.mkdir(parents=True, exist_ok=True)
+    program = plugins_root / PUBLICATION_PUSH_PROGRAM_FILENAME
+    _ = program.write_text(publication_push_program_source(), encoding="utf-8")
+    program.chmod(0o700)
+    return plugins_root
+
+
+def _ancestor_of(*, world: _World, earlier: str, later: str) -> bool:
+    """Whether one commit is contained in another, asked of git rather than inferred."""
+    return (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", earlier, later],
+            cwd=world.clone,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=_fixture_env(),
+        ).returncode
+        == 0
+    )
+
+
+def test_a_review_fix_republish_drops_the_empties_above_the_published_tip(
+    tmp_path: Path,
+) -> None:
+    """The preserve_remote_ancestry MERGE path, which no rebase flag can reach.
+
+    On re-entry — every accepted review fix re-earns a green janitor and
+    re-enters this stage — origin's publish tip is an ancestor of this run's
+    HEAD, so the stage MERGES the current default tip rather than rebasing, to
+    retain the already-published ancestry and keep the push fast-forward. A
+    merge drops nothing, so the empty commits the engine minted since the last
+    publication survive it: the flags that fix the first publication leave this
+    path exactly as it was.
+
+    THE PUBLISHED TIP IS ASSERTED STILL CONTAINED, which is what keeps this a
+    repair of the merge path rather than its replacement. A stage that reached
+    for the whole-branch rebase instead would publish a head with no empty
+    commits and pass a weaker assertion, while having rewritten a tip the forge
+    is already serving and a reviewer has already read.
+
+    AND THE EXACT-HEAD PUSH HELPER IS WITHHELD, deliberately, as the instrument
+    that proves the push stayed a FAST-FORWARD. Both a fast-forward and a lease
+    move the ref to the same sha, so nothing in the final refs tells them apart;
+    with no helper materialized, a stage that tried to lease fails closed before
+    pushing anything.
+    """
+    world = _petri_run(root=tmp_path)
+    _ = _advance_default(world=world)
+
+    first = _run_publish_draft(world=world)
+    assert first.returncode == 0, first.stderr
+    published_first = world.remote_head(ref=_BRANCH)
+    assert _published_empties(world=world) == []
+
+    # The rest of the run, as the engine leaves it: a checkpoint per node, an
+    # accepted review fix, and another checkpoint.
+    _ = _checkpoint(cwd=world.clone, subject="fabro(run): proof_capture (succeeded)")
+    _ = _commit(
+        cwd=world.clone, path=_OWNED_FILE, text="the reviewer's fix\n", subject="fix: review fix"
+    )
+    _ = _checkpoint(cwd=world.clone, subject="fabro(run): janitor (succeeded)")
+    assert (
+        len(_commits_that_started_empty(world=world, base=published_first, head="HEAD")) == 2
+    ), "the fixture carries no empty commits above the published tip"
+    _ = _advance_default(world=world, path="second.txt", text="moved again\n")
+
+    result = _run_publish_draft(world=world)
+
+    assert result.returncode == 0, result.stderr
+    assert _published_empties(world=world) == []
+    republished = world.remote_head(ref=_BRANCH)
+    assert republished == world.head()
+    assert republished != published_first
+    assert _ancestor_of(
+        world=world, earlier=published_first, later=republished
+    ), "the already-published tip was rewritten rather than preserved"
+    assert world.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{republished}\n"
+    assert (
+        _git("show", f"{republished}:{_OWNED_FILE}", cwd=world.clone).stdout
+        == "the reviewer's fix\n"
+    )
+
+
+def _anchored_run(*, root: Path) -> tuple[_World, str]:
+    """A run whose ALREADY-PUBLISHED tip itself carries empty checkpoint commits.
+
+    The shape a PR-anchored resume of pull request 3113 or 3114 reaches: that
+    branch was published by a run of the pre-repair build, so the empties are
+    inside the published ancestry rather than above it, and dropping them is a
+    rewrite of a ref the forge is already serving. The resuming run's HEAD
+    descends from that tip, so the stage reads it as its own and takes the
+    preserve path.
+    """
+    world = _world(root=root)
+    _ = _checkpoint(cwd=world.clone, subject="fabro(prior): dod_gate (succeeded)")
+    _ = _commit(
+        cwd=world.clone,
+        path=_OWNED_FILE,
+        text="work the prior run published\n",
+        subject="feat: work",
+    )
+    _ = _checkpoint(cwd=world.clone, subject="fabro(prior): janitor (succeeded)")
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=world.clone)
+    published = world.head()
+    (world.clone / ".git" / PUBLICATION_STATE_GIT_PATH).mkdir(parents=True, exist_ok=True)
+    _ = (world.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(
+        f"{published}\n", encoding="utf-8"
+    )
+    _ = _checkpoint(cwd=world.clone, subject="fabro(resume): implement (succeeded)")
+    _ = _commit(
+        cwd=world.clone, path=_OWNED_FILE, text="the resumed run's work\n", subject="feat: resumed"
+    )
+    return world, published
+
+
+def test_a_published_tip_carrying_empties_is_rewritten_under_an_explicit_lease(
+    tmp_path: Path,
+) -> None:
+    """The arm the preserve path cannot serve, and the reason the lease exists.
+
+    When the empties sit INSIDE the published ancestry — a resume anchored on a
+    pull request the pre-repair build published, which is exactly pull requests
+    3113 and 3114 — no amount of dropping above that tip reaches them, so
+    preserving the ancestry and dropping the empties are incompatible. The
+    guarantee wins: the stage refreshes onto the default tip, drops every empty
+    commit, and republishes under an EXPLICIT lease against the tip it observed.
+
+    THE TIP IS THIS RUN'S OWN BY MEASUREMENT, not by assumption, which is what
+    keeps this narrow. The arm is reachable only where the observed tip is an
+    ANCESTOR of this run's HEAD, so the history being rewritten is history this
+    run contains; a foreign tip still fails closed on the unchanged sentinel.
+
+    FOUR INSTRUMENTS, because "no empty commit" alone is satisfied by a stage
+    that published nothing. The published branch must carry the resumed work,
+    the record must name the republished head (or `pr` compares the pull
+    request against a head nothing published), the old tip must NOT be
+    contained — that is the rewrite, and its absence would mean the empties
+    survived — and the stage must say on its own transcript which tip it leased
+    against, so the rewrite is readable rather than inferred from a moved ref.
+    """
+    world, published = _anchored_run(root=tmp_path)
+    assert (
+        len(
+            _commits_that_started_empty(
+                world=world, base=f"origin/{_DEFAULT_BRANCH}", head=published
+            )
+        )
+        == 2
+    ), "the fixture's published tip carries no empty commits"
+    plugins_root = _materialized_push_program(root=tmp_path)
+
+    result = _run_publish_draft(
+        world=world, extra_env={SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins_root)}
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _published_empties(world=world) == []
+    republished = world.remote_head(ref=_BRANCH)
+    assert republished == world.head()
+    assert not _ancestor_of(world=world, earlier=published, later=republished)
+    assert world.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{republished}\n"
+    assert (
+        _git("show", f"{republished}:{_OWNED_FILE}", cwd=world.clone).stdout
+        == "the resumed run's work\n"
+    )
+    assert published in result.stderr
+
+
+def test_a_published_tip_carrying_empties_fails_closed_without_the_lease_helper(
+    tmp_path: Path,
+) -> None:
+    """The control that makes the arm above a LEASE rather than a bare force.
+
+    Without this case, "the branch was republished without its empty commits"
+    is equally consistent with a stage that force-pushed, which is the one
+    thing the ratified clause forbids of a publication rewrite. The helper is
+    the only route to an expected-object push, so withholding it must stop the
+    stage before it writes anything — and origin's publish branch is asserted
+    UNMOVED, because a refusal issued after the push would leave the same
+    sentinel on stderr and a rewritten ref behind it.
+    """
+    world, published = _anchored_run(root=tmp_path)
+
+    result = _run_publish_draft(
+        world=world,
+        extra_env={SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(tmp_path / "absent-plugins")},
+    )
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_PROGRAM_ABSENT" in result.stderr
+    assert world.remote_head(ref=_BRANCH) == published
