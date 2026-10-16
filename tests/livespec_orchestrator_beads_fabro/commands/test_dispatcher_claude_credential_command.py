@@ -31,6 +31,9 @@ _TEST_TOKEN = "test-oauth-token"
 _SLOT_PROFILE = "anthropic-3"
 _SLOT_ENV = "CLAUDE_CODE_OAUTH_TOKEN__ANTHROPIC_3"
 _SLOT_TOKEN = "slot-oauth-token"
+# The selector's own fallback marker. Matched rather than the whole line so the
+# reason clause stays the selector's to word.
+_FALLBACK_WARNING = "factory credential slot fallback"
 
 
 def _status(*, usable: bool) -> ClaudeCredentialStatus:
@@ -190,6 +193,48 @@ def test_status_probes_the_caam_selected_slot_not_the_unnumbered_token(
 
     assert exit_code == 0
     assert seen == [_SLOT_TOKEN]
+
+
+@pytest.mark.parametrize(
+    ("profile", "reason_fragment"),
+    [
+        (None, "no caam-published account selection record"),
+        ("anthropic-9", "CLAUDE_CODE_OAUTH_TOKEN__ANTHROPIC_9"),
+    ],
+)
+def test_status_falls_back_to_the_unnumbered_token_and_says_so_once_on_stderr(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    profile: str | None,
+    reason_fragment: str,
+) -> None:
+    """Both fallback arms probe the unnumbered token and announce themselves.
+
+    The two arms are the selector's own: no published selection at all, and a
+    published profile whose pool slot the wrapper did not inject. Each reports
+    the reason that distinguishes it, because a fallback that said only that it
+    fell back leaves an operator unable to tell a host with no rotation record
+    from one whose wrapper is missing a slot — two conditions with different
+    remedies. Exactly ONE line is required: a silent reversion to a different
+    account is the defect, and a repeated one would mean the selector ran twice
+    and the two runs could disagree.
+    """
+    if profile is None:
+        monkeypatch.setenv("HOME", str(tmp_path))
+    else:
+        _publish_selected_profile(monkeypatch=monkeypatch, home=tmp_path, profile=profile)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _TEST_TOKEN)
+    seen: list[str] = []
+    monkeypatch.setattr(command, "probe_claude_credential", _recording_probe(seen=seen))
+
+    exit_code = command.run_claude_cred_status(args=argparse.Namespace(as_json=True))
+
+    assert exit_code == 0
+    assert seen == [_TEST_TOKEN]
+    announced = [line for line in capsys.readouterr().err.splitlines() if _FALLBACK_WARNING in line]
+    assert len(announced) == 1
+    assert reason_fragment in announced[0]
 
 
 def test_dispatcher_routes_claude_status_command(

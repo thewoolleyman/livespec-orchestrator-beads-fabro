@@ -23,7 +23,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential_io
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
     select_factory_credential,
 )
-from livespec_orchestrator_beads_fabro.io import write_stdout
+from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
 __all__: list[str] = [
     "assess_claude_credential",
@@ -50,7 +50,7 @@ def run_claude_cred_status(*, args: argparse.Namespace) -> int:
     choice = select_factory_credential(
         environ=os.environ,
         home=Path.home(),
-        warn=lambda _message: None,
+        warn=lambda message: write_stderr(text=f"livespec-dispatch: {message}\n"),
     )
     status = assess_claude_credential(
         token=os.environ.get(choice.env_name),
