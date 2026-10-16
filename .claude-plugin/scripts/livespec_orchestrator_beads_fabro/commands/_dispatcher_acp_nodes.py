@@ -55,6 +55,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_repository import (
 )
 from livespec_orchestrator_beads_fabro.commands._acp_node_selection import (
     acp_node_selection_record,
+    selected_candidate_identities,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._acp_structured_render import READ_ONLY_NODES
@@ -241,7 +242,13 @@ def prepare_acp_nodes(  # noqa: PLR0913 — kw-only dispatch inputs; each is one
     selected = select_acp_node_adapters(resolution=resolution, chains=chains, verdict=verdict)
     if isinstance(selected, str):
         return selected
-    resolution = replace(selected.resolution, candidates=chains.selected_identities)
+    # The entitlement labels come from the SELECTION and never from the chain's
+    # position zero: a label naming a skipped candidate would record a provider
+    # ceiling against an allowance this dispatch never spent.
+    resolution = replace(
+        selected.resolution,
+        candidates=selected_candidate_identities(selected=selected.selected),
+    )
     record: dict[str, object] = {
         "stage": ACP_NODES_STAGE,
         "work_item_id": work_item_id,
