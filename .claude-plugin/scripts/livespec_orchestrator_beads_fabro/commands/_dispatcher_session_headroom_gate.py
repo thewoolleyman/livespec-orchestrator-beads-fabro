@@ -51,6 +51,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     SessionHeadroomReading,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_drain import (
+    drain_rate_attempted,
     reading_with_drain_rate,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_records import (
@@ -135,18 +136,48 @@ def session_headroom_policy(
         if not taken:
             reading = read(token=_projected_token(), observed_at=now_iso)
             taken.append(
-                reading_with_drain_rate(
+                _projected_drain_rate(
                     reading=reading,
-                    baseline=session_headroom_baseline(
-                        journal_path=journal_path,
-                        credential_identity=reading.credential_identity,
-                        now_iso=now_iso,
-                    ),
+                    floor_percent=floor,
+                    journal_path=journal_path,
+                    now_iso=now_iso,
                 )
             )
         return taken[0]
 
     return SessionHeadroomPolicy(floor_percent=floor, read=read_once)
+
+
+def _projected_drain_rate(
+    *,
+    reading: SessionHeadroomReading,
+    floor_percent: int,
+    journal_path: Path | None,
+    now_iso: str,
+) -> SessionHeadroomReading:
+    """This reading, carrying a drain rate where the floor leaves one to compute.
+
+    THE NOT-ATTEMPTED TEST RUNS BEFORE THE JOURNAL READ, and that order is the
+    behaviour rather than an optimization. The clause distinguishes a
+    `not-projected` reading -- one the floor settled -- from an `unavailable`
+    projection that was attempted and found no baseline, and reading the
+    history on a reading the floor already settled is what makes the two
+    indistinguishable from the outside: both would end at a null rate, one of
+    them having spent a file read per admission pass to establish an absence
+    nothing was waiting on. Naming the two results apart in the journal is a
+    separate obligation, so this keeps only the half it owns -- that the
+    history is not consulted at all.
+    """
+    if not drain_rate_attempted(reading=reading, floor_percent=floor_percent):
+        return reading
+    return reading_with_drain_rate(
+        reading=reading,
+        baseline=session_headroom_baseline(
+            journal_path=journal_path,
+            credential_identity=reading.credential_identity,
+            now_iso=now_iso,
+        ),
+    )
 
 
 def _projected_token() -> str | None:
