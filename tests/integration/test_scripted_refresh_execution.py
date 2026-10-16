@@ -140,13 +140,94 @@ def _git(*argv: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _refresh_script(*, check_suite: str) -> str:
-    """The shipped `pr_refresh` node's script, with only the engine's own tokens bound."""
-    graph = parse_dot_graph(text=_IMPLEMENT_GRAPH.read_text(encoding="utf-8"))
-    assert not isinstance(graph, str), graph
-    script = graph.nodes["pr_refresh"]["script"]
+# The PINNED reader's unescape, restated here as the CROSS-CHECK that binds a raw
+# attribute value to the canonical parser's decoded one, never as an independent
+# model of it: `_raw_refresh_script` keeps the raw candidate whose pinned decode
+# EQUALS what `parse_dot_graph` returned, so a restatement that drifted from the
+# parser leaves no candidate and fails loudly rather than rendering something
+# else. The same shape `test_pr_route_base_advance_scenario184` uses for `pr`.
+_PINNED_UNESCAPE_RE = re.compile(r"\\(.)")
+
+# How the shipped graph declares a node's script: one attribute, on one line,
+# opened by this prefix and closed by the quote that ends the line.
+_SCRIPT_ATTRIBUTE_PREFIX = 'script="'
+
+# Where the escString decode parks a backslash it has already produced, so that
+# backslash cannot be re-read as the opener of the NEXT escape. A NUL can appear
+# in neither the graph text nor a shell script, which is what makes it safe.
+_DECODED_BACKSLASH = "\x00"
+
+# The two renderings, named so a failure reports which engine it modelled.
+_RENDERINGS = (
+    pytest.param(False, id="pinned-drops-every-escapes-backslash"),
+    pytest.param(True, id="petri-era-decodes-escstring-only"),
+)
+
+
+def _bind_engine_tokens(*, script: str, check_suite: str) -> str:
+    """Bind the engine's OWN tokens, and nothing else the stage carries."""
     return script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH).replace(
         "{{ inputs.sandbox_check_suite }}", check_suite
+    )
+
+
+def _declared_refresh_script() -> str:
+    """The shipped `pr_refresh` node's `script` attribute, through the canonical parser."""
+    graph = parse_dot_graph(text=_IMPLEMENT_GRAPH.read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+    return graph.nodes["pr_refresh"]["script"]
+
+
+def _raw_refresh_script() -> str:
+    """The `pr_refresh` `script` value as the FILE carries it, its escapes UNDECODED.
+
+    Attributed by DECODE rather than by position: the candidate kept is the one
+    whose pinned decode equals what `parse_dot_graph` returned for this node, so
+    a line read that missed the value, or sliced it wrongly, leaves no candidate
+    and fails here instead of quietly rendering something else.
+    """
+    text = _IMPLEMENT_GRAPH.read_text(encoding="utf-8")
+    declared = _declared_refresh_script()
+    candidates = [
+        raw
+        for raw in (
+            line.strip()[len(_SCRIPT_ATTRIBUTE_PREFIX) : -1]
+            for line in text.splitlines()
+            if line.strip().startswith(_SCRIPT_ATTRIBUTE_PREFIX)
+        )
+        if _PINNED_UNESCAPE_RE.sub(r"\1", raw) == declared
+    ]
+    assert len(candidates) == 1, f"pr_refresh: {len(candidates)} raw candidates, expected 1"
+    return candidates[0]
+
+
+def _refresh_script(*, check_suite: str) -> str:
+    """The shipped `pr_refresh` node's script, with only the engine's own tokens bound."""
+    return _bind_engine_tokens(script=_declared_refresh_script(), check_suite=check_suite)
+
+
+def _petri_refresh_script(*, check_suite: str) -> str:
+    """The shipped `pr_refresh` node's script as a PETRI-ERA engine renders it.
+
+    The raw value is decoded as a DOT escString -- a backslash before a backslash
+    or a double quote, and nothing else -- so every other backslash reaches the
+    shell exactly as the candidate engine delivers it.
+    """
+    return _bind_engine_tokens(
+        script=_raw_refresh_script()
+        .replace("\\\\", _DECODED_BACKSLASH)
+        .replace('\\"', '"')
+        .replace(_DECODED_BACKSLASH, "\\"),
+        check_suite=check_suite,
+    )
+
+
+def _rendered_refresh_script(*, petri: bool, check_suite: str) -> str:
+    """The `pr_refresh` node's script as the engine under test renders it."""
+    return (
+        _petri_refresh_script(check_suite=check_suite)
+        if petri
+        else _refresh_script(check_suite=check_suite)
     )
 
 
@@ -350,6 +431,12 @@ def _branch_clone(*, box: _Refresh, name: str) -> Path:
 _PASSING_GATE = "true"
 _FAILING_GATE = "false"
 
+# The jq program the auto-merge read owes `jq`: a BARE field path, carrying no
+# quote character of its own. A jq field path needs no quoting, and the quote
+# characters a backslash-escaped spelling leaves behind are a parse error rather
+# than a filter (work-item bd-ib-be5r7o).
+_AUTO_MERGE_FIELD_PATH = ".autoMergeRequest"
+
 # The forge stub, a PROGRAM on `PATH` rather than an in-process mock because the
 # stage reaches `gh` as a subprocess. It serves exactly the two calls the v145
 # disarm leg makes -- the auto-merge read and the `--disable-auto` write -- and
@@ -406,9 +493,10 @@ def _run(
     box: _Refresh,
     check_suite: str = _PASSING_GATE,
     extra_env: dict[str, str] | None = None,
+    petri: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", "-c", _refresh_script(check_suite=check_suite)],
+        ["bash", "-c", _rendered_refresh_script(petri=petri, check_suite=check_suite)],
         cwd=box.clone,
         capture_output=True,
         text=True,
@@ -483,6 +571,60 @@ def test_an_armed_pull_request_is_disarmed_before_the_rebase(tmp_path: Path) -> 
     # And the rebase really happened, so the disarm is not a no-op path.
     assert box.local_head() != before
     assert box.remote_head(ref=_BRANCH) == box.local_head()
+
+
+@pytest.mark.parametrize("petri", _RENDERINGS)
+def test_the_arming_read_hands_jq_a_bare_field_path_on_both_renderings(
+    *,
+    petri: bool,
+    tmp_path: Path,
+) -> None:
+    """One committed spelling of the auto-merge read works on BOTH engines.
+
+    THE PETRI LEG IS THE ONE THAT WAS FAILING, and it failed closed at the one
+    guard that stands in front of every rewrite (work-item bd-ib-be5r7o). A DOT
+    attribute string escapes a double quote and a backslash and NOTHING ELSE, so
+    a backslash written in front of a single quote in the graph is not an escape:
+    the pinned engine's reader drops it by accident, while a Petri-era reader
+    hands it to the shell, where a backslashed quote is a LITERAL quote
+    character. `gh` then forwards `'.autoMergeRequest'`, quote characters and
+    all, to `jq`, which cannot parse it.
+
+    Measured 2026-10-16 on hp-candidate :32278 under plugin v0.203.2: the
+    PR-anchored resumes of `bd-ib-tixpma` (run 01M532Z6ENF0, pull request 3114)
+    and `bd-ib-o6aeji` (run 01M5330YQQFQ, pull request 3113) both printed jq's
+    "failed to parse jq expression (line 1, column 1)" with literal single quotes
+    around the field path, then refused under
+    `LIVESPEC_PR_REFRESH_ARMING_UNREADABLE` before any rebase or push -- so
+    neither resume reached the refresh it was released for.
+
+    THE EXPRESSION IS READ OFF THE RECORDER, not inferred from the outcome. The
+    stub answers the field without consulting `--jq` at all, exactly as a forge
+    double must (it has no JSON document to filter), so every other case in this
+    module passes on both renderings while the real `gh` would reject the
+    expression outright. The recorded operand is therefore the only instrument
+    here that can tell the two spellings apart.
+
+    The pinned leg is the control: the same committed bytes behave this way on
+    the engine the factory runs today, which is what makes ONE spelling enough
+    for both.
+    """
+    box = _build(root=tmp_path, armed=True)
+    _ = _advance_default(box=box)
+
+    result = _run(box=box, petri=petri)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_REFRESH_ARMING_UNREADABLE" not in result.stderr
+    assert "LIVESPEC_PR_REFRESH_DISARMED" in result.stderr
+    reads = [
+        cast("list[str]", call["argv"])
+        for call in box.forge_calls()
+        if cast("list[str]", call["argv"])[:2] == ["pr", "view"]
+    ]
+    assert reads, "the stage read no arming"
+    argv = reads[0]
+    assert argv[argv.index("--jq") + 1] == _AUTO_MERGE_FIELD_PATH
 
 
 def test_an_unarmed_pull_request_is_not_disarmed(tmp_path: Path) -> None:
