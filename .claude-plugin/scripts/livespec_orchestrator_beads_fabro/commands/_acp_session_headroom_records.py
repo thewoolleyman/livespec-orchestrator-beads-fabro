@@ -124,13 +124,31 @@ def _skipped_fields(*, skip: SkippedCandidate) -> dict[str, object]:
 
 
 def session_headroom_reading_fields(*, reading: SessionHeadroomReading) -> dict[str, object]:
-    """One reading's five journaled facts, with nulls written rather than omitted."""
+    """One reading's six journaled facts, with nulls written rather than omitted.
+
+    THE LAST KEY IS A RATE AND NOT A LEVEL, and that is why it is here at all.
+    The five-hour REMAINING figure the floor decides on cannot see how fast the
+    window is emptying, and a dispatch keeps its dispatch-time credential to
+    the end of the run -- so a credential losing 15 points of its allowance
+    every half hour reads as ample headroom at the instant of admission and is
+    spent well before the run it admitted finishes.
+
+    IT IS WRITTEN ON EVERY READING, NULL INCLUDED, for the same reason the
+    original five are, and the reason bites harder here: the rate is not taken
+    at all on a reading the floor settled, so an omitted key would make "no
+    rate was measured" indistinguishable from "this build does not measure
+    rates". And the null is an explicit null rather than a zero, because 0.0 is
+    exactly what a credential nobody is spending measures at -- a coerced zero
+    would report a measurement nobody took to the one reader using the figure
+    to judge whether the floor is adequate.
+    """
     return {
         "credential_identity": reading.credential_identity,
         "utilization_percent": reading.utilization_percent,
         "remaining_percent": reading.remaining_percent,
         "unobservable": reading.unobservable,
         "observed_at": reading.observed_at,
+        "five_hour_drain_percent_per_hour": reading.five_hour_drain_percent_per_hour,
     }
 
 
