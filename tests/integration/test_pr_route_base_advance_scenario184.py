@@ -914,3 +914,45 @@ def test_the_merge_commit_read_hands_jq_a_bare_field_path_on_both_renderings(
     assert reads, "the stage read no merge commit"
     argv = reads[-1]
     assert argv[argv.index("--jq") + 1] == _MERGE_COMMIT_FIELD_PATH
+
+
+@pytest.mark.parametrize("petri", _RENDERINGS)
+def test_the_visit_count_is_recorded_as_a_bare_number_on_both_renderings(
+    *,
+    petri: bool,
+    tmp_path: Path,
+) -> None:
+    """A later visit of the same run reads the recorded count back as an integer.
+
+    The third span of the same quoting family (work-item bd-ib-be5r7o), and the
+    one whose damage is not a lost diagnostic but a stage that refuses. A
+    backslashed quote reaches the shell as a literal quote character and the
+    `\\n` beside it as a bare `n`, so the format `printf` receives is a
+    quote-wrapped literal: the state file ends up holding the count wrapped in
+    quote characters with no trailing newline at all.
+
+    THE SECOND VISIT IS WHERE THAT LANDS, which is why one run of the stage
+    cannot show it. `pr` re-reads the file it wrote and requires the value to
+    compare as a number; a quote-wrapped one does not, so the stage refuses under
+    LIVESPEC_PR_VISIT_COUNT_UNREADABLE — on the second visit of a run whose first
+    visit reported itself perfectly healthy. The count is therefore asserted on
+    its BYTES after the first visit and on the second visit's own answer, since
+    the bytes alone say nothing about what reads them and a successful second
+    visit alone would pass for a build that never recorded a count.
+
+    The pinned leg is the control: the same committed bytes behave this way on
+    the engine the factory runs today.
+    """
+    box = _build(root=tmp_path, reject_merge=None)
+    script = _rendered_pr_script(petri=petri)
+
+    first = _run_rendered(box=box, script=script)
+
+    assert first.returncode == 0, first.stderr
+    assert box.state(name=_VISIT_COUNT_FILENAME) == "1\n"
+
+    second = _run_rendered(box=box, script=script)
+
+    assert second.returncode == 0, second.stderr
+    assert "LIVESPEC_PR_VISIT_COUNT_UNREADABLE" not in second.stderr
+    assert box.state(name=_VISIT_COUNT_FILENAME) == "2\n"
