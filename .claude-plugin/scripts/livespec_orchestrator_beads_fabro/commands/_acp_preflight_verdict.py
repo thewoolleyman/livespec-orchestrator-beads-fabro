@@ -60,6 +60,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import 
 )
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import ResolvedAcpChain
 from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import AcpHoldLedger
+from livespec_orchestrator_beads_fabro.commands._acp_hold_records import AcpAvailabilityHold
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import SessionHeadroomReading
 from livespec_orchestrator_beads_fabro.commands._acp_success_critical import (
     derive_admission_required,
@@ -88,6 +89,12 @@ class AcpPreflightVerdict:
     success_critical: tuple[str, ...] = ()
     admission_required: tuple[str, ...] = ()
     exhausted: tuple[str, ...] = ()
+    # The live records THIS evaluation filtered against, carried so the
+    # scheduled-reevaluation derivation grades the very holds the nodes above
+    # were filtered by. A consumer re-reading the ledger for them would be
+    # taking a SECOND measurement, and a record retiring between the two reads
+    # would then be surfaced by one half and acted on by the other.
+    holds: tuple[AcpAvailabilityHold, ...] = ()
     unobservable: tuple[Mapping[str, object], ...] = ()
     refusal: str | None = None
     assessed_credentials: Mapping[str, str] = field(default_factory=dict)
@@ -164,6 +171,7 @@ def build_acp_preflight_verdict(
         success_critical=critical.nodes,
         admission_required=required,
         exhausted=_exhausted(preflights=preflights, required=required),
+        holds=ledger.holds,
         unobservable=ledger.unobservable,
         assessed_credentials=dict(assessed),
         headroom_assessments=_headroom_assessments(preflights=preflights),

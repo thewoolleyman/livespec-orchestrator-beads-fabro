@@ -80,6 +80,7 @@ __all__: list[str] = [
     "AvailabilityWait",
     "GoverningHold",
     "availability_wait",
+    "availability_wait_refusal_fields",
 ]
 
 # The condition a refusal names when no skip on the emptied node named one.
@@ -153,11 +154,20 @@ def availability_wait(
     if now is None:
         return None
     # Ordered by `exhausted` rather than by `verdict.nodes`, because the named
-    # node must be the first EMPTIED one in graph order. Every exhausted node
-    # has a preflight by construction -- `_exhausted` is computed from them --
-    # so a missing one is a bug and raises rather than being filtered away.
+    # node must be the first EMPTIED one in graph order.
+    #
+    # AN EXHAUSTED NODE WITH NO FILTER RECORD IS TOLERATED, NOT INDEXED. Inside
+    # `build_acp_preflight_verdict` every exhausted node does have a
+    # `NodePreflight` -- `_exhausted` is computed from them -- but the verdict
+    # is a plain value every consumer may construct, and a caller naming an
+    # exhausted node without its per-node record is reporting an outage it
+    # recorded no skips for. Indexing would raise from inside the pre-claim
+    # admission filter, which is the one place a bug-class escape strands a row;
+    # and such a node substantiates no condition and no hold, so it falls to
+    # `UNAVAILABLE_EVIDENCE` and the cadence rather than to an invented
+    # identity.
     by_node = {preflight.node: preflight for preflight in verdict.nodes}
-    emptied = tuple(by_node[node] for node in verdict.exhausted)
+    emptied = tuple(by_node[node] for node in verdict.exhausted if node in by_node)
     governing = _governing_holds(emptied=emptied, holds=holds)
     return AvailabilityWait(
         node=verdict.exhausted[0],
@@ -171,6 +181,42 @@ def availability_wait(
     )
 
 
+def availability_wait_refusal_fields(*, wait: AvailabilityWait | None) -> dict[str, object]:
+    """The containment-refusal fields one scheduled wait contributes.
+
+    EMPTY for `None`, which is what keeps every pre-existing refusal record
+    byte-identical: a viable verdict and a configuration refusal add no keys at
+    all, exactly as `headroom_refusal_fields` adds none unless headroom emptied
+    a chain. That is the additive guarantee, expressed as the absence of a key
+    rather than as a null the next reader has to interpret.
+
+    `governing_hold_observations` is a LIST and is empty rather than absent when
+    no hold governs, because the clause requires the refusal to name applicable
+    observations "when present" -- an empty list says the question was asked and
+    the answer was none, while a missing key is what a record from a build
+    predating this decision looks like.
+    """
+    if wait is None:
+        return {}
+    return {
+        "governing_condition": wait.governing_condition,
+        "admission_required_node": wait.node,
+        "admission_required_nodes_lacking_candidate": list(wait.nodes),
+        "scheduled_reevaluation_at": wait.reevaluate_at,
+        "governing_hold_observations": [
+            {
+                "observation_id": hold.observation_id,
+                "scope": hold.scope,
+                "hold_key": hold.hold_key,
+                "candidate_key": hold.candidate_key,
+                "cause": hold.cause,
+                "expires_at": hold.expires_at,
+            }
+            for hold in wait.holds
+        ],
+    }
+
+
 def _governing_condition(*, emptied: tuple[NodePreflight, ...]) -> str:
     """What emptied the FIRST emptied chain, by the precedence above.
 
@@ -178,8 +224,12 @@ def _governing_condition(*, emptied: tuple[NodePreflight, ...]) -> str:
     refusal names ONE admission-required node and the condition has to be the
     condition of that node -- a precedence taken across the whole set would
     report a typed hold on a later node as the reason the named one is empty.
+
+    NO emptied record at all, and a record naming no skip, both reach
+    `UNAVAILABLE_EVIDENCE` below, which is the honest reading of each: the
+    chain is empty and nothing observable says why.
     """
-    reasons = {skip.reason for skip in emptied[0].skipped}
+    reasons = {skip.reason for preflight in emptied[:1] for skip in preflight.skipped}
     for condition in GOVERNING_CONDITION_PRECEDENCE:
         if condition in reasons:
             return condition

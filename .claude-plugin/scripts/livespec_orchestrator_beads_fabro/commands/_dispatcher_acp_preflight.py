@@ -46,6 +46,13 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Protocol
 
+from returns.unsafe import unsafe_perform_io
+
+from livespec_orchestrator_beads_fabro.commands._acp_availability_wait import (
+    AvailabilityWait,
+    availability_wait,
+    availability_wait_refusal_fields,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import PreflightInputs
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import resolve_acp_catalogs
 from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import (
@@ -68,6 +75,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_chain_sources im
     workflow_scoped_dispatcher_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
+    DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS,
+    resolve_credential_reprobe_interval_seconds,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
     live_provider_exhaustions,
 )
@@ -78,6 +89,7 @@ __all__: list[str] = [
     "credential_reprobe_wait_applies",
     "resolve_acp_preflight",
     "resolve_acp_primary_generations",
+    "resolve_availability_wait",
     "resolve_dispatch_candidates",
 ]
 
@@ -235,11 +247,42 @@ def resolve_dispatch_candidates(*, repo: Path) -> tuple[RenderedCandidate, ...] 
     return rendered or None
 
 
+def resolve_availability_wait(
+    *, repo: Path, verdict: AcpPreflightVerdict, now_iso: str
+) -> AvailabilityWait | None:
+    """Schedule the next admission evaluation this verdict owes, or `None`.
+
+    The ONLY read this adds is the repository's own
+    `dispatcher.credential_reprobe_interval_seconds` cadence. The availability
+    EVIDENCE is taken off the verdict, which carries the holds its own nodes
+    were filtered against -- a second ledger walk here would be a second
+    measurement of one evaluation, and the two could disagree about a record
+    that retired between them.
+
+    An unreadable cadence key falls back to the ratified default rather than
+    refusing. The wait is not a gate: it is the instant a refusal ALREADY taken
+    reports, so failing here would replace an actionable refusal with a
+    traceback about the file it was about to name.
+    """
+    interval = unsafe_perform_io(
+        resolve_credential_reprobe_interval_seconds(cwd=repo).value_or(
+            DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS
+        )
+    )
+    return availability_wait(
+        verdict=verdict,
+        holds=verdict.holds,
+        now_iso=now_iso,
+        reprobe_interval_seconds=interval,
+    )
+
+
 def acp_preflight_refusal(
     *,
     work_item_id: str,
     verdict: AcpPreflightVerdict,
     journal: JournalWriter,
+    wait: AvailabilityWait | None = None,
 ) -> DispatchOutcome | None:
     """Refuse one candidate before claim when a success-critical chain is gone.
 
@@ -253,6 +296,16 @@ def acp_preflight_refusal(
     `headroom_refusal_fields`. That keeps every pre-existing refusal record
     byte-identical, which is what makes this clause additive to a repository
     that never assesses a covered candidate.
+
+    The SCHEDULED WAIT is merged the same way and for the same reason, and it
+    is `None` on exactly the two refusals that are not availability waits: a
+    configuration refusal, which waiting cannot repair, and a verdict whose
+    clock could not be read. `SPECIFICATION/contracts.md` section "Provider
+    spend containment" requires a containment refusal to carry the governing
+    condition, the admission-required node lacking an eligible candidate and
+    the scheduled reevaluation instant -- so the fields are the wait's own
+    projection rather than three values re-derived at this call site, which is
+    what keeps the journal line and the instant a later pass honours identical.
     """
     if verdict.viable:
         return None
@@ -273,6 +326,7 @@ def acp_preflight_refusal(
             "exhausted": list(verdict.exhausted),
             "unobservable_observations": len(verdict.unobservable),
             **headroom_refusal_fields(verdict=verdict),
+            **availability_wait_refusal_fields(wait=wait),
         }
     )
     return outcome
