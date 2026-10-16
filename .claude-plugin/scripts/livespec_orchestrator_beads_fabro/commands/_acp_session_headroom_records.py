@@ -45,12 +45,16 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import 
     SkippedCandidate,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
-from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import SessionHeadroomReading
+from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
+    SessionHeadroomProjection,
+    SessionHeadroomReading,
+)
 
 __all__: list[str] = [
     "SESSION_HEADROOM_STAGE",
     "headroom_refusal_fields",
     "session_headroom_assessment_record",
+    "session_headroom_projection_fields",
     "session_headroom_reading_fields",
     "session_headroom_selection_fields",
 ]
@@ -149,6 +153,46 @@ def session_headroom_reading_fields(*, reading: SessionHeadroomReading) -> dict[
         "unobservable": reading.unobservable,
         "observed_at": reading.observed_at,
         "five_hour_drain_percent_per_hour": reading.five_hour_drain_percent_per_hour,
+        "projection": session_headroom_projection_fields(projection=reading.projection),
+    }
+
+
+def session_headroom_projection_fields(
+    *, projection: SessionHeadroomProjection | None
+) -> dict[str, object] | None:
+    """The ONE projection result a reading carries, or an explicit null.
+
+    EXACTLY ONE RESULT, UNDER ONE KEY, which is the clause's own requirement:
+    "the journal record MUST additionally carry exactly one projection result".
+    Three parallel optional blocks -- a projected one, an unavailable one and a
+    not-projected one -- would let a record carry two, and a reader joining on
+    whichever it found first would report the wrong one with no way to notice.
+    So the result KIND is a field inside the single block, and the figures that
+    do not apply to that kind are written as nulls beside it.
+
+    A reading carrying NO projection renders an explicit `null` rather than a
+    fourth result value. That is a different claim from any of the three: it
+    says this reading was never projected AT ALL, which is what a record from a
+    build predating this clause looks like, and what a verdict composed with no
+    policy produces. Collapsing it onto `not-projected` would report the three
+    conditions the clause enumerates for a reading nothing assessed.
+
+    The drain rate appears BOTH here and as the reading's own sibling key, and
+    they cannot diverge because both are rendered from the one reading this
+    projection was taken from. The sibling key is what `bd-ib-rszkjc` shipped
+    and what the baseline reader joins on; the copy inside the block is what
+    makes the result self-contained for a reader grading one projection.
+    """
+    if projection is None:
+        return None
+    return {
+        "result": projection.result,
+        "reason": projection.reason,
+        "five_hour_drain_percent_per_hour": projection.five_hour_drain_percent_per_hour,
+        "baseline_observed_at": projection.baseline_observed_at,
+        "projected_exhaustion_at": projection.projected_exhaustion_at,
+        "session_headroom_horizon_minutes": projection.horizon_minutes,
+        "projection_skip_applied": projection.skip_applied,
     }
 
 

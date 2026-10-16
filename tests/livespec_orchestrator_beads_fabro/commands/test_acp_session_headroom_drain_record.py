@@ -116,12 +116,14 @@ def test_the_rendered_record_spells_an_unmeasured_rate_as_a_json_null() -> None:
     assert f'"{_DRAIN_FIELD}": null' in rendered
 
 
-def test_the_key_is_the_last_of_the_readings_six_journaled_facts() -> None:
-    """The projection's whole key set, so a seventh key cannot arrive unnoticed.
+def test_the_rate_sits_among_the_readings_whole_journaled_key_set() -> None:
+    """The projection's whole key set, so a new key cannot arrive unnoticed.
 
     Nothing a credential value or a raw provider response could travel through
     is admissible here, and an exact set is what keeps that a structural
-    property rather than a review note.
+    property rather than a review note. The seventh key is the PROJECTION
+    result `bd-ib-lgpsik` added beside this rate; it is named here rather than
+    elsewhere because this set is the one place a key can be added silently.
     """
     fields = headroom_records.session_headroom_reading_fields(reading=_graded())
 
@@ -132,4 +134,5 @@ def test_the_key_is_the_last_of_the_readings_six_journaled_facts() -> None:
         "remaining_percent",
         "unobservable",
         _DRAIN_FIELD,
+        "projection",
     }

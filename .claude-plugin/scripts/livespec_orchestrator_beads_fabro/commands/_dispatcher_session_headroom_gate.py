@@ -64,6 +64,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_drain impo
     drain_rate_attempted,
     reading_with_drain_rate,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_projection import (
+    reading_with_projection,
+    session_headroom_projection,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_records import (
     session_headroom_assessment_record,
 )
@@ -177,7 +181,11 @@ def session_headroom_policy(
     the one this pass appends to.
 
     The baseline is read INSIDE the memo, so an evaluation that assesses no
-    covered candidate touches the journal no more than it spends a request.
+    covered candidate touches the journal no more than it spends a request --
+    and the PROJECTION is taken there too, which is what makes "The projection
+    MUST be computed only from journaled assessments and MUST NOT issue any
+    usage request beyond the one bounded reading this clause already requires"
+    a property of the memo rather than a second guarantee to maintain.
     """
     floor = unsafe_perform_io(
         resolve_session_headroom_floor_percent(cwd=repo).value_or(
@@ -195,9 +203,10 @@ def session_headroom_policy(
         if not taken:
             reading = read(token=_projected_token(), observed_at=now_iso)
             taken.append(
-                _projected_drain_rate(
+                _assessed(
                     reading=reading,
                     floor_percent=floor,
+                    horizon_minutes=horizon,
                     journal_path=journal_path,
                     now_iso=now_iso,
                 )
@@ -207,14 +216,15 @@ def session_headroom_policy(
     return SessionHeadroomPolicy(floor_percent=floor, horizon_minutes=horizon, read=read_once)
 
 
-def _projected_drain_rate(
+def _assessed(
     *,
     reading: SessionHeadroomReading,
     floor_percent: int,
+    horizon_minutes: int,
     journal_path: Path | None,
     now_iso: str,
 ) -> SessionHeadroomReading:
-    """This reading, carrying a drain rate where the floor leaves one to compute.
+    """This reading, carrying its drain rate and its ONE projection result.
 
     THE NOT-ATTEMPTED TEST RUNS BEFORE THE JOURNAL READ, and that order is the
     behaviour rather than an optimization. The clause distinguishes a
@@ -223,18 +233,38 @@ def _projected_drain_rate(
     history on a reading the floor already settled is what makes the two
     indistinguishable from the outside: both would end at a null rate, one of
     them having spent a file read per admission pass to establish an absence
-    nothing was waiting on. Naming the two results apart in the journal is a
-    separate obligation, so this keeps only the half it owns -- that the
-    history is not consulted at all.
+    nothing was waiting on.
+
+    THE BASELINE IS READ ONCE AND SPENT TWICE, which is why it is bound to a
+    local rather than asked for again by the projection. The rate and the
+    projection are two readings OF ONE HISTORY, so a second `session_headroom_
+    baseline` call would re-read a journal that concurrent passes append to --
+    and a rate measured against one baseline while the projection named another
+    is a record whose own two halves disagree.
+
+    THE RESULT IS ALWAYS ATTACHED, including on the arm that computes no rate:
+    `not-projected` IS a result, and the clause requires exactly one on every
+    assessed credential. A reading that left the field null there would make an
+    operator's disabled dial indistinguishable from a build that does not
+    project at all.
     """
-    if not drain_rate_attempted(reading=reading, floor_percent=floor_percent):
-        return reading
-    return reading_with_drain_rate(
-        reading=reading,
-        baseline=session_headroom_baseline(
+    baseline = (
+        session_headroom_baseline(
             journal_path=journal_path,
             credential_identity=reading.credential_identity,
             now_iso=now_iso,
+        )
+        if drain_rate_attempted(reading=reading, floor_percent=floor_percent)
+        else None
+    )
+    rated = reading_with_drain_rate(reading=reading, baseline=baseline)
+    return reading_with_projection(
+        reading=rated,
+        projection=session_headroom_projection(
+            reading=rated,
+            baseline=baseline,
+            floor_percent=floor_percent,
+            horizon_minutes=horizon_minutes,
         ),
     )
 
