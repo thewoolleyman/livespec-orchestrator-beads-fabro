@@ -367,6 +367,14 @@ def test_the_deadline_bounds_a_launcher_whose_grandchild_holds_stdout(
     credential, no network and no `codex` binary is involved, and both spawned
     processes self-terminate within `_GRANDCHILD_LIFETIME_SECONDS` whatever
     this assertion does.
+
+    `check-tests-no-real-time` is stood down for the bound below rather than
+    satisfied. What separates the two behaviours IS a real duration: the
+    blocking `readline` returns when the last holder of the inherited pipe goes
+    away, and that is the kernel's accounting, not this process's. There is no
+    clock to inject into it, and the two outcomes are separated by 4x in both
+    directions — the defect measured 3.11s against a 0.5s deadline — so the
+    bound cannot be closed by host load.
     """
     started = time.monotonic()
 
@@ -380,6 +388,7 @@ def test_the_deadline_bounds_a_launcher_whose_grandchild_holds_stdout(
     elapsed = time.monotonic() - started
     # Pre-fix this is the grandchild's own lifetime (~3s); post-fix it is the
     # deadline (~0.5s), because killing the group closes the inherited pipe.
+    # real-time-required: a blocking readline on a pipe a real grandchild holds
     assert (
         elapsed < _BOUNDED_CEILING_SECONDS
     ), f"renewal outlived its {_DEADLINE_SECONDS}s deadline: {elapsed:.2f}s"
