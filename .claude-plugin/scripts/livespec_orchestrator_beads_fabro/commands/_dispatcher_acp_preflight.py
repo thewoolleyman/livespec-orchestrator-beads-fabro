@@ -31,6 +31,21 @@ through to the dispatch path, because before-claim is strictly earlier than
 before-run and a claim taken on configuration that cannot resolve has to be
 released again.
 
+THE AVAILABILITY EVIDENCE IS HOST-WIDE, AND THE JOURNAL IS NOT ITS AUTHORITY.
+The same section requires evidence to be "discoverable host-wide from the
+factory's native run records", so the filter's hold set is the repository's own
+journal UNIONED with what `_acp_factory_hold_evidence` derives from every
+factory declared under `dispatcher.factories`. A peer repository's run that
+spent a provider allowance therefore skips the covered candidate here, without
+this repository having failed a run of its own, and the union is taken ONCE,
+beside the journal read, for the same reason that read is taken once.
+
+The reader is a SEAM and defaults to absent, exactly as `probe` and `headroom`
+do above and for the same reason: wait attention and idle-factory resolve a
+verdict with no external call at all, and a default that reached two factories
+per evaluation would make their composition issue the very round trips the
+clause's snapshot rule forbids.
+
 ONE MORE CONSUMER READS THE SAME RESOLUTION: the LEGACY provider gate, through
 `resolve_dispatch_candidates`. It needs no verdict and no graph -- only the
 candidates this repository's resolved node adapters render, so it can tell a
@@ -43,6 +58,7 @@ could not be proven to agree with the first.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Protocol
 
@@ -59,7 +75,14 @@ from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import (
     RenderedCandidate,
     rendered_dispatch_candidates,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import read_acp_hold_ledger
+from livespec_orchestrator_beads_fabro.commands._acp_factory_hold_evidence import (
+    FactoryRunReader,
+    factory_hold_evidence,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import (
+    AcpHoldLedger,
+    read_acp_hold_ledger,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_node_repository import repository_acp_chains
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import (
     AcpPreflightVerdict,
@@ -110,6 +133,7 @@ def resolve_acp_preflight(
     now_iso: str,
     probe: Callable[[str], str] | None = None,
     headroom: SessionHeadroomPolicy | None = None,
+    factory_runs: FactoryRunReader | None = None,
 ) -> AcpPreflightVerdict:
     """Grade every ACP node's candidate chain for this repository, once.
 
@@ -126,6 +150,11 @@ def resolve_acp_preflight(
     MUST NOT issue a live usage request", so wait attention and idle-factory
     resolve a verdict with no policy and the filter becomes a total no-op. Only
     the admission pass supplies one.
+
+    `factory_runs` is the host-wide availability-evidence seam, and it defaults
+    to ABSENT on the same reasoning: it is the only input here that reaches a
+    factory, and a default that read every declared one would put two round
+    trips on every verdict a snapshot composes.
     """
     block = workflow_scoped_dispatcher_block(repo=repo)
     catalogs = resolve_acp_catalogs(block=block)
@@ -145,7 +174,9 @@ def resolve_acp_preflight(
     # ONE ledger read for one evaluation: the verdict's unobservable set and the
     # filter's live records must come from the same walk, or a record retiring
     # between two reads would be surfaced by one half and acted on by the other.
-    ledger = read_acp_hold_ledger(journal_path=journal_path, now_iso=now_iso)
+    ledger = _host_wide_ledger(
+        repo=repo, journal_path=journal_path, now_iso=now_iso, factory_runs=factory_runs
+    )
     return build_acp_preflight_verdict(
         chains=chains,
         graph_text=graph_text,
@@ -344,6 +375,38 @@ def credential_reprobe_wait_applies(*, verdict: AcpPreflightVerdict) -> bool:
     combination, so it needs no condition of its own.
     """
     return not verdict.fallback_enabled or not verdict.viable
+
+
+def _host_wide_ledger(
+    *,
+    repo: Path,
+    journal_path: Path | None,
+    now_iso: str,
+    factory_runs: FactoryRunReader | None,
+) -> AcpHoldLedger:
+    """The repository's own records UNIONED with every declared factory's.
+
+    The journal half is read first and kept whole, which is what makes this
+    additive: a repository whose Dispatcher supplies no reader resolves the
+    byte-identical ledger it always did. The factory half is appended rather
+    than merged by id, because `observation_id` digests the evidence plus the
+    scope it lands on -- so an attempt this repository already projected into
+    its own journal derives the SAME id, and the candidate filter is a
+    coverage test rather than a count.
+
+    The unobservable sets are unioned for the same reason the holds are. An
+    unreadable factory is "unavailable, not an empty hold set", and the only
+    surface that can say so is the verdict every consumer already reads.
+    """
+    ledger = read_acp_hold_ledger(journal_path=journal_path, now_iso=now_iso)
+    if factory_runs is None:
+        return ledger
+    evidence = factory_hold_evidence(repo=repo, reader=factory_runs, now_iso=now_iso)
+    return replace(
+        ledger,
+        holds=(*ledger.holds, *evidence.holds),
+        unobservable=(*ledger.unobservable, *evidence.unobservable),
+    )
 
 
 def _legacy_providers(*, journal_path: Path | None, now_iso: str) -> frozenset[str]:

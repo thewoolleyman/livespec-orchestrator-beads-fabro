@@ -47,7 +47,10 @@ so the typed outcome available here is the vendor-agnostic provider ceiling
 `_fabro_port_permanent_failure` already recognises from the recorded cause
 chain, attributed to the entitlement the run's own labels record. That is the
 `quota` cause of Scenario 127's "A provider-limit failure releases the item and
-re-dispatches it to the next eligible candidate".
+re-dispatches it to the next eligible candidate", and it is DOMAIN-scoped for
+the reason the built-in quota signatures are: the spent allowance belongs to
+the account, so holding one candidate would leave every sibling on the same
+provider dispatching into the same refusal.
 
 AN ENTITLEMENT KEY MAY ARRIVE DIGESTED, and it is read as it stands, exactly as
 `_fabro_executed_candidate` reads it. `candidate_label_value` leaves an
@@ -66,8 +69,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
+from livespec_orchestrator_beads_fabro.commands._acp_failure_classifier import (
+    DOMAIN_SCOPE,
+    AcpAvailabilityFailure,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_hold_records import (
+    HOLD_EVIDENCE_KINDS,
     HOLD_INTERVAL,
+    HOLD_SCHEMA_VERSION,
+    AcpAvailabilityHold,
+    observation_id,
     parse_hold_instant,
 )
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
@@ -86,6 +97,8 @@ from livespec_orchestrator_beads_fabro.commands._fabro_terminal_evidence import 
 
 __all__: list[str] = [
     "EMPTY_FACTORY_HOLD_EVIDENCE",
+    "FACTORY_EVIDENCE_KIND",
+    "FACTORY_EVIDENCE_SOURCE",
     "INSPECT_UNREADABLE",
     "LISTING_UNREADABLE",
     "OCCURRENCE_UNREADABLE",
@@ -94,7 +107,18 @@ __all__: list[str] = [
     "FactoryHoldObservation",
     "FactoryRunReader",
     "factory_hold_evidence",
+    "observation_hold",
 ]
+
+# The evidence kind a TERMINAL-failure-derived hold is minted under. Read off
+# the hold writer's own closed set rather than spelled again, exactly as
+# `_acp_event_projection` reads the failover-event kind beside it, so a rename
+# there cannot leave this call site silently naming a kind that writer refuses.
+FACTORY_EVIDENCE_KIND = HOLD_EVIDENCE_KINDS[1]
+
+# The diagnostic channel this verdict was read off: the engine's own recorded
+# cause chain for the failing node attempt.
+FACTORY_EVIDENCE_SOURCE = "process.terminal_diagnostic"
 
 # The ratified cause a spent provider allowance carries, identical to the one
 # the built-in provider-limit signatures declare.
@@ -154,6 +178,17 @@ class FactoryHoldObservation:
     cause: str
     occurred_at: str
 
+    @property
+    def run_reference(self) -> str:
+        """The factory run reference this observation is re-derivable from.
+
+        It is also what makes the derived observation id STABLE: the id
+        digests its evidence, and this reference is a fact of the FACTORY's
+        record rather than of the reading, so two Dispatchers deriving one
+        attempt mint one id instead of two records of the same outage.
+        """
+        return f"{self.factory}:{self.run_id}:{self.node_attempt}"
+
 
 @dataclass(frozen=True, kw_only=True)
 class FactoryHoldEvidence:
@@ -162,8 +197,57 @@ class FactoryHoldEvidence:
     observations: tuple[FactoryHoldObservation, ...] = ()
     unobservable: tuple[Mapping[str, object], ...] = ()
 
+    @property
+    def holds(self) -> tuple[AcpAvailabilityHold, ...]:
+        """Each observation as the live typed hold the candidate filter reads.
+
+        No expiry filter is applied here, and that is deliberate rather than
+        missing: `_row_evidence` has already bounded the scan to attempts
+        inside `HOLD_INTERVAL`, so every observation that reached this point
+        is one whose record still stands. A second test would be a second
+        measurement of one window.
+        """
+        return tuple(observation_hold(observation=observation) for observation in self.observations)
+
 
 EMPTY_FACTORY_HOLD_EVIDENCE = FactoryHoldEvidence()
+
+
+def observation_hold(*, observation: FactoryHoldObservation) -> AcpAvailabilityHold:
+    """The live schema-v1 hold one derived observation stands for."""
+    failure = _observation_failure(observation=observation)
+    return AcpAvailabilityHold(
+        schema_version=HOLD_SCHEMA_VERSION,
+        observation_id=observation_id(
+            evidence_kind=FACTORY_EVIDENCE_KIND,
+            evidence_id=observation.run_reference,
+            failure=failure,
+        ),
+        scope=failure.scope,
+        hold_key=failure.hold_key,
+        candidate_key=failure.candidate_key,
+        cause=failure.cause,
+        occurred_at=observation.occurred_at,
+        expires_at=observation.occurred_at,
+    )
+
+
+def _observation_failure(*, observation: FactoryHoldObservation) -> AcpAvailabilityFailure:
+    """The typed verdict this observation carries, scoped to its provider domain.
+
+    `candidate_key` is deliberately absent from the FAILURE even though the
+    observation records one: a domain-scoped record must name none -- the hold
+    parser refuses one that does -- and the entitlement that ran is identifying
+    evidence about the attempt rather than the thing being held.
+    """
+    return AcpAvailabilityFailure(
+        cause=observation.cause,
+        scope=DOMAIN_SCOPE,
+        hold_key=observation.availability_key,
+        availability_key=observation.availability_key,
+        candidate_key=None,
+        source=FACTORY_EVIDENCE_SOURCE,
+    )
 
 
 def factory_hold_evidence(

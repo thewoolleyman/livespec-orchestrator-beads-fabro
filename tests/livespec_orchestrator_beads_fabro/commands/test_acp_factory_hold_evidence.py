@@ -68,6 +68,53 @@ _FACTORIES_CONFIG = """{
 }
 """
 
+_CHAIN_CONFIG = """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "default_factory": "hp",
+      "factories": {
+        "hp": {"server": "https://hp.example.ts.net:32276"},
+        "vps": {"server": "https://vps.example.ts.net:32276"}
+      },
+      "acp_nodes": {
+        "implement": {
+          "display_name": "Primary",
+          "candidate_key": "primary",
+          "availability_key": "codex",
+          "command": "adapter-primary",
+          "fallbacks": [
+            {
+              "display_name": "Fallback",
+              "candidate_key": "fallback",
+              "availability_key": "anthropic",
+              "command": "adapter-fallback"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+"""
+
+_CHAIN_MANIFEST = """[workflow]
+graph = "workflow.fabro"
+
+[run.inputs]
+implement_adapter = "adapter-primary"
+"""
+
+_CHAIN_GRAPH = """
+    graph [stall_timeout="7200s"]
+    start [shape=Mdiamond, label="Start"]
+    exit  [shape=Msquare, label="Exit"]
+    implement [backend="acp", acp.command="a", timeout="60s"]
+    gate [shape=parallelogram, timeout="60s"]
+    start -> implement
+    implement -> gate
+    gate -> exit [label="green", condition="outcome=succeeded"]
+"""
+
 
 def _module() -> Any:
     """Import the slice's module, proving its file exists first."""
@@ -79,6 +126,30 @@ def _repo(*, tmp_path: Path) -> Path:
     """A repository declaring two participating factories."""
     (tmp_path / ".livespec.jsonc").write_text(_FACTORIES_CONFIG, encoding="utf-8")
     return tmp_path
+
+
+def _chain_repo(*, tmp_path: Path) -> Path:
+    """The same two factories, plus an `implement` chain the evidence can cover.
+
+    Candidate zero's `availability_key` is the one the peer repository's run
+    row records as spent; candidate one's is not. So the chain stays viable
+    and the skip is attributable to exactly one hold.
+    """
+    workflow = tmp_path / ".fabro" / "workflows" / "implement-work-item"
+    workflow.mkdir(parents=True)
+    (workflow / "workflow.toml").write_text(_CHAIN_MANIFEST, encoding="utf-8")
+    (workflow / "workflow.fabro").write_text(_CHAIN_GRAPH, encoding="utf-8")
+    (tmp_path / ".livespec.jsonc").write_text(_CHAIN_CONFIG, encoding="utf-8")
+    return tmp_path
+
+
+def _candidate_keys(*, verdict: Any) -> list[str | None]:
+    """The `implement` node's surviving candidates, in configured order."""
+    node = verdict.node_preflight(node="implement")
+    return [
+        None if candidate.identity is None else candidate.identity.candidate_key
+        for candidate in node.candidates
+    ]
 
 
 def _rows(*, payload: list[dict[str, Any]]) -> tuple[Any, ...]:
@@ -384,6 +455,105 @@ def test_a_failing_node_the_run_recorded_no_entitlement_for_derives_nothing(
 
     assert evidence.observations == ()
     assert evidence.unobservable == ()
+
+
+def test_an_observation_stands_for_a_domain_hold_on_the_spent_allowance(tmp_path: Path) -> None:
+    """The entitlement that ran identifies the attempt; the ALLOWANCE is what is held.
+
+    Scenario 127: "Then it records a domain hold on that candidate's
+    availability key". A candidate-scoped record would leave every sibling on
+    the same provider dispatching into the same refusal, which is why the
+    built-in quota signatures are domain-scoped without exception -- and the
+    hold parser refuses a domain record that names a candidate key at all.
+    """
+    module = _module()
+    classifier = importlib.import_module(f"{_PACKAGE}._acp_failure_classifier")
+    repo = _repo(tmp_path=tmp_path)
+    reader = _Reader(
+        rows={"hp": _rows(payload=[_row_payload()])},
+        payloads={("hp", _RUN_ID): _inspect_payload(cause=_CEILING_CAUSE)},
+    )
+
+    evidence = module.factory_hold_evidence(repo=repo, reader=reader, now_iso=_NOW)
+
+    assert len(evidence.holds) == 1
+    hold = evidence.holds[0]
+    assert hold.scope == classifier.DOMAIN_SCOPE
+    assert hold.hold_key == "codex"
+    assert hold.candidate_key is None
+    assert hold.cause == module.PROVIDER_LIMIT_CAUSE
+    assert hold.occurred_at == _OCCURRED_AT
+    # The id digests the FACTORY's own record, so two Dispatchers deriving one
+    # attempt mint one id rather than two records of the same outage.
+    assert module.observation_hold(observation=evidence.observations[0]) == hold
+
+
+def test_a_peer_repositorys_recorded_outage_skips_this_repositorys_covered_candidate(
+    tmp_path: Path,
+) -> None:
+    """The clause's whole promise, through the verdict every consumer reads.
+
+    "an observation made by any repository's run on a participating factory is
+    visible to every repository that dispatches to it." Nothing in this
+    repository's journal mentions the run, and the journal path is `None`.
+    """
+    preflight = importlib.import_module(f"{_PACKAGE}._dispatcher_acp_preflight")
+    repo = _chain_repo(tmp_path=tmp_path)
+    reader = _Reader(
+        rows={"hp": _rows(payload=[_row_payload()])},
+        payloads={("hp", _RUN_ID): _inspect_payload(cause=_CEILING_CAUSE)},
+    )
+
+    verdict = preflight.resolve_acp_preflight(
+        repo=repo, journal_path=None, now_iso=_NOW, factory_runs=reader
+    )
+
+    assert verdict.viable is True
+    assert _candidate_keys(verdict=verdict) == ["fallback"]
+    assert [hold.hold_key for hold in verdict.holds] == ["codex"]
+
+
+def test_the_same_repository_with_no_factory_evidence_keeps_every_candidate(
+    tmp_path: Path,
+) -> None:
+    """The control that makes the case above able to fail for the right reason.
+
+    Without it, a preflight that dropped the primary for any other reason --
+    an unreadable adapter, a mis-ordered chain -- would satisfy the skip
+    assertion while reading no factory evidence at all.
+    """
+    preflight = importlib.import_module(f"{_PACKAGE}._dispatcher_acp_preflight")
+    repo = _chain_repo(tmp_path=tmp_path)
+
+    verdict = preflight.resolve_acp_preflight(repo=repo, journal_path=None, now_iso=_NOW)
+
+    assert _candidate_keys(verdict=verdict) == ["primary", "fallback"]
+    assert verdict.holds == ()
+
+
+def test_an_unreadable_factory_listing_rides_the_verdict_as_unobservable(
+    tmp_path: Path,
+) -> None:
+    """An evidence source that could not be read is carried, never interpreted.
+
+    The verdict stays VIABLE, which is the clause's "It MAY continue with
+    candidates whose availability evidence is independently complete" -- what
+    it must not do is report the unread factory as having held nothing.
+    """
+    module = _module()
+    preflight = importlib.import_module(f"{_PACKAGE}._dispatcher_acp_preflight")
+    repo = _chain_repo(tmp_path=tmp_path)
+    reader = _Reader(rows={"hp": None, "vps": None})
+
+    verdict = preflight.resolve_acp_preflight(
+        repo=repo, journal_path=None, now_iso=_NOW, factory_runs=reader
+    )
+
+    assert verdict.viable is True
+    assert [entry["reason"] for entry in verdict.unobservable] == [
+        module.LISTING_UNREADABLE,
+        module.LISTING_UNREADABLE,
+    ]
 
 
 def test_a_sparse_row_reports_no_repository_rather_than_a_derived_one(tmp_path: Path) -> None:
