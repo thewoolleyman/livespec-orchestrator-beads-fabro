@@ -1,0 +1,127 @@
+"""Matcher control for tests_no_real_time — one of every form, plus the near-misses.
+
+NOT a test and NOT collected: the `.py.txt` suffix keeps it out of pytest, ruff
+and pyright, so the offending forms below can be written exactly as a real test
+would write them. The check reads this file and requires its own markers to
+match what the matcher found, which is what makes a clean scan of the suite
+evidence rather than a silence.
+
+ONE marker, on every line the matcher must find. It is deliberately not
+spelled out in this docstring: the check locates it by substring, so naming it
+in prose would mark this line as an expectation of its own.
+"""
+
+from __future__ import annotations
+
+import threading
+import time
+
+_BUDGET_SECONDS = 5.0
+
+
+def test_a_real_sleep_is_an_offence() -> None:
+    time.sleep(0.05)  # EXPECT-OFFENCE
+
+
+def test_an_elapsed_difference_assertion_is_an_offence() -> None:
+    started = time.monotonic()
+    elapsed = time.monotonic() - started
+    assert elapsed < _BUDGET_SECONDS  # EXPECT-OFFENCE
+
+
+def test_an_inline_elapsed_difference_is_an_offence() -> None:
+    started = time.perf_counter()
+    assert time.perf_counter() - started < _BUDGET_SECONDS  # EXPECT-OFFENCE
+
+
+def test_a_wrapped_elapsed_assertion_is_reported_at_its_first_line() -> None:
+    started = time.time()
+    elapsed = time.time() - started
+    assert (  # EXPECT-OFFENCE
+        elapsed < _BUDGET_SECONDS
+    ), f"took {elapsed:.2f}s"
+
+
+def test_an_elapsed_name_rebound_to_something_ordinary_is_not_an_offence() -> None:
+    started = time.monotonic()
+    elapsed = time.monotonic() - started
+    elapsed = len("not a measurement")
+    assert elapsed > 0
+
+
+def test_a_clock_reading_used_as_fixture_data_is_not_an_offence() -> None:
+    deadline = int(time.time()) + 3600
+    assert deadline > 0
+    assert time.time() < deadline
+    assert deadline - 3600 > 0
+
+
+def test_an_injected_clock_is_not_an_offence() -> None:
+    readings = iter((0.0, 1.0, 9.0))
+    monotonic = readings.__next__
+    started = monotonic()
+    assert monotonic() - started < _BUDGET_SECONDS
+
+
+def test_a_sibling_scope_does_not_inherit_a_tracked_name() -> None:
+    elapsed = len("a local that merely shares the name")
+    assert elapsed < _BUDGET_SECONDS
+
+
+def test_a_deterministic_wait_is_not_an_offence() -> None:
+    ready = threading.Event()
+    worker = threading.Thread(target=ready.set)
+    worker.start()
+    worker.join(timeout=_BUDGET_SECONDS)
+    assert ready.is_set()
+
+
+def test_a_sleep_inside_a_child_process_source_string_is_out_of_scope() -> None:
+    child = "import time; time.sleep(30)"
+    assert "sleep" in child
+
+
+def test_every_compound_statement_body_is_descended() -> None:
+    started = time.monotonic()
+    if started >= 0.0:
+        elapsed = time.monotonic() - started
+        assert elapsed < _BUDGET_SECONDS  # EXPECT-OFFENCE
+    else:
+        assert started < 0.0
+    while False:
+        assert started == 0.0
+    for _ in range(0):
+        assert started == 0.0
+    with threading.Lock():
+        inner = time.monotonic() - started
+        assert inner < _BUDGET_SECONDS  # EXPECT-OFFENCE
+    try:
+        assert started >= 0.0
+    except AssertionError:
+        assert started < 0.0
+    else:
+        guarded = time.monotonic() - started
+        assert guarded < _BUDGET_SECONDS  # EXPECT-OFFENCE
+    finally:
+        trailing = time.monotonic() - started
+        assert trailing < _BUDGET_SECONDS  # EXPECT-OFFENCE
+    match int(started):
+        case 0:
+            matched = time.monotonic() - started
+            assert matched < _BUDGET_SECONDS  # EXPECT-OFFENCE
+        case _:
+            assert started > 0.0
+
+
+class _AnnotatedScope:
+    budget: float = _BUDGET_SECONDS
+
+    def measure(self) -> None:
+        started: float = time.monotonic()
+        elapsed: float = time.monotonic() - started
+        assert elapsed < self.budget  # EXPECT-OFFENCE
+
+    def declared_only(self) -> None:
+        later: float
+        later = 0.0
+        assert later == 0.0
