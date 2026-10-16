@@ -210,6 +210,40 @@ def test_post_merge_reports_red_when_the_cluster_jobs_verdict_is_failed(tmp_path
     assert "ended Failed on tree cafe08" in outcome.detail
 
 
+def test_post_merge_names_the_missing_verdict_when_the_cluster_returns_none(
+    tmp_path: Path,
+) -> None:
+    """A cluster that said nothing is red, and the detail SAYS it said nothing.
+
+    Never green, and never described as a gate that reported a result: a merge
+    the cluster did not gate has not been gated, and the remedy for an absent
+    verdict is on the cluster or in the credential that reaches it rather than
+    in the repository. Reporting it as a failed gate would send an operator to
+    read a check that never ran.
+    """
+    runner = Runner(
+        queue=_cluster_queue(
+            reply=_gate_reply(
+                state="NO_VERDICT",
+                detail="await-gate-terminal did not complete, so the gate reached no verdict",
+            )
+        )
+    )
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=_cluster_repo(tmp_path=tmp_path)),
+        runner=runner,
+        journal=Journal(),
+        merged=_merged(),
+    )
+
+    assert (outcome.status, outcome.stage) == ("failed", "janitor-post-merge-cluster")
+    assert "NO VERDICT" in outcome.detail
+    assert "nothing gated this merge" in outcome.detail
+    assert "await-gate-terminal did not complete" in outcome.detail
+
+
 def test_post_merge_keeps_the_host_process_venue_when_none_is_declared(tmp_path: Path) -> None:
     """A repository that declares no venue keeps the host-local check suite.
 
