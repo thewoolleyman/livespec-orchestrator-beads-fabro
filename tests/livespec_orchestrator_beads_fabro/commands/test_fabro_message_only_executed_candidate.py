@@ -140,6 +140,10 @@ def _observed(*, repo: Path, stages: object) -> object:
                 exit_code=0, stdout=_petri_inspect_stdout(stages=stages), stderr=""
             ),
             "ps": CommandResult(exit_code=0, stdout=_PS_STDOUT, stderr=""),
+            # Every case here observes a FAILED run, which also spends the
+            # terminal event-stream read that recovers a needs-human
+            # terminal's emitted preservation sentinel.
+            "events": CommandResult(exit_code=0, stdout="[]", stderr=""),
         }
     )
     return inspect_run(plan=_plan(repo=repo), runner=runner, journal=Journal(), run_id=_RUN_ID)

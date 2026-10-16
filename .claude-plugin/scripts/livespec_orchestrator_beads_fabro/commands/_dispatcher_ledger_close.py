@@ -356,6 +356,7 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # and is therefore absent from every other outcome for reasons that have
     # nothing to do with hooks.
     "hook_over_limit",
+    "needs_human_preservation",
     "provider_usage_limit_provider",
     "remedy",
     "step",

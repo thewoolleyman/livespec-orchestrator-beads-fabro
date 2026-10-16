@@ -103,6 +103,7 @@ class FabroInspectResult:
     payload: object | None
     status_kind: str | None
     failure: FabroFailureDetail | None
+    events_payload: object | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

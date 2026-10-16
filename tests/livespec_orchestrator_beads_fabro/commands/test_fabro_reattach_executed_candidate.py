@@ -164,6 +164,7 @@ def test_a_shared_sentence_is_attributed_to_the_claude_candidate_that_ran(
                 exit_code=0, stdout=_inspect_stdout(cause=_SHARED_SENTENCE), stderr=""
             ),
             "ps": CommandResult(exit_code=0, stdout=_PS_STDOUT, stderr=""),
+            "events": CommandResult(exit_code=0, stdout="[]", stderr=""),
         }
     )
 
@@ -176,7 +177,7 @@ def test_a_shared_sentence_is_attributed_to_the_claude_candidate_that_ran(
     assert observed.failure.provider_usage_limit is True
     assert observed.failure.provider_usage_limit_provider == "anthropic"
     assert observed.failure.provider_usage_limit_entitlement == _ANTHROPIC_CANDIDATE
-    assert [argv[1] for argv in runner.calls] == ["inspect", "ps"]
+    assert [argv[1] for argv in runner.calls] == ["inspect", "ps", "events"]
 
 
 def test_an_ordinary_failure_spends_no_second_read_for_labels(*, tmp_path: Path) -> None:
@@ -185,12 +186,19 @@ def test_an_ordinary_failure_spends_no_second_read_for_labels(*, tmp_path: Path)
     `ps -a --json` lists every run the factory holds, so spending it on every
     observation would put a large read on the ordinary failure path — and a
     run whose failure reports no ceiling has no provider to attribute.
+
+    `events` IS spent here, and that is not a weakening of this control: the
+    terminal event-stream read is gated on a CONFIRMED FAILED run rather than
+    on a ceiling, because a terminal's emitted preservation sentinel has to be
+    recovered whatever the fault was. What this case pins is the absence of
+    `ps`, which is why the whole sequence is asserted rather than its length.
     """
     runner = ArgvRunner(
         replies={
             "inspect": CommandResult(
                 exit_code=0, stdout=_inspect_stdout(cause=_ORDINARY_FAULT), stderr=""
-            )
+            ),
+            "events": CommandResult(exit_code=0, stdout="[]", stderr=""),
         }
     )
 
@@ -202,7 +210,7 @@ def test_an_ordinary_failure_spends_no_second_read_for_labels(*, tmp_path: Path)
     assert observed.failure is not None
     assert observed.failure.provider_usage_limit is False
     assert observed.failure.provider_usage_limit_provider is None
-    assert [argv[1] for argv in runner.calls] == ["inspect"]
+    assert [argv[1] for argv in runner.calls] == ["inspect", "events"]
 
 
 def test_an_unreadable_labels_read_keeps_the_v107_cause_text_attribution(*, tmp_path: Path) -> None:
@@ -219,6 +227,7 @@ def test_an_unreadable_labels_read_keeps_the_v107_cause_text_attribution(*, tmp_
                 exit_code=0, stdout=_inspect_stdout(cause=_SHARED_SENTENCE), stderr=""
             ),
             "ps": CommandResult(exit_code=1, stdout="", stderr="connection refused"),
+            "events": CommandResult(exit_code=0, stdout="[]", stderr=""),
         }
     )
 
@@ -247,6 +256,7 @@ def test_the_labels_read_is_journaled_as_its_own_stage(*, tmp_path: Path) -> Non
                 exit_code=0, stdout=_inspect_stdout(cause=_SHARED_SENTENCE), stderr=""
             ),
             "ps": CommandResult(exit_code=0, stdout=_PS_STDOUT, stderr=""),
+            "events": CommandResult(exit_code=0, stdout="[]", stderr=""),
         }
     )
 
