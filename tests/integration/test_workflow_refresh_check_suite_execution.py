@@ -263,6 +263,19 @@ class _World:
         return probe.returncode == 0
 
 
+_GH_UNARMED_STUB = """#!/bin/sh
+# `pr_refresh` asks the forge whether the pull request carries an auto-merge
+# request before it rebases, and fails closed when it cannot be asked. This
+# module's subject is the declared-check-suite seam, not the arming, so the
+# stub reports an UNARMED pull request and the disarm becomes a no-op. The
+# real `gh` on PATH refuses without GitHub App credentials, which would stop
+# the stage before it ever reached the suite. The arming arms themselves are
+# driven in `test_scripted_refresh_execution`, against a forge stub that
+# records the clone's head at each call.
+echo null
+"""
+
+
 def _world(*, root: Path) -> _World:
     """An origin carrying the default branch, and a clone holding this run's work.
 
@@ -288,6 +301,11 @@ def _world(*, root: Path) -> _World:
     push_program = plugins_root / PUBLICATION_PUSH_PROGRAM_FILENAME
     _ = push_program.write_text(publication_push_program_source(), encoding="utf-8")
     push_program.chmod(0o700)
+    bin_dir = root / "bin"
+    bin_dir.mkdir()
+    gh_stub = bin_dir / "gh"
+    _ = gh_stub.write_text(_GH_UNARMED_STUB, encoding="utf-8")
+    gh_stub.chmod(0o755)
     return _World(origin=origin, clone=clone, plugins_root=plugins_root)
 
 
@@ -300,7 +318,7 @@ def _stage_env(*, world: _World) -> dict[str, str]:
     push takes the inline fallback identically here and on a CI runner.
     """
     return {
-        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "PATH": f"{world.clone.parent / 'bin'}:/usr/local/bin:/usr/bin:/bin",
         "HOME": str(world.clone.parent / "home"),
         "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
         "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
