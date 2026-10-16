@@ -496,7 +496,7 @@ def _cancel_journal(
     executing_stage: str = "proof_capture",
     published_head: str = _HEAD,
 ) -> Path:
-    """The ordinary journal plus one `watchdog-stall-cancel` row for a LATER dispatch.
+    """The ordinary journal plus the LATER dispatch's own launch and cancel rows.
 
     The cancel row's run is deliberately NOT the run the pull request's proof
     record names: that is the state the clause describes — "no proof record on the
@@ -504,25 +504,36 @@ def _cancel_journal(
     and it is what makes these cases discriminate. A gather that ignored the
     cancel row would still find the proof-record anchor and report the stage that
     record's `captured` verdict implies, which is `review`.
+
+    THE LATER DISPATCH'S OWN `dispatch-id` ROW IS PART OF THE FIXTURE, because a
+    dispatch journals one at launch and the anchor is scoped to the item's LATEST
+    journaled dispatch. Without it this journal names an earlier dispatch as the
+    latest while carrying a cancel row for a dispatch nothing here records — a
+    shape no dispatcher writes, and one that reads to a correctly-scoped anchor
+    as a cancel the item has since dispatched past.
     """
     journal = _journal(path=path)
     with journal.open("a", encoding="utf-8") as handle:
-        _ = handle.write(
-            json.dumps(
-                {
-                    "stage": "watchdog-stall-cancel",
-                    "work_item_id": _ITEM_ID,
-                    "dispatch_id": _CANCELLED_DISPATCH,
-                    "run_id": run_id,
-                    "factory": "hp",
-                    "executing_stage": executing_stage,
-                    "pull_request": _PR,
-                    "published_head": published_head,
-                    "published_head_unreadable": None,
-                }
-            )
-            + "\n"
-        )
+        for row in (
+            {
+                "stage": "dispatch-id",
+                "work_item_id": _ITEM_ID,
+                "dispatch_id": _CANCELLED_DISPATCH,
+                "workflow_name": "implement-work-item",
+            },
+            {
+                "stage": "watchdog-stall-cancel",
+                "work_item_id": _ITEM_ID,
+                "dispatch_id": _CANCELLED_DISPATCH,
+                "run_id": run_id,
+                "factory": "hp",
+                "executing_stage": executing_stage,
+                "pull_request": _PR,
+                "published_head": published_head,
+                "published_head_unreadable": None,
+            },
+        ):
+            _ = handle.write(json.dumps(row) + "\n")
     return journal
 
 

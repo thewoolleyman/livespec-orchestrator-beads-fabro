@@ -257,3 +257,144 @@ def test_only_a_rework_stage_cancel_naming_a_head_reports_an_unanchoring_stage()
         _cancel_row(work_item_id=_OTHER_ITEM_ID, executing_stage="janitor"),
     ):
         assert module.unanchoring_cancel_stage(records=(row,), work_item_id=_ITEM_ID) is None
+
+
+_LATER_DISPATCH_ID = "a7395318d0c945589105940e7936139f"
+
+
+def _dispatch_row(
+    *, work_item_id: str = _ITEM_ID, dispatch_id: str | None = _DISPATCH_ID
+) -> dict[str, object]:
+    """One `dispatch-id` row, which is how the journal records that a dispatch began."""
+    return {"stage": "dispatch-id", "work_item_id": work_item_id, "dispatch_id": dispatch_id}
+
+
+def _cancelled_dispatch(*, dispatch_id: str | None = _DISPATCH_ID) -> dict[str, object]:
+    """One anchoring cancel row that names the dispatch it belongs to."""
+    row = _cancel_row()
+    row["dispatch_id"] = dispatch_id
+    return row
+
+
+def test_a_cancel_row_the_item_has_since_dispatched_past_anchors_nothing() -> None:
+    """The clause scopes this anchor to the item's LATEST journaled dispatch.
+
+    "When no proof record on the pull request carries the identifier of the
+    item's latest journaled dispatch, and THAT dispatch's journal carries a
+    `watchdog-stall-cancel` record" — so a cancel row belonging to a dispatch a
+    later plain dispatch has superseded is not this anchor, however recent it is
+    among the cancel rows. The journal is append-only and a `dispatch-id` row is
+    written at launch, so a `dispatch-id` row for the item AFTER the cancel row
+    is a dispatch that began later and was never cancelled.
+
+    Anchoring there is wrong in both directions at once, and both are expensive.
+    When the pull request carries the later dispatch's head, the moved-head
+    refusal fires on a two-dispatches-old sha and names a plain dispatch as the
+    remedy — which reclaims the publish branch this whole item exists to
+    preserve. When the two heads coincide, the resume re-enters `proof_capture`
+    on a tree the later dispatch had already captured and had reviewed.
+    """
+    module = _loaded()
+    assert (
+        module.cancel_anchor(
+            records=(
+                _dispatch_row(),
+                _cancelled_dispatch(),
+                _dispatch_row(dispatch_id=_LATER_DISPATCH_ID),
+            ),
+            work_item_id=_ITEM_ID,
+            proof_run_ids=frozenset(),
+        )
+        is None
+    )
+
+
+def test_the_latest_dispatchs_own_cancel_row_still_anchors() -> None:
+    """The control for the gate above: a row of the latest dispatch is admitted.
+
+    Without it, a gate that refused every journal carrying a `dispatch-id` row
+    at all would satisfy the supersession case while retiring the anchor
+    entirely — and every journal of a real dispatch carries one. The unrelated
+    row is here for the same reason: the gate reads the item's DISPATCH rows,
+    not every row the item has.
+    """
+    module = _loaded()
+    anchor = module.cancel_anchor(
+        records=(
+            _dispatch_row(work_item_id=_OTHER_ITEM_ID, dispatch_id=_LATER_DISPATCH_ID),
+            _dispatch_row(),
+            {"stage": "ledger-admit", "work_item_id": _ITEM_ID},
+            _cancelled_dispatch(),
+        ),
+        work_item_id=_ITEM_ID,
+        proof_run_ids=frozenset(),
+    )
+    assert anchor is not None
+    assert anchor.run_id == _RUN_ID
+    assert anchor.head == _HEAD
+
+
+def test_a_cancel_row_naming_a_dispatch_other_than_the_latest_anchors_nothing() -> None:
+    """Position is not the whole of attribution, so the named ids are compared too.
+
+    A cancel row can be journaled AFTER the dispatch it belongs to has been
+    superseded — a reconciliation of a stranded run writes one — and such a row
+    sits last in the journal while naming a dispatch the item has moved past.
+    Journal position cannot tell that row from the latest dispatch's own; the
+    two dispatch ids can, and they are both already on the records.
+    """
+    module = _loaded()
+    assert (
+        module.cancel_anchor(
+            records=(_dispatch_row(dispatch_id=_LATER_DISPATCH_ID), _cancelled_dispatch()),
+            work_item_id=_ITEM_ID,
+            proof_run_ids=frozenset(),
+        )
+        is None
+    )
+
+
+def test_a_proof_record_naming_the_latest_journaled_dispatch_takes_precedence() -> None:
+    """The precedence comparison takes the LATEST DISPATCH's identifiers, not the row's.
+
+    The two are the same set whenever the cancel row names its dispatch, which is
+    why this case names none: a row written before the cancel site recorded the
+    dispatch id still belongs to the dispatch the `dispatch-id` row identifies,
+    so a proof record carrying THAT id is evidence this dispatch's capture
+    completed and outranks the row exactly as a run-id-bearing record does.
+    """
+    module = _loaded()
+    records = (_dispatch_row(), _cancelled_dispatch(dispatch_id=None))
+    assert (
+        module.cancel_anchor(
+            records=records, work_item_id=_ITEM_ID, proof_run_ids=frozenset({_DISPATCH_ID})
+        )
+        is None
+    )
+    anchor = module.cancel_anchor(records=records, work_item_id=_ITEM_ID, proof_run_ids=frozenset())
+    assert anchor is not None
+    assert anchor.run_id == _RUN_ID
+
+
+def test_a_superseded_rework_stage_cancel_reports_no_unanchoring_stage() -> None:
+    """The refusal's explanation is scoped to the same dispatch its decision is.
+
+    Both readings resolve the row through one gate, so the refusal cannot offer
+    the rework rule as its reason while naming a cancel from a dispatch the item
+    has already dispatched past — an explanation that would send an operator
+    hunting a rework loop that is not what refused them.
+    """
+    module = _loaded()
+    rework = _cancel_row(executing_stage="janitor")
+    rework["dispatch_id"] = _DISPATCH_ID
+    assert (
+        module.unanchoring_cancel_stage(
+            records=(_dispatch_row(), rework, _dispatch_row(dispatch_id=_LATER_DISPATCH_ID)),
+            work_item_id=_ITEM_ID,
+        )
+        is None
+    )
+    assert (
+        module.unanchoring_cancel_stage(records=(_dispatch_row(), rework), work_item_id=_ITEM_ID)
+        == "janitor"
+    )
