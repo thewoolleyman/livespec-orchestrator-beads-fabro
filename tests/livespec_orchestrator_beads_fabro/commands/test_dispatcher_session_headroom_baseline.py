@@ -87,6 +87,37 @@ def test_an_absent_journal_file_holds_no_baseline(tmp_path: Path) -> None:
     assert _baseline(tmp_path=tmp_path, lines=(), write=False) is None
 
 
+def test_a_journal_that_exists_but_cannot_be_READ_holds_no_baseline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An existence test passing is NOT a promise that the read will succeed.
+
+    A permission fault, an ENOENT race against the `--journal` path between
+    the existence test and the read, or an EIO all land here, and each is a
+    failure to MEASURE rather than a history carrying nothing. The clause
+    already fails this projection open, so the worst honest outcome is a null
+    figure -- whereas an exception escaping this read propagates out through
+    `resolve_acp_preflight` into `_eligible_legs`, which nothing on that path
+    catches, and fails an entire admission evaluation over a figure the floor
+    does not depend on.
+
+    The positive control above is what gives this case its force: a reader
+    that counted NOTHING would satisfy it without reading anything at all.
+    """
+    path = tmp_path / "fabro-dispatch-journal.jsonl"
+    _ = path.write_text(f"{_assessment_record(assessments=[_valid_entry()])}\n", encoding="utf-8")
+
+    def refuse(_path: Path, *, encoding: str | None = None, errors: str | None = None) -> str:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "read_text", refuse)
+
+    assert (
+        session_headroom_baseline(journal_path=path, credential_identity=_IDENTITY, now_iso=_NOW)
+        is None
+    )
+
+
 def test_no_journal_path_at_all_holds_no_baseline() -> None:
     """A caller holding no journal says so, and is answered rather than refused."""
     assert (
