@@ -112,6 +112,17 @@ _NODE_BLOCK_RE = re.compile(r"(?ms)^[ \t]*(?P<name>\w+)[ \t]*\[(?P<body>[^\]]*)\
 _VISIT_COUNT_FIELD = "node_visit_count"
 _RUN_ID_SOURCE = 'stdin_source="context.internal.run_id"'
 
+# How the shipped graph declares a node's script: one attribute, on one line,
+# opened by this prefix and closed by the quote that ends the line.
+_SCRIPT_ATTRIBUTE_PREFIX = 'script="'
+
+# The pattern the structural refusal below exists for: a backslash in front of a
+# single quote inside a node script. A DOT attribute string escapes a double
+# quote and a backslash and NOTHING else, so this sequence is not an escape --
+# the pinned reader drops the backslash by accident while a Petri-era reader
+# hands it to the shell, where a backslashed quote is a LITERAL quote character.
+_ESCAPED_SINGLE_QUOTE = "\\'"
+
 
 def _graph_text() -> str:
     return _GRAPH.read_text(encoding="utf-8")
@@ -134,6 +145,82 @@ def _node_bodies(*, text: str) -> dict[str, str]:
         for match in _NODE_BLOCK_RE.finditer(text)
         if match.group("name") != "graph"
     }
+
+
+def _raw_node_scripts(*, text: str) -> dict[str, str]:
+    """Each declared node's `script` value as the FILE carries it, escapes UNDECODED.
+
+    Read off the raw text rather than through `parse_dot_graph`, which models the
+    PINNED reader and drops the backslash from every escape it meets: a decoded
+    script cannot carry the pattern the refusal below is about, so a scan over
+    the parsed graph would report clean for every graph ever written.
+    """
+    found: dict[str, str] = {}
+    for name, body in _node_bodies(text=text).items():
+        for line in body.splitlines():
+            stripped = line.strip()
+            if stripped.startswith(_SCRIPT_ATTRIBUTE_PREFIX) and stripped.endswith('"'):
+                found[name] = stripped[len(_SCRIPT_ATTRIBUTE_PREFIX) : -1]
+    return found
+
+
+def _quoting_offenders(*, text: str) -> dict[str, int]:
+    """Each node whose script carries a backslash-escaped single quote, and how many."""
+    return {
+        name: script.count(_ESCAPED_SINGLE_QUOTE)
+        for name, script in _raw_node_scripts(text=text).items()
+        if _ESCAPED_SINGLE_QUOTE in script
+    }
+
+
+def test_no_node_script_carries_a_backslash_escaped_single_quote() -> None:
+    """The structural refusal that closes the Petri-era quoting family for good.
+
+    Work-item bd-ib-be5r7o. Four spans of this one pattern reached master, and
+    each was found by a production failure rather than by a gate:
+    `bd-ib-m4cspa` fixed the fifth and missed these four, because nothing
+    mechanical was looking. The pattern is invisible to every gate this
+    repository already runs -- `check-fabro-graph-validity` hands the graph to
+    `fabro validate`, which accepts it either way, since the graph is perfectly
+    VALID and it is the SHELL that is handed a literal quote character.
+
+    WHAT EACH SPAN COST, which is why the refusal is blanket rather than
+    per-construct: a `--jq` operand becomes a program beginning with a quote
+    token, so the read fails closed (fatal on the arming guard in front of every
+    rewrite, and silent on the merge-detection path, where the run loses the sha
+    of the merge it produced); a `printf` format becomes a quote-wrapped literal
+    whose `\\n` is a bare `n`, so a state file holds a value a later visit cannot
+    compare as a number and a durable reason file holds its cause punctuated by
+    stray quotes with no line ending. Different constructs, one cause.
+
+    THE MUTANT CONTROL RUNS FIRST, deliberately. A scan that reports an absence
+    for a living has to be shown capable of returning a HIT within its own scope
+    before its clean answer means anything: a prefix that stopped matching, a
+    body regex that stopped reaching the publication nodes, or a scan taken over
+    the PARSED graph (where the pattern cannot survive at all) would each report
+    exactly what a clean graph reports. The mutant is made from the committed
+    graph's own `pr` script rather than hand-authored, so it cannot rot into
+    something the scan would miss for an unrelated reason, and the finding is
+    asserted to NAME that node, since an offender a failure does not name sends
+    a reader through a ten-thousand-character attribute by hand. Its count is
+    asserted RELATIVE to the committed graph's own, so the control states what
+    the mutation ADDED rather than restating what the graph happens to carry.
+    """
+    text = _graph_text()
+    scripts = _raw_node_scripts(text=text)
+    assert "pr" in scripts, sorted(scripts)
+    committed = _quoting_offenders(text=text)
+
+    wrapped = f"{_ESCAPED_SINGLE_QUOTE}.mergeCommit.oid{_ESCAPED_SINGLE_QUOTE}"
+    # ONE occurrence, so the control's arithmetic states a fixed addition rather
+    # than however many merge-commit reads the node happens to carry today.
+    mutant = text.replace("--jq '.mergeCommit.oid'", f"--jq {wrapped}", 1)
+    assert mutant != text
+    mutated = _quoting_offenders(text=mutant)
+    assert "pr" in mutated, sorted(mutated)
+    assert mutated["pr"] == committed.get("pr", 0) + 2
+
+    assert committed == {}
 
 
 def test_no_edge_condition_references_a_workflow_input_token() -> None:
