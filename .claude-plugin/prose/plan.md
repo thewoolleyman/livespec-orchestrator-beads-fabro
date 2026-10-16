@@ -343,9 +343,14 @@ steps, the proof they produced, and whether they reproduced. The primitive compu
 the publishing identity, and each assertion's proof mode read off the plan's own Definition of Done — and refuses a `verified`
 post whose computed identity equals the identity that captured the steps it replays. A DIFFERENT session must replay them.
 
-Where a release applies to the plan's work — the governed repository carries at least one release tag — the steps must run
-against the released artifact installed through its normal installation path. The archive gate rejects a record that states
-`release: none`, or names a release tag the repository does not carry, and names the missing release identity in its refusal.
+Each record is judged against the RELEASE REPOSITORY its first installed build identifier names — `<owner>/<repository>`, or a
+bare `<repository>` under the governed repository's forge owner — so a plan shipped as `livespec-dev-tooling v1.96.1` is judged
+against that repository. A record naming none, or a bare name the forge denies, falls back to the governed repository; an
+explicit `<owner>/<repository>` the forge denies is rejected naming it, never judged against the governed one. Release tags are
+read from each repository's forge remote and never a local clone, so a local-only tag does not count. Where the release
+repository carries a tag, the steps must run against the released artifact installed through its normal installation path, and
+the gate rejects a record stating `release: none` or naming a tag that repository lacks, naming the missing release identity and
+the repository it judged; a read the gate cannot take rejects too, naming the repository and the failure.
 
 After the fact, the `plan_close_proof` conformance verdict reports a plan epic closed later than the proof leg's ratification
 date whose timeline carries no `verified` plan record; an epic closed on or before that date is out of its scope.
