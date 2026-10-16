@@ -600,8 +600,11 @@ def test_a_fractional_start_still_stops_by_the_absolute_epoch(
     the rounding affected.
     """
     beat_file = tmp_path / "beats"
+    # The wait body runs only when the clock is not already inside the window on
+    # entry, so whether it executes depends on timing. Excluded so per-file
+    # coverage cannot fail at random (run 38878333019, PR 3090).
     while not (start_fraction <= (time.time() % 1) <= start_fraction + 0.08):
-        time.sleep(0.005)
+        time.sleep(0.005)  # pragma: no cover - timing-dependent alignment wait
     deadline = int(time.time()) + _SOON_SECONDS
 
     result = _run(
