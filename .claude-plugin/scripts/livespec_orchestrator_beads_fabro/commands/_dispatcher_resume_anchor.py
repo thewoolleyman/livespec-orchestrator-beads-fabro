@@ -96,6 +96,35 @@ RESUMED_AT_REVIEW = "review"
 RESUMED_AT_FIX = "fix"
 RESUMED_AT_PROOF_CAPTURE = "proof_capture"
 
+# The rest of the publication tail, which normalizes to `pr_refresh` exactly as
+# `pr` does (v145, Scenario 184's resumed-disarm sub-scenario). These are INPUTS
+# and never ANSWERS, for the same reason `RESUMED_AT_PR` is.
+#
+# WHY THEY ARE HERE AT ALL, when the clause only spells `pr`. The ending that
+# sends an operator to a resume on this route fires AFTER the run finished: `pr`
+# armed auto-merge, `pr_route` found no refresh-route marker, `verify_pr`
+# confirmed the publication and the run reached its terminal. So the factory's
+# own record -- the newest checkpoint's `next_node_id`, which outranks the
+# verdict fallback whenever the factory still holds the run -- names one of
+# THESE rather than `pr`, and for the ordinary case of this ending it names the
+# terminal.
+#
+# WHAT EACH ONE DOES IF CARRIED THROUGH, because none of them is loud and that
+# is what makes the normalization load-bearing rather than tidy. A resumed run
+# entering `exit` terminates at once: the dispatch reports a green resume while
+# the pull request is still armed, still conflicting, and nothing has disarmed
+# or refreshed it -- the operator's whole recovery chain ran and changed nothing.
+# `verify_pr` asks whether the branch is published, which it is, and reaches the
+# same terminal. `pr_route` consumes a marker no `pr` visit of the resumed run
+# wrote and falls through to `verify_pr`. All three skip the disarm the clause
+# puts in front of the rebase, which is the one thing the resumed run is for.
+_RESUMED_AT_POST_ARMING = (
+    RESUMED_AT_PR,
+    "pr_route",
+    "verify_pr",
+    "exit",
+)
+
 # Which party decided the resumed-at stage. Each value NAMES the measurement
 # rather than ranking it, per the repository rule that an option set is never
 # labelled as numbered tiers.
@@ -187,27 +216,29 @@ def published_head(*, body: str) -> str | None:
 
 
 def normalized_entry_node(*, node: str) -> str:
-    """One resumed-at stage with the RETIRED publication entry corrected.
+    """One resumed-at stage with every PUBLICATION-TAIL entry corrected.
 
     The clause requires that "an earlier `pr` entry MUST normalize to
     `pr_refresh`", and the correction lives here — on the ONE value both sources
     flow through — rather than at either source. The factory source is the one
-    that can still name `pr`, since a run terminated under a build older than
-    the scripted publication reports the node it died inside; the verdict table
-    above answers `pr_refresh` directly. Normalizing at a single source would
-    leave the other able to deliver `pr`.
+    that can still name a tail node, since it names whichever node the run was
+    executing when it terminated; the verdict table above answers `pr_refresh`
+    directly. Normalizing at a single source would leave the other able to
+    deliver one.
 
     Entering `pr` on a resumed run is not merely out of date. `pr` reads the
     published head out of the refresh provenance `pr_refresh` establishes, so a
     resume entering it directly either refuses for absent provenance or, where
     a resume anchor supplied one, readies a pull request whose base nothing
-    rebased onto the authoritative default.
+    rebased onto the authoritative default. `_RESUMED_AT_POST_ARMING` above
+    records what each of its siblings does instead, and why a resume that
+    reaches one of them is the silent kind of wrong.
 
     Every other node is returned UNCHANGED rather than validated against the
     graph: the factory names the node it was executing, and a reader that
     second-guessed that answer would be deciding, not normalizing.
     """
-    return RESUMED_AT_PR_REFRESH if node == RESUMED_AT_PR else node
+    return RESUMED_AT_PR_REFRESH if node in _RESUMED_AT_POST_ARMING else node
 
 
 def resumed_at_for_verdict(*, verdict: str) -> str:
