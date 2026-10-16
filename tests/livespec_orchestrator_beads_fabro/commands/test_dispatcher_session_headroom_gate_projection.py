@@ -57,7 +57,9 @@ def test_the_reading_assesses_the_caam_selected_slot_not_the_unnumbered_token(
             credential_identity="cred", observed_at=observed_at, utilization=10
         )
 
-    policy = headroom_gate.session_headroom_policy(repo=tmp_path, now_iso=_NOW, read=_read)
+    policy = headroom_gate.session_headroom_policy(
+        repo=tmp_path, now_iso=_NOW, journal_path=None, read=_read
+    )
     _ = policy.read()
 
     assert tokens == ["selected-token"]

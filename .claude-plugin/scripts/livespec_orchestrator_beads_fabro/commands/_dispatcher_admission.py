@@ -255,14 +255,20 @@ def _eligible_legs(
     is what makes its memo the "one assessment per distinct projected
     credential per admission evaluation" guarantee rather than a convention.
     The policy shares the pass's own `now_iso`, so the observation time the
-    journal reports is the instant this evaluation is dated by.
+    journal reports is the instant this evaluation is dated by -- and it shares
+    the ONE journal path the verdict is resolved against, which is also the
+    history its drain rate is measured from. Both readers take it from the
+    journal this pass actually appends to rather than re-deriving it, because
+    `dispatcher.py` accepts a `--journal` override and a second derivation
+    cannot be proven to name the same file.
     """
     now_iso = utc_now_iso()
+    journal_path = getattr(journal, "path", None)
     verdict = resolve_acp_preflight(
         repo=repo,
-        journal_path=getattr(journal, "path", None),
+        journal_path=journal_path,
         now_iso=now_iso,
-        headroom=session_headroom_policy(repo=repo, now_iso=now_iso),
+        headroom=session_headroom_policy(repo=repo, now_iso=now_iso, journal_path=journal_path),
     )
     rework_admittable, refused = filter_eligible_candidates(
         repo=repo,
