@@ -116,3 +116,21 @@ def test_host_runbook_distinguishes_the_three_credential_recovery_states() -> No
     assert "missing executable, transport failure, or error response" in _IMAGE_RUNBOOK
     assert "**Explicit provider authentication failure.**" in _IMAGE_RUNBOOK
     assert "Only this state calls for `codex login`" in _IMAGE_RUNBOOK
+
+
+def test_host_runbook_names_the_recipe_as_the_way_to_take_a_candidate_canary() -> None:
+    # The two refused canaries of plan fabro-currency were taken by hand against
+    # a real backlog item, so the runbook has to NAME the recipe rather than
+    # merely mention that canaries exist — an operator reading it must not have
+    # to choose an item.
+    assert "### Taking a candidate canary" in _IMAGE_RUNBOOK
+    assert "just canary-dispatch <factory>" in _IMAGE_RUNBOOK
+    assert "orchestrator-image/canary-fixture.md" in _IMAGE_RUNBOOK
+    assert "orchestrator-image/canary-marker.md" in _IMAGE_RUNBOOK
+    assert "canary:fixture-dispatch" in _IMAGE_RUNBOOK
+    # The failure the recipe retires, so a reader knows why hand-picking an item
+    # is the thing not to do.
+    assert "01M4NWARSD8T" in _IMAGE_RUNBOOK
+    assert "bd-ib-o6aeji" in _IMAGE_RUNBOOK
+    # Do NOT pick a real backlog item for a canary.
+    assert "never a real backlog item" in _IMAGE_RUNBOOK
