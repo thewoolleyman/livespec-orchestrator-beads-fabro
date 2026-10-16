@@ -79,13 +79,22 @@ class LiveRun:
 class ResumeObservation:
     """Every measurement the refusal ladder grades, gathered before it runs.
 
-    FOUR FIELDS ENCODE "COULD NOT BE ASKED" DISTINCTLY FROM AN ANSWER, because
+    FIVE FIELDS ENCODE "COULD NOT BE ASKED" DISTINCTLY FROM AN ANSWER, because
     for each of them the two support opposite decisions. `pull_request_state` and
     `pull_request_head` are `None` when the forge did not answer — never when it
     answered that there is nothing there, which `pull_request=None` says. And
     `liveness_observed` is false when the factory did not answer, which is
     deliberately not the same value as the empty `live_runs` tuple an answering
     factory with nothing alive produces.
+
+    `records_observed` is the fifth, and it is the narrowest: the forge answered
+    the LISTING — so there is a number, a state and a head — and failed only on the
+    pull request's own record list. The two answers that must not merge here are a
+    pull request carrying NO record and a record read that never happened, which
+    the gather receives as one value. Only the first establishes the cancel-record
+    anchor's precondition, and reading the second as the first re-entered
+    `proof_capture` on a tree a later dispatch had already captured and reviewed.
+    It defaults to TRUE for the same reason `forge_observed` does.
 
     `forge_observed` is the fourth, and it is the one whose absence cost the most.
     A forge outage leaves no pull request NUMBER either, so without it the
@@ -118,6 +127,7 @@ class ResumeObservation:
     pull_request: int | None = None
     pull_request_state: str | None = None
     pull_request_head: str | None = None
+    records_observed: bool = True
     live_runs: tuple[LiveRun, ...] = ()
     liveness_observed: bool = False
     lock_age_seconds: float | None = None
@@ -188,6 +198,15 @@ def _anchor_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
     dispatch, which is the difference that matters: a plain dispatch reclaims the
     branch, so advising one on an unmeasured read destroys the publication this
     whole surface exists to finish.
+
+    AND AN UNREADABLE RECORD LIST IS A FOURTH, sitting between the other two for
+    the same positional reason. It is a NARROWER outage than the one above: the
+    listing answered, so the number, the state and the head are all facts and
+    their own arms still grade them — only "what do this pull request's records
+    say" went unanswered. It must precede the headless refusal rather than fall
+    through to it, because that refusal is a CONFIDENT NEGATIVE about those very
+    records and its remedy is the branch-reclaiming plain dispatch; stating it
+    from an unread list reports a diagnostic as a measurement.
     """
     if not observation.forge_observed:
         unobservable = (
@@ -203,6 +222,15 @@ def _anchor_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
             " nothing to resume from; dispatch it plainly instead"
         )
         return (unpublished,)
+    if not observation.records_observed:
+        unread = (
+            "the forge could not report the Proof of Done records on pull request"
+            f" #{observation.pull_request}, so neither whether one anchors a resume"
+            " nor whether one outranks this item's stall cancel could be measured;"
+            " a resume does not proceed on an unobservable answer. Retry once the"
+            " forge answers"
+        )
+        return (unread,)
     if observation.anchor_head is None:
         return (_headless_refusal(observation=observation),)
     return ()

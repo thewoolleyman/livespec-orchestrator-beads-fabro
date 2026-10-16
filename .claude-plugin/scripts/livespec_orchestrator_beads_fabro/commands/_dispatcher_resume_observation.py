@@ -29,6 +29,21 @@ lets the factory be asked about the right run: the stage question is asked of th
 EARLIER run, and under this anchor that is the cancelled dispatch rather than
 whichever run the pull request's older record happens to name.
 
+BUT IT IS NOT ASKED AT ALL WHEN THE RECORD LIST COULD NOT BE READ, because the
+precedence bound it applies is a MEASUREMENT of that list and this is the module
+that takes it. `read_pull_request_records` answers `None` both for a pull request
+carrying no record and for a `gh pr view` that failed, and its docstring keeps
+them apart deliberately: "a failed read is evidence of nothing at all". Handing
+the second one an empty identifier set tells the cancel reader that no proof
+record names the dispatch — the reader then admits the row honestly, on an input
+that was never established. Measured against the pre-fix gather on one journal
+and one pull request: `gh pr view` exiting 0 anchored on the pull request's own
+record and entered at `review`, exiting 1 anchored on the cancel row and entered
+at `proof_capture`, and NEITHER reading refused. So the question is not asked on
+a blinded read, and `records_observed` carries the blinding to the ladder, which
+refuses on it — the fail-closed direction, since the alternative re-runs capture
+and review on a tree already proved and posts a second capture record.
+
 WHY THE DEFINITION-OF-DONE DIFFERENCE IS MEASURED AGAINST THE RECORD RATHER THAN
 THE JOURNAL. The clause refuses when the item's current section "differs from the
 earlier run's dispatch-time snapshot", and gives its reason outright: "so the
@@ -169,11 +184,16 @@ def gather_resume(
         if pull_request is not None
         else None
     )
+    records_observed = pull_request is None or records is not None
     journaled = read_journal_records(journal_path=journal_path)
-    cancel = cancel_anchor(
-        records=journaled,
-        work_item_id=item.id,
-        proof_run_ids=frozenset(one.run_id for one in records or ()),
+    cancel = (
+        cancel_anchor(
+            records=journaled,
+            work_item_id=item.id,
+            proof_run_ids=frozenset(one.run_id for one in records or ()),
+        )
+        if records_observed
+        else None
     )
     provisional = resume_anchor(records=records or (), executing_node=None)
     factory = _factory_reading(
@@ -199,6 +219,7 @@ def gather_resume(
             pull_request=None if pull_request is None else pull_request.number,
             pull_request_state=None if pull_request is None else pull_request.state,
             pull_request_head=None if pull_request is None else pull_request.head,
+            records_observed=records_observed,
             live_runs=factory.live_runs,
             liveness_observed=factory.observed,
             lock_age_seconds=_lock_age_seconds(repo=repo, work_item_id=item.id),
