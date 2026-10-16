@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.203.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.203.2...v0.203.3) (2026-10-16)
+
+
+### Bug Fixes
+
+* attribute needs-human causes to the routing stage ([ab9a961](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ab9a961ff47aec8d737d62efbc2ace43527d4ba0))
+* read needs-human preservation from terminal stage events ([27d62e1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/27d62e19f9d7943bf13885141b501e353a6c3daa))
+
 ## [0.203.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.203.1...v0.203.2) (2026-10-16)
 
 
