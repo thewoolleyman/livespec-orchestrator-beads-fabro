@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.203.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.202.2...v0.203.0) (2026-10-16)
+
+
+### Features
+
+* **dispatcher:** disarm auto-merge in pr_refresh before any rebase (bd-ib-3hpdvm) ([8680205](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/86802055e96b79be8f7e9cf1955fbfa7aa4460fe))
+* **dispatcher:** end an overtaken armed pull request blocked at merge-poll (bd-ib-3hpdvm) ([fd474df](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fd474df0662e59dadd3b33e625c77a77fe3c7dff))
+* **dispatcher:** guard the merge-hold release against a live run and an unproved head (bd-ib-3hpdvm) ([3983dc3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3983dc339b1fe64b9644c6e0aa42ef162eeae386))
+* **dispatcher:** record the non-convergence cause the refresh route ends on (bd-ib-3hpdvm) ([27ddefe](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/27ddefe6310a48361bc0688913de149128e0ed47))
+* **dispatcher:** record the overtaken arming and name its recovery chain (bd-ib-3hpdvm) ([be413c1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/be413c1ac06e6927c87d9b106c57dee92fbcd984))
+* **dispatcher:** resume an armed, exited run at pr_refresh (bd-ib-3hpdvm) ([b01c48f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b01c48fcf0e68d9f030dc0987351c49e59721b98))
+* **dispatcher:** route a rejected arming back to pr_refresh through pr_route (bd-ib-3hpdvm) ([871ef78](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/871ef786ddc9c6b4ab58ec7c01191911c3192b71))
+
 ## [0.202.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.202.1...v0.202.2) (2026-10-16)
 
 
