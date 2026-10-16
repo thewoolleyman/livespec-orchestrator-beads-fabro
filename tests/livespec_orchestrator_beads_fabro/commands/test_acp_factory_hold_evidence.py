@@ -20,6 +20,7 @@ provider.
 from __future__ import annotations
 
 import importlib
+import json
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
@@ -102,6 +103,25 @@ _CHAIN_CONFIG = """{
   }
 }
 """
+
+# A typed v1 observation the REPOSITORY'S OWN journal carries, on the
+# fallback's allowance. Its presence is what makes the journal observable in
+# the reconstruction case below: with it, both candidates are skipped.
+_JOURNALLED_FALLBACK_HOLD: dict[str, Any] = {
+    "stage": "acp-availability-observed",
+    "schema_version": 1,
+    "observation_id": "acpobs-journalled-fallback",
+    "scope": "availability-domain",
+    "hold_key": "anthropic",
+    "candidate_key": None,
+    "cause": "quota",
+    "evidence_kind": "acp-failover-event",
+    "evidence_id": "evt-1",
+    "occurred_at": _OCCURRED_AT,
+    "expires_at": _EXPIRES_AT,
+    "work_item_id": "bd-own-1",
+    "node": "implement",
+}
 
 _CHAIN_MANIFEST = """[workflow]
 graph = "workflow.fabro"
@@ -689,3 +709,103 @@ def test_an_unreadable_occurrence_is_carried_through_rather_than_given_a_bound()
     assert module.attempt_expiry(occurred_at="not-an-instant") == "not-an-instant"
     assert observation.expires_at == "not-an-instant"
     assert module.observation_hold(observation=observation).expires_at == "not-an-instant"
+
+
+def test_derived_holds_are_reconstructed_identically_once_the_journal_is_removed(
+    tmp_path: Path,
+) -> None:
+    """ "Hold observations ... MUST remain reconstructible after any repository-local
+    dispatch journal is removed."
+
+    The journal here carries a typed record of its own, on the FALLBACK's
+    allowance, so its presence is observable: with it, both candidates are
+    skipped and the chain is exhausted. Removing it must take only that
+    record away -- the factory-derived hold on the primary's allowance is
+    byte-identical across the two reads, and still skips the primary.
+
+    This is a CONTROL, not a claim about new code: the derivation takes no
+    journal parameter at all, so the property holds structurally and this
+    case passed the moment the derivation existed. What it guards is the
+    UNION -- a merge that deduplicated against the journal, or that read the
+    journal first and short-circuited, would fail here while satisfying every
+    other case in this module.
+    """
+    preflight = importlib.import_module(f"{_PACKAGE}._dispatcher_acp_preflight")
+    repo = _chain_repo(tmp_path=tmp_path)
+    journal = repo / "journal.jsonl"
+    journal.write_text(json.dumps(_JOURNALLED_FALLBACK_HOLD) + "\n", encoding="utf-8")
+    reader = _Reader(
+        rows={"hp": _rows(payload=[_row_payload()])},
+        payloads={("hp", _RUN_ID): _inspect_payload(cause=_CEILING_CAUSE)},
+    )
+
+    with_journal = preflight.resolve_acp_preflight(
+        repo=repo, journal_path=journal, now_iso=_NOW, factory_runs=reader
+    )
+    journal.unlink()
+    without_journal = preflight.resolve_acp_preflight(
+        repo=repo, journal_path=journal, now_iso=_NOW, factory_runs=reader
+    )
+
+    assert with_journal.viable is False
+    assert _candidate_keys(verdict=with_journal) == []
+    assert without_journal.viable is True
+    assert _candidate_keys(verdict=without_journal) == ["fallback"]
+    derived = [hold for hold in with_journal.holds if hold.hold_key == "codex"]
+    assert derived == list(without_journal.holds)
+
+
+def test_a_journaled_derived_record_carries_its_factory_run_as_the_audit_reference(
+    tmp_path: Path,
+) -> None:
+    """ "Dispatch journals MAY record audit references but MUST NOT be the sole
+    authority for holds."
+
+    The record is an ordinary conformant v1 observation -- it reads back
+    through `parse_hold_record` to the very hold the evidence stands for --
+    PLUS the factory run it was derived from, so a reader of the journal is
+    pointed at the authority rather than left holding the only copy.
+    """
+    module = _module()
+    records = importlib.import_module(f"{_PACKAGE}._acp_hold_records")
+    repo = _repo(tmp_path=tmp_path)
+    reader = _Reader(
+        rows={"hp": _rows(payload=[_row_payload()])},
+        payloads={("hp", _RUN_ID): _inspect_payload(cause=_CEILING_CAUSE)},
+    )
+    evidence = module.factory_hold_evidence(repo=repo, reader=reader, now_iso=_NOW)
+
+    record = module.factory_hold_observation_record(
+        observation=evidence.observations[0], work_item_id="bd-ib-hyuqv6"
+    )
+
+    assert isinstance(record, dict)
+    assert record[module.AUDIT_REFERENCE_KEY] == f"hp:{_RUN_ID}:implement"
+    assert records.parse_hold_record(record=record) == evidence.holds[0]
+
+
+def test_a_record_whose_observation_cannot_be_dated_refuses_rather_than_appending() -> None:
+    """The hold writer's own refusal is returned, not swallowed into a record.
+
+    An appended line whose occurrence nobody can read is an audit reference to
+    nothing: the hold it claims to mirror cannot be re-derived from it, which
+    is the one property the journal copy exists to preserve.
+    """
+    module = _module()
+    observation = module.FactoryHoldObservation(
+        factory="hp",
+        repository=_PEER_REPOSITORY,
+        run_id=_RUN_ID,
+        node_attempt="implement",
+        availability_key="codex",
+        candidate_key="primary",
+        cause=module.PROVIDER_LIMIT_CAUSE,
+        occurred_at="not-an-instant",
+    )
+
+    refusal = module.factory_hold_observation_record(
+        observation=observation, work_item_id="bd-ib-hyuqv6"
+    )
+
+    assert isinstance(refusal, str)
+    assert "not-an-instant" in refusal
