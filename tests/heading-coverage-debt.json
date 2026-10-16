@@ -880,5 +880,12 @@
     "heading": "## Scenario 185 \u2014 A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch",
     "work_item": "bd-ib-qgcpoc",
     "first_seen": "2026-10-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 187 \u2014 A priority-epic idle-slot audit surfaces dispatchable priority work while the factory queue is empty, and a blocker with a live run is not a stale edge",
+    "work_item": "bd-ib-irh4js",
+    "first_seen": "2026-10-16"
   }
 ]

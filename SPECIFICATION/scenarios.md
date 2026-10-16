@@ -6605,3 +6605,42 @@ Feature: Recovery routing for an automatically released item
     And the journal carries a recovery-held record naming the merged state and the remedy reconcile-merged --item
     And no publish-branch reclaim runs for it
 ```
+
+## Scenario 187 — A priority-epic idle-slot audit surfaces dispatchable priority work while the factory queue is empty, and a blocker with a live run is not a stale edge
+
+```gherkin
+Feature: The idle-slot audit measures the priority queue against the factory board
+  As a factory driver whose slots sat idle for hours while priority work was dispatchable
+  I want every priority-epic child classified against the live board across tenants
+  So that idle capacity beside dispatchable work is surfaced instead of assumed away
+
+Scenario: An empty factory queue beside a dispatchable priority child produces the finding and the attention fact
+  Given a committed dispatcher.idle_slot_audit naming a factory and a priority epic in another tenant's checkout
+  And the factory board shows 1 live row and no runnable row
+  And one child of that epic is ready with no open blocks dependency and is admitted by its tenant's admission-eligibility verdict with capacity excepted
+  When the idle-slot audit runs
+  Then that child is classified DISPATCHABLE-NOW
+  And the output ends with a finding line naming the factory, 1 live row attributed to the Fabro server, and that child's id
+  And the needs-attention snapshot carries exactly one hygiene:idle-slot fact whose handoff runs the idle-slot audit
+  And no ledger, dispatch journal, or factory was written
+
+Scenario: A ready child whose only blocker is active with a live run is BLOCKED, not STALE-EDGE
+  Given a ready priority child whose only open blocks dependency is on an active item
+  And a live board row is attributed to that active blocker
+  When the idle-slot audit runs
+  Then the child is classified BLOCKED
+  And when instead no live row is attributed to that active blocker the child is classified STALE-EDGE
+
+Scenario: A hold the admission verdict refuses is HELD, and prose cannot hold a ready child
+  Given a ready priority child with no open blocks dependency that its tenant's admission-eligibility verdict does not admit
+  When the idle-slot audit runs
+  Then the child is classified HELD with the verdict's reason beside it
+  And a ready child whose only hold is written in a comment is classified DISPATCHABLE-NOW
+
+Scenario: A queued run or an unobservable board yields no finding
+  Given a configured audit with a DISPATCHABLE-NOW priority child
+  When the factory board shows one runnable row
+  Then no finding line is printed and no hygiene:idle-slot fact composes
+  And when instead the board cannot be read it is reported unobservable with unknown live and queued counts, and no finding line is printed
+```
+
