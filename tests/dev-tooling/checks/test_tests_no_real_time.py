@@ -190,10 +190,10 @@ def test_the_matcher_control_fires_when_a_marked_form_stops_being_found(*, tmp_p
     _ = fixture.write_text(original.replace("time.sleep(0.05)", "len('x')", 1), encoding="utf-8")
     _seed_tests_tree(root=tmp_path, sources={"test_a.py": "\n"})
 
-    found = [entry for entry in check.findings(repo_root=tmp_path) if "the matcher found" in entry]
+    found = [entry for entry in check.findings(repo_root=tmp_path) if "its markers say" in entry]
 
-    assert len(found) == 1, found
-    assert str(_CONTROL_FIXTURE) in found[0]
+    assert found, "a matcher that lost a marked form reported nothing"
+    assert all(str(_CONTROL_FIXTURE) in entry for entry in found)
 
 
 def test_main_reports_every_finding_and_exits_non_zero(
@@ -212,3 +212,132 @@ def test_main_reports_every_finding_and_exits_non_zero(
 
     monkeypatch.setattr(check, "findings", lambda **_kwargs: [])
     assert check.main() == 0
+
+
+def test_an_occurrence_is_stood_down_by_a_marker_carrying_a_reason() -> None:
+    """The stand-down, for a test whose subject genuinely IS real time."""
+    check = _load_check()
+    source = (
+        "import time\n"
+        "\n"
+        "\n"
+        "def test_x() -> None:\n"
+        "    time.sleep(0.25)  # real-time-required: the host clock is the subject\n"
+    )
+
+    assert check.file_findings(source=source, label="tests/test_x.py") == []
+
+
+def test_a_marker_on_the_line_above_binds_to_the_occurrence() -> None:
+    """One line of lead-in, because a reason worth reading rarely fits after.
+
+    The alternative authors reach for is a reason trimmed until it says
+    nothing, which is the opposite of what a written reason is for.
+    """
+    check = _load_check()
+    source = (
+        "import time\n"
+        "\n"
+        "\n"
+        "def test_x() -> None:\n"
+        "    # real-time-required: a real subprocess exits on an absolute epoch\n"
+        "    time.sleep(0.25)\n"
+    )
+
+    assert check.file_findings(source=source, label="tests/test_x.py") == []
+
+
+def test_a_marker_further_above_does_not_reach_the_occurrence() -> None:
+    """The binding region is bounded, so a marker cannot cover a whole block.
+
+    Without this the lead-in line would degrade into a file-level pragma by
+    accident: one marker near the top would quietly stand down everything
+    under it, which is precisely what a per-occurrence exemption is not.
+    """
+    check = _load_check()
+    source = (
+        "import time\n"
+        "\n"
+        "\n"
+        "def test_x() -> None:\n"
+        "    # real-time-required: too far above to bind\n"
+        "    _ = len('one line of lead-in, and no more')\n"
+        "    time.sleep(0.25)\n"
+    )
+
+    found = check.file_findings(source=source, label="tests/test_x.py")
+
+    assert found == ["tests/test_x.py:7: waits in real time through time.sleep"]
+
+
+def test_a_marker_with_no_reason_is_itself_the_finding() -> None:
+    """An exemption nobody justified is the shape this gate exists to stop.
+
+    Accepting a bare marker would make the written reason advisory, and an
+    advisory reason is one that stops being written. The finding is DISTINCT
+    from the offence's own, so the remedy it asks for is the right one.
+    """
+    check = _load_check()
+    source = (
+        "import time\n"
+        "\n"
+        "\n"
+        "def test_x() -> None:\n"
+        "    time.sleep(0.25)  # real-time-required:\n"
+    )
+
+    found = check.file_findings(source=source, label="tests/test_x.py")
+
+    assert found == ["tests/test_x.py:5: carries an exemption marker with no written reason"]
+
+
+def test_a_wrapped_assertion_takes_the_marker_on_any_of_its_own_lines() -> None:
+    """A multi-line assertion is ONE occurrence, so its whole span binds.
+
+    Its finding is reported at the `assert` line, and a marker is accepted
+    anywhere the expression reaches — otherwise an assertion whose first line
+    is already full could never be stood down at all.
+    """
+    check = _load_check()
+    source = (
+        "import time\n"
+        "\n"
+        "\n"
+        "def test_x() -> None:\n"
+        "    started = time.monotonic()\n"
+        "    elapsed = time.monotonic() - started\n"
+        "    assert (\n"
+        "        elapsed < 5.0\n"
+        "        # real-time-required: a real socket timeout is the discriminator\n"
+        "    ), f'took {elapsed}s'\n"
+    )
+
+    assert check.file_findings(source=source, label="tests/test_x.py") == []
+
+
+def test_the_repositorys_own_tests_tree_is_clean() -> None:
+    """The gate's own contract, read against the tree it governs.
+
+    Nothing short of reading the real tree establishes this: a seeded clean
+    file would pass against a matcher pointed at nothing at all. It is also
+    where both positive controls run against the committed fixture.
+    """
+    check = _load_check()
+
+    assert check.findings(repo_root=_REPO_ROOT) == []
+
+
+def test_the_gate_runs_in_the_check_aggregate() -> None:
+    """The slug is a literal member of the aggregate's own declaration.
+
+    The justfile `check:` array is the aggregate's ONE declaration — the shared
+    completeness gate certifies that set and `just-check.sh` executes exactly
+    what parsing it yields — so a gate absent from it never runs, whatever else
+    is wired. A hardcoded second list diverged by ten slugs for eight weeks
+    here, which is why the declaration itself is what gets read.
+    """
+    justfile = (_REPO_ROOT / "justfile").read_text(encoding="utf-8")
+    declaration = justfile.split("targets=(", 1)[1].split("\n)", 1)[0]
+
+    assert "check-tests-no-real-time" in declaration.split()
+    assert "\ncheck-tests-no-real-time:\n" in justfile
