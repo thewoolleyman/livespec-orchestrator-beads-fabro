@@ -54,6 +54,18 @@ _RESUMED_AT_STAGES = (
 _COMPLETED_STAGES = ("dod_gate", "implement")
 _START_NODE = "start"
 
+# The stages whose ORPHAN SET reaches a declaration whose attribute body carries a
+# `]` inside a quoted value — `publish_draft`, whose script spells
+# `${remote_line%%[[:space:]]*}`. Entering this late orphans that node, so these
+# are the entries a body pattern ending at the first `]` cuts in half.
+#
+# Every one of them is reachable as a resumed-at stage. `executing_node_from_payload`
+# answers the newest checkpoint's `next_node_id` for whatever node the engine was
+# executing, and `normalized_entry_node` rewrites only `pr`, returning "every other
+# node UNCHANGED rather than validated against the graph" — so a run that died
+# inside `verify_pr`, or that ended at a terminal sentinel, names it here.
+_LATE_STAGES = ("verify_pr", "needs_human", "non_converged", "dead_implementer", "exit")
+
 # A stage no workflow in this repository declares, standing in for the stage a
 # factory run record names when the earlier run ran a different variant.
 _UNDECLARED_STAGE = "triage_findings"
@@ -147,3 +159,60 @@ def test_a_graph_naming_an_undeclared_endpoint_is_refused() -> None:
     """The derivation emits a graph whose edges all resolve, or it emits none."""
     module: Any = importlib.import_module(_MODULE_NAME)
     assert module.graph_entered_at(graph_text=_IMPLICIT_NODE_GRAPH, node="a") is None
+
+
+def test_a_stage_whose_orphan_carries_a_bracketed_script_still_derives() -> None:
+    """A `]` inside a quoted attribute value must not end the body being pruned.
+
+    The prune LOCATES each orphaned declaration by pattern and leaves the
+    postcondition to catch what it fails to locate, so a body that ends at the
+    first `]` fails CLOSED — which is the safe direction and is why no invalid
+    graph ever reached the engine. It is still a refusal for work that should
+    derive: the tail of the half-deleted script survives as graph syntax, the
+    reparse fails, and the operator reads "declares no node 'verify_pr'" about a
+    graph that declares it on line one of its own node list.
+
+    Asserted as DERIVING rather than as "the reparse succeeds", because the
+    refusal is indistinguishable at the payload surface from the genuinely
+    undeclared stage the sibling case covers — and those two owe opposite
+    remedies.
+    """
+    module: Any = importlib.import_module(_MODULE_NAME)
+    committed = _IMPLEMENT_GRAPH.read_text(encoding="utf-8")
+    for node in _LATE_STAGES:
+        derived = module.graph_entered_at(graph_text=committed, node=node)
+        assert derived is not None, node
+        graph = _parsed(text=derived)
+        assert [edge.destination for edge in graph.edges if edge.source == _START_NODE] == [node]
+        endpoints = {
+            endpoint for edge in graph.edges for endpoint in (edge.source, edge.destination)
+        }
+        assert endpoints <= set(graph.nodes), (node, sorted(endpoints - set(graph.nodes)))
+
+
+def test_the_pruned_declaration_leaves_no_tail_of_its_own_script_behind() -> None:
+    """The control that names the mechanism, not just the symptom.
+
+    Without it, the case above could pass for any reason that made the reparse
+    succeed. `[[:space:]` is the prefix of `publish_draft`'s bracketed shell
+    idiom and occurs EXACTLY ONCE in the committed graph: a body pattern that
+    stopped at the inner `]` deleted everything up to it and left the remainder —
+    beginning `]*}` — standing in the derived text, so that fragment's absence is
+    what distinguishes a whole-declaration prune from a reparse that happened to
+    recover.
+
+    The node's NAME is deliberately not asserted absent. The prune removes
+    declarations and edges and preserves comments by design, and this graph
+    discusses `publish_draft` in twenty-one of them, so a name search would fail
+    against a correct derivation — the mirror of the trap the sibling module's
+    docstring records, where a name present in both the derived graph and the
+    original could never fail. The script fragment is the token that cannot
+    survive unless the body was cut short.
+    """
+    module: Any = importlib.import_module(_MODULE_NAME)
+    committed = _IMPLEMENT_GRAPH.read_text(encoding="utf-8")
+    assert committed.count("[[:space:]") == 1
+    derived = module.graph_entered_at(graph_text=committed, node="verify_pr")
+    assert derived is not None
+    assert "publish_draft" not in set(_parsed(text=derived).nodes)
+    assert "[[:space:]" not in derived

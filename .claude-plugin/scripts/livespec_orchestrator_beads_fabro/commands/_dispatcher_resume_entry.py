@@ -98,13 +98,25 @@ RESUME_HEAD_ARG = "resume_head"
 # `start` edge is a graph that could never have run.
 _START_EDGE = re.compile(r"(?m)^(?P<indent>[ \t]*)start[ \t]*->[ \t]*(?P<target>\w+)[ \t]*$")
 
+# One attribute body, from its opening bracket to the bracket that CLOSES it.
+# The quoted-string alternative is what makes that the right bracket: this graph's
+# `script` attributes carry shell, and shell carries `]` — `publish_draft` spells
+# `${remote_line%%[[:space:]]*}` — so a body written `\[[^\]]*\]` ends at a bracket
+# INSIDE a string value. That cut an orphaned declaration in half and left the tail
+# of its script standing as graph syntax, which the postcondition then refused: on
+# the committed graph it rejected `verify_pr` and all four terminal sentinels,
+# every one of them a stage a run record can name, each reported as a stage the
+# workflow does not declare. An escape is modelled because a `\"` inside a script
+# would otherwise close the string early and put the scan back inside the body.
+_ATTRIBUTE_BODY = r'\[(?:[^\]"]|"(?:[^"\\]|\\.)*")*\]'
+
 # A node DECLARATION and its whole attribute body: a bare name at line start
 # followed directly by its attribute bracket. The same shape
 # `_dispatcher_graph_render` matches, and for the same reason — an edge line never
 # matches, because the name must be followed by the bracket with nothing between.
 # Used only to LOCATE the span of a node the parser has already decided to prune,
 # never to decide whether a node exists.
-_NODE_DECLARATION = r"(?ms)^[ \t]*{name}[ \t]*\[[^\]]*\]"
+_NODE_DECLARATION = r"(?ms)^[ \t]*{name}[ \t]*" + _ATTRIBUTE_BODY
 
 # One EDGE statement on its own line, with or without an attribute list. Used
 # only to LOCATE the span of an edge the parser has already placed, for the same
@@ -112,7 +124,9 @@ _NODE_DECLARATION = r"(?ms)^[ \t]*{name}[ \t]*\[[^\]]*\]"
 # pattern that failed to see one simply leaves that edge in the text, where the
 # postcondition below catches it.
 _EDGE = re.compile(
-    r"(?m)^[ \t]*(?P<source>\w+)[ \t]*->[ \t]*(?P<target>\w+)[ \t]*(?:\[[^\]]*\])?[ \t]*$"
+    r"(?m)^[ \t]*(?P<source>\w+)[ \t]*->[ \t]*(?P<target>\w+)[ \t]*(?:"
+    + _ATTRIBUTE_BODY
+    + r")?[ \t]*$"
 )
 
 _NODE_NAME = re.compile(r"^\w+$")
