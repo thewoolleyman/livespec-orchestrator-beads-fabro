@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.205.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.205.0...v0.205.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **pre-push:** a push that only deletes refs skips the pre-push aggregate ([44cd126](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/44cd126a0f4d01481dcb5b35e33bb5fbfe7cdbd4))
+
 ## [0.205.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.204.0...v0.205.0) (2026-10-16)
 
 
