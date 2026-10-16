@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._plan_archive_gates import (
     PlanArchiveRefusedError,
     outside_plan_path_references,
@@ -47,8 +48,8 @@ from livespec_orchestrator_beads_fabro.commands._plan_proof_leg import (
     plan_proof_leg,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_proof_record import plan_proof_entries
-from livespec_orchestrator_beads_fabro.commands._plan_release_tags import (
-    repository_release_tags,
+from livespec_orchestrator_beads_fabro.commands._plan_release_reader import (
+    forge_release_reader,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
     PLAN_HANDOFF_PREFIX,
@@ -147,7 +148,9 @@ def archive_thread(  # noqa: PLR0913 — package primitive mirrors the archive i
             epic_id=epic_id,
         ),
     )
-    proof = resolve_plan_proof_leg(client=client, project_root=project_root, epic_id=epic_id)
+    proof = resolve_plan_proof_leg(
+        client=client, project_root=project_root, epic_id=epic_id, runner=runner
+    )
     if not proof.met:
         raise PlanArchiveRefusedError.unproved_plan_assertions(
             unproved=proof.unproved,
@@ -170,7 +173,11 @@ def archive_thread(  # noqa: PLR0913 — package primitive mirrors the archive i
 
 
 def resolve_plan_proof_leg(
-    *, client: BeadsClient, project_root: Path, epic_id: str
+    *,
+    client: BeadsClient,
+    project_root: Path,
+    epic_id: str,
+    runner: CommandRunner | None = None,
 ) -> PlanProofLeg:
     """Gather the proof leg's four inputs from this epic and grade it.
 
@@ -183,6 +190,12 @@ def resolve_plan_proof_leg(
     positions, and where the last carrier-map event sits — so the positions the
     leg compares all come from the same list. Reading the timeline twice is the
     way those indices come to be measured against different lists.
+
+    The fourth input is ONE reader, built here so every record on the timeline is
+    judged through one resolution of the governed repository's forge identity and
+    one memo. `runner` is the subprocess seam that reader reads the forge through —
+    the same seam the archiving party's identity is computed over, because both are
+    forge reads taken from this checkout.
 
     A missing Definition of Done section refuses HERE rather than grading an
     empty assertion set, because zero assertions means zero unproved ones: the
@@ -200,7 +213,10 @@ def resolve_plan_proof_leg(
         assertions=section.assertions,
         entries=plan_proof_entries(comments=comments),
         carrier_map_position=last_carrier_map_position(comments=comments),
-        release_tags=repository_release_tags(project_root=project_root),
+        release_reader=forge_release_reader(
+            project_root=project_root,
+            runner=ShellCommandRunner() if runner is None else runner,
+        ),
     )
 
 

@@ -13,10 +13,21 @@ either."
 
 This module is that decision, and it is PURE: a function of the parsed
 assertions, the timeline's records with their positions, where the last
-carrier-map event sits, and which release tags the repository carries. The two
-IO reads it needs live in their own modules (`_plan_proof_record`,
-`_plan_release_tags`) for the usual reason — a decision that reached for a
-subprocess could not be exercised across the states the clause distinguishes.
+carrier-map event sits, and one reader that answers, per record, which release
+repository it is judged against and what the forge said of that repository. The
+IO it needs lives in its own modules (`_plan_proof_record`, and the
+`_plan_release_repository` / `_plan_release_forge` / `_plan_release_reader`
+trio) for the usual reason — a decision that reached for a subprocess could not
+be exercised across the states the clause distinguishes.
+
+WHY THE RELEASE INPUT IS A READER AND NO LONGER A TAG SET. The plan-record clause
+(v148) judges the release rule "against the RELEASE REPOSITORY of each record",
+and a record names its own through its first installed build identifier — so one
+timeline can carry records judged against different repositories, and a single
+tag set cannot express that. The leg therefore asks PER RECORD, through a seam
+whose whole surface is one record body in and one reading out; it never learns
+that a repository name is parsed out of a build identity, or that a forge was
+asked.
 
 WHY AN UNPROVED ASSERTION IS THE ANSWER AND A BOOLEAN IS NOT. The refusal must
 name EACH unproved plan assertion, so the leg returns the assertions rather than
@@ -71,22 +82,36 @@ from livespec_orchestrator_beads_fabro.commands._plan_proof_record import (
     PlanProofEntry,
     latest_plan_proof_entry,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_release_repository import (
+    ReleaseReader,
+    UnreadableRelease,
+)
 
 __all__: list[str] = [
     "NOT_EVIDENCE_NO_RELEASE",
     "NOT_EVIDENCE_SELF_VERIFIED",
     "NOT_EVIDENCE_UNKNOWN_RELEASE",
+    "NOT_EVIDENCE_UNREADABLE_RELEASE",
     "PlanProofLeg",
     "plan_proof_leg",
 ]
 
-# The three ways a published plan record fails to be evidence. Each is a distinct
-# remedy — rerun the steps against the released artifact, name a tag this
-# repository carries, have a different party replay — so they are distinct strings
-# rather than one "not evidence" message whose reader would have to open the
-# record to work out which.
-NOT_EVIDENCE_NO_RELEASE = "states release none, and a release applies to this repository's work"
-NOT_EVIDENCE_UNKNOWN_RELEASE = "names a release tag this repository does not carry"
+# The four ways a published plan record fails to be evidence. Each is a distinct
+# remedy — rerun the steps against the released artifact, name a tag the release
+# repository carries, give the gate a forge it can read, have a different party
+# replay — so they are distinct strings rather than one "not evidence" message
+# whose reader would have to open the record to work out which.
+#
+# EACH RELEASE REJECTION NAMES THE RELEASE REPOSITORY IT JUDGED, composed onto the
+# constant at the point of refusal. The clause requires it, and without it the two
+# tag rejections are unactionable once a record may be judged against a sibling: an
+# operator told only that "a release applies" cannot tell whether the gate asked
+# about the repository they released from.
+NOT_EVIDENCE_NO_RELEASE = "states release none, and a release applies to its release repository"
+NOT_EVIDENCE_UNKNOWN_RELEASE = "names a release tag its release repository does not carry"
+NOT_EVIDENCE_UNREADABLE_RELEASE = (
+    "names a release repository whose release tags the gate could not read"
+)
 NOT_EVIDENCE_SELF_VERIFIED = "was published by the identity that captured the steps it replays"
 
 
@@ -114,7 +139,7 @@ def plan_proof_leg(
     assertions: Sequence[DefinitionOfDoneAssertion],
     entries: Sequence[PlanProofEntry],
     carrier_map_position: int | None,
-    release_tags: frozenset[str],
+    release_reader: ReleaseReader,
 ) -> PlanProofLeg:
     """Grade every plan assertion against the records on its epic's timeline.
 
@@ -125,7 +150,7 @@ def plan_proof_leg(
     of every pre-clause plan unreachable.
     """
     judged = tuple(
-        (one, _rejection(entry=one, entries=entries, tags=release_tags)) for one in entries
+        (one, _rejection(entry=one, entries=entries, reader=release_reader)) for one in entries
     )
     evidence = tuple(one for one, rejection in judged if rejection is None)
     fresh = tuple(
@@ -192,13 +217,17 @@ def _covered(
 
 
 def _rejection(
-    *, entry: PlanProofEntry, entries: Sequence[PlanProofEntry], tags: frozenset[str]
+    *, entry: PlanProofEntry, entries: Sequence[PlanProofEntry], reader: ReleaseReader
 ) -> str | None:
-    """Why this record is not evidence, or `None` when the gate admits it."""
+    """Why this record is not evidence, or `None` when the gate admits it.
+
+    The self-verified test runs FIRST, and that ordering is worth keeping: it is
+    pure, so a record refused on independence costs no forge round trip at all.
+    """
     self_verified = _self_verified(entry=entry, entries=entries)
     if self_verified is not None:
         return self_verified
-    return _release_rejection(record=entry.record, tags=tags)
+    return _release_rejection(record=entry.record, reader=reader)
 
 
 def _self_verified(*, entry: PlanProofEntry, entries: Sequence[PlanProofEntry]) -> str | None:
@@ -218,22 +247,40 @@ def _self_verified(*, entry: PlanProofEntry, entries: Sequence[PlanProofEntry]) 
     return NOT_EVIDENCE_SELF_VERIFIED
 
 
-def _release_rejection(*, record: ProofRecord, tags: frozenset[str]) -> str | None:
-    """Whether this record's build identity satisfies the repository's release rule.
+def _release_rejection(*, record: ProofRecord, reader: ReleaseReader) -> str | None:
+    """Whether this record satisfies the release rule of its OWN release repository.
 
-    No tags means no release applies, so the rule does not fire — and a record
-    that names a tag anyway is left alone rather than rejected for naming one the
-    repository does not carry, because the condition the clause attaches the whole
-    rule to was not met.
+    Three arms, in the clause's own order of precedence.
+
+    An UNREADABLE release repository rejects, and that is the reversal v148
+    landed: the retired reading returned an empty tag set for a failed read, and an
+    empty set MEANS "no release applies", so an unreachable forge or a rejected
+    credential made every record evidence. The refusal carries the reading's own
+    failure line, which already names the repository the gate tried to read.
+
+    An empty tag set from a SUCCESSFUL read means no release applies, so the rule
+    does not fire — and a record that names a tag anyway is left alone rather than
+    rejected for naming one the repository does not carry, because the condition
+    the clause attaches the whole rule to was not met.
+
+    Otherwise the record's FIRST release tag must be one the release repository
+    carries. The gate "MUST NOT accept a tag merely because some repository carries
+    it", which holds structurally here: the only tag set in scope is the one the
+    reading brought back for this record's own repository.
     """
-    if not tags:
+    reading = reader.reading(body=record.body)
+    if isinstance(reading, UnreadableRelease):
+        return f"{NOT_EVIDENCE_UNREADABLE_RELEASE}: {reading.failure}"
+    if not reading.tags:
         return None
     build = build_identity_in(body=record.body)
     named = None if build is None else build.release_tag
     if named is None:
-        return NOT_EVIDENCE_NO_RELEASE
-    if named not in tags:
-        return NOT_EVIDENCE_UNKNOWN_RELEASE
+        return f"{NOT_EVIDENCE_NO_RELEASE} {reading.repository}"
+    if named not in reading.tags:
+        return (
+            f"{NOT_EVIDENCE_UNKNOWN_RELEASE}: {reading.repository} does not carry {named}"
+        )
     return None
 
 
