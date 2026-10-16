@@ -50,10 +50,12 @@ from pathlib import Path
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro.commands._acp_availability_wait import AvailabilityWait
 from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import RenderedCandidate
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     acp_preflight_refusal,
+    resolve_availability_wait,
     resolve_dispatch_candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import host_only_refusal
@@ -121,6 +123,13 @@ def filter_eligible_candidates(
     # per-row resolution would re-read one manifest and one overlay table per
     # candidate to reach the identical set.
     rendered = resolve_dispatch_candidates(repo=repo)
+    # ONE evaluation instant for the whole wave, and ONE scheduled
+    # reevaluation derived from it. Both belong to the pass rather than to any
+    # row: every candidate an emptied chain refuses waits for the SAME instant,
+    # so deriving it per row would let two rows refused by one outage report
+    # two different instants a later pass would then disagree about.
+    now_iso = utc_now_iso()
+    wait = resolve_availability_wait(repo=repo, verdict=preflight, now_iso=now_iso)
     admittable: list[WorkItem] = []
     refused: list[DispatchOutcome] = []
     for item in candidates:
@@ -138,6 +147,8 @@ def filter_eligible_candidates(
             journal=journal,
             adopted_ceiling=adopted_ceiling,
             rendered=rendered,
+            now_iso=now_iso,
+            wait=wait,
         )
         if refusal is None:
             admittable.append(item)
@@ -146,7 +157,7 @@ def filter_eligible_candidates(
     return admittable, refused
 
 
-def _refusal_for(
+def _refusal_for(  # noqa: PLR0913 -- one kw-only condition ladder; every input is a pass-resolved fact, not a variant.
     *,
     repo: Path,
     preflight: AcpPreflightVerdict,
@@ -154,18 +165,22 @@ def _refusal_for(
     journal: JournalFile,
     adopted_ceiling: int | None,
     rendered: tuple[RenderedCandidate, ...] | None,
+    now_iso: str,
+    wait: AvailabilityWait | None,
 ) -> DispatchOutcome | None:
     """The first condition this row fails, or `None` when it passes all five."""
     exhaustion_refusal = provider_exhaustion_refusal(
         work_item_id=item.id,
         journal=journal,
         journal_path=getattr(journal, "path", None),
-        now_iso=utc_now_iso(),
+        now_iso=now_iso,
         candidates=rendered,
     )
     if exhaustion_refusal is not None:
         return exhaustion_refusal
-    chain_refusal = acp_preflight_refusal(work_item_id=item.id, verdict=preflight, journal=journal)
+    chain_refusal = acp_preflight_refusal(
+        work_item_id=item.id, verdict=preflight, journal=journal, wait=wait
+    )
     if chain_refusal is not None:
         return chain_refusal
     size_refusals = route_factory_size_dispatch_entry(
