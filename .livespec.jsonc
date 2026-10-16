@@ -385,6 +385,33 @@
         "mise": ["sh", "-c", "mise trust && env -u GITHUB_TOKEN -u GH_TOKEN -u GITHUB_API_TOKEN mise install --quiet"],
         "lefthook": ["uv", "run", "lefthook", "install"]
       },
+      // WHERE the post-merge janitor runs its fresh-checkout check suite
+      // (bd-ib-26deyw). `cluster_job` delegates it to the maintainer-owned k3s
+      // cluster through the shared dev-tooling delegated gate: the janitor
+      // checkout's tree is pushed to the gates mirror, a gate Job runs the
+      // suite in a pod, and this host reports that Job's own verdict. The
+      // alternative is `host_local`, which is also what silence means, and
+      // which is where every doubt resolves — an unrecognised word keeps the
+      // suite running here rather than delegating it to a cluster nobody has
+      // proven on this host.
+      //
+      // WHY THE CLUSTER. The suite is the heaviest recurring load the
+      // dispatching host carries, and it is pure CPU on a tree the cluster can
+      // reconstruct from the pushed tree hash alone. The deferral that asked
+      // for this is the archived livespec plan k3s-on-gmktec-for-vps-usage
+      // (epic livespec-sab5gn), reconsidered once R4 — the delegated pre-push
+      // gate — had been live-exercised with independent replays on 2026-10-12
+      // and 2026-10-13.
+      //
+      // A LOST VERDICT IS RED, NOT GREEN, and that is not configurable: a gate
+      // that was asked and did not answer reports the post-merge gate failed
+      // naming the missing cluster verdict, because an item must never close on
+      // a reading nobody took. The host that reconciles a merge therefore needs
+      // a readable gates credential; without one the gate reaches no verdict
+      // and the item stays open until it does.
+      "janitor": {
+        "venue": "cluster_job"
+      },
       // Detection-coverage anchor: the ledger item the two detection skills
       // (capture-impl-gaps, capture-spec-drift) append their attributed ATTEMPT
       // and all-or-nothing COMPLETED-coverage records to, per contracts.md
