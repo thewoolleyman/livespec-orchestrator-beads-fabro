@@ -252,7 +252,13 @@ def test_materialize_dispatch_materializes_the_selected_variant_directory(
     # ADAPTERS FIRST, then the payload: since plan `fabro-currency` P4 the
     # generator renders each ACP node's resolved adapter command into the
     # payload graph as a literal, so the resolution is an INPUT to it.
-    assert [record["stage"] for record in journal.records] == ["acp-nodes", "node-timeouts"]
+    assert [record["stage"] for record in journal.records] == [
+        "acp-nodes",
+        # The per-node candidate selection, written out of the resolution
+        # immediately above it (bd-ib-wvj4rk).
+        "acp-node-selection",
+        "node-timeouts",
+    ]
 
 
 def test_materialize_dispatch_selects_the_variant_named_on_the_namespace(

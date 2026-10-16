@@ -53,6 +53,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import (
+    HEADROOM_SKIP,
+    LEGACY_HOLD_SKIP,
+    PROBE_SKIP,
+    TYPED_HOLD_SKIP,
     NodePreflight,
     SkippedCandidate,
 )
@@ -62,11 +66,27 @@ from livespec_orchestrator_beads_fabro.commands._acp_chain_digests import (
 )
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import ResolvedAcpChain
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
+from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_records import (
+    session_headroom_skip_fields,
+)
 
 __all__: list[str] = [
+    "ACP_NODE_SELECTION_STAGE",
     "SelectedAcpCandidate",
+    "acp_node_selection_record",
     "select_acp_candidates",
 ]
+
+# The journal stage one dispatch's per-node selections are recorded under.
+# Distinct from the adapter-resolution stage on purpose: that record says what
+# each node's CHAIN resolved to, and this one says which position of it ran.
+ACP_NODE_SELECTION_STAGE = "acp-node-selection"
+
+# The two skip reasons a DURABLE availability record produced. They are the only
+# ones the clause calls holds, which is why the projection keys on this set
+# rather than on "not ephemeral": a reason added later must be classified
+# deliberately rather than inherited into the hold list by default.
+_HOLD_SKIPS: frozenset[str] = frozenset({TYPED_HOLD_SKIP, LEGACY_HOLD_SKIP})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -166,3 +186,77 @@ def _selection(
         full_chain=chain.full_chain,
         skipped=skipped,
     )
+
+
+def acp_node_selection_record(*, selected: Mapping[str, SelectedAcpCandidate]) -> dict[str, object]:
+    """ONE record per dispatch, carrying every node's selection.
+
+    ONE RECORD AND NOT ONE PER NODE. "which candidate did this dispatch select"
+    is a question about the dispatch, and spreading the answer across a row per
+    node would make a reader collate them before they could answer it -- and
+    would leave no way to tell a node whose row is missing from a dispatch that
+    never reached that node. Every node the selection visited appears, including
+    the ones that stayed at position zero.
+
+    EVERY SKIP IS CLASSIFIED, AND THE THREE LISTS ARE NOT INTERCHANGEABLE. A
+    durable availability record is a HOLD; a usage-window reading is a HEADROOM
+    skip, which the clause forbids representing as an observed hold; and a
+    credential-probe refusal is neither -- it is a local observation about a
+    credential, with no typed availability cause. Collapsing any pair would make
+    a credential that is merely busy indistinguishable from an entitlement a
+    provider refused. The three together also account for EVERY position the
+    selection passed over, so `selected_index` is never a number with nothing
+    behind it.
+    """
+    return {
+        "stage": ACP_NODE_SELECTION_STAGE,
+        "selections": {node: _selection_fields(one=one) for node, one in sorted(selected.items())},
+    }
+
+
+def _selection_fields(*, one: SelectedAcpCandidate) -> dict[str, object]:
+    """One node's selection, as the clause enumerates it."""
+    identity = one.candidate.identity
+    return {
+        "selection_identity": one.selection_identity,
+        "selected_index": one.index,
+        "selected_availability_key": None if identity is None else identity.availability_key,
+        "selected_candidate_key": None if identity is None else identity.candidate_key,
+        "primary_generation_digest": one.primary_generation,
+        "full_chain_digest": one.full_chain,
+        "holds": [_hold_fields(skip=skip) for skip in one.skipped if skip.reason in _HOLD_SKIPS],
+        "headroom_skips": [
+            session_headroom_skip_fields(skip=skip)
+            for skip in one.skipped
+            if skip.reason == HEADROOM_SKIP
+        ],
+        "probe_skips": [
+            _probe_fields(skip=skip) for skip in one.skipped if skip.reason == PROBE_SKIP
+        ],
+    }
+
+
+def _hold_fields(*, skip: SkippedCandidate) -> dict[str, object]:
+    """One candidate a DURABLE availability record skipped, with its typed cause."""
+    return {
+        "availability_key": skip.availability_key,
+        "candidate_key": skip.candidate_key,
+        "reason": skip.reason,
+        "cause": skip.cause,
+        "scope": skip.scope,
+        "hold_key": skip.hold_key,
+    }
+
+
+def _probe_fields(*, skip: SkippedCandidate) -> dict[str, object]:
+    """One candidate the admission credential probe skipped, by its CONDITION.
+
+    No typed availability cause, scope or hold key: the probe creates no
+    observed record, so there is nothing of that shape to report and a null one
+    would invite a reader to join against a ledger where it matches nothing.
+    """
+    return {
+        "availability_key": skip.availability_key,
+        "candidate_key": skip.candidate_key,
+        "condition": skip.condition,
+    }

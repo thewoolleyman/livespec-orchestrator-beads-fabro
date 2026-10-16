@@ -4315,6 +4315,12 @@ def test_dispatch_green_closes_item_and_journals(
         # protocol completes on the Petri-era engine. The resolution is therefore
         # an INPUT to generation, so it has to be journaled first.
         "acp-nodes",
+        # WHICH candidate of each node's chain this dispatch rendered, written
+        # straight after the resolution it selects out of. The two answer
+        # different questions -- what the chain resolved to, and which position
+        # of it ran -- and a reader triaging a fallback needs the first to make
+        # sense of the second, so the order between them is asserted here.
+        "acp-node-selection",
         "node-timeouts",
         "conformance-premise-undeclared",
         "dispatch-id",
