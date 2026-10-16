@@ -99,7 +99,11 @@ def _unobservable_policy(*, floor_percent: int) -> headroom.SessionHeadroomPolic
     reading = headroom.unobservable_session_headroom(
         credential_identity="cred-1", observed_at=_NOW, reason="timed-out"
     )
-    return headroom.SessionHeadroomPolicy(floor_percent=floor_percent, read=lambda: reading)
+    return headroom.SessionHeadroomPolicy(
+        floor_percent=floor_percent,
+        horizon_minutes=headroom.DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES,
+        read=lambda: reading,
+    )
 
 
 def _spent_policy(*, floor_percent: int) -> headroom.SessionHeadroomPolicy:
@@ -107,7 +111,11 @@ def _spent_policy(*, floor_percent: int) -> headroom.SessionHeadroomPolicy:
     reading = headroom.session_headroom_reading(
         credential_identity="cred-1", observed_at=_NOW, utilization=100
     )
-    return headroom.SessionHeadroomPolicy(floor_percent=floor_percent, read=lambda: reading)
+    return headroom.SessionHeadroomPolicy(
+        floor_percent=floor_percent,
+        horizon_minutes=headroom.DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES,
+        read=lambda: reading,
+    )
 
 
 def _verdict(*, policy: headroom.SessionHeadroomPolicy) -> AcpPreflightVerdict:

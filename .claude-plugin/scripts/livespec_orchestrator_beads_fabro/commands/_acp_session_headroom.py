@@ -64,6 +64,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import Acp
 
 __all__: list[str] = [
     "DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT",
+    "DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES",
     "FULL_ALLOWANCE_PERCENT",
     "UNREADABLE_UTILIZATION",
     "SessionHeadroomPolicy",
@@ -78,6 +79,14 @@ __all__: list[str] = [
 # `dispatcher.session_headroom_floor_percent`, in percentage points of the
 # five-hour usage allowance REMAINING -- never elapsed wall-clock time.
 DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT = 20
+
+# The ratified default of the committed-only
+# `dispatcher.session_headroom_horizon_minutes`: how far ahead of an
+# observation a PROJECTED exhaustion still refuses the candidate. It lives
+# beside the floor rather than with the projection decision because both are
+# ratified dial defaults carried on the per-evaluation policy, and a reader
+# looking for one expects to find the other.
+DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES = 180
 
 # The allowance a utilization percentage is measured against, and the upper
 # bound of the clause's inclusive valid range.
@@ -119,16 +128,23 @@ class SessionHeadroomReading:
 
 @dataclass(frozen=True, kw_only=True)
 class SessionHeadroomPolicy:
-    """The governing floor plus the ONE reading seam for one admission evaluation.
+    """The two governing dials plus the ONE reading seam for one evaluation.
 
     `read` is memoized by whoever BUILDS the policy, per admission evaluation,
     which is how "One assessment per distinct projected credential per admission
     evaluation MUST be reused across nodes and candidates sharing that
     credential" becomes a property of the value every node is filtered against
     rather than a convention each call site remembers.
+
+    `horizon_minutes` carries NO DEFAULT, exactly as the floor does not. Both
+    dials are resolved by the one builder that reads the repository, and a
+    default here would let a caller that simply forgot to thread the horizon
+    through report the ratified 180 for every dispatch forever -- a policy that
+    reads exactly like one whose operator configured nothing.
     """
 
     floor_percent: int
+    horizon_minutes: int
     read: Callable[[], SessionHeadroomReading]
 
 

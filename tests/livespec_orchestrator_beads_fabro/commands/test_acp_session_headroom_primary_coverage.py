@@ -174,7 +174,11 @@ def test_an_above_floor_reading_leaves_this_repositorys_routing_admissible() -> 
         repo=_REPO_ROOT,
         journal_path=None,
         now_iso=_NOW,
-        headroom=headroom.SessionHeadroomPolicy(floor_percent=_FLOOR, read=lambda: reading),
+        headroom=headroom.SessionHeadroomPolicy(
+            floor_percent=_FLOOR,
+            horizon_minutes=headroom.DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES,
+            read=lambda: reading,
+        ),
     )
 
     assert verdict.viable is True
