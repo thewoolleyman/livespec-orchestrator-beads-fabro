@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.201.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.6...v0.201.7) (2026-10-16)
+
+
+### Bug Fixes
+
+* **fabro:** run the declared check suite in pr_refresh and publish_draft ([1d7c6d1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1d7c6d145072e5572a0f69ecbf3c709d83d45b71))
+
 ## [0.201.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.5...v0.201.6) (2026-10-16)
 
 
