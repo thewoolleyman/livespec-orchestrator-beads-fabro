@@ -27,6 +27,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_events import (
+    routing_stage_failure,
     terminal_event_output,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import causal_stage_failure
@@ -188,6 +189,12 @@ def _needs_human_terminal_outcome(
     causal = causal_stage_failure(
         evidence=None if inspect is None else terminal_evidence(payload=inspect.payload)
     )
+    if inspect is not None and causal.stages:
+        failure = routing_stage_failure(
+            inspect_payload=inspect.payload,
+            events_payload=inspect.events_payload,
+            stage=causal.stages[-1],
+        )
     return outcome_type(
         work_item_id=plan.work_item_id,
         status="blocked",
