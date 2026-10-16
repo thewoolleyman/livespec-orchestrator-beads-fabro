@@ -106,6 +106,7 @@ __all__: list[str] = [
     "FactoryHoldEvidence",
     "FactoryHoldObservation",
     "FactoryRunReader",
+    "attempt_expiry",
     "factory_hold_evidence",
     "observation_hold",
 ]
@@ -189,6 +190,19 @@ class FactoryHoldObservation:
         """
         return f"{self.factory}:{self.run_id}:{self.node_attempt}"
 
+    @property
+    def expires_at(self) -> str:
+        """The bounded expiry this attempt's OCCURRENCE time implies.
+
+        Derived from `occurred_at` alone, with no clock anywhere in reach --
+        the same property `hold_observation_record` holds by taking no clock
+        parameter, and it matters more here: this evidence is re-read from the
+        factory on EVERY admission evaluation, so an expiry computed from the
+        reading would make one four-minute outage stand for as long as anyone
+        kept looking at it.
+        """
+        return attempt_expiry(occurred_at=self.occurred_at)
+
 
 @dataclass(frozen=True, kw_only=True)
 class FactoryHoldEvidence:
@@ -213,6 +227,30 @@ class FactoryHoldEvidence:
 EMPTY_FACTORY_HOLD_EVIDENCE = FactoryHoldEvidence()
 
 
+def attempt_expiry(*, occurred_at: str) -> str:
+    """One attempt's bounded expiry, or the occurrence itself when unreadable.
+
+    The bound is the SAME `HOLD_INTERVAL` a journal-projected observation
+    takes, read off the hold writer rather than respelled: the two valves
+    observe the same kind of outage on the same factory, and a derived hold
+    that outlived its projected counterpart would be a behaviour change
+    nobody ratified.
+
+    An occurrence nobody can read is not an instant fifteen minutes can be
+    added to, so it is carried through UNCHANGED rather than replaced: both of
+    the record's instants then say the same unreadable thing, where a computed
+    substitute would date the record from the READING. Do NOT mistake that arm
+    for a safety net -- `hold_expired` cannot read such a record either and
+    reports it as standing. What keeps it harmless is that no derivation here
+    can build one: `factory_hold_evidence` formats every `occurred_at` from an
+    instant it has already parsed.
+    """
+    occurred = parse_hold_instant(text=occurred_at)
+    if occurred is None:
+        return occurred_at
+    return (occurred + HOLD_INTERVAL).strftime(_ISO_FORMAT)
+
+
 def observation_hold(*, observation: FactoryHoldObservation) -> AcpAvailabilityHold:
     """The live schema-v1 hold one derived observation stands for."""
     failure = _observation_failure(observation=observation)
@@ -228,7 +266,7 @@ def observation_hold(*, observation: FactoryHoldObservation) -> AcpAvailabilityH
         candidate_key=failure.candidate_key,
         cause=failure.cause,
         occurred_at=observation.occurred_at,
-        expires_at=observation.occurred_at,
+        expires_at=observation.expires_at,
     )
 
 

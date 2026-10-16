@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass, field
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,11 @@ _NOW = "2026-10-16T12:00:00Z"
 _STARTED_AT = "2026-10-16T11:40:00Z"
 _WALL_TIME_MS = 600_000
 _OCCURRED_AT = "2026-10-16T11:50:00Z"
+
+# That occurrence advanced by the ratified fifteen-minute hold interval. It is
+# spelled rather than computed so the expected value cannot be derived by the
+# same arithmetic the implementation uses.
+_EXPIRES_AT = "2026-10-16T12:05:00Z"
 
 _RUN_ID = "01M4TN6V5M5WSRA57JENX0MVXW"
 
@@ -600,3 +606,86 @@ def test_a_run_record_carrying_no_terminal_evidence_names_no_node(tmp_path: Path
 
     assert evidence.observations == ()
     assert evidence.unobservable == ()
+
+
+def test_hold_expiry_is_computed_from_the_failing_attempts_occurrence_time(
+    tmp_path: Path,
+) -> None:
+    """ "Expiry is computed from occurrence time and never from ingestion."
+
+    The attempt occurred at 11:50:00Z and the bounded interval is fifteen
+    minutes, so the record stands until 12:05:00Z -- read off the ATTEMPT,
+    not off the 12:00:00Z instant the derivation was taken at.
+    """
+    module = _module()
+    records = importlib.import_module(f"{_PACKAGE}._acp_hold_records")
+    repo = _repo(tmp_path=tmp_path)
+    reader = _Reader(
+        rows={"hp": _rows(payload=[_row_payload()])},
+        payloads={("hp", _RUN_ID): _inspect_payload(cause=_CEILING_CAUSE)},
+    )
+
+    evidence = module.factory_hold_evidence(repo=repo, reader=reader, now_iso=_NOW)
+
+    assert timedelta(minutes=15) == records.HOLD_INTERVAL
+    assert evidence.observations[0].expires_at == _EXPIRES_AT
+    assert evidence.holds[0].occurred_at == _OCCURRED_AT
+    assert evidence.holds[0].expires_at == _EXPIRES_AT
+
+
+def test_re_deriving_the_same_attempt_later_does_not_push_its_expiry_forward(
+    tmp_path: Path,
+) -> None:
+    """Re-derivation is a replay, and a replay must not refresh a hold.
+
+    This is the host-wide form of the property `hold_observation_record`
+    holds by taking no clock: the evidence here is re-read from the factory
+    on EVERY admission evaluation, so an expiry computed from the reading
+    would make a single four-minute outage stand for as long as anyone kept
+    looking at it.
+    """
+    module = _module()
+    repo = _repo(tmp_path=tmp_path)
+    reader = _Reader(
+        rows={"hp": _rows(payload=[_row_payload()])},
+        payloads={("hp", _RUN_ID): _inspect_payload(cause=_CEILING_CAUSE)},
+    )
+
+    first = module.factory_hold_evidence(repo=repo, reader=reader, now_iso=_NOW)
+    later = module.factory_hold_evidence(repo=repo, reader=reader, now_iso="2026-10-16T12:04:00Z")
+
+    assert first.holds == later.holds
+    assert later.holds[0].expires_at == _EXPIRES_AT
+
+
+def test_an_unreadable_occurrence_is_carried_through_rather_than_given_a_bound() -> None:
+    """An instant nobody can read is not one fifteen minutes can be added to.
+
+    Unreachable through `factory_hold_evidence`, which formats every
+    `occurred_at` from an instant it has already parsed -- but `attempt_expiry`
+    is the one place the bound is computed, and what it must NOT do is invent
+    one. Carrying the unreadable text through leaves the record's two instants
+    saying the same unreadable thing; substituting a computed instant would
+    date the record from the READING, which is exactly what the clause's
+    "never from ingestion" forbids.
+
+    Note what this case does NOT claim: `hold_expired` cannot read such a
+    record either, so it reports the hold as standing. That is why no
+    derivation here can produce one, and why the arm exists for a hand-built
+    value rather than as a safety net.
+    """
+    module = _module()
+    observation = module.FactoryHoldObservation(
+        factory="hp",
+        repository=_PEER_REPOSITORY,
+        run_id=_RUN_ID,
+        node_attempt="implement",
+        availability_key="codex",
+        candidate_key="primary",
+        cause=module.PROVIDER_LIMIT_CAUSE,
+        occurred_at="not-an-instant",
+    )
+
+    assert module.attempt_expiry(occurred_at="not-an-instant") == "not-an-instant"
+    assert observation.expires_at == "not-an-instant"
+    assert module.observation_hold(observation=observation).expires_at == "not-an-instant"
