@@ -6606,6 +6606,50 @@ Feature: Recovery routing for an automatically released item
     And no publish-branch reclaim runs for it
 ```
 
+## Scenario 186 — A provider exhaustion observed on one credential account does not refuse dispatch on another account of the same vendor
+
+```gherkin
+Feature: An exhaustion record observed under one credential identity does not hold out another account of the same vendor
+  As a maintainer whose credential rotation moves a vendor's candidates onto an account with headroom
+  I want an exhaustion record to refuse only dispatches on the account that observed the limit
+  So that a rotation is not defeated by records minted by runs still finishing on the exhausted account
+
+  Scenario: A record names the credential identity the observing dispatch projected
+    Given a dispatch whose admission projected credential identity "A" ends with a typed provider usage-limit outcome for provider "anthropic"
+    When the Dispatcher mints the observed provider-exhaustion record
+    Then the record names provider "anthropic" and credential identity "A"
+
+  Scenario: A newer record for one identity does not retire another identity's record
+    Given an unexpired provider-exhaustion record for provider "anthropic" naming credential identity "A"
+    And a newer unexpired provider-exhaustion record for provider "anthropic" naming credential identity "B"
+    When the Dispatcher reads the live provider-exhaustion records
+    Then both records are live
+
+  Scenario: A dispatch on another credential identity is admitted while the record is live
+    Given an unexpired provider-exhaustion record for provider "anthropic" naming credential identity "A"
+    And a ready work-item whose covered candidates project credential identity "B"
+    When the Dispatcher evaluates the admission valve
+    Then the record does not refuse the item
+
+  Scenario: A dispatch on the same credential identity is refused while the record is live
+    Given an unexpired provider-exhaustion record for provider "anthropic" naming credential identity "A"
+    And a ready work-item whose covered candidates project credential identity "A" with no eligible fallback
+    When the Dispatcher evaluates the admission valve
+    Then the item is refused naming the record and its expiry
+
+  Scenario: A record without a credential identity keeps vendor-wide coverage
+    Given an unexpired provider-exhaustion record for provider "anthropic" that names no credential identity
+    And a ready work-item whose covered candidates project credential identity "B" with no eligible fallback
+    When the Dispatcher evaluates the admission valve
+    Then the item is refused naming the record and its expiry
+
+  Scenario: An unreadable credential identity fails closed
+    Given an unexpired provider-exhaustion record for provider "anthropic" naming credential identity "A"
+    And a ready work-item whose projected credential identity is absent
+    When the Dispatcher evaluates the admission valve
+    Then the record refuses the item
+```
+
 ## Scenario 187 — A priority-epic idle-slot audit surfaces dispatchable priority work while the factory queue is empty, and a blocker with a live run is not a stale edge
 
 ```gherkin

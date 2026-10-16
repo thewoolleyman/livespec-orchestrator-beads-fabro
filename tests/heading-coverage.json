@@ -1840,6 +1840,14 @@
     "work_item": "bd-ib-qgcpoc"
   },
   {
+    "heading": "## Scenario 186 \u2014 A provider exhaustion observed on one credential account does not refuse dispatch on another account of the same vendor",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by the revise pass accepting proposal exhaustion-record-per-credential-identity (plan factory-configurable-model-fallback-priority, epic bd-ib-jxvgq5; maintainer ruling R76 on livespec-dev-tooling-dfixhe). Credential-identity scoping of the provider-exhaustion record is not implemented yet; an integration-tier test is owed for the six sub-scenarios, and work-item bd-ib-b53dhr implements them and owns that binding.",
+    "work_item": "bd-ib-b53dhr"
+  },
+  {
     "heading": "## Scenario 187 \u2014 A priority-epic idle-slot audit surfaces dispatchable priority work while the factory queue is empty, and a blocker with a live run is not a stale edge",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
