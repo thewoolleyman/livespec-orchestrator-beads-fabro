@@ -5525,7 +5525,27 @@ until retirement as domain holds against candidates whose built-in compatibility
 alias names that provider, plus identity-less legacy candidates under
 §"Factory-configurable ACP fallback priority", which every live legacy record
 covers; they MUST NOT be ignored or broadened to unrelated explicitly identified
-candidates. Typed candidate evidence wins over legacy cause-text attribution when
+candidates. A provider-exhaustion record minted from a dispatch's typed provider usage-limit
+outcome MUST also carry the opaque non-secret credential identity that the
+dispatch's admission session-headroom assessment journaled under the "Admission
+filters candidates by projected Claude session headroom" clause of this section,
+when that assessment journaled one; a record for a dispatch whose admission
+journaled no such identity carries none. An absent identity is not a credential
+identity: a record minted for a dispatch whose projected identity was absent
+carries none. A record carrying a credential identity covers only a dispatch
+whose admission projects that same identity for a covered candidate; a dispatch
+projecting a different identity, including one admitted after the credential
+behind the candidate was rotated to another account of the same vendor, MUST NOT
+be refused by it. Records are distinct per provider and credential identity: a
+newer record for one identity neither supersedes nor retires a live record for
+another. The identity is a fingerprint of one credential snapshot, so a
+refreshed snapshot of the same account projects a new identity and is not
+covered until a new observation is recorded against it. A provider-exhaustion
+record that carries no credential identity, including every record minted before
+this clause, keeps the vendor-wide coverage stated above until it expires or is
+cleared. When a dispatch's projected credential identity is absent, the record
+covers it, so that a blinded gauge fails closed.
+Typed candidate evidence wins over legacy cause-text attribution when
 a chain executed. No record, current or legacy, MAY refuse a dispatch whose
 resolved candidates all lie outside its coverage.
 
@@ -5540,7 +5560,9 @@ clearance are the two other retirement routes.
 
 **An operator may retire a record early.** The Dispatcher MUST offer an exact
 scope/key clearance for current records and retain the existing provider valve
-for legacy records only. Both require asserted identity and a non-blank reason,
+for legacy records only. The provider valve retires every live provider-exhaustion record of the named
+provider, whether or not the record carries a credential identity.
+Both require asserted identity and a non-blank reason,
 refuse a target with no matching live record before writing, and APPEND an audit
 record containing the exact identity, actor, time, and reason. For a current
 record the authoritative clearance is the factory-native record that
