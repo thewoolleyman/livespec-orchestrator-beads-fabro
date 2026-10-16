@@ -211,7 +211,7 @@ def test_the_policy_reads_the_projected_snapshot_at_most_once_per_evaluation(
     monkeypatch.setenv(CLAUDE_OAUTH_TOKEN_ENV, _TOKEN)
     tokens: list[str | None] = []
     policy = headroom_gate.session_headroom_policy(
-        repo=tmp_path, now_iso=_NOW, read=_recording_read(tokens)
+        repo=tmp_path, now_iso=_NOW, journal_path=None, read=_recording_read(tokens)
     )
 
     first = policy.read()
@@ -228,7 +228,7 @@ def test_the_floor_defaults_to_the_ratified_twenty_and_is_committed_only(tmp_pat
     assert headroom.DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT == 20
 
     policy = headroom_gate.session_headroom_policy(
-        repo=tmp_path, now_iso=_NOW, read=_recording_read(tokens)
+        repo=tmp_path, now_iso=_NOW, journal_path=None, read=_recording_read(tokens)
     )
 
     assert policy.floor_percent == headroom.DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT
@@ -242,7 +242,7 @@ def test_a_committed_floor_inside_the_inclusive_range_is_honoured(
     _write_floor(root=tmp_path, value=configured)
 
     policy = headroom_gate.session_headroom_policy(
-        repo=tmp_path, now_iso=_NOW, read=_recording_read([])
+        repo=tmp_path, now_iso=_NOW, journal_path=None, read=_recording_read([])
     )
 
     assert policy.floor_percent == expected
@@ -257,7 +257,7 @@ def test_a_floor_outside_the_declared_range_is_refused_rather_than_clamped(
 
     resolved = headroom_gate.resolve_session_headroom_floor_percent(cwd=tmp_path)
     policy = headroom_gate.session_headroom_policy(
-        repo=tmp_path, now_iso=_NOW, read=_recording_read([])
+        repo=tmp_path, now_iso=_NOW, journal_path=None, read=_recording_read([])
     )
 
     assert is_successful(resolved) is False
@@ -334,4 +334,5 @@ def test_the_record_carries_no_credential_value_or_raw_provider_response() -> No
         "utilization_percent",
         "remaining_percent",
         "unobservable",
+        "five_hour_drain_percent_per_hour",
     }

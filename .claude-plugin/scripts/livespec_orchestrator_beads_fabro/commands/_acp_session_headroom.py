@@ -40,6 +40,16 @@ THE SKIP PREDICATE IS THE WHOLE FILTER, and its two boundaries are the ones an
 almost-correct implementation inverts: equality PASSES, and a floor of 0
 disables both kinds of skip while retaining the reading. Both are the clause's
 own words.
+
+THE FIVE-HOUR DRAIN RATE IS NOT GRADED BY THIS MODULE'S VALID-READING RULE,
+and the asymmetry is deliberate. The clause's inclusive 0..100 grade governs
+the five-hour UTILIZATION, because that is the figure remaining headroom is
+computed from and the floor decides on; a RATE has no 0..100 range at all, so
+coercing it into that grade would discard measurements nothing bounds. The rate
+is attached AFTER grading by `_acp_session_headroom_drain`, which needs a
+journal history this module has no business reading -- which is also why the
+field defaults to null here rather than being a constructor argument: a reading
+carries no rate until an evaluation holding that history attaches one.
 """
 
 from __future__ import annotations
@@ -94,10 +104,16 @@ class SessionHeadroomReading:
     utilization_percent: float | None = None
     remaining_percent: float | None = None
     unobservable: str | None = None
+    five_hour_drain_percent_per_hour: float | None = None
 
     @property
     def observable(self) -> bool:
-        """Whether this reading carries a valid utilization at all."""
+        """Whether this reading carries a valid utilization at all.
+
+        Named for the UTILIZATION, which is the figure the floor decides on.
+        The drain rate is a separate measurement over a history, so a reading
+        can be observable here and still carry no rate.
+        """
         return self.unobservable is None
 
 
