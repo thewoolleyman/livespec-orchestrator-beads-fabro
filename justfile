@@ -47,6 +47,21 @@ acceptance-live-preflight:
 acceptance-live item:
     bash orchestrator-image/tier2-dispatch-proof.sh --run --item "$1"
 
+# `canary-dispatch <factory>` — take a candidate canary. Files a FRESH canary
+# work-item from the committed fixture template
+# (orchestrator-image/canary-fixture.md), whose Definition of Done is validated
+# through the same ratified parse the gate's host-side wall reads, then
+# dispatches that item to the NAMED factory. Every canary it files carries the
+# `canary:fixture-dispatch` label. Kept outside `just check` — it mutates the
+# ledger and launches a factory run. Run it under this project's configured
+# credential wrapper, per the beads prerequisites in AGENTS.md:
+#   with-livespec-env.sh -- mise exec -- just canary-dispatch hp
+# The runbook section "Taking a candidate canary" in orchestrator-image/README.md
+# is the operator-facing account of when and why.
+[positional-arguments]
+canary-dispatch factory:
+    bash dev-tooling/just-canary-dispatch.sh "$1"
+
 # Fabro Enemy Unit Tests tier 0. Real Fabro dependency calls through the
 # dispatcher FabroPort against the live host server, but no workflow run is
 # launched. Kept outside `just check`; run under the operator environment when
