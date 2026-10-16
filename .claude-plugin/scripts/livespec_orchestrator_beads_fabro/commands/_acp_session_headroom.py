@@ -50,6 +50,14 @@ is attached AFTER grading by `_acp_session_headroom_drain`, which needs a
 journal history this module has no business reading -- which is also why the
 field defaults to null here rather than being a constructor argument: a reading
 carries no rate until an evaluation holding that history attaches one.
+
+THE PROJECTION RESULT IS CARRIED HERE AND DECIDED NEXT DOOR, for the same
+reason. `SessionHeadroomProjection` is a VALUE -- the result kind, the figures
+and whether a skip applied -- so it belongs beside the reading it rides; the
+decision that produces it needs the drain rate, the baseline and the committed
+horizon, so it lives in `_acp_session_headroom_projection`. Keeping the type
+here is also what lets the reading carry it without this module importing the
+decision, which would close a cycle.
 """
 
 from __future__ import annotations
@@ -66,8 +74,12 @@ __all__: list[str] = [
     "DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT",
     "DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES",
     "FULL_ALLOWANCE_PERCENT",
+    "NOT_PROJECTED_RESULT",
+    "PROJECTED_RESULT",
+    "UNAVAILABLE_RESULT",
     "UNREADABLE_UTILIZATION",
     "SessionHeadroomPolicy",
+    "SessionHeadroomProjection",
     "SessionHeadroomReading",
     "headroom_covers_candidate",
     "headroom_skips_candidate",
@@ -97,6 +109,48 @@ FULL_ALLOWANCE_PERCENT = 100.0
 # issued the request, because only it observed the fault.
 UNREADABLE_UTILIZATION = "unreadable-utilization"
 
+# The THREE projection results the clause closes, and they are three rather
+# than two because `not-projected` and `unavailable` "MUST remain distinct
+# values". A projection nobody attempted (the horizon's own dial is irrelevant
+# there -- the FLOOR settled the reading) and a projection attempted against a
+# history that could not support one both end at a null rate, and only the
+# second is a reason to expect a figure once this checkout has been dispatching
+# for an hour.
+PROJECTED_RESULT = "projected"
+UNAVAILABLE_RESULT = "unavailable"
+NOT_PROJECTED_RESULT = "not-projected"
+
+
+@dataclass(frozen=True, kw_only=True)
+class SessionHeadroomProjection:
+    """What a reading's projected exhaustion came to, as ONE closed result.
+
+    THE RESULT KIND IS A FIELD AND NOT AN ABSENCE, which is the whole reason
+    this is a value rather than three optional columns on the reading. A null
+    rate beside a null exhaustion instant is what BOTH non-results look like,
+    so a reader holding only the figures cannot tell a dial that was off from a
+    history that was missing -- the distinction the clause requires be kept.
+
+    `skip_applied` is DECIDED HERE, where the horizon is in hand, and merely
+    READ by the filter. The filter runs per node against candidates sharing one
+    reading, so a filter that re-derived the comparison would re-derive it once
+    per candidate against a horizon it would have to be handed anyway -- and two
+    derivations of one inequality are how a refusal record comes to disagree
+    with the refusal it explains.
+
+    Every field is a percentage, an instant, a count of minutes or a closed
+    token. There is no field a credential value or a raw provider response could
+    arrive through, exactly as on the reading this rides.
+    """
+
+    result: str
+    reason: str | None = None
+    five_hour_drain_percent_per_hour: float | None = None
+    baseline_observed_at: str | None = None
+    projected_exhaustion_at: str | None = None
+    horizon_minutes: int | None = None
+    skip_applied: bool = False
+
 
 @dataclass(frozen=True, kw_only=True)
 class SessionHeadroomReading:
@@ -114,6 +168,7 @@ class SessionHeadroomReading:
     remaining_percent: float | None = None
     unobservable: str | None = None
     five_hour_drain_percent_per_hour: float | None = None
+    projection: SessionHeadroomProjection | None = None
 
     @property
     def observable(self) -> bool:

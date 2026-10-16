@@ -230,6 +230,7 @@ def _refusal(*, records: list[dict[str, Any]]) -> dict[str, Any]:
                 "unobservable": None,
                 "observed_at": _NOW,
                 "five_hour_drain_percent_per_hour": None,
+                "projection": None,
             },
         ),
         (
@@ -241,6 +242,7 @@ def _refusal(*, records: list[dict[str, Any]]) -> dict[str, Any]:
                 "unobservable": headroom.UNREADABLE_UTILIZATION,
                 "observed_at": _NOW,
                 "five_hour_drain_percent_per_hour": None,
+                "projection": None,
             },
         ),
     ],

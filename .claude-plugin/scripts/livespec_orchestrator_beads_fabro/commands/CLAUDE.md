@@ -884,19 +884,24 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   declared.
 - The ADMISSION SESSION-HEADROOM FILTER of `contracts.md`'s "Admission filters
   candidates by projected Claude session headroom" paragraph (`bd-ib-jwuxs4`,
-  Scenario 60) lives in SIX cohesive modules, split pure-from-impure the usual
+  Scenario 60) lives in SEVEN cohesive modules, split pure-from-impure the usual
   way, and the dependency direction reads bottom-up: `_acp_session_headroom`
   (PURE: the reading value, its validation, the coverage predicate and the skip
-  predicate, plus the per-evaluation policy type) → `_acp_session_headroom_drain`
+  predicate, plus the projection RESULT value and the per-evaluation policy type)
+  → `_acp_session_headroom_drain`
   (PURE: the five-hour drain rate — the inclusive age window, the earliest-prior
-  selection and the rate itself) and `_acp_session_headroom_
+  selection and the rate itself) → `_acp_session_headroom_projection` (PURE: what
+  that rate IMPLIES — the projected exhaustion instant, the horizon comparison
+  that decides a projection skip, and the three closed results) and
+  `_acp_session_headroom_
   records` (PURE: the journal projections — the per-item assessment record, the
   per-node selection fields, and the fields a headroom-governed refusal adds) and
   `_dispatcher_session_headroom_io` (the ONE bounded usage request plus the
   opaque credential fingerprint) and `_dispatcher_session_headroom_baseline`
   (the dispatch-journal read that projects one credential's prior readings) →
   `_dispatcher_session_headroom_gate` (the
-  committed floor, the per-evaluation policy its memo lives in, and the journal
+  committed floor and horizon, the per-evaluation policy its memo lives in, and
+  the journal
   writer). The filter itself is the FOURTH filter of
   `_acp_candidate_preflight`; `_dispatcher_admission` is the only caller that
   supplies a policy, and it hands the policy the SAME journal path it resolves
@@ -943,6 +948,24 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   is what an unspent credential genuinely reads as, so a coerced zero is
   indistinguishable at the record from a measurement — the same argument the
   reading's own `unobservable` field rests on, one level down.
+  THREE PROPERTIES OF THE PROJECTION an editor must not invert, and each is the
+  clause's own wording rather than a preference. The record carries EXACTLY ONE
+  result under ONE key, with the result KIND as a field inside it: three
+  parallel optional blocks would let a record carry two, and a reader joining on
+  whichever it found first would report the wrong one with no way to notice.
+  `not-projected` and `unavailable` stay DISTINCT — the first means the dial or
+  the floor settled the reading before any history was consulted, the second
+  means a projection was attempted and an input could not be measured — and both
+  end at a null rate, so a build that collapsed them would report an operator's
+  disabled dial and a fresh checkout's missing history as one state. And every
+  unavailable arm FAILS OPEN, because the floor already governs the level of an
+  unprojected reading while a projection that refused when blinded would refuse
+  every first dispatch on every credential in every fresh checkout — the common
+  case rather than an edge. Note also that the baseline is read ONCE in
+  `_dispatcher_session_headroom_gate._assessed` and spent twice: the rate and the
+  projection are two readings of ONE history, and a second journal read would
+  let a rate measured against one baseline sit beside a projection naming
+  another.
 - The **TDD order calibration** modules (plan `factory-test-first-enforcement`
   slice S3, `bd-ib-3h5vfq`) put seven `tdd.*` fields plus the implement
   adapter on the terminal `dispatcher.calibration` span, so "is the factory

@@ -482,6 +482,7 @@ def test_an_admission_pass_journals_one_assessment_record_per_work_item(
             "unobservable": None,
             "observed_at": _NOW,
             "five_hour_drain_percent_per_hour": None,
+            "projection": None,
         }
     ]
 
