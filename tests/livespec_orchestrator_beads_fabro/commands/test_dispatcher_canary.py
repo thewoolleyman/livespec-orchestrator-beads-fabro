@@ -19,6 +19,10 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
+from livespec_orchestrator_beads_fabro._beads_client import (
+    make_beads_client,
+    reset_fake_singleton,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     definition_of_done,
 )
@@ -190,3 +194,31 @@ def test_the_subcommand_refuses_when_intake_cannot_route(*, capsys: Any, monkeyp
     assert captured.out == ""
     assert "LIVESPEC_CANARY_FIXTURE_UNUSABLE" in captured.err
     assert "intake could not route it" in captured.err
+
+
+def test_every_filed_canary_carries_the_fixture_dispatch_label() -> None:
+    """The label is what tells a fixture dispatch from ordinary filed work.
+
+    It is asserted on the LEDGER RECORD rather than on a constant, because the
+    canary's whole point is that a reader surveying the tenant can separate the
+    canaries out; a label the code names and never writes would read correct at
+    every other surface.
+    """
+    canary = _canary()
+    assert hasattr(canary, "CANARY_LABEL"), dir(canary)
+    reset_fake_singleton()
+    config = _fake_config()
+
+    filed = canary.file_canary_work_item(
+        repo=_REPO_ROOT, config=config, now_iso="2026-10-16T00:00:00Z"
+    )
+
+    assert isinstance(filed, str), filed
+    record = make_beads_client(config=config).show_issue(issue_id=filed)
+    assert canary.CANARY_LABEL in (record.get("labels") or [])
+    # Prefixed and self-describing, so a bare label list identifies it without a
+    # legend, and never a numbered or tiered name.
+    assert canary.CANARY_LABEL.startswith("canary:")
+    # Beside the intake marker rather than instead of it: the canary is a real
+    # ledger item that went through the ordinary door.
+    assert "intake:triaged" in (record.get("labels") or [])

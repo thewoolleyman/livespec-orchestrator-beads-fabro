@@ -29,6 +29,14 @@ spec tree. That is the wall's own measurement, and a second resolution here woul
 be a second implementation of the very rule this module exists to stay on the
 right side of — the shape that produced the refused canaries in the first place.
 
+WHY THE LABEL IS WRITTEN AFTER INTAKE RATHER THAN CARRIED ON THE WORK ITEM. A
+`WorkItem`'s label set is a CLOSED projection of its modelled fields
+(`_work_item_labels`), so there is no field a fixture label could ride on, and
+widening that projection for a canary would put a factory-operations concern
+into the ledger's own schema. `add_labels` is additive, so the canary label
+lands BESIDE the intake marker rather than instead of it — which is what keeps
+the canary a real item that went through the ordinary door.
+
 WHY EACH CANARY IS A FRESH LEDGER ITEM RATHER THAN A REPLAY OF ONE. A replayed
 item carries the history of its earlier dispatches — a journal row, a publish
 branch, a recorded factory — so the second canary would differ from the first in
@@ -50,6 +58,7 @@ from pathlib import Path
 from livespec_runtime.work_items.rank import key_between
 from returns.pipeline import is_successful
 
+from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._ids import new_work_item_id
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
@@ -66,6 +75,7 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = [
     "CANARY_FIXTURE_RELATIVE_PATH",
+    "CANARY_LABEL",
     "CANARY_MARKER_RELATIVE_PATH",
     "CanaryFixture",
     "CanaryFixtureUnusable",
@@ -81,6 +91,11 @@ __all__: list[str] = [
 # runbook name the same two paths rather than two spellings of them.
 CANARY_FIXTURE_RELATIVE_PATH = "orchestrator-image/canary-fixture.md"
 CANARY_MARKER_RELATIVE_PATH = "orchestrator-image/canary-marker.md"
+# The label every canary the recipe files carries. Prefixed so a reader
+# surveying a bare label list can separate a fixture dispatch from ordinary
+# filed work, and SELF-DESCRIBING rather than numbered or tiered, per this
+# repository's rule that an option set names what each value IS.
+CANARY_LABEL = "canary:fixture-dispatch"
 
 _TITLE_PREFIX = "# "
 # The canary is filed with every intake gate answered, because the committed
@@ -221,6 +236,7 @@ def _filed(
                 " so the ledger holds the record and no dispatch was attempted"
             )
         )
+    make_beads_client(config=config).update_issue(issue_id=item.id, add_labels=[CANARY_LABEL])
     return item.id
 
 
