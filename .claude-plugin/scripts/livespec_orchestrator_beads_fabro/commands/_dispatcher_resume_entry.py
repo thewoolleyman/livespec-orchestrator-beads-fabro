@@ -39,7 +39,11 @@ refuses the derivation too rather than being edited on faith.
 The text edit itself is still a span splice, because the derived graph must be the
 committed graph MINUS what the prune removes — every surviving node keeps its own
 attributes and its own comments, which a re-render from the parsed form would
-discard.
+discard. So the two patterns that LOCATE spans are paired with a POSTCONDITION:
+the spliced text is parsed again and must declare exactly the nodes that survived
+the prune, with every edge naming one of them. Anything a pattern failed to
+locate therefore refuses the derivation instead of reaching a run, which is why
+neither pattern has to be as careful as the parser.
 
 WHY AN UNDECLARED NODE REFUSES HERE. The resumed-at stage can come from a factory
 run record, which names whatever node THAT engine was executing — possibly a node
@@ -102,6 +106,15 @@ _START_EDGE = re.compile(r"(?m)^(?P<indent>[ \t]*)start[ \t]*->[ \t]*(?P<target>
 # never to decide whether a node exists.
 _NODE_DECLARATION = r"(?ms)^[ \t]*{name}[ \t]*\[[^\]]*\]"
 
+# One EDGE statement on its own line, with or without an attribute list. Used
+# only to LOCATE the span of an edge the parser has already placed, for the same
+# reason the declaration pattern is: the parser decides WHICH edges go, and a
+# pattern that failed to see one simply leaves that edge in the text, where the
+# postcondition below catches it.
+_EDGE = re.compile(
+    r"(?m)^[ \t]*(?P<source>\w+)[ \t]*->[ \t]*(?P<target>\w+)[ \t]*(?:\[[^\]]*\])?[ \t]*$"
+)
+
 _NODE_NAME = re.compile(r"^\w+$")
 
 # The graph's own start node, which is never a prune candidate: it is the root the
@@ -128,11 +141,12 @@ class ResumeCheckout:
 def graph_entered_at(*, graph_text: str, node: str) -> str | None:
     """The one run's derived graph, entered at `node`, or `None` when it cannot be.
 
-    `None` for four conditions, each of which would otherwise produce a graph
+    `None` for five conditions, each of which would otherwise produce a graph
     that fails at run-create time rather than a refusal an operator can read: a
     node name that is not a bare identifier (so it could never be one), a graph
-    the shared parser refuses, a node this workflow does not declare, and a graph
-    carrying no unconditional `start` edge to move.
+    the shared parser refuses, a node this workflow does not declare, a graph
+    carrying no unconditional `start` edge to move, and a spliced result that is
+    not the graph the prune intended.
     """
     if _NODE_NAME.match(node) is None:
         return None
@@ -143,13 +157,15 @@ def graph_entered_at(*, graph_text: str, node: str) -> str | None:
     if edge is None:
         return None
     orphaned = _orphaned_by_entering(graph=graph, entry=node)
-    return _spliced(
+    derived = _spliced(
         text=graph_text,
         edits=[
             (edge.start(), edge.end(), f"{edge.group('indent')}start -> {node}"),
             *_declaration_spans(graph_text=graph_text, names=orphaned),
+            *_edge_spans(graph_text=graph_text, names=orphaned, moved=edge.span()),
         ],
     )
+    return _validated(text=derived, declared=frozenset(graph.nodes) - orphaned, entry=node)
 
 
 def _orphaned_by_entering(*, graph: DotGraph, entry: str) -> frozenset[str]:
@@ -185,13 +201,69 @@ def _declaration_spans(*, graph_text: str, names: frozenset[str]) -> list[tuple[
     return spans
 
 
+def _edge_spans(
+    *, graph_text: str, names: frozenset[str], moved: tuple[int, int]
+) -> list[tuple[int, int, str]]:
+    """A deletion edit for each edge line either end of which is a pruned node.
+
+    No REACHABLE node can lose an outgoing edge here, and that is what keeps the
+    prune from tripping fabro's `all_conditional_edges` rejection: an edge from a
+    reachable source makes its target reachable by definition, so every edge this
+    removes has a pruned SOURCE. The one exception is the `start` edge itself,
+    whose old target is usually pruned — it is excluded by span, because the
+    splice is already rewriting it and two edits for one span would corrupt the
+    text rather than merely disagree.
+    """
+    return [
+        (found.start(), found.end(), "")
+        for found in _EDGE.finditer(graph_text)
+        if found.span() != moved and {found.group("source"), found.group("target")} & names
+    ]
+
+
+def _validated(*, text: str, declared: frozenset[str], entry: str) -> str | None:
+    """The derived text, or `None` when it is not the graph the prune intended.
+
+    A POSTCONDITION rather than a second opinion, and it is what lets the two
+    span patterns above stay simple: they LOCATE what the parser decided to
+    remove, and anything they fail to locate — a declaration whose body carries
+    a `]`, an edge chained onto one line — survives into this read and refuses
+    the derivation instead of shipping a graph nobody wrote.
+
+    The three questions are the three the engine's own validator asks: does it
+    still parse, does it declare exactly the nodes that survived the prune, and
+    does every edge name a node it declares. The last one also refuses a
+    committed graph carrying an IMPLICITLY declared node — one named only by an
+    edge — which this derivation cannot reason about, since such a node is
+    absent from `nodes` and so is never a prune candidate however orphaned the
+    move leaves it. Refusing a resume there is a resume that does not happen;
+    deriving from it is a run created against a graph whose edges do not all
+    resolve.
+    """
+    graph = parse_dot_graph(text=text)
+    if (
+        isinstance(graph, str)
+        or frozenset(graph.nodes) != declared
+        or any(
+            endpoint not in graph.nodes
+            for found in graph.edges
+            for endpoint in (found.source, found.destination)
+        )
+        or not any(
+            found.source == _START_NODE and found.destination == entry for found in graph.edges
+        )
+    ):
+        return None
+    return text
+
+
 def _spliced(*, text: str, edits: list[tuple[int, int, str]]) -> str:
     """`text` with each `(start, end, replacement)` edit applied, in offset order.
 
     Sorted here rather than at each caller because the edits are COLLECTED by
-    concern — the moved edge, then the orphaned declarations — and a splice walks
-    the text once, so the collection order and the offset order are different
-    things.
+    concern — the moved edge, then the orphaned declarations, then the orphaned
+    edges — and a splice walks the text once, so the collection order and the
+    offset order are different things.
     """
     pieces: list[str] = []
     cursor = 0
