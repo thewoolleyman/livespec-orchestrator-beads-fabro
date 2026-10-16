@@ -47,7 +47,22 @@ opened. Read its docstring before touching that choice: the written name is
 relative for a package-era client, and resolving it against the Dispatcher's own
 working directory finds a different repository's graph rather than failing.
 
-THREE READINGS AN EDITOR MUST NOT INVERT.
+FOUR READINGS AN EDITOR MUST NOT INVERT.
+
+A descendant NAMES the hook by carrying either `hooks/<name>` in its argv or an
+argv WORD equal to the name, and narrowing that back to the path form is the one
+change that makes this whole instrument inert here. An installed hook that execs
+into a runner -- `exec mise exec -- lefthook run --no-auto-install "$hook_name"
+"$@"`, which is this repository's own `.git/hooks/pre-push` -- has replaced its
+process before the suite that outlives the limit starts, so the path is gone
+from argv and only the name remains, as an argument. The failure is silent at
+every surface: the node swallows this program's exit, so the push still fails
+closed but UNNAMED, which is the unexplained needs-human ending Scenario 177
+exists to prevent. Word equality rather than a substring, because a path like
+`dev-tooling/check-pre-push.sh` is a job the hook run spawns and matching it
+would make the reading depend on spellings nobody chose -- while within one
+push's subtree there is nothing but the hook run to match, and a later-starting
+match could not move the answer anyway.
 
 The hook run's root is the EARLIEST-STARTED matching descendant, because the
 elapsed figure the clause asks for is the HOOK RUN's, and a run that re-execs
@@ -279,14 +294,23 @@ def descendants(table, root):
 
 
 def hook_run_start_ticks(proc_root, table, push_pid, hook_name):
-    """The EARLIEST start among descendants whose argv names the hook, else None."""
-    needle = "hooks/" + hook_name
+    """The EARLIEST start among descendants whose argv names the hook, else None.
+
+    NAMING THE HOOK MEANS EITHER OF TWO THINGS, because a hook may exec away
+    from its own path. An installed hook that runs its work itself carries
+    `hooks/<name>` in argv; one that ends in `exec <runner> ... <name> ...`
+    -- which is this fleet's shape -- carries the name as an ARGUMENT instead,
+    and never carries the path again. Matching only the path cannot return a hit
+    for the second shape at all.
+    """
+    installed = "hooks/" + hook_name
     starts = []
     for pid in descendants(table, push_pid):
         raw = read_text(os.path.join(proc_root, str(pid), "cmdline"))
         if raw is None:
             continue
-        if needle in raw.replace("\\0", " "):
+        argv = [word for word in raw.split("\\0") if word]
+        if installed in " ".join(argv) or hook_name in argv:
             starts.append(table[pid][1])
     return min(starts) if starts else None
 

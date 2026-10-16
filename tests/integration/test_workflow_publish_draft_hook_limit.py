@@ -11,7 +11,9 @@ WHY A REAL HOOK AND A REAL PUSH. The whole claim is about what a hook run's
 processes are doing at the moment a bound ends the push that started them, and
 every part of that is a property of the process tree git actually builds. A
 doubled `git push` would let the double decide whether a hook ran, which is the
-one thing under test.
+one thing under test. The hook is also shaped like this repository's -- it execs
+into a runner rather than doing its work in place -- because that is the shape
+an observer keyed on the installed path cannot see; see `_install_pre_push`.
 
 THE NEGATIVE CASE IS WHAT MAKES THE POSITIVE ONE EVIDENCE. A script that printed
 the sentinel on any slow push would satisfy the positive assertion exactly as a
@@ -97,11 +99,27 @@ def _run_clone(*, tmp_path: Path) -> tuple[Path, Path]:
 
 
 def _install_pre_push(*, run: Path, seconds: int) -> None:
-    """A real pre-push hook, so git builds the process tree under test."""
+    """A real pre-push hook, so git builds the process tree under test.
+
+    SHAPED LIKE THIS REPOSITORY'S, which is what makes the tree the one that
+    matters: `.git/hooks/pre-push` here ends in
+    `exec mise exec -- lefthook run --no-auto-install "$hook_name" "$@"`, so the
+    hook process EXECS away from its own path before the suite that outlives a
+    limit begins, and its argv then names the runner and carries the hook name
+    as an argument. A hook that merely slept under its installed path would
+    exercise a shape no clone of this repository has, and an observer blind to
+    the exec'd one would pass against it.
+    """
     hooks = run / ".git" / "hooks"
     hooks.mkdir(parents=True, exist_ok=True)
+    runner = run / ".git" / "hook-runner-stand-in"
+    _ = runner.write_text(f"#!/bin/sh\nsleep {seconds}\nexit 0\n", encoding="utf-8")
+    runner.chmod(runner.stat().st_mode | stat.S_IXUSR)
     hook = hooks / "pre-push"
-    _ = hook.write_text(f"#!/bin/sh\nsleep {seconds}\nexit 0\n", encoding="utf-8")
+    _ = hook.write_text(
+        f'#!/bin/sh\nexec "{runner}" run --no-auto-install pre-push "$@"\n',
+        encoding="utf-8",
+    )
     hook.chmod(hook.stat().st_mode | stat.S_IXUSR)
 
 

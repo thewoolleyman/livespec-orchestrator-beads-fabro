@@ -103,6 +103,31 @@ def _hook_script(*, tmp_path: Path, seconds: int) -> Path:
     return hook
 
 
+def _delegating_hook_script(*, tmp_path: Path, seconds: int) -> Path:
+    """A stand-in pre-push hook shaped like THIS repository's: it EXECS away.
+
+    `.git/hooks/pre-push` here ends in
+    `exec mise exec -- lefthook run --no-auto-install "$hook_name" "$@"`, so by
+    the time the full suite is running -- the part that outlives a limit -- the
+    hook process's own argv names the DELEGATE and carries the hook name as an
+    argument, and no longer names the installed hook's path at all. The
+    delegate's work is a child, so a reader that cannot see the exec'd process
+    has no later-starting fallback to under-report either.
+    """
+    hooks = tmp_path / ".git" / "hooks"
+    hooks.mkdir(parents=True, exist_ok=True)
+    delegate = tmp_path / "hook-runner-stand-in"
+    _ = delegate.write_text(f"#!/bin/sh\nsleep {seconds}\n", encoding="utf-8")
+    delegate.chmod(0o755)
+    hook = hooks / "pre-push"
+    _ = hook.write_text(
+        f'#!/bin/sh\nexec "{delegate}" run --no-auto-install pre-push "$@"\n',
+        encoding="utf-8",
+    )
+    hook.chmod(0o755)
+    return hook
+
+
 def test_a_hook_still_running_at_the_limit_is_reported_with_its_elapsed_time(
     tmp_path: Path,
 ) -> None:
@@ -126,6 +151,39 @@ def test_a_hook_still_running_at_the_limit_is_reported_with_its_elapsed_time(
     # A real measurement rather than a constant: the hook had been running for
     # about two seconds, and an implementation that reported zero, or the
     # push's own age, or the limit, would all fail this band.
+    assert 1_000 <= event.hook_elapsed_ms <= 20_000, event.hook_elapsed_ms
+
+
+def test_a_hook_that_execs_into_a_delegate_is_still_found_and_named(
+    tmp_path: Path,
+) -> None:
+    """Scenario 177: the event is named for the hook shape this repository runs.
+
+    THE DISCRIMINATING CASE. A reader keyed on the installed hook's PATH cannot
+    return a hit here however healthy it is, and its miss is silent twice over:
+    the node swallows the observer's exit, so the publication still fails closed
+    but UNNAMED -- no row, no cause -- which is exactly the unexplained
+    needs-human ending Scenario 177 exists to prevent.
+
+    The non-exec case above is kept as the control, so this is not one blind spot
+    traded for another: both shapes must be reported.
+    """
+    hook = _delegating_hook_script(tmp_path=tmp_path, seconds=30)
+    push = subprocess.Popen(["sh", "-c", f"{hook}; true"])
+    try:
+        time.sleep(2)
+        code, stderr = _observe(program=_program(tmp_path=tmp_path), push_pid=push.pid)
+    finally:
+        push.kill()
+        _ = push.wait()
+
+    assert code == 0, stderr
+    event = hook_over_limit_from_text(text=stderr)
+    assert event is not None, stderr
+    assert (event.node, event.operation, event.limit_seconds) == ("publish_draft", "push", 3600)
+    # The same real measurement the non-exec case asserts, and here it also
+    # pins WHICH process was taken as the hook run's root: the delegate's own
+    # `sleep` child starts last and would report near zero.
     assert 1_000 <= event.hook_elapsed_ms <= 20_000, event.hook_elapsed_ms
 
 
