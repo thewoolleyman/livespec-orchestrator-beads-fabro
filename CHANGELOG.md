@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.201.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.2...v0.201.3) (2026-10-16)
+
+
+### Bug Fixes
+
+* name the restored pre-refresh head in publish_draft's non-conflict refresh failure ([675ea41](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/675ea41e9bb47fff510d66353667c1ebf0dd5048))
+* restore the pre-refresh head when publish_draft's refresh fails without a conflict ([e115425](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e115425d0b4fc88d7d71da2e8c6730df5382a67c))
+
 ## [0.201.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.1...v0.201.2) (2026-10-15)
 
 
