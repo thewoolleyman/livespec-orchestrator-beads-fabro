@@ -27,6 +27,7 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import NodeTimeou
 
 __all__: list[str] = [
     "RenderedGraph",
+    "node_timeout_seconds",
     "render_workflow_graph",
 ]
 
@@ -92,6 +93,33 @@ def render_workflow_graph(*, committed_text: str, timeouts: NodeTimeouts) -> Ren
             f"{len(rendered.node_seconds)} resolved to a node"
         )
     return rendered
+
+
+def node_timeout_seconds(*, graph_text: str, node: str) -> int | None:
+    """The literal duration one node's `timeout` attribute carries, in seconds.
+
+    READ BACK OUT of a graph rather than re-derived from configuration, which is
+    the whole point: a command node that has to enforce its own limit must
+    enforce the one its attribute actually received, and the two can differ --
+    a per-dispatch override, a payload rendered from a different resolution, or
+    a node the rewrite did not reach. Asking the artifact closes that gap by
+    construction instead of by two readings that are hoped to agree.
+
+    Answers None rather than a default when the node is absent, carries no
+    timeout, or carries one this reader cannot parse as whole seconds. The
+    caller is expected to WITHHOLD the figure in that case, never to substitute
+    one: a bound enforced against an invented limit would report that invented
+    number as the limit that ended the operation.
+    """
+    for match in _NODE_BLOCK_RE.finditer(graph_text):
+        if match.group("name") != node:
+            continue
+        attribute = _TIMEOUT_ATTR_RE.search(match.group("body"))
+        if attribute is None:
+            return None
+        digits = attribute.group(0).partition('"')[2].rstrip('"').removesuffix("s")
+        return int(digits) if digits.isdigit() else None
+    return None
 
 
 def _rewrite_blocks(*, committed_text: str, timeouts: NodeTimeouts) -> RenderedGraph:

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit import HookOverLimit
+
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 
@@ -125,6 +127,12 @@ class DispatchOutcome:
     that printed no reason, which is a different fact from a terminal that
     printed an empty one; both arrive here as None because the distinction is
     not one any reader of this field acts on.
+
+    `hook_over_limit` is the `hook-over-limit` event this run's output reported,
+    if it reported one. It is carried here rather than re-parsed by the cause
+    writer for the reason `journal_hook_over_limit` records: the journal row and
+    the needs-human cause must describe ONE reading, and a second parse of the
+    same output is a second reading nothing could prove agrees with the first.
     """
 
     work_item_id: str
@@ -147,6 +155,7 @@ class DispatchOutcome:
     needs_human_kind: str | None = None
     needs_human_stages: tuple[str, ...] | None = None
     needs_human_reason: str | None = None
+    hook_over_limit: HookOverLimit | None = None
 
 
 SleepFn = Callable[[float], None]

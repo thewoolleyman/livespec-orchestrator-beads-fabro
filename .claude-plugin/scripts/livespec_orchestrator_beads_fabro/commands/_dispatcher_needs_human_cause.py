@@ -56,6 +56,9 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit import (
+    hook_over_limit_cause_lines,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
@@ -194,6 +197,18 @@ def _attribution(*, outcome: DispatchOutcome) -> tuple[str, ...]:
     if outcome.fabro_failure_cause is not None:
         lines.append(f"innermost cause: {_safe(text=outcome.fabro_failure_cause)}")
         lines.extend(_fault(cause=outcome.fabro_failure_cause))
+    # The hook-over-limit classification, when the ending is attributed to one.
+    #
+    # OUR OWN TEXT, so it does not pass through `_safe`: every field is an
+    # enumerated node name, an enumerated operation, or an integer this
+    # module's own parse produced, and none of it is engine prose that could
+    # carry a MiniJinja opener or a tokenized URL.
+    #
+    # It is rendered only under STAGE_FAILURE, which is what keeps a RECOVERED
+    # event from being named as the cause of a later ending: the clause forbids
+    # exactly that, and the event reaching this writer at all means the run
+    # ended on the stage the observation came from.
+    lines.extend(hook_over_limit_cause_lines(event=outcome.hook_over_limit))
     if outcome.fabro_failure_category is not None:
         lines.append(f"failure category: {outcome.fabro_failure_category}")
     if outcome.fabro_failure_signature is not None:

@@ -63,6 +63,26 @@ likely to need the bound re-chosen between the two figures, and the shipped
 figure plus `CODEX_FRESHNESS_MARGIN_SECONDS` now demands 640635 of a token's
 remaining life, so a ten-day Codex token has to be under about 2.59 days old
 to pass the freshness gate.
+
+Budgeting the two PUBLICATION stages for an hour each (`bd-ib-xi63mq`,
+Scenario 177 -- `publish_draft` and `pr_refresh` run this repository's declared
+check suite inside a push hook) moves both again. This is a RE-MEASUREMENT
+against the payload and the `.livespec.jsonc` in THIS tree, not a figure
+carried over from the earlier attempt at this item: that attempt measured
+555125 and 834125 against a tree whose `fix.max_visits` and `pr_refresh`
+predecessor set predate v134 and v135, so neither of its figures survives
+here. Measured now: 665835 seconds shipped and 1006035 at the retired `"15m"`,
+so the bound moves to 680000 to stay between the two, with 14165 seconds of
+headroom. That also retires the janitor reasoning two paragraphs above -- the
+"largest value that stayed under the bound" was derived against the 530000
+bound of that day rather than against a property of 4340 -- while the janitor
+entry itself is untouched. The derived figure in the paragraph above moves with
+it: the shipped figure plus `CODEX_FRESHNESS_MARGIN_SECONDS` now demands 669435
+of a token's remaining life, so a ten-day Codex token has to be under about
+2.25 days old to pass the freshness gate. The bound moving is not a relaxation
+of the enforcement that matters: `credential_deadline_epoch` still caps every
+run at the token's OBSERVED expiry minus its margin, and this figure is the
+allowance a graph may ASK for, not a lifetime anything grants.
 """
 
 from __future__ import annotations
@@ -83,12 +103,12 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 
 # The bound the freshness requirement has to sit under, and the figure the
 # RETIRED `"15m"` resolved. The bound is deliberately looser than the measured
-# 637035 seconds this budget yields: the requirement also sums the resolved node
+# 665835 seconds this budget yields: the requirement also sums the resolved node
 # timeouts, so pinning it exactly would make every unrelated timeout edit fail
 # this case. The control below pins the 15m figure exactly, because that one is
 # the thing being moved away from and a drifting comparand would hide the move.
-_FRESHNESS_BOUND_SECONDS = 650_000
-_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 977_235
+_FRESHNESS_BOUND_SECONDS = 680_000
+_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_006_035
 
 
 def _checkpoint() -> dict[str, Any]:
@@ -151,7 +171,7 @@ def test_the_checkpoint_budget_holds_the_credential_freshness_floor_under_the_bo
     that happened to shrink -- a pass earned by something this item never
     touched. The control re-resolves the SAME payload with only the checkpoint
     budget restored to the retired `"15m"` and requires it to land ABOVE the
-    bound at exactly the measured 958455 seconds, which is what makes the first
+    bound at exactly the measured 1006035 seconds, which is what makes the first
     assertion evidence about this declaration rather than about the graph.
 
     The replacement is asserted to match exactly once before it is applied: a
