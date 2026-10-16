@@ -395,22 +395,51 @@
       // suite running here rather than delegating it to a cluster nobody has
       // proven on this host.
       //
-      // WHY THE CLUSTER. The suite is the heaviest recurring load the
-      // dispatching host carries, and it is pure CPU on a tree the cluster can
-      // reconstruct from the pushed tree hash alone. The deferral that asked
-      // for this is the archived livespec plan k3s-on-gmktec-for-vps-usage
-      // (epic livespec-sab5gn), reconsidered once R4 — the delegated pre-push
-      // gate — had been live-exercised with independent replays on 2026-10-12
-      // and 2026-10-13.
-      //
       // A LOST VERDICT IS RED, NOT GREEN, and that is not configurable: a gate
       // that was asked and did not answer reports the post-merge gate failed
       // naming the missing cluster verdict, because an item must never close on
-      // a reading nobody took. The host that reconciles a merge therefore needs
-      // a readable gates credential; without one the gate reaches no verdict
-      // and the item stays open until it does.
+      // a reading nobody took. That holds for whichever venue is declared here;
+      // it is the cluster arm's verdict reading, not this key's doing.
+      //
+      // THIS REPOSITORY DECLARES `host_local`, DELIBERATELY AND FOR NOW, and
+      // the reason is a property of the shared gate pod rather than of this
+      // host. The gate Job's command is fixed in the shared dev-tooling
+      // package's `ci-runner/k3s/phase2/gates/gate-job-template.yaml` as four
+      // `just` invocations under `set -euo pipefail`:
+      // `just install-worktree-pack`, `just install-commit-refuse-hooks`,
+      // `just warm-typecheck`, `just hook_gate=1 check`. THE LAST TWO DO NOT
+      // EXIST HERE. Measured against this tree: `just --summary` lists `check`,
+      // `install-commit-refuse-hooks` and `install-worktree-pack` and carries no
+      // `warm-typecheck` recipe, and this repository's justfile declares no
+      // `hook_gate` variable, so `just hook_gate=1 check` exits 1 with
+      // "error: Variable hook_gate overridden on the command line but not
+      // present in justfile". Scope searched: this repository's full
+      // `just --summary`, its `justfile` and its `dev-tooling/*.just`.
+      //
+      // So declaring `cluster_job` here would abort the pod on a GREEN TREE,
+      // the gate would return FAILED, and the post-merge janitor would report
+      // red for every merge — after the work had already landed, which is the
+      // one moment nothing can re-run. That is not a gate finding a defect; it
+      // is a venue this repository cannot be judged in.
+      //
+      // WHAT HAS TO CHANGE TO FLIP THIS KEY. Either that shared template's pod
+      // command becomes repo-agnostic — which is that package's change to make,
+      // not this file's, exactly as the pinned `origin/master` range base is —
+      // or this repository supplies what the command names. Note that the
+      // second route alone is NOT sufficient for this item's Definition of
+      // Done: `just hook_gate=1 check` is deliberately the dev-tooling PRE-PUSH
+      // surrogate aggregate, with `hook_gate_skips` applied and this
+      // repository's own leading janitor targets absent, so it is a different
+      // and weaker target set than the fresh-checkout suite the janitor
+      // declares. The cluster mechanism itself stays live and selectable: it is
+      // this repository's declaration that waits, not the code.
+      //
+      // The deferral that asked for the move is the archived livespec plan
+      // k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn), reconsidered once
+      // R4 — the delegated pre-push gate — had been live-exercised with
+      // independent replays on 2026-10-12 and 2026-10-13.
       "janitor": {
-        "venue": "cluster_job"
+        "venue": "host_local"
       },
       // Detection-coverage anchor: the ledger item the two detection skills
       // (capture-impl-gaps, capture-spec-drift) append their attributed ATTEMPT
