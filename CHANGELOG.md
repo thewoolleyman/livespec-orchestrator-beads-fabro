@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.201.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.5...v0.201.6) (2026-10-16)
+
+
+### Bug Fixes
+
+* **dispatcher:** resolve the harness settings source at the clone root ([5f80f7e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5f80f7ee5559d8fca9d7c4aa5cd0dac4b8b6bb1a))
+* **dispatcher:** write the harness shell ceilings into the sandbox settings file ([b12f69a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b12f69ac9944faa504e764941581fcbd919b851a))
+
 ## [0.201.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.201.4...v0.201.5) (2026-10-16)
 
 
