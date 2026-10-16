@@ -203,7 +203,9 @@ def _recorded_hold(*, repo: Path) -> Path:
     )
     assert outcome is not None
     assert outcome.provider_usage_limit is True
-    record_provider_exhaustion_if_observed(outcome=outcome, journal=journal, now_iso=_NOW)
+    record_provider_exhaustion_if_observed(
+        outcome=outcome, journal=journal, journal_path=journal_path, now_iso=_NOW
+    )
     return journal_path
 
 

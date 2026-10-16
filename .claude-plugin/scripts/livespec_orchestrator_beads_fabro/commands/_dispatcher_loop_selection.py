@@ -298,6 +298,7 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     record_provider_exhaustion_if_observed(
         outcome=outcome,
         journal=journal,
+        journal_path=journal.path,
         now_iso=utc_now_iso(),
     )
     # "After a run reaches any terminal outcome ... read the run's events

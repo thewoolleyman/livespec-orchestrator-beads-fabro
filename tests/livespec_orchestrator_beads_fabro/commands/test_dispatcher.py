@@ -4156,6 +4156,10 @@ def test_provider_usage_limit_outcome_records_dispatcher_owned_expiry(
             "stage": "provider-exhaustion-observed",
             "work_item_id": item.id,
             "provider": "codex",
+            # An explicit null: this dispatch's admission journaled no
+            # session-headroom assessment, so no credential identity was
+            # projected for it and the record keeps vendor-wide coverage.
+            "credential_identity": None,
             "governing_condition": "provider_usage_limit",
             "record_expires_at": "2026-08-23T10:15:00Z",
         }

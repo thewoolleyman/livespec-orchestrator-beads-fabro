@@ -129,6 +129,11 @@ def _item(
 @dataclass(kw_only=True)
 class _RecordingJournal:
     records: list[dict[str, object]] = field(default_factory=list)
+    # An in-memory journal has no file, and `None` is the honest answer
+    # for it: the credential-identity read on the mint path asks this
+    # journal where its own history lives, and a double that recorded
+    # nothing on disk has none to offer.
+    path: Path | None = None
 
     def append(self, *, record: dict[str, object]) -> None:
         self.records.append(record)
