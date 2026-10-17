@@ -43,6 +43,19 @@ instead.
   the line reports a correct observation while permanently retiring the
   carry-forward route.
 
+- `test_proof_capture_git_history_anchoring.py` — bd-ib-ltjrn: the proof-capture
+  prompt's `Deterministic` bullet requires a reproduction step that reads git
+  history to name a fixed commit sha or use a depth-independent predicate,
+  never a fixed-size window counted from HEAD; it carries the reason (the
+  engine appends a checkpoint commit after every node, so HEAD moves between
+  capture and replay) and one worked example per verdict. The needles are
+  scoped to that BULLET rather than the whole prompt, because the record's
+  own "read the head from the forge, not the clone" paragraph would satisfy a
+  whole-file probe over a bullet that said nothing. A prompt test because the
+  steps are authored by the agent out of this prose and rendered by no Python
+  caller: a HEAD-anchored step passes capture and surfaces one stage later as
+  a `not_reproduced` verdict against a correct implementation.
+
 - `test_implement_coverage_before_green.py` — bd-ib-z6fmp: the implement-stage
   prompt requires the repository's per-file coverage check to be run over the
   FULL suite, with every gap closed, BEFORE any Green commit or amend — the hook
