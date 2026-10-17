@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.207.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.207.0...v0.207.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **exhaustion:** clear every live record of the provider an operator names ([127f461](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/127f461d5eaf04ad968cecf540b87e330947affd))
+* **exhaustion:** key record liveness on the account as well as the vendor ([d1cfd13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d1cfd13a09e958d3cb1f6b0accb85a7676477ccc))
+* **exhaustion:** key the provider-exhaustion record on the credential account ([95c3ec2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/95c3ec2193a8d8390bd0fb2c367e62f96144da13))
+* **exhaustion:** refuse a dispatch whose projected account cannot be read ([384a237](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/384a237044236d7d72bea234fa0d13a8a7804f3e))
+* **exhaustion:** scope an account-named exhaustion record to that account ([028d6e0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/028d6e063043b6d2cdfed672112d33f14306c7c2))
+
 ## [0.207.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.206.0...v0.207.0) (2026-10-17)
 
 
