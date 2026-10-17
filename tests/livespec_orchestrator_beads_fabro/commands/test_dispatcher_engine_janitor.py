@@ -9,7 +9,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import post_merge
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import (
+    JANITOR_REMOVED_ENV_VARS,
+    janitor_env_delta,
+    post_merge,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_install_recipe import (
     JANITOR_BOOTSTRAP_KEY,
     JanitorBootstrapRecipe,
@@ -299,3 +303,20 @@ def test_post_merge_releases_lock_after_green(tmp_path: Path) -> None:
         "janitor-post-merge",
         "janitor-checkout-remove",
     ]
+
+
+def test_janitor_env_delta_adds_the_core_root_and_removes_every_scrubbed_name() -> None:
+    """The delta is one addition plus one removal entry per scrubbed variable.
+
+    The scrub set is asserted by LITERAL name rather than by comparing the
+    delta against the constant it is built from: the point of the entry is
+    WHICH variables it names, and a self-comparison would hold for a set that
+    named none of them.
+    """
+    delta = janitor_env_delta(core_plugin_root="/janitor-co/.livespec-core/.claude-plugin")
+
+    assert delta == {
+        "LIVESPEC_CORE_PLUGIN_ROOT": "/janitor-co/.livespec-core/.claude-plugin",
+        "LIVESPEC_FABRO_FACTORY": None,
+    }
+    assert "LIVESPEC_FABRO_FACTORY" in JANITOR_REMOVED_ENV_VARS

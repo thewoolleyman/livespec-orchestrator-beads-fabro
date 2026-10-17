@@ -1,4 +1,22 @@
-"""Post-merge janitor flow for the Dispatcher engine."""
+"""Post-merge janitor flow for the Dispatcher engine.
+
+THE CHECK RUN'S VERDICT IS ABOUT THE MERGE, NEVER ABOUT HOW THE DISPATCH WAS
+ROUTED. The janitor runs the target repository's check aggregate in a fresh
+checkout of the merged default-branch tip, inheriting this process's own
+environment -- which carries the variables the Dispatcher itself reads to
+select a factory and to attribute a journal record. Those describe THIS
+dispatch; they are not part of the merged code under test, and a governed
+repository's suite legitimately exercises the code that reads them, so
+inheriting them makes the verdict depend on the route. Measured 2026-10-17 on
+`bd-ib-o6aeji`: the merge commit was green on the default branch's own CI, the
+dispatch had been launched with the factory route exported, and the janitor
+went red on 25 tests in exactly those areas -- stranding an already-merged item
+`active` with no merge audit. Every merge dispatched through the documented
+env-var route to a non-default factory failed that way.
+
+The scrub reaches the RECONCILE janitor for free, because `reconcile-merged`
+re-runs the post-merge flow through this same `post_merge`.
+"""
 
 from __future__ import annotations
 
@@ -43,10 +61,38 @@ if TYPE_CHECKING:
         JournalWriter,
     )
 
-__all__: list[str] = ["post_merge"]
+__all__: list[str] = [
+    "JANITOR_REMOVED_ENV_VARS",
+    "janitor_env_delta",
+    "post_merge",
+]
 
 _GIT_TIMEOUT_SECONDS = 600.0
 _JANITOR_TIMEOUT_SECONDS = 3600.0
+
+# The dispatcher's factory-routing and invoker-attribution variables, removed
+# from the janitor's check run. Spelled here rather than imported, because each
+# reader holds its own PRIVATE constant for the same name (`_ENV_FABRO_FACTORY`
+# in `_config` and in `_dispatcher_factory_ledger`) and a cross-module private
+# import is the one thing this package's layering forbids. A later variable the
+# Dispatcher reads to select a factory or to attribute a journal record belongs
+# in this tuple.
+JANITOR_REMOVED_ENV_VARS: tuple[str, ...] = ("LIVESPEC_FABRO_FACTORY",)
+
+
+def janitor_env_delta(*, core_plugin_root: str) -> dict[str, str | None]:
+    """The janitor check run's environment delta: one addition, the scrub as removals.
+
+    Every other value the Dispatcher's environment carries is retained, because
+    the check needs the credentials and the toolchain path it was invoked with.
+    A removal is unconditional rather than conditioned on presence: removing a
+    name this process does not carry is a no-op, so the delta states the whole
+    scrub set instead of a reading of which members happened to be set.
+    """
+    return {
+        CORE_PLUGIN_ROOT_ENV_VAR: core_plugin_root,
+        **dict.fromkeys(JANITOR_REMOVED_ENV_VARS),
+    }
 
 
 def post_merge(
@@ -129,7 +175,7 @@ def _post_merge_locked(
             list(plan.janitor),
             plan.janitor_checkout,
             _JANITOR_TIMEOUT_SECONDS,
-            {CORE_PLUGIN_ROOT_ENV_VAR: str(plan.janitor_core_checkout / ".claude-plugin")},
+            janitor_env_delta(core_plugin_root=str(plan.janitor_core_checkout / ".claude-plugin")),
         ),
         # The check suite is the command whose red the retention clause exists
         # for: its excerpt names the suite, and the failing target it reports

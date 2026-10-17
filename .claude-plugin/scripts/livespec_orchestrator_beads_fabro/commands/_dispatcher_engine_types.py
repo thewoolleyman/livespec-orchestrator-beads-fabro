@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
@@ -187,11 +187,20 @@ class CommandRunner(Protocol):
         argv: list[str],
         cwd: Path,
         timeout_seconds: float,
-        env: dict[str, str] | None = None,
+        env: Mapping[str, str | None] | None = None,
         stdin: int | None = None,
     ) -> CommandResult:
         """Run argv in cwd, returning the completed result (never raising
-        for non-zero exits; timeouts surface as non-zero results)."""
+        for non-zero exits; timeouts surface as non-zero results).
+
+        `env` is the child's environment DELTA against this process, not the
+        whole environment: a string value SETS the variable and a `None` value
+        REMOVES it. The removal arm exists because a caller cannot express
+        "without this variable" through a mapping that is merged over
+        `os.environ` -- the post-merge janitor needs exactly that, and doing it
+        by mutating `os.environ` around the call would reach every concurrent
+        dispatch thread in the same process.
+        """
         ...
 
 
