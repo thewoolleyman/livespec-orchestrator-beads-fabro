@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.211.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.211.2...v0.211.3) (2026-10-17)
+
+
+### Bug Fixes
+
+* **proof-capture:** anchor a git-history reproduction step to a fixed sha ([3578320](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3578320f708f0aac196b33027622076ac0917603))
+* **proof-capture:** give the moving-HEAD reason inside the anchoring rule ([2529dcc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2529dccc827f9e06a32d81253b2297541d478807))
+* **proof-capture:** work the anchoring rule with a rejected and an accepted example ([21d59e8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/21d59e80262ffe94addc2e96c670f310385bace3))
+
 ## [0.211.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.211.1...v0.211.2) (2026-10-17)
 
 
