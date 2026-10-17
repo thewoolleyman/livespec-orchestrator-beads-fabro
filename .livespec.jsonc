@@ -391,9 +391,10 @@
       // checkout's tree is pushed to the gates mirror, a gate Job runs the
       // suite in a pod, and this host reports that Job's own verdict. The
       // alternative is `host_local`, which is also what silence means, and
-      // which is where every doubt resolves — an unrecognised word keeps the
-      // suite running here rather than delegating it to a cluster nobody has
-      // proven on this host.
+      // which is where every doubt resolves — an absent block, an absent key, a
+      // value of the wrong type and an unrecognised word all keep the suite
+      // running here, because only a declaration spelling the cluster value
+      // exactly should move a repository's gate onto another machine.
       //
       // A LOST VERDICT IS RED, NOT GREEN, and that is not configurable: a gate
       // that was asked and did not answer reports the post-merge gate failed
@@ -401,45 +402,53 @@
       // a reading nobody took. That holds for whichever venue is declared here;
       // it is the cluster arm's verdict reading, not this key's doing.
       //
-      // THIS REPOSITORY DECLARES `host_local`, DELIBERATELY AND FOR NOW, and
-      // the reason is a property of the shared gate pod rather than of this
-      // host. The gate Job's command is fixed in the shared dev-tooling
-      // package's `ci-runner/k3s/phase2/gates/gate-job-template.yaml` as four
-      // `just` invocations under `set -euo pipefail`:
-      // `just install-worktree-pack`, `just install-commit-refuse-hooks`,
-      // `just warm-typecheck`, `just hook_gate=1 check`. THE LAST TWO DO NOT
-      // EXIST HERE. Measured against this tree: `just --summary` lists `check`,
-      // `install-commit-refuse-hooks` and `install-worktree-pack` and carries no
-      // `warm-typecheck` recipe, and this repository's justfile declares no
-      // `hook_gate` variable, so `just hook_gate=1 check` exits 1 with
-      // "error: Variable hook_gate overridden on the command line but not
-      // present in justfile". Scope searched: this repository's full
-      // `just --summary`, its `justfile` and its `dev-tooling/*.just`.
+      // THIS REPOSITORY DECLARES `cluster_job`, AND IT PREVIOUSLY DECLARED
+      // `host_local` FOR A REASON THAT IS NOW GONE. That reason was a property
+      // of the shared gate pod rather than of this repository: the Job's
+      // command used to be fixed in the dev-tooling package as four `just`
+      // invocations ending in `just warm-typecheck` and `just hook_gate=1
+      // check`, neither of which exists here, so the pod aborted on a GREEN
+      // TREE — measured 2026-10-17 as Job
+      // `gate-livespec-orchestrator-beads-fabro-ee118f8fd5dc`, which died with
+      // "error: Variable 'hook_gate' overridden on the command line but not
+      // present in justfile" against a tree whose master CI was green.
       //
-      // So declaring `cluster_job` here would abort the pod on a GREEN TREE,
-      // the gate would return FAILED, and the post-merge janitor would report
-      // red for every merge — after the work had already landed, which is the
-      // one moment nothing can re-run. That is not a gate finding a defect; it
-      // is a venue this repository cannot be judged in.
+      // THAT POD COMMAND IS NOW REPO-AGNOSTIC. The pinned dev-tooling resolves
+      // it through `gate_remote_delegate.declared_gate_check_suite`, which
+      // reads a `gate_check_suite` declaration out of the consuming
+      // repository's own `[tool.livespec_dev_tooling]` block and otherwise
+      // falls through to `install-worktree-pack`,
+      // `install-commit-refuse-hooks`, `check-pre-push`. Measured against this
+      // tree: `just --summary` lists all three of those recipes and this
+      // repository's `pyproject.toml` declares no `gate_check_suite`, so the
+      // Job runs that fall-through — this repository's own pre-push aggregate,
+      // not another repository's recipes. Scope searched: this repository's
+      // full `just --summary` and its `pyproject.toml`.
       //
-      // WHAT HAS TO CHANGE TO FLIP THIS KEY. Either that shared template's pod
-      // command becomes repo-agnostic — which is that package's change to make,
-      // not this file's, exactly as the pinned `origin/master` range base is —
-      // or this repository supplies what the command names. Note that the
-      // second route alone is NOT sufficient for this item's Definition of
-      // Done: `just hook_gate=1 check` is deliberately the dev-tooling PRE-PUSH
-      // surrogate aggregate, with `hook_gate_skips` applied and this
-      // repository's own leading janitor targets absent, so it is a different
-      // and weaker target set than the fresh-checkout suite the janitor
-      // declares. The cluster mechanism itself stays live and selectable: it is
-      // this repository's declaration that waits, not the code.
+      // THE POSITIVE CONTROL IS A REAL JOB, not that measurement. Gate Job
+      // `gate-livespec-orchestrator-beads-fabro-1c5e8de33c1f` in namespace
+      // `gates` ran this repository's own declared suite against tree
+      // 1c5e8de33c1f5c1376e7027e89a6d7d55de03fa1 (master 655306cb, `ci-green`
+      // success) under livespec-dev-tooling v1.112.5 and reported PASSED, 92
+      // targets and 0 failed, with livespec core resolved at v0.42.1.
+      //
+      // WHAT IS STILL A PREMISE OF THE DISPATCHING HOST, AND WHICH WAY IT
+      // FAILS. The cluster venue reaches the gate FROM that host, so it needs
+      // the host's gates kubeconfig and a `render-gate-job.sh` — the in-repo
+      // copy, or the converged
+      // `/usr/local/lib/ci-runner-k3s/gates/render-gate-job.sh`. The client
+      // returns the converged path unchecked on purpose, so an absent one fails
+      // AT THE SEAM: the run reports `NO_VERDICT` and the paragraph above turns
+      // that into a RED post-merge outcome naming the missing cluster verdict.
+      // A host that cannot reach the gate therefore makes merges loud rather
+      // than falsely green.
       //
       // The deferral that asked for the move is the archived livespec plan
       // k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn), reconsidered once
       // R4 — the delegated pre-push gate — had been live-exercised with
       // independent replays on 2026-10-12 and 2026-10-13.
       "janitor": {
-        "venue": "host_local"
+        "venue": "cluster_job"
       },
       // Detection-coverage anchor: the ledger item the two detection skills
       // (capture-impl-gaps, capture-spec-drift) append their attributed ATTEMPT
