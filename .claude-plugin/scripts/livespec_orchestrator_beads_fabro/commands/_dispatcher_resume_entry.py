@@ -76,6 +76,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import (
 
 __all__: list[str] = [
     "RESUME_ENTRY_NODE_ARG",
+    "RESUME_FETCH_REF_ARG",
     "RESUME_HEAD_ARG",
     "ResumeCheckout",
     "graph_entered_at",
@@ -83,13 +84,20 @@ __all__: list[str] = [
     "resume_checkout_prepare_steps_block",
 ]
 
-# The two `argparse.Namespace` attributes a resume carries into the ordinary
-# dispatch path. Named constants rather than literals because they are read
-# DEFENSIVELY at two seams that no other command sets them at, and a typo at
-# either read is invisible: the attribute simply resolves absent, the dispatch
-# proceeds as a plain one, and the resumed run re-implements from `start`.
+# The `argparse.Namespace` attributes a resume or a seeded recovery carries into
+# the ordinary dispatch path. Named constants rather than literals because they
+# are read DEFENSIVELY at two seams that no other command sets them at, and a typo
+# at either read is invisible: the attribute simply resolves absent, the dispatch
+# proceeds as a plain one, and the run re-implements from `start`.
 RESUME_ENTRY_NODE_ARG = "resume_entry_node"
 RESUME_HEAD_ARG = "resume_head"
+
+# WHICH REF THE HEAD IS FETCHED FROM, for a placement whose commit is not on the
+# publish branch. A SEEDED recovery route is the one such caller: its commit lives
+# on a preservation ref, and the publish branch it would otherwise fetch is the
+# one the reclaim deletes before the run starts. Absent for a resume, which fetches
+# the publish branch the resumed run goes on to push to.
+RESUME_FETCH_REF_ARG = "resume_fetch_ref"
 
 # The unconditional `start` edge, as the committed graph spells it: a bare
 # `start -> <target>` line carrying no attribute list. The CONDITIONAL form is
@@ -139,17 +147,25 @@ _START_NODE = "start"
 
 @dataclass(frozen=True, kw_only=True)
 class ResumeCheckout:
-    """The publish branch and head one resumed run's sandbox is placed on.
+    """The ref and head one run's sandbox is placed on, before anything else runs.
 
-    A pair rather than the head alone, because the fetch needs the BRANCH and the
+    A pair rather than the head alone, because the fetch needs a REF and the
     checkout needs the HEAD, and taking the head from a branch tip read at
     prepare time would defeat the whole point: the tip may have moved since the
     record was published, which is precisely the state the head-moved refusal
     exists to catch.
+
+    `fetch_ref` overrides WHICH ref is fetched and is absent for a resume, whose
+    head is on the publish branch by construction. A SEEDED recovery route
+    supplies it, because its commit lives on a preservation ref and the publish
+    branch is the one the reclaim deletes before that run starts — so a fetch of
+    the branch would ask origin for a ref that is already gone, and the step would
+    fail the run rather than place it anywhere.
     """
 
     branch: str
     head: str
+    fetch_ref: str | None = None
 
 
 def graph_entered_at(*, graph_text: str, node: str) -> str | None:
@@ -303,16 +319,17 @@ def resume_checkout_prepare_steps_block(*, checkout: ResumeCheckout | None) -> s
     """
     if checkout is None:
         return ""
+    ref = checkout.fetch_ref or f"refs/heads/{checkout.branch}"
     script = " && ".join(
         (
             "set -e",
-            f"git fetch --no-tags origin {shlex.quote(f'refs/heads/{checkout.branch}')}",
+            f"git fetch --no-tags origin {shlex.quote(ref)}",
             f"git checkout --detach {shlex.quote(checkout.head)}",
         )
     )
     return (
-        "\n# --- Dispatcher-materialized resume checkout: the publish branch at the\n"
-        "# --- head the anchoring Proof of Done record names ---\n"
+        "\n# --- Dispatcher-materialized recovery checkout: the ref the recorded\n"
+        "# --- head lives on, at that head ---\n"
         "[[run.prepare.steps]]\n"
         f"script = {_toml_basic_string(value=script)}\n"
     )
@@ -338,7 +355,12 @@ def resume_checkout_for(*, args: argparse.Namespace, branch: str) -> ResumeCheck
     head = getattr(args, RESUME_HEAD_ARG, None)
     if not isinstance(head, str) or not head:
         return None
-    return ResumeCheckout(branch=branch, head=head)
+    fetch_ref = getattr(args, RESUME_FETCH_REF_ARG, None)
+    return ResumeCheckout(
+        branch=branch,
+        head=head,
+        fetch_ref=fetch_ref if isinstance(fetch_ref, str) and fetch_ref else None,
+    )
 
 
 def _toml_basic_string(*, value: str) -> str:

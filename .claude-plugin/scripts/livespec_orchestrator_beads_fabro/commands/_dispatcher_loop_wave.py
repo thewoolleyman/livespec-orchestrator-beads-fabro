@@ -129,7 +129,9 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
     admission = admit_and_select(
         repo=repo,
         items=items,
-        candidates=selected_candidates,
+        # A HELD item is withheld from the valve, which is the whole of "it stays
+        # `ready`": the valve is the only thing that writes `ready -> active`.
+        candidates=routing.offered(candidates=selected_candidates),
         journal=journal,
         enforce_cap=True,
         rework=rework,
@@ -202,5 +204,8 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
         dispatched = [future.result() for future in futures]
     # Held / host-only-refused items ride in the outcomes so the verdict and
     # post-verdict alarm see them; capacity-deferred items ride along too, but
-    # verdict/alarm classification treats them as non-defects.
-    return admission.refused + admission.deferred + dispatched
+    # verdict/alarm classification treats them as non-defects. A RECOVERY-held
+    # item rides on the same terms the clause gives it — "reported as a deferred
+    # outcome on the same terms as a capacity deferral" — so a drain that held one
+    # reports it rather than returning a wave that silently lost a candidate.
+    return admission.refused + admission.deferred + routing.held_outcomes() + dispatched
