@@ -156,7 +156,17 @@ def _checkpoint_completed_route(
     """
     completed_raw: object = checkpoint.get("completed_nodes")
     outcomes_raw: object = checkpoint.get("node_outcomes")
-    current_raw = cast("str", checkpoint.get("current_node"))
+    current_raw: object = checkpoint.get("current_node")
+    # FAIL CLOSED on a checkpoint whose own shape cannot be read. An unreadable
+    # node list or outcome map is a failure to MEASURE the route, not a route
+    # that was measured and found complete -- and the natural coding of "no
+    # missing stage found" is a pass earned on data nobody could read.
+    if (
+        not isinstance(completed_raw, list)
+        or not isinstance(outcomes_raw, dict)
+        or not isinstance(current_raw, str)
+    ):
+        return False
     completed = frozenset(
         item for item in cast("list[object]", completed_raw) if isinstance(item, str)
     )
