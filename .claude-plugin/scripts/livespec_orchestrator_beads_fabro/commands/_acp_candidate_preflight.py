@@ -85,9 +85,11 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_projection
 )
 
 __all__: list[str] = [
+    "FLOOR_SKIP_KIND",
     "HEADROOM_SKIP",
     "LEGACY_HOLD_SKIP",
     "PROBE_SKIP",
+    "PROJECTION_SKIP_KIND",
     "PROVIDER_LIMIT_CONDITIONS",
     "TYPED_HOLD_SKIP",
     "NodePreflight",
@@ -102,6 +104,16 @@ TYPED_HOLD_SKIP = "typed-availability-hold"
 LEGACY_HOLD_SKIP = "legacy-provider-hold"
 PROBE_SKIP = "credential-probe-refusal"
 HEADROOM_SKIP = "session-headroom-shortfall"
+
+# WHICH of the two headroom shortfalls decided one `HEADROOM_SKIP`. They are a
+# second field rather than a second skip reason because the clause gives a
+# projection skip "exactly the semantics of a floor skip" -- every surface
+# keying on the reason must treat them alike -- while also requiring the
+# records to "name a projection skip as a projection skip, distinct from a
+# floor skip". A reason-level split would have satisfied the second at the cost
+# of the first.
+FLOOR_SKIP_KIND = "floor"
+PROJECTION_SKIP_KIND = "projection"
 
 # The ONLY probe conditions that produce an ephemeral skip. Every other refusal
 # -- absent, revoked, denied, unassessable -- is a fault no fallback repairs, so
@@ -131,6 +143,16 @@ class SkippedCandidate:
     of a usage window, not a provider refusal of any kind, and the clause
     forbids representing it as an observed hold. The floor travels with the
     reading because neither is interpretable without the other.
+
+    `headroom_horizon_minutes` and `headroom_skip_kind` complete that triple
+    for the PROJECTED half. The horizon is the second governing dial and is no
+    more interpretable apart from the reading than the floor is -- a reader
+    seeing an exhaustion two hours out cannot say whether it was refused
+    without knowing what horizon was in force. The kind is recorded at the
+    moment the skip is decided rather than re-derived later from the reading,
+    because the two shortfalls are not exclusive: a reading can sit below the
+    floor AND project an exhaustion inside the horizon, and only the filter
+    knows which test actually stopped the candidate.
     """
 
     availability_key: str | None
@@ -142,6 +164,24 @@ class SkippedCandidate:
     condition: str | None = None
     headroom: SessionHeadroomReading | None = None
     headroom_floor_percent: int | None = None
+    headroom_horizon_minutes: int | None = None
+    headroom_skip_kind: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class _HeadroomShortfall:
+    """The four facts ONE headroom skip is recorded from, as one value.
+
+    Grouped rather than passed as four parameters because they are one
+    measurement and its two governing dials: a caller holding three of them is
+    holding an incomplete account, and the ephemeral-skip factory serves the
+    probe refusal too, which carries none of them.
+    """
+
+    reading: SessionHeadroomReading
+    floor_percent: int
+    horizon_minutes: int
+    kind: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -307,15 +347,36 @@ def _headroom_skip(
     reading = policy.read()
     if reading not in assessments:
         assessments.append(reading)
-    if headroom_skips_candidate(
-        reading=reading, floor_percent=policy.floor_percent
-    ) or projection_skips_candidate(reading=reading):
-        return _ephemeral_skip(
-            candidate=candidate,
-            reason=HEADROOM_SKIP,
-            headroom=reading,
-            headroom_floor_percent=policy.floor_percent,
-        )
+    kind = _headroom_skip_kind(reading=reading, floor_percent=policy.floor_percent)
+    if kind is None:
+        return None
+    return _ephemeral_skip(
+        candidate=candidate,
+        reason=HEADROOM_SKIP,
+        shortfall=_HeadroomShortfall(
+            reading=reading,
+            floor_percent=policy.floor_percent,
+            horizon_minutes=policy.horizon_minutes,
+            kind=kind,
+        ),
+    )
+
+
+def _headroom_skip_kind(*, reading: SessionHeadroomReading, floor_percent: int) -> str | None:
+    """Which headroom shortfall stops this candidate, or `None` for neither.
+
+    THE FLOOR IS TESTED FIRST, and the order is the reported kind rather than
+    an optimization. The two tests are not exclusive -- a reading below the
+    floor whose window is also projected to empty inside the horizon fails both
+    -- and the floor is the one an operator can act on directly, so a skip
+    reporting `projection` there would point at a dial that was never the
+    binding constraint. It is also the only order under which an unobservable
+    reading, which has no projection to be refused by, reports the floor.
+    """
+    if headroom_skips_candidate(reading=reading, floor_percent=floor_percent):
+        return FLOOR_SKIP_KIND
+    if projection_skips_candidate(reading=reading):
+        return PROJECTION_SKIP_KIND
     return None
 
 
@@ -344,8 +405,7 @@ def _ephemeral_skip(
     candidate: AcpCandidate,
     reason: str,
     condition: str | None = None,
-    headroom: SessionHeadroomReading | None = None,
-    headroom_floor_percent: int | None = None,
+    shortfall: _HeadroomShortfall | None = None,
 ) -> SkippedCandidate:
     """A skip THIS EVALUATION decided, carrying no typed availability cause.
 
@@ -361,8 +421,10 @@ def _ephemeral_skip(
         candidate_key=candidate_key,
         reason=reason,
         condition=condition,
-        headroom=headroom,
-        headroom_floor_percent=headroom_floor_percent,
+        headroom=None if shortfall is None else shortfall.reading,
+        headroom_floor_percent=None if shortfall is None else shortfall.floor_percent,
+        headroom_horizon_minutes=None if shortfall is None else shortfall.horizon_minutes,
+        headroom_skip_kind=None if shortfall is None else shortfall.kind,
     )
 
 

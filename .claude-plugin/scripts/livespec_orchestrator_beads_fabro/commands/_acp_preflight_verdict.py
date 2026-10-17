@@ -100,6 +100,11 @@ class AcpPreflightVerdict:
     assessed_credentials: Mapping[str, str] = field(default_factory=dict)
     headroom_assessments: tuple[SessionHeadroomReading, ...] = ()
     session_headroom_floor_percent: int | None = None
+    # The SECOND governing dial, carried for the same reason and keyed on the
+    # same distinction: `None` means no policy was supplied, never "the horizon
+    # is zero". A horizon of 0 is a ratified setting that disables projection
+    # skips while retaining the computation and its record.
+    session_headroom_horizon_minutes: int | None = None
 
     @property
     def viable(self) -> bool:
@@ -177,6 +182,9 @@ def build_acp_preflight_verdict(
         headroom_assessments=_headroom_assessments(preflights=preflights),
         session_headroom_floor_percent=(
             None if inputs.headroom is None else inputs.headroom.floor_percent
+        ),
+        session_headroom_horizon_minutes=(
+            None if inputs.headroom is None else inputs.headroom.horizon_minutes
         ),
     )
 
