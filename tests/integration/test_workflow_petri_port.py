@@ -107,7 +107,27 @@ _CONDITION_RE = re.compile(r'condition[ \t]*=[ \t]*"(?P<value>[^"]*)"')
 # file's text is quoted (the fleet convention of livespec-dev-tooling-9yb4).
 _OPENER_RE = re.compile(r"\{[{#%]")
 
-_NODE_BLOCK_RE = re.compile(r"(?ms)^[ \t]*(?P<name>\w+)[ \t]*\[(?P<body>[^\]]*)\]")
+# A node's attribute body, read LINE-ORIENTED rather than by a `[^\]]*` body
+# pattern. That pattern ended a body at the first `]` ANYWHERE after the
+# opener, and a `]` is not rare inside a node script: it closes a shell
+# character class. `publish_draft` and `needs_human` each carry `*[!0-9]*`, so
+# each body truncated mid-script, each one's `script="` line lost the quote that
+# would have closed it, and both nodes fell out of the attribution entirely --
+# silently, because the remaining ten nodes still produced a plausible
+# non-empty scan. A graph carrying this work-item's own defect inside
+# `publish_draft` therefore read CLEAN through the refusal written to forbid it.
+#
+# A block body is every line between a bare `name [` opener and the `]` that
+# sits alone on its own line. That closer cannot occur inside an attribute,
+# because this graph writes one attribute per line and a DOT attribute string
+# holds no bare newline -- which is the property the old pattern needed and did
+# not have. The single-line `name [...]` form (`start` and `exit`) is a separate
+# pattern rather than a widening of this one, so neither shape's reading depends
+# on the other's.
+_NODE_BLOCK_RE = re.compile(
+    r"(?m)^[ \t]*(?P<name>\w+)[ \t]*\[[ \t]*\n(?P<body>(?:.*\n)*?)[ \t]*\]$"
+)
+_INLINE_NODE_RE = re.compile(r"(?m)^[ \t]*(?P<name>\w+)[ \t]*\[(?P<body>[^\n\]]*)\][ \t]*$")
 
 _VISIT_COUNT_FIELD = "node_visit_count"
 _RUN_ID_SOURCE = 'stdin_source="context.internal.run_id"'
@@ -139,12 +159,30 @@ def _conditions(*, text: str) -> dict[tuple[str, str], str]:
 
 
 def _node_bodies(*, text: str) -> dict[str, str]:
-    """Each declared node's attribute body, by node name."""
-    return {
+    """Each declared node's attribute body, by node name, in BOTH declared shapes."""
+    found = {
         match.group("name"): match.group("body")
-        for match in _NODE_BLOCK_RE.finditer(text)
-        if match.group("name") != "graph"
+        for pattern in (_INLINE_NODE_RE, _NODE_BLOCK_RE)
+        for match in pattern.finditer(text)
     }
+    return {name: body for name, body in found.items() if name != "graph"}
+
+
+def _declared_script_lines(*, text: str) -> list[str]:
+    """Every `script` attribute line in the FILE, attributed to no node at all.
+
+    The completeness control for the attribution above, and deliberately a
+    SECOND reading rather than a re-use of the first: a count derived from
+    `_node_bodies` would agree with itself however much that walk dropped, which
+    is exactly how the truncated body pattern reported a clean scan over ten of
+    this graph's twelve scripts.
+    """
+    return [
+        stripped
+        for line in text.splitlines()
+        if (stripped := line.strip()).startswith(_SCRIPT_ATTRIBUTE_PREFIX)
+        and stripped.endswith('"')
+    ]
 
 
 def _raw_node_scripts(*, text: str) -> dict[str, str]:
@@ -193,32 +231,65 @@ def test_no_node_script_carries_a_backslash_escaped_single_quote() -> None:
     compare as a number and a durable reason file holds its cause punctuated by
     stray quotes with no line ending. Different constructs, one cause.
 
-    THE MUTANT CONTROL RUNS FIRST, deliberately. A scan that reports an absence
-    for a living has to be shown capable of returning a HIT within its own scope
-    before its clean answer means anything: a prefix that stopped matching, a
-    body regex that stopped reaching the publication nodes, or a scan taken over
-    the PARSED graph (where the pattern cannot survive at all) would each report
-    exactly what a clean graph reports. The mutant is made from the committed
-    graph's own `pr` script rather than hand-authored, so it cannot rot into
-    something the scan would miss for an unrelated reason, and the finding is
-    asserted to NAME that node, since an offender a failure does not name sends
-    a reader through a ten-thousand-character attribute by hand. Its count is
-    asserted RELATIVE to the committed graph's own, so the control states what
-    the mutation ADDED rather than restating what the graph happens to carry.
+    THE SCOPE CONTROL RUNS FIRST, because the refusal's claim is about EVERY
+    node script and an instrument's reach is the half of that claim no clean
+    answer can establish. Every `script` attribute line in the file is counted
+    by a reading that attributes nothing, and the attribution must account for
+    all of them: when this case was first authored the body pattern truncated
+    each body at its first shell character class, so `publish_draft` and
+    `needs_human` were outside the scan and ten scripts of twelve passed for
+    twelve.
+
+    THE MUTANT CONTROLS RUN NEXT. A scan that reports an absence for a living
+    has to be shown capable of returning a HIT before its clean answer means
+    anything: a prefix that stopped matching, a body pattern that stopped
+    reaching a node, or a scan taken over the PARSED graph (where the pattern
+    cannot survive at all) would each report exactly what a clean graph reports.
+    Each mutant is made from the committed graph's own text rather than
+    hand-authored, so neither can rot into something the scan would miss for an
+    unrelated reason, and each finding is asserted to NAME its node, since an
+    offender a failure does not name sends a reader through a
+    ten-thousand-character attribute by hand. Counts are asserted RELATIVE to
+    the committed graph's own, so a control states what its mutation ADDED
+    rather than restating what the graph happens to carry.
+
+    THE TWO MUTANTS ARE NOT REDUNDANT, and the second is why this case was
+    revised. `pr` was inside the original scan's reach, so a mutant in it could
+    only ever show the instrument FUNCTIONS -- never that it is POINTED at the
+    whole graph. `publish_draft` is the node that reach excluded, and its
+    mutation is seeded in the `--jq` read of the pull-request number, the one
+    span of this family's own shape that node carries. A mutant only in the
+    reachable node is the exact control that passed while the blind spot stood.
     """
     text = _graph_text()
     scripts = _raw_node_scripts(text=text)
-    assert "pr" in scripts, sorted(scripts)
+    declared = _declared_script_lines(text=text)
+    assert declared != []
+    # The COUNT says the attribution dropped none of them -- and it also reports
+    # an attribution that collapsed two nodes onto one script, which a set
+    # comparison alone would call equal. The VALUES say each script the scan
+    # holds is one the file really declares, so the count cannot be met by
+    # inventing entries.
+    assert len(scripts) == len(declared), sorted(scripts)
+    assert set(scripts.values()) == {line[len(_SCRIPT_ATTRIBUTE_PREFIX) : -1] for line in declared}
+
     committed = _quoting_offenders(text=text)
 
-    wrapped = f"{_ESCAPED_SINGLE_QUOTE}.mergeCommit.oid{_ESCAPED_SINGLE_QUOTE}"
-    # ONE occurrence, so the control's arithmetic states a fixed addition rather
-    # than however many merge-commit reads the node happens to carry today.
-    mutant = text.replace("--jq '.mergeCommit.oid'", f"--jq {wrapped}", 1)
-    assert mutant != text
-    mutated = _quoting_offenders(text=mutant)
-    assert "pr" in mutated, sorted(mutated)
-    assert mutated["pr"] == committed.get("pr", 0) + 2
+    # Each replacement is bounded to ONE occurrence, so a control's arithmetic
+    # states a fixed addition of two quotes rather than however many reads its
+    # node happens to carry today -- `pr` carries this needle twice already, on
+    # one line, and a later visit may add more.
+    for node, needle in (
+        ("pr", "--jq '.mergeCommit.oid'"),
+        ("publish_draft", "--jq '.[0].number'"),
+    ):
+        assert node in scripts, sorted(scripts)
+        wrapped = needle.replace("'", _ESCAPED_SINGLE_QUOTE)
+        mutant = text.replace(needle, wrapped, 1)
+        assert mutant != text
+        mutated = _quoting_offenders(text=mutant)
+        assert node in mutated, (node, sorted(mutated))
+        assert mutated[node] == committed.get(node, 0) + 2
 
     assert committed == {}
 
