@@ -16,12 +16,31 @@ and then make it undispatchable -- a state that reads healthy on the status
 alone. The item below starts `auto` and must still be `auto` afterwards.
 
 REPLAY IS KEYED ON THE FACTORY, RUN AND FAILING NODE ATTEMPT, which is the
-clause's own key, and the two replay cases are not one case twice. An
+clause's own key, and the three replay cases are not one case repeated. An
 interrupted release must COMPLETE -- exactly one record, no second hold, and
 no refreshed expiry -- while a replay arriving after a NEWER dispatch has
 claimed the item must leave that claim alone. The second is the destructive
 direction: the resulting row is byte-identical to a correct first release, so
 nothing downstream could tell a live run's stolen claim from a healthy one.
+
+THE THIRD CASE IS THE ONE THE RELEASE ROW ALONE CANNOT ANSWER: a pass whose
+ledger transition never landed. The clause requires reconciliation to complete
+"any interrupted hold, release, cost-observation, and LEDGER-TRANSITION
+writes", and the transition is deliberately fail-soft, so a release row can sit
+in the journal beside an item that is still `active` with `fabro` assigned. A
+replay reading only its own release row calls that state already-released and
+leaves the item holding a WIP slot with no run -- invisible to admission and to
+`next`, which is the strand this whole clause exists to retire. So the replay
+is settled against the ITEM's own status and assignee, not against the row
+alone.
+
+AND THE JOURNAL READING MUST NOT BE BLINDABLE. The newer-dispatch-claim guard
+reads the journal for a `dispatch-id` row, and the journal is shared with every
+other dispatcher stage, so one truncated line from a crash mid-append is an
+ordinary event. A reader that discarded the whole file on one unparseable line
+would see no claim row, conclude nothing is owed either way, and hand a running
+run's claim back to the queue -- a gauge that passes when blinded, which this
+repository treats as worse than the honest violation.
 
 WHY THE LEGACY ARM IS EXERCISED HERE TOO. It writes no typed hold but is still
 a release, so the ledger transition and the journal record must happen on both
@@ -199,6 +218,22 @@ def _released_item() -> WorkItem:
     return materialize_work_items(records=read_work_items(path=_config()))[_ITEM_ID]
 
 
+def _release_line() -> str:
+    """This release's OWN journal row, as an interrupted pass left it.
+
+    Spelled once, because three replay cases key on it and a second spelling of
+    the release key is how two of them would come to describe different
+    releases while reading as one case repeated.
+    """
+    return json.dumps(
+        {
+            "stage": "provider-limit-release",
+            "work_item_id": _ITEM_ID,
+            "release_key": f"hp:{_RUN}:implement",
+        }
+    )
+
+
 def test_the_release_holds_journals_and_returns_the_item_to_ready(tmp_path: Path) -> None:
     """All four ordered steps of the clause, on the typed arm."""
     append_work_item(path=_config(), item=_item())
@@ -319,13 +354,7 @@ def test_a_replay_after_a_newer_dispatch_claimed_the_item_leaves_that_claim(
     journal = _journal(
         tmp_path=tmp_path,
         lines=(
-            json.dumps(
-                {
-                    "stage": "provider-limit-release",
-                    "work_item_id": _ITEM_ID,
-                    "release_key": f"hp:{_RUN}:implement",
-                }
-            ),
+            _release_line(),
             json.dumps({"stage": "dispatch-id", "work_item_id": _ITEM_ID}),
         ),
     )
@@ -342,6 +371,93 @@ def test_a_replay_after_a_newer_dispatch_claimed_the_item_leaves_that_claim(
     assert len(held) == 1
     assert held[0]["reason"] == "newer-dispatch-claim"
     # The newer dispatch's claim is intact.
+    claimed = _released_item()
+    assert claimed.status == "active"
+    assert claimed.assignee == "fabro"
+
+
+def test_a_replay_completes_a_release_whose_ledger_transition_never_landed(
+    tmp_path: Path,
+) -> None:
+    """A release row beside a still-claimed item is an UNFINISHED step three.
+
+    The write order is hold, then release record, then ledger transition, and
+    that transition is fail-soft by design: `_release_claim` journals
+    `provider-limit-release-error` and leaves the item `active` with `fabro`
+    assigned. The journal fixture below is exactly that state. A replay reading
+    only its own release row would report `already-released`, say nothing is
+    owed, and leave the item stranded -- so the reading is settled against the
+    item, and the replay finishes the transition.
+
+    It also finishes the interrupted HOLD, which is idempotent through the
+    shared ledger's first-write-wins dedupe, while journaling NO second release
+    record: that append is the one write a replay cannot repeat.
+    """
+    append_work_item(path=_config(), item=_item())
+    journal = _journal(
+        tmp_path=tmp_path,
+        lines=(
+            _release_line(),
+            json.dumps(
+                {
+                    "stage": "provider-limit-release-error",
+                    "work_item_id": _ITEM_ID,
+                    "release_key": f"hp:{_RUN}:implement",
+                    "reason": "BeadsCommandError",
+                }
+            ),
+        ),
+    )
+
+    _dispose(
+        tmp_path=tmp_path,
+        journal=journal,
+        outcome=_outcome(release=_release(), status="provider-limit-release"),
+    )
+
+    assert len(_of_stage(journal=journal, stage="provider-limit-release")) == 1
+    assert _of_stage(journal=journal, stage="provider-limit-release-held") == []
+    assert len(_of_stage(journal=journal, stage="acp-availability-observed")) == 1
+    released = _released_item()
+    assert released.status == "ready"
+    assert released.assignee is None
+    assert released.admission_policy == "auto"
+
+
+def test_one_malformed_line_does_not_blind_the_newer_dispatch_claim_guard(
+    tmp_path: Path,
+) -> None:
+    """A truncated line must not make the guard hand back a live claim.
+
+    The newer-claim guard is a journal reading, and a reader that discarded the
+    WHOLE journal on one unparseable line would find neither this release's own
+    row nor the `dispatch-id` row after it, conclude nothing is owed, and
+    perform the release again -- returning a running run's claim to the queue
+    under a row byte-identical to a correct first release. The malformed line
+    here belongs to an unrelated stage, which is what a crash mid-append
+    actually leaves: only that line may be dropped.
+    """
+    append_work_item(path=_config(), item=_item())
+    journal = _journal(
+        tmp_path=tmp_path,
+        lines=(
+            _release_line(),
+            '{"stage": "janitor", "work_it',
+            json.dumps({"stage": "dispatch-id", "work_item_id": _ITEM_ID}),
+        ),
+    )
+
+    _dispose(
+        tmp_path=tmp_path,
+        journal=journal,
+        outcome=_outcome(release=_release(), status="provider-limit-release"),
+    )
+
+    held = _of_stage(journal=journal, stage="provider-limit-release-held")
+    assert len(held) == 1
+    assert held[0]["reason"] == "newer-dispatch-claim"
+    assert len(_of_stage(journal=journal, stage="provider-limit-release")) == 1
+    assert _of_stage(journal=journal, stage="acp-availability-observed") == []
     claimed = _released_item()
     assert claimed.status == "active"
     assert claimed.assignee == "fabro"
