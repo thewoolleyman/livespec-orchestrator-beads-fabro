@@ -1,5 +1,7 @@
 """Tests for the Dispatcher's post-merge janitor engine slice."""
 
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -50,6 +52,7 @@ def _plan(*, repo: Path) -> DispatchPlan:
 class Runner:
     queue: list[CommandResult]
     calls: list[tuple[list[str], Path]] = field(default_factory=list)
+    envs: list[Mapping[str, str | None] | None] = field(default_factory=list)
 
     def run(
         self,
@@ -57,11 +60,11 @@ class Runner:
         argv: list[str],
         cwd: Path,
         timeout_seconds: float,
-        env: dict[str, str] | None = None,
+        env: Mapping[str, str | None] | None = None,
     ) -> CommandResult:
-        _ = env
         assert timeout_seconds > 0
         self.calls.append((argv, cwd))
+        self.envs.append(env)
         return self.queue.pop(0)
 
 
@@ -94,6 +97,44 @@ def _branch() -> CommandResult:
 def _provisioning_queue() -> list[CommandResult]:
     """pull-primary, the venue resolution, and every stage after it, all green."""
     return [_ok(), _branch(), *[_ok() for _ in range(9)]]
+
+
+# A declaration that additionally selects the CLUSTER venue for the janitor's
+# own check suite, which is what this repository itself declares.
+_CLUSTER_VENUE_CONFIG = (
+    '{"livespec-orchestrator-beads-fabro": {"compat": {"pinned": "master"}, '
+    '"dispatcher": {"janitor": {"venue": "cluster_job"}}}}'
+)
+
+# Where the janitor's own check-suite stage sits in the runner's call log:
+# pull-primary, the venue merge-containment probe, the preclean, the checkout
+# add, the trust step, the bootstrap, the per-checkout bootstrap and the core
+# provision all precede it.
+_CHECK_SUITE_CALL = 8
+
+
+def _gate(*, state: str) -> CommandResult:
+    """What the delegated-gate client reports on its own JSON log line.
+
+    `exit_code` follows that client's PUSH-oriented contract -- 0 only when the
+    gate passed AND its green token was written -- which the janitor
+    deliberately does not read: the token authorises a push and the Job's
+    verdict is the only thing a post-merge gate is asking about.
+    """
+    return CommandResult(
+        exit_code=0 if state == "PASSED" else 1,
+        stdout="",
+        stderr=json.dumps({"event": "delegated gate", "state": state, "detail": "tree 0ff1ce"}),
+    )
+
+
+def _cluster_queue(*, gate: CommandResult) -> list[CommandResult]:
+    """pull-primary, the venue resolution, provisioning, the gate run, the cleanup."""
+    return [_ok(), _branch(), *[_ok() for _ in range(6)], gate, _ok()]
+
+
+def _write_cluster_venue(*, repo: Path) -> None:
+    _ = (repo / ".livespec.jsonc").write_text(_CLUSTER_VENUE_CONFIG, encoding="utf-8")
 
 
 def _merged() -> PrView:
@@ -341,3 +382,115 @@ def test_janitor_removed_env_vars_reports_only_the_names_the_environment_carries
     monkeypatch.delenv("LIVESPEC_FABRO_FACTORY")
 
     assert janitor_removed_env_vars() == ()
+
+
+def test_post_merge_cluster_venue_reports_green_from_the_gate_jobs_verdict(
+    tmp_path: Path,
+) -> None:
+    """The declared cluster venue runs the delegated gate, not a local check suite.
+
+    The Job's own verdict is what the janitor reports, so a PASSED gate closes
+    the post-merge gate green exactly as a green local suite did -- and the
+    command the host ran is the gate client in the fresh checkout rather than
+    the check suite itself.
+    """
+    _write_cluster_venue(repo=tmp_path)
+    plan = _plan(repo=tmp_path)
+    runner = Runner(queue=_cluster_queue(gate=_gate(state="PASSED")))
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=plan,
+        runner=runner,
+        journal=Journal(),
+        merged=_merged(),
+    )
+
+    gate_argv, gate_cwd = runner.calls[_CHECK_SUITE_CALL]
+    assert "gate_remote_delegate" in " ".join(gate_argv)
+    assert gate_argv[-1] == "run"
+    assert gate_cwd == plan.janitor_checkout
+    assert (outcome.status, outcome.stage) == ("green", "done")
+    assert outcome.detail == "merged, post-merge janitor green"
+
+
+def test_post_merge_cluster_venue_scrubs_the_dispatch_route_from_the_gate_run(
+    tmp_path: Path,
+) -> None:
+    """The route scrub reaches the CLUSTER venue too, and the core root does not.
+
+    The scrub carries the module's own rule -- the verdict is about the merge,
+    never about how the dispatch was routed -- which a delegated gate owes
+    exactly as a host-local suite does, and it is what keeps the stage's
+    journaled removal account true whichever venue ran. The core plugin root is
+    withheld because it exists so a suite running on the HOST can resolve this
+    plugin inside the fresh checkout; the gate client reads no such root, and
+    the pod re-derives its own checkout from the pushed tree.
+    """
+    _write_cluster_venue(repo=tmp_path)
+    runner = Runner(queue=_cluster_queue(gate=_gate(state="PASSED")))
+
+    _ = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path),
+        runner=runner,
+        journal=Journal(),
+        merged=_merged(),
+    )
+
+    gate_env = runner.envs[_CHECK_SUITE_CALL]
+    assert gate_env == dict.fromkeys(JANITOR_REMOVED_ENV_VARS)
+
+
+def test_post_merge_cluster_venue_no_verdict_is_red_naming_the_missing_verdict(
+    tmp_path: Path,
+) -> None:
+    """A gate that was asked and did not answer is RED, and says so as that.
+
+    It is deliberately NOT the `janitor-env-degraded` outcome, which reports
+    `green` at its own stage for a venue that could not be provisioned: a
+    submitted gate whose verdict was lost is a gate that decided nothing, and
+    an item must never close on a reading nobody took.
+    """
+    _write_cluster_venue(repo=tmp_path)
+    runner = Runner(queue=_cluster_queue(gate=_gate(state="NO_VERDICT")))
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path),
+        runner=runner,
+        journal=Journal(),
+        merged=_merged(),
+    )
+
+    assert (outcome.status, outcome.stage) == ("failed", "janitor-post-merge")
+    assert (outcome.pr_number, outcome.merge_sha) == (7, "cafe08")
+    detail = outcome.detail.lower()
+    assert "reached no verdict" in detail
+    assert "missing cluster verdict" in detail
+
+
+def test_post_merge_cluster_venue_failed_job_is_red_naming_the_jobs_own_verdict(
+    tmp_path: Path,
+) -> None:
+    """The CONTROL for the case above: a real red verdict is reported as one.
+
+    Without it, a no-verdict wording that fired on every non-pass would satisfy
+    the missing-verdict assertion while telling an operator their red tree was
+    a plumbing fault -- two conditions whose remedies are opposite.
+    """
+    _write_cluster_venue(repo=tmp_path)
+    runner = Runner(queue=_cluster_queue(gate=_gate(state="FAILED")))
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path),
+        runner=runner,
+        journal=Journal(),
+        merged=_merged(),
+    )
+
+    assert (outcome.status, outcome.stage) == ("failed", "janitor-post-merge")
+    detail = outcome.detail.lower()
+    assert "reported a failed verdict" in detail
+    assert "missing cluster verdict" not in detail
