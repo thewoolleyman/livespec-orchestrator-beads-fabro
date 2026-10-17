@@ -57,6 +57,7 @@ from pathlib import Path
 
 from livespec_runtime.work_items.rank import key_between
 from returns.pipeline import is_successful
+from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._ids import new_work_item_id
@@ -98,6 +99,11 @@ CANARY_MARKER_RELATIVE_PATH = "orchestrator-image/canary-marker.md"
 CANARY_LABEL = "canary:fixture-dispatch"
 
 _TITLE_PREFIX = "# "
+# The ONE routed verdict a canary may be dispatched from. Named rather than
+# compared inline because the other three — `pending-approval`, `backlog`,
+# `blocked` — all arrive on the SUCCESS track, so the constant is what carries
+# "intake answered" and "intake admitted it" apart.
+_READY_STATUS = "ready"
 # The canary is filed with every intake gate answered, because the committed
 # fixture is authored to satisfy all six: one coherent done, graded from the
 # marker file alone, factory-eligible, dependency-free, repo-targeted and above
@@ -226,6 +232,17 @@ def _filed(
     An intake route that fails is reported with the minted id in it: the record
     EXISTS in the ledger at that point, and a refusal that hid the id would
     leave an orphan nobody could find to dispose of.
+
+    THE ROUTED VERDICT IS GRADED, NOT JUST THE TRACK IT ARRIVED ON. Intake
+    answers on the success track whatever it routed the item to, so a canary the
+    host-side Definition-of-Done wall held back at `pending-approval` is a
+    SUCCESS carrying a parked status. Returning its id would print that id, pass
+    the recipe's emptiness guard, and dispatch a canary against an item already
+    known to be unfit — which is the item-quality-failure-reading-as-engine-
+    failure this whole module exists to remove, arriving through the sanctioned
+    recipe rather than around it. The refusal NAMES the routed status, because
+    "intake refused it" and "intake parked it awaiting approval" are different
+    faults with different remedies.
     """
     item = _canary_work_item(fixture=fixture, prefix=config.prefix, now_iso=now_iso)
     routed = file_captured_work_item(path=config, item=item, checklist=_CHECKLIST)
@@ -234,6 +251,18 @@ def _filed(
             detail=(
                 f"the canary work-item {item.id} was filed but intake could not route it,"
                 " so the ledger holds the record and no dispatch was attempted"
+            )
+        )
+    # `unsafe_perform_io` is required: `IOResult.unwrap` returns `IO[value]`,
+    # and an `IO[Verdict]` compares unequal to every status there is — so a
+    # bare comparison would refuse the `ready` canary too.
+    status = unsafe_perform_io(routed.unwrap())
+    if status != _READY_STATUS:
+        return CanaryFixtureUnusable(
+            detail=(
+                f"the canary work-item {item.id} was filed but intake routed it to"
+                f" {status} rather than {_READY_STATUS}, so the ledger holds the record"
+                " and no dispatch was attempted"
             )
         )
     make_beads_client(config=config).update_issue(issue_id=item.id, add_labels=[CANARY_LABEL])

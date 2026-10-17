@@ -353,13 +353,19 @@ and 6 of plan `fabro-currency` (hp-candidate runs `01M4NWARSD8T` and
 else. Both reached `dod_gate` and were refused there — an ITEM-QUALITY failure
 that reads exactly like an ENGINE failure, which is why canary 6 repeated it.
 The fixture's Definition of Done is validated at filing time through the same
-ratified parse the gate's host-side wall reads, so a canary that reaches the
-gate reaches it with a brief already known to pass.
+ratified parse the gate's host-side wall reads, and the filing then refuses
+unless intake routes the canary all the way to `ready` — which the wall's own
+findings are what withhold. So a canary that reaches the gate reaches it with a
+brief already known to pass.
 
 A refusal before any run names the fixture's own fault on stderr, prefixed
 `LIVESPEC_CANARY_FIXTURE_UNUSABLE:`, and files nothing. A canary that is filed
 but cannot be routed by intake reports with its minted id in the message, so the
-record is findable rather than orphaned.
+record is findable rather than orphaned. A canary intake routes somewhere other
+than `ready` — `pending-approval` is the one the unresolved-reference fault
+above produces — reports with its minted id AND the status it was routed to,
+because an item parked awaiting approval and an item intake could not route at
+all are different faults with different remedies.
 
 ### Candidate build + Enemy Unit Test comparison
 

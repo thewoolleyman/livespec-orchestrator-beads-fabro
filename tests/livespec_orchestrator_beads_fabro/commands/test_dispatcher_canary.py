@@ -27,6 +27,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done i
     definition_of_done,
 )
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
+from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 from returns.io import IOFailure
 
@@ -56,6 +57,23 @@ def _fake_config() -> StoreConfig:
         fake=True,
         repo_root=_REPO_ROOT,
     )
+
+
+def _repo_whose_fixture_references(*, tmp_path: Path, heading: str) -> Path:
+    """A repository holding the committed fixture with ONE line changed.
+
+    Only the `References:` line differs, so the copy is still a well-formed
+    fixture that the parse admits and the wall then grades — which is what makes
+    the routing the thing under test rather than the parse.
+    """
+    canary = _canary()
+    committed = (_REPO_ROOT / canary.CANARY_FIXTURE_RELATIVE_PATH).read_text(encoding="utf-8")
+    before, marker, _ = committed.partition("References:")
+    assert marker, canary.CANARY_FIXTURE_RELATIVE_PATH
+    doctored = tmp_path / canary.CANARY_FIXTURE_RELATIVE_PATH
+    doctored.parent.mkdir(parents=True, exist_ok=True)
+    doctored.write_text(f"{before}References: {heading}\n", encoding="utf-8")
+    return tmp_path
 
 
 def test_the_committed_fixture_template_defines_the_canary_work_item() -> None:
@@ -173,6 +191,47 @@ def test_an_intake_route_that_fails_names_the_minted_id(*, monkeypatch: Any) -> 
     assert isinstance(refused, canary.CanaryFixtureUnusable), refused
     assert "intake could not route it" in refused.detail
     assert "bd-ib-" in refused.detail
+
+
+def test_an_intake_route_that_parks_the_canary_is_refused(tmp_path: Path) -> None:
+    """A canary intake did not route to `ready` must not reach the dispatch.
+
+    This is the fault that refused canaries 5 and 6 — a `References:` line
+    naming a heading the governed tree does not carry — reproduced through the
+    REAL host-side wall rather than a substituted seam, because the seam cannot
+    show that the wall is what withholds `ready`. Intake succeeds, so the
+    `IOResult` is a success and the id is minted; only the routed VERDICT says
+    the item is parked. A filing graded on success alone therefore prints that
+    id, the recipe's emptiness guard passes, and the canary is dispatched at
+    `pending-approval` — an item-quality failure arriving at the factory wearing
+    an engine failure's clothes, which is the one outcome the committed fixture
+    exists to remove.
+
+    The routed status is asserted IN the detail: "intake refused it" and "intake
+    parked it awaiting approval" are different faults with different remedies,
+    and an operator who cannot tell them apart reads the second as the first.
+    """
+    canary = _canary()
+    reset_fake_singleton()
+    config = _fake_config()
+    repo = _repo_whose_fixture_references(
+        tmp_path=tmp_path,
+        heading="## Scenario 999 — no heading of the governed spec tree carries this",
+    )
+
+    refused = canary.file_canary_work_item(repo=repo, config=config, now_iso="2026-10-16T00:00:00Z")
+
+    assert isinstance(refused, canary.CanaryFixtureUnusable), refused
+    assert "pending-approval" in refused.detail
+    assert "ready" in refused.detail
+    # The minted id, for the same reason the unroutable arm names it: the record
+    # EXISTS in the ledger by now, and a refusal that hid the id would leave an
+    # orphan nobody could find to dispose of.
+    parked = materialize_work_items(records=read_work_items(path=config))
+    assert len(parked) == 1, parked
+    [item_id] = parked
+    assert item_id in refused.detail
+    assert parked[item_id].status == "pending-approval"
 
 
 def test_the_subcommand_refuses_when_intake_cannot_route(*, capsys: Any, monkeypatch: Any) -> None:
