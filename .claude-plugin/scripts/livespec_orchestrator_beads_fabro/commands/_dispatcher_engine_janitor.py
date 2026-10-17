@@ -20,6 +20,7 @@ re-runs the post-merge flow through this same `post_merge`.
 
 from __future__ import annotations
 
+import os
 from contextlib import ExitStack
 from typing import TYPE_CHECKING
 
@@ -65,6 +66,7 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "JANITOR_REMOVED_ENV_VARS",
     "janitor_env_delta",
+    "janitor_removed_env_vars",
     "post_merge",
 ]
 
@@ -80,6 +82,16 @@ _JANITOR_TIMEOUT_SECONDS = 3600.0
 # variable the Dispatcher reads to select a factory or to attribute a journal
 # record belongs in this tuple.
 JANITOR_REMOVED_ENV_VARS: tuple[str, ...] = ("LIVESPEC_FABRO_FACTORY", INVOKER_ENV_VAR)
+
+
+def janitor_removed_env_vars() -> tuple[str, ...]:
+    """Which scrubbed variables this Dispatcher's environment actually carries.
+
+    The DELTA names the whole scrub set unconditionally; the journal row names
+    what was really there, so a reader can tell a scrubbed run from one that
+    inherited nothing.
+    """
+    return tuple(name for name in JANITOR_REMOVED_ENV_VARS if name in os.environ)
 
 
 def janitor_env_delta(*, core_plugin_root: str) -> dict[str, str | None]:
@@ -181,8 +193,13 @@ def _post_merge_locked(
         ),
         # The check suite is the command whose red the retention clause exists
         # for: its excerpt names the suite, and the failing target it reports
-        # is on the stream the excerpt did not keep.
-        journal_options=StageJournalOptions(retention=plan.janitor_retention),
+        # is on the stream the excerpt did not keep. The removal list rides the
+        # same options, because the scrub and its account are one policy for
+        # this one stage.
+        journal_options=StageJournalOptions(
+            retention=plan.janitor_retention,
+            removed_env_vars=janitor_removed_env_vars(),
+        ),
     )
     if janitor.exit_code != 0:
         return outcome_type(

@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     )
 
 __all__: list[str] = [
+    "REMOVED_ENV_VARS_FIELD",
     "StageJournalOptions",
     "failed_outcome",
     "journal_publish_draft_refresh",
@@ -47,7 +48,13 @@ class StageJournalOptions:
 
     streams: bool = False
     retention: JanitorRetention | None = None
+    removed_env_vars: tuple[str, ...] = ()
 
+
+# The row field naming what a stage's child environment LOST against the
+# Dispatcher's own. Named once, so the writer and every reader of the scrub's
+# durable account cannot drift.
+REMOVED_ENV_VARS_FIELD = "removed_env_vars"
 
 _DEFAULT_STAGE_JOURNAL_OPTIONS = StageJournalOptions()
 _PUBLISH_DRAFT_REFRESH_PATTERN = re.compile(
@@ -185,6 +192,8 @@ def journal_stage(
     if journal_options.streams:
         record["stdout"] = tail(text=result.stdout)
         record["stderr"] = tail(text=result.stderr)
+    if journal_options.removed_env_vars:
+        record[REMOVED_ENV_VARS_FIELD] = list(journal_options.removed_env_vars)
     if journal_options.retention is not None:
         record.update(
             retained_output_record(

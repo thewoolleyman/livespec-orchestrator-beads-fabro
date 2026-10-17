@@ -68,6 +68,9 @@ _DECLARED_CONFIG = '{"livespec-orchestrator-beads-fabro": {"compat": {"pinned": 
 
 _JANITOR_STAGE = "janitor-post-merge"
 
+# The journal-row field naming what the check run's environment lost.
+_REMOVED_FIELD = "removed_env_vars"
+
 # The dispatcher's two routing and attribution variables, spelled as LITERALS
 # rather than imported from the production scrub set. A test that named the set
 # it is grading could not tell a set missing a variable from a set that never
@@ -343,6 +346,24 @@ def test_the_invoker_attribution_variable_is_removed_from_the_check_run_too(
     assert _child_env_value(directory=drive.checkout, name=_INVOKER_ENV_VAR) is None
     assert f"INVOKER={_ABSENT}" in str(drive.row["detail"])
     assert (drive.outcome.status, drive.outcome.stage) == ("green", "done")
+
+
+def test_the_janitor_post_merge_journal_row_names_each_variable_it_removed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The row names both removed variables, so a reader can tell a scrubbed run.
+
+    The row is the only durable account of the scrub: the child's environment
+    is gone the moment the check exits, and the clause asks for the removal to
+    be legible afterwards rather than inferred from a green verdict.
+    """
+    _routed_dispatcher_env(monkeypatch=monkeypatch)
+
+    drive = _drive(repo=_repo(tmp_path=tmp_path, name="named"), janitor=_probe_argv(fails_on=()))
+
+    # Read with `get`, so an ABSENT field and an EMPTY list are distinguishable
+    # readings rather than one KeyError -- the next case turns on exactly that.
+    assert drive.row.get(_REMOVED_FIELD) == [_FACTORY_ENV_VAR, _INVOKER_ENV_VAR]
 
 
 def test_the_reconcile_merged_janitor_applies_the_same_environment_scrub(
