@@ -913,6 +913,27 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   timer, so work-item `bd-ib-rxf` carries it as a HOST-CAPTURED assertion
   instead. This file never connects to a tenant.
 
+- `test_exhaustion_record_credential_identity_scenario186.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 186 and the credential-identity clause
+  of `contracts.md` §"Dispatcher admission, WIP cap, and post-merge
+  acceptance": a provider-exhaustion record observed on one credential account
+  does not refuse dispatch on another account of the same vendor. The six
+  gherkin blocks map 1:1 to the six cases, each through the surface the
+  scenario names — `post_run_dispositions` for the mint, over a terminal built
+  by `fabro_run_terminal_outcome` from a Fabro payload so the vendor is
+  classified by production code; `live_provider_exhaustions` for "the records
+  the Dispatcher reads"; and `filter_eligible_candidates` for the four
+  admission cases, against a real repository checkout and a real on-disk
+  journal. What makes it a scenario binding rather than a unit test is the
+  JOIN: the account the valve compares against is taken from the verdict's own
+  journaled session-headroom assessment, so the label one dispatch's admission
+  wrote is the label another dispatch's admission reads, which is the only
+  thing the incident turned on. Two cases are controls for the rest and must
+  stay: the provider-only record, because narrowing an account-named record is
+  equally consistent with a gate that stopped reading the journal, and the
+  absent-account case, because that one arm WIDENS a record's reach and is the
+  direction every other case argues against.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
