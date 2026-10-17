@@ -35,7 +35,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit imp
     emit_calibration,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
-    bounce_non_convergence_to_backlog,
     complete_and_accept,
     escalate_needs_human_block,
 )
@@ -75,8 +74,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_repo_config import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_staleness_gate import (
     apply_dispatcher_staleness_gate,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition import (
-    dispose_stall_cancel,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_routing import (
+    dispose_terminal_routing,
 )
 from livespec_orchestrator_beads_fabro.commands._ready_aging_order import ready_aging_order
 from livespec_orchestrator_beads_fabro.commands._sibling_status_lookup import (
@@ -361,14 +360,14 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
         # needs-human ending, and for the groom-cut path above, whose own
         # comment is that run's terminal record.
         record_needs_human_cause(repo=repo, item=item, outcome=outcome, journal=journal)
-    bounce_non_convergence_to_backlog(repo=repo, item=item, outcome=outcome, journal=journal)
-    # The REPLACEMENT disposition for the bounce above, which declines a
-    # watchdog cancellation (`bd-ib-nfbyot`). It sits AFTER the bounce for the
-    # same reason the needs-human pair is ordered: the two are mutually
-    # exclusive by predicate, so the order cannot change which one fires, and
-    # keeping the replacement beside what it replaces is what makes a future
-    # reader see that no terminal is left with no disposition at all.
-    dispose_stall_cancel(repo=repo, item=item, outcome=outcome, journal=journal)
+    # Every non-green terminal route, as one group: the non-convergence bounce,
+    # the stall-watchdog cancellation, and the provider-limit release. They are
+    # mutually exclusive by predicate, so the order among them cannot change
+    # which one fires, and `_dispatcher_terminal_routing` is where a reader can
+    # see that no non-green terminal is left with no disposition at all.
+    dispose_terminal_routing(
+        repo=repo, item=item, outcome=outcome, journal=journal, now_iso=utc_now_iso()
+    )
     emit_calibration(
         args=args,
         repo=repo,
