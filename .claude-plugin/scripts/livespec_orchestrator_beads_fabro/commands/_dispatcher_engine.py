@@ -99,6 +99,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_open_diff import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_labels import (
     dispatch_run_label_pairs,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_successful_terminal import (
+    successful_store_loss_checkpoint,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
 
 __all__: list[str] = [
@@ -253,7 +256,16 @@ def run_dispatch(
         exit_code=fabro.exit_code,
         stderr=fabro.stderr,
     )
-    if terminal is not None:
+    # A STRUCTURED SUCCESSFUL CHECKPOINT OUTRANKS THE ENGINE'S OWN CONCLUSION,
+    # and only for the one conclusion that admits it cannot answer: a worker
+    # that exited zero before its terminal run event was persisted. The engine
+    # then reports `failed` for a workflow that completed every node, so the
+    # dispatch used to report a false implementation failure over an already
+    # published pull request. The checkpoint is read for THIS run only; every
+    # other failure keeps its own terminal outcome, untouched.
+    if terminal is not None and not successful_store_loss_checkpoint(
+        run_id=run_id, inspect=inspect
+    ):
         # Attached rather than threaded through `fabro_run_terminal_outcome`,
         # which classifies the ENGINE's own record and has no business reading a
         # sandbox sentinel. The event is evidence the cause writer renders only
