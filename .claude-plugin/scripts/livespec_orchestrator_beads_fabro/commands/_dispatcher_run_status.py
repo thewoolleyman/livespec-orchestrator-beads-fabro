@@ -54,6 +54,7 @@ class PrView:
     head: str | None = None
     base: str | None = None
     head_ref_name: str | None = None
+    head_repository: str | None = None
 
     def matches_publication(self, *, branch: str, head: str) -> bool:
         """Whether this is a live or merged publication of the checkpoint head."""
@@ -106,11 +107,19 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
         head=head_raw if isinstance(head_raw, str) and head_raw else None,
         base=base_raw if isinstance(base_raw, str) and base_raw else None,
         head_ref_name=_optional_string(value=parsed.get("headRefName")),
+        head_repository=_head_repository_of(parsed=parsed),
     )
 
 
 def _optional_string(*, value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _head_repository_of(*, parsed: dict[str, Any]) -> str | None:
+    repository_raw: object = parsed.get("headRepository")
+    if not isinstance(repository_raw, dict):
+        return None
+    return _optional_string(value=cast("dict[str, Any]", repository_raw).get("nameWithOwner"))
 
 
 def _status_check_rollup_items(*, rollup_raw: object) -> list[object]:

@@ -17,6 +17,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     parse_pr_view,
     pr_view_argv,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_successful_terminal import (
+    SuccessfulTerminalEvidence,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -28,7 +31,7 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "TerminalPublication",
     "reconcile_terminal_publication",
-    "terminal_publication_matches",
+    "terminal_publication_view",
 ]
 
 _GH_TIMEOUT_SECONDS = 300.0
@@ -53,12 +56,12 @@ def reconcile_terminal_publication(
     runner: CommandRunner,
     journal: JournalWriter,
     terminal: DispatchOutcome | None,
-    checkpoint_head: str | None,
+    evidence: SuccessfulTerminalEvidence | None,
 ) -> TerminalPublication:
     """Confirm a PR only for a normally-green or checkpoint-qualified run."""
     hold: CurrentMergeHold = "unreadable"
     view = None
-    if terminal is None or checkpoint_head is not None:
+    if terminal is None or evidence is not None:
         # THE CURRENT HOLD, read ONCE for the whole merge-confirmation boundary.
         # The plan's `merge_hold` is the launch snapshot the sandbox and the
         # dispatch record share and must keep; this is what the ledger says now,
@@ -66,30 +69,35 @@ def reconcile_terminal_publication(
         # the two (`_dispatcher_current_merge_hold`).
         hold = read_current_merge_hold(repo=plan.repo, work_item_id=plan.work_item_id)
         view = confirm_pr(plan=plan, runner=runner, journal=journal, hold=hold)
-    matches = bool(
-        view is not None
-        and checkpoint_head is not None
-        and terminal_publication_matches(
-            plan=plan,
-            runner=runner,
-            journal=journal,
-            pr_number=view.number,
-            head=checkpoint_head,
-        )
+    observed = (
+        terminal_publication_view(plan=plan, runner=runner, journal=journal)
+        if view is not None and evidence is not None
+        else None
     )
+    matches = False
+    if observed is not None and view is not None and evidence is not None:
+        matches = observed.number == view.number and observed.matches_publication(
+            branch=plan.branch,
+            head=evidence.commit_sha,
+        )
+        if matches:
+            _journal_successful_classification(
+                plan=plan,
+                journal=journal,
+                evidence=evidence,
+                publication=observed,
+            )
     refusal = terminal if terminal is not None and not matches else None
     return TerminalPublication(hold=hold, view=view, refusal=refusal)
 
 
-def terminal_publication_matches(
+def terminal_publication_view(
     *,
     plan: DispatchPlan,
     runner: CommandRunner,
     journal: JournalWriter,
-    pr_number: int,
-    head: str,
-) -> bool:
-    """Observe and match the branch, PR identity, state, and checkpoint head.
+) -> PrView | None:
+    """Observe the branch publication with the fields needed to authenticate it.
 
     A SEPARATE view rather than the one `confirm_pr` already took, because the
     question is different: that one asks whether there is a pull request to
@@ -98,7 +106,7 @@ def terminal_publication_matches(
     so unavailable evidence keeps the engine's own failed disposition.
     """
     argv = pr_view_argv(plan=plan)
-    argv[-1] = f"{argv[-1]}{_HEAD_FIELDS}"
+    argv[-1] = f"{argv[-1]}{_HEAD_FIELDS},headRepository"
     result = runner.run(
         argv=argv,
         cwd=plan.repo,
@@ -107,12 +115,67 @@ def terminal_publication_matches(
     journal_stage(
         journal=journal,
         plan=plan,
-        stage="fabro-terminal-publication",
+        stage="fabro-terminal-publication-probe",
         result=result,
     )
-    view = parse_pr_view(stdout=result.stdout) if result.exit_code == 0 else None
-    return bool(
-        view is not None
-        and view.number == pr_number
-        and view.matches_publication(branch=plan.branch, head=head)
+    return parse_pr_view(stdout=result.stdout) if result.exit_code == 0 else None
+
+
+def _journal_successful_classification(
+    *,
+    plan: DispatchPlan,
+    journal: JournalWriter,
+    evidence: SuccessfulTerminalEvidence,
+    publication: PrView,
+) -> None:
+    """Record the two evidence legs, the conflict, and the verdict SEPARATELY.
+
+    Four records rather than one, because they are four different claims and a
+    reader has to be able to disbelieve any one of them on its own: what the
+    engine concluded, which checkpoint contradicted it, which publication
+    authenticated that checkpoint, and only then the classification those three
+    support. Collapsing them would leave the conflicting engine evidence
+    indistinguishable from the verdict it lost to.
+    """
+    common: dict[str, object] = {
+        "work_item_id": plan.work_item_id,
+        "run_id": evidence.run_id,
+    }
+    journal.append(
+        record={
+            **common,
+            "stage": "fabro-terminal-conflict",
+            "engine_status": evidence.engine_status,
+            "failure_cause": evidence.failure_cause,
+            "failure_category": evidence.failure_category,
+        }
+    )
+    journal.append(
+        record={
+            **common,
+            "stage": "fabro-terminal-checkpoint",
+            "timestamp": evidence.timestamp,
+            "current_node": evidence.current_node,
+            "next_node_id": evidence.next_node_id,
+            "commit_sha": evidence.commit_sha,
+        }
+    )
+    journal.append(
+        record={
+            **common,
+            "stage": "fabro-terminal-publication",
+            "pr_number": publication.number,
+            "state": publication.state,
+            "branch": publication.head_ref_name,
+            "head": publication.head,
+            "repository": publication.head_repository,
+        }
+    )
+    journal.append(
+        record={
+            **common,
+            "stage": "fabro-terminal-classification",
+            "classification": "successful-workflow",
+            "evidence": "checkpoint+publication",
+        }
     )
