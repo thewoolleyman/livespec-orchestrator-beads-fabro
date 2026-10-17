@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
@@ -55,7 +56,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     PrView,
     build_plan,
+    janitor_reconcile_checkout_path,
 )
+from livespec_orchestrator_beads_fabro.commands.dispatcher import main
+from livespec_orchestrator_beads_fabro.store import append_work_item
+from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 # The two REQUIRED contract fields, without which the post-merge flow degrades
 # before the janitor is ever reached.
@@ -89,6 +94,28 @@ _ENV_DUMP = "janitor-child-env.nul"
 # pull-primary, the venue's merge-containment probe, the preclean, and the five
 # provisioning steps. The janitor argv itself is never taken from this queue.
 _CANNED_STAGES_BEFORE_JANITOR = 8
+
+# The in-memory tenant the reconcile case's item is seeded into.
+_STORE = StoreConfig(
+    tenant="livespec-orch-beads-fabro",
+    prefix="bd-ib",
+    server_user="livespec-orch-beads-fabro",
+    database="livespec-orch-beads-fabro",
+    bd_path="bd",
+    fake=True,
+)
+
+# What `gh pr view` answers the reconcile valve: the merge it reconciles.
+_PR_VIEW_JSON = json.dumps(
+    {
+        "number": 3157,
+        "state": "MERGED",
+        "autoMergeRequest": {},
+        "mergeStateStatus": "CLEAN",
+        "mergeCommit": {"oid": "0766415e"},
+        "statusCheckRollup": [],
+    }
+)
 
 
 def _probe_argv(*, fails_on: tuple[str, ...]) -> tuple[str, ...]:
@@ -293,6 +320,146 @@ def test_the_janitor_check_run_keeps_every_environment_value_it_did_not_remove(
     # attribution variable.
     assert child_names - dispatcher_names <= {CORE_PLUGIN_ROOT_ENV_VAR}
     assert dispatcher_names - child_names <= {_FACTORY_ENV_VAR, _INVOKER_ENV_VAR}
+
+
+def test_the_invoker_attribution_variable_is_removed_from_the_check_run_too(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A dispatch attributed through LIVESPEC_INVOKER still gets a green janitor.
+
+    The invoker variable is the OTHER half of the measured instance, and it
+    fails the suite for a different reason than the factory route does: the
+    operator-default tests resolve the journal invoker from it, so under the
+    dispatcher's attribution they resolve differently than they do under CI.
+    """
+    probe = _probe_argv(fails_on=(_INVOKER_ENV_VAR,))
+    monkeypatch.setenv(_INVOKER_ENV_VAR, _INVOKER_VALUE)
+    control = _control(probe=probe, directory=tmp_path / "control")
+
+    _routed_dispatcher_env(monkeypatch=monkeypatch)
+    drive = _drive(repo=_repo(tmp_path=tmp_path, name="attributed"), janitor=probe)
+
+    assert f"INVOKER={_INVOKER_VALUE}" in control
+    assert _child_env_value(directory=drive.checkout, name=_INVOKER_ENV_VAR) is None
+    assert f"INVOKER={_ABSENT}" in str(drive.row["detail"])
+    assert (drive.outcome.status, drive.outcome.stage) == ("green", "done")
+
+
+def test_the_reconcile_merged_janitor_applies_the_same_environment_scrub(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The reconcile valve's own janitor check run carries neither routing variable.
+
+    Driven through the REAL `dispatcher.main(argv=["reconcile-merged", ...])`
+    entry point over the real store seam, with the check aggregate taken off
+    the repository's own committed `dispatcher.janitor.check_suite`
+    declaration, because the valve builds its own plan and no argument of this
+    test could put a probe into it. The valve is a SECOND entry into the
+    post-merge flow, which is why the clause names it separately: a scrub wired
+    at one caller rather than inside the flow would leave this one inheriting.
+    """
+    reset_fake_singleton()
+    probe = _probe_argv(fails_on=(_FACTORY_ENV_VAR, _INVOKER_ENV_VAR))
+    # The in-memory tenant: this tier never reaches a live Dolt server.
+    monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    _routed_dispatcher_env(monkeypatch=monkeypatch)
+    repo = _reconcile_repo(tmp_path=tmp_path, probe=probe)
+    item = _reconcile_item()
+    append_work_item(path=_STORE, item=item)
+    checkout = janitor_reconcile_checkout_path(repo=repo, work_item_id=item.id)
+    checkout.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_merged.ShellCommandRunner",
+        lambda: _ReconcileRunner(janitor=probe),
+    )
+
+    _ = main(argv=["reconcile-merged", "--repo", str(repo), "--item", item.id, "--json"])
+
+    assert _child_env_value(directory=checkout, name=_FACTORY_ENV_VAR) is None
+    assert _child_env_value(directory=checkout, name=_INVOKER_ENV_VAR) is None
+    # The same retention control the post-merge cases carry: the check run keeps
+    # the credential it was invoked with.
+    assert _child_env_value(directory=checkout, name=_CREDENTIAL_ENV_VAR) == _CREDENTIAL_VALUE
+
+
+@dataclass(kw_only=True)
+class _ReconcileRunner:
+    """The reconcile valve's runner, keyed on the SUBCOMMAND rather than on call order.
+
+    Keying on argv rather than on a queue is what lets the janitor run for real
+    wherever the valve reaches it, without this test encoding the valve's own
+    stage sequence -- which is not the subject and whose drift would make the
+    case fail for a reason that has nothing to do with the environment.
+    """
+
+    janitor: tuple[str, ...]
+    shell: ShellCommandRunner = field(default_factory=ShellCommandRunner)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: object = None,
+    ) -> CommandResult:
+        if tuple(argv) == self.janitor:
+            return self.shell.run(
+                argv=argv,
+                cwd=cwd,
+                timeout_seconds=timeout_seconds,
+                env=env,  # pyright: ignore[reportArgumentType]
+            )
+        if "symbolic-ref" in argv:
+            return CommandResult(exit_code=0, stdout="origin/master\n", stderr="")
+        if argv[:3] == ["gh", "pr", "view"]:
+            return CommandResult(exit_code=0, stdout=_PR_VIEW_JSON, stderr="")
+        return CommandResult(exit_code=0, stdout="", stderr="")
+
+
+def _reconcile_repo(*, tmp_path: Path, probe: tuple[str, ...]) -> Path:
+    """A governed repository DECLARING the probe as its janitor check suite."""
+    repo = tmp_path / "reconcile-repo"
+    repo.mkdir(parents=True, exist_ok=True)
+    _ = (repo / ".livespec.jsonc").write_text(
+        json.dumps(
+            {
+                "livespec-orchestrator-beads-fabro": {
+                    "connection": {"prefix": "bd-ib"},
+                    "compat": {"pinned": "master"},
+                    "dispatcher": {
+                        "acceptance_mode": "ai-only",
+                        "janitor": {"check_suite": list(probe)},
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    return repo
+
+
+def _reconcile_item() -> WorkItem:
+    return WorkItem(
+        id="bd-ib-fd26sc-reconcile",
+        type="bug",
+        status="active",
+        title="A merged item the reconcile valve re-runs the janitor for",
+        description="Reconcile the already merged pull request.",
+        origin="freeform",
+        gap_id=None,
+        rank="a0",
+        assignee=None,
+        depends_on=(),
+        captured_at="2026-10-17T00:00:00Z",
+        resolution=None,
+        reason=None,
+        audit=None,
+        superseded_by=None,
+        admission_policy="auto",
+        acceptance_policy="ai-only",
+    )
 
 
 def _repo(*, tmp_path: Path, name: str) -> Path:
