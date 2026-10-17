@@ -6,6 +6,14 @@ committed workflow, and journaling that record -- lives in
 This module owns everything from the mint onward: the overlay that carries the
 run-scoped credentials, the rendered goal, the watched run, and the dispositions
 its outcome routes to.
+
+The overlay's own ~seventeen-argument PROJECTION was lifted into
+`_dispatcher_loop_overlay`, which is a projection of values this module has
+already resolved rather than a stage of its own; the refusal that projection can
+produce deliberately stayed HERE, beside the other pre-launch refusals, because
+the ORDER of returns between the mint and the launch is load-bearing -- see the
+comment above `materialize_dispatch_overlay`'s call site and the full reasoning
+in `_dispatcher_proof_credential_lease`.
 """
 
 from __future__ import annotations
@@ -22,9 +30,6 @@ from livespec_orchestrator_beads_fabro.commands import (
 )
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
-    materialize_overlay,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_id_journal import (
     DispatchJournalIdentity,
 )
@@ -39,9 +44,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     run_dispatch,
     run_fabro_factory_auth_login,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
-    contract_prompt_variables,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     GithubTokenEnvRunner,
     JournalFile,
@@ -53,6 +55,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_lessons import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
     failed_dispatch_outcome,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_overlay import (
+    DispatchOverlay,
+    materialize_dispatch_overlay,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan import (
     goal_file_path,
@@ -77,16 +83,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_run_claim import (
     release_pre_run_claim_if_needed,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
-    journaled_proof_rendering,
-    publish_branch_for,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_metadata import (
-    publication_metadata_for,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
-    resume_checkout_for,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
     ReviewGateEmission,
@@ -199,7 +195,10 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
     overlay_file = getattr(plan, "workflow_toml", overlay_file_path(work_item_id=item.id))
     if isinstance(token_supplier := selfup.github_token_supplier(), str):
         return failed_dispatch_outcome(
-            journal=journal, work_item_id=item.id, stage="github-app-auth", detail=token_supplier
+            journal=journal,
+            work_item_id=item.id,
+            stage="github-app-auth",
+            detail=token_supplier,
         )
     # Lessons are read host-side from `repo` (the dispatcher's operative
     # checkout, where the reflector maintains loop-reflection-gate/lessons.md),
@@ -235,75 +234,31 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
     # the watched launcher releases much earlier, at RUNNING, immediately after
     # the candidate worker has snapshotted the vault.
     _ = lifetime.cleanup.callback(lambda: secret_sink.release_launch_guard())
-    overlay_error = materialize_overlay(
-        committed=recorded.committed_workflow,
-        overlay=overlay_file,
-        repo=repo,
-        work_item_id=item.id,
-        dispatch_id=identity.dispatch_id,
-        token=token_supplier,
-        # The review-fix guard THIS plan renders, so the overlay's credential
-        # requirement is derived from the loop bound this dispatch actually runs
-        # rather than from the committed default a bare `fabro run` would see.
-        review_fix_visit_cap=plan.review_fix_visit_cap,
-        graph_override=recorded.payload.graph,
-        # The client build the record MEASURED for this plan's factory binary,
-        # which decides how the written config may name that graph: a Petri-era
-        # client collects the package the config sits in, and refuses an
-        # absolute inline reference in it. Read off the plan rather than
-        # re-measured, for the resolve-once reason the integration contract
-        # gives — a second `--version` read cannot be proven to agree with the
-        # one the dispatch record journaled, and the launch shape is chosen from
-        # that same reading.
-        fabro_version=plan.fabro_version,
-        # The publish branch and head a RESUME puts the sandbox clone on, built
-        # from the head the anchoring record names rather than from the branch
-        # tip: a tip read at prepare time may have moved since the record was
-        # published, which is the state the head-moved refusal exists to catch.
-        resume_checkout=resume_checkout_for(
-            args=args, branch=publish_branch_for(work_item_id=item.id)
-        ),
-        # The ONE contract the plan already resolved, projected once more: the
-        # committed run config's prepare commands template these values as
-        # `{{ inputs.* }}`, and the pinned engine renders that site for the
-        # graph but not for `run.prepare`.
-        prepare_inputs=contract_prompt_variables(resolved=plan.integration),
-        git_author=recorded.git_author,
-        # This repository's proof-asset rendering, as the pre-dispatch gate
-        # MEASURED and journaled it. Read back from that record rather than
-        # re-probed: the overlay is materialized on every dispatch, offline
-        # included, so the measurement travels through the journal and the
-        # projection stays pure (bd-ib-pa73qh).
-        proof_rendering=journaled_proof_rendering(journal_path=journal.path, repository=repo.name),
-        # The adapter inputs this dispatch WRAPS, so the route check grades the
-        # graph against what is actually guarded rather than against a convention.
-        adapter_inputs=(
-            frozenset() if plan.acp_nodes is None else frozenset(plan.acp_nodes.inputs.values())
-        ),
-        # WHICH factory this dispatch launches at, and that factory's own vault.
-        # Both read off the plan's already-resolved target rather than from a
-        # second configuration read, for the resolve-once reason the integration
-        # contract gives: a credential stored in one server's vault while the run
-        # launched against another's resolves to nothing.
-        factory_name=plan.fabro_factory_name,
-        secret_sink=secret_sink,
-        # WHERE this dispatch's sandbox image comes from, read off the plan's
-        # single resolution for the same resolve-once reason the integration
-        # contract gives: the dispatch record already named that decision, so a
-        # second read here could disagree with the record without either
-        # surface showing it.
-        sandbox_image=plan.sandbox_image,
-        # The pull-request title and body the scripted `pr` stage applies. This
-        # is the ONE call site that holds the work-item, which is why the
-        # rendering happens here and travels down as a value: `pr` is a command
-        # node, so it cannot read the rendered goal the retired `pr` prompt did,
-        # and without this projection it falls back to the publish branch name
-        # as its title and keeps `publish_draft`'s placeholder body.
-        publication_metadata=publication_metadata_for(item=item),
+    # The overlay projection itself lives in `_dispatcher_loop_overlay`: every
+    # one of its ~seventeen arguments is already resolved onto the plan or the
+    # dispatch record, so it projects settled values and reads nothing. The
+    # REFUSAL stays here, beside the other pre-launch refusals, because the
+    # order of returns in this window is load-bearing — see the comment above
+    # and `_dispatcher_proof_credential_lease`.
+    overlay_error = materialize_dispatch_overlay(
+        overlay=DispatchOverlay(
+            args=args,
+            repo=repo,
+            item=item,
+            journal=journal,
+            recorded=recorded,
+            overlay_file=overlay_file,
+            dispatch_id=identity.dispatch_id,
+            token=token_supplier,
+            secret_sink=secret_sink,
+        )
     )
     if overlay_error is not None:
         return failed_dispatch_outcome(
-            journal=journal, work_item_id=item.id, stage="run-config-overlay", detail=overlay_error
+            journal=journal,
+            work_item_id=item.id,
+            stage="run-config-overlay",
+            detail=overlay_error,
         )
     goal_text = render_goal(
         item=item, repo=repo, branch=plan.branch, comments=recorded.comments, lessons=lessons

@@ -23,6 +23,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_io_fabro_launcher as launcher_module,
 )
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop as loop_module
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop_overlay as overlay_module
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     CommandRunner,
@@ -212,10 +213,15 @@ def test_factory_authentication_precedes_vault_materialization(
     monkeypatch.setattr(loop_module.selfup, "github_token_supplier", lambda: lambda: "token")
     monkeypatch.setattr(loop_module, "read_ratified_lessons", lambda **_: ())
     monkeypatch.setattr(loop_module, "minijinja_openers_in_goal_sources", lambda **_: ())
-    monkeypatch.setattr(loop_module, "resume_checkout_for", lambda **_: None)
-    monkeypatch.setattr(loop_module, "publish_branch_for", lambda **_: "feat/review-fix")
-    monkeypatch.setattr(loop_module, "contract_prompt_variables", lambda **_: {})
-    monkeypatch.setattr(loop_module, "journaled_proof_rendering", lambda **_: "")
+    # The overlay PROJECTION's own inputs, patched on `_dispatcher_loop_overlay`
+    # because that is the module that calls them. The factory login and the
+    # vault sink stay on `_dispatcher_loop`, which is what keeps this case's
+    # ordering claim meaningful: the two events it compares are raised from
+    # opposite sides of that seam.
+    monkeypatch.setattr(overlay_module, "resume_checkout_for", lambda **_: None)
+    monkeypatch.setattr(overlay_module, "publish_branch_for", lambda **_: "feat/review-fix")
+    monkeypatch.setattr(overlay_module, "contract_prompt_variables", lambda **_: {})
+    monkeypatch.setattr(overlay_module, "journaled_proof_rendering", lambda **_: "")
     monkeypatch.setattr(
         loop_module,
         "fabro_vault_sink_for_plan",
@@ -234,7 +240,7 @@ def test_factory_authentication_precedes_vault_materialization(
         events.append("vault-materialization")
         return "stop after observing the ordering"
 
-    monkeypatch.setattr(loop_module, "materialize_overlay", materialize)
+    monkeypatch.setattr(overlay_module, "materialize_overlay", materialize)
     outcome = loop_module.dispatch_one(
         args=SimpleNamespace(),
         repo=tmp_path,

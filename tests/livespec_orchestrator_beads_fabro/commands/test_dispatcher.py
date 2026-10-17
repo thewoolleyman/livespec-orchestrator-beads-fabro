@@ -56,6 +56,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_ledger_close,
     _dispatcher_loop,
     _dispatcher_loop_command,
+    _dispatcher_loop_overlay,
     _dispatcher_loop_record,
     _dispatcher_loop_selection,
     _dispatcher_otel_wiring,
@@ -4662,7 +4663,9 @@ def test_dispatch_hands_the_journaled_proof_rendering_to_the_overlay(
         captured.update(kwargs)
         return "overlay intercepted"
 
-    monkeypatch.setattr(_dispatcher_loop, "materialize_overlay", capturing_materialize_overlay)
+    monkeypatch.setattr(
+        _dispatcher_loop_overlay, "materialize_overlay", capturing_materialize_overlay
+    )
 
     outcome = _dispatcher_loop.dispatch_one(
         args=argparse.Namespace(
@@ -4721,7 +4724,9 @@ def test_dispatch_tells_the_overlay_which_client_build_it_resolved(
         captured.update(kwargs)
         return "overlay intercepted"
 
-    monkeypatch.setattr(_dispatcher_loop, "materialize_overlay", capturing_materialize_overlay)
+    monkeypatch.setattr(
+        _dispatcher_loop_overlay, "materialize_overlay", capturing_materialize_overlay
+    )
 
     outcome = _dispatcher_loop.dispatch_one(
         args=argparse.Namespace(

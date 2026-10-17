@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
+from livespec_dev_tooling.checks.file_lloc import _LLOC_HARD_CEILING, _count_lloc
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_calibration_emit,
     _dispatcher_codex_auth,
@@ -544,3 +545,98 @@ def test_loop_record_cluster_importable_from_new_module_and_old_names_removed() 
         assert not hasattr(dispatch_loop, name)
         assert hasattr(loop_record, name)
     assert dispatch_loop.__all__ == ["dispatch_one"]
+
+
+def _failed_outcome_kwarg_lines(*, source: str) -> list[str]:
+    """Return the line FOLLOWING each `failed_dispatch_outcome(` call opening.
+
+    Located by the opening token rather than by line number, so this reads the
+    same whatever else moves in the file. The line after the opening paren is
+    where a collapse shows up: expanded, it carries exactly one keyword
+    argument; packed, it carries all four.
+    """
+    lines = source.splitlines()
+    return [
+        lines[index + 1]
+        for index, line in enumerate(lines)
+        if "failed_dispatch_outcome(" in line and "def " not in line and index + 1 < len(lines)
+    ]
+
+
+def test_loop_overlay_leg_is_its_own_module_rather_than_packed_call_sites() -> None:
+    """The run-config overlay projection is its own module, honestly under the ceiling.
+
+    THE LOAD-BEARING ASSERTION IS THE FIRST ONE, and it is about counter-shaving
+    rather than about formatting taste. `_dispatcher_loop` was brought to
+    exactly the 250-LLOC hard ceiling by collapsing two pre-existing
+    `failed_dispatch_outcome` calls this work-item never touched onto one
+    physical line each -- recovering exactly the six lines the admission-verdict
+    threading cost. `file_lloc` counts PHYSICAL lines carrying code tokens, so
+    that recovers the COUNTER and nothing else: the file still rests on the
+    ceiling, so the next code line added to it hard-fails, while the measurement
+    reads compliant. Ruff declares no `skip-magic-trailing-comma`, so the
+    expanded form is stable under the formatter and the collapse could only have
+    been a manual edit.
+
+    So this pins BOTH halves of the honest remedy: each call site carries one
+    keyword argument per line, AND the file has real headroom under the shared
+    gate's own hard ceiling rather than resting on it. The ceiling and the
+    counter are IMPORTED from the gate rather than restated, so this cannot pass
+    by measuring the file differently than `just check` does.
+
+    THE SEAM, and why it is this one. `_dispatcher_loop_overlay` takes the
+    ~seventeen-argument `materialize_overlay` projection -- every one of whose
+    arguments is already resolved onto the plan or the dispatch record, and each
+    of which carries its own load-bearing design comment -- while the REFUSAL
+    arm stays behind in `_dispatch_one_locked`. That placement is deliberate:
+    the pre-launch refusal ORDER is load-bearing, because the credential revoke
+    is the run's own teardown, so the sequence of returns between the mint and
+    the launch has to stay readable in ONE function.
+
+    The last assertion is the control for the choice, and it is a POSITIVE one:
+    `run_dispatch` must STILL be reachable on `_dispatcher_loop`. It is the
+    injection seam 30 test files monkeypatch, so a decomposition that moved it
+    would have retargeted ~141 patch sites to buy the same headroom this cut
+    buys by moving two.
+    """
+    commands_dir = Path(dispatcher.__file__).parent
+    module_path = commands_dir / "_dispatcher_loop_overlay.py"
+    loop_overlay_public_names = {
+        "DispatchOverlay",
+        "materialize_dispatch_overlay",
+    }
+    loop_source = (commands_dir / "_dispatcher_loop.py").read_text(encoding="utf-8")
+
+    kwarg_lines = _failed_outcome_kwarg_lines(source=loop_source)
+    assert kwarg_lines, "no failed_dispatch_outcome call site was located"
+    for line in kwarg_lines:
+        assert line.count("=") <= 1, f"packed failed_dispatch_outcome kwargs on one line: {line!r}"
+
+    lloc = _count_lloc(source=loop_source)
+    assert lloc <= _LLOC_HARD_CEILING - 10, (
+        f"_dispatcher_loop.py is at {lloc} LLOC, within 10 of the "
+        f"{_LLOC_HARD_CEILING} hard ceiling — decompose rather than repack"
+    )
+
+    assert module_path.is_file()
+    loop_overlay = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_overlay"
+    )
+    dispatch_loop = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop"
+    )
+    assert set(loop_overlay.__all__) == loop_overlay_public_names
+    for name in loop_overlay_public_names:
+        assert hasattr(loop_overlay, name)
+    assert dispatch_loop.materialize_dispatch_overlay is loop_overlay.materialize_dispatch_overlay
+    for name in (
+        "materialize_overlay",
+        "contract_prompt_variables",
+        "journaled_proof_rendering",
+        "publication_metadata_for",
+        "resume_checkout_for",
+    ):
+        assert not hasattr(dispatch_loop, name)
+        assert hasattr(loop_overlay, name)
+    assert dispatch_loop.__all__ == ["dispatch_one"]
+    assert hasattr(dispatch_loop, "run_dispatch")
