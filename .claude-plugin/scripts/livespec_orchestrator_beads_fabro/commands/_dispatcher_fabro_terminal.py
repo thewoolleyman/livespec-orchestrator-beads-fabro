@@ -26,6 +26,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     NEEDS_HUMAN_MARKER,
     DispatchPlan,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_outcome import (
+    provider_limit_release_outcome,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_events import (
     routing_stage_failure,
     terminal_event_output,
@@ -62,6 +65,20 @@ def fabro_run_terminal_outcome(
     stderr: str,
 ) -> DispatchOutcome | None:
     """Return a non-green run observation, or None for ordinary PR reconciliation."""
+    # FIRST, because the clause releases a provider-limit failure "through any
+    # terminal, the workflow's `needs_human` terminal included" -- so it has to
+    # outrank BOTH mappings below that would otherwise rest the item at
+    # `blocked`. It costs a green run nothing: a succeeded run records no
+    # failure, and the reading returns before touching configuration.
+    released = provider_limit_release_outcome(
+        outcome_type=outcome_type,
+        plan=plan,
+        run_id=run_id,
+        inspect=inspect,
+        stderr=stderr,
+    )
+    if released is not None:
+        return released
     blocked = _blocked_outcome(
         outcome_type=outcome_type,
         plan=plan,

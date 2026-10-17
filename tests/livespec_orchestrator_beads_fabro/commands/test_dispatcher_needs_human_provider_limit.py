@@ -148,7 +148,22 @@ def _outcome(*, tmp_path: Path, cause: str) -> DispatchOutcome:
         stderr=_STDERR,
     )
     assert outcome is not None
-    assert outcome.status == "blocked"
+    # SUPERSEDED, and deliberately re-pointed rather than dropped. This guard
+    # read `blocked` until `bd-ib-6itdjz` landed the provider-limit release of
+    # `SPECIFICATION/contracts.md`'s "Provider-limit release and re-dispatch":
+    # a ceiling observed at a terminal now releases the item to `ready` instead
+    # of resting it at `blocked / needs-human`, which the clause forbids
+    # surfacing as a needs-human decision at all.
+    #
+    # Everything this module asserts BELOW the guard is unchanged and is now
+    # the live proof that the release did not cost the legacy observation: the
+    # two typed provider fields still ride the outcome, the taxonomy is still
+    # overruled to `deterministic`, and `record_provider_exhaustion_if_observed`
+    # still writes its record -- which it keys on
+    # `provider_usage_limit_provider` alone, so a release that dropped that
+    # field would leave the next dispatch burning the same exhausted
+    # credential.
+    assert outcome.status == "provider-limit-release"
     return outcome
 
 

@@ -11,6 +11,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import 
     BaseAdvancedAfterArming,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit import HookOverLimit
+from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_classify import (
+    ProviderLimitRelease,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
@@ -165,6 +168,13 @@ class DispatchOutcome:
     needs_human_preservation: str | None = None
     hook_over_limit: HookOverLimit | None = None
     base_advanced: BaseAdvancedAfterArming | None = None
+    # The provider-limit release this terminal owes, decided ONCE by the
+    # terminal mapper and read from here by the disposition that performs it.
+    # It rides the outcome for the reason `hook_over_limit` beside it does: the
+    # classification needs the inspect payload and the dispatch's own resolved
+    # candidate identity, neither of which the post-run disposition holds, so a
+    # second derivation there could only re-read the rendered detail prose.
+    provider_limit_release: ProviderLimitRelease | None = None
 
 
 SleepFn = Callable[[float], None]
