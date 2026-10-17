@@ -41,6 +41,7 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoveryRoute
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     RESUME_ENTRY_NODE_ARG,
+    RESUME_FETCH_REF_ARG,
     RESUME_HEAD_ARG,
 )
 
@@ -78,6 +79,11 @@ def recovery_launch_args(
     somewhere and the clause gives a resume no exemption from it — "resolve its
     factory as `dispatch --item` does". The WORKFLOW pin is applied for every
     route BUT `resume`, for the persistence reason the module docstring gives.
+
+    A `seeded` route sets the head and the REF THAT CARRIES IT and deliberately
+    sets NO entry node: a seed is a plain dispatch that starts at `start`, on a
+    different tree. Setting an entry node there would skip every node the seeded
+    run has to run precisely because its work is unfinished.
     """
     pinned = pins.factory(args=args, repo=repo, work_item_id=work_item_id)
     resume = None if route is None else route.resume
@@ -91,4 +97,11 @@ def recovery_launch_args(
         # own recorded pin, which is the same graph.
         cloned.workflow_name = resume.workflow_name or getattr(args, "workflow_name", None)
         return cloned
-    return pins.workflow(args=pinned, repo=repo, work_item_id=work_item_id)
+    named = pins.workflow(args=pinned, repo=repo, work_item_id=work_item_id)
+    seed = None if route is None else route.seed
+    if seed is None:
+        return named
+    seeded = argparse.Namespace(**vars(named))
+    setattr(seeded, RESUME_HEAD_ARG, seed.commit_sha)
+    setattr(seeded, RESUME_FETCH_REF_ARG, seed.preservation_ref)
+    return seeded

@@ -5,9 +5,12 @@
 `seeded`, `fresh` and `held` — and says the first that holds is the route. This
 module is the GRAMMAR: the four names, and the per-route state a launch path
 needs in order to execute one. The DECISION lives in
-`_dispatcher_recovery_routing`, which has to read the forge and the factory, and
-the records live in `_dispatcher_recovery_records`; keeping the values here is
-what lets both of those be read on their own.
+`_dispatcher_recovery_routing`, which has to read the forge and the factory; the
+preserved-work READING lives in `_dispatcher_recovery_preserved`; and the journal
+records live in `_dispatcher_recovery_records`. Keeping the values here is what
+lets each of those be read on its own, and it is why the value types live HERE
+rather than beside the readings that produce them — a grammar that imported its
+own readers could not be the thing all three of them agree on.
 
 WHY THE ROUTE IS A VALUE RATHER THAN A FLAG ON THE ARGUMENTS. The clause is
 explicit about where route state may live: "After admission, each launch path
@@ -34,15 +37,59 @@ from dataclasses import dataclass
 
 __all__: list[str] = [
     "ROUTE_FRESH",
+    "ROUTE_HELD",
     "ROUTE_RESUME",
+    "ROUTE_SEEDED",
+    "RecoveryHold",
+    "RecoveryMeasurement",
     "RecoveryResume",
     "RecoveryRoute",
+    "RecoverySeed",
 ]
 
-# The routes, as the clause names them. `held` and `seeded` arrive with the
-# measurements that produce them.
+# The four routes, as the clause names them.
 ROUTE_FRESH = "fresh"
 ROUTE_RESUME = "resume"
+ROUTE_SEEDED = "seeded"
+ROUTE_HELD = "held"
+
+
+@dataclass(frozen=True, kw_only=True)
+class RecoveryMeasurement:
+    """One measurement routing could not take, and what the item's reader is told.
+
+    The NAME is a stable token an operator greps the journal for; the DETAIL is
+    the prose the surface that could not measure already renders, carried rather
+    than re-worded so the journal row and the refusal an operator reads say the
+    same thing about the same read.
+    """
+
+    name: str
+    detail: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class RecoveryHold:
+    """Every reason one item was held, in the order the resume's refusals are listed.
+
+    BOTH fields rather than one list, because the clause distinguishes them and
+    their remedies differ in kind: a measurement that could not be taken is
+    retried automatically by the next pass, while a non-fallback refusal names a
+    remedy a human or another valve has to perform.
+    """
+
+    measurements: tuple[RecoveryMeasurement, ...] = ()
+    refusals: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True)
+class RecoverySeed:
+    """The four things a seed record must name, resolved from one origin read."""
+
+    source_run_id: str
+    remote: str
+    commit_sha: str
+    preservation_ref: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -76,11 +123,12 @@ class RecoveryRoute:
     ONE type for every route rather than one per route, because every consumer
     asks the same two questions — which route is this, and what does it carry —
     and a union would make each of them a type test before either question could
-    be asked. The per-route payload is optional and exactly one of them is set
-    for the routes that have one, which `_dispatcher_recovery_routing` is the
-    sole constructor of.
+    be asked. At most one of the three payloads is set, which
+    `_dispatcher_recovery_routing` is the sole constructor of.
     """
 
     work_item_id: str
     route: str
     resume: RecoveryResume | None = None
+    seed: RecoverySeed | None = None
+    hold: RecoveryHold | None = None

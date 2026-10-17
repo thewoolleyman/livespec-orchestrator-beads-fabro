@@ -42,16 +42,35 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    CommandRunner,
+    DispatchOutcome,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved import (
+    PreservedWorkUnobservable,
+    verified_preserved_seed,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records import (
+    PRESERVED_WORK_ABSENT,
+    PRESERVED_WORK_VERIFIED,
+    RECOVERY_HELD_STAGE,
+    recovery_held_record,
+    recovery_route_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_release import (
     released_for_recovery,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import (
     ROUTE_FRESH,
+    ROUTE_HELD,
     ROUTE_RESUME,
+    ROUTE_SEEDED,
+    RecoveryHold,
+    RecoveryMeasurement,
     RecoveryResume,
     RecoveryRoute,
 )
@@ -69,9 +88,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals impo
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
+    "MEASUREMENT_PRESERVED_WORK",
     "RecoveryRouting",
     "route_recovery",
 ]
+
+# The measurement name a preserved-work read that could not be taken reports
+# under. One token per measurement, so an operator greps the journal for the READ
+# that failed rather than for the route it stopped.
+MEASUREMENT_PRESERVED_WORK = "preserved-work"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -109,6 +134,41 @@ class RecoveryRouting:
         route = self.route_for(work_item_id=work_item_id)
         return route is None or route.route != ROUTE_RESUME
 
+    def offered(self, *, candidates: list[WorkItem]) -> list[WorkItem]:
+        """The candidates the admission valve is offered, which excludes every hold.
+
+        "A `held` item MUST NOT be offered to the admission valve in that pass. It
+        stays `ready`." Withholding it from the valve is the whole of that: the
+        valve is the only thing that writes `ready -> active`, so an item it never
+        sees keeps its status without anything having to put it back.
+        """
+        return [
+            one for one in candidates if not _is_held(route=self.route_for(work_item_id=one.id))
+        ]
+
+    def held_outcomes(self) -> list[DispatchOutcome]:
+        """One deferred outcome per held item, for the drain's own report.
+
+        "Under `loop` the hold is reported as a deferred outcome on the same terms
+        as a capacity deferral." The STATUS is therefore the capacity one, which
+        is what keeps the verdict and the post-verdict alarm treating it as a
+        non-defect; the STAGE is this hold's own, which is what lets an operator
+        tell the two apart. That pairing is the one `_dispatcher_rework_admission`
+        already uses for its own deferral.
+        """
+        return [
+            DispatchOutcome(
+                work_item_id=one.work_item_id,
+                status="capacity-deferred",
+                stage=RECOVERY_HELD_STAGE,
+                pr_number=None,
+                merge_sha=None,
+                detail=_held_detail(route=one),
+            )
+            for one in self.routes
+            if _is_held(route=one)
+        ]
+
 
 def route_recovery(
     *,
@@ -135,13 +195,39 @@ def route_recovery(
                     runner=runner,
                 ),
                 item=item,
+                repo=repo,
+                runner=runner,
                 journal=journal,
             )
         )
     return RecoveryRouting(routes=tuple(routes))
 
 
-def _released_route(*, gather: ResumeGather, item: WorkItem, journal: JournalFile) -> RecoveryRoute:
+def _is_held(*, route: RecoveryRoute | None) -> bool:
+    """Whether this route is the hold; an absent route never is."""
+    return route is not None and route.route == ROUTE_HELD
+
+
+def _held_detail(*, route: RecoveryRoute) -> str:
+    """Every reason one held item names, as one line for the deferred outcome."""
+    hold = route.hold
+    if hold is None:
+        return "recovery held"
+    named = (
+        *(f"{one.name}: {one.detail}" for one in hold.measurements),
+        *hold.refusals,
+    )
+    return "recovery held: " + "; ".join(named)
+
+
+def _released_route(
+    *,
+    gather: ResumeGather,
+    item: WorkItem,
+    repo: Path,
+    runner: CommandRunner,
+    journal: JournalFile,
+) -> RecoveryRoute:
     """The route one RELEASED candidate takes, from the resume's own measurement.
 
     The refusal ladder is the clause's own grading surface — "`resume`, when every
@@ -155,7 +241,7 @@ def _released_route(*, gather: ResumeGather, item: WorkItem, journal: JournalFil
     anchor = gather.anchor
     pull_request = gather.observation.pull_request
     if resume_refusals(observation=gather.observation) or anchor is None or pull_request is None:
-        return RecoveryRoute(work_item_id=item.id, route=ROUTE_FRESH)
+        return _fallback_route(gather=gather, item=item, repo=repo, runner=runner, journal=journal)
     journal.append(
         record=resume_journal_record(
             work_item_id=item.id,
@@ -166,6 +252,7 @@ def _released_route(*, gather: ResumeGather, item: WorkItem, journal: JournalFil
             source=anchor.source,
         )
     )
+    journal.append(record=recovery_route_record(work_item_id=item.id, route=ROUTE_RESUME))
     return RecoveryRoute(
         work_item_id=item.id,
         route=ROUTE_RESUME,
@@ -178,3 +265,67 @@ def _released_route(*, gather: ResumeGather, item: WorkItem, journal: JournalFil
             workflow_name=gather.workflow_name,
         ),
     )
+
+
+def _fallback_route(
+    *,
+    gather: ResumeGather,
+    item: WorkItem,
+    repo: Path,
+    runner: CommandRunner,
+    journal: JournalFile,
+) -> RecoveryRoute:
+    """The route a refused resume falls back to: `seeded`, `fresh`, or `held`.
+
+    "`seeded`, when every applicable resume refusal is fallback-permitting and
+    preserved work is verified; `fresh`, when every applicable resume refusal is
+    fallback-permitting and preserved work is confirmed absent; `held`, when...
+    any measurement routing needs cannot be taken."
+
+    The preserved-work read is taken HERE rather than beside the gather, because
+    it is the one measurement only this arm needs: a resume that passes never asks
+    it, and asking it anyway would spend an origin round trip per released
+    candidate to answer a question the route had already settled.
+    """
+    preserved = verified_preserved_seed(
+        runner=runner,
+        repo=repo,
+        work_item_id=item.id,
+        earlier_run_ids=gather.earlier_run_ids,
+    )
+    if isinstance(preserved, PreservedWorkUnobservable):
+        return _held_route(
+            item=item,
+            journal=journal,
+            hold=RecoveryHold(
+                measurements=(
+                    RecoveryMeasurement(name=MEASUREMENT_PRESERVED_WORK, detail=preserved.detail),
+                )
+            ),
+        )
+    if preserved is None:
+        # Confirmed absence, with the loss recorded: every source was asked and
+        # named nothing, which is what permits the default branch.
+        journal.append(
+            record=recovery_route_record(
+                work_item_id=item.id,
+                route=ROUTE_FRESH,
+                preserved_work=PRESERVED_WORK_ABSENT,
+            )
+        )
+        return RecoveryRoute(work_item_id=item.id, route=ROUTE_FRESH)
+    journal.append(
+        record=recovery_route_record(
+            work_item_id=item.id,
+            route=ROUTE_SEEDED,
+            seed=preserved,
+            preserved_work=PRESERVED_WORK_VERIFIED,
+        )
+    )
+    return RecoveryRoute(work_item_id=item.id, route=ROUTE_SEEDED, seed=preserved)
+
+
+def _held_route(*, item: WorkItem, journal: JournalFile, hold: RecoveryHold) -> RecoveryRoute:
+    """Record one hold and return its route; the item is left exactly as it was."""
+    journal.append(record=recovery_held_record(work_item_id=item.id, hold=hold))
+    return RecoveryRoute(work_item_id=item.id, route=ROUTE_HELD, hold=hold)
