@@ -88,6 +88,9 @@ concrete, copy-pasteable action or command. The steps must be:
 
 - **Deterministic.** No "check that it looks right"; name the exact
   command and the exact expected observation.
+  A step that reads git history MUST name a fixed commit sha, or use a
+  depth-independent predicate. It MUST NEVER expect a commit inside a
+  fixed-size window counted from HEAD.
 - **Rooted in this sandbox.** Start from the clone's working directory and
   the tooling the sandbox actually has.
 - **Credential-safe.** Where a step needs a credential, name it by its
