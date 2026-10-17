@@ -72,6 +72,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_poli
     scoped_repository_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_selection import (
+    SelectedAcpNodes,
     select_acp_node_adapters,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
@@ -229,17 +230,12 @@ def prepare_acp_nodes(  # noqa: PLR0913 — kw-only dispatch inputs; each is one
         resolution=resolution,
         dispatch=dispatch,
         workflow_inputs=workflow_inputs,
-        factory=factory,
     )
     if isinstance(chains, str):
         return chains
-    # WHICH candidate of each node's chain this dispatch renders, folded onto
-    # the finished resolution rather than resolved beside it, so the launch
-    # reads the adapters from the same object the record was projected from. A
-    # launch that selected its own would be a second read of one configuration,
-    # and the disagreement would be invisible: both reads produce a perfectly
-    # well-formed candidate.
-    selected = select_acp_node_adapters(resolution=resolution, chains=chains, verdict=verdict)
+    selected = _select_and_gate(
+        resolution=resolution, chains=chains, verdict=verdict, factory=factory
+    )
     if isinstance(selected, str):
         return selected
     # The entitlement labels come from the SELECTION and never from the chain's
@@ -375,6 +371,46 @@ def _factory_name(*, factory: FactoryTarget | None) -> str:
     return "(unresolved)" if factory is None else factory.name
 
 
+def _select_and_gate(
+    *,
+    resolution: AcpNodeResolution,
+    chains: AcpChainResolution,
+    verdict: AcpPreflightVerdict | None,
+    factory: FactoryTarget | None,
+) -> SelectedAcpNodes | str:
+    """Choose each node's candidate, then refuse one the factory cannot configure.
+
+    WHICH candidate of each node's chain this dispatch renders, folded onto the
+    finished resolution rather than resolved beside it, so the launch reads the
+    adapters from the same object the record was projected from. A launch that
+    selected its own would be a second read of one configuration, and the
+    disagreement would be invisible: both reads produce a perfectly well-formed
+    candidate.
+
+    THE CAPABILITY GATE SITS HERE, AFTER THE SELECTION, because the one
+    remaining engine capability gates the candidate this dispatch RENDERS: an
+    unselected fallback's `config_options` is a request no engine is asked to
+    honour here, so gating on it would refuse a dispatch that would have run
+    correctly. It is still before any Fabro run exists, exactly as every other
+    refusal in this seam is -- the move is a few lines within one pre-run
+    function, so nothing about its position relative to the claim changes.
+
+    ONE reader, built here and passed in, so the dispatch issues at most one
+    `GET /system/info` however many nodes are in question.
+    """
+    selected = select_acp_node_adapters(resolution=resolution, chains=chains, verdict=verdict)
+    if isinstance(selected, str):
+        return selected
+    uncapable = acp_capability_refusal(
+        selected=selected.selected,
+        factory_name=_factory_name(factory=factory),
+        capabilities=factory_capability_reader(factory=factory),
+    )
+    if uncapable is not None:
+        return uncapable
+    return selected
+
+
 def _resolve_chains(
     *,
     block: dict[str, object],
@@ -382,7 +418,6 @@ def _resolve_chains(
     resolution: AcpNodeResolution,
     dispatch: Mapping[str, AcpNodeOverlay],
     workflow_inputs: Mapping[str, str],
-    factory: FactoryTarget | None,
 ) -> AcpChainResolution | str:
     """Attach each node's candidate chain to its resolved primary, or refuse.
 
@@ -409,21 +444,6 @@ def _resolve_chains(
     declared = repository_acp_chains(block=block, catalogs=catalogs)
     if isinstance(declared, str):
         return declared
-    # BEFORE the attach, because this is a refusal about the chain as
-    # CONFIGURED: a chain asking the engine to advance candidates or to set
-    # session options against a factory that can do neither would otherwise run
-    # green on whatever single adapter and model the agent chose for itself.
-    #
-    # ONE reader for both of the gate's arms, built here and passed in, so the
-    # dispatch issues at most one `GET /system/info` however many nodes and
-    # capabilities are in question.
-    uncapable = acp_capability_refusal(
-        chains=declared,
-        factory_name=_factory_name(factory=factory),
-        capabilities=factory_capability_reader(factory=factory),
-    )
-    if uncapable is not None:
-        return uncapable
     attached = attach_acp_chains(
         resolution=resolution,
         chains=declared,

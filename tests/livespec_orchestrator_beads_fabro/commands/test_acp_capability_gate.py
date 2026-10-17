@@ -87,6 +87,39 @@ class _Reader:
         return self.capabilities
 
 
+def _selection(*, entry: dict[str, Any]) -> Any:
+    """This node's selection with NOTHING held, i.e. position zero.
+
+    The gate reads the SELECTED candidate, so every case here states the
+    selection explicitly rather than handing over a chain. Position zero is the
+    right one for all of them: each varies the factory's CAPABILITY answer and
+    not which candidate the dispatch rendered. The selection semantics
+    themselves -- a selected fallback gating, an unselected one never gating --
+    are covered end to end through the real resolution path in
+    `test_acp_selected_candidate_options_gate.py`.
+    """
+    schema = _module(name="_acp_candidate_schema")
+    adapters = _module(name="_acp_node_adapters")
+    selection = _module(name="_acp_node_selection")
+    chain = _chains(entry=entry)[_NODE]
+    return {
+        _NODE: selection.SelectedAcpCandidate(
+            node=_NODE,
+            index=0,
+            candidate=schema.AcpCandidate(
+                adapter=adapters.AcpAdapter(command="acp"),
+                identity=chain.identity,
+                agent_id=chain.agent_id,
+                config_options=chain.config_options,
+            ),
+            selection_identity="sel-0123456789abcdef",
+            primary_generation="gen-0123456789abcdef",
+            full_chain="chain-0123456789abcdef",
+            skipped=(),
+        )
+    }
+
+
 def _refusal(*, entry: dict[str, Any], reader: _Reader) -> str | None:
     """One gate call, through the module's DECLARED public surface.
 
@@ -98,7 +131,7 @@ def _refusal(*, entry: dict[str, Any], reader: _Reader) -> str | None:
     gate = _module(name="_acp_capability_gate")
     assert "acp_capability_refusal" in gate.__all__, sorted(gate.__all__)
     return gate.acp_capability_refusal(
-        chains=_chains(entry=entry), factory_name=_FACTORY, capabilities=reader
+        selected=_selection(entry=entry), factory_name=_FACTORY, capabilities=reader
     )
 
 
@@ -214,20 +247,26 @@ def test_an_empty_advertised_set_is_reported_as_nothing() -> None:
     assert "(nothing)" in refusal
 
 
-def test_a_chain_whose_fallback_carries_options_is_gated_too() -> None:
-    """Every candidate that could be rendered carries the obligation.
+def test_a_chain_whose_unselected_fallback_carries_options_is_not_gated() -> None:
+    """An UNSELECTED fallback's options never gate -- and owe no round trip.
 
-    The Dispatcher renders exactly one candidate per node, but a chain's later
-    candidates are rendered by a LATER dispatch after a provider-limit release,
-    so a chain whose second candidate the server cannot configure is
-    misconfigured now rather than mid-sequence.
+    `contracts.md` ends the clause saying so in as many words: "an unselected
+    fallback's options never gate a dispatch". The Dispatcher renders exactly
+    one candidate per node and the engine never learns the others exist, so a
+    fallback's request is one no engine is asked to honour on THIS dispatch; a
+    later dispatch that actually selects it is gated then, when the obligation
+    is real. Gating it now would refuse a dispatch that would have run
+    correctly, naming a capability the rendered configuration does not need.
+
+    Asserted on the CALL COUNT as well as the answer, because a gate that read
+    the list and happened to find the capability would also return `None`.
     """
     reader = _Reader(capabilities=frozenset())
 
     refusal = _refusal(entry={**_ENV_ENTRY, "fallbacks": [dict(_PROTOCOL_ENTRY)]}, reader=reader)
 
-    assert refusal is not None
-    assert _CAPABILITY in refusal
+    assert refusal is None
+    assert reader.calls == 0
 
 
 def test_a_legacy_chain_never_consults_the_gauge() -> None:
