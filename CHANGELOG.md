@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.208.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.208.0...v0.208.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **janitor:** name each scrubbed variable on the janitor-post-merge journal row ([2cb9688](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2cb968892b89f4d66d8f668a086d0be30bab84e0))
+* **janitor:** record an empty removal list when the dispatcher carried nothing ([8834937](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/883493780a0fa22dd7c46e6340f25533a894a584))
+* **janitor:** scrub the dispatcher's factory route from the janitor check run ([2e23b06](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2e23b06b994829889a461d154e60e67a788c5791))
+* **janitor:** scrub the dispatcher's invoker attribution from the janitor check run ([6fa3b2a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6fa3b2a894c888b35deda99b9bc089255a6ac05f))
+
 ## [0.208.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.207.4...v0.208.0) (2026-10-17)
 
 
