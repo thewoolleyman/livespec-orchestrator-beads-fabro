@@ -1,12 +1,15 @@
 """Failure and compatibility controls for push-time credential replacement."""
 
+import base64
 import subprocess
+from urllib.parse import urlsplit, urlunsplit
 
 import pytest
 
 from tests.integration import test_push_time_credentials as fixtures
 from tests.integration.test_push_time_credentials import (
     BRANCH,
+    EXPIRED,
     PushSandbox,
     executable,
     git,
@@ -112,11 +115,48 @@ def test_an_app_sandbox_with_a_missing_helper_refuses_publication(
     assert box.writes == []
 
 
-def test_the_server_rejects_the_expired_url_without_the_refresh_helper(
+def test_the_server_rejects_the_expired_credential_without_the_refresh_helper(
     push_sandbox: PushSandbox,
 ) -> None:
-    """Positive control: the same real transport refuses an unrefreshed push."""
+    """Positive control: the same real transport refuses an unrefreshed push.
+
+    The expired credential is handed to git through a static
+    `credential.helper` and the origin URL is stripped of its userinfo,
+    because a credential carried in the URL no longer reaches receive-pack at
+    all on libcurl 8.5.0-2ubuntu10.16 (CVE-2026-94266): that release returns
+    `CURLINFO_EFFECTIVE_URL` with the userinfo removed, git reads the
+    difference against the URL it asked for as a redirect, and rebases every
+    later request onto the credential-free URL. The POST then carries no
+    `Authorization` header, so the server answers the UNAUTHENTICATED 401 arm,
+    git falls through to a credential prompt, and with no terminal the control
+    reports `could not read Username` instead of the refusal it exists to
+    observe — `box.writes` would be empty too. git's credential layer passes
+    the token as `CURLOPT_USERPWD`, which libcurl never puts in the effective
+    URL, so this channel observes the same refusal on both libcurl releases.
+
+    `http.extraHeader` is the other channel the URL-stripping rules in, and it
+    is deliberately NOT the one used here: git does not know such a header is
+    a credential, so on the receive-pack 401 it asks its credential layer for
+    a username it has no source for, and the push dies with the same
+    `could not read Username` this control must not accept.
+    """
     box = push_sandbox
+    origin_url = urlsplit(git("remote", "get-url", "origin", cwd=box.clone, env=box.env))
+    credential_free = urlunsplit(
+        (origin_url.scheme, f"{origin_url.hostname}:{origin_url.port}", origin_url.path, "", "")
+    )
+    assert "@" not in credential_free
+    helper = box.root / "expired-credential-helper"
+    executable(
+        path=helper,
+        source=(
+            "#!/bin/sh\n"
+            '[ "$1" = get ] || exit 0\n'
+            f"printf 'username=x-access-token\\npassword=%s\\n' '{EXPIRED}'\n"
+        ),
+    )
+    git("remote", "set-url", "origin", credential_free, cwd=box.clone, env=box.env)
+    git("config", "credential.helper", str(helper), cwd=box.clone, env=box.env)
     result = subprocess.run(
         ["git", "push", "origin", f"HEAD:{BRANCH}"],
         cwd=box.clone,
@@ -127,5 +167,6 @@ def test_the_server_rejects_the_expired_url_without_the_refresh_helper(
     )
     assert result.returncode != 0
     assert "HTTP 401" in result.stderr
-    assert box.writes
+    expected = "Basic " + base64.b64encode(f"x-access-token:{EXPIRED}".encode()).decode()
+    assert box.writes == [expected]
     assert box.mint_count() == 0

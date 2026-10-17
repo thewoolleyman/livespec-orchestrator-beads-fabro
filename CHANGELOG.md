@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.207.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.207.2...v0.207.3) (2026-10-17)
+
+
+### Bug Fixes
+
+* read an unarmed pull request's null auto-merge request as unarmed in pr_refresh (bd-ib-fisgni) ([cd51ba6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cd51ba6edf058043f6deeca90e064afcbc515f40))
+
 ## [0.207.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.207.1...v0.207.2) (2026-10-17)
 
 
