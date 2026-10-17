@@ -69,14 +69,24 @@ _DETERMINISTIC_BULLET = re.compile(
     re.DOTALL | re.MULTILINE,
 )
 
-# The rule itself, as the two physical lines that carry its positive and its
-# negative half. Pinned POSITIVELY rather than by probing for the absence of a
-# HEAD-window phrase: an absence probe could never return a hit and would read
-# clean over a bullet that said nothing at all.
+# The rule itself: the two anchors it permits and the one shape it forbids.
+# Pinned POSITIVELY rather than by probing for the absence of a HEAD-window
+# phrase: an absence probe could never return a hit and would read clean over a
+# bullet that said nothing at all.
 _ANCHORING_RULE = (
     "MUST name a fixed commit sha",
     "depth-independent predicate",
     "fixed-size window counted from HEAD",
+)
+
+# The reason, which the bullet must carry IN THE RULE rather than leave to a
+# reader. An agent authoring a step cannot tell a depth-stable read from a
+# depth-fragile one without knowing that the engine moves HEAD underneath it,
+# and a bare prohibition invites the plausible-looking `--max-count=4` that
+# merely widens the window the next checkpoint will outgrow.
+_ANCHORING_REASON = (
+    "the engine appends a checkpoint commit after every node",
+    "so HEAD moves between capture and replay",
 )
 
 
@@ -126,4 +136,16 @@ def test_the_deterministic_bullet_anchors_a_git_history_read_to_a_fixed_sha() ->
             f"the Deterministic bullet omits {phrase!r}, so a reproduction step may "
             f"anchor a git-history read to a window counted from a HEAD that moves "
             f"between capture and replay"
+        )
+
+
+def test_the_deterministic_bullet_gives_the_moving_head_reason_in_the_rule() -> None:
+    """The rule says why: the engine's per-node checkpoint commit moves HEAD."""
+    bullet = _deterministic_bullet()
+
+    for phrase in _ANCHORING_REASON:
+        assert phrase in bullet, (
+            f"the Deterministic bullet omits {phrase!r}, so the anchoring rule "
+            f"arrives as a bare prohibition and an author cannot tell which reads "
+            f"survive the checkpoint commits the engine appends after this stage"
         )
