@@ -269,7 +269,17 @@ def _script_attributes(*, text: str) -> list[tuple[str, str]]:
 
 
 def _skip_comment(*, text: str, at: int) -> int:
-    """The index after a DOT comment opening at `at`, or `at` when none opens there."""
+    """The index after a DOT comment opening at `at`, or `at` when none opens there.
+
+    Three forms: `//` and `/* */`, and a line whose first non-blank character is
+    `#`, which Graphviz ignores whole (measured with `dot -Tcanon`, indented or
+    not). Missing the third let a quote on a `#` line desynchronize the string
+    tracking, which hid a real script from the attribution.
+    """
+    line_start = text.rfind("\n", 0, at) + 1
+    if text.startswith("#", at) and text[line_start:at].strip() == "":
+        newline = text.find("\n", at)
+        return len(text) if newline < 0 else newline
     if text.startswith("//", at):
         newline = text.find("\n", at)
         return len(text) if newline < 0 else newline
@@ -328,36 +338,22 @@ def _quoting_offenders(*, text: str) -> dict[str, int]:
         count = script.count(_ESCAPED_SINGLE_QUOTE)
         if count:
             offenders[owner] = offenders.get(owner, 0) + count
-    # THE BACKSTOP, which needs no model of DOT's attribute grammar. Two review
-    # rounds each found a valid DOT spelling the attribution missed, so the
-    # refusal no longer rests on the attribution being complete: every escaped
-    # quote in ANY string outside a comment is counted, and whatever the
-    # attribution did not account for is refused as unattributed rather than
-    # passed. The attribution is what NAMES a node; this is what makes the
-    # refusal blanket.
-    unattributed = _escaped_quotes_in_strings(text=text) - sum(offenders.values())
+    # THE BACKSTOP, and it reads BYTES, not DOT. Three review rounds each found a
+    # valid DOT spelling the attribution missed -- the third one desynchronized
+    # a string-and-comment tokenizer that the first backstop shared with it -- so
+    # the refusal's blanket claim now rests on nothing that can be lexed wrong:
+    # every backslash-quote pair ANYWHERE in the file, comments included, is
+    # counted, and whatever the attribution did not account for is refused as
+    # unattributed. The committed graph carries none at all, so this costs
+    # nothing; a comment that ever needs to quote the sequence must spell it
+    # some other way. The attribution NAMES a node; this makes the refusal total.
+    unattributed = text.count(_ESCAPED_SINGLE_QUOTE) - sum(offenders.values())
     if unattributed:
         offenders[_UNATTRIBUTED] = unattributed
     return offenders
 
 
 _UNATTRIBUTED = "<unattributed>"
-
-
-def _escaped_quotes_in_strings(*, text: str) -> int:
-    """Escaped single quotes across EVERY DOT string in the file, comments excluded."""
-    total = 0
-    at = 0
-    while at < len(text):
-        skipped = _skip_comment(text=text, at=at)
-        if skipped != at:
-            at = skipped
-        elif text[at] == '"':
-            body, at = _dot_string(text=text, start=at)
-            total += body.count(_ESCAPED_SINGLE_QUOTE)
-        else:
-            at += 1
-    return total
 
 
 # Non-canonical script layouts, each carrying ONE escaped-quote pair. Every one
@@ -372,15 +368,19 @@ _LAYOUT_MUTANTS = (
     f'{_PROBE_NODE} [\n    script="case $x in\n]\n esac; echo Q.bad.Q"\n]',
     f'{_PROBE_NODE} [script /* explanation */ = "echo Q.bad.Q"]',
     f'{_PROBE_NODE} [script="echo " + "Q.bad.Q"]',
+    f'# "\n{_PROBE_NODE} [script="echo // Q.bad.Q"]',
 )
 
-# An escaped quote the attribution cannot see -- here in a non-script string,
-# standing in for any spelling of a script that a future DOT form might hide
+# An escaped quote the attribution cannot see -- here in a non-script string
+# and in a comment, standing in for any spelling of a script that a future DOT form might hide
 # from it. Only the backstop can catch it, and it must still be REFUSED, under
 # the unattributed key, so the refusal's blanket claim does not depend on the
 # attribution keeping up with DOT's grammar. A `\'` is not a DOT escape in ANY
-# string, so refusing it outside scripts too is conservative, not wrong.
-_BACKSTOP_MUTANTS = (f'{_PROBE_NODE} [label="Q.bad.Q"]',)
+# string, so refusing it outside scripts, comments included, is conservative.
+_BACKSTOP_MUTANTS = (
+    f'{_PROBE_NODE} [label="Q.bad.Q"]',
+    f'/* Q.bad.Q */ {_PROBE_NODE} [label="x"]',
+)
 
 
 def _with_probe_node(*, text: str, declaration: str) -> str:
