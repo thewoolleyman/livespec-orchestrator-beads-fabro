@@ -5061,6 +5061,24 @@ leaves it. If a future change deliberately retains merge-sha pinning
 anywhere for reproducibility, this section MUST state how a post-merge
 environment fix clears an earlier item without a manual override.
 
+**Post-merge and reconcile janitor environment.** The post-merge janitor and the
+reconcile-merged janitor MUST run the target repository's check aggregate in an
+environment from which the dispatcher's own factory-routing and
+invoker-attribution variables have been removed. That set is at least
+`LIVESPEC_FABRO_FACTORY` and `LIVESPEC_INVOKER`, and it MUST include any later
+variable the dispatcher reads to select a factory or to attribute a journal
+record. Those variables describe how THIS dispatch was routed and attributed.
+They are not part of the merged code under test, and a repository's suite
+legitimately exercises the code that reads them, so inheriting them makes the
+janitor's verdict depend on the dispatch route rather than on the merge. The
+janitor MUST NOT otherwise alter the environment the check aggregate receives:
+credentials and the toolchain path the check needs are retained. The
+`janitor-post-merge` journal row MUST name each variable it removed, and MUST
+record an empty list when none was present, so a reader can tell a scrubbed run
+from one that inherited nothing. This clause governs only the check run's
+ENVIRONMENT; it is not a new step of the closed set and adds no pre-dispatch
+refusal.
+
 **Merge-strategy resolution.** The strategy by which a dispatched item's
 approved pull request lands on the default branch is the schema field
 `dispatcher.merge_mode`, resolved through the one generic resolver and read as

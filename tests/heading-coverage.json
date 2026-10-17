@@ -1864,5 +1864,13 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_pre_push_deletion_only_scenario188.test_scenario188_a_delete_only_push_skips_every_gate_and_says_why"
+  },
+  {
+    "heading": "## Scenario 189 \u2014 The post-merge and reconcile janitor's check run inherits none of the dispatcher's routing and attribution variables",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by revision v152 accepting proposal janitor-inherits-no-routing-variables (plan fabro-currency, epic bd-ib-6tcjfx). The janitor-environment scrub is not implemented yet; an integration-tier test is owed for the three sub-scenarios, and work-item bd-ib-fd26sc implements them and owns that binding.",
+    "work_item": "bd-ib-fd26sc"
   }
 ]
