@@ -61,6 +61,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 _NOW = "2026-10-14T12:00:00Z"
 _LATER = "2099-01-01T00:00:00Z"
 _FLOOR = 20
+_HORIZON = headroom.DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES
 _CLAUDE_PAIR = (ANTHROPIC_DOMAIN, "builtin-anthropic-0123456789abcdef")
 _SECOND_PAIR = (ANTHROPIC_DOMAIN, "builtin-anthropic-fedcba9876543210")
 _BUILTIN_PAIRS = frozenset({_CLAUDE_PAIR, _SECOND_PAIR})
@@ -274,12 +275,16 @@ def test_a_headroom_emptied_node_waits_without_a_claim_and_says_what_it_read(
                 "availability_key": _CLAUDE_PAIR[0],
                 "candidate_key": _CLAUDE_PAIR[1],
                 "session_headroom_floor_percent": _FLOOR,
+                "session_headroom_horizon_minutes": _HORIZON,
+                "headroom_skip_kind": "floor",
                 "headroom": expected,
             },
             {
                 "availability_key": _SECOND_PAIR[0],
                 "candidate_key": _SECOND_PAIR[1],
                 "session_headroom_floor_percent": _FLOOR,
+                "session_headroom_horizon_minutes": _HORIZON,
+                "headroom_skip_kind": "floor",
                 "headroom": expected,
             },
         ]

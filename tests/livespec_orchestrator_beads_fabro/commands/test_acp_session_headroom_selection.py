@@ -58,6 +58,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _NOW = "2026-10-14T12:00:00Z"
 _FLOOR = 20
+_HORIZON = headroom.DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES
 # The attribution envelope `JournalFile.append` stamps onto every record. It is
 # dropped before the whole-record comparison below because its `at` is the live
 # clock and its `invoker` is the host: asserting them would bind this case to
@@ -249,6 +250,8 @@ def test_a_skipped_primary_admits_the_item_on_its_fallback_and_says_why(
                         "availability_key": _CLAUDE_PAIR[0],
                         "candidate_key": _CLAUDE_PAIR[1],
                         "session_headroom_floor_percent": _FLOOR,
+                        "session_headroom_horizon_minutes": _HORIZON,
+                        "headroom_skip_kind": "floor",
                         "headroom": _reading_fields(utilization=90.0, remaining=10.0),
                     }
                 ],
@@ -317,5 +320,7 @@ def test_the_skipped_entry_names_no_hold_identity_of_any_kind(
         "availability_key",
         "candidate_key",
         "session_headroom_floor_percent",
+        "session_headroom_horizon_minutes",
+        "headroom_skip_kind",
         "headroom",
     }

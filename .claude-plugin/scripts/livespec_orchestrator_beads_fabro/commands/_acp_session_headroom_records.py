@@ -114,11 +114,21 @@ def session_headroom_selection_fields(*, node: NodePreflight) -> dict[str, objec
 
 
 def _skipped_fields(*, skip: SkippedCandidate) -> dict[str, object]:
-    """One headroom-skipped candidate: who it was, what was read, and the floor."""
+    """One headroom-skipped candidate: who it was, what was read, and both dials.
+
+    THE KIND IS WHAT NAMES A PROJECTION SKIP AS A PROJECTION SKIP, which the
+    clause requires of this very surface. It is written beside BOTH dials rather
+    than instead of them: a reader asking why a candidate left the set needs the
+    kind to know which test fired and both dials to know what it fired against,
+    and the embedded reading carries the credential identity that joins the skip
+    to the assessment holding its projection.
+    """
     return {
         "availability_key": skip.availability_key,
         "candidate_key": skip.candidate_key,
         "session_headroom_floor_percent": skip.headroom_floor_percent,
+        "session_headroom_horizon_minutes": skip.headroom_horizon_minutes,
+        "headroom_skip_kind": skip.headroom_skip_kind,
         "headroom": (
             None
             if skip.headroom is None
@@ -218,6 +228,7 @@ def headroom_refusal_fields(*, verdict: AcpPreflightVerdict) -> dict[str, object
         return {}
     return {
         "session_headroom_floor_percent": floor,
+        "session_headroom_horizon_minutes": verdict.session_headroom_horizon_minutes,
         "session_headroom_assessments": [
             session_headroom_reading_fields(reading=reading)
             for reading in verdict.headroom_assessments
