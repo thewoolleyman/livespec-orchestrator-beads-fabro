@@ -952,6 +952,37 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   absent-account case, because that one arm WIDENS a record's reach and is the
   direction every other case argues against.
 
+- `test_janitor_environment_scrub_scenario189.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 189 and the post-merge and reconcile
+  janitor environment clause of `SPECIFICATION/contracts.md`: the janitor's
+  check run carries neither `LIVESPEC_FABRO_FACTORY` nor `LIVESPEC_INVOKER`,
+  keeps every other value the Dispatcher's environment held, and the
+  `janitor-post-merge` journal row names what it removed. The check aggregate
+  is a REAL child process that EXITS NON-ZERO when it can see the variable
+  under test, which is the measured defect rather than a contrivance: this
+  repository's own factory-resolution and operator-default tests read those
+  variables, so a janitor that inherits them reds a merge whose
+  default-branch CI was green and strands the item `active`. The child dumps
+  its environment NUL-framed, the only framing in which a value's own newline
+  cannot be mistaken for a record boundary, and every value is read back by
+  NAME so no assertion renders the rest of the host's environment. Each case
+  carries the SAME probe run through the same production `ShellCommandRunner`
+  with an unscrubbed overlay as its control, because "the child saw no
+  variable" is evidence only beside a child that WOULD have seen it — a probe
+  that could not read its environment at all would otherwise satisfy every
+  assertion here. The retention case is deliberately an INVARIANT that holds
+  before the scrub and after: the obvious wrong implementation hands the child
+  a curated environment built from scratch, and a check reaching for a
+  credential or for `PATH` in that environment fails for a reason no journal
+  row would name. The empty-removal-list case and the names-what-it-removed
+  case are each other's control, since an omitted field is what every row
+  written before the scrub looks like. The reconcile case drives the REAL
+  `dispatcher.main(argv=["reconcile-merged", ...])` with the probe taken off
+  the repository's own committed `dispatcher.janitor.check_suite` declaration,
+  because the valve builds its own plan and no argument could put a probe into
+  it; its runner is keyed on the SUBCOMMAND rather than on call order, so the
+  case does not encode the valve's stage sequence, which is not the subject.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
