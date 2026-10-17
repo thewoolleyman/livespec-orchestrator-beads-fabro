@@ -80,6 +80,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     headroom_covers_candidate,
     headroom_skips_candidate,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_projection import (
+    projection_skips_candidate,
+)
 
 __all__: list[str] = [
     "HEADROOM_SKIP",
@@ -283,6 +286,18 @@ def _headroom_skip(
     is what makes an above-floor reading journalable: the clause requires every
     assessment to be journaled for each affected work-item, not only the ones
     that refused something.
+
+    TWO SHORTFALLS, ONE SKIP, and that is the clause in as many words: "A
+    projection skip has exactly the semantics of a floor skip". So the LEVEL
+    and the PROJECTION are tested in one condition producing one
+    `SkippedCandidate`, rather than as two arms with two skip reasons -- every
+    surface downstream (the governing-condition precedence, the availability
+    wait, the idle-factory projection) keys on that one reason, and a second
+    token would leave a projection-emptied chain unnamed by all three. WHICH of
+    the two decided it is recoverable from the reading the skip carries, whose
+    projection result says whether a projection skip applied -- so the record
+    surfaces can name a projection skip as a projection skip without a second
+    skip reason that every consumer would have to learn.
     """
     policy = inputs.headroom
     if policy is None or not headroom_covers_candidate(
@@ -292,14 +307,16 @@ def _headroom_skip(
     reading = policy.read()
     if reading not in assessments:
         assessments.append(reading)
-    if not headroom_skips_candidate(reading=reading, floor_percent=policy.floor_percent):
-        return None
-    return _ephemeral_skip(
-        candidate=candidate,
-        reason=HEADROOM_SKIP,
-        headroom=reading,
-        headroom_floor_percent=policy.floor_percent,
-    )
+    if headroom_skips_candidate(
+        reading=reading, floor_percent=policy.floor_percent
+    ) or projection_skips_candidate(reading=reading):
+        return _ephemeral_skip(
+            candidate=candidate,
+            reason=HEADROOM_SKIP,
+            headroom=reading,
+            headroom_floor_percent=policy.floor_percent,
+        )
+    return None
 
 
 def _record_skip(
