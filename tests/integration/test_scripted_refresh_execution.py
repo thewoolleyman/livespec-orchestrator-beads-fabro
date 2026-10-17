@@ -431,11 +431,15 @@ def _branch_clone(*, box: _Refresh, name: str) -> Path:
 _PASSING_GATE = "true"
 _FAILING_GATE = "false"
 
-# The jq program the auto-merge read owes `jq`: a BARE field path, carrying no
-# quote character of its own. A jq field path needs no quoting, and the quote
-# characters a backslash-escaped spelling leaves behind are a parse error rather
-# than a filter (work-item bd-ib-be5r7o).
-_AUTO_MERGE_FIELD_PATH = ".autoMergeRequest"
+# The jq program the auto-merge read owes `jq`: the field piped through
+# `tojson`, carrying no quote character of its own. A jq program needs no
+# quoting, and the quote characters a backslash-escaped spelling leaves behind
+# are a parse error rather than a filter (work-item bd-ib-be5r7o). `tojson` is
+# what makes an UNARMED pull request legible: `gh`'s built-in `--jq` prints a
+# JSON null as NOTHING under a bare field path, which the stage cannot tell
+# from a forge that would not answer, while `tojson` renders it as the literal
+# `null` the stage compares against (work-item bd-ib-fisgni).
+_AUTO_MERGE_FIELD_PATH = ".autoMergeRequest|tojson"
 
 # The first token of the non-convergence cause, which is what the reason file
 # must OPEN with: a quote-wrapped format puts a quote character there instead,
@@ -479,7 +483,21 @@ if argv[:2] == ["pr", "view"]:
     if state["arming_unreadable"]:
         sys.stderr.write("the forge declined to report autoMergeRequest\n")
         sys.exit(1)
-    print("{}" if state["armed"] else "null")
+    # Rendered the way REAL `gh --jq` renders it, measured with gh against
+    # unarmed pull request 3113 and armed pull request 3154 on 2026-10-17: a
+    # bare field path prints an object as compact JSON and a null as NOTHING,
+    # while `|tojson` prints the literal `null`. An operand this double does not
+    # model is refused rather than answered, so it can never stand in for a
+    # spelling the real CLI would render differently.
+    value = {"enabledAt": "now"} if state["armed"] else None
+    operand = argv[argv.index("--jq") + 1]
+    if operand == ".autoMergeRequest":
+        print("" if value is None else json.dumps(value, separators=(",", ":")))
+    elif operand == ".autoMergeRequest|tojson":
+        print(json.dumps(value, separators=(",", ":")))
+    else:
+        sys.stderr.write("unmodelled --jq operand: %%s\n" %% operand)
+        sys.exit(2)
     sys.exit(0)
 
 if argv[:2] == ["pr", "merge"] and "--disable-auto" in argv:
@@ -639,6 +657,15 @@ def test_an_unarmed_pull_request_is_not_disarmed(tmp_path: Path) -> None:
     equally consistent with a stage that issues `--disable-auto` on every
     refresh, which spends a forge write per refresh and reports a removal that
     removed nothing.
+
+    IT IS ALSO THE CASE THAT WAS FAILING ON EVERY REAL FORGE (work-item
+    bd-ib-fisgni). Under a bare `.autoMergeRequest` path `gh` prints an unarmed
+    pull request's null as nothing, so the stage read it as a forge that would
+    not answer and failed closed with `LIVESPEC_PR_REFRESH_ARMING_UNREADABLE`.
+    Measured 2026-10-17: bd-ib-o6aeji's resume run 01M542TM46NS on
+    hp-candidate, pull request 3113. This case passed throughout because its
+    forge double printed `null` for any operand. The double now renders the
+    operand the way `gh` does, which is what lets this case see the defect.
     """
     box = _build(root=tmp_path)
     _ = _advance_default(box=box)
@@ -646,6 +673,8 @@ def test_an_unarmed_pull_request_is_not_disarmed(tmp_path: Path) -> None:
     result = _run(box=box)
 
     assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_REFRESH_ARMING_UNREADABLE" not in result.stderr
+    assert "LIVESPEC_PR_REFRESH_CHANGED" in result.stderr
     assert "LIVESPEC_PR_REFRESH_DISARMED" not in result.stderr
     assert box.disarm_heads() == []
     assert [cast("list[str]", call["argv"])[:2] for call in box.forge_calls()] == [["pr", "view"]]
