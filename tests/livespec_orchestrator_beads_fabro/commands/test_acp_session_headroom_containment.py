@@ -232,6 +232,7 @@ def _refusal(*, records: list[dict[str, Any]]) -> dict[str, Any]:
                 "observed_at": _NOW,
                 "five_hour_drain_percent_per_hour": None,
                 "projection": None,
+                "unverified_provider_reset_claim": None,
             },
         ),
         (
@@ -244,6 +245,7 @@ def _refusal(*, records: list[dict[str, Any]]) -> dict[str, Any]:
                 "observed_at": _NOW,
                 "five_hour_drain_percent_per_hour": None,
                 "projection": None,
+                "unverified_provider_reset_claim": None,
             },
         ),
     ],
