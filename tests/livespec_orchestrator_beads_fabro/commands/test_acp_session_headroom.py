@@ -105,14 +105,6 @@ def _write_floor(*, root: Path, value: str) -> None:
     )
 
 
-def _write_horizon(*, root: Path, value: str) -> None:
-    _ = (root / ".livespec.jsonc").write_text(
-        '{"livespec-orchestrator-beads-fabro": {"dispatcher": '
-        f'{{"session_headroom_horizon_minutes": {value}}}}}}}',
-        encoding="utf-8",
-    )
-
-
 # ---------------------------------------------------------------------------
 # The reading itself.
 # ---------------------------------------------------------------------------
@@ -272,54 +264,14 @@ def test_a_floor_outside_the_declared_range_is_refused_rather_than_clamped(
     assert policy.floor_percent == headroom.DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT
 
 
-def test_the_horizon_defaults_to_the_ratified_one_eighty_and_is_committed_only(
-    tmp_path: Path,
-) -> None:
-    """The second dial resolves beside the floor and spends no usage request."""
-    tokens: list[str | None] = []
-    assert headroom.DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES == 180
-
-    policy = headroom_gate.session_headroom_policy(
-        repo=tmp_path, now_iso=_NOW, read=_recording_read(tokens)
-    )
-
-    assert policy.horizon_minutes == headroom.DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES
-    assert tokens == []
-
-
-@pytest.mark.parametrize(("configured", "expected"), [("0", 0), ("1440", 1440), ("45", 45)])
-def test_a_committed_horizon_inside_the_inclusive_range_is_honoured(
-    tmp_path: Path, configured: str, expected: int
-) -> None:
-    """Both ends of the clause's inclusive 0..1440 range, and one interior value."""
-    _write_horizon(root=tmp_path, value=configured)
-
-    policy = headroom_gate.session_headroom_policy(
-        repo=tmp_path, now_iso=_NOW, read=_recording_read([])
-    )
-
-    assert policy.horizon_minutes == expected
-
-
-@pytest.mark.parametrize("configured", ["1441", "-1", '"180"', "true", "180.5"])
-def test_a_horizon_outside_the_declared_range_is_refused_rather_than_clamped(
-    tmp_path: Path, configured: str
-) -> None:
-    """An unreadable dial resolves to the RATIFIED default, never to a guess.
-
-    A horizon above a day is not a stricter dial but one no projection can ever
-    satisfy, so clamping it would silently condemn every covered candidate in
-    the repository rather than refusing the value the operator actually wrote.
-    """
-    _write_horizon(root=tmp_path, value=configured)
-
-    resolved = headroom_gate.resolve_session_headroom_horizon_minutes(cwd=tmp_path)
-    policy = headroom_gate.session_headroom_policy(
-        repo=tmp_path, now_iso=_NOW, read=_recording_read([])
-    )
-
-    assert is_successful(resolved) is False
-    assert policy.horizon_minutes == headroom.DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES
+# THE HORIZON DIAL IS COVERED BY `test_acp_session_headroom_horizon_dial.py`
+# AND NOT HERE. This file grew three horizon cases of its own while that
+# dedicated module was landing on the default branch, and keeping both would
+# leave the clause's inclusive 0..1440 range asserted twice from one method --
+# which reads as corroboration while being one reading taken twice. The
+# dedicated module carries the same default, in-range and out-of-range cases
+# plus the one neither of these files would catch: that the key is ABSENT from
+# the API-configurable manifest, which is what "committed-only" means.
 
 
 # ---------------------------------------------------------------------------

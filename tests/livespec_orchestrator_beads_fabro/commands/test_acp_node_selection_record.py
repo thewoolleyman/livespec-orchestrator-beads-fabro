@@ -92,7 +92,20 @@ def _assert_record_surface() -> None:
     on an attribute lookup. This package requires every module to enumerate its
     public surface in `__all__`, so a record stage reachable only as an
     undeclared attribute is not a surface the Dispatcher may wire.
+
+    THE SKIP PROJECTION IS ASSERTED BEFORE THE SELECTION MODULE IS REACHED FOR.
+    The selection record and the headroom surfaces must describe one skip
+    through ONE projection -- two spellings of these keys is how one surface
+    comes to report `session_headroom_floor_percent` while another reports
+    `floor` and no reader can join them -- so the selection module imports that
+    projection BY NAME, and a projection that is private or renamed takes the
+    whole package's import graph down rather than failing any assertion here.
+    Asking the records module first is what names the missing surface for
+    whoever does reach this case, and it states which module owns the key the
+    two surfaces share.
     """
+    records = _module(name="_acp_session_headroom_records")
+    assert "session_headroom_skip_fields" in records.__all__, sorted(records.__all__)
     selection = _module(name="_acp_node_selection")
     headroom = _module(name="_acp_session_headroom")
     assert "ACP_NODE_SELECTION_STAGE" in selection.__all__, sorted(selection.__all__)
@@ -330,6 +343,13 @@ def test_a_headroom_skip_carries_its_assessment_floor_and_horizon(tmp_path: Path
     10 percent remaining is a skip under a floor of 20 and ample under a floor
     of 5, and the horizon is the committed dial a reader of an old journal line
     cannot recover from the repository as it now stands.
+
+    THE SKIP KIND RIDES WITH THEM because the two shortfalls are not exclusive:
+    a reading can sit below the floor AND project an exhaustion inside the
+    horizon, so the dials alone cannot say which test actually stopped the
+    candidate. Asserting it HERE is also what proves the selection record and
+    the headroom surfaces describe one skip through one projection rather than
+    through two that agree today.
     """
     _assert_record_surface()
     repo = _repo(
@@ -361,12 +381,16 @@ def test_a_headroom_skip_carries_its_assessment_floor_and_horizon(tmp_path: Path
             "candidate_key": "claude-opus-5",
             "session_headroom_floor_percent": _FLOOR,
             "session_headroom_horizon_minutes": _HORIZON,
+            "headroom_skip_kind": "floor",
             "headroom": {
                 "credential_identity": "cred-1",
                 "utilization_percent": 90.0,
                 "remaining_percent": 10.0,
                 "unobservable": None,
                 "observed_at": _NOW,
+                "five_hour_drain_percent_per_hour": None,
+                "projection": None,
+                "unverified_provider_reset_claim": None,
             },
         }
     ]
