@@ -38,6 +38,7 @@ import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     warn_item_sizing,
 )
@@ -102,7 +103,7 @@ class RecordedDispatch:
     comments: tuple[WorkItemComment, ...]
 
 
-def record_dispatch(
+def record_dispatch(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict` is the admission evaluation this item was admitted by, which is independent of the identity, the janitor and the item itself.
     *,
     args: argparse.Namespace,
     repo: Path,
@@ -110,6 +111,7 @@ def record_dispatch(
     journal: JournalFile,
     janitor: tuple[str, ...] | None,
     identity: DispatchJournalIdentity,
+    verdict: AcpPreflightVerdict | None = None,
 ) -> RecordedDispatch | DispatchOutcome:
     """Resolve and journal this dispatch, or return the refusal outcome.
 
@@ -117,13 +119,20 @@ def record_dispatch(
     failed outcome the caller would otherwise have built, carrying the journal
     stage that produced it, so the launch half routes it by TYPE rather than by
     re-reading which step failed.
+
+    `verdict` rides through to the materialization, which selects each ACP
+    node's rendered candidate from it. It is not read here: this module's job is
+    to resolve and record WHAT the dispatch is, and the selection is part of
+    that resolution rather than a decision of its own.
     """
     raw_labels = read_dispatch_labels(repo=repo, item=item)
     if isinstance(raw_labels, str):
         return failed_dispatch_outcome(
             journal=journal, work_item_id=item.id, stage="ledger-labels", detail=raw_labels
         )
-    materialized = materialize_dispatch(args=args, repo=repo, work_item_id=item.id, journal=journal)
+    materialized = materialize_dispatch(
+        args=args, repo=repo, work_item_id=item.id, journal=journal, verdict=verdict
+    )
     if isinstance(materialized, MaterializationRefusal):
         return failed_dispatch_outcome(
             journal=journal,

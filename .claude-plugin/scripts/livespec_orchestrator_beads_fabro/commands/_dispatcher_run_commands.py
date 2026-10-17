@@ -237,6 +237,10 @@ def _admit_and_dispatch_target(  # noqa: PLR0913 — kw-only targeted dispatch; 
             item=item,
             journal=journal,
             janitor=janitor,
+            # The valve's own ACP evaluation, as the queue-draining loop passes
+            # it: a targeted dispatch narrows WHICH item runs and never which
+            # read of the availability evidence its candidates are selected by.
+            verdict=admission.verdict,
         )
         for item in launching
     ]

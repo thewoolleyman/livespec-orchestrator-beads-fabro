@@ -33,6 +33,7 @@ from pathlib import Path
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
+from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     resolve_acp_preflight,
 )
@@ -96,12 +97,28 @@ class Admission:
     routing refusals plus admission holds (manual / unresolvable assignee) —
     that ride in the wave's outcome list so the verdict and the post-verdict
     alarm see them.
+
+    `verdict` carries the ONE ACP candidate-chain evaluation this pass made, so
+    the launch of each item it admitted selects that item's per-node candidate
+    from the very evaluation that admitted it. It rides OUT of the valve rather
+    than being re-resolved at the launch for the reason this module's docstring
+    gives for resolving it once: the contract makes selection "once per dispatch
+    from one consistent read of the availability evidence", and a launch-side
+    resolution would be a SECOND read whose disagreement nothing could announce,
+    because both reads produce a perfectly well-formed candidate. It is still
+    never an INPUT, because a caller able to supply one is a caller able to
+    supply a stale one.
+
+    It defaults to absent only so a stand-in `Admission` for a path that
+    evaluated no candidates stays expressible; the valve itself always carries
+    the verdict it computed.
     """
 
     admitted: list[WorkItem]
     deferred: list[DispatchOutcome]
     refused: list[DispatchOutcome]
     rework: list[WorkItem] = field(default_factory=list)
+    verdict: AcpPreflightVerdict | None = None
 
 
 def admit_and_select(
@@ -139,11 +156,13 @@ def admit_and_select(
     The pass's ACP candidate-chain verdict is resolved HERE, once, and is
     deliberately not a parameter: a caller able to supply its own verdict is a
     caller able to supply a stale one, and "both paths consume the same pure
-    preflight verdict" would then hold only by convention.
+    preflight verdict" would then hold only by convention. It is RETURNED on the
+    result, because the dispatch of each admitted item has to select its per-node
+    candidate from this same evaluation.
     """
     accounting = claimed_active_accounting(repo=repo, items=items, journal=journal)
     rework_pass = rework if rework is not None else ReworkPass()
-    rework_admittable, admittable, refused = _eligible_legs(
+    verdict, rework_admittable, admittable, refused = _eligible_legs(
         repo=repo,
         items=items,
         candidates=candidates,
@@ -229,6 +248,7 @@ def admit_and_select(
         deferred=[*reworked.deferred, *deferred],
         refused=refused,
         rework=list(reworked.admitted),
+        verdict=verdict,
     )
 
 
@@ -240,8 +260,14 @@ def _eligible_legs(
     journal: JournalFile,
     accounting: ActiveClaimAccounting,
     rework: ReworkPass,
-) -> tuple[list[WorkItem], list[WorkItem], list[DispatchOutcome]]:
+) -> tuple[AcpPreflightVerdict, list[WorkItem], list[WorkItem], list[DispatchOutcome]]:
     """Both legs' eligible rows, and every refusal, against ONE shared verdict.
+
+    THE VERDICT LEADS THE RETURN because it is what the other three are graded
+    against, and because the caller has to pass it on: the launch of every row
+    admitted below selects its per-node ACP candidate from this object, so
+    computing it here and discarding it would leave the dispatch to resolve its
+    own -- the second read the contract forbids.
 
     The verdict is resolved here rather than per leg, which is what the
     contract's "Each credential is assessed at most once per admission
@@ -292,7 +318,7 @@ def _eligible_legs(
         journal=journal,
     )
     refused.extend(ready_refused)
-    return rework_admittable, admittable, refused
+    return verdict, rework_admittable, admittable, refused
 
 
 def _budget_left(*, rework: ReworkPass, taken: int) -> int | None:

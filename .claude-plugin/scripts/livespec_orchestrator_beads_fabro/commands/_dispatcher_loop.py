@@ -20,6 +20,7 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_self_update as selfup,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
@@ -116,7 +117,20 @@ def dispatch_one(
     item: WorkItem,
     journal: JournalFile,
     janitor: tuple[str, ...] | None,
+    verdict: AcpPreflightVerdict | None = None,
 ) -> DispatchOutcome:
+    """Launch one admitted item, under the admission evaluation that admitted it.
+
+    `verdict` is the `Admission.verdict` of the pass that claimed this item, and
+    every launch site passes its own. It reaches the ACP adapter resolution
+    unchanged, where it decides which candidate of each node's chain is
+    rendered -- so a dispatch runs the first candidate admission found eligible
+    rather than a primary admission may have skipped.
+
+    It defaults to absent for the callers that have no admission pass behind
+    them, and absent means no selection is applied: every node keeps its
+    configured primary, which is the contract's additive guarantee.
+    """
     raw_factory_target = getattr(args, "fabro_factory_target", None)
     dispatch_factory = (
         raw_factory_target.name if isinstance(raw_factory_target, FactoryTarget) else None
@@ -138,6 +152,7 @@ def dispatch_one(
             item=item,
             journal=journal,
             janitor=janitor,
+            verdict=verdict,
             lifetime=_DispatchLifetime(
                 identity=DispatchJournalIdentity(
                     dispatch_id=dispatch_id,
@@ -157,18 +172,25 @@ def dispatch_one(
 # `PLR0911` waiver because the ledger-labels, materialization and ledger-comments
 # refusals moved behind `record_dispatch`'s single rail; that is a consequence of
 # the split, not a licence to collapse what is left.
-def _dispatch_one_locked(
+def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict` is the admission evaluation this launch selects its ACP candidates from, and folding it into the lifetime carrier would claim a relationship to the dispatch lock it does not have.
     *,
     args: argparse.Namespace,
     repo: Path,
     item: WorkItem,
     journal: JournalFile,
     janitor: tuple[str, ...] | None,
+    verdict: AcpPreflightVerdict | None,
     lifetime: _DispatchLifetime,
 ) -> DispatchOutcome:
     identity = lifetime.identity
     recorded = record_dispatch(
-        args=args, repo=repo, item=item, journal=journal, janitor=janitor, identity=identity
+        args=args,
+        repo=repo,
+        item=item,
+        journal=journal,
+        janitor=janitor,
+        identity=identity,
+        verdict=verdict,
     )
     if isinstance(recorded, DispatchOutcome):
         return recorded
@@ -177,10 +199,7 @@ def _dispatch_one_locked(
     overlay_file = getattr(plan, "workflow_toml", overlay_file_path(work_item_id=item.id))
     if isinstance(token_supplier := selfup.github_token_supplier(), str):
         return failed_dispatch_outcome(
-            journal=journal,
-            work_item_id=item.id,
-            stage="github-app-auth",
-            detail=token_supplier,
+            journal=journal, work_item_id=item.id, stage="github-app-auth", detail=token_supplier
         )
     # Lessons are read host-side from `repo` (the dispatcher's operative
     # checkout, where the reflector maintains loop-reflection-gate/lessons.md),
@@ -284,10 +303,7 @@ def _dispatch_one_locked(
     )
     if overlay_error is not None:
         return failed_dispatch_outcome(
-            journal=journal,
-            work_item_id=item.id,
-            stage="run-config-overlay",
-            detail=overlay_error,
+            journal=journal, work_item_id=item.id, stage="run-config-overlay", detail=overlay_error
         )
     goal_text = render_goal(
         item=item, repo=repo, branch=plan.branch, comments=recorded.comments, lessons=lessons

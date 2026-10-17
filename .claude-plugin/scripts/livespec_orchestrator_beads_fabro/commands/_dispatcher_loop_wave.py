@@ -162,6 +162,13 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
                 item=item,
                 journal=journal,
                 janitor=janitor,
+                # The valve's OWN evaluation, so each launch selects its
+                # per-node ACP candidate from the read that admitted the item.
+                # Re-resolving one here would be a second read of the
+                # availability evidence, which the clause forbids outright --
+                # and the two reads would disagree silently, because each
+                # produces a perfectly well-formed candidate.
+                verdict=admission.verdict,
             )
             for item in picked
         ]
