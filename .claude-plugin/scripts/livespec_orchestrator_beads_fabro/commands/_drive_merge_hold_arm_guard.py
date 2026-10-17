@@ -48,6 +48,7 @@ would show it.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from subprocess import run
@@ -319,7 +320,7 @@ class _ValveCommandRunner:
         argv: list[str],
         cwd: Path,
         timeout_seconds: float,
-        env: dict[str, str] | None = None,
+        env: Mapping[str, str | None] | None = None,
         stdin: int | None = None,
     ) -> CommandResult:
         """Run `argv`, returning the completed result; never raises for a non-zero exit."""

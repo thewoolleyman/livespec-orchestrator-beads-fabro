@@ -49,7 +49,7 @@ import json
 import os
 import subprocess
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -76,6 +76,7 @@ __all__: list[str] = [
     "JournalFile",
     "ShellCommandRunner",
     "WatchedFabroLauncher",
+    "child_env",
     "utc_now_iso",
 ]
 
@@ -92,6 +93,26 @@ _STAMPED_INVOKER_FIELDS: tuple[str, ...] = (
 )
 
 
+def child_env(*, delta: Mapping[str, str | None]) -> dict[str, str]:
+    """This process's environment with `delta` applied: strings SET, `None` REMOVES.
+
+    The removal arm is what lets a caller ask for a child WITHOUT a variable
+    this process carries. A mapping merged over `os.environ` cannot express
+    that, and the alternative -- deleting the name from `os.environ` around the
+    call -- would reach every other dispatch running in this process, since
+    `dispatcher.py loop --parallel` drives its wave through a thread pool.
+    Removing a name this process does not carry is a no-op, so a caller may
+    name its whole scrub set without first asking which members are present.
+    """
+    resolved = dict(os.environ)
+    for name, value in delta.items():
+        if value is None:
+            _ = resolved.pop(name, None)
+        else:
+            resolved[name] = value
+    return resolved
+
+
 @dataclass(frozen=True, kw_only=True)
 class ShellCommandRunner:
     """Production CommandRunner: subprocess.run with captured output."""
@@ -102,7 +123,7 @@ class ShellCommandRunner:
         argv: list[str],
         cwd: Path,
         timeout_seconds: float,
-        env: dict[str, str] | None = None,
+        env: Mapping[str, str | None] | None = None,
         stdin: int | None = None,
         start_new_session: bool = False,
     ) -> CommandResult:
@@ -114,7 +135,7 @@ class ShellCommandRunner:
                 text=True,
                 timeout=timeout_seconds,
                 check=False,
-                env=None if env is None else {**os.environ, **env},
+                env=None if env is None else child_env(delta=env),
                 stdin=stdin,
                 start_new_session=start_new_session,
             ),
@@ -146,7 +167,7 @@ class GithubTokenEnvRunner:
         argv: list[str],
         cwd: Path,
         timeout_seconds: float,
-        env: dict[str, str] | None = None,
+        env: Mapping[str, str | None] | None = None,
         stdin: int | None = None,
     ) -> CommandResult:
         token = attempt(action=self.token, exceptions=(GithubAppAuthError,))
@@ -158,7 +179,10 @@ class GithubTokenEnvRunner:
                 stderr=f"GitHub App token refresh failed (fail-closed): {exc.detail}",
             )
         os.environ[GITHUB_TOKEN_ENV_VAR] = token
-        merged_env = {**(env or {}), GITHUB_TOKEN_ENV_VAR: os.environ[GITHUB_TOKEN_ENV_VAR]}
+        merged_env: dict[str, str | None] = {
+            **(env or {}),
+            GITHUB_TOKEN_ENV_VAR: os.environ[GITHUB_TOKEN_ENV_VAR],
+        }
         if stdin is None:
             return self.inner.run(
                 argv=argv,

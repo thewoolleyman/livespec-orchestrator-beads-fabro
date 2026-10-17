@@ -2592,8 +2592,12 @@ def test_engine_green_runs_janitor_in_fresh_checkout(tmp_path: Path) -> None:
     remove_argv = ["git", "-C", str(tmp_path), "worktree", "remove", "--force", str(checkout)]
     assert runner.calls[6][0] == remove_argv
     assert runner.calls[13][0] == remove_argv
+    # The janitor's env DELTA: the core-plugin root it adds, and the
+    # dispatcher's factory route removed, so the check verdict is about the
+    # merge rather than about how this dispatch was routed.
     assert runner.envs[12] == {
-        "LIVESPEC_CORE_PLUGIN_ROOT": str(checkout / ".livespec-core" / ".claude-plugin")
+        "LIVESPEC_CORE_PLUGIN_ROOT": str(checkout / ".livespec-core" / ".claude-plugin"),
+        "LIVESPEC_FABRO_FACTORY": None,
     }
 
 
