@@ -33,6 +33,7 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import (
     AcpNodeResolution,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
     ACP_NODES_STAGE,
     prepare_acp_nodes,
@@ -119,8 +120,23 @@ def materialize_dispatch(
     repo: Path,
     work_item_id: str,
     journal: JournalWriter,
+    verdict: AcpPreflightVerdict | None = None,
 ) -> MaterializedDispatch | MaterializationRefusal:
-    """Resolve this dispatch's workflow variant, payload and ACP adapters, or refuse."""
+    """Resolve this dispatch's workflow variant, payload and ACP adapters, or refuse.
+
+    `verdict` is the ACP candidate-chain evaluation the ADMISSION of this item
+    produced, passed straight through to the adapter resolution, which uses it
+    to pick WHICH candidate of each node's chain this dispatch renders. It
+    arrives from the caller rather than being resolved here because the contract
+    makes selection "once per dispatch from one consistent read of the
+    availability evidence" -- a resolution taken here would be a second read of
+    that evidence, and the disagreement would be invisible.
+
+    Absent means NO SELECTION IS APPLIED and every node keeps its configured
+    primary: the reconcile and check subcommands reach this code having
+    evaluated no candidates at all, and the contract's additive guarantee
+    requires their resolution to stay byte-identical.
+    """
     # WHICH named workflow this dispatch runs, before WHERE its config file
     # is: the dispatch target may register variants under
     # `dispatcher.workflows`, and a registry this Dispatcher cannot honour
@@ -179,6 +195,11 @@ def materialize_dispatch(
         # reason `acp_node` is: the reconcile and check subcommands reach this
         # code with a Namespace that never carried one.
         factory=getattr(args, "fabro_factory_target", None),
+        # The admission evaluation this item was admitted by, which decides
+        # which candidate of each node's chain is rendered. Threaded from the
+        # caller rather than resolved here: one dispatch, one read of the
+        # availability evidence.
+        verdict=verdict,
     )
     if isinstance(acp_nodes, str):
         return MaterializationRefusal(stage=ACP_NODES_STAGE, detail=acp_nodes)

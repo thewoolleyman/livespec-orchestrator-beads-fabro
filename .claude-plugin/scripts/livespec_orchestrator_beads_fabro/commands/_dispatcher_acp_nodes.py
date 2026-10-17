@@ -206,6 +206,20 @@ def prepare_acp_nodes(  # noqa: PLR0913 — kw-only dispatch inputs; each is one
     configuration but absent from the workflow, or a malformed adapter
     table, is a config error, and the honest place to discover one is the
     dispatch that would otherwise have run the default it meant to replace.
+
+    `verdict` is the ADMISSION evaluation this dispatch was admitted by, and it
+    decides WHICH candidate of each node's chain is rendered. A dispatch hands
+    in the verdict its own `Admission` carried; it is never re-resolved here,
+    because the contract makes selection "once per dispatch from one consistent
+    read of the availability evidence".
+
+    ITS ABSENCE IS A MEANINGFUL ANSWER AND NOT A GAP: no verdict means no
+    selection is applied, so every node keeps the configured primary the three
+    layers resolved, byte-identical to section "ACP node adapter configuration".
+    That is the contract's additive guarantee, and it is what the reconcile and
+    check subcommands -- which evaluate no candidates at all -- depend on. It is
+    deliberately NOT the same answer as an empty verdict, which means every
+    candidate was filtered out and refuses an admission-required node.
     """
     block = dispatcher_block(cwd=repo)
     configured = _dispatch_workflow_configuration(block=block, committed=committed)

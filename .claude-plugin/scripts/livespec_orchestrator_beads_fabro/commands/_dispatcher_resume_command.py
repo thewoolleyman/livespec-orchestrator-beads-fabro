@@ -343,6 +343,11 @@ def _admit_and_dispatch_resume(
             item=admitted,
             journal=journal,
             janitor=janitor,
+            # The valve's own ACP evaluation. A resume is subject to the
+            # ordinary admission rules, so it is subject to this one too: the
+            # resumed run selects its per-node candidates from the read that
+            # re-admitted the item, never from one of its own.
+            verdict=admission.verdict,
         )
         for admitted in admission.admitted
     ]
