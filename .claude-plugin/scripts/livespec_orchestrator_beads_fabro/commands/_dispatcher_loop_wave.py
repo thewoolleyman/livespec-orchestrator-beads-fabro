@@ -42,6 +42,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
     post_admission_publish_branch_reclaim,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_launch import (
+    LaunchPins,
+    recovery_launch_args,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routing import (
+    route_recovery,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
 from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_ledger import (
     args_with_dispatch_workflow_name,
@@ -107,6 +114,12 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
     janitor: tuple[str, ...] | None,
     rework: ReworkPass,
 ) -> list[DispatchOutcome]:
+    # RECOVERY ROUTING, which the clause places after the pre-dispatch wall (run
+    # by the command module above) and strictly BEFORE the valve, while every
+    # candidate is still `ready`. It reads only; a candidate with no earlier
+    # dispatch that released it is routed `fresh` without any remote measurement,
+    # so an ordinary drain pays nothing for it.
+    routing = route_recovery(args=args, repo=repo, candidates=selected_candidates, journal=journal)
     # The admission valve drains the candidate set up to the per-repo WIP cap:
     # host-only items are routed away, manual / unresolvable items are held +
     # surfaced, marked rework rows re-occupy the slots their own `active` rows
@@ -141,22 +154,36 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
     # pre-dispatch wall every entry point runs before admission. It still
     # precedes every launch below, which is what keeps each new run's
     # `publish_draft` push a plain fast-forward.
-    post_admission_publish_branch_reclaim(args=args, repo=repo, items=picked, journal=journal)
+    # A `resume`-routed item is deliberately NOT offered: the surviving publish
+    # branch is the branch its run resumes on, so preserving that head to a ref
+    # and deleting the branch would destroy exactly what the resume exists to
+    # finish, and the journal would read like a healthy reclaim.
+    post_admission_publish_branch_reclaim(
+        args=args,
+        repo=repo,
+        items=[item for item in picked if routing.reclaims(work_item_id=item.id)],
+        journal=journal,
+    )
     with ThreadPoolExecutor(max_workers=max(1, args.parallel)) as pool:
         futures = [
             pool.submit(
                 dispatch_one,
-                # BOTH per-dispatch ledger pins, applied in one place so the
-                # factory this dispatch goes to and the workflow variant it
-                # runs are recorded on the item together — a retry that reuses
-                # one and re-resolves the other is the drift both pins exist
-                # to prevent.
-                args=args_with_dispatch_workflow_name(
-                    args=args_with_dispatch_factory_target(
-                        args=args, repo=repo, work_item_id=item.id
-                    ),
+                # BOTH per-dispatch ledger pins AND this item's recovery route,
+                # applied in one per-item place so the factory this dispatch
+                # goes to, the workflow variant it runs and the tree it starts
+                # from are decided together — a retry that reuses one and
+                # re-resolves another is the drift the pins exist to prevent,
+                # and a route written onto the wave's shared namespace would
+                # apply one item's head to every item in the wave.
+                args=recovery_launch_args(
+                    args=args,
                     repo=repo,
                     work_item_id=item.id,
+                    route=routing.route_for(work_item_id=item.id),
+                    pins=LaunchPins(
+                        factory=args_with_dispatch_factory_target,
+                        workflow=args_with_dispatch_workflow_name,
+                    ),
                 ),
                 repo=repo,
                 item=item,
