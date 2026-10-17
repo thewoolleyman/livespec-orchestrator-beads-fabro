@@ -51,6 +51,34 @@ nothing downstream could tell the two apart. Both are journaled rather than
 silent, because a replay that did nothing and said nothing is
 indistinguishable from one that never ran.
 
+A RELEASE ROW IS NOT EVIDENCE THAT THE LEDGER TRANSITION LANDED, so the
+already-released reading is settled against the ITEM and never against the row
+alone. The write order is hold, then release record, then transition, and
+`_release_claim` is fail-soft by design: it journals `provider-limit-release-
+error` and leaves the item `active` with `fabro` assigned. A replay that read
+its own row and stopped would report that exact state as already-released,
+announce that nothing is owed, and leave the item holding a WIP slot with no
+run -- invisible to admission and to `next`, which is the strand this clause
+exists to retire. The clause requires reconciliation to complete "any
+interrupted hold, release, cost-observation, and ledger-transition writes", so
+a row standing beside a claim that was never dropped is an unfinished third
+step. The ONE write a replay withholds is the release-record append, which is
+a plain append and so the only step that is not idempotent; the hold is
+re-attempted because `ingest_hold_observation`'s dedupe makes that a no-op
+when it already landed and a completion when it did not.
+
+THE JOURNAL READING IS PER LINE, THROUGH THE SHARED READER, and that is a
+correctness requirement rather than tidiness. The newer-claim guard is a
+journal reading, and the journal is shared with every other dispatcher stage,
+so one truncated line from a crash mid-append is an ordinary event. A reader
+that discarded the whole file on one unparseable line would find neither this
+release's row nor the claim row after it, conclude nothing is owed either way,
+and hand a running run's claim back to the queue -- a gauge that passes when
+blinded, which is worse than the honest violation because its record reads
+exactly like a healthy first release. `_acp_journal_records.journal_records`
+already drops only the lines it cannot read, and is the reader every other
+ledger over this file uses.
+
 THE HOLD IS INGESTED THROUGH THE SHARED LEDGER, which is what makes the
 expiry un-refreshable by a replay: `ingest_hold_observation` dedupes on every
 observation id the journal has EVER carried, and the id digests the release
@@ -67,15 +95,15 @@ exactly what explains the next dispatch spending the same exhausted allowance.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import (
     ingest_hold_observation,
     read_acp_hold_ledger,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_journal_records import journal_records
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -137,6 +165,22 @@ _LEDGER_WRITE_ERRORS = (
 )
 
 
+@dataclass(frozen=True, kw_only=True)
+class _ReleaseOwed:
+    """What this pass still owes, as ONE reading of the journal and the item.
+
+    Two fields rather than one verdict string, because the two questions have
+    different answers on the replay that matters: a release whose transition
+    never landed owes the ledger write and owes NO second release record, and a
+    single enumeration would have to carry a value for that pair anyway. A
+    `held_reason` is the whole answer when it is present -- nothing is owed and
+    the reason is journaled -- so the two are never both acted on.
+    """
+
+    release_record: bool
+    held_reason: str | None
+
+
 def dispose_provider_limit_release(
     *,
     repo: Path,
@@ -157,7 +201,8 @@ def dispose_provider_limit_release(
     release = outcome.provider_limit_release
     if outcome.status != PROVIDER_LIMIT_RELEASE_STATUS or release is None:
         return
-    held = _release_hold_reason(journal=journal, release=release, item_id=item.id)
+    owed = _release_owed(journal=journal, release=release, item=item)
+    held = owed.held_reason
     if held is not None:
         journal.append(
             record={
@@ -169,7 +214,8 @@ def dispose_provider_limit_release(
         )
         return
     _record_hold(release=release, item_id=item.id, journal=journal, now_iso=now_iso)
-    journal.append(record=provider_limit_release_record(release=release, work_item_id=item.id))
+    if owed.release_record:
+        journal.append(record=provider_limit_release_record(release=release, work_item_id=item.id))
     _release_claim(repo=repo, item=item, journal=journal, release=release)
 
 
@@ -272,36 +318,59 @@ def _release_claim(
         )
 
 
-def _release_hold_reason(
-    *, journal: JournalFile, release: ProviderLimitRelease, item_id: str
-) -> str | None:
-    """Why this release must not be performed now, if it must not.
+def _release_owed(
+    *, journal: JournalFile, release: ProviderLimitRelease, item: WorkItem
+) -> _ReleaseOwed:
+    """What this pass still owes, if anything.
 
-    Keyed on the RELEASE rather than on the item, which is the clause's own
-    key: the question is settled by what the journal recorded for THIS
-    `factory:run:node attempt` triple, so one item released for two different
-    runs is two independent releases while a replay of one of them is declined.
+    WHICH RELEASE is keyed on the RELEASE rather than on the item, which is the
+    clause's own key: the question is settled by what the journal recorded for
+    THIS `factory:run:node attempt` triple, so one item released for two
+    different runs is two independent releases while a replay of one of them is
+    read against its own row.
 
-    A journal carrying no record of this release holds nothing, which keeps the
-    fail-soft direction: without a prior record there is no "after" to read,
-    and the dispatch most likely to have left the item stranded is exactly the
-    one whose record went missing.
+    A journal carrying no record of this release owes the whole release, which
+    keeps the fail-soft direction: without a prior record there is no "after"
+    to read, and the dispatch most likely to have left the item stranded is
+    exactly the one whose record went missing.
+
+    THE THREE ANSWERS A PRIOR ROW ADMITS ARE TAKEN IN THIS ORDER, and the order
+    is load-bearing. A `dispatch-id` row AFTER this release's own says a LATER
+    dispatch now holds the claim, so the claim standing on the item is not the
+    one this release dropped and the item's own fields cannot tell the two
+    apart -- which is why that reading runs first. Otherwise a claim still
+    standing is this release's unfinished third step, and only a claim already
+    dropped means the release landed and nothing is owed.
     """
-    records = _journal_records(journal=journal)
+    records = journal_records(journal_path=journal.path)
     released_at = [
         index
         for index, record in enumerate(records)
-        if _names_release(record=record, item_id=item_id, release=release)
+        if _names_release(record=record, item_id=item.id, release=release)
     ]
     if not released_at:
-        return None
+        return _ReleaseOwed(release_record=True, held_reason=None)
     following = records[released_at[-1] + 1 :]
     if any(
-        record.get("stage") == _DISPATCH_ID_STAGE and record.get("work_item_id") == item_id
+        record.get("stage") == _DISPATCH_ID_STAGE and record.get("work_item_id") == item.id
         for record in following
     ):
-        return _HELD_NEWER_DISPATCH_CLAIM
-    return _HELD_ALREADY_RELEASED
+        return _ReleaseOwed(release_record=False, held_reason=_HELD_NEWER_DISPATCH_CLAIM)
+    if _claim_stands(item=item):
+        return _ReleaseOwed(release_record=False, held_reason=None)
+    return _ReleaseOwed(release_record=False, held_reason=_HELD_ALREADY_RELEASED)
+
+
+def _claim_stands(*, item: WorkItem) -> bool:
+    """Whether the dispatch claim this release drops is still on the item.
+
+    The completed third step is exactly what `_release_claim` writes --
+    `ready` with no assignee -- so anything else is a claim the release has not
+    dropped yet. Read as a pair rather than on the status alone, because a
+    half-applied transition is a ledger write that failed partway and the
+    assignee is the field a dispatch claims with.
+    """
+    return item.status != "ready" or item.assignee is not None
 
 
 def _names_release(
@@ -312,28 +381,4 @@ def _names_release(
         record.get("stage") == PROVIDER_LIMIT_RELEASE_STAGE
         and record.get("work_item_id") == item_id
         and record.get("release_key") == release.release_key
-    )
-
-
-def _journal_records(*, journal: JournalFile) -> tuple[Mapping[str, object], ...]:
-    """Every mapping record the journal holds, in append order.
-
-    Append order is what the reading above depends on: it asks what the journal
-    recorded AFTER a particular release. Every read failure yields the EMPTY
-    tuple rather than raising, and a line that is not a mapping is dropped, for
-    the same fail-soft reason the stall disposition gives -- a disposition that
-    crashed on one truncated line would strand the item it was about to
-    release.
-    """
-    read = attempt(action=lambda: journal.path.read_text(encoding="utf-8"), exceptions=(OSError,))
-    if isinstance(read, AttemptFailure):
-        return ()
-    parsed = attempt(
-        action=lambda: [json.loads(line) for line in read.splitlines() if line],
-        exceptions=(ValueError,),
-    )
-    if isinstance(parsed, AttemptFailure):
-        return ()
-    return tuple(
-        cast("Mapping[str, object]", record) for record in parsed if isinstance(record, dict)
     )

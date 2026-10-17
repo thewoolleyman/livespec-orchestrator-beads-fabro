@@ -17,6 +17,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_goal import (
     minijinja_openers_in_goal_sources,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
+    PROVIDER_LIMIT_RELEASE_STAGE,
+)
 from livespec_orchestrator_beads_fabro.store import WorkItemComment, append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -306,6 +309,42 @@ def test_dump_failure_comment_escapes_and_bounds_external_stderr(tmp_path: Path)
     assert "stderr: " in body
     assert "x" * 5000 not in body
     assert len(body) < 2000
+
+
+def test_a_provider_limit_release_still_writes_the_artifact_pointer(tmp_path: Path) -> None:
+    """The release re-routes an ending that used to arrive here as `blocked`.
+
+    So the pointer must still be written for it. Without this the whole
+    provider-limit class loses the durable `livespec-preserve-by-reference`
+    comment -- the artifact pointer with the byte size and sha256 -- while the
+    release re-queues the item, which is the discarded-work path the clause
+    exists to close. The release's own `recovery_source` is a journal field,
+    and the journal is not the durable authority.
+
+    The status is spelled as a LITERAL and bound to the product constant, so a
+    gate widened for some other spelling of the release cannot pass here.
+    """
+    assert PROVIDER_LIMIT_RELEASE_STAGE == "provider-limit-release"
+    module = _module()
+    append_work_item(path=_config(), item=_item())
+    journal = _RecordingJournal()
+    runner = _DumpRunner(export_diff=True)
+
+    module.preserve_checkpointed_work_reference(
+        args=_args(),
+        repo=_repo(tmp_path),
+        item=_item(),
+        outcome=_outcome(status="provider-limit-release"),
+        journal=journal,
+        runner=runner,
+    )
+
+    comments = make_beads_client(config=_config()).list_comments(issue_id="bd-ib-preserve")
+    body = str(comments[-1]["text"])
+    assert "livespec-preserve-by-reference" in body
+    assert "stage artifact path: stages/002-implement@1/diff.patch" in body
+    assert "sha256: 66cea3fffd55d2674c51819b19f4a7dee70484243ba4ed26408fa70e05b074dd" in body
+    assert journal.records[-1]["stage"] == "preserve-by-reference"
 
 
 def test_green_run_adds_no_preserve_comment(tmp_path: Path) -> None:

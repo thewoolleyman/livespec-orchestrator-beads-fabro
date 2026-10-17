@@ -1,4 +1,18 @@
-"""Preserve failed/blocked Fabro run work by reference on the ledger."""
+"""Preserve a non-green Fabro run's work by reference on the ledger.
+
+THE STATUS SET IS WHAT DECIDES WHETHER A POINTER IS WRITTEN AT ALL, so every
+status that re-routes a previously-`blocked` ending has to be added to it. The
+provider-limit release is the measured instance: every ending it now takes
+arrived here as `blocked` before `bd-ib-6itdjz`, and a status keyed set that
+had not been widened would silently stop writing the durable
+`livespec-preserve-by-reference` comment for that whole class -- the artifact
+pointer with the byte size and sha256 that an operator re-dispatching from a
+dead run's preserved diff reads. The release's own `recovery_source` is a
+JOURNAL field, and the journal is explicitly not the durable authority, so for
+a run whose needs-human push failed or was never observed the item would be
+re-queued with nothing durable pointing at the factory artifact: the
+discarded-work path the clause exists to close.
+"""
 
 from __future__ import annotations
 
@@ -22,6 +36,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_b
     error_pointer_body,
     missing_artifact_body,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
+    PROVIDER_LIMIT_RELEASE_STAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
@@ -41,6 +58,12 @@ __all__: list[str] = [
 ]
 
 _DUMP_TIMEOUT_SECONDS = 300.0
+# Every terminal whose work is worth a durable pointer. The release status is
+# imported from the RECORDS leaf rather than from the outcome mapper that names
+# it a status, because the stage and the status are one literal and the leaf
+# carries no configuration, engine or preflight chain this module would
+# otherwise import to read one constant.
+_PRESERVED_STATUSES = frozenset({"blocked", "failed", PROVIDER_LIMIT_RELEASE_STAGE})
 _LEDGER_WRITE_ERRORS = (
     WorkItemNotFoundError,
     BeadsCommandError,
@@ -68,8 +91,8 @@ def preserve_checkpointed_work_reference(
     journal: JournalWriter,
     runner: CommandRunner | None = None,
 ) -> None:
-    """Write a preserve-by-reference comment for failed/blocked Fabro runs."""
-    if outcome.status not in {"blocked", "failed"}:
+    """Write a preserve-by-reference comment for a non-green Fabro run."""
+    if outcome.status not in _PRESERVED_STATUSES:
         return
     run_id = outcome.fabro_run_id
     target = getattr(args, "fabro_factory_target", None)
