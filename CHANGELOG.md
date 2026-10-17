@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.211.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.210.0...v0.211.0) (2026-10-17)
+
+
+### Features
+
+* **dispatcher:** classify a terminal provider-limit failure for release ([3986e9c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3986e9cfc5f814d003c21063104a49d4e866cd7c))
+* **dispatcher:** perform the provider-limit release and free the claim ([d64c306](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d64c30628363bc1916c402a265524691448eea47))
+* **dispatcher:** record the hold and the release a provider limit observes ([4c70bac](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4c70bac483198fa8214670ecafc9dcd59821d5b6))
+* **dispatcher:** release a terminated provider-limit run instead of blocking ([e92612b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e92612b878cd0cef795ad7a84dc8f0c552ca8056))
+
+
+### Bug Fixes
+
+* **dispatcher:** settle a provider-limit replay against the item, not the row ([49ca042](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/49ca042b6235da29b8c34bba4c301ba1e4bb18a5))
+
 ## [0.210.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.209.0...v0.210.0) (2026-10-17)
 
 
