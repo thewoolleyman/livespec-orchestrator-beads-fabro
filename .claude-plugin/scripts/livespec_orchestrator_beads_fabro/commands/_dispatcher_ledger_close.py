@@ -357,6 +357,13 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # nothing to do with hooks.
     "hook_over_limit",
     "needs_human_preservation",
+    # The provider-limit release, dropped on the same terms and for the
+    # ATTRIBUTION reason in its strongest form: an explicit null here would
+    # read as "this run WAS examined for a provider availability limit and
+    # none was found", which is a positive finding about an observation that is
+    # only ever taken at a non-green Fabro terminal. Every green outcome, every
+    # pre-dispatch refusal and every post-merge step would otherwise carry it.
+    "provider_limit_release",
     "provider_usage_limit_provider",
     "remedy",
     "step",
