@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_current_merge_hold import (
     CurrentMergeHold,
@@ -20,6 +20,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_successful_terminal import (
     SuccessfulTerminalEvidence,
 )
+from livespec_orchestrator_beads_fabro.effects import parse_json
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -74,11 +75,17 @@ def reconcile_terminal_publication(
         if view is not None and evidence is not None
         else None
     )
+    repository = (
+        terminal_repository_name(plan=plan, runner=runner, journal=journal)
+        if observed is not None
+        else None
+    )
     matches = False
     if observed is not None and view is not None and evidence is not None:
         matches = observed.number == view.number and observed.matches_publication(
             branch=plan.branch,
             head=evidence.commit_sha,
+            repository=repository or "",
         )
         if matches:
             _journal_successful_classification(
@@ -119,6 +126,35 @@ def terminal_publication_view(
         result=result,
     )
     return parse_pr_view(stdout=result.stdout) if result.exit_code == 0 else None
+
+
+def terminal_repository_name(
+    *,
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    journal: JournalWriter,
+) -> str | None:
+    """Observe the repository identity that owns this dispatch's publish branch.
+
+    THE THIRD LEG of the publication's identity, and the one a head-and-branch
+    comparison cannot supply: a fork carries the same branch name and can carry
+    the same head, so without it an unrelated repository's pull request
+    authenticates this run's checkpoint.
+    """
+    result = runner.run(
+        argv=["gh", "repo", "view", "--json", "nameWithOwner"],
+        cwd=plan.repo,
+        timeout_seconds=_GH_TIMEOUT_SECONDS,
+    )
+    journal_stage(
+        journal=journal,
+        plan=plan,
+        stage="fabro-terminal-repository-probe",
+        result=result,
+    )
+    parsed_raw = parse_json(text=result.stdout)
+    parsed = cast("dict[str, object]", parsed_raw)
+    return cast("str | None", parsed.get("nameWithOwner"))
 
 
 def _journal_successful_classification(
