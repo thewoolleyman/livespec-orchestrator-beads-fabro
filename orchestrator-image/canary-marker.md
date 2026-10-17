@@ -17,3 +17,4 @@ being a measurement of the engine and becomes a measurement of the change.
 ## Recorded canary dispatches
 
 - 2026-10-16 — marker introduced; no canary has recorded a line against it yet.
+- 2026-10-17 — canary `bd-ib-d3h677` on factory `hp`, run `01M55GKWZ05JB53JTX14Q86597`.
