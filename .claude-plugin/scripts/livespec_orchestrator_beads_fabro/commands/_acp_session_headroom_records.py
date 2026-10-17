@@ -155,6 +155,13 @@ def session_headroom_reading_fields(*, reading: SessionHeadroomReading) -> dict[
     exactly what a credential nobody is spending measures at -- a coerced zero
     would report a measurement nobody took to the one reader using the figure
     to judge whether the floor is adequate.
+
+    THE LAST KEY IS THE ONE FACT THE PROVIDER ASSERTED RATHER THAN THE ONE THIS
+    BUILD MEASURED, and its name says so. The clause permits journaling "a reset
+    instant the response carries" as "an unverified provider claim" and forbids
+    it from changing the projection skip; nothing reads it, and a key spelled
+    `resets_at` would sit beside a measured drain rate with nothing to tell a
+    reader which of the two anybody checked.
     """
     return {
         "credential_identity": reading.credential_identity,
@@ -164,6 +171,7 @@ def session_headroom_reading_fields(*, reading: SessionHeadroomReading) -> dict[
         "observed_at": reading.observed_at,
         "five_hour_drain_percent_per_hour": reading.five_hour_drain_percent_per_hour,
         "projection": session_headroom_projection_fields(projection=reading.projection),
+        "unverified_provider_reset_claim": reading.provider_reset_claim,
     }
 
 

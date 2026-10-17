@@ -291,6 +291,7 @@ def test_the_assessment_record_names_the_item_the_identity_and_the_reading() -> 
             "observed_at": _NOW,
             "five_hour_drain_percent_per_hour": None,
             "projection": None,
+            "unverified_provider_reset_claim": None,
         }
     ]
 
@@ -313,6 +314,7 @@ def test_the_assessment_record_carries_an_unobservable_result_explicitly() -> No
             "observed_at": _NOW,
             "five_hour_drain_percent_per_hour": None,
             "projection": None,
+            "unverified_provider_reset_claim": None,
         }
     ]
 
@@ -340,4 +342,5 @@ def test_the_record_carries_no_credential_value_or_raw_provider_response() -> No
         "unobservable",
         "five_hour_drain_percent_per_hour",
         "projection",
+        "provider_reset_claim",
     }

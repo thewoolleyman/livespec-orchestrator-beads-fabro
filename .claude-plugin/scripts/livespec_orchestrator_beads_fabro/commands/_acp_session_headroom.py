@@ -156,10 +156,19 @@ class SessionHeadroomProjection:
 class SessionHeadroomReading:
     """One assessment of one projected credential, at one observation time.
 
-    Every field is an opaque identity, a percentage or an instant. There is no
-    field a credential value or a raw provider response could arrive through,
-    which is the clause's "The journal MUST NOT contain credential values or
-    raw provider responses" expressed as a type rather than as a review note.
+    Every field is an opaque identity, a percentage, an instant or a closed
+    result. There is no field a credential value or a raw provider response
+    could arrive through, which is the clause's "The journal MUST NOT contain
+    credential values or raw provider responses" expressed as a type rather
+    than as a review note.
+
+    `provider_reset_claim` is the ONE field the provider itself asserts, and it
+    is named for what it is. The clause permits journaling "a reset instant the
+    response carries" as "an unverified provider claim" and forbids it from
+    changing the projection skip -- so it is carried, never read by any
+    decision here or in the projection, and rendered under a record key that
+    says it is unverified. A field called `resets_at` would invite exactly the
+    reasoning the prohibition exists to prevent.
     """
 
     credential_identity: str
@@ -169,6 +178,7 @@ class SessionHeadroomReading:
     unobservable: str | None = None
     five_hour_drain_percent_per_hour: float | None = None
     projection: SessionHeadroomProjection | None = None
+    provider_reset_claim: str | None = None
 
     @property
     def observable(self) -> bool:
@@ -204,7 +214,11 @@ class SessionHeadroomPolicy:
 
 
 def session_headroom_reading(
-    *, credential_identity: str, observed_at: str, utilization: object
+    *,
+    credential_identity: str,
+    observed_at: str,
+    utilization: object,
+    provider_reset_claim: str | None = None,
 ) -> SessionHeadroomReading:
     """Grade one provider utilization figure into a reading, or an unobservable.
 
@@ -220,21 +234,36 @@ def session_headroom_reading(
             credential_identity=credential_identity,
             observed_at=observed_at,
             reason=UNREADABLE_UTILIZATION,
+            provider_reset_claim=provider_reset_claim,
         )
     return SessionHeadroomReading(
         credential_identity=credential_identity,
         observed_at=observed_at,
         utilization_percent=percent,
         remaining_percent=FULL_ALLOWANCE_PERCENT - percent,
+        provider_reset_claim=provider_reset_claim,
     )
 
 
 def unobservable_session_headroom(
-    *, credential_identity: str, observed_at: str, reason: str
+    *,
+    credential_identity: str,
+    observed_at: str,
+    reason: str,
+    provider_reset_claim: str | None = None,
 ) -> SessionHeadroomReading:
-    """The explicit unobservable result, naming the measurement that failed."""
+    """The explicit unobservable result, naming the measurement that failed.
+
+    A reset CLAIM survives an unobservable utilization, because the two are
+    graded independently from one response: a reply whose utilization header is
+    missing or malformed can still assert when the window resets, and dropping
+    the claim there would discard the only thing that response said.
+    """
     return SessionHeadroomReading(
-        credential_identity=credential_identity, observed_at=observed_at, unobservable=reason
+        credential_identity=credential_identity,
+        observed_at=observed_at,
+        unobservable=reason,
+        provider_reset_claim=provider_reset_claim,
     )
 
 

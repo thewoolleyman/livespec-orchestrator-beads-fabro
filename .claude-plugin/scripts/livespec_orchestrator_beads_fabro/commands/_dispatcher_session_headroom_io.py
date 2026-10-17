@@ -72,6 +72,7 @@ __all__: list[str] = [
     "CLAUDE_SESSION_HEADROOM_MAX_OUTPUT_TOKENS",
     "CLAUDE_SESSION_HEADROOM_MODEL",
     "CLAUDE_SESSION_HEADROOM_URL",
+    "FIVE_HOUR_RESET_HEADER",
     "FIVE_HOUR_UTILIZATION_HEADER",
     "SESSION_HEADROOM_READ_TIMEOUT_SECONDS",
     "TIMED_OUT_REASON",
@@ -87,6 +88,12 @@ CLAUDE_SESSION_HEADROOM_URL = "https://api.anthropic.com/v1/messages"
 CLAUDE_SESSION_HEADROOM_MODEL = "claude-haiku-4-5-20251001"
 CLAUDE_SESSION_HEADROOM_MAX_OUTPUT_TOKENS = 1
 FIVE_HOUR_UTILIZATION_HEADER = "anthropic-ratelimit-unified-5h-utilization"
+
+# The provider's own claim about when the five-hour window resets. It is read
+# and carried, never acted on: the clause permits journaling it as "an
+# unverified provider claim" and forbids it from changing the projection skip,
+# and nothing here or downstream has a second source to check it against.
+FIVE_HOUR_RESET_HEADER = "anthropic-ratelimit-unified-5h-reset"
 
 # Finite, as the clause requires in as many words, and the same bound the
 # sibling credential probe uses: both are one bounded request on the admission
@@ -135,42 +142,72 @@ def read_projected_session_headroom(
             observed_at=observed_at,
             reason=ABSENT_CREDENTIAL_REASON,
         )
-    utilization = _five_hour_utilization(token=token)
+    utilization, reset_claim = _five_hour_window(token=token)
     if isinstance(utilization, str):
         return unobservable_session_headroom(
-            credential_identity=identity, observed_at=observed_at, reason=utilization
+            credential_identity=identity,
+            observed_at=observed_at,
+            reason=utilization,
+            provider_reset_claim=reset_claim,
         )
     return session_headroom_reading(
         credential_identity=identity,
         observed_at=observed_at,
         utilization=utilization,
+        provider_reset_claim=reset_claim,
     )
 
 
-def _five_hour_utilization(*, token: str) -> float | None | str:
-    """The header's utilization percentage, `None`, or the NAME of the failure.
+def _five_hour_window(*, token: str) -> tuple[float | None | str, str | None]:
+    """The utilization or the NAME of the failure, plus any reset claim.
 
-    `None` means the provider answered without a parseable header, which the
-    shared grader reports as an unreadable utilization. A `str` return is an
-    unobservable reason rather than an error message: the caller journals it
-    verbatim, so it must be one of the closed reasons above and must never
-    carry the provider's own sentence, which is a raw provider response.
+    `None` in the first slot means the provider answered without a parseable
+    header, which the shared grader reports as an unreadable utilization. A
+    `str` there is an unobservable reason rather than an error message: the
+    caller journals it verbatim, so it must be one of the closed reasons above
+    and must never carry the provider's own sentence, which is a raw provider
+    response.
+
+    THE CLAIM TRAVELS WITH EVERY ANSWER THE PROVIDER ACTUALLY GAVE, including a
+    refused one -- a 429 at the session limit is exactly the response most
+    likely to carry it -- and is `None` for the two faults where there is no
+    response at all to read it from.
     """
     try:
         with urlopen(  # noqa: S310 - fixed HTTPS endpoint, no caller-controlled URL.
             _headroom_request(token=token),
             timeout=SESSION_HEADROOM_READ_TIMEOUT_SECONDS,
         ) as response:
-            return _header_percent(headers=response.headers)
+            return (
+                _header_percent(headers=response.headers),
+                _reset_claim(headers=response.headers),
+            )
     except HTTPError as error:
         percent = _header_percent(headers=error.headers)
+        reset_claim = _reset_claim(headers=error.headers)
         if percent is not None:
-            return percent
-        return _http_reason(status=error.code)
+            return (percent, reset_claim)
+        return (_http_reason(status=error.code), reset_claim)
     except TimeoutError:
-        return TIMED_OUT_REASON
+        return (TIMED_OUT_REASON, None)
     except (URLError, OSError):
-        return TRANSPORT_FAILED_REASON
+        return (TRANSPORT_FAILED_REASON, None)
+
+
+def _reset_claim(*, headers: Message | None) -> str | None:
+    """The provider's claimed reset instant, verbatim, or `None`.
+
+    Taken as the header's own text with no parsing and no validation: nothing
+    downstream reads it, so a parse here would be work performed to produce a
+    value no decision consumes -- and a parse that FAILED would discard the
+    claim the clause permits journaling.
+    """
+    if headers is None:
+        return None
+    raw = headers.get(FIVE_HOUR_RESET_HEADER)
+    if raw is None:
+        return None
+    return str(raw)
 
 
 def _headroom_request(*, token: str) -> Request:

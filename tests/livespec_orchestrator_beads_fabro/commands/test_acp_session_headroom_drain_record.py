@@ -135,4 +135,5 @@ def test_the_rate_sits_among_the_readings_whole_journaled_key_set() -> None:
         "unobservable",
         _DRAIN_FIELD,
         "projection",
+        "unverified_provider_reset_claim",
     }

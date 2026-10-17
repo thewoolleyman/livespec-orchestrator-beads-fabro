@@ -208,6 +208,7 @@ def _reading_fields(*, utilization: float, remaining: float) -> dict[str, object
         "observed_at": _NOW,
         "five_hour_drain_percent_per_hour": None,
         "projection": None,
+        "unverified_provider_reset_claim": None,
     }
 
 
