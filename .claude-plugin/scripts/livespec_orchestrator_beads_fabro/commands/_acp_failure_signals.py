@@ -113,9 +113,26 @@ _GUARD_MARKERS: tuple[tuple[str, tuple[tuple[str, ...], ...]], ...] = (
         "cancellation",
         (("operation was cancelled",), ("cancelled by the operator",)),
     ),
+    # `acp turn timed out` is the ENGINE'S OWN wording for a turn that
+    # reached its ceiling, and it shares no literal with the other three
+    # conjunctions -- so without it the class named every node deadline
+    # except the one this factory actually produces. Measured 2026-10-17 on
+    # run 01M54W4YM2SWANMK515YNPFY7J: `ACP turn timed out after 345 tool
+    # call(s) and 3658 session update(s)`, categorised `transient_infra`
+    # after four hours of genuine progress. That cause reached `unmatched`,
+    # so it was already non-eligible -- by accident, on the grounds that no
+    # signature happened to match it. A configured literal broad enough to
+    # catch a provider timeout would have turned a WORK timeout into a
+    # provider-limit release, returning the run to `ready` as though an
+    # allowance had been spent.
     (
         "node_deadline",
-        (("node deadline exceeded",), ("deadline exceeded",), ("node timeout",)),
+        (
+            ("node deadline exceeded",),
+            ("deadline exceeded",),
+            ("node timeout",),
+            ("acp turn timed out",),
+        ),
     ),
     (
         "stall_expiry",
