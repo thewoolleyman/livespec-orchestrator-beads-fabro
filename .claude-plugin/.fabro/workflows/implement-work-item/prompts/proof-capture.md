@@ -94,6 +94,9 @@ concrete, copy-pasteable action or command. The steps must be:
   The reason: the engine appends a checkpoint commit after every node,
   so HEAD moves between capture and replay. A commit the window held
   when you captured sits below it by the time the replay leg looks.
+  Rejected: `git log --max-count=2 --format=%H HEAD`, expecting a given
+  sha among its lines.
+  Accepted: `git merge-base --is-ancestor <sha> HEAD`.
 - **Rooted in this sandbox.** Start from the clone's working directory and
   the tooling the sandbox actually has.
 - **Credential-safe.** Where a step needs a credential, name it by its

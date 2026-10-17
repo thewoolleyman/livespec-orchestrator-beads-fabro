@@ -89,6 +89,13 @@ _ANCHORING_REASON = (
     "so HEAD moves between capture and replay",
 )
 
+# One worked example per verdict, each spelled WITH its verdict word so the
+# pair cannot be satisfied by a command the prose merely mentions. The rejected
+# one is the exact shape `bd-ib-qg6qkz` published; the accepted one is a
+# predicate whose answer does not depend on how deep the sha has sunk.
+_REJECTED_EXAMPLE = "Rejected: `git log --max-count=2 --format=%H HEAD`"
+_ACCEPTED_EXAMPLE = "Accepted: `git merge-base --is-ancestor <sha> HEAD`"
+
 
 def _proof_capture_prompt_files() -> tuple[str, ...]:
     """Prompt filenames of every node named `proof_capture` in the committed graph."""
@@ -149,3 +156,19 @@ def test_the_deterministic_bullet_gives_the_moving_head_reason_in_the_rule() -> 
             f"arrives as a bare prohibition and an author cannot tell which reads "
             f"survive the checkpoint commits the engine appends after this stage"
         )
+
+
+def test_the_deterministic_bullet_shows_a_rejected_and_an_accepted_example() -> None:
+    """The rule is worked, not only stated: one HEAD window, one fixed sha."""
+    bullet = _deterministic_bullet()
+
+    assert _REJECTED_EXAMPLE in bullet, (
+        f"the Deterministic bullet shows no rejected HEAD-window example "
+        f"({_REJECTED_EXAMPLE!r}), so the shape that cost two canary runs is named "
+        f"nowhere an author would recognise it in their own step"
+    )
+    assert _ACCEPTED_EXAMPLE in bullet, (
+        f"the Deterministic bullet shows no accepted fixed-sha example "
+        f"({_ACCEPTED_EXAMPLE!r}), so the rule forbids a shape without offering the "
+        f"depth-independent one that replaces it"
+    )
