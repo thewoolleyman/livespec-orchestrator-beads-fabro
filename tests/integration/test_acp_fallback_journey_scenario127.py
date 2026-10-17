@@ -52,6 +52,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
 from livespec_orchestrator_beads_fabro.commands._acp_capability_gate import (
     CONFIG_OPTIONS_CAPABILITY,
     acp_capability_refusal,
@@ -67,7 +68,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_fallback_warning_records im
 )
 from livespec_orchestrator_beads_fabro.commands._acp_hold_records import HOLD_STAGE
 from livespec_orchestrator_beads_fabro.commands._acp_journal_records import journal_records
+from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import AcpAdapter
 from livespec_orchestrator_beads_fabro.commands._acp_node_repository import repository_acp_chains
+from livespec_orchestrator_beads_fabro.commands._acp_node_selection import SelectedAcpCandidate
 from livespec_orchestrator_beads_fabro.commands._acp_projection_run import (
     AcpProjectionRequest,
     project_run_events,
@@ -253,7 +256,13 @@ def _target() -> FactoryTarget:
 
 
 def _refusal(*, capabilities: list[str] | None, repo: Path) -> tuple[str | None, _Transport]:
-    """Run the real gate against a recorded factory answer."""
+    """Run the real gate against a recorded factory answer.
+
+    The gate reads the SELECTED candidate, so the selection is stated here as
+    position zero -- this journey's primary, which is the candidate a dispatch
+    with nothing held renders and whose `protocol` mechanism genuinely owes the
+    capability.
+    """
     transport = _Transport(capabilities=capabilities)
     block = _dispatcher_block()
     catalogs = resolve_acp_catalogs(block=block)
@@ -261,9 +270,25 @@ def _refusal(*, capabilities: list[str] | None, repo: Path) -> tuple[str | None,
     chains = repository_acp_chains(block=block, catalogs=catalogs)
     assert not isinstance(chains, str), chains
     _ = repo
+    chain = chains[_NODE]
     return (
         acp_capability_refusal(
-            chains=chains,
+            selected={
+                _NODE: SelectedAcpCandidate(
+                    node=_NODE,
+                    index=0,
+                    candidate=AcpCandidate(
+                        adapter=AcpAdapter(command="acp"),
+                        identity=chain.identity,
+                        agent_id=chain.agent_id,
+                        config_options=chain.config_options,
+                    ),
+                    selection_identity="sel-0123456789abcdef",
+                    primary_generation="gen-0123456789abcdef",
+                    full_chain="chain-0123456789abcdef",
+                    skipped=(),
+                )
+            },
             factory_name=_FACTORY_NAME,
             capabilities=factory_capability_reader(factory=_target(), transport=transport),
         ),

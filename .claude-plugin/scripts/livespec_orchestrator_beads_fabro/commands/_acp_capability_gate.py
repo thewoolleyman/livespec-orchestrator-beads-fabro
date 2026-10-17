@@ -48,7 +48,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 
-from livespec_orchestrator_beads_fabro.commands._acp_node_chains import AcpNodeChain
+from livespec_orchestrator_beads_fabro.commands._acp_node_selection import SelectedAcpCandidate
 
 __all__: list[str] = [
     "CONFIG_OPTIONS_CAPABILITY",
@@ -60,18 +60,29 @@ CONFIG_OPTIONS_CAPABILITY = "acp.candidate_config_options.v1"
 
 def acp_capability_refusal(
     *,
-    chains: Mapping[str, AcpNodeChain],
+    selected: Mapping[str, SelectedAcpCandidate],
     factory_name: str,
     capabilities: Callable[[], frozenset[str] | None],
 ) -> str | None:
-    """Refuse an options-carrying chain the resolved factory cannot configure.
+    """Refuse a SELECTED candidate the resolved factory cannot configure.
 
-    Returns `None` when no candidate asks for an in-protocol option or the
-    capability is advertised; otherwise an actionable refusal naming the nodes,
-    the factory and the one capability string to deploy, which the caller routes
-    as a failed dispatch before any claim is taken.
+    Returns `None` when no node's selected candidate asks for an in-protocol
+    option or the capability is advertised; otherwise an actionable refusal
+    naming the nodes, the factory and the one capability string to deploy, which
+    the caller routes as a failed dispatch before any claim is taken.
+
+    THE SELECTION AND NEVER THE WHOLE CHAIN. `contracts.md` ends the clause with
+    "an unselected fallback's options never gate a dispatch", and the reason is
+    that the Dispatcher renders exactly ONE candidate per node: a fallback's
+    `config_options` is a request no engine is asked to honour on this dispatch,
+    so refusing on it refuses a dispatch that would have run correctly -- while
+    naming a capability the rendered configuration does not need. The cost would
+    land on exactly the configuration this feature encourages, a
+    protocol-configured fallback behind a healthy environment-mechanism primary,
+    which would refuse every dispatch of that node for a candidate it was never
+    going to run.
     """
-    requesting = sorted(node for node, chain in chains.items() if _requests_options(chain=chain))
+    requesting = sorted(node for node, one in selected.items() if one.candidate.config_options)
     if not requesting:
         return None
     advertised = capabilities()
@@ -79,13 +90,6 @@ def acp_capability_refusal(
         return None
     return _options_refusal(
         nodes=requesting, factory_name=factory_name, cause=_cause(advertised=advertised)
-    )
-
-
-def _requests_options(*, chain: AcpNodeChain) -> bool:
-    """Whether any candidate of this chain asks for an in-protocol option."""
-    return bool(chain.config_options) or any(
-        candidate.config_options for candidate in chain.fallbacks
     )
 
 
