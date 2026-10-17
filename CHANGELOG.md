@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.208.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.207.4...v0.208.0) (2026-10-17)
+
+
+### Features
+
+* admit a dispatch the factory cannot fall back for (bd-ib-wvj4rk) ([9bd8616](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9bd86161b41723ea8134ea2467c3bcb29612f17c))
+* gate config_options on each node's selected candidate (bd-ib-wvj4rk) ([2c34e4d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2c34e4d30e91fa6f23a1e35bd8ad2e358537f772))
+* journal the per-node ACP candidate selection (bd-ib-wvj4rk) ([bb5e2c9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bb5e2c93eb9d3010ae6e75b2bf58d2f349a8dac9))
+* label each ACP node with its selected candidate (bd-ib-wvj4rk) ([b233502](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b233502ad46a29b9696e7558b83384dde77edc9d))
+* render the selected candidate as a node's only adapter (bd-ib-wvj4rk) ([144c11e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/144c11ecc769fdeb9d8109e16eb6017fbef40ce4))
+* select the first eligible ACP candidate per node (bd-ib-wvj4rk) ([18f1675](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/18f16758a105d04020bcc69bc08f0d5703be34a1))
+
+
+### Bug Fixes
+
+* decompose the overlay leg instead of packing call sites (bd-ib-wvj4rk) ([a17f96f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a17f96fcd80fae65344c4a4e55a42cf8bf2c1375))
+* share one skip projection across the selection and headroom records (bd-ib-wvj4rk) ([a631e10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a631e10bdee78b81a616c6e57ae2c37dc4a10aa4))
+* thread the admission verdict to the per-node ACP selection (bd-ib-wvj4rk) ([3b5a567](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3b5a5673a0628f229a35ab91611a4233c8cc1828))
+
 ## [0.207.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.207.3...v0.207.4) (2026-10-17)
 
 
