@@ -98,7 +98,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_labels import (
     dispatch_run_label_pairs,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_successful_terminal import (
-    successful_store_loss_checkpoint_head,
+    successful_store_loss_evidence,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_publication import (
     reconcile_terminal_publication,
@@ -266,13 +266,13 @@ def run_dispatch(
     # decides nothing alone -- the reconciliation below still has to find the
     # matching publication -- so every other failure keeps its own terminal
     # outcome, untouched.
-    checkpoint_head = successful_store_loss_checkpoint_head(run_id=run_id, inspect=inspect)
+    evidence = successful_store_loss_evidence(run_id=run_id, inspect=inspect)
     publication = reconcile_terminal_publication(
         plan=plan,
         runner=runner,
         journal=journal,
         terminal=terminal,
-        checkpoint_head=checkpoint_head,
+        evidence=evidence,
     )
     if publication.refusal is not None:
         # Attached rather than threaded through `fabro_run_terminal_outcome`,
