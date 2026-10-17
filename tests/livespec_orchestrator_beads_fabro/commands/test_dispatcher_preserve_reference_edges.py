@@ -304,7 +304,7 @@ def test_post_run_dispositions_continue_after_preserve_failure(
     monkeypatch.setattr(_dispatcher_loop_selection, "escalate_needs_human_block", needs_human)
     monkeypatch.setattr(
         _dispatcher_loop_selection,
-        "bounce_non_convergence_to_backlog",
+        "dispose_terminal_routing",
         non_convergence,
     )
     monkeypatch.setattr(_dispatcher_loop_selection, "emit_calibration", lambda **_: None)

@@ -440,7 +440,7 @@ def test_a_filed_cut_is_not_then_rested_at_blocked_needs_human(
         lambda **_: escalated.append("escalated"),
     )
     monkeypatch.setattr(_dispatcher_loop_selection, "preserve_checkpointed_work_reference", _noop)
-    monkeypatch.setattr(_dispatcher_loop_selection, "bounce_non_convergence_to_backlog", _noop)
+    monkeypatch.setattr(_dispatcher_loop_selection, "dispose_terminal_routing", _noop)
     monkeypatch.setattr(_dispatcher_loop_selection, "emit_calibration", _noop)
     monkeypatch.setattr(_dispatcher_loop_selection, "record_provider_exhaustion_if_observed", _noop)
     monkeypatch.setattr(

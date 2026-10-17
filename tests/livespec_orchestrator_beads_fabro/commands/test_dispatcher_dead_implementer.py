@@ -176,7 +176,10 @@ def _stub_unrelated_dispositions(*, monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
         "preserve_checkpointed_work_reference",
         "escalate_needs_human_block",
-        "bounce_non_convergence_to_backlog",
+        # The GROUP of non-green terminal routes, which is where the
+        # non-convergence bounce and the stall arm moved when the
+        # provider-limit release joined them as a third peer.
+        "dispose_terminal_routing",
         "emit_calibration",
     ):
         monkeypatch.setattr(_dispatcher_loop_selection, name, lambda **_: None)
