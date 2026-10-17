@@ -18,6 +18,7 @@ fact about the artifact under construction rather than a collection error.
 
 from __future__ import annotations
 
+import subprocess
 from importlib import import_module
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,10 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     reset_fake_singleton,
 )
 from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands._config import (
+    has_fabro_factories,
+    has_fabro_factory,
+)
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -150,3 +155,86 @@ def test_a_fixture_that_cannot_be_read_is_reported_rather_than_filed(*, tmp_path
     refused = canary.file_canary_work_item(repo=tmp_path, config=_config(), now_iso=_NOW)
 
     assert isinstance(refused, canary.CanaryFixtureUnusable), refused
+
+
+def test_an_undeclared_factory_name_would_resolve_to_the_ambient_local_engine() -> None:
+    """The hazard the recipe's factory guard exists to close, measured.
+
+    An undeclared name is NOT an error downstream: `_factory_entry` answers `{}`
+    for one, so the target resolves with no server and the dispatch lands on the
+    ambient local engine rather than the candidate the name meant. This asserts
+    the two predicates the guard is built on give the answer it needs — that this
+    repository DOES constrain factory names, and that `hp-candidate`, the
+    likeliest invocation of a candidate-canary recipe, is not among them.
+
+    Without this, the guard below could be satisfied by a script that refuses
+    everything or nothing, and the text assertions could not tell the difference.
+    """
+    assert has_fabro_factories(cwd=_REPO_ROOT) is True
+    assert has_fabro_factory(cwd=_REPO_ROOT, factory="hp") is True
+    assert has_fabro_factory(cwd=_REPO_ROOT, factory="hp-candidate") is False
+
+
+def test_the_recipe_refuses_an_undeclared_factory_before_filing_anything() -> None:
+    """An undeclared name must refuse at the guard, touching no ledger.
+
+    Run against the REAL script rather than a transcription of it, and it needs
+    neither credentials nor a ledger precisely BECAUSE the guard precedes
+    `file-canary` — so this test passing is itself evidence of the ordering the
+    finding turns on. A guard placed after the filing would reach `file-canary`
+    here, which needs the tenant password, and this test would fail.
+
+    Requiring the argument closed only OMISSION. An undeclared name is the
+    strictly worse case: the run completes and is read as evidence about a
+    candidate engine that never ran it — an item-quality failure wearing an
+    engine failure's clothes, one layer up from the one the fixture removes.
+    """
+    completed = subprocess.run(
+        ["bash", str(_RECIPE_SCRIPT), "hp-candidate"],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode != 0, completed.stdout
+    assert "hp-candidate is not a factory this repository declares" in completed.stderr
+    # The declared set is named, because a refusal an operator cannot act on
+    # sends them to the config file to work out what they should have typed.
+    assert "declared factories: hp" in completed.stderr
+    # Nothing was filed: the refusal says so, and the filing narration that the
+    # successful path prints is absent.
+    assert "nothing was filed and nothing was dispatched" in completed.stderr
+    assert "filed canary" not in completed.stdout
+
+
+def test_the_recipe_grades_the_factory_name_before_it_files_a_canary() -> None:
+    """The guard's position and its three outcomes, read off the script.
+
+    POSITION is the load-bearing property: a guard that ran after `file-canary`
+    would strand a filed canary at the top of the ready queue for a concurrent
+    drain to select, so a typo would cost a disposal as well as a refusal.
+
+    The exit codes deliberately skip 1, because `python3 -c` exits 1 on any
+    uncaught exception — a probe that signalled "declared, and this is not one"
+    with 1 would report an ImportError as a confident verdict about the operator's
+    config. Measured while building this guard: with the probe's dependencies
+    absent it refused `hp` while naming an EMPTY declared set, which is a
+    plausible, actionable and entirely wrong cause.
+    """
+    script = _RECIPE_SCRIPT.read_text(encoding="utf-8")
+
+    guard_at = script.index("factory_probe=")
+    filing_at = script.index("dispatcher.py file-canary")
+    assert guard_at < filing_at, "the factory guard must precede the filing"
+
+    # Both predicates, because an unconstrained repository must stay
+    # unconstrained: a repo declaring no `factories` block constrains no name.
+    assert "has_fabro_factories" in script
+    assert "has_fabro_factory" in script
+    # An unreadable config is its own outcome, never folded into "undeclared" —
+    # the confusion `dispatcher_block`'s own docstring warns about.
+    assert "LivespecConfigUnreadableError" in script
+    assert "could not be read" in script
+    # And a probe that cannot run at all reports itself, not a verdict.
+    assert "NOT a verdict about" in script

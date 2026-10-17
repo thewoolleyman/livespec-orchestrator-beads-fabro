@@ -340,6 +340,19 @@ you name — `hp` for the pinned production factory, or whichever name
 `canary:fixture-dispatch`, so a reader surveying the tenant can separate the
 canaries from ordinary filed work with one label filter.
 
+**The factory name must be one `dispatcher.factories` declares, and the recipe
+grades it before it files anything.** An undeclared name is not an error further
+down: the target resolves with no server, the dispatch lands on the ambient local
+engine at `127.0.0.1:32276`, and the run is then read as evidence about a
+candidate engine that never ran it. Only `hp` is committed, so taking a canary
+against a candidate means declaring that candidate's entry host-side FIRST —
+`just canary-dispatch hp-candidate` with no such entry is refused, by name, with
+the declared set printed and no canary filed. A repository that declares no
+`factories` block at all constrains no name and keeps today's ambient behaviour.
+An unreadable `.livespec.jsonc` is reported as the config fault it is rather than
+as an undeclared factory, and a probe that cannot run at all says so instead of
+returning a verdict.
+
 The canary's whole deliverable is one appended line in
 `orchestrator-image/canary-marker.md`, a plain Markdown file outside every tree
 the check suite points a scanner at, so the change the canary makes cannot
