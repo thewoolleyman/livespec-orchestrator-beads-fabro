@@ -32,6 +32,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_install_recipe 
     JanitorBootstrapRecipe,
     resolve_janitor_bootstrap_recipe,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import INVOKER_ENV_VAR
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_degraded import (
     DegradedStep,
     degraded_step,
@@ -71,13 +72,14 @@ _GIT_TIMEOUT_SECONDS = 600.0
 _JANITOR_TIMEOUT_SECONDS = 3600.0
 
 # The dispatcher's factory-routing and invoker-attribution variables, removed
-# from the janitor's check run. Spelled here rather than imported, because each
-# reader holds its own PRIVATE constant for the same name (`_ENV_FABRO_FACTORY`
-# in `_config` and in `_dispatcher_factory_ledger`) and a cross-module private
-# import is the one thing this package's layering forbids. A later variable the
-# Dispatcher reads to select a factory or to attribute a journal record belongs
-# in this tuple.
-JANITOR_REMOVED_ENV_VARS: tuple[str, ...] = ("LIVESPEC_FABRO_FACTORY",)
+# from the janitor's check run. The factory name is spelled here rather than
+# imported, because each reader holds its own PRIVATE constant for it
+# (`_ENV_FABRO_FACTORY` in `_config` and in `_dispatcher_factory_ledger`) and a
+# cross-module private import is the one thing this package's layering forbids;
+# the invoker name is PUBLIC at its reader, so it comes from there. A later
+# variable the Dispatcher reads to select a factory or to attribute a journal
+# record belongs in this tuple.
+JANITOR_REMOVED_ENV_VARS: tuple[str, ...] = ("LIVESPEC_FABRO_FACTORY", INVOKER_ENV_VAR)
 
 
 def janitor_env_delta(*, core_plugin_root: str) -> dict[str, str | None]:

@@ -318,5 +318,6 @@ def test_janitor_env_delta_adds_the_core_root_and_removes_every_scrubbed_name() 
     assert delta == {
         "LIVESPEC_CORE_PLUGIN_ROOT": "/janitor-co/.livespec-core/.claude-plugin",
         "LIVESPEC_FABRO_FACTORY": None,
+        "LIVESPEC_INVOKER": None,
     }
-    assert "LIVESPEC_FABRO_FACTORY" in JANITOR_REMOVED_ENV_VARS
+    assert JANITOR_REMOVED_ENV_VARS == ("LIVESPEC_FABRO_FACTORY", "LIVESPEC_INVOKER")
