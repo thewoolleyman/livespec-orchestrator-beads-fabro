@@ -71,6 +71,7 @@ __all__: list[str] = [
     "UNOBSERVABLE_READING_REASON",
     "UNREADABLE_OBSERVATION_REASON",
     "UTILIZATION_NOT_HIGHER_REASON",
+    "projection_skips_candidate",
     "reading_with_projection",
     "session_headroom_projection",
 ]
@@ -102,6 +103,7 @@ UNREADABLE_OBSERVATION_REASON = "unreadable-observation-instant"
 _INSTANT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 _FLOOR_DISABLED_PERCENT = 0
+_HORIZON_DISABLED_MINUTES = 0
 
 
 def session_headroom_projection(
@@ -195,8 +197,54 @@ def _attempted_projection(
         baseline_observed_at=baseline.observed_at,
         projected_exhaustion_at=exhaustion.strftime(_INSTANT_FORMAT),
         horizon_minutes=horizon_minutes,
-        skip_applied=exhaustion < observed + timedelta(minutes=horizon_minutes),
+        skip_applied=_exhausts_inside_horizon(
+            observed=observed, exhaustion=exhaustion, horizon_minutes=horizon_minutes
+        ),
     )
+
+
+def _exhausts_inside_horizon(
+    *, observed: datetime, exhaustion: datetime, horizon_minutes: int
+) -> bool:
+    """Whether the exhaustion is STRICTLY earlier than the observation plus horizon.
+
+    THE DISABLED-DIAL TEST IS A GUARD AND NOT AN ARITHMETIC ACCIDENT. With a
+    horizon of 0 the comparison instant IS the observation instant, and an
+    exhaustion computed from a positive rate is never before the observation it
+    was computed from -- so the inequality alone happens to skip nobody today.
+    The clause RATIFIES that disable, so it is written as something a reader can
+    see rather than left to a property of a division nobody states; the measured
+    case it catches is a rate reaching here negative, which the drain
+    measurement cannot produce but a caller constructing a reading can.
+
+    STRICTNESS IS THE CLAUSE'S OWN WORD, and it is the boundary an almost-correct
+    implementation moves: an exhaustion landing exactly ON the horizon is outside
+    it, exactly as a remaining headroom equal to the floor passes the floor.
+    """
+    if horizon_minutes <= _HORIZON_DISABLED_MINUTES:
+        return False
+    return exhaustion < observed + timedelta(minutes=horizon_minutes)
+
+
+def projection_skips_candidate(*, reading: SessionHeadroomReading) -> bool:
+    """Whether this reading's PROJECTION leaves a covered candidate selectable.
+
+    The comparison was decided where the horizon was in hand, so this only
+    READS it. The filter runs once per candidate against one shared reading, so
+    a filter that re-derived the inequality would re-derive it per candidate
+    against a horizon it would have to be handed anyway -- and two derivations
+    of one comparison are how a refusal record comes to disagree with the
+    refusal it explains.
+
+    A reading carrying NO projection skips nothing, which is the honest answer
+    for every surface that composes a verdict without a policy: wait attention
+    and idle-factory take no reading at all, so there is no projection for them
+    to be refused by.
+    """
+    projection = reading.projection
+    if projection is None:
+        return False
+    return projection.skip_applied
 
 
 def _unavailable_reason(
