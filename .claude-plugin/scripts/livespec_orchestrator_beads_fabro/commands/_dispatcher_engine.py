@@ -60,7 +60,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_current_merge_hold import (
     MERGE_HELD_STAGE,
     merge_hold_terminal,
-    read_current_merge_hold,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import (
     failed_outcome,
@@ -70,7 +69,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_merge import (
     await_merge,
-    confirm_pr,
     outcome_after_await,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import (
@@ -100,7 +98,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_labels import (
     dispatch_run_label_pairs,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_successful_terminal import (
-    successful_store_loss_checkpoint,
+    successful_store_loss_checkpoint_head,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_publication import (
+    reconcile_terminal_publication,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
 
@@ -261,23 +262,25 @@ def run_dispatch(
     # that exited zero before its terminal run event was persisted. The engine
     # then reports `failed` for a workflow that completed every node, so the
     # dispatch used to report a false implementation failure over an already
-    # published pull request. The checkpoint is read for THIS run only; every
-    # other failure keeps its own terminal outcome, untouched.
-    if terminal is not None and not successful_store_loss_checkpoint(
-        run_id=run_id, inspect=inspect
-    ):
+    # published pull request. The checkpoint is read for THIS run only, and it
+    # decides nothing alone -- the reconciliation below still has to find the
+    # matching publication -- so every other failure keeps its own terminal
+    # outcome, untouched.
+    checkpoint_head = successful_store_loss_checkpoint_head(run_id=run_id, inspect=inspect)
+    publication = reconcile_terminal_publication(
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        terminal=terminal,
+        checkpoint_head=checkpoint_head,
+    )
+    if publication.refusal is not None:
         # Attached rather than threaded through `fabro_run_terminal_outcome`,
         # which classifies the ENGINE's own record and has no business reading a
         # sandbox sentinel. The event is evidence the cause writer renders only
         # where the ending is attributed to it.
-        return replace(terminal, hook_over_limit=hook_over_limit)
-    # THE CURRENT HOLD, read ONCE for the whole merge-confirmation boundary. The
-    # plan's `merge_hold` is the launch snapshot the sandbox and the dispatch record
-    # share and must keep; this is what the ledger says now, hours later, and a hold
-    # set during the run is visible in exactly one of the two
-    # (`_dispatcher_current_merge_hold`).
-    hold = read_current_merge_hold(repo=plan.repo, work_item_id=plan.work_item_id)
-    view = confirm_pr(plan=plan, runner=runner, journal=journal, hold=hold)
+        return replace(publication.refusal, hook_over_limit=hook_over_limit)
+    hold, view = publication.hold, publication.view
     if view is None:
         return failed_outcome(
             outcome_type=DispatchOutcome,

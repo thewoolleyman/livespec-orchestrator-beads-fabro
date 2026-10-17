@@ -13,18 +13,24 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
 )
 
 __all__: list[str] = [
-    "successful_store_loss_checkpoint",
+    "successful_store_loss_checkpoint_head",
 ]
 
 _RUN_STORE_LOSS_MESSAGE = "Worker exited before emitting a terminal run event: exit status: 0"
 
 
-def successful_store_loss_checkpoint(
+def successful_store_loss_checkpoint_head(
     *,
     run_id: str | None,
     inspect: FabroInspectResult | None,
-) -> bool:
-    """Recognize the incident's last durable successful checkpoint.
+) -> str | None:
+    """Return the incident checkpoint's published head, or no override.
+
+    The HEAD is what the caller needs rather than a bare verdict: the
+    checkpoint's own `git_commit_sha` is the commit the successful run
+    published, so it is the only value a publication can be authenticated
+    against. A qualifying checkpoint with no readable head is therefore no
+    evidence at all.
 
     The engine's own conclusion says the worker exited before persisting a
     terminal run event, so it cannot answer whether the workflow completed.
@@ -42,7 +48,8 @@ def successful_store_loss_checkpoint(
     final_raw: object = outcomes.get("verify_pr")
     final = cast("dict[object, object]", final_raw) if isinstance(final_raw, dict) else {}
     failure = None if inspect is None else inspect.failure
-    return bool(
+    commit_raw: object = checkpoint.get("git_commit_sha")
+    qualifies = bool(
         run_id is not None
         and inspect is not None
         and inspect.command.exit_code == 0
@@ -54,5 +61,6 @@ def successful_store_loss_checkpoint(
         and checkpoint.get("current_node") == "verify_pr"
         and checkpoint.get("next_node_id") == "exit"
         and final.get("status") == "succeeded"
-        and isinstance(checkpoint.get("git_commit_sha"), str)
+        and isinstance(commit_raw, str)
     )
+    return cast("str", commit_raw) if qualifies else None
