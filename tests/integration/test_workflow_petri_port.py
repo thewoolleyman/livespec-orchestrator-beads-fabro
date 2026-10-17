@@ -34,6 +34,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._config import resolve_node_timeouts
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_allowance import (
     commit_timeout_seconds,
@@ -193,15 +194,13 @@ _SCRIPT_KEY = "script"
 
 def _skip_blank(*, text: str, at: int) -> int:
     """The index after any whitespace AND comments at `at` -- DOT allows both between tokens."""
-    while at < len(text):
-        if text[at] in " \t\r\n":
+    while True:
+        while at < len(text) and text[at] in " \t\r\n":
             at += 1
-            continue
         skipped = _skip_comment(text=text, at=at)
         if skipped == at:
             return at
         at = skipped
-    return at
 
 
 def _dot_string(*, text: str, start: int) -> tuple[str, int]:
@@ -467,6 +466,22 @@ def test_no_node_script_carries_a_backslash_escaped_single_quote() -> None:
     for declaration in _BACKSTOP_MUTANTS:
         mutated = _quoting_offenders(text=_with_probe_node(text=text, declaration=declaration))
         assert mutated == {_UNATTRIBUTED: 2}, (declaration, mutated)
+
+    # A `script` word that is a VALUE rather than a key is not a script, and a
+    # clean probe beside it stays clean: the scanner must not invent offences.
+    clean = _with_probe_node(
+        text=text, declaration=f'{_PROBE_NODE} [label=script, script="echo ok"]'
+    )
+    assert _quoting_offenders(text=clean) == {}
+    assert (_PROBE_NODE, "echo ok") in _script_attributes(text=clean)
+
+    # What the scanner cannot read it REFUSES, loudly, rather than skipping.
+    for unreadable, reason in (
+        (f'{_PROBE_NODE} [script="echo', "unterminated DOT string"),
+        (f"{_PROBE_NODE} [script=<echo>]", "not a quoted DOT string"),
+    ):
+        with pytest.raises(AssertionError, match=reason):
+            _script_attributes(text=unreadable)
 
     # Each replacement is bounded to ONE occurrence, so a control's arithmetic
     # states a fixed addition of two quotes rather than however many reads its
