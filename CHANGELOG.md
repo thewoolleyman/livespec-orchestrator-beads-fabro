@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.209.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.208.1...v0.209.0) (2026-10-17)
+
+
+### Features
+
+* **canary:** define the canary work-item in a committed fixture template ([e08c040](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e08c040254f02aa693c88526fdaf56405f7d13fd))
+* **canary:** file a fresh canary from the fixture and dispatch it by name ([c7f18b0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c7f18b053ac94b715fd2a9075f4d627701b5b737))
+* **canary:** label every canary the recipe files as a fixture dispatch ([66fbc24](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/66fbc24199e3b3f39126d4d6a3584c188ff88131))
+
+
+### Bug Fixes
+
+* **canary:** grade the factory name before filing a canary ([68967f6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/68967f6946c65258754397b839c2eb1cd822d3cb))
+* **canary:** refuse a canary intake routed anywhere but ready ([bd7c9bd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bd7c9bdb6cc9e8d288f0fd9b8b44f299336206b7))
+
 ## [0.208.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.208.0...v0.208.1) (2026-10-17)
 
 
