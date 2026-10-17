@@ -266,7 +266,7 @@ def run_dispatch(
     # decides nothing alone -- the reconciliation below still has to find the
     # matching publication -- so every other failure keeps its own terminal
     # outcome, untouched.
-    evidence = successful_store_loss_evidence(run_id=run_id, inspect=inspect)
+    evidence = successful_store_loss_evidence(plan=plan, run_id=run_id, inspect=inspect)
     publication = reconcile_terminal_publication(
         plan=plan,
         runner=runner,
