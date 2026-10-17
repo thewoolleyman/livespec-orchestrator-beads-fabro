@@ -169,13 +169,15 @@ def _node_bodies(*, text: str) -> dict[str, str]:
 
 
 def _declared_script_lines(*, text: str) -> list[str]:
-    """Every `script` attribute line in the FILE, attributed to no node at all.
+    """Every `script` attribute written in the graph's CANONICAL one-line shape.
 
-    The completeness control for the attribution above, and deliberately a
-    SECOND reading rather than a re-use of the first: a count derived from
-    `_node_bodies` would agree with itself however much that walk dropped, which
-    is exactly how the truncated body pattern reported a clean scan over ten of
-    this graph's twelve scripts.
+    An independent LOWER BOUND on `_script_attributes`, deliberately read a
+    different way: a count derived from the scanner would agree with itself
+    however much the scanner dropped. It is a lower bound and not the census,
+    because it shares the line-shape restriction the first revision of this
+    refusal had -- a multi-line script, or `script = "..."` with spaces, is
+    invisible to it -- and that shared restriction is how two readings once
+    agreed on a scan that missed every non-canonical layout.
     """
     return [
         stripped
@@ -185,30 +187,152 @@ def _declared_script_lines(*, text: str) -> list[str]:
     ]
 
 
-def _raw_node_scripts(*, text: str) -> dict[str, str]:
-    """Each declared node's `script` value as the FILE carries it, escapes UNDECODED.
+_DOT_WORD_RE = re.compile(r"[A-Za-z_][\w.]*")
+_SCRIPT_KEY = "script"
+
+
+def _skip_blank(*, text: str, at: int) -> int:
+    while at < len(text) and text[at] in " \t\r\n":
+        at += 1
+    return at
+
+
+def _dot_string(*, text: str, start: int) -> tuple[str, int]:
+    """The raw body of the DOT string opened at `start`, and the index after it.
+
+    Escapes stay UNDECODED: a backslash only shields the character after it from
+    closing the string. A string may span lines and may hold a bare `]`.
+    """
+    at = start + 1
+    while at < len(text):
+        if text[at] == "\\":
+            at += 2
+        elif text[at] == '"':
+            return text[start + 1 : at], at + 1
+        else:
+            at += 1
+    raise AssertionError(f"unterminated DOT string opened at offset {start}")
+
+
+def _script_attributes(*, text: str) -> list[tuple[str, str]]:
+    """Every `script` attribute in the graph as `(owner, raw value)`, in file order.
 
     Read off the raw text rather than through `parse_dot_graph`, which models the
     PINNED reader and drops the backslash from every escape it meets: a decoded
     script cannot carry the pattern the refusal below is about, so a scan over
     the parsed graph would report clean for every graph ever written.
+
+    QUOTE-AWARE AND LAYOUT-FREE, and that is the second revision's whole point.
+    The first revision attributed scripts by line shape, so `script = "..."`,
+    a quoted `"script"` key, a script spanning lines, or a bare `]` inside one
+    all fell out of the scan silently while the refusal still passed. This walk
+    skips comments, tracks attribute lists by `[`/`]` OUTSIDE strings only, and
+    reads each `script` key's value to its unescaped closing quote. The owner is
+    the last bare word before the list opened, which is the node for a node
+    statement. A script value that is not a quoted string cannot be scanned, so
+    it fails here, naming its owner, rather than being skipped.
     """
-    found: dict[str, str] = {}
-    for name, body in _node_bodies(text=text).items():
-        for line in body.splitlines():
-            stripped = line.strip()
-            if stripped.startswith(_SCRIPT_ATTRIBUTE_PREFIX) and stripped.endswith('"'):
-                found[name] = stripped[len(_SCRIPT_ATTRIBUTE_PREFIX) : -1]
+    found: list[tuple[str, str]] = []
+    owner = ""
+    last_word = ""
+    depth = 0
+    at = 0
+    while at < len(text):
+        skipped = _skip_comment(text=text, at=at)
+        if skipped != at:
+            at = skipped
+            continue
+        if text[at] in "[]":
+            opens = text[at] == "["
+            depth += 1 if opens else -1
+            owner = last_word if opens else owner
+            at += 1
+            continue
+        token, at = _dot_token(text=text, at=at)
+        if depth == 0:
+            last_word = token if token is not None else last_word
+            continue
+        if token != _SCRIPT_KEY:
+            continue
+        read = _script_value(text=text, at=at, owner=owner)
+        if read is not None:
+            value, at = read
+            found.append((owner, value))
     return found
 
 
+def _skip_comment(*, text: str, at: int) -> int:
+    """The index after a DOT comment opening at `at`, or `at` when none opens there."""
+    if text.startswith("//", at):
+        newline = text.find("\n", at)
+        return len(text) if newline < 0 else newline
+    if text.startswith("/*", at):
+        end = text.find("*/", at + 2)
+        assert end >= 0, f"unterminated block comment at offset {at}"
+        return end + 2
+    return at
+
+
+def _dot_token(*, text: str, at: int) -> tuple[str | None, int]:
+    """One DOT token: a string's raw body or a bare word, or `None` for punctuation."""
+    if text[at] == '"':
+        return _dot_string(text=text, start=at)
+    word = _DOT_WORD_RE.match(text, at)
+    if word is not None:
+        return word.group(), word.end()
+    return None, at + 1
+
+
+def _script_value(*, text: str, at: int, owner: str) -> tuple[str, int] | None:
+    """The value of the `script` key ending at `at`, or `None` when no `=` follows it."""
+    equals = _skip_blank(text=text, at=at)
+    if equals >= len(text) or text[equals] != "=":
+        return None
+    opener = _skip_blank(text=text, at=equals + 1)
+    assert (
+        opener < len(text) and text[opener] == '"'
+    ), f"node {owner!r} declares a script that is not a quoted DOT string, so it cannot be scanned"
+    return _dot_string(text=text, start=opener)
+
+
+def _raw_node_scripts(*, text: str) -> dict[str, str]:
+    """Each node's `script` value as the FILE carries it, escapes UNDECODED."""
+    return dict(_script_attributes(text=text))
+
+
 def _quoting_offenders(*, text: str) -> dict[str, int]:
-    """Each node whose script carries a backslash-escaped single quote, and how many."""
-    return {
-        name: script.count(_ESCAPED_SINGLE_QUOTE)
-        for name, script in _raw_node_scripts(text=text).items()
-        if _ESCAPED_SINGLE_QUOTE in script
-    }
+    """Each node whose script carries a backslash-escaped single quote, and how many.
+
+    Summed over the attribute LIST rather than the by-node mapping, so a node
+    declaring a second script cannot hide the first one's offence.
+    """
+    offenders: dict[str, int] = {}
+    for owner, script in _script_attributes(text=text):
+        count = script.count(_ESCAPED_SINGLE_QUOTE)
+        if count:
+            offenders[owner] = offenders.get(owner, 0) + count
+    return offenders
+
+
+# Non-canonical script layouts, each carrying ONE escaped-quote pair. Every one
+# passed the first revision of the refusal silently; each is now a mutant
+# control. Written with the escape as a placeholder so the source of THIS file
+# carries no backslash-quote pair of its own.
+_PROBE_NODE = "layout_probe"
+_LAYOUT_MUTANTS = (
+    f'{_PROBE_NODE} [script = "echo Q.bad.Q"]',
+    f'{_PROBE_NODE} ["script"="echo Q.bad.Q"]',
+    f'{_PROBE_NODE} [\n    script="echo first;\n echo Q.bad.Q;\n echo last"\n]',
+    f'{_PROBE_NODE} [\n    script="case $x in\n]\n esac; echo Q.bad.Q"\n]',
+)
+
+
+def _with_probe_node(*, text: str, declaration: str) -> str:
+    """The graph with one extra node declared just before its closing brace."""
+    closer = text.rstrip().rfind("}")
+    assert closer > 0
+    body = declaration.replace("Q.", _ESCAPED_SINGLE_QUOTE).replace(".Q", _ESCAPED_SINGLE_QUOTE)
+    return f"{text[:closer]}    {body}\n{text[closer:]}"
 
 
 def test_no_node_script_carries_a_backslash_escaped_single_quote() -> None:
@@ -233,12 +357,15 @@ def test_no_node_script_carries_a_backslash_escaped_single_quote() -> None:
 
     THE SCOPE CONTROL RUNS FIRST, because the refusal's claim is about EVERY
     node script and an instrument's reach is the half of that claim no clean
-    answer can establish. Every `script` attribute line in the file is counted
-    by a reading that attributes nothing, and the attribution must account for
-    all of them: when this case was first authored the body pattern truncated
-    each body at its first shell character class, so `publish_draft` and
-    `needs_human` were outside the scan and ten scripts of twelve passed for
-    twelve.
+    answer can establish. When this case was first authored the body pattern
+    truncated each body at its first shell character class, so `publish_draft`
+    and `needs_human` were outside the scan and ten scripts of twelve passed for
+    twelve. Its first repair then read scripts by LINE SHAPE, and so did the
+    count meant to check it, so the two agreed while `script = "..."`, a quoted
+    key, and any multi-line script were all invisible to both. The scan is now a
+    quote-aware walk with no layout assumption; the canonical-line reading
+    remains only as a lower bound, and the layout mutants below are what show
+    the walk's reach.
 
     THE MUTANT CONTROLS RUN NEXT. A scan that reports an absence for a living
     has to be shown capable of returning a HIT before its clean answer means
@@ -262,18 +389,25 @@ def test_no_node_script_carries_a_backslash_escaped_single_quote() -> None:
     reachable node is the exact control that passed while the blind spot stood.
     """
     text = _graph_text()
+    attributes = _script_attributes(text=text)
     scripts = _raw_node_scripts(text=text)
     declared = _declared_script_lines(text=text)
     assert declared != []
-    # The COUNT says the attribution dropped none of them -- and it also reports
-    # an attribution that collapsed two nodes onto one script, which a set
-    # comparison alone would call equal. The VALUES say each script the scan
-    # holds is one the file really declares, so the count cannot be met by
-    # inventing entries.
-    assert len(scripts) == len(declared), sorted(scripts)
-    assert set(scripts.values()) == {line[len(_SCRIPT_ATTRIBUTE_PREFIX) : -1] for line in declared}
+    # One script per node, so the by-node mapping collapsed nothing.
+    assert len(scripts) == len(attributes), [owner for owner, _ in attributes]
+    # The canonical-line reading is a LOWER BOUND: every script it sees, the
+    # scanner must see too, so the scanner cannot have dropped one that the
+    # file's ordinary layout declares.
+    assert {line[len(_SCRIPT_ATTRIBUTE_PREFIX) : -1] for line in declared} <= set(scripts.values())
 
     committed = _quoting_offenders(text=text)
+
+    # THE LAYOUT MUTANTS are the controls the second review asked for: each is a
+    # script shape the canonical-line reading cannot see, so only a scanner that
+    # is genuinely layout-free can name the offending node.
+    for declaration in _LAYOUT_MUTANTS:
+        mutated = _quoting_offenders(text=_with_probe_node(text=text, declaration=declaration))
+        assert mutated.get(_PROBE_NODE) == 2, (declaration, mutated)
 
     # Each replacement is bounded to ONE occurrence, so a control's arithmetic
     # states a fixed addition of two quotes rather than however many reads its
