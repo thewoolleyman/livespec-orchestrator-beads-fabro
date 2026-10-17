@@ -1673,6 +1673,17 @@ it there; the bullets below are what this repo was missing.
   not what the specification REQUIRES, so it is not a spec-change decision.
   Only a spec-change-tier child routes to `propose-change`; escalating the rest
   deadlocks the archive gate, which refuses while any child sits undisposed.
+- **Dispatch a measured root-cause fix now; do not park it behind sequencing**
+  (maintainer correction, 2026-10-17). Once a recurring defect has a MEASURED
+  cause, dispatch its fix immediately. Hand-recovering each instance is a
+  stopgap, never the plan. A peer coordinator's ordering ("after run X ends")
+  is not a reason to wait, because the maintainer outranks it. Hold a fix behind
+  capacity only when the factory is MEASURED saturated by a fresh `fabro ps -a`
+  active count, never behind another run's ending. *Instance:* `bd-ib-fd26sc`
+  was a janitor environment leak that stranded every hp-candidate merge. It was
+  filed and then parked behind "after tixpma ends" while each strand was
+  reconciled by hand, until the maintainer asked "Why aren't you just fixing
+  the root cause?" The coordinator then amended its own rule (R103 (2)) to match.
 
 ## Working with the maintainer (repo-additive)
 
