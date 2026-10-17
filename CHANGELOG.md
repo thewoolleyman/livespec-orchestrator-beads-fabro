@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.211.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.211.0...v0.211.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* assess session headroom where no fallback chain is declared (bd-ib-vim5gc) ([ccac312](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ccac312deb00255d7c816ec2b1796aa2700ebc5c))
+
 ## [0.211.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.210.0...v0.211.0) (2026-10-17)
 
 
