@@ -192,8 +192,15 @@ _SCRIPT_KEY = "script"
 
 
 def _skip_blank(*, text: str, at: int) -> int:
-    while at < len(text) and text[at] in " \t\r\n":
-        at += 1
+    """The index after any whitespace AND comments at `at` -- DOT allows both between tokens."""
+    while at < len(text):
+        if text[at] in " \t\r\n":
+            at += 1
+            continue
+        skipped = _skip_comment(text=text, at=at)
+        if skipped == at:
+            return at
+        at = skipped
     return at
 
 
@@ -292,7 +299,17 @@ def _script_value(*, text: str, at: int, owner: str) -> tuple[str, int] | None:
     assert (
         opener < len(text) and text[opener] == '"'
     ), f"node {owner!r} declares a script that is not a quoted DOT string, so it cannot be scanned"
-    return _dot_string(text=text, start=opener)
+    value, at = _dot_string(text=text, start=opener)
+    # DOT joins `"a" + "b"` into one string, so every later segment is part of
+    # the script too, and an offence there is the script's offence.
+    while (plus := _skip_blank(text=text, at=at)) < len(text) and text[plus] == "+":
+        segment = _skip_blank(text=text, at=plus + 1)
+        assert (
+            segment < len(text) and text[segment] == '"'
+        ), f"node {owner!r} concatenates its script with something that is not a quoted DOT string"
+        more, at = _dot_string(text=text, start=segment)
+        value += more
+    return value, at
 
 
 def _raw_node_scripts(*, text: str) -> dict[str, str]:
@@ -311,7 +328,36 @@ def _quoting_offenders(*, text: str) -> dict[str, int]:
         count = script.count(_ESCAPED_SINGLE_QUOTE)
         if count:
             offenders[owner] = offenders.get(owner, 0) + count
+    # THE BACKSTOP, which needs no model of DOT's attribute grammar. Two review
+    # rounds each found a valid DOT spelling the attribution missed, so the
+    # refusal no longer rests on the attribution being complete: every escaped
+    # quote in ANY string outside a comment is counted, and whatever the
+    # attribution did not account for is refused as unattributed rather than
+    # passed. The attribution is what NAMES a node; this is what makes the
+    # refusal blanket.
+    unattributed = _escaped_quotes_in_strings(text=text) - sum(offenders.values())
+    if unattributed:
+        offenders[_UNATTRIBUTED] = unattributed
     return offenders
+
+
+_UNATTRIBUTED = "<unattributed>"
+
+
+def _escaped_quotes_in_strings(*, text: str) -> int:
+    """Escaped single quotes across EVERY DOT string in the file, comments excluded."""
+    total = 0
+    at = 0
+    while at < len(text):
+        skipped = _skip_comment(text=text, at=at)
+        if skipped != at:
+            at = skipped
+        elif text[at] == '"':
+            body, at = _dot_string(text=text, start=at)
+            total += body.count(_ESCAPED_SINGLE_QUOTE)
+        else:
+            at += 1
+    return total
 
 
 # Non-canonical script layouts, each carrying ONE escaped-quote pair. Every one
@@ -324,7 +370,17 @@ _LAYOUT_MUTANTS = (
     f'{_PROBE_NODE} ["script"="echo Q.bad.Q"]',
     f'{_PROBE_NODE} [\n    script="echo first;\n echo Q.bad.Q;\n echo last"\n]',
     f'{_PROBE_NODE} [\n    script="case $x in\n]\n esac; echo Q.bad.Q"\n]',
+    f'{_PROBE_NODE} [script /* explanation */ = "echo Q.bad.Q"]',
+    f'{_PROBE_NODE} [script="echo " + "Q.bad.Q"]',
 )
+
+# An escaped quote the attribution cannot see -- here in a non-script string,
+# standing in for any spelling of a script that a future DOT form might hide
+# from it. Only the backstop can catch it, and it must still be REFUSED, under
+# the unattributed key, so the refusal's blanket claim does not depend on the
+# attribution keeping up with DOT's grammar. A `\'` is not a DOT escape in ANY
+# string, so refusing it outside scripts too is conservative, not wrong.
+_BACKSTOP_MUTANTS = (f'{_PROBE_NODE} [label="Q.bad.Q"]',)
 
 
 def _with_probe_node(*, text: str, declaration: str) -> str:
@@ -407,7 +463,10 @@ def test_no_node_script_carries_a_backslash_escaped_single_quote() -> None:
     # is genuinely layout-free can name the offending node.
     for declaration in _LAYOUT_MUTANTS:
         mutated = _quoting_offenders(text=_with_probe_node(text=text, declaration=declaration))
-        assert mutated.get(_PROBE_NODE) == 2, (declaration, mutated)
+        assert mutated == {_PROBE_NODE: 2}, (declaration, mutated)
+    for declaration in _BACKSTOP_MUTANTS:
+        mutated = _quoting_offenders(text=_with_probe_node(text=text, declaration=declaration))
+        assert mutated == {_UNATTRIBUTED: 2}, (declaration, mutated)
 
     # Each replacement is bounded to ONE occurrence, so a control's arithmetic
     # states a fixed addition of two quotes rather than however many reads its
