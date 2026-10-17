@@ -193,5 +193,15 @@ def _checkpoint_completed_route(
 
 
 def _node_succeeded(*, outcomes: dict[object, object], node: str) -> bool:
-    raw = cast("dict[object, object]", outcomes.get(node))
-    return raw.get("status") == "succeeded"
+    """Treat an ABSENT or non-mapping outcome as not succeeded, never as a bug.
+
+    A required node with no recorded outcome, or one holding a string, a number
+    or null, is evidence that could not be read -- so it fails this test and the
+    dispatch keeps its ordinary non-green classification. Indexing it as a
+    mapping raised instead, which turned unreadable engine evidence into a
+    traceback out of the middle of `run_dispatch`.
+    """
+    raw = outcomes.get(node)
+    if not isinstance(raw, dict):
+        return False
+    return cast("dict[object, object]", raw).get("status") == "succeeded"
