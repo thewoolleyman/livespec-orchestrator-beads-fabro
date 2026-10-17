@@ -135,13 +135,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "heading": "## Dispatcher successful terminal evidence",
-    "work_item": "bd-ib-l55d7e",
-    "first_seen": "2026-10-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
     "heading": "## Grooming and slice-size calibration",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-19"
@@ -473,13 +466,6 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario 165 \u2014 Completed-cycle measurements explain runtime non-convergence",
     "work_item": "bd-ib-z2y4ca",
-    "first_seen": "2026-10-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 166 \u2014 Successful terminal evidence survives an engine terminal-event persistence failure",
-    "work_item": "bd-ib-l55d7e",
     "first_seen": "2026-10-09"
   },
   {
