@@ -887,5 +887,12 @@
     "heading": "## Scenario 187 \u2014 A priority-epic idle-slot audit surfaces dispatchable priority work while the factory queue is empty, and a blocker with a live run is not a stale edge",
     "work_item": "bd-ib-irh4js",
     "first_seen": "2026-10-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 189 \u2014 The post-merge and reconcile janitor's check run inherits none of the dispatcher's routing and attribution variables",
+    "work_item": "bd-ib-fd26sc",
+    "first_seen": "2026-10-17"
   }
 ]

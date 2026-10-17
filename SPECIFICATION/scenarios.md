@@ -6712,3 +6712,28 @@ Feature: A ref deletion is not gated like a change to the tree
     When the repository's pre-push gate runs
     Then it runs the full pre-push gate
 ```
+
+## Scenario 189 — The post-merge and reconcile janitor's check run inherits none of the dispatcher's routing and attribution variables
+
+```gherkin
+Feature: The janitor's check verdict depends on the merge, not on how the dispatch was routed,
+  so a dispatcher routed or attributed through its environment cannot turn a green merge red
+
+  Scenario: A dispatch routed through LIVESPEC_FABRO_FACTORY gets the janitor verdict its merge earns
+    Given a dispatcher whose environment carries LIVESPEC_FABRO_FACTORY and LIVESPEC_INVOKER
+    And a merged item whose check aggregate passes at the janitor venue when run without those variables
+    When the post-merge janitor runs the repository's check aggregate
+    Then the check run's environment carries neither LIVESPEC_FABRO_FACTORY nor LIVESPEC_INVOKER
+    And the janitor reports the aggregate's own passing verdict
+    And the janitor-post-merge journal row names LIVESPEC_FABRO_FACTORY and LIVESPEC_INVOKER as removed
+
+  Scenario: The reconcile-merged janitor applies the same scrub
+    Given a reconcile-merged invocation whose environment carries LIVESPEC_INVOKER
+    When the reconcile janitor runs the repository's check aggregate
+    Then the check run's environment does not carry LIVESPEC_INVOKER
+
+  Scenario: A dispatcher with no routing variables records an empty removal list
+    Given a dispatcher whose environment carries none of the dispatcher's routing or attribution variables
+    When the post-merge janitor runs
+    Then the janitor-post-merge journal row records an empty list of removed variables
+```
