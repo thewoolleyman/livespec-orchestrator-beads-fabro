@@ -101,8 +101,23 @@ def record_identity_covers_dispatch(
 
     A record naming NO account answers yes to every dispatch of its vendor,
     which is the vendor-wide reach the clause preserves for it.
+
+    TWO WAYS A DISPATCH CAN BE BLIND, and both answer yes as well. The literal
+    ABSENT identity is a reading that was taken and reports there was no
+    credential to fingerprint; an EMPTY set is no reading at all -- an
+    evaluation that assessed no covered candidate, or one resolved with no
+    headroom policy. Neither is evidence that this dispatch would have missed
+    the ceiling, and the clause rules on it in as many words: "When a
+    dispatch's projected credential identity is absent, the record covers it,
+    so that a blinded gauge fails closed."
+
+    This is the one arm that WIDENS a record's reach rather than narrowing it,
+    and the direction is the point: a gauge that admitted whenever it could not
+    observe its input makes blinding the input the cheapest route past the gate.
     """
     if record_identity is None:
+        return True
+    if not projected_identities or ABSENT_CREDENTIAL_IDENTITY in projected_identities:
         return True
     return record_identity in projected_identities
 
