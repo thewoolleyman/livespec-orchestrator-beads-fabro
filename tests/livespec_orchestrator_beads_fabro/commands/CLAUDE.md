@@ -187,6 +187,30 @@ Tests for the thin-transport command modules under
   `getattr` assertion, because each module's Red predates the constants it
   binds and a Red's test bytes are fixed across its Red-to-Green pair.
 
+- The `test_dispatcher_exhaustion_*` family covers the CREDENTIAL-ACCOUNT axis
+  of the provider-exhaustion record (Scenario 186, bound end to end by
+  `tests/integration/test_exhaustion_record_credential_identity_scenario186.py`).
+  Five modules, split by which claim each one can actually fail on.
+  `..._credential_identity` owns the positive mint; `..._unnamed_account_mint`
+  owns its two negatives, because the ABSENT case is the one where the
+  assessment DID journal an identity string and the mint must decline it;
+  `..._credential_identity_journal_shapes` covers the degraded and sparse
+  journal shapes a live append-only file holds, which came out of a coverage
+  measurement taken after that Red was authored; `..._identity_scoped_coverage`
+  carries the scoping, including the one case the whole fix lives or dies on —
+  an account-named record is no longer part of the legacy provider-only
+  blanket, without which one such record empties seven of eight
+  admission-required nodes and the gate's scoping is inert; and
+  `..._per_identity_liveness`, `..._provider_only_coverage` and
+  `..._blinded_projection` carry the key, the vendor-wide absence and the
+  fail-closed arm. Two pairings are load-bearing and must not be split: the
+  provider-only record's WIDE coverage sits beside the operator clearance's
+  PROVIDER-wide key, since the clearance line itself names no account and a
+  pair-keyed clearance would clear exactly the provider-only record while
+  reporting the provider cleared; and every admit sits beside a refusal on the
+  SAME journal, because a gate that had stopped reading the journal admits the
+  rotated account exactly as a correctly scoped one does.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr
