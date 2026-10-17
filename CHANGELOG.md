@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.207.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.207.3...v0.207.4) (2026-10-17)
+
+
+### Bug Fixes
+
+* bound the re-probe wait by consecutive rounds it could not re-resolve ([16c07a1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/16c07a1353fa8bcb2c57e794131f9805f96d6901))
+* **dispatcher:** empty every wrapper-injected name for the re-resolution child ([276d375](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/276d37551ef2ea637c121fd86e28fc8c83ac6fb7))
+* **dispatcher:** project the credential the re-probe wait retired on ([0766415](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0766415e057cc7728cf853fc1f1d1b9f36847cbb))
+* name the probed credential in every credential-reprobe-refused row ([2e24ba2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2e24ba25d2c35a3b7d879d0823e70c19d682f5fe))
+* re-resolve the worker credential through the configured wrapper per re-probe ([377e6d2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/377e6d2f29279362dc7adbe05de39b7528d20c62))
+* retire the re-probe wait only by the probe's own next result ([942a46a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/942a46a12d9944ee4229ee31e47a87760cfb50dc))
+
 ## [0.207.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.207.2...v0.207.3) (2026-10-17)
 
 
