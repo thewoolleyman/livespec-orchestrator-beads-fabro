@@ -83,6 +83,7 @@ class _Launcher:
 @dataclass(kw_only=True)
 class _Runner:
     plan: DispatchPlan
+    pr_overrides: dict[str, object] = field(default_factory=dict)
     calls: list[tuple[list[str], Path]] = field(default_factory=list)
 
     def run(
@@ -99,7 +100,14 @@ class _Runner:
         if argv[:2] == ["synthetic-fabro", "inspect"]:
             return _ok(stdout=json.dumps([_failed_inspect()]))
         if argv[:3] == ["gh", "pr", "view"]:
-            return _ok(stdout=json.dumps(_pull_request(plan=self.plan)))
+            return _ok(
+                stdout=json.dumps(
+                    {
+                        **_pull_request(plan=self.plan),
+                        **self.pr_overrides,
+                    }
+                )
+            )
         if argv[:2] == ["gh", "api"]:
             return _ok(stdout=json.dumps([{"number": 41}]))
         return _ok()
@@ -110,6 +118,7 @@ def _ok(*, stdout: str = "") -> CommandResult:
 
 
 def _plan(*, root: Path) -> DispatchPlan:
+    root.mkdir(parents=True, exist_ok=True)
     repo = root / "repo"
     repo.mkdir()
     return build_plan(
@@ -166,9 +175,13 @@ def _pull_request(*, plan: DispatchPlan) -> dict[str, object]:
     }
 
 
-def _dispatch(*, root: Path) -> tuple[DispatchOutcome, _Journal, _Runner]:
+def _dispatch(
+    *,
+    root: Path,
+    pr_overrides: dict[str, object] | None = None,
+) -> tuple[DispatchOutcome, _Journal, _Runner]:
     plan = _plan(root=root)
-    runner = _Runner(plan=plan)
+    runner = _Runner(plan=plan, pr_overrides=pr_overrides or {})
     journal = _Journal()
     outcome = run_dispatch(
         plan=plan,
@@ -193,3 +206,27 @@ def test_store_loss_after_success_continues_the_normal_merge_reconciliation(
         _MERGE_SHA,
     )
     assert any(argv[:3] == ["gh", "pr", "view"] for argv, _cwd in runner.calls)
+
+
+def test_publication_must_match_the_checkpoint_head_and_reports_merge_state(
+    tmp_path: Path,
+) -> None:
+    matching, _journal, _runner = _dispatch(
+        root=tmp_path / "matching",
+    )
+    stale, _journal, _runner = _dispatch(
+        root=tmp_path / "stale",
+        pr_overrides={"headRefOid": "b" * 40},
+    )
+
+    assert (matching.status, matching.stage, matching.pr_number, matching.merge_sha) == (
+        "green",
+        "done",
+        41,
+        _MERGE_SHA,
+    )
+    assert (stale.status, stale.stage, stale.pr_number) == (
+        "failed",
+        "fabro-run",
+        None,
+    )
