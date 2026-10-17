@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.207.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.207.1...v0.207.2) (2026-10-17)
+
+
+### Bug Fixes
+
+* carry the bare-quote pr_refresh into the groom variant (bd-ib-be5r7o) ([b184b3e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b184b3e9c6bd17594353c40e8b5b675d4d5c05d7))
+* hand jq a bare autoMergeRequest path in pr_refresh (bd-ib-be5r7o) ([8ac7048](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8ac7048b420db3fa8a98017177b630b91edf5285))
+* hand jq a bare mergeCommit.oid path in pr (bd-ib-be5r7o) ([4492b23](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4492b23716f6a4599290d38379bcf2845d1d0101))
+* record the pr visit count as a bare number (bd-ib-be5r7o) ([8b5c2a5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8b5c2a55b67874909af95a59ba276021c40ba7ed))
+* refuse a backslash-escaped single quote in any node script (bd-ib-be5r7o) ([027348f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/027348f33b4b9bddfc3ddfafbea6a99f8ffb545d))
+* write the non-converged reason with a bare printf format (bd-ib-be5r7o) ([b9d153c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b9d153c34c562a5eceb14900c5ff0d11884a9e1a))
+
 ## [0.207.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.207.0...v0.207.1) (2026-10-17)
 
 
