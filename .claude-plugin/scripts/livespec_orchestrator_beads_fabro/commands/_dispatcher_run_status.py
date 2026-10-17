@@ -53,6 +53,13 @@ class PrView:
     diff_size: int | None = None
     head: str | None = None
     base: str | None = None
+    head_ref_name: str | None = None
+
+    def matches_publication(self, *, branch: str, head: str) -> bool:
+        """Whether this is a live or merged publication of the checkpoint head."""
+        return (
+            self.state in {"OPEN", "MERGED"} and self.head_ref_name == branch and self.head == head
+        )
 
 
 _TERMINAL_CHECK_CONCLUSIONS = frozenset(
@@ -98,7 +105,12 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
         diff_size=pr_diff_size_of(payload=parsed),
         head=head_raw if isinstance(head_raw, str) and head_raw else None,
         base=base_raw if isinstance(base_raw, str) and base_raw else None,
+        head_ref_name=_optional_string(value=parsed.get("headRefName")),
     )
+
+
+def _optional_string(*, value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
 
 
 def _status_check_rollup_items(*, rollup_raw: object) -> list[object]:
