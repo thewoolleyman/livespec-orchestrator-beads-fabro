@@ -996,6 +996,28 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   a reading creates NO observed availability record and retires none, which
   holds structurally rather than carefully: nothing in the filter is handed a
   journal.
+  A SEVENTH PROPERTY LIVES ONE MODULE OVER, in `_acp_preflight_verdict.
+  _no_fallback_graded`, and it is the repair of a gap that hid for the mirror
+  reason the one below hid: a repository DECLARING NO FALLBACK-ENABLED CHAIN is
+  still assessed, because the clause covers "built-in single-candidate nodes
+  without fallback metadata". The assessment used to be short-circuited by the
+  enabled-chain test that runs strictly earlier, so it was gated on a repository
+  declaring fallback metadata rather than on the clause's own coverage rule —
+  measured 2026-10-17, a fresh dispatch in a sibling repository that declares no
+  chains journaled ZERO assessments while this repository's own evaluations
+  journaled one apiece, which left every repository without chains dispatching
+  with no headroom brake at all. Three things about that path an editor must not
+  invert. It is keyed on the POLICY's absence and never on a falsy floor, so
+  wait attention and idle-factory still pay the whole short-circuit and issue no
+  usage request. It filters on HEADROOM ALONE — the inputs are rebuilt and no
+  hold ledger reaches it — because the other three filters need no external call
+  and a verdict that applied them only when a policy happened to be supplied
+  would answer differently per consumer, which "Idle-factory and wait attention
+  consume this identical verdict" forbids; the headroom clause ratifies that one
+  asymmetry and nothing else may acquire one. And it FAILS OPEN on the two
+  graph-derivation refusals, which a dispatch does not need, while the
+  CONFIGURATION refusal stays fail-closed in `_dispatcher_acp_preflight` where
+  `prepare_acp_nodes` would refuse the dispatch for the same fault anyway.
   ONE GAP IS WORTH KNOWING BEFORE EDITING THE CHAIN LAYERS, because it produced
   a clean, plausible, entirely wrong green. A node's FALLBACKS are parsed as
   candidates and keep their resolved `agent_id`; its PRIMARY is REBUILT in
@@ -1004,7 +1026,10 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `config_options` is. Without that, coverage saw `None` on every primary and
   the filter assessed nothing this repository's own eight ACP nodes run.
   `test_acp_session_headroom_primary_coverage.py` keeps the live control that
-  caught it.
+  caught it. The two gaps are siblings: that one made the filter assess nothing
+  on a repository WITH chains, this one made it assess nothing on a repository
+  WITHOUT them, and each produced a healthy-looking green on the other's
+  population.
   THREE PROPERTIES OF THE DRAIN RATE an editor must not invert, and each is a
   different kind of claim. A PRIOR READING and a BASELINE are deliberately
   different types: the baseline carries the elapsed hours MEASURED during

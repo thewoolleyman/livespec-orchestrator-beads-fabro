@@ -14,6 +14,9 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_admission_eligibility,
     _dispatcher_completion,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_records import (
+    SESSION_HEADROOM_STAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_decision_journal import (
     read_auto_disposition_decisions,
 )
@@ -147,8 +150,15 @@ def test_admission_refuses_when_workflow_scope_labels_cannot_be_read(
 
     assert admission.admitted == []
     assert [outcome.stage for outcome in admission.refused] == ["ledger-labels"]
-    assert [record["stage"] for record in journal.records] == ["outcome"]
-    outcome = journal.records[0]["outcome"]
+    # The session-headroom assessment leads, because the clause requires the
+    # reading for each affected work-item whether or not it refused anything --
+    # it is journaled before the refusal ladder runs, so a row refused by a
+    # LATER condition still carries the reading its evaluation took.
+    assert [record["stage"] for record in journal.records] == [
+        SESSION_HEADROOM_STAGE,
+        "outcome",
+    ]
+    outcome = journal.records[-1]["outcome"]
     assert isinstance(outcome, dict)
     assert outcome["work_item_id"] == "bd-ib-123"
     assert outcome["status"] == "failed"

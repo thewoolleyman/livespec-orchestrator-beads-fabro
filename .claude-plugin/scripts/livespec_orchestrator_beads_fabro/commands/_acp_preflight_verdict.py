@@ -26,11 +26,19 @@ parameter. That is what lets wait attention and idle-factory consume it without
 an "additional credential probe or external call", and what makes two
 invocations against an unchanged store render byte-identical rows.
 
-THE NO-FALLBACK PATH IS THE COMMON ONE AND IT IS A TOTAL NO-OP. When no node
-carries a non-empty fallback field, `viable` is true, no graph is read, no
-refusal can fire, and nothing about admission changes. This is the additive
-guarantee the contract opens with, expressed as an early return rather than as
-a series of conditions that happen to be false.
+THE NO-FALLBACK PATH IS THE COMMON ONE AND IT IS A TOTAL NO-OP UNLESS A
+SESSION-HEADROOM POLICY WAS SUPPLIED. When no node carries a non-empty fallback
+field and no policy arrives, `viable` is true, no graph is read, no refusal can
+fire, and nothing about admission changes. This is the additive guarantee the
+contract opens with, expressed as an early return rather than as a series of
+conditions that happen to be false.
+
+THE ONE THING THAT PATH STILL DOES is assess session headroom, because the
+headroom clause's coverage rule names exactly the repositories it would
+otherwise miss: "assess every otherwise-selectable covered candidate on an
+admission-required ACP node, including covered fallbacks and built-in
+single-candidate nodes without fallback metadata". `_no_fallback_graded` below
+owns that path and records why it filters on headroom ALONE.
 
 THE HEADROOM FLOOR IS CARRIED, AND `None` MEANS "NO POLICY WAS SUPPLIED" --
 never "the floor is zero". A floor of 0 is a real, ratified setting that
@@ -61,6 +69,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import 
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import ResolvedAcpChain
 from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import AcpHoldLedger
 from livespec_orchestrator_beads_fabro.commands._acp_hold_records import AcpAvailabilityHold
+from livespec_orchestrator_beads_fabro.commands._acp_node_chains import AcpNodeChain
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import SessionHeadroomReading
 from livespec_orchestrator_beads_fabro.commands._acp_success_critical import (
     derive_admission_required,
@@ -71,6 +80,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_workflow_graph import parse
 __all__: list[str] = [
     "AcpPreflightVerdict",
     "build_acp_preflight_verdict",
+    "chain_source_refusal_verdict",
     "no_fallback_verdict",
 ]
 
@@ -135,6 +145,41 @@ def no_fallback_verdict() -> AcpPreflightVerdict:
     return AcpPreflightVerdict(fallback_enabled=False)
 
 
+def chain_source_refusal_verdict(
+    *, declared: Mapping[str, AcpNodeChain], refusal: str
+) -> AcpPreflightVerdict:
+    """The verdict an unreadable chain-source resolution produces.
+
+    TWO DIRECTIONS, DECIDED BY WHAT THE REPOSITORY DECLARED. A repository that
+    declared a fallback-enabled chain is REFUSED, which is this feature's
+    fail-closed configuration refusal: before-claim is strictly earlier than
+    before-run, and a claim taken on configuration that cannot resolve has to
+    be released again.
+
+    A repository that declared NONE gets the viable no-op instead, and that
+    direction is the whole reason this decision is a function rather than one
+    constructor call. Such a repository is only here because a session-headroom
+    policy arrived, and the faults reachable in the resolution -- an
+    unresolvable workflow variant, an unreadable workflow config, a refused
+    overlay table -- belong to gates that report them UNDER THEIR OWN STAGE
+    later in the dispatch. Surfacing one here would re-attribute a
+    workflow-registry fault to the ACP preflight, which reports it with the
+    wrong remedy and SILENTLY DISPLACES the stage that owns it: measured on
+    `tests/integration/test_named_workflow_variants.py`, a reserved-name
+    registry fault stopped being reported by the registry gate at all. An
+    additive headroom assessment must not move another gate's refusal.
+
+    `declared` is the DECLARED table rather than a boolean, because the one
+    question asked of it -- whether any chain is enabled -- is the same
+    question `build_acp_preflight_verdict` asks of the resolved chains, and
+    answering it in the one place that must decide on it keeps a caller from
+    spelling it a second way.
+    """
+    if not any(chain.enabled for chain in declared.values()):
+        return no_fallback_verdict()
+    return AcpPreflightVerdict(fallback_enabled=True, refusal=refusal)
+
+
 def build_acp_preflight_verdict(
     *,
     chains: Mapping[str, ResolvedAcpChain],
@@ -144,15 +189,104 @@ def build_acp_preflight_verdict(
 ) -> AcpPreflightVerdict:
     """Filter every node's chain once, and grade the success-critical ones.
 
-    The graph is read only once a node is actually fallback-enabled, so a
-    repository on the v107 path never pays for a derivation whose answer cannot
-    change its dispatch -- and never refuses on a graph shape it does not use.
+    The graph is read only once a node is actually fallback-enabled or a
+    session-headroom policy arrived, so a repository on the v107 path with no
+    policy never pays for a derivation whose answer cannot change its dispatch
+    -- and never refuses on a graph shape it does not use.
     """
     if not any(chain.enabled for chain in chains.values()):
+        return _no_fallback_graded(chains=chains, graph_text=graph_text, inputs=inputs)
+    return _graded(
+        fallback_enabled=True,
+        chains=chains,
+        graph_text=graph_text,
+        ledger=ledger,
+        inputs=inputs,
+    )
+
+
+def _no_fallback_graded(
+    *,
+    chains: Mapping[str, ResolvedAcpChain],
+    graph_text: str | None,
+    inputs: PreflightInputs,
+) -> AcpPreflightVerdict:
+    """The verdict a repository declaring no fallback-enabled chain gets.
+
+    THE SESSION-HEADROOM POLICY IS STILL APPLIED, and that is the one thing
+    this path does beyond the v107 no-op. The headroom clause requires the
+    Dispatcher to assess "built-in single-candidate nodes without fallback
+    metadata", so a repository whose every node resolves to one built-in Claude
+    adapter is squarely inside it -- and short-circuiting left exactly those
+    repositories dispatching with no headroom brake at all. Measured
+    2026-10-17: a fresh dispatch in a sibling repository that declares no
+    chains journaled ZERO assessment records while this repository's own
+    evaluations journaled one apiece.
+
+    WITH NO POLICY IT IS STILL THE TOTAL NO-OP, which is what keeps the
+    additive guarantee intact and what leaves wait attention and idle-factory
+    free of any external call. The test is for the POLICY's absence and never
+    for a falsy floor, because a floor of 0 is a ratified setting that disables
+    the skip while retaining the reading and its journal row.
+
+    IT FILTERS ON HEADROOM ALONE, which is why the inputs are rebuilt rather
+    than forwarded and why no ledger reaches this path at all. The three other
+    filters cost nothing to evaluate, so a verdict that applied them here would
+    answer DIFFERENTLY depending on whether a policy had been supplied -- and
+    "Idle-factory and wait attention consume this identical verdict" is the
+    fallback-priority clause's own requirement, with both of those consumers
+    supplying none. The headroom clause ratifies that one asymmetry in as many
+    words ("Snapshot composition MUST NOT issue a live usage request", with the
+    wait surfaced from the recorded evaluation); nothing else may acquire one.
+    A typed or legacy availability record on a v107 repository therefore keeps
+    reaching the gate that already grades it, scoped to the candidates the
+    dispatch renders.
+
+    AND IT FAILS OPEN ON A REFUSAL, the opposite direction from the
+    fallback-enabled path and chosen rather than incidental. Both refusals
+    `_graded` can reach are about the GRAPH -- an unreadable one, or a
+    success-critical derivation that cannot grade its shape -- and a dispatch
+    needs neither: `admission_required` exists to decide admission, so these are
+    conditions a v107 repository has never been held to. Refusing on one would
+    turn an additive assessment into a new refusal class for every such
+    repository, and the condition most likely to fire is a legitimate workflow
+    shape this derivation does not cover rather than a fault. The CONFIGURATION
+    refusals, which a dispatch does need and which `prepare_acp_nodes` refuses
+    on in its own right, never reach here -- `_dispatcher_acp_preflight` returns
+    those before resolving a verdict at all. No reading is spent on a fail-open
+    either: both refusal arms below precede the candidate filter.
+    """
+    if inputs.headroom is None:
         return no_fallback_verdict()
+    graded = _graded(
+        fallback_enabled=False,
+        chains=chains,
+        graph_text=graph_text,
+        ledger=AcpHoldLedger(holds=(), unobservable=(), observation_ids=frozenset()),
+        inputs=PreflightInputs(builtin_pairs=inputs.builtin_pairs, headroom=inputs.headroom),
+    )
+    return no_fallback_verdict() if graded.refusal is not None else graded
+
+
+def _graded(
+    *,
+    fallback_enabled: bool,
+    chains: Mapping[str, ResolvedAcpChain],
+    graph_text: str | None,
+    ledger: AcpHoldLedger,
+    inputs: PreflightInputs,
+) -> AcpPreflightVerdict:
+    """Derive this graph's graded node sets and filter every chain against them.
+
+    ONE grader for both callers rather than one apiece. They differ only in
+    `fallback_enabled`, in the inputs they hand down and in what they do with a
+    refusal, and a second copy is how the no-fallback path comes to grade a
+    different node set -- or to name a different exhausted order -- than the
+    path every assertion about this verdict was written against.
+    """
     if graph_text is None:
         return AcpPreflightVerdict(
-            fallback_enabled=True,
+            fallback_enabled=fallback_enabled,
             unobservable=ledger.unobservable,
             refusal=_MISSING_GRAPH_REFUSAL,
         )
@@ -160,7 +294,7 @@ def build_acp_preflight_verdict(
     critical = derive_success_critical(graph=graph)
     if isinstance(critical, str):
         return AcpPreflightVerdict(
-            fallback_enabled=True,
+            fallback_enabled=fallback_enabled,
             unobservable=ledger.unobservable,
             refusal=critical,
         )
@@ -171,7 +305,7 @@ def build_acp_preflight_verdict(
         for node in sorted(chains)
     )
     return AcpPreflightVerdict(
-        fallback_enabled=True,
+        fallback_enabled=fallback_enabled,
         nodes=preflights,
         success_critical=critical.nodes,
         admission_required=required,

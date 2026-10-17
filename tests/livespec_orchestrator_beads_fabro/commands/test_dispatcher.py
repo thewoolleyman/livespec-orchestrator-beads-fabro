@@ -4314,6 +4314,15 @@ def test_dispatch_green_closes_item_and_journals(
         # because the whole point of that gate's position is that it decides
         # before the item is claimed.
         "codex-credential-gate-not-applied",
+        # The session-headroom assessment, immediately before the claim and
+        # inside the admission pass rather than in the wall above it. This
+        # fixture declares no ACP chain and still resolves every node to a
+        # built-in Claude adapter, which the clause covers as a "built-in
+        # single-candidate node without fallback metadata" -- so one reading is
+        # taken for the one projected credential and journaled against this
+        # item. It refuses nothing here: the hermetic reading reports an
+        # untouched window, so the dispatch runs to `green` with it present.
+        "acp-session-headroom",
         "ledger-admit",
         # ADAPTERS BEFORE THE PAYLOAD, and the order is load-bearing rather than
         # incidental: since plan `fabro-currency` P4 the payload generator renders

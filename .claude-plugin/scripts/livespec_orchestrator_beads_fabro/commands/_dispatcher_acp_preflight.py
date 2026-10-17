@@ -7,14 +7,37 @@ consumers that ACT on it -- the admission refusal, and the gate on the legacy
 credential re-probe wait.
 
 THE READ IS LAZY, AND THAT IS WHAT MAKES THIS ADDITIVE. A repository that
-declares no fallback configuration never gets past the first branch: no
-workflow variant is resolved, no graph is parsed, no journal is walked, and
-the verdict is the viable no-op. `SPECIFICATION/contracts.md` section
-"Factory-configurable ACP fallback priority" opens by requiring exactly that --
-"when no fallback metadata is present, or `fallbacks` is an empty array,
-adapter resolution and rendered command bytes MUST remain byte-identical" --
-and an early return is a far stronger guarantee of it than a chain of
-conditions that happen to evaluate false.
+declares no fallback configuration AND supplies no session-headroom policy
+never gets past the first branch: no workflow variant is resolved, no graph is
+parsed, no journal is walked, and the verdict is the viable no-op.
+`SPECIFICATION/contracts.md` section "Factory-configurable ACP fallback
+priority" opens by requiring exactly that -- "when no fallback metadata is
+present, or `fallbacks` is an empty array, adapter resolution and rendered
+command bytes MUST remain byte-identical" -- and an early return is a far
+stronger guarantee of it than a chain of conditions that happen to evaluate
+false. Wait attention and idle-factory supply no policy, so that early return
+is still the whole of what they pay.
+
+THE SESSION-HEADROOM POLICY IS THE ONE INPUT THAT DEFEATS THAT SHORT-CIRCUIT,
+and it has to. The headroom clause of section "Dispatcher admission, WIP cap,
+and post-merge acceptance" requires the Dispatcher to assess "built-in
+single-candidate nodes without fallback metadata", so gating the assessment on
+a repository declaring fallback chains left every repository without them
+dispatching with no headroom brake at all -- measured 2026-10-17 against a
+sibling repository that declares none and journaled zero assessments. A
+no-fallback repository with a policy therefore resolves its chain sources and
+reaches `_acp_preflight_verdict._no_fallback_graded`, which owns that path.
+
+THAT REPOSITORY IS STILL NEVER REFUSED FOR A FAULT IT DID NOT DECLARE, which is
+what keeps the assessment additive rather than a new refusal class. Both routes
+out of the resolution land on the viable no-op for it:
+`chain_source_refusal_verdict` returns the no-op for an unreadable CHAIN SOURCE,
+because an unresolvable workflow variant or an unreadable workflow config
+belongs to the gate that reports it under its own stage later in the dispatch,
+and `_no_fallback_graded` returns it for an unreadable GRAPH, because a dispatch
+needs no admission-required derivation at all. Only the configuration refusal of
+a repository that DID declare a chain stays fail-closed, for the reason the next
+section gives.
 
 WHICH GRAPH IS GRADED, AND WHY IT IS THE DEFAULT ONE. Admission happens before
 a work-item is claimed, and a registry variant is selected per DISPATCH, so
@@ -87,6 +110,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_repository import repo
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import (
     AcpPreflightVerdict,
     build_acp_preflight_verdict,
+    chain_source_refusal_verdict,
     no_fallback_verdict,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import SessionHeadroomPolicy
@@ -149,7 +173,10 @@ def resolve_acp_preflight(
     ABSENT for exactly the same reason one clause over: "Snapshot composition
     MUST NOT issue a live usage request", so wait attention and idle-factory
     resolve a verdict with no policy and the filter becomes a total no-op. Only
-    the admission pass supplies one.
+    the admission pass supplies one. Its presence is ALSO what decides whether
+    a repository declaring no fallback-enabled chain is graded at all, per the
+    module docstring above -- which is why the no-fallback test below reads it
+    rather than short-circuiting on the chain table alone.
 
     `factory_runs` is the host-wide availability-evidence seam, and it defaults
     to ABSENT on the same reasoning: it is the only input here that reaches a
@@ -163,13 +190,13 @@ def resolve_acp_preflight(
     declared = repository_acp_chains(block=block, catalogs=catalogs)
     if isinstance(declared, str):
         return AcpPreflightVerdict(fallback_enabled=True, refusal=declared)
-    if not any(chain.enabled for chain in declared.values()):
+    if not any(chain.enabled for chain in declared.values()) and headroom is None:
         return no_fallback_verdict()
     resolved = repository_acp_chain_sources(
         repo=repo, block=block, declared=declared, catalogs=catalogs
     )
     if isinstance(resolved, str):
-        return AcpPreflightVerdict(fallback_enabled=True, refusal=resolved)
+        return chain_source_refusal_verdict(declared=declared, refusal=resolved)
     chains, graph_text, builtin_pairs = resolved
     # ONE ledger read for one evaluation: the verdict's unobservable set and the
     # filter's live records must come from the same walk, or a record retiring

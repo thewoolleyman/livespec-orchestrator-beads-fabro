@@ -242,6 +242,67 @@ def _hermetic_factory_credential_slots(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _hermetic_session_headroom_reading(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Answer every admission pass's session-headroom read without a provider.
+
+    THE SECOND BOUNDED LIVE MESSAGES REQUEST, and the exact analogue of
+    `_hermetic_claude_credential_probe` above: the admission valve builds a
+    session-headroom policy per evaluation, and that policy's default read
+    issues one `POST /v1/messages` to Anthropic for the five-hour utilization
+    header. Left ambient, a hermetic dispatch test with any plausible
+    `CLAUDE_CODE_OAUTH_TOKEN` in scope would reach the provider from pytest,
+    and one with none would grade the reading UNOBSERVABLE -- which the clause
+    skips exactly as a below-floor reading, so every covered candidate would
+    leave the selectable set and every dispatch test would be refused before
+    claim. Both outcomes depend on the runner rather than on the code, which is
+    what this file exists to remove.
+
+    IT WAS UNREACHABLE BEFORE AND IS NOT NOW, which is why it arrives with the
+    no-fallback assessment rather than with the clause. Every repository
+    fixture in this suite declares no ACP chain, so the preflight used to
+    short-circuit before any policy was consulted; it no longer does, because
+    the clause covers "built-in single-candidate nodes without fallback
+    metadata" and those fixtures resolve exactly that through the bundled
+    default workflow.
+
+    THE STAND-IN READS AN UNTOUCHED WINDOW, so admission is graded exactly as
+    it was before the path became reachable: a full allowance passes every
+    floor, so no fixture changes answer and no case becomes vacuous. It is the
+    same direction `_hermetic_claude_credential_probe` takes in returning a
+    USABLE probe.
+
+    ONLY THE PRODUCTION CALL SITE IS PATCHED. Every test that exercises the
+    policy itself injects its own `read` and reaches no provider already, and
+    patching the builder in its own module would also wrap it for those -- one
+    of which binds the builder at import time and one of which asserts its
+    signature.
+    """
+    from livespec_orchestrator_beads_fabro.commands import _dispatcher_admission
+    from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
+        SessionHeadroomPolicy,
+        SessionHeadroomReading,
+        session_headroom_reading,
+    )
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_gate import (
+        session_headroom_policy,
+    )
+
+    def untouched_window(*, token: str | None, observed_at: str) -> SessionHeadroomReading:
+        _ = token
+        return session_headroom_reading(
+            credential_identity="hermetic-session-headroom",
+            observed_at=observed_at,
+            utilization=0,
+        )
+
+    def hermetic_policy(**kwargs: Any) -> SessionHeadroomPolicy:
+        _ = kwargs.setdefault("read", untouched_window)
+        return session_headroom_policy(**kwargs)
+
+    monkeypatch.setattr(_dispatcher_admission, "session_headroom_policy", hermetic_policy)
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_release_adoption_bases(
     monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
 ) -> None:

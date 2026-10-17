@@ -223,6 +223,23 @@ Tests for the thin-transport command modules under
   coverage measurement taken after that module's Red was authored, and a Red's
   test bytes are fixed across its Red-to-Green pair.
 
+- The three `test_acp_session_headroom_no_fallback_*` modules cover the session
+  headroom clause's coverage of a repository that declares NO fallback-enabled
+  chain. All three drive the real `resolve_acp_preflight` against a repository
+  FIXTURE and inject only the provider read, because the defect they close was a
+  short-circuit in the resolution itself — a hand-built verdict satisfies every
+  assertion here while saying nothing about the path a dispatch takes. The
+  `_repository` module owns the journaled assessment, the `_refusal` module owns
+  the two consequences of an emptied node and reads BOTH off ONE admission run
+  (they are two rows of one evaluation, so two runs would let a build disagree
+  with itself about which nodes it emptied), and the `_controls` module owns the
+  two negatives — an arbitrary adapter on every node owes no reading, and a
+  policy-free call must resolve no chain sources at all. That last one counts
+  the RESOLUTIONS rather than reading the verdict, because a verdict can be the
+  no-op while the work a snapshot must not do has already been spent. Its
+  positive control is the `_repository` module, which resolves the same fixture
+  and reads once as soon as a policy is supplied.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr

@@ -125,12 +125,37 @@ def select_acp_candidates(
     Nodes are visited in sorted order so a configuration with two faults always
     refuses on the same one, which keeps a refusal reproducible across
     dispatches -- the same reason `attach_acp_chains` sorts.
+
+    A VERDICT THAT IS NOT FALLBACK-ENABLED SELECTS NOTHING, and is treated here
+    exactly as an ABSENT one: every node keeps the primary the three layers
+    resolved. Selecting AMONG candidates is the fallback-priority clause's
+    feature and a repository that declared no chain has nothing to select among,
+    so this is the same additive guarantee `prepare_acp_nodes` records for an
+    absent verdict -- "no selection is applied, so every node keeps the
+    configured primary the three layers resolved, byte-identical".
+
+    It is a condition rather than an inference from an empty node set, because
+    such a verdict DOES carry filtered nodes since the session-headroom clause
+    began assessing built-in single-candidate nodes. Reading those as a
+    selection instruction changes nothing a dispatch renders -- the only
+    no-fallback verdict that reaches here is a viable one, whose every chain
+    still holds its primary -- but it compares the ADMISSION-time resolution
+    against this launch's, and those two legitimately differ when a dispatch is
+    handed a committed workflow manifest the default-variant precedence does not
+    reach. Measured on `tests/integration/test_node_timeouts_scenario89.py`,
+    which supplies exactly such a manifest: five dispatches died at `acp-nodes`
+    reporting that the repository's candidate configuration had changed, on
+    repositories that had declared none.
     """
     selected: dict[str, SelectedAcpCandidate] = {}
     for node in sorted(chains):
         one = _select_one(
             chain=chains[node],
-            preflight=None if verdict is None else verdict.node_preflight(node=node),
+            preflight=(
+                None
+                if verdict is None or not verdict.fallback_enabled
+                else verdict.node_preflight(node=node)
+            ),
             admission_required=() if verdict is None else verdict.admission_required,
         )
         if isinstance(one, str):

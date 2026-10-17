@@ -317,11 +317,17 @@ def journal_session_headroom(
 
     TWO things make this a no-op rather than an empty row, and they are
     different conditions. A verdict carrying NO floor was resolved without a
-    policy -- wait attention, idle-factory, the legacy no-fallback path -- so no
-    reading was ever attempted and there is nothing to report. A verdict
-    carrying a floor but NO assessments assessed no covered candidate, which is
-    every dispatch in a repository routed wholly away from Claude; a row per
-    item per pass there would be journal noise naming nothing.
+    policy -- wait attention and idle-factory -- so no reading was ever
+    attempted and there is nothing to report. A verdict carrying a floor but NO
+    assessments assessed no covered candidate, which is every dispatch in a
+    repository routed wholly away from Claude; a row per item per pass there
+    would be journal noise naming nothing.
+
+    A REPOSITORY DECLARING NO FALLBACK CHAIN IS IN NEITHER CLASS, and used to
+    be read as the first one. Its verdict carries the floor and its assessments
+    whenever the admission pass supplied a policy, because the headroom clause
+    covers "built-in single-candidate nodes without fallback metadata" --
+    `_acp_preflight_verdict._no_fallback_graded` is where that path is graded.
 
     A floor of ZERO is neither of those: the reading is still attempted and
     still journaled, which is why the guard tests the floor for `None` rather
