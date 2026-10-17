@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.207.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.206.0...v0.207.0) (2026-10-17)
+
+
+### Features
+
+* **dispatcher:** journal the provider's reset claim without letting it move a skip ([b53a604](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b53a6040d87a9ee1467cbb6aaf8de39d4777a152))
+* **dispatcher:** name a projection skip apart from a floor skip on both records ([49e6e00](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/49e6e00048ba61ec622769dcc4422aa519fd4245))
+* **dispatcher:** project the instant a reading's five-hour window empties ([2ad7f7f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2ad7f7ff2c3c452dfe9891ab4b1fc9c3a543ef17))
+* **dispatcher:** read the committed admission horizon the projection skip is governed by ([61c132e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/61c132e25323b84153d096b6bdb437e46e3be505))
+* **dispatcher:** skip a candidate projected to empty inside the admission horizon ([800de10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/800de104b01cf643f98548a94c43f87f0d81efab))
+
 ## [0.206.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.205.1...v0.206.0) (2026-10-17)
 
 
