@@ -68,6 +68,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidateIdentity
 from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import RenderedCandidate
 from livespec_orchestrator_beads_fabro.commands._acp_failure_classifier import (
     AcpAvailabilityFailure,
@@ -101,6 +102,14 @@ class ProviderLimitRelease:
     attributed -- and is `None` on the eligible arm, where the hold key is the
     entitlement the run actually recorded.
 
+    `executed` is the entitlement the failing node ACTUALLY ran, and it is kept
+    apart from `matched` because the clause asks for both and they disagree by
+    design: a quota signature is domain-scoped, so its verdict carries no
+    `candidate_key` at all -- the hold parser refuses a domain record that
+    names one -- while the release record must still name "the candidate
+    identity that failed". Reading that identity off the verdict would report
+    every domain release as having run no candidate.
+
     `recovery_source` is the clause's "preserved-work reference the release
     observed (the published head or preservation ref) or its confirmed
     absence". It is a REQUIRED field rather than a defaulted one for the reason
@@ -113,6 +122,7 @@ class ProviderLimitRelease:
     run_id: str | None
     node_attempt: str
     matched: AcpAvailabilityFailure | None
+    executed: AcpCandidateIdentity | None
     legacy_provider: str | None
     recovery_source: str
 
@@ -169,43 +179,19 @@ def classified_release(
     which is the identity-less legacy posture rather than a failure to measure.
     """
     matched = _eligible(failure=failure, rendered=rendered)
-    if matched is not None:
-        return _release(
-            matched=matched,
-            legacy_provider=None,
-            node_attempt=node_attempt,
-            factory=factory,
-            run_id=run_id,
-            recovery_source=recovery_source,
-        )
-    if failure.provider_usage_limit:
-        return _release(
-            matched=None,
-            legacy_provider=failure.provider_usage_limit_provider,
-            node_attempt=node_attempt,
-            factory=factory,
-            run_id=run_id,
-            recovery_source=recovery_source,
-        )
-    return None
-
-
-def _release(
-    *,
-    matched: AcpAvailabilityFailure | None,
-    legacy_provider: str | None,
-    node_attempt: str,
-    factory: str,
-    run_id: str | None,
-    recovery_source: str,
-) -> ProviderLimitRelease:
-    """One release value, assembled once for both arms."""
+    if matched is None and not failure.provider_usage_limit:
+        return None
     return ProviderLimitRelease(
         factory=factory,
         run_id=run_id,
         node_attempt=node_attempt,
         matched=matched,
-        legacy_provider=legacy_provider,
+        executed=None if rendered is None else rendered.candidate.identity,
+        # The two arms are mutually exclusive by construction rather than by a
+        # rule: a matched verdict already names the entitlement whose allowance
+        # was spent, so reporting a cause-text provider beside it would be two
+        # answers about one attempt.
+        legacy_provider=None if matched is not None else failure.provider_usage_limit_provider,
         recovery_source=recovery_source,
     )
 
