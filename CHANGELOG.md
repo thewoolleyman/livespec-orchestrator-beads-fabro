@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.210.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.209.0...v0.210.0) (2026-10-17)
+
+
+### Features
+
+* declare the cluster venue for this repository's janitor (bd-ib-26deyw) ([c047a7a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c047a7a548aa39e8cc991724d50fc6efb6da2a73))
+* report the janitor red when the cluster gate reaches no verdict (bd-ib-26deyw) ([7064345](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/706434538170c56b10c08c46989aa3a9dfc5f4bf))
+* run the janitor's cluster gate with the dispatch-route scrubbed (bd-ib-26deyw) ([ee572c3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ee572c3ad50306b7d4cce557e730ffa4ee536bdb))
+* run the post-merge janitor's check suite as a cluster Job (bd-ib-26deyw) ([d23458a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d23458a7bcc78da4197773fdfdf6a15a9075850d))
+
 ## [0.209.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.208.1...v0.209.0) (2026-10-17)
 
 
