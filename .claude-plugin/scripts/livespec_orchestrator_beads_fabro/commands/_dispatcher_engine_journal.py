@@ -48,7 +48,10 @@ class StageJournalOptions:
 
     streams: bool = False
     retention: JanitorRetention | None = None
-    removed_env_vars: tuple[str, ...] = ()
+    # `None` means this stage scrubs nothing and owes no account of it; an
+    # EMPTY TUPLE means it scrubs and removed nothing, which is a reading its
+    # row must carry rather than omit. A single tuple cannot say both.
+    removed_env_vars: tuple[str, ...] | None = None
 
 
 # The row field naming what a stage's child environment LOST against the
@@ -182,6 +185,13 @@ def journal_stage(
     because the retention clause covers the janitor's own commands and nothing
     else: a default that retained for every journaled stage would be the broad
     capture of every command the clause declines to perform.
+
+    `journal_options.removed_env_vars` is the durable account of a stage's
+    environment scrub, and it is opt-in for the same reason: the janitor is the
+    only stage that removes anything, and a field on every row would say
+    "removed nothing" about stages that scrub by construction. Its EMPTY arm is
+    written rather than omitted, so a reader can tell a scrubbing build that
+    found nothing to remove from a build that does not scrub.
     """
     record: dict[str, object] = {
         "work_item_id": plan.work_item_id,
@@ -192,7 +202,7 @@ def journal_stage(
     if journal_options.streams:
         record["stdout"] = tail(text=result.stdout)
         record["stderr"] = tail(text=result.stderr)
-    if journal_options.removed_env_vars:
+    if journal_options.removed_env_vars is not None:
         record[REMOVED_ENV_VARS_FIELD] = list(journal_options.removed_env_vars)
     if journal_options.retention is not None:
         record.update(

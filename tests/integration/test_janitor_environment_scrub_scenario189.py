@@ -366,6 +366,27 @@ def test_the_janitor_post_merge_journal_row_names_each_variable_it_removed(
     assert drive.row.get(_REMOVED_FIELD) == [_FACTORY_ENV_VAR, _INVOKER_ENV_VAR]
 
 
+def test_a_dispatcher_carrying_no_routing_variable_records_an_empty_removal_list(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The field is PRESENT and empty, never omitted.
+
+    An omitted field is what every row written before the scrub existed looks
+    like, so a reader could not tell "this build removed nothing because there
+    was nothing to remove" from "this build does not scrub at all". The case
+    above is its control: the two differ only in what the dispatcher's
+    environment carried, and the rows must differ in kind rather than in
+    presence.
+    """
+    monkeypatch.delenv(_FACTORY_ENV_VAR, raising=False)
+    monkeypatch.delenv(_INVOKER_ENV_VAR, raising=False)
+
+    drive = _drive(repo=_repo(tmp_path=tmp_path, name="unrouted"), janitor=_probe_argv(fails_on=()))
+
+    assert _REMOVED_FIELD in drive.row
+    assert drive.row[_REMOVED_FIELD] == []
+
+
 def test_the_reconcile_merged_janitor_applies_the_same_environment_scrub(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

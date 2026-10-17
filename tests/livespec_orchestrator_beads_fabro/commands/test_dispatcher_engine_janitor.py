@@ -12,6 +12,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import (
     JANITOR_REMOVED_ENV_VARS,
     janitor_env_delta,
+    janitor_removed_env_vars,
     post_merge,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_install_recipe import (
@@ -321,3 +322,22 @@ def test_janitor_env_delta_adds_the_core_root_and_removes_every_scrubbed_name() 
         "LIVESPEC_INVOKER": None,
     }
     assert JANITOR_REMOVED_ENV_VARS == ("LIVESPEC_FABRO_FACTORY", "LIVESPEC_INVOKER")
+
+
+def test_janitor_removed_env_vars_reports_only_the_names_the_environment_carries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The row's account is a READING, while the delta states the whole set.
+
+    Both arms matter and they are different claims: the delta may name a
+    variable this process does not carry, because removing an absent name is a
+    no-op, but the row must not claim to have removed one.
+    """
+    monkeypatch.setenv("LIVESPEC_FABRO_FACTORY", "hp-candidate")
+    monkeypatch.delenv("LIVESPEC_INVOKER", raising=False)
+
+    assert janitor_removed_env_vars() == ("LIVESPEC_FABRO_FACTORY",)
+
+    monkeypatch.delenv("LIVESPEC_FABRO_FACTORY")
+
+    assert janitor_removed_env_vars() == ()
