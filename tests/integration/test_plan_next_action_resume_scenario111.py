@@ -56,6 +56,8 @@ from livespec_orchestrator_beads_fabro.commands.plan import (
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
+from tests.plan_resume_checkout import CHECKOUT_UNDER_TEST, item_status_result
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -85,6 +87,9 @@ def _hermetic_tenant(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 def _config() -> StoreConfig:
+    # `repo_root` is pinned to the checkout under test so the required_result
+    # below resolves against the SAME root the fixture names, whatever that
+    # checkout's directory is called — see `tests/plan_resume_checkout.py`.
     return StoreConfig(
         tenant="livespec-impl-beads",
         prefix="bd-ib",
@@ -92,6 +97,7 @@ def _config() -> StoreConfig:
         database="livespec-impl-beads",
         bd_path="bd",
         fake=True,
+        repo_root=CHECKOUT_UNDER_TEST,
     )
 
 
@@ -100,10 +106,11 @@ def _impl_action(*, ref: str, epic_id: str) -> NextAction:
         kind="impl",
         ref=ref,
         text="Dispatch b1 through the factory.",
-        required_result={
-            "repo": "livespec-orchestrator-beads-fabro",
-            "item_status": {"item_id": epic_id, "status": "closed"},
-        },
+        required_result=item_status_result(
+            checkout=CHECKOUT_UNDER_TEST,
+            item_id=epic_id,
+            status="closed",
+        ),
         budget={
             "deadline": "2099-09-04T18:00:00Z",
             "max_handoffs": 3,

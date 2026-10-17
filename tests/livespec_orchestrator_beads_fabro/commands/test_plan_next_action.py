@@ -29,6 +29,8 @@ from livespec_orchestrator_beads_fabro.commands.plan import (
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
+from tests.plan_resume_checkout import CHECKOUT_UNDER_TEST, item_status_result
+
 if TYPE_CHECKING:
     import pytest
 
@@ -36,6 +38,9 @@ _EPIC_ID = "bd-ib-w3nwz5"
 
 
 def _config() -> StoreConfig:
+    # `repo_root` is pinned to the checkout under test so `_RESULT` below
+    # resolves against the SAME root it names, whatever that checkout's
+    # directory is called — see `tests/plan_resume_checkout.py`.
     return StoreConfig(
         tenant="livespec-impl-beads",
         prefix="bd-ib",
@@ -43,6 +48,7 @@ def _config() -> StoreConfig:
         database="livespec-impl-beads",
         bd_path="bd",
         fake=True,
+        repo_root=CHECKOUT_UNDER_TEST,
     )
 
 
@@ -99,10 +105,11 @@ def _impl_action() -> NextAction:
     )
 
 
-_RESULT = {
-    "repo": "livespec-orchestrator-beads-fabro",
-    "item_status": {"item_id": _EPIC_ID, "status": "closed"},
-}
+_RESULT = item_status_result(
+    checkout=CHECKOUT_UNDER_TEST,
+    item_id=_EPIC_ID,
+    status="closed",
+)
 _BUDGET = {
     "deadline": "2099-09-04T18:00:00Z",
     "max_handoffs": 3,
