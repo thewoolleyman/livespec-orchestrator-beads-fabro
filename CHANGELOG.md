@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.206.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.205.1...v0.206.0) (2026-10-17)
+
+
+### Features
+
+* **plan:** judge each plan record against its own release repository's remote ([8f6c8da](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8f6c8da40a9afab4131a6210f8e987dbb51f503a))
+* **plan:** name the release repository a plan record's build identity carries ([ab6d82c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ab6d82cd74ac49316853fbceeb4cf688c0292164))
+* **plan:** read release tags from the forge remote, fail-closed ([0ba2d0d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0ba2d0d7b56cec18f38bb256d9f162e1203ad8b5))
+* **plan:** resolve each plan record's release repository through the forge ([1ee2e39](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1ee2e394a29e4902ab962eb7d1c67ac35fdc527e))
+
 ## [0.205.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.205.0...v0.205.1) (2026-10-16)
 
 
