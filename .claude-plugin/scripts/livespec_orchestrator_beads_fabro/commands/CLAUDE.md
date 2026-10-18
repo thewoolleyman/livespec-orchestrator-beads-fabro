@@ -170,6 +170,32 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   deliberately left NO re-export shim — AGENTS.md §"Refactoring for size" bans
   one, and a shim would have bought the overlay none of the room the split was
   for. Every caller imports from here.
+- `_dispatcher_goal_recovery.py` — what a SEEDED dispatch's goal brief says about
+  the tree its sandbox starts on (`bd-ib-kn7ktk`, Scenario 185): "The new sandbox
+  MUST check out the recorded SHA, and the goal brief MUST name that commit as an
+  interrupted prior attempt whose current state the agent inspects before
+  continuing." PURE. It is its own module rather than a branch inside
+  `_dispatcher_goal` because that module assembles the ITEM's own brief — ledger
+  fields, riders, ratified lessons, every line of it untrusted prose bound for the
+  escaper — while this section is authored by the Dispatcher from the invocation's
+  resume attributes, so the two share neither input nor provenance; keeping them
+  apart is also what keeps the brief assembler free of a dependency on
+  `_dispatcher_resume_entry`, which owns the attribute names. Three properties an
+  editor must not invert. BOTH `resume_head` AND `resume_fetch_ref` are required,
+  and that pair is the whole discriminator: a `resume` route sets the head alone
+  and its tree is that dispatch's OWN publication, entered at the node it stopped
+  at, so a renderer keyed on the head would narrate every resumed run's own branch
+  as somebody else's interrupted attempt and send a run entering at `pr` off to
+  audit work it had already proved. The two attributes are read DEFENSIVELY
+  through the shared constants, exactly as `resume_checkout_for` reads the same
+  pair, because only a recovery route sets them and a respelling at either end
+  resolves absent, renders the plain brief, and says nothing about the section it
+  dropped. And an attribute that is PRESENT but empty narrates nothing, because an
+  empty head reaches `git checkout --detach ''` and fails the run in preparation —
+  a brief that had already told the agent to inspect that commit would be
+  describing a placement which never happened. The section travels to the one call
+  site through the `_dispatcher_plan` façade beside `render_goal`, its paired
+  input, rather than being imported at the dispatch path separately.
 - `_ready_aging_order.py` — the orchestrator-side ready-AGE inputs
   `ready_sort_key` needs, injected for the same reason
   `_sibling_status_lookup` is: the durable, clone-independent `ready_since`
