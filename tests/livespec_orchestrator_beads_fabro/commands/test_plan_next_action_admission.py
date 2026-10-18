@@ -40,6 +40,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
     chain_cache_metadata,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_tokens import create_token
+from livespec_orchestrator_beads_fabro.commands._plan_handoff import append_handoff
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     NextAction,
     ResumeDirective,
@@ -66,6 +67,13 @@ _CONTROL_EPIC = "bd-ib-admitcontrol"
 _CONTROL_TARGET = "bd-ib-admitcontroltarget"
 _PATH_EPIC = "bd-ib-admitpath"
 _PATH_TARGET = "bd-ib-admitpathtarget"
+_UNKNOWN_EPIC = "bd-ib-admitunknown"
+_UNKNOWN_TARGET = "bd-ib-admitunknowntarget"
+_HANDOFF_EPIC = "bd-ib-admithandoff"
+_HANDOFF_TARGET = "bd-ib-admithandofftarget"
+# A repository identity carrying no path separator at all, so its refusal cannot
+# be satisfied by anything this project's own spellings happen to share.
+_UNKNOWN_REPO = "a-repository-this-host-has-never-cloned"
 _SESSION = "claude:plan-admission"
 _NOW = "2026-10-18T18:30:00Z"
 # Far enough ahead that the resume's own real-clock expiry reading can never
@@ -134,6 +142,19 @@ def _action(*, target_id: str, repo: str) -> NextAction:
     )
 
 
+def _epic_state(*, config: StoreConfig, epic_id: str) -> tuple[object, int]:
+    """Everything a refused write must have left untouched on one epic.
+
+    The metadata carries the pointer AND the authority chain's own cache, so a
+    refusal that had already committed its transition shows up here even though
+    the pointer it would have projected was never written; the comment count is
+    what a prematurely appended handoff or progress event moves.
+    """
+    client = _fake(config=config)
+    record = client.show_issue(issue_id=epic_id)
+    return record.get("metadata"), len(client.list_comments(issue_id=epic_id))
+
+
 def _write_and_resume(
     *,
     config: StoreConfig,
@@ -191,3 +212,44 @@ def test_a_required_result_the_writer_accepts_is_read_as_observed(tmp_path: Path
     assert control_directive.observation is not None, control_directive
     assert control_directive.observation.status == OBSERVATION_UNSATISFIED
     assert control_directive.observation.source == SOURCE_LEDGER
+
+
+def test_an_unresolvable_repository_is_refused_naming_the_identity(tmp_path: Path) -> None:
+    """The refusal names the identity it could not resolve, and writes nothing.
+
+    The identity is the ONE field its author has to change, so a refusal that
+    withheld it would send them to read the resolver rather than fix the value —
+    and the `repo` field is not echoed anywhere else in a refused write.
+
+    THE BEFORE-AND-AFTER STATE IS THE SECOND HALF, and it is a different claim:
+    the refusal is owed BEFORE any ledger write, and a writer that refused after
+    appending its handoff or committing its epoch transition would return this
+    very same refusal while having spent a handoff unit on it.
+    """
+    config = _project(tmp_path=tmp_path)
+    _seed_epic(config=config, epic_id=_UNKNOWN_EPIC, target_id=_UNKNOWN_TARGET)
+    _seed_epic(config=config, epic_id=_HANDOFF_EPIC, target_id=_HANDOFF_TARGET)
+    pointer_before = _epic_state(config=config, epic_id=_UNKNOWN_EPIC)
+    handoff_before = _epic_state(config=config, epic_id=_HANDOFF_EPIC)
+
+    pointer_refusal = set_next_action(
+        config=config,
+        epic_id=_UNKNOWN_EPIC,
+        action=_action(target_id=_UNKNOWN_TARGET, repo=_UNKNOWN_REPO),
+        session=_SESSION,
+        now=_NOW,
+    )
+    handoff_refusal = append_handoff(
+        config=config,
+        epic_id=_HANDOFF_EPIC,
+        body="Handing the slice over.",
+        author=_SESSION,
+        now=_NOW,
+        next_action=_action(target_id=_HANDOFF_TARGET, repo=_UNKNOWN_REPO),
+    )
+
+    for refusal in (pointer_refusal, handoff_refusal):
+        assert isinstance(refusal, NextActionRefusal), refusal
+        assert _UNKNOWN_REPO in refusal.detail, refusal.detail
+    assert _epic_state(config=config, epic_id=_UNKNOWN_EPIC) == pointer_before
+    assert _epic_state(config=config, epic_id=_HANDOFF_EPIC) == handoff_before

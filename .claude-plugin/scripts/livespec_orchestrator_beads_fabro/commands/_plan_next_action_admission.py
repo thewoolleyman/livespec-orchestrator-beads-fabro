@@ -89,7 +89,13 @@ def _unresolvable_repository(
     project_root: Path,
     required_result: object,
 ) -> NextActionRefusal | None:
-    """Refuse a repository identity no observation of this result could resolve."""
+    """Refuse a repository identity no observation of this result could resolve.
+
+    The refusal NAMES that identity, because the `repo` field is the one thing
+    its author has to change and a refused write echoes it nowhere else — so a
+    refusal without it sends the author to read the resolver rather than fix the
+    value.
+    """
     parsed = parse_result_reference(value=required_result)
     if isinstance(parsed, ResultReferenceRefusal):
         return None
@@ -97,9 +103,9 @@ def _unresolvable_repository(
         return None
     return NextActionRefusal(
         detail=(
-            "required_result names a repository the shared authoritative result"
-            " reader cannot resolve for this project, so every observation of this"
-            " obligation would be unobservable"
+            f"required_result names the repository {parsed.repo!r}, which the shared"
+            " authoritative result reader cannot resolve for this project, so every"
+            " observation of this obligation would be unobservable"
         )
     )
 
