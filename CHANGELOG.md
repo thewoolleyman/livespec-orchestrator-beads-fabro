@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.211.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.211.5...v0.211.6) (2026-10-18)
+
+
+### Bug Fixes
+
+* **dispatcher:** give the MiniJinja escaper its own cohesive module ([f90617a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f90617ad12f743bf903109b515962626e18f4e54))
+* **dispatcher:** install the worktree-discipline pack in the sandbox prepare chain ([5273c56](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5273c561c101e79f1aeb67b5eaf4772b0dbc77d4))
+* **dispatcher:** name the sandbox pack provisioning in the fleet defaults ([caf169f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/caf169f5d4e7fbafcb6eed07cbe16138476a19a0))
+
 ## [0.211.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.211.4...v0.211.5) (2026-10-18)
 
 
