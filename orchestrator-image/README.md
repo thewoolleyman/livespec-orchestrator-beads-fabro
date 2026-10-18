@@ -148,7 +148,52 @@ tip advances past the pinned build whenever a fix or a test lands, so a recorded
 `origin/factory-integration` = `<sha>` snapshot goes stale without becoming
 visibly wrong, which is how a true statement keeps reading as authoritative after
 it stops being true. Check the property itself rather than a snapshot of it:
-`git merge-base --is-ancestor 8869e88b2 origin/factory-integration`.
+`git merge-base --is-ancestor 8869e88b2 origin/factory-integration`. The
+hp-candidate instance serves the v0.382 release bundle instead; see the next section.
+
+### The v0.382 release bundle (`bd-ib-sxcnj7`, plan `fabro-currency`)
+
+This is the Petri-era build the factory is cutting over to. It is pinned as ONE exact
+published upstream tag plus a small, named carried set, and it is the build that
+`origin/factory-integration` now carries. Its tip is `28a65c09`, a `git merge -s ours
+8869e88b2` commit on top of `adeefec4c` (fork PR 11, coordinator ruling R152). That
+commit's tree is identical to `adeefec4c`, and it keeps the legacy `8869e88b2` reachable
+while that build still serves `:32276`.
+
+**Bundle manifest (measured 2026-10-18):**
+
+| Field | Value |
+| --- | --- |
+| Upstream tag | `v0.382.0-nightly.0`, a published `fabro-sh/fabro` GitHub prerelease, published 2026-10-10T10:49:05Z. `SPECIFICATION/constraints.md` makes an official nightly eligible on the same terms as a stable tag (ruling R38) |
+| Tag source commit | `5f82fb086e767576ccb2437fa2cd75d0a3957473` |
+| Integration commit | `adeefec4cd4fbf7cee34bd12761ade409b6a6e75` (the tag plus the six carries below), reachable from `origin/factory-integration` at `28a65c091b814a4f52d6b31432fd239794b725bd` |
+| Binary | `fabro 0.382.0-nightly.0 (adeefec 2026-10-16)`, a production-UI build (`NODE_ENV=production`), sha256 `26872440c75c50edfd59a0d33f1401baf70a9e5de81fb65192a1f7042817f7c1`. It serves hp-candidate `:32278` as `/home/cwoolley/.fabro-candidate/bin/fabro`. A byte-identical copy, with `BUILD_INFO` and `SHA256SUMS`, is at `~/.local/state/fabro-web-prod/v0382-adeefec/` on vps |
+| Container image | `livespec-orchestrator:fabro-v0.382-adeefec`, image ID `sha256:65b857c1ef3fe7a111f9d8371c3de14a4166f6abe6bb58485b0d3a84f2df05a2`, baked on vps with `HOST_FABRO_BIN` set to that copy. The baked `/usr/local/bin/fabro` has the same sha256 and `--version` as the hp-candidate binary. The image is local and not pushed to a registry, so the image ID is its content digest |
+| Currency survey | at 2026-10-18T05:34:22Z the newest published release was `v0.389.0-nightly.0` (2026-10-17T10:47:50Z), so the base is inside the 30-calendar-day window. It leaves the window once a release published after 2026-11-09T10:49:05Z exists. A survey older than seven days does not prove currency, so re-survey before relying on it |
+
+Verify reachability, not equality: `git merge-base --is-ancestor adeefec4c origin/factory-integration`.
+
+**Carried-patch table (the bundle's complete carried set).** Every row is a fork-local
+commit on top of the upstream tag. None is present upstream: `upstream/main` and
+`v0.389.0-nightly.0` contain no OTLP exporter, and upstream PR #576 is still open and
+conflicting. The plan's 2026-10-08 scope event DEFERRED all six to a later release. Its
+2026-10-10 scope event REVERSED that deferral after the independent review, and they
+were carried as `bd-ib-6vhgqg`. The fallback-chain (S4) and in-protocol model selection
+carries of the legacy set are NOT in this bundle; they stay deferred from 2026-10-08
+until they are re-landed on Petri.
+
+| Commit | What it is | Disposition (2026-10-08 / 2026-10-10 scope events) | Owner | Review by |
+| --- | --- | --- | --- | --- |
+| `707038a60982` | opt-in OTLP/HTTP span export, decoupled from `FABRO_LOG` | deferred / reinstated; upstream path is the PR #576 rewrite as the canonical-event OTLP logs exporter (`bd-ib-njbg7j`) | plan fabro-currency (`bd-ib-6tcjfx`) | 2026-11-09 |
+| `b97025de17d1` | the server forwards OTLP export config to the worker, never its headers | deferred / reinstated | plan fabro-currency (`bd-ib-6tcjfx`) | 2026-11-09 |
+| `db6a34da763e` | server and worker run spans joined through a W3C `traceparent` | deferred / reinstated | plan fabro-currency (`bd-ib-6tcjfx`) | 2026-11-09 |
+| `231f9c7de138` | `run_turn` span per ACP agent attempt, with the launch digest | deferred / reinstated | plan fabro-currency (`bd-ib-6tcjfx`) | 2026-11-09 |
+| `c9a0c8b31f39` | dispatch correlation labels on `run_turn` and worker run spans | deferred / reinstated | plan fabro-currency (`bd-ib-6tcjfx`) | 2026-11-09 |
+| `adeefec4cd4f` | the server run span joins the caller's trace through its `TRACEPARENT` | deferred / reinstated | plan fabro-currency (`bd-ib-6tcjfx`) | 2026-11-09 |
+
+A review-by date is the date by which the row is either gone (upstream shipped it, or
+the carry was dropped) or re-dated with a reason. It is aligned to the base's
+currency edge, so the review and the next re-pin happen together.
 
 ### `factory-integration` — the carrier branch for unreleased fixes
 
@@ -164,6 +209,13 @@ changes — the spec fixes the rules, this section carries the commands and the 
 
 `factory-integration` = the pinned base + EVERY pending upstream fix the factory
 needs (never a subset, so the branch is always the whole truth about what runs):
+
+#### Legacy 0.254 carrier set (`8869e88`): NOT part of the v0.382 bundle
+
+The table below describes ONLY the legacy `0.254.0 (8869e88)` build that still serves
+production `:32276` until `bd-ib-iud52v` retires it. `8869e88b2` stays reachable from
+`factory-integration` through the second parent of `28a65c09`, but the branch's tree is
+now the v0.382 bundle above. Nothing below is carried in that bundle.
 
 | Carried fix | What it is | Why the factory needs it |
 | --- | --- | --- |
@@ -229,11 +281,16 @@ dispatcher refusals now include the sibling lookup diagnostic; check for message
 such as `sibling tenant read failed for <repo>:<id>`, `no clone configured for
 <repo>:<id>`, or `<id> not found in <repo>`.
 
-**Base is pinned to 0.254 — do NOT modernize.** The factory MUST NOT pin any fabro
-build ≥ 0.256 until the `workflow.fabro` migration lands: fabro #474 de-templates
-`acp.command`, so our `acp.command="{{ inputs.acp_adapter }}"` node goes through
-literally and every dispatch dies `exit 127`. Deferred modernization: ledger
-`bd-ib-6qu`. Rollout/revert state for the 0.254 cutover: ledger `bd-ib-2nq.4`.
+**The base is current, not frozen.** The old "pinned to 0.254, do not modernize"
+rule is gone. It held only while the workflow graph was unmigrated: fabro #474
+de-templated `acp.command`, so an unmigrated templated node went through literally and
+died `exit 127`. The graph has since been ported to Petri semantics (`bd-ib-hti4zf`).
+`SPECIFICATION/constraints.md` §"Fabro runtime constraints" now requires the base tag
+to have been published no more than 30 calendar days before the newest observed
+release, and every carry to have a review-by date. The current pin is the v0.382 release
+bundle above; the legacy `0.254` build serves only `:32276` until `bd-ib-iud52v`.
+The rebuild and re-pin steps below were written for the legacy build, and the bundle's
+Petri-era build adds a production-UI step (`NODE_ENV=production`).
 
 **Rebuild + re-pin** (whenever the carried-fix set changes). Keep the outgoing
 binary as a rollback artifact — the pin is a file swap, so the revert is one too:
@@ -573,8 +630,8 @@ the production unit except the host, the service account and the GitHub App:
 
 | Property | Value |
 | --- | --- |
-| Unit | `fabro-server-candidate.service` (hand-installed; NOT yet in the `fabro_server` Ansible role, which hardcodes one shared binary per host — `bd-ib-sxcnj7` owns that lockstep change, so `just ansible-drift` reports this unit until it lands) |
-| Binary | `/home/cwoolley/.fabro-candidate/bin/fabro`, an exact published upstream tag (`v0.378.0-nightly.0` at stand-up); the production binary at `~/.fabro/bin/fabro` is untouched |
+| Unit | `fabro-server-candidate.service`, managed by the `fabro_server` Ansible role in livespec-dev-tooling (`ansible/roles/fabro_server`, declared in `host_vars/hp-xubuntu.yml` with its own binary path and `binary_sha256`). fabro-hosts points at that role rather than carrying its own template |
+| Binary | `/home/cwoolley/.fabro-candidate/bin/fabro`: the v0.382 release bundle above, `fabro 0.382.0-nightly.0 (adeefec 2026-10-16)`, sha256 `26872440…7c1` (`v0.378.0-nightly.0` at stand-up). The production binary at `~/.fabro/bin/fabro` is untouched |
 | HOME, storage, settings | `/home/cwoolley/.fabro-candidate/{storage,settings.toml,environments}`; the unit sets `HOME` to that directory |
 | Bind, console | `127.0.0.1:32278`; `https://hp-xubuntu.perch-rudd.ts.net:32278` via `tailscale serve` (beside 32276 and 32277) |
 | Auth | `dev-token`, its OWN `server.env` (mode 600) with a fresh `SESSION_SECRET` and a fresh `FABRO_DEV_TOKEN` |
@@ -593,8 +650,8 @@ a later tag needs `fabro secret set` instead.
 Query it from vps with the matching client, never with the 0.254 one:
 
 ```bash
-~/.local/state/fabro-currency/v0.378.0-nightly.0/fabro version --server https://hp-xubuntu.perch-rudd.ts.net:32278
-~/.local/state/fabro-currency/v0.378.0-nightly.0/fabro ps -a  --server https://hp-xubuntu.perch-rudd.ts.net:32278
+~/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro version --server https://hp-xubuntu.perch-rudd.ts.net:32278
+~/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro ps -a  --server https://hp-xubuntu.perch-rudd.ts.net:32278
 ```
 
 `~/.fabro/auth.json` carries the `:32278` entry (same `{kind, logged_in_at,
