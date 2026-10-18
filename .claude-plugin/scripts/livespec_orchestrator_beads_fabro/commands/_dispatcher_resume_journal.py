@@ -31,12 +31,53 @@ more than one pull request over its life — a plain re-dispatch after a reclaim
 opens a new one. Counting resumes per ITEM rather than per PULL REQUEST would
 refuse a first resume of a freshly published pull request because two resumes of
 a previous one had already been spent.
+
+WHY ONLY A RESUME THAT CREATED A FACTORY RUN ANCHORS ONE. The record is journaled
+BEFORE the run exists — it has to be, for the attribution reason above — so a
+`resume` row is evidence of an ATTEMPT and not of a run. The bound exists because
+"the proof-loop caps are per run", which the refusal says itself, so an attempt
+refused before any run was created spent none of those caps and there is nothing
+for it to have anchored. Counting it turns a transient provider-headroom refusal
+into the PERMANENT loss of the resume route: two such attempts exhaust the bound,
+and the only remedy the refusal can then name is a plain dispatch, which reclaims
+the publish branch and discards the pull request's approved work. Measured
+2026-10-18 on `bd-ib-nsrgxl`: two resume attempts of pull request 3209 were each
+refused by the ACP preflight's session-headroom filter with no Fabro run, and the
+third was refused for having "already anchored 2 resumes".
+
+HOW A CREATED RUN IS RECOGNISED, AND WHY NOT BY STAGE NAME. A run exists once the
+factory has minted an id for it, and `_run_attribution` already owns that
+reading: a journal record counts as a run record "when it carries BOTH a
+`work_item_id` and a `run_id`", precisely because naming the stages instead
+"would fail in the expensive direction" — a stage added later would carry the run
+id and be silently ignored. So this module asks that module, rather than keeping
+a second list of stage names free to drift from it. Keying on the `dispatch-id`
+row in particular would be wrong in the very direction this fix corrects: that
+row is written before the launch, so a dispatch refused at the goal preflight or
+at materialization would anchor a resume that created no run.
+
+AND WHY THE WINDOW CLOSES AT THE ITEM'S NEXT ATTEMPT. A reader that simply asked
+whether the item has ever had a run would let ONE launched resume vouch for every
+refused attempt around it — including the attempt that came before it, whose own
+window it was never in. So a resume anchors on a run-naming row that follows it
+and precedes the item's next `resume` row, and a row that precedes every attempt
+(the dispatch that published the pull request in the first place) anchors none.
+
+WHY `was_resumed` DELIBERATELY DOES NOT NARROW WITH IT. That reader answers a
+different question — whether the MERGE this item reached was reached through a
+resume — for a pointer whose resumed-run identifier comes from the merging
+outcome rather than from the journal. It is asked only of an item that merged, so
+an attempt that never ran cannot be the dispatch it credits, and narrowing it
+would make a pointer's provenance depend on a row the merging dispatch does not
+own.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from typing import cast
+
+from livespec_orchestrator_beads_fabro.commands._run_attribution import journaled_run_ids
 
 __all__: list[str] = [
     "RESUME_STAGE",
@@ -101,17 +142,20 @@ def resume_linked_run_ids(
 def resumes_anchored_on(
     *, records: Sequence[Mapping[str, object]], work_item_id: str, pull_request: int
 ) -> tuple[str, ...]:
-    """One NAME per resume of one pull request, oldest first.
+    """One NAME per resume of one pull request that CREATED A RUN, oldest first.
 
     Returned as names rather than as a count because the third-resume refusal
     has to name both earlier resumes, and a count cannot be named. Each resume
     is named by the earlier run it set out to finish, which is the identifier an
     operator can look up on the factory; a record naming no identifier falls
-    back to the stage it entered at, so a malformed row still CONTRIBUTES to the
-    bound rather than silently raising the cap by one.
+    back to the stage it entered at, so a malformed row that DID create a run
+    still CONTRIBUTES to the bound rather than silently raising the cap by one.
+
+    An attempt that created no run is absent entirely, for the reason the module
+    docstring gives: it spent none of the per-run caps the bound replaces.
     """
     anchored: list[str] = []
-    for record in _resume_records(records=records, work_item_id=work_item_id):
+    for record in _launched_resume_records(records=records, work_item_id=work_item_id):
         if record.get(_PULL_REQUEST_KEY) != pull_request:
             continue
         named = _identifier_list(value=record.get(_EARLIER_RUN_IDS_KEY))
@@ -129,9 +173,15 @@ def was_resumed(
     resumed and whose CURRENT one was dispatched plainly was not resumed into
     this merge, and naming a resumed run on its pointer would credit a dispatch
     that had nothing to do with the record being cited.
+
+    Read off EVERY resume record of that pull request, and deliberately not off
+    the bound's launched subset, for the reason the module docstring gives: this
+    answers a question about a merge that happened, and the identifier the
+    pointer names comes from the merging outcome rather than from these rows.
     """
-    return bool(
-        resumes_anchored_on(records=records, work_item_id=work_item_id, pull_request=pull_request)
+    return any(
+        record.get(_PULL_REQUEST_KEY) == pull_request
+        for record in _resume_records(records=records, work_item_id=work_item_id)
     )
 
 
@@ -144,6 +194,35 @@ def _resume_records(
         for record in records
         if record.get(_STAGE_KEY) == RESUME_STAGE and record.get(_WORK_ITEM_KEY) == work_item_id
     )
+
+
+def _launched_resume_records(
+    *, records: Sequence[Mapping[str, object]], work_item_id: str
+) -> tuple[Mapping[str, object], ...]:
+    """Every `resume` record of one item that went on to create a factory run.
+
+    One pass over the item's own rows, carrying at most one resume record as
+    PENDING. A `resume` row replaces whatever was pending — which is what closes
+    the window at the item's next attempt — and the first later row naming a run
+    resolves the pending record as launched. A pending record the pass ends on
+    created no run and is simply never yielded.
+
+    The run-naming test is `journaled_run_ids` rather than a stage comparison, so
+    this reader and `_run_attribution` cannot disagree about what names a run.
+    """
+    launched: list[Mapping[str, object]] = []
+    pending: Mapping[str, object] | None = None
+    for record in records:
+        if record.get(_WORK_ITEM_KEY) != work_item_id:
+            continue
+        if record.get(_STAGE_KEY) == RESUME_STAGE:
+            pending = record
+        elif pending is not None and journaled_run_ids(
+            records=(record,), work_item_id=work_item_id
+        ):
+            launched.append(pending)
+            pending = None
+    return tuple(launched)
 
 
 def _identifier_list(*, value: object) -> list[str]:
