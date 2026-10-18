@@ -4324,6 +4324,13 @@ def test_dispatch_green_closes_item_and_journals(
         # untouched window, so the dispatch runs to `green` with it present.
         "acp-session-headroom",
         "ledger-admit",
+        # The recovery route this dispatch took, written straight after the
+        # claim -- at the LAUNCH rather than at the measurement, because a route
+        # is valid only for the pass that measured it and an item the valve
+        # deferred must carry nothing out of this one. This fixture's item has
+        # no earlier dispatch that released it, so it is routed `fresh` with no
+        # remote measurement at all, and this row is what records that.
+        "recovery-route",
         # ADAPTERS BEFORE THE PAYLOAD, and the order is load-bearing rather than
         # incidental: since plan `fabro-currency` P4 the payload generator renders
         # each ACP node's resolved adapter command into the graph as a LITERAL,

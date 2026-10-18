@@ -63,6 +63,7 @@ __all__: list[str] = [
     "anchor_refusals",
     "head_refusals",
     "liveness_refusals",
+    "lock_refusals",
     "resume_refusals",
 ]
 
@@ -166,7 +167,7 @@ def resume_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
         *head_refusals(observation=observation),
         *_definition_of_done_refusals(observation=observation),
         *liveness_refusals(observation=observation),
-        *_lock_refusals(observation=observation),
+        *lock_refusals(observation=observation),
         *_pull_request_state_refusals(observation=observation),
         *_resume_chain_refusals(observation=observation),
     )
@@ -348,14 +349,29 @@ def liveness_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
     return (live,)
 
 
-def _lock_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
-    """The live-ownership-lock refusal, naming the age, as `reconcile-merged` does."""
+def lock_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
+    """The live-ownership-lock refusal, naming the age, as `reconcile-merged` does.
+
+    THE REMEDY HAS TWO HALVES BECAUSE THE OPERATOR'S TWO SITUATIONS DO. A lock
+    whose holder is genuinely dispatching is waited out; a lock left behind by a
+    process that died in a way the liveness probe cannot see is confirmed dead
+    first, and `fabro ps` is where that is confirmed. Naming only the wait sends
+    an operator to wait indefinitely on the second — which is the same
+    one-of-two-remedies failure the pull-request-state arm below keeps apart.
+    `reconcile-merged`'s own lock refusal, which this one mirrors, names both.
+
+    PUBLIC for the reason this module's header gives about its three other
+    public arms: recovery routing CLASSIFIES this refusal as non-fallback and
+    must carry its text verbatim, and a classifier reaching for it privately is
+    what the private-calls gate forbids.
+    """
     if observation.lock_age_seconds is None:
         return ()
     held = (
         "this item's dispatch-scoped ownership lock is held by a live process,"
         f" {observation.lock_age_seconds:.0f}s old; wait for that dispatch to"
-        " release it rather than running two against one branch"
+        " release it, or confirm with `fabro ps` that its holder is gone, rather"
+        " than running two against one branch"
     )
     return (held,)
 

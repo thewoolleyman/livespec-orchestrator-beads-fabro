@@ -31,6 +31,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
     post_admission_publish_branch_reclaim,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_launch import (
+    LaunchPins,
+    journal_recovery_route,
+    recovery_launch_args,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routing import (
+    RecoveryRouting,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import (
     ReworkPass,
 )
@@ -53,6 +61,7 @@ def admit_and_dispatch_target(  # noqa: PLR0913 — kw-only targeted dispatch; `
     journal: JournalFile,
     janitor: tuple[str, ...] | None,
     marked: bool,
+    routing: RecoveryRouting,
 ) -> DispatchOutcome:
     # The admission valve runs BEFORE the Fabro launch: a host-only item is
     # routed away, a manual / unresolvable-assignee item is held + surfaced,
@@ -80,16 +89,38 @@ def admit_and_dispatch_target(  # noqa: PLR0913 — kw-only targeted dispatch; `
     # it belongs past the admission decision rather than in the pre-dispatch
     # wall above (bd-ib-huoyk7), and before the launch, which is what keeps the
     # new run's `publish_draft` push a plain fast-forward.
-    post_admission_publish_branch_reclaim(args=args, repo=repo, items=launching, journal=journal)
+    # A `resume`-routed item is deliberately NOT offered, exactly as in the
+    # drain: the surviving publish branch is the branch its run resumes on, so
+    # preserving that head to a ref and deleting the branch would destroy what
+    # the resume exists to finish.
+    post_admission_publish_branch_reclaim(
+        args=args,
+        repo=repo,
+        items=[item for item in launching if routing.reclaims(work_item_id=item.id)],
+        journal=journal,
+    )
+    # Each launching item's route, recorded now that the valve has decided it
+    # will launch -- here rather than at the measurement, because a route is
+    # valid only for the pass that measured it and an item the valve turned away
+    # must carry nothing out of this one.
+    for item in launching:
+        journal_recovery_route(route=routing.route_for(work_item_id=item.id), journal=journal)
     dispatched = [
         dispatch_one(
-            # Both per-dispatch ledger pins, as in the queue-draining loop:
-            # the factory this dispatch goes to and the workflow variant it
-            # runs are recorded on the item together.
-            args=args_with_dispatch_workflow_name(
-                args=args_with_dispatch_factory_target(args=args, repo=repo, work_item_id=item.id),
+            # BOTH per-dispatch ledger pins AND this item's recovery route, in
+            # one per-item place, as in the queue-draining loop: the factory
+            # this dispatch goes to, the workflow variant it runs and the tree
+            # it starts from are decided together, on this item's OWN copy of
+            # the arguments rather than on a namespace a wave could share.
+            args=recovery_launch_args(
+                args=args,
                 repo=repo,
                 work_item_id=item.id,
+                route=routing.route_for(work_item_id=item.id),
+                pins=LaunchPins(
+                    factory=args_with_dispatch_factory_target,
+                    workflow=args_with_dispatch_workflow_name,
+                ),
             ),
             repo=repo,
             item=item,

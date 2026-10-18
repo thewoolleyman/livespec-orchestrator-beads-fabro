@@ -54,6 +54,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurement
     MEASUREMENT_PRESERVED_WORK,
     unobservable_measurements,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_non_fallback import (
+    non_fallback_refusals,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved import (
     PreservedWorkUnobservable,
     verified_preserved_seed,
@@ -63,6 +66,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records imp
     PRESERVED_WORK_VERIFIED,
     RECOVERY_HELD_STAGE,
     recovery_held_record,
+    recovery_held_report,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_release import (
     released_for_recovery,
@@ -139,6 +143,30 @@ class RecoveryRouting:
         return [
             one for one in candidates if not _is_held(route=self.route_for(work_item_id=one.id))
         ]
+
+    def held_report(self, *, work_item_id: str) -> str | None:
+        """The refusal `dispatch --item` exits 3 with, or `None` for a live route.
+
+        "Under `dispatch --item` it is a precondition error (exit `3`) naming the
+        item and the measurement or the non-fallback refusals with their
+        remedies, before any run exists." A METHOD rather than a test the
+        targeted path performs on the route it fetched: the question that path
+        asks is "may I proceed", and the answer a hold owes it is the whole
+        message — so a call site cannot reach the first without rendering the
+        second, which is how the drain's deferred outcome and this refusal stay
+        two readings of one decision.
+
+        Keyed on the HOLD rather than on the route name, which is the same
+        question asked of the field that carries the answer: `_held_route` is
+        the only constructor of a hold and it is also the only one that returns
+        `ROUTE_HELD`, so a route carrying a hold IS a held route, and a second
+        test of the name could only ever disagree with the payload it is about
+        to render.
+        """
+        route = self.route_for(work_item_id=work_item_id)
+        if route is None or route.hold is None:
+            return None
+        return recovery_held_report(work_item_id=work_item_id, hold=route.hold)
 
     def held_outcomes(self) -> list[DispatchOutcome]:
         """One deferred outcome per held item, for the drain's own report.
@@ -230,6 +258,14 @@ def _released_route(
     classified as fallback-permitting or not — so an unanswered question would be
     graded as an answer.
 
+    THE NON-FALLBACK REFUSALS ARE GRADED SECOND, for the mirror reason. They too
+    are invisible to the ladder below, which asks only whether ANY refusal
+    applies: a live lock, a live earlier run and a merged pull request each
+    answer that question exactly as a missing anchor does, so a ladder reached
+    with one of them standing would perform the plain dispatch their remedies
+    exist to forbid. They are graded AFTER the unobservable measurements because
+    an unanswered read is not a refusal about anything.
+
     The refusal ladder is then the clause's own grading surface — "`resume`, when
     every published-PR resume precondition of the `resume --item` clause passes" —
     so a silent ladder IS the resume route and nothing here re-decides it. The anchor
@@ -246,6 +282,16 @@ def _released_route(
         # not — so falling through would seed or dispatch around a question that
         # was never answered, and the record would read like a measured decision.
         return _held_route(item=item, journal=journal, hold=RecoveryHold(measurements=measurements))
+    refusals = non_fallback_refusals(observation=gather.observation)
+    if refusals:
+        # "A non-fallback refusal takes precedence over every fallback-permitting
+        # one, so a merged pull request is never treated as a missing anchor."
+        # Hence BEFORE the ladder rather than inside it: the ladder's first test
+        # is whether ANY refusal applies, and a non-fallback one answers that
+        # test identically to a fallback-permitting one — so falling through
+        # would carry out a remedy the refusal exists to forbid, and would do it
+        # with the record reading like an ordinary measured fallback.
+        return _held_route(item=item, journal=journal, hold=RecoveryHold(refusals=refusals))
     anchor = gather.anchor
     pull_request = gather.observation.pull_request
     if resume_refusals(observation=gather.observation) or anchor is None or pull_request is None:
