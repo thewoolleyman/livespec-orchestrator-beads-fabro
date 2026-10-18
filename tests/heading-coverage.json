@@ -1870,5 +1870,13 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_janitor_environment_scrub_scenario189.test_a_dispatch_routed_through_the_factory_variable_gets_the_verdict_its_merge_earns"
+  },
+  {
+    "heading": "## Scenario 192 \u2014 A turn cut by its node timeout leaves its commit run to finish or be named, and a hook still executing at the cut is a hook-over-limit event",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by revision v153 accepting proposal node-timeout-cut-commit-run (plan sandbox-commit-gate-ceiling, epic bd-ib-qy5wol). A turn cut by its node timeout leaving its commit run to finish or be named, and the node-timeout hook-over-limit limit, are not implemented yet; an integration-tier test is owed for the three sub-scenarios, and work-item bd-ib-ptnxyg implements them and owns that binding.",
+    "work_item": "bd-ib-ptnxyg"
   }
 ]
