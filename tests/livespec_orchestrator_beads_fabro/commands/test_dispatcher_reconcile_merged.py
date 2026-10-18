@@ -666,6 +666,65 @@ def test_reconcile_merged_refuses_ambiguous_title_search_candidates(
     ]
 
 
+def test_reconcile_merged_refuses_ambiguous_body_search_candidates(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Body-only matches are candidates, never grounds to choose a merge."""
+    _assert_reconcile_command_registered(capsys=capsys)
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(id="bd-ib-target", status="active")
+    append_work_item(path=_config(), item=item)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            CommandResult(exit_code=1, stdout="", stderr="not found"),
+            _ok(
+                stdout=json.dumps(
+                    [
+                        {
+                            **_list_pr(
+                                number=19,
+                                title="Repair one configuration path",
+                                sha="multi1",
+                                head="fix-one-configuration-path",
+                            ),
+                            "body": f"Implements {item.id}.",
+                        },
+                        {
+                            **_list_pr(
+                                number=20,
+                                title="Repair another configuration path",
+                                sha="multi2",
+                                head="fix-another-configuration-path",
+                            ),
+                            "body": f"Follow up on {item.id}.",
+                        },
+                    ]
+                )
+            ),
+            _ok(),
+            *_venue_resolution(),
+            *[_ok() for _ in range(8)],
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        lambda **_: _AcceptancePass(verdict="PASS"),
+    )
+
+    exit_code = main(argv=["reconcile-merged", "--repo", str(repo), "--item", item.id])
+
+    assert exit_code == 3
+    err = capsys.readouterr().err
+    assert "ambiguous merged PR candidates" in err
+    assert "#19 multi1" in err
+    assert "#20 multi2" in err
+
+
 def test_parse_merged_pr_list_accepts_branch_or_title_and_rejects_unusable_shapes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
