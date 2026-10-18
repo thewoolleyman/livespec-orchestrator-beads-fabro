@@ -169,6 +169,7 @@ class _VenueRunner:
     shell: ShellCommandRunner = field(default_factory=ShellCommandRunner)
     calls: list[list[str]] = field(default_factory=list)
     envs: list[Mapping[str, str | None] | None] = field(default_factory=list)
+    suite_cwds: list[Path] = field(default_factory=list)
 
     def run(
         self,
@@ -182,6 +183,8 @@ class _VenueRunner:
         assert cwd.exists()
         self.calls.append(list(argv))
         self.envs.append(env)
+        if self._is_check_suite(argv=argv):
+            self.suite_cwds.append(cwd)
         canned = self.suite if self._is_check_suite(argv=argv) else None
         if canned is not None:
             return canned
@@ -202,6 +205,7 @@ class _Drive:
     row: dict[str, object]
     checkout: Path
     calls: list[list[str]]
+    suite_cwds: list[Path]
 
 
 def _merged() -> PrView:
@@ -275,9 +279,26 @@ def _gate_without_a_verdict() -> CommandResult:
     )
 
 
+def _gate_passed_without_writing_a_token(*, state: str) -> CommandResult:
+    """A gate client whose Job PASSED and which still exited non-zero.
+
+    This is the client's own contract rather than a contrivance: its exit code
+    is 0 only when the gate passed AND a green push token was written, and that
+    token authorises a push rather than closing a post-merge gate.
+    """
+    return CommandResult(
+        exit_code=1, stdout="", stderr=json.dumps({"event": "delegated gate", "state": state})
+    )
+
+
 def _green() -> CommandResult:
     """A host-local check suite that passed: on that venue the exit code IS the verdict."""
     return CommandResult(exit_code=0, stdout="every target green", stderr="")
+
+
+def _red() -> CommandResult:
+    """A host-local check suite that failed, carrying the target it failed on."""
+    return CommandResult(exit_code=1, stdout="", stderr="Failed targets (1):\n  - check-lint")
 
 
 def _git(*, cwd: Path, argv: tuple[str, ...]) -> str:
@@ -389,7 +410,13 @@ def _drive(
     )
     records = [json.loads(line) for line in journal.path.read_text(encoding="utf-8").splitlines()]
     rows = [record for record in records if record.get("stage") == _JANITOR_STAGE]
-    return _Drive(outcome=outcome, row=rows[-1], checkout=checkout, calls=runner.calls)
+    return _Drive(
+        outcome=outcome,
+        row=rows[-1],
+        checkout=checkout,
+        calls=runner.calls,
+        suite_cwds=runner.suite_cwds,
+    )
 
 
 def test_scenario191_the_row_names_the_venue_the_suite_was_resolved_to_and_attempted_in(
@@ -648,3 +675,144 @@ def test_scenario191_the_row_names_the_rule_that_chose_the_suite(tmp_path: Path)
     assert list(_HOST_SUITE) in host.calls
     assert list(_HOST_SUITE) not in cluster.calls
     assert list(CLUSTER_GATE_ARGV) in cluster.calls
+
+
+def test_scenario190_an_absent_or_unrecognised_venue_keeps_the_suite_on_the_dispatching_host(
+    tmp_path: Path,
+) -> None:
+    """Silence and a misspelling both keep the declared suite running here, exit code and all.
+
+    OFF is the strict path, so the two doubtful declarations are asserted
+    together: a build that moved the suite onto the cluster on anything other
+    than the exact word would run a gate nobody has proven on that host, after
+    the work has already merged.
+
+    The exit code IS the verdict on this venue, so both directions are
+    asserted. A green-only case would pass for a janitor that ignored the suite
+    entirely, and a red-only case for one that reported red whatever the suite
+    said.
+    """
+    silent_green = _drive(tmp_path=tmp_path, name="v190-silent", venue=None, suite=_green())
+    silent_red = _drive(tmp_path=tmp_path, name="v190-silent-red", venue=None, suite=_red())
+    misdeclared = _drive(
+        tmp_path=tmp_path, name="v190-misdeclared", venue="cluster", suite=_green()
+    )
+
+    assert (silent_green.outcome.status, silent_green.outcome.stage) == ("green", "done")
+    assert (silent_red.outcome.status, silent_red.outcome.stage) == ("failed", _JANITOR_STAGE)
+    assert "check-lint" in silent_red.outcome.detail
+    assert (misdeclared.outcome.status, misdeclared.outcome.stage) == ("green", "done")
+    # The declared command ran, and it ran IN the fresh janitor checkout.
+    for drive in (silent_green, silent_red, misdeclared):
+        assert drive.suite_cwds == [drive.checkout]
+        assert list(CLUSTER_GATE_ARGV) not in drive.calls
+
+
+def test_scenario190_the_cluster_venue_runs_the_gate_client_rather_than_the_declared_suite(
+    tmp_path: Path,
+) -> None:
+    """Under `cluster_job` the gate client runs in the janitor checkout and the declaration does not.
+
+    The repository here DECLARES `dispatcher.janitor.check_suite`, which is the
+    whole premise: on this venue the suite the Job runs is the one the gate
+    client resolves from the checkout's own `[tool.livespec_dev_tooling]`
+    block, and the committed declaration is not applied at all. Asserting only
+    that the gate client ran would pass for a build that ran both.
+    """
+    cluster = _drive(
+        tmp_path=tmp_path, name="v190-cluster", venue=_CLUSTER_JOB, suite=_gate(state="PASSED")
+    )
+
+    assert list(CLUSTER_GATE_ARGV) in cluster.calls
+    assert list(_HOST_SUITE) not in cluster.calls
+    assert cluster.suite_cwds == [cluster.checkout]
+
+
+def test_scenario190_a_cluster_gate_that_passed_reads_green_even_when_the_client_exits_non_zero(
+    tmp_path: Path,
+) -> None:
+    """The state word decides, never the exit code.
+
+    The control is the same state word on a client that exited 0, so the green
+    verdict is attributable to the state word rather than to either exit code:
+    without it, "PASSED reads green" is equally consistent with a janitor still
+    reading the exit code and happening to agree.
+    """
+    unwritten_token = _drive(
+        tmp_path=tmp_path,
+        name="v190-passed-no-token",
+        venue=_CLUSTER_JOB,
+        suite=_gate_passed_without_writing_a_token(state="PASSED"),
+    )
+    clean_exit = _drive(
+        tmp_path=tmp_path, name="v190-passed", venue=_CLUSTER_JOB, suite=_gate(state="PASSED")
+    )
+
+    assert (unwritten_token.outcome.status, unwritten_token.outcome.stage) == ("green", "done")
+    assert (unwritten_token.outcome.status, unwritten_token.outcome.stage) == (
+        clean_exit.outcome.status,
+        clean_exit.outcome.stage,
+    )
+    # And the row records the reading the verdict came from, on both legs.
+    assert unwritten_token.row.get(_GATE_STATE_FIELD) == "PASSED"
+
+
+def test_scenario190_a_failed_job_reads_red_as_the_jobs_own_verdict(tmp_path: Path) -> None:
+    """A FAILED Job is a red TREE, and the detail says so rather than naming plumbing.
+
+    Worded apart from the no-verdict arm because the remedies are opposite: a
+    failed Job sends the operator to the gate's own log, and a lost verdict
+    sends them to the cluster.
+    """
+    failed = _drive(
+        tmp_path=tmp_path, name="v190-failed", venue=_CLUSTER_JOB, suite=_gate(state="FAILED")
+    )
+
+    assert (failed.outcome.status, failed.outcome.stage) == ("failed", _JANITOR_STAGE)
+    assert "FAILED verdict" in failed.outcome.detail
+    assert "reached no verdict" not in failed.outcome.detail
+    assert failed.row.get(_GATE_STATE_FIELD) == "FAILED"
+
+
+def test_scenario190_a_cluster_gate_that_reached_no_verdict_is_red_and_never_degraded(
+    tmp_path: Path,
+) -> None:
+    """Every unreadable reading lands on the same red, and never on the degraded green.
+
+    The degraded outcome reports `green` at its own stage because the merge is
+    confirmed either way, which is the one thing a gate that was asked and did
+    not answer must not do: it would let the item close on a reading nobody
+    took. So the three unreadable shapes are asserted to reach `failed` at the
+    janitor stage, with a detail that names the missing verdict as the finding
+    rather than the tree.
+
+    The `_gate(state="FAILED")` case above is this one's control: it is the one
+    shape that must NOT take this arm, and without it a janitor that called
+    every non-pass reading a lost verdict would satisfy all three cases here.
+    """
+    drives = {
+        "on-stdout": _drive(
+            tmp_path=tmp_path,
+            name="v190-stdout",
+            venue=_CLUSTER_JOB,
+            suite=_gate_announcing_on_stdout(state="PASSED"),
+        ),
+        "not-a-word": _drive(
+            tmp_path=tmp_path,
+            name="v190-not-a-word",
+            venue=_CLUSTER_JOB,
+            suite=_gate_whose_state_is_not_a_word(),
+        ),
+        "silent": _drive(
+            tmp_path=tmp_path,
+            name="v190-silent-gate",
+            venue=_CLUSTER_JOB,
+            suite=_gate_without_a_verdict(),
+        ),
+    }
+
+    for shape, drive in drives.items():
+        assert (drive.outcome.status, drive.outcome.stage) == ("failed", _JANITOR_STAGE), shape
+        assert "reached no verdict" in drive.outcome.detail, shape
+        assert "the missing cluster verdict is the" in drive.outcome.detail, shape
+        assert drive.outcome.stage != "janitor-env-degraded", shape

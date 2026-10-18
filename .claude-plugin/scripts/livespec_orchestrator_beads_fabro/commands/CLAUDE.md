@@ -512,6 +512,33 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   block, an absent key, a wrong type, an unrecognised word — the mirror of the
   fail-closed verdict, landing in the same place: both defaults reduce to "run
   the checks".
+  It also owns the `janitor-post-merge` ROW'S ACCOUNT of that venue
+  (`bd-ib-nsrgxl`, Scenario 191), named here beside the selection it reports so
+  the row's words and the selection's words cannot drift. Five further
+  properties an editor must not invert. The row names the RESOLVED venue, never
+  the declared value: a row echoing `cluster` — or any other unrecognised word
+  — would report a machine the suite never ran on, which is the reading the
+  fail-closed selection exists to prevent anyone making. On the HOST-LOCAL
+  venue the gate fields are OMITTED and never nulled, because the cluster arm
+  writes `gate_state: null` where the client reached no verdict and a
+  host-local null would read as that same state. ONE parse of the verdict line
+  serves both the state word and the Job keys, which is why `_verdict_line`
+  yields the LINE rather than the state. No Job key is ever DERIVED — the
+  gate's convention is `gate-<repository>-<first twelve of the tree hash>` in
+  the `gates` namespace and the row already carries that tree hash, so a name
+  COULD be constructed, and a constructed one reads exactly like a reported one
+  while being wrong in precisely the case an operator reads the row to
+  investigate. And the START instant is taken by the CALLER immediately before
+  the launch: the row is built after the command returns and already carries
+  its own append instant, so a start stamped there would report every stage as
+  instantaneous. The submitted-tree reading (`gate_tree_hash`) is the module's
+  one impure function, taken directly on the runner exactly as the venue
+  resolution's own merge-containment probe is, and answers `None` rather than
+  the empty string for a reading that could not be TAKEN. The `suite_source`
+  word names the RULE rather than the venue: `dispatcher.janitor.check_suite`
+  on the host, and `gate_check_suite` on the cluster, where the committed
+  declaration is not applied at all, so naming it there would send an operator
+  to edit a declaration the run never consulted.
 - `_dispatcher_open_command_node.py` — which COMMAND node of the phase graph a run
   is inside, read off one `fabro events` output (`bd-ib-qsk4o5`). PURE, and the
   repair of a measured false-kill: a command node (`janitor`, `publish_draft`,
