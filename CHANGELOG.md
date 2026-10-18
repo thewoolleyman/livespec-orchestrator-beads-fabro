@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.216.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.216.0...v0.216.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **plan:** name the bare resolvable identity for a forge-path repo (bd-ib-eebjcl) ([067dce3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/067dce34e61021c6ad498f36694e67355657e9f7))
+* **plan:** name the unresolvable repository in the refusal (bd-ib-eebjcl) ([011dc06](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/011dc068d7b77faf3ce48c5626240669da3c99ca))
+* **plan:** refuse an unresolvable required_result repository (bd-ib-eebjcl) ([cd5b2e8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cd5b2e80f35be6034abf9c4dc9367224304efde3))
+* **sandbox:** carry the changed directory and match a glob against the protected set ([9d1c5fd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9d1c5fd13ebb0f442aa50afdac55867d5dfb82d2))
+* **sandbox:** drop here-document bodies and read a command line by line ([35fe2fa](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/35fe2fa6ee10518b0795a425b53a7234ae16c9b4))
+* **sandbox:** refuse an agent command that removes a run protected path ([8fb4ccd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8fb4ccdd6c59405529975fe8cf1deb01b46f53ea))
+* **sandbox:** refuse the whole tool call before any segment of it runs ([c711922](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c71192212fa7314d2f088cae17193e373a1dfba1))
+* **sandbox:** resolve a removal target to its canonical path before comparing ([11fb7e2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/11fb7e2d0cb1592a9a3853a94c5286acd8ae1068))
+* **sandbox:** resolve each removal target so an agent-made link cannot stand in ([4e0d341](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4e0d341679644fe17a899f5a5fa88858cdde7163))
+* **sandbox:** substitute a variable this command assigned a protected path ([81ed639](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/81ed63911b1f9df58d4e1f7d0035620d84ad7bfc))
+* **sandbox:** the guard reads the no-target-directory spelling too ([67e27aa](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/67e27aa26c06e2441b9aececf4aa8eee145027cc))
+* **sandbox:** the guard spares a destination that is already a directory ([120b0d5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/120b0d509cff1f0c5f26817be64ca838afe0930f))
+* **sandbox:** the refusal quotes the word that stands in for a protected path ([a1ca069](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a1ca069bc83522f515332d29ad03079cd38708c2))
+
 ## [0.216.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.215.2...v0.216.0) (2026-10-18)
 
 
