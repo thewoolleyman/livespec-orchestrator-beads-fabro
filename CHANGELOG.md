@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.215.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.215.1...v0.215.2) (2026-10-18)
+
+
+### Bug Fixes
+
+* **dispatcher:** stop a notify row's dispatcher run id counting as a factory run ([fa2e338](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fa2e338dfb6d0b8fd9fd8bad696653f19f862e4f))
+
 ## [0.215.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.215.0...v0.215.1) (2026-10-18)
 
 
