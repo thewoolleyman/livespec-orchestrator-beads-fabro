@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_detail import (
+    NEEDS_HUMAN_CAUSE_ABSENT,
     needs_human_terminal_detail,
     needs_human_terminal_reason,
 )
@@ -126,7 +127,13 @@ def test_several_causal_stages_are_pluralised_rather_than_reduced_to_one() -> No
 
 
 def test_an_unreadable_failure_block_still_attributes_the_stage() -> None:
-    """The signature and the failure block are independent reads of one record."""
+    """The signature and the failure block are independent reads of one record.
+
+    The stage attribution survives an unreadable block, and that block's own
+    silence is now STATED rather than omitted (`bd-ib-3nu5vv`): an attributed
+    ending has already claimed a fault, so a reader has to be able to tell a
+    cause nobody could read from an ending that had none.
+    """
     detail = needs_human_terminal_detail(
         work_item_id=_ITEM,
         run_id=_RUN,
@@ -136,10 +143,16 @@ def test_an_unreadable_failure_block_still_attributes_the_stage() -> None:
     )
 
     assert "failed at stage pr after a non-retryable fault" in detail
-    assert "innermost cause" not in detail
+    assert NEEDS_HUMAN_CAUSE_ABSENT in detail
 
 
-def test_a_failure_block_with_no_cause_names_no_cause() -> None:
+def test_a_failure_block_with_no_cause_states_that_the_cause_is_absent() -> None:
+    """A block that WAS read and carries no cause: the gap is the engine's.
+
+    Distinct from the case above, which could read no block at all, and both
+    owe the reader the same statement — neither may print an empty or
+    placeholder cause in its place.
+    """
     detail = needs_human_terminal_detail(
         work_item_id=_ITEM,
         run_id=_RUN,
@@ -149,7 +162,7 @@ def test_a_failure_block_with_no_cause_names_no_cause() -> None:
     )
 
     assert "failed at stage pr after a non-retryable fault" in detail
-    assert "innermost cause" not in detail
+    assert NEEDS_HUMAN_CAUSE_ABSENT in detail
 
 
 def test_a_failed_stage_with_no_recorded_signature_names_the_stage_alone() -> None:
