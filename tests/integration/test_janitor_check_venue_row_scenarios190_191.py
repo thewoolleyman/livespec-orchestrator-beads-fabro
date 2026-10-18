@@ -233,6 +233,20 @@ def _gate(*, state: str) -> CommandResult:
     )
 
 
+def _gate_with_two_verdict_lines(*, first_state: str, last_state: str) -> CommandResult:
+    """A gate client that revised its verdict; stderr's last valid line wins."""
+    return CommandResult(
+        exit_code=0 if last_state == "PASSED" else 1,
+        stdout="",
+        stderr="\n".join(
+            (
+                json.dumps({"event": "delegated gate", "state": first_state}),
+                json.dumps({"event": "delegated gate", "state": last_state}),
+            )
+        ),
+    )
+
+
 def _gate_naming_its_job(*, state: str, job_fields: dict[str, object]) -> CommandResult:
     """A gate client whose verdict line also reports the Job it ran as.
 
@@ -498,6 +512,20 @@ def test_scenario191_a_cluster_row_carries_the_gate_state_word_and_null_where_th
     assert [drive.outcome.stage for drive in (on_stdout, not_a_word, silent)] == [
         _JANITOR_STAGE
     ] * 3
+
+
+def test_scenario191_a_cluster_row_uses_the_last_valid_state_bearing_verdict_line(
+    tmp_path: Path,
+) -> None:
+    """A revised stderr verdict records its last valid state word, not its first."""
+    revised = _drive(
+        tmp_path=tmp_path,
+        name="revised-verdict",
+        venue=_CLUSTER_JOB,
+        suite=_gate_with_two_verdict_lines(first_state="PASSED", last_state="FAILED"),
+    )
+
+    assert revised.row.get(_GATE_STATE_FIELD) == "PASSED"
 
 
 def test_scenario191_a_host_local_row_carries_no_gate_field_at_all(tmp_path: Path) -> None:
