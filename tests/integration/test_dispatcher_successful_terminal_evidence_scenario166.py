@@ -46,6 +46,7 @@ _REPOSITORY = "thewoolleyman/proof-repo"
 _WORKER_EXIT_MESSAGE = "Worker exited before emitting a terminal run event: exit status: 0"
 _REPO_ROOT = Path(__file__).parents[2]
 _WORKFLOW = _REPO_ROOT / ".claude-plugin/.fabro/workflows/implement-work-item/workflow.toml"
+_NATIVE_INSPECT = _REPO_ROOT / "tests/fixtures/fabro_native_inspect/background.json"
 _SUCCESSFUL_NODES = (
     "start",
     "dod_gate",
@@ -685,6 +686,114 @@ def test_unmeasurable_configured_route_fails_closed_without_raising(
         else (name, type(value.error).__name__, "raised", None)
         for name, value in observed
     ] == [(name, "failed", "fabro-run", None) for name, *_rest in cases]
+
+
+def test_a_real_records_ungraded_completed_nodes_still_prove_the_route(
+    tmp_path: Path,
+) -> None:
+    """The engine GRADES FEWER NODES THAN IT COMPLETES, measured off a real record.
+
+    Every other case here synthesizes a grade for every node it also lists as
+    completed, so a predicate demanding one per graph dominator passes against
+    all of them and refuses the shape the engine actually writes.  The omission
+    set is therefore taken from the committed ``fabro inspect --json`` capture
+    rather than invented: that record lists ``setup`` and ``dod_gate`` in
+    ``completed_nodes`` with NO ``node_outcomes`` entry, and ``dod_gate`` is a
+    dominator of this repository's configured green terminal by that same name.
+
+    ``start`` stands in for that record's ``setup``, the graph's own entry
+    marker: ``start [shape=Mdiamond]`` declares no backend and runs no script,
+    so there has never been anything for the engine to grade there.  A
+    dominator the engine never graded is UNGRADED, not failed -- the dispatch
+    keeps its ordinary non-green outcome when a graded one reports a failure,
+    which the ``required-failed`` control asserts, and when the route is not
+    completed at all, which ``incomplete-route`` asserts.
+    """
+    captured = json.loads(_NATIVE_INSPECT.read_text(encoding="utf-8"))
+    assert isinstance(captured, list)
+    checkpoint = captured[0]["checkpoint"]
+    ungraded = tuple(
+        node for node in checkpoint["completed_nodes"] if node not in checkpoint["node_outcomes"]
+    )
+
+    sparse = _successful_checkpoint()
+    sparse["node_outcomes"] = {
+        node: {"status": "succeeded"}
+        for node in _SUCCESSFUL_NODES
+        if node not in {"start", "dod_gate"}
+    }
+    outcome, _journal, _runner = _dispatch(
+        root=tmp_path,
+        inspect_record=_failed_inspect(checkpoint=sparse),
+    )
+
+    assert ungraded == ("setup", "dod_gate")
+    assert (outcome.status, outcome.stage, outcome.pr_number, outcome.merge_sha) == (
+        "green",
+        "done",
+        41,
+        _MERGE_SHA,
+    )
+
+
+def test_petri_stage_states_grade_the_route_and_collapse_repaired_visits(
+    tmp_path: Path,
+) -> None:
+    """A record carrying no ``node_outcomes`` is graded from its ``stages`` map.
+
+    The Petri engine records no ``node_outcomes`` at all; its per-stage results
+    live in the record's own top-level ``stages`` map, keyed ``<node>@<visit>``
+    and carrying ``state`` rather than ``status``.  The needs-human reader
+    already resolves both inputs, so a second reading here would make the two
+    disagree about whether the SAME record is readable -- and "unreadable" is
+    the answer that keeps an already-merged pull request classified failed.
+
+    The map is the run's whole history and the engine never retires an entry,
+    so the fixture carries the ORDINARY shape of every run the graph's bounded
+    fix loop rescued: ``janitor@1`` failed, ``fix@1`` succeeded, ``janitor@2``
+    succeeded.  Grading entry by entry would refuse that run on its repaired
+    stage.  The control is the mirror image -- a final stage whose NEWEST visit
+    is the failed one -- which must still end non-green, so the collapse is
+    evidence about visit order rather than a reader that stopped reading
+    failures.
+    """
+    repaired = _successful_checkpoint()
+    _ = repaired.pop("node_outcomes")
+    repaired_record = _failed_inspect(checkpoint=repaired)
+    repaired_record["stages"] = {
+        **{f"{node}@1": {"state": "succeeded"} for node in _SUCCESSFUL_NODES},
+        "janitor@1": {"state": "failed"},
+        "fix@1": {"state": "succeeded"},
+        "janitor@2": {"state": "succeeded"},
+    }
+    regressed = _successful_checkpoint()
+    _ = regressed.pop("node_outcomes")
+    regressed_record = _failed_inspect(checkpoint=regressed)
+    regressed_record["stages"] = {
+        **{f"{node}@1": {"state": "succeeded"} for node in _SUCCESSFUL_NODES},
+        "verify_pr@2": {"state": "failed"},
+    }
+
+    graded, _journal, _runner = _dispatch(
+        root=tmp_path / "repaired",
+        inspect_record=repaired_record,
+    )
+    regressed_outcome, _journal, _runner = _dispatch(
+        root=tmp_path / "regressed",
+        inspect_record=regressed_record,
+    )
+
+    assert (graded.status, graded.stage, graded.pr_number, graded.merge_sha) == (
+        "green",
+        "done",
+        41,
+        _MERGE_SHA,
+    )
+    assert (regressed_outcome.status, regressed_outcome.stage, regressed_outcome.pr_number) == (
+        "failed",
+        "fabro-run",
+        None,
+    )
 
 
 def test_missing_or_malformed_per_node_outcomes_fail_closed_without_raising(
