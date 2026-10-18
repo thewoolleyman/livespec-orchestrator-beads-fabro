@@ -4,10 +4,11 @@ These fixtures exist for one reason: the suite must answer the same way on
 every machine it runs on. Each one replaces an AMBIENT host dependency the
 dispatch path would otherwise read — the host Codex credential, the host
 `fabro` engine binary, the host `gh`, the per-profile OAuth token slots
-the credential wrapper injects — with a hermetic stand-in, so the suite
+the credential wrapper injects, the dispatching operator's own invoker
+identity and factory selection — with a hermetic stand-in, so the suite
 never depends on whether the runner is logged in, has the engine
-installed, ships `gh` on the step-subprocess PATH, or is running inside
-that wrapper.
+installed, ships `gh` on the step-subprocess PATH, is dispatching work,
+or is running inside that wrapper.
 
 The Claude credential pre-flight similarly makes one bounded live Messages
 API request before a dispatch. Tests receive a successful non-secret probe
@@ -198,6 +199,48 @@ def _hermetic_projected_credential_use(monkeypatch: pytest.MonkeyPatch) -> None:
     same absent state on a developer host, in CI, and inside a factory sandbox.
     """
     for name in _PROJECTED_CREDENTIAL_USE_ENV:
+        monkeypatch.delenv(name, raising=False)
+
+
+_AMBIENT_OPERATOR_ENV = (
+    "LIVESPEC_INVOKER",
+    "LIVESPEC_FABRO_FACTORY",
+)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_operator_attribution_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the DISPATCHING operator's attribution and routing out of pytest.
+
+    These two are the operator's own inputs to a dispatch — who is asking
+    (`LIVESPEC_INVOKER`, which `drive` forwards to the Dispatcher as an
+    explicit `--invoker <id>`) and which factory to route it to
+    (`LIVESPEC_FABRO_FACTORY`, which outranks the committed default). They are
+    ambient per-invocation inputs, not repository test configuration, and they
+    are exactly the shape of ambient host dependency this file exists to
+    replace: a case that resolves either one answers differently depending on
+    whether the session running the suite happens to export it.
+
+    The asymmetry is what makes it expensive. Continuous integration exports
+    NEITHER, so a case that reads one is permanently green there, while a
+    session that DISPATCHES exports the identity because the driver's gate
+    requires it — and `just check` runs inside that session on every pre-push
+    and inside the post-merge janitor. Measured 2026-10-18 at master
+    d36799fa: with `LIVESPEC_INVOKER` exported, two of the four Scenario 17
+    drive cases failed because the forwarded `--invoker` pair shifts the
+    dispatcher argv past the index they read, so a dispatching session got a
+    red host-side pre-push on every branch while the same tree's
+    default-branch continuous integration was green (work-item
+    bd-ib-untu6x). `bd-ib-fd26sc` removed both names from the janitor's own
+    child environment, which fixed the janitor and not the suite's own
+    process; this is that half.
+
+    Scrubbing them is the whole fixture. A case that needs either value sets
+    it explicitly after this fixture runs — the precedent the seven cases
+    already popping `LIVESPEC_INVOKER` per test established, and which
+    `monkeypatch` restores at teardown either way.
+    """
+    for name in _AMBIENT_OPERATOR_ENV:
         monkeypatch.delenv(name, raising=False)
 
 
