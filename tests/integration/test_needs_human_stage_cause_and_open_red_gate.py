@@ -410,3 +410,42 @@ def test_an_open_red_reason_requires_a_py_path_in_the_head_commit(tmp_path: Path
     assert _GENERIC_REASON in stderr
     assert f"{_OPEN_RED_CLAUSE} {control.head}" in control_stderr
     assert _HALF_PAIR_CLAUSE in control_stderr
+
+
+def test_a_non_py_implementation_beside_its_test_claims_no_open_red(tmp_path: Path) -> None:
+    """The measured shape of master 1d7c6d14: `.fabro` implementation plus its test.
+
+    `red_green_replay`'s impl bucket is `.py`-only, so a Green amend that
+    stages a `workflow.fabro` beside its test takes the gate's silent-pass
+    branch and is never stamped `TDD-Green-Verified-At`. Red trailers with no
+    Green are therefore that commit's CONFORMING shape — master CI passes it —
+    and the terminal reported it as a half-authored pair blocking the loop.
+
+    THE TEST FILE IS WHAT MAKES THIS A SEPARATE CASE from the narrowing above.
+    Such a commit DOES carry a `.py`; it is simply not a product one, so a
+    reading that merely counted `.py` paths would pass the previous case and
+    still fire on every `.fabro` pair this repository authors. The control is
+    the SAME three paths with one product `.py` added, which is a genuinely
+    half-authored commit and must still be reported — without it, "no open Red"
+    is equally consistent with a terminal that ignores the head commit
+    entirely.
+    """
+    exempt = {
+        ".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro": "the graph edit\n",
+        "tests/integration/test_slice.py": "def test_slice() -> None:\n    pass\n",
+    }
+    world = _world(root=tmp_path / "exempt", changed=exempt, message=_OPEN_RED_MESSAGE)
+    control = _world(
+        root=tmp_path / "control",
+        changed={**exempt, _PRODUCT_IMPL_PATH: "the half-authored product edit\n"},
+        message=_OPEN_RED_MESSAGE,
+    )
+
+    stderr = _run_terminal(world=world)
+    control_stderr = _run_terminal(world=control)
+
+    assert _OPEN_RED_CLAUSE not in stderr
+    assert _HALF_PAIR_CLAUSE not in stderr
+    assert _GENERIC_REASON in stderr
+    assert f"{_OPEN_RED_CLAUSE} {control.head}" in control_stderr
+    assert _HALF_PAIR_CLAUSE in control_stderr
