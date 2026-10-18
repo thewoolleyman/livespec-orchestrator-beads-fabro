@@ -214,11 +214,25 @@ def _checkpoint_completed_route(
     anything but succeeded still refuses, which is what keeps a genuinely failed
     required stage out.
 
-    The entry marker is relieved of the GRADE and not of the COMPLETION, which is
-    deliberate rather than an oversight: `completed_nodes` is the engine's own
-    account of the nodes it ran, nothing measured here says any engine omits the
-    marker from it, and a record that does omit it is unavailable evidence --
-    which keeps the ordinary non-green outcome, the conservative direction.
+    THE ENTRY MARKER IS RELIEVED OF THE COMPLETION AS WELL AS OF THE GRADE, and
+    the earlier asymmetry here was a measured defect rather than a conservative
+    choice. That reading held that `completed_nodes` is the engine's own account
+    of the nodes it ran and that nothing said any engine omits the marker from
+    it. Both committed `fabro inspect --json` captures say exactly that: each
+    opens with `setup` -- the engine's own name for the marker -- and NEITHER
+    names `start`, and no revision of the graph has ever declared a `setup` node.
+    Nothing executes at `start [shape=Mdiamond]`, which declares no backend and
+    no script, so the engine's account of what it RAN cannot contain it.
+
+    Requiring it therefore refused 100% of real records while reporting the same
+    clean non-green a genuine failure reports -- indistinguishable at every
+    surface from the correct fail-closed answer, which is the one way this rule
+    can fail without anyone noticing. Nothing is given up by relieving it: the
+    marker dominates every node in the graph, so it carries no discriminating
+    information, and the route still rests on every EXECUTABLE dominator
+    completing and on the terminal-shape test below. The GRADE still ranges over
+    the whole dominating set, so an engine that did grade the marker and graded
+    it anything but succeeded still refuses.
 
     The `outcomes` map arrives ALREADY RESOLVED from the port, keyed as the
     engine wrote it, so a Petri `<node>@<visit>` key is divided here through
@@ -239,7 +253,12 @@ def _checkpoint_completed_route(
     successful = frozenset(node for node in states if _node_succeeded(states=states, node=node))
     required = dominators(graph=graph, start=route.start)[route.green_terminal]
     preceding = required - {route.green_terminal}
-    route_completed = preceding.issubset(completed) and (preceding & frozenset(states)).issubset(
+    # `dominators` always reports the start in its own dominator set, so the
+    # entry marker is in EVERY graph's `preceding`. COMPLETION is asked only of
+    # the dominators an engine can actually run; the GRADE still ranges over all
+    # of them.
+    executed = preceding - {route.start}
+    route_completed = executed.issubset(completed) and (preceding & frozenset(states)).issubset(
         successful
     )
     terminal_completed = (
