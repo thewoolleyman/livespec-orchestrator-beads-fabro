@@ -76,6 +76,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import 
     LEGACY_HOLD_SKIP,
     PROBE_SKIP,
     TYPED_HOLD_SKIP,
+    UNAVAILABLE_EVIDENCE_SKIP,
     NodePreflight,
     SkippedCandidate,
 )
@@ -96,19 +97,27 @@ __all__: list[str] = [
     "availability_wait_refusal_fields",
 ]
 
-# The condition a refusal names when no skip on the emptied node named one.
+# The condition a refusal names when no skip on the emptied node named one, and
+# the condition an unavailable evidence source names when it emptied one itself.
 # "When no hold governs the refusal, it MUST name the outstanding
 # confirmation, unavailable evidence source, admission-time credential-probe
-# skip, or admission session-headroom skip instead."
-UNAVAILABLE_EVIDENCE = "unavailable-availability-evidence"
+# skip, or admission session-headroom skip instead." It is ALIASED from the
+# filter's own skip reason rather than spelled a second time: the two are one
+# fact, and two literals of one fact is how a journal row comes to disagree
+# with the skip that produced it.
+UNAVAILABLE_EVIDENCE = UNAVAILABLE_EVIDENCE_SKIP
 
 # Which skip governs when several emptied one chain. A DURABLE record outranks
 # an ephemeral one because it is the fact carrying a bounded expiry and the one
 # an operator can clear; the typed record outranks the legacy blanket for the
-# same reason the filter consults it first.
+# same reason the filter consults it first. The unavailable source sits between
+# the records that WERE read and the two local skips, exactly where the filter
+# applies it -- a precedence that disagreed with the filter's own ordering
+# would name a condition for a candidate the filter never reached.
 GOVERNING_CONDITION_PRECEDENCE: tuple[str, ...] = (
     TYPED_HOLD_SKIP,
     LEGACY_HOLD_SKIP,
+    UNAVAILABLE_EVIDENCE_SKIP,
     PROBE_SKIP,
     HEADROOM_SKIP,
 )
