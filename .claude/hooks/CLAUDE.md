@@ -127,6 +127,23 @@ spelling with its own verbs rather than testing both against one set. The
 reading is also case-sensitive on purpose: `-t` is `--target-directory`, a
 different flag.
 
+A link an agent makes that points at a protected path is PERMANENT, and
+anyone building a simulation here has to plan for it. Resolution is what
+stops such a link standing in for the path it points at, and it applies to
+the command that would remove the LINK as much as to any other — so once the
+link exists, its name can never be reclaimed. The refusal must therefore say
+two things a bare victim name cannot: which word the command actually wrote
+(`stand_in_targets`, asked over the same three readings as `refused_path` so
+the two cannot disagree about a spared destination), and that the name is
+gone for good. Measured 2026-10-18 on run 01M577JN5RK7220F6B50PN1227, where
+the absence of both cost a proof replay: `rm -f
+/tmp/proof-capture/agent-made-link` was refused naming `/workspace`, a path
+absent from the command, under a remedy — build the simulation under a
+scratch directory — the agent had already followed. **So point every link in
+a simulation at a path inside that same simulation, and give the simulation a
+name no earlier run has used.** A fixed name makes the block that creates it
+one-shot.
+
 ## The shared shell reading
 
 `livespec_shell_shape.py` is the one place a Bash command is separated into the

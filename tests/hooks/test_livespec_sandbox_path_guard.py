@@ -232,6 +232,59 @@ def test_removing_an_agent_made_link_to_a_protected_path_is_refused(
     assert str(protected) in _refusal_reason(captured=capsys.readouterr().out)
 
 
+def test_the_refusal_for_an_agent_made_link_quotes_the_link_the_command_wrote(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The protected path is not in the command, so the refusal must say how it matched.
+
+    Measured 2026-10-18 on run 01M577JN5RK7220F6B50PN1227: the proof replay
+    could not re-run this item's own Assertion 6 block, because the block opens
+    by removing the fixed-name link an earlier capture had left pointing at a
+    protected path. The refusal named only that protected path and prescribed
+    building the simulation under a scratch directory — which is where the link
+    already was — so nothing in it said the name could never be reclaimed.
+    """
+    layout = _Layout(base=tmp_path)
+    agent_link = tmp_path / "agent-made-link"
+    agent_link.symlink_to(layout.root)
+    guard = _load_guard()
+
+    _run_guard(
+        guard=guard,
+        payload=_payload(command=f"rm -f {agent_link}", cwd=str(layout.clone)),
+        monkeypatch=monkeypatch,
+        sandbox_root=str(layout.root),
+        project_dir=str(layout.clone),
+    )
+
+    reason = _refusal_reason(captured=capsys.readouterr().out)
+    assert str(agent_link) in reason
+    assert f"does not name {layout.root}" in reason
+    assert "cannot be cleaned up" in reason
+
+
+def test_a_refusal_for_a_path_the_command_named_carries_no_stand_in_paragraph(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The disclosure is for the indirect case only; a direct one explains itself."""
+    layout = _Layout(base=tmp_path)
+    guard = _load_guard()
+
+    _run_guard(
+        guard=guard,
+        payload=_payload(command=f"rm -rf {layout.root}", cwd=str(layout.clone)),
+        monkeypatch=monkeypatch,
+        sandbox_root=str(layout.root),
+        project_dir=str(layout.clone),
+    )
+
+    assert "does not name" not in _refusal_reason(captured=capsys.readouterr().out)
+
+
 def test_removing_an_agent_made_link_to_a_scratch_directory_is_not_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
