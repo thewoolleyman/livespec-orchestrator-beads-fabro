@@ -95,6 +95,7 @@ __all__: list[str] = [
     "cluster_janitor_red",
     "cluster_venue_declared",
     "gate_tree_hash",
+    "gate_verdict",
     "host_janitor_red",
     "janitor_check_row_fields",
     "janitor_check_started_at",
@@ -127,6 +128,7 @@ _VENUE_FIELD = "venue"
 _GATE_PASSED = "PASSED"
 _GATE_FAILED = "FAILED"
 _STATE_FIELD = "state"
+_UNREAD_GATE_VERDICT = object()
 
 # The `janitor-post-merge` row's own account of the venue, named here beside the
 # selection it reports rather than at the journal writer, so the word a row
@@ -231,7 +233,12 @@ def host_janitor_red(*, result: CommandResult, checkout: Path) -> str | None:
     )
 
 
-def cluster_janitor_red(*, result: CommandResult, checkout: Path) -> str | None:
+def cluster_janitor_red(
+    *,
+    result: CommandResult,
+    checkout: Path,
+    verdict: dict[str, Any] | None | object = _UNREAD_GATE_VERDICT,
+) -> str | None:
     """The CLUSTER venue's red detail, or `None` when the gate Job completed.
 
     The state word decides, never the exit code: a gate that PASSED and could
@@ -246,7 +253,13 @@ def cluster_janitor_red(*, result: CommandResult, checkout: Path) -> str | None:
     second as the first sends them to read a verdict that does not exist;
     reporting the first as the second tells them their red tree was plumbing.
     """
-    state = _state_of(line=_verdict_line(text=result.stderr))
+    # The post-merge engine reads this once and shares it with the journal
+    # projection, so its outcome and row name one observed gate verdict. The
+    # default preserves this helper's focused callers, which ask it directly
+    # to read a result rather than driving that flow.
+    if verdict is _UNREAD_GATE_VERDICT:
+        verdict = gate_verdict(result=result)
+    state = _state_of(line=cast("dict[str, Any] | None", verdict))
     if state == _GATE_PASSED:
         return None
     if state == _GATE_FAILED:
@@ -316,7 +329,11 @@ def gate_tree_hash(*, runner: CommandRunner, checkout: Path) -> str | None:
 
 
 def janitor_check_row_fields(
-    *, on_the_cluster: bool, result: CommandResult, tree_hash: str | None, started_at: str
+    *,
+    on_the_cluster: bool,
+    tree_hash: str | None,
+    started_at: str,
+    verdict: dict[str, Any] | None,
 ) -> dict[str, object]:
     """The `janitor-post-merge` row's venue account, as ONE projection.
 
@@ -349,23 +366,22 @@ def janitor_check_row_fields(
     }
     if not on_the_cluster:
         return fields
-    line = _verdict_line(text=result.stderr)
-    fields[_ROW_GATE_STATE_FIELD] = _state_of(line=line)
+    fields[_ROW_GATE_STATE_FIELD] = _state_of(line=verdict)
     fields[_ROW_GATE_TREE_HASH_FIELD] = tree_hash
-    # ONE reading of the verdict line serves both the state word and the Job
-    # keys, which is the whole reason `_verdict_line` yields the line rather
+    # ONE engine reading of the verdict line serves both the state word and the
+    # Job keys, which is the whole reason `gate_verdict` yields the line rather
     # than the state: a second parse would be a second reading nothing proves
     # agrees with the first about the output it describes.
     #
     # An absent line stands in as an EMPTY mapping, which carries no Job key
     # and is not a reading in its own right: a verdict line always holds its
     # own string `state`, so no real one can be empty.
-    reported = line or {}
+    reported = verdict or {}
     fields.update({name: reported[name] for name in _ROW_JOB_FIELDS if name in reported})
     return fields
 
 
-def _verdict_line(*, text: str) -> dict[str, Any] | None:
+def gate_verdict(*, result: CommandResult) -> dict[str, Any] | None:
     """The gate client's VERDICT LINE, parsed, or `None` for no readable reading.
 
     The verdict line is the LAST standard-error line that parses as a JSON
@@ -380,7 +396,7 @@ def _verdict_line(*, text: str) -> dict[str, Any] | None:
     the state alone would make the row re-parse the same output to find them,
     which is two readings of one thing where one will do.
     """
-    for line in reversed(text.splitlines()):
+    for line in reversed(result.stderr.splitlines()):
         parsed = parse_json(text=line)
         if isinstance(parsed, JsonParseFailure) or not isinstance(parsed, dict):
             continue
@@ -393,7 +409,7 @@ def _verdict_line(*, text: str) -> dict[str, Any] | None:
 def _state_of(*, line: dict[str, Any] | None) -> str | None:
     """The verdict line's state word, or `None` when there was no verdict line.
 
-    A `cast` rather than a second `isinstance`: `_verdict_line` selects a line
+    A `cast` rather than a second `isinstance`: `gate_verdict` selects a line
     only once its `state` IS a string, so re-testing it here would be a branch
     no input can take and a quiet denial of what that selection guarantees.
     """

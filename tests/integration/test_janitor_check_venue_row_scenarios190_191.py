@@ -35,6 +35,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_engine_janitor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
@@ -525,6 +527,38 @@ def test_scenario191_a_cluster_row_uses_the_last_valid_state_bearing_verdict_lin
         suite=_gate_with_two_verdict_lines(first_state="PASSED", last_state="FAILED"),
     )
 
+    assert revised.row.get(_GATE_STATE_FIELD) == "FAILED"
+    assert (revised.outcome.status, revised.outcome.stage) == ("failed", _JANITOR_STAGE)
+
+
+def test_scenario191_one_parsed_verdict_drives_the_cluster_row_and_its_outcome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The row and outcome share one parsed verdict instead of re-reading stderr.
+
+    A revised verdict makes the shared reading observable: the same final
+    ``FAILED`` line has to reach both the row and the post-merge outcome, and
+    the engine calls its parser exactly once. A pair of independent parses can
+    happen to agree on static stderr today while leaving the two consumers free
+    to diverge when the gate client changes its narration tomorrow.
+    """
+    verdict_reads: list[object] = []
+    gate_verdict = _dispatcher_engine_janitor.gate_verdict
+
+    def _recording_gate_verdict(*, result: CommandResult) -> object:
+        verdict = gate_verdict(result=result)
+        verdict_reads.append(verdict)
+        return verdict
+
+    monkeypatch.setattr(_dispatcher_engine_janitor, "gate_verdict", _recording_gate_verdict)
+    revised = _drive(
+        tmp_path=tmp_path,
+        name="one-shared-verdict",
+        venue=_CLUSTER_JOB,
+        suite=_gate_with_two_verdict_lines(first_state="PASSED", last_state="FAILED"),
+    )
+
+    assert len(verdict_reads) == 1
     assert revised.row.get(_GATE_STATE_FIELD) == "FAILED"
     assert (revised.outcome.status, revised.outcome.stage) == ("failed", _JANITOR_STAGE)
 
