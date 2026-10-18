@@ -74,12 +74,24 @@ def test_document_states_the_per_tenant_fabro_server_recipe() -> None:
     assert "fabro_dev_" in doc
     assert "64 lowercase hex" in doc
 
-    # 4. The copy of the named environment file, and WHY it is needed — the
-    #    workflow's run environment names it, so a home without it cannot run
-    #    the graph. The id is asserted beside the path so the document cannot
-    #    keep the copy step while losing the reason for it.
+    # 4. The named environment file and the id it answers to. What that file
+    #    IS depends on the engine, and the document has to say which: on the
+    #    pinned 0.254 engine `workflow.toml` declares the environment inline
+    #    and the host-local file is an optional IMAGE OVERRIDE, so a document
+    #    calling it a hard prerequisite sends an adopter after a file this
+    #    repository does not ship. The id is asserted beside the path so the
+    #    step cannot survive while the reason for it is lost.
     assert "environments/livespec-ci.toml" in doc
     assert 'id = "livespec-ci"' in doc
+    assert "image override" in doc
+
+    #    And the one constraint whose violation is silent: the Dispatcher
+    #    appends the `[env]` table at dispatch time and TOML forbids declaring
+    #    a table twice, so a host-local file carrying its own `[env]` block
+    #    collides and takes down every dispatch that reads it. Asserted
+    #    because an adopter told to copy a working file verbatim reproduces
+    #    exactly that block.
+    assert "`[env]` table" in doc
 
 
 def test_document_states_that_a_target_local_workflow_is_resolved_automatically() -> None:
