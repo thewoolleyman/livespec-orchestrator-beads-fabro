@@ -40,6 +40,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurements import (
+    MEASUREMENT_FORGE_PULL_REQUEST,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records import (
     PRESERVED_WORK_ABSENT,
     RECOVERY_ROUTE_STAGE,
@@ -49,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_release imp
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import (
     ROUTE_FRESH,
+    ROUTE_HELD,
     RecoveryResume,
     RecoveryRoute,
 )
@@ -63,9 +67,16 @@ _LATER_DISPATCH = "b7395318d0c945589105940e7936139f"
 
 
 class _Shell:
-    """A scripted subprocess seam; see the sibling module for why state is class-level."""
+    """A scripted subprocess seam; see the sibling module for why state is class-level.
+
+    An unscripted argv answers an empty exit 0 HERE, unlike the wave modules'
+    seams, because two cases below are about reads that find NOTHING rather than
+    reads that fail — and `calls` is what lets a read that must not have happened
+    at all be asserted as an absence of its own.
+    """
 
     answers: ClassVar[dict[str, CommandResult]] = {}
+    calls: ClassVar[list[str]] = []
 
     def run(
         self,
@@ -78,6 +89,7 @@ class _Shell:
     ) -> CommandResult:
         _ = cwd, timeout_seconds, env, stdin
         joined = " ".join(argv)
+        _Shell.calls.append(joined)
         for needle, result in _Shell.answers.items():
             if needle in joined:
                 return result
@@ -169,36 +181,60 @@ def test_another_items_release_does_not_release_this_one() -> None:
     assert released_for_recovery(records=_released_history(), work_item_id="bd-ib-other") is False
 
 
-def test_a_released_item_whose_forge_cannot_be_asked_is_routed_fresh(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A refused resume falls through to a plain dispatch and journals no resume.
-
-    The forge listing fails, which is the resume's first measurement, so the
-    ladder refuses and there is no anchor to act on. What this case pins is that
-    routing does NOT journal a `resume` record it cannot honour: a record written
-    there would link the earlier run's identifiers to a dispatch that started
-    from `start` on the default branch, and the acceptance pass would then grade
-    this run's merge on the earlier run's proof.
-    """
+def _route(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> routing.RecoveryRouting:
+    """Route the one released candidate against whatever `_Shell` is scripted with."""
     journal = _journal(tmp_path=tmp_path, records=_released_history())
-    _Shell.answers = {"gh pr list": CommandResult(exit_code=1, stdout="", stderr="boom")}
+    _Shell.calls = []
     monkeypatch.setattr(ShellCommandRunner, "run", _Shell.run)
-
-    routed = routing.route_recovery(
+    return routing.route_recovery(
         args=_args(repo=tmp_path, journal=journal),
         repo=tmp_path,
         candidates=[_work_item()],
         journal=journal,
     )
 
+
+def test_a_released_item_whose_forge_listing_fails_is_held_before_anything_else(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The FORGE measurement, named, and the reads below it never spent.
+
+    `test_dispatcher_recovery_routing_unobservable.py` drives the factory read
+    through a whole wave; this is the forge half, which fails one step earlier —
+    and the claim it adds is that nothing BELOW the failed measurement is
+    attempted, so a hold does not pay for origin round trips whose answers could
+    not be used anyway.
+    """
+    _Shell.answers = {"gh pr list": CommandResult(exit_code=1, stdout="", stderr="boom")}
+
+    routed = _route(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    route = routed.route_for(work_item_id=_ITEM_ID)
+
+    assert route is not None
+    assert route.route == ROUTE_HELD
+    assert route.hold is not None
+    assert [one.name for one in route.hold.measurements] == [MEASUREMENT_FORGE_PULL_REQUEST]
+    assert [call for call in _Shell.calls if "ls-remote" in call] == []
+
+
+def test_a_fallback_permitting_refusal_with_no_preserved_work_is_fresh_with_the_loss_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every read answered, the branch carries no pull request, nothing was preserved.
+
+    This is the one route that discards work, so it is the one that has to be
+    earned: the refusal is fallback-permitting, every preserved-work source was
+    asked, and each named nothing. The route carries that finding, which is the
+    clause's "with that loss recorded".
+    """
+    _Shell.answers = {"gh pr list": CommandResult(exit_code=0, stdout="[]", stderr="")}
+
+    routed = _route(tmp_path=tmp_path, monkeypatch=monkeypatch)
+
     assert routed.route_for(work_item_id=_ITEM_ID) == RecoveryRoute(
         work_item_id=_ITEM_ID, route=ROUTE_FRESH, preserved_work=PRESERVED_WORK_ABSENT
     )
-    # Neither record is written at the measurement: the valve has not decided
-    # anything yet, so a route this pass may not launch carries nothing out of it.
-    assert _rows(journal=journal, stage="resume") == ()
-    assert _rows(journal=journal, stage=RECOVERY_ROUTE_STAGE) == ()
+    assert len([call for call in _Shell.calls if "ls-remote" in call]) == 3
     # A `fresh` item IS reclaimed for: clearing the dead run's branch is what
     # lets the new run's `publish_draft` push a plain fast-forward.
     assert routed.reclaims(work_item_id=_ITEM_ID) is True

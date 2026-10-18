@@ -52,6 +52,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurements import (
+    MEASUREMENT_PRESERVED_WORK,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records import (
     RECOVERY_HELD_STAGE,
     recovery_held_record,
@@ -64,7 +67,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
     RecoveryRoute,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routing import (
-    MEASUREMENT_PRESERVED_WORK,
     RecoveryRouting,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass

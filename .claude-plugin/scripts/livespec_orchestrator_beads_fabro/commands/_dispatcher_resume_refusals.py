@@ -34,6 +34,19 @@ which "requires a real merge and stays the only valve for one". Naming a plain
 dispatch for a merged pull request sends an operator to cut an empty branch
 against work that has already landed, and to spend an `acceptance_rework_cap`
 attempt failing.
+
+WHY THREE ARMS ARE PUBLIC WHILE THE REST ARE PRIVATE. Recovery routing has to
+CLASSIFY these refusals — the contracts section "Factory-configurable ACP
+fallback priority" grades each one as fallback-permitting, non-fallback, or an
+unobservable measurement, and routes on the class. It must do so without
+re-wording any of them, because that clause requires a held item's record to
+carry "every applicable non-fallback refusal with its EXISTING remedy in the
+order the resume's refusals are listed". The arms that render an
+unobservable-measurement refusal are therefore a real interface rather than
+internals: a classifier reaching for them privately is what the private-calls
+gate forbids, and a classifier that respelled their text would be a second
+account of one measurement — free to drift from the refusal an operator reads
+here.
 """
 
 from __future__ import annotations
@@ -47,6 +60,9 @@ __all__: list[str] = [
     "PR_STATE_OPEN",
     "LiveRun",
     "ResumeObservation",
+    "anchor_refusals",
+    "head_refusals",
+    "liveness_refusals",
     "resume_refusals",
 ]
 
@@ -146,10 +162,10 @@ def resume_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
     """
     return (
         *_status_refusals(observation=observation),
-        *_anchor_refusals(observation=observation),
-        *_head_refusals(observation=observation),
+        *anchor_refusals(observation=observation),
+        *head_refusals(observation=observation),
         *_definition_of_done_refusals(observation=observation),
-        *_liveness_refusals(observation=observation),
+        *liveness_refusals(observation=observation),
         *_lock_refusals(observation=observation),
         *_pull_request_state_refusals(observation=observation),
         *_resume_chain_refusals(observation=observation),
@@ -183,7 +199,7 @@ def _status_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
     return (parked,)
 
 
-def _anchor_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
+def anchor_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
     """The nothing-to-resume-from refusals: no open pull request, or no head.
 
     Two refusals rather than one because the remedy is the same but the FACT is
@@ -260,7 +276,7 @@ def _headless_refusal(*, observation: ResumeObservation) -> str:
     )
 
 
-def _head_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
+def head_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
     """The moved-head refusal, and the forge-unobservable refusal in its place.
 
     A `pr` node that rebased and pushed before terminating leaves exactly the
@@ -308,7 +324,7 @@ def _definition_of_done_refusals(*, observation: ResumeObservation) -> tuple[str
     return (changed,)
 
 
-def _liveness_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
+def liveness_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
     """The live-earlier-run refusal, and the factory-unobservable one in its place.
 
     This runs AFTER the dispatch preamble's orphan reconciliation, so a run named
