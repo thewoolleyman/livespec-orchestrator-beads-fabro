@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.213.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.212.0...v0.213.0) (2026-10-18)
+
+
+### Features
+
+* **dispatcher:** decide and record one terminated run's tree preservation ([580fc12](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/580fc126e85ab40ff42a0e1906893c6ac19ef031))
+* **dispatcher:** decide which checkpoint-failed runs need their tree preserved ([d3d2907](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d3d2907d97705af94df6111914b3107da1a12ac8))
+* **dispatcher:** preserve a terminated run's work by pointer and by tree ([f2126dd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f2126ddb5c5b54bf72b9e7b6ae3f6550612ece0c))
+* **dispatcher:** publish a checkpoint-failed run's tree through the forge Git Data API ([52bc727](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/52bc7272ede97efb7484b78e55bb76e24f956308))
+* **dispatcher:** read a checkpoint-failed run's changed files from its factory ([4656840](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4656840ae70852f94b6505c19b5f4934bb2905c6))
+* **dispatcher:** read the base commit a checkpoint-failed run's sandbox was staged at ([6b15e92](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6b15e921850e9edb579918f8070dd694a2f1928d))
+* **dispatcher:** record a failed tree preservation and name the step that failed ([b6fed17](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b6fed1795e0fdb0d3e5c764a2c4dd3ef4a11a8c1))
+* **dispatcher:** record a successful tree preservation on the work-item ([a038b00](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a038b00f9248d9ab6881159a334e300412ad7d32))
+
 ## [0.212.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.211.6...v0.212.0) (2026-10-18)
 
 
