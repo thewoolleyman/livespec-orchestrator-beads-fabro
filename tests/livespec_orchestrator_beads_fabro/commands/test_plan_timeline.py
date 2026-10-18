@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import (
@@ -38,6 +39,18 @@ def _config() -> StoreConfig:
     )
 
 
+def _result_repo() -> str:
+    """The repository identity a required result may name in these fixtures.
+
+    `_config()` carries no `repo_root`, so a plan write resolves its result
+    repository against the invoking checkout, whose own directory name is the
+    identity the shared authoritative result reader resolves there. A
+    placeholder the reader could never resolve is refused at the write
+    (`bd-ib-eebjcl`), because every observation of it would be unobservable.
+    """
+    return Path.cwd().name
+
+
 def _fake() -> FakeBeadsClient:
     client = make_beads_client(config=_config())
     assert isinstance(client, FakeBeadsClient)
@@ -71,7 +84,7 @@ def test_timeline_ignores_non_plan_comments() -> None:
             ref="bd-ib-plan.1",
             text="Continue with the scoped child.",
             required_result={
-                "repo": "repo",
+                "repo": _result_repo(),
                 "item_status": {"item_id": "bd-ib-plan", "status": "closed"},
             },
             budget={"deadline": "2099-08-11T00:00:00Z", "max_handoffs": 3},

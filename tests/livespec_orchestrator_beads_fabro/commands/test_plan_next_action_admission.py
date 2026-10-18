@@ -1,0 +1,193 @@
+"""The repository identity a plan pointer's required result names, at write time.
+
+The typed `next_action` writer graded a `required_result`'s `repo` field as any
+non-empty string, while the shared authoritative result reader resolves only the
+identities `_plan_result_repository` enumerates. So a value the writer ACCEPTED
+could be one the reader can never resolve, and every later observation of it read
+`unobservable` from repository resolution — which `resume_directive` answers by
+withholding dispatch until the budget deadline, while a correction is refused by
+design because the obligation it would replace is itself unobservable. One
+malformed field therefore locked the obligation for its whole budget, measured
+2026-10-18 on plan epic `bd-ib-6tcjfx`, whose pointer named the project's own
+repository in the full `owner/name` form.
+
+EVERY CASE DRIVES A PUBLIC WRITER — `set_next_action` — rather than the admission
+in isolation, because the defect was a DISAGREEMENT between a writer and a reader
+and only the writer's own path establishes which side this repository takes. The
+accepted-result case then reads the obligation back through `resume_directive`,
+the surface whose withheld dispatch was the measured cost.
+
+THE POSITIVE CONTROL IS LOAD-BEARING. A writer that refused every repository
+identity would satisfy every refusal case here, so the project's own bare
+directory name is written into the same tenant and asserted both ACCEPTED and
+OBSERVED through the ledger.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+from livespec_orchestrator_beads_fabro._beads_client import (
+    FakeBeadsClient,
+    IssueDraft,
+    make_beads_client,
+    reset_fake_singleton,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
+    chain_cache_metadata,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_tokens import create_token
+from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
+    NextAction,
+    ResumeDirective,
+    resume_directive,
+    set_next_action,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_next_action_validation import (
+    NextActionRefusal,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
+    OBSERVATION_SATISFIED,
+    OBSERVATION_UNSATISFIED,
+    SOURCE_LEDGER,
+    SOURCE_REPOSITORY_RESOLUTION,
+)
+from livespec_orchestrator_beads_fabro.types import StoreConfig
+
+_PROJECT_NAME = "repo"
+# The project's own repository written as a forge path. It is the exact shape the
+# measured incident carried, and the reader resolves a BARE repository name, so
+# this identity is unresolvable however correct it looks to its author.
+_OWNER_PATH = f"thewoolleyman/{_PROJECT_NAME}"
+_CONTROL_EPIC = "bd-ib-admitcontrol"
+_CONTROL_TARGET = "bd-ib-admitcontroltarget"
+_PATH_EPIC = "bd-ib-admitpath"
+_PATH_TARGET = "bd-ib-admitpathtarget"
+_SESSION = "claude:plan-admission"
+_NOW = "2026-10-18T18:30:00Z"
+# Far enough ahead that the resume's own real-clock expiry reading can never
+# reach it, so a withheld dispatch here is never an expired budget.
+_FAR_FUTURE = "2099-01-01T00:00:00Z"
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_backend(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
+    reset_fake_singleton()
+    yield
+    reset_fake_singleton()
+
+
+def _fake(*, config: StoreConfig) -> FakeBeadsClient:
+    client = make_beads_client(config=config)
+    assert isinstance(client, FakeBeadsClient)
+    return client
+
+
+def _project(*, tmp_path: Path) -> StoreConfig:
+    repo = tmp_path / _PROJECT_NAME
+    repo.mkdir()
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
+    return store_config(repo=repo)
+
+
+def _seed_epic(*, config: StoreConfig, epic_id: str, target_id: str) -> None:
+    """One plan epic carrying an authority chain, plus the item its result names."""
+    fake = _fake(config=config)
+    for issue_id, status in ((epic_id, "active"), (target_id, "ready")):
+        _ = fake.create_issue(
+            draft=IssueDraft(
+                issue_id=issue_id,
+                issue_type="epic" if issue_id == epic_id else "feature",
+                title=issue_id,
+                description="Definition of Done\n\n- A thing holds.",
+                assignee=None,
+                created_at="2026-10-18T08:00:00Z",
+                metadata={"rank": "a0"},
+            )
+        )
+        fake.update_issue(issue_id=issue_id, status=status)
+    genesis = create_token(client=fake)
+    fake.update_issue(
+        issue_id=epic_id,
+        metadata=chain_cache_metadata(
+            existing_metadata={"rank": "a0"},
+            latest_closed=None,
+            current=genesis,
+        ),
+    )
+
+
+def _action(*, target_id: str, repo: str) -> NextAction:
+    return NextAction(
+        kind="impl",
+        ref=target_id,
+        text="Keep driving the slice.",
+        required_result={"repo": repo, "item_status": {"item_id": target_id, "status": "done"}},
+        budget={"deadline": _FAR_FUTURE, "max_handoffs": 5},
+    )
+
+
+def _write_and_resume(
+    *,
+    config: StoreConfig,
+    epic_id: str,
+    target_id: str,
+    repo: str,
+) -> tuple[NextActionRefusal | None, ResumeDirective]:
+    _seed_epic(config=config, epic_id=epic_id, target_id=target_id)
+    refusal = set_next_action(
+        config=config,
+        epic_id=epic_id,
+        action=_action(target_id=target_id, repo=repo),
+        session=_SESSION,
+        now=_NOW,
+    )
+    return refusal, resume_directive(config=config, epic_id=epic_id, unattended=True)
+
+
+def test_a_required_result_the_writer_accepts_is_read_as_observed(tmp_path: Path) -> None:
+    """Every accepted pointer is read as satisfied or unsatisfied, never unresolvable.
+
+    The two writes go into ONE tenant and differ only in the repository identity
+    their required result names. The control names the project's own directory
+    name and must be accepted AND observed; the candidate names the same
+    repository as a forge path, which the reader cannot resolve — so the writer
+    must not accept it, because an accepted-then-unobservable obligation is
+    exactly the state that locks a plan for its whole budget.
+    """
+    config = _project(tmp_path=tmp_path)
+    control = _write_and_resume(
+        config=config,
+        epic_id=_CONTROL_EPIC,
+        target_id=_CONTROL_TARGET,
+        repo=_PROJECT_NAME,
+    )
+    candidate = _write_and_resume(
+        config=config,
+        epic_id=_PATH_EPIC,
+        target_id=_PATH_TARGET,
+        repo=_OWNER_PATH,
+    )
+
+    for refusal, directive in (control, candidate):
+        if refusal is not None:
+            continue
+        findings = "\n".join(directive.findings)
+        assert f"source={SOURCE_REPOSITORY_RESOLUTION}" not in findings, findings
+        assert directive.observation is not None, directive
+        assert directive.observation.status in (
+            OBSERVATION_SATISFIED,
+            OBSERVATION_UNSATISFIED,
+        ), directive.observation
+    control_refusal, control_directive = control
+    assert control_refusal is None, control_refusal
+    assert control_directive.observation is not None, control_directive
+    assert control_directive.observation.status == OBSERVATION_UNSATISFIED
+    assert control_directive.observation.source == SOURCE_LEDGER

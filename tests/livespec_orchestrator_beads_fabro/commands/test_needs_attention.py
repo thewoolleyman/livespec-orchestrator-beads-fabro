@@ -34,6 +34,18 @@ def _config() -> StoreConfig:
     )
 
 
+def _result_repo() -> str:
+    """The repository identity a required result may name in these fixtures.
+
+    `_config()` carries no `repo_root`, so a plan write resolves its result
+    repository against the invoking checkout, whose own directory name is the
+    identity the shared authoritative result reader resolves there. A
+    placeholder the reader could never resolve is refused at the write
+    (`bd-ib-eebjcl`), because every observation of it would be unobservable.
+    """
+    return Path.cwd().name
+
+
 def _seed(item: WorkItem) -> None:
     append_work_item(path=_config(), item=item)
 
@@ -296,7 +308,7 @@ def test_build_attention_reads_ledger_held_plan_without_handoff_file(
             ref="bd-plan",
             text="Keep driving bd-plan.",
             required_result={
-                "repo": "repo",
+                "repo": _result_repo(),
                 "item_status": {"item_id": "bd-plan", "status": "closed"},
             },
             budget={"deadline": "2099-08-11T00:00:00Z", "max_handoffs": 3},
@@ -340,7 +352,7 @@ def test_build_attention_surfaces_a_live_plan_with_an_insufficient_newest_handof
             ref="bd-ib-qfv9.1",
             text="Implement it.",
             required_result={
-                "repo": "repo",
+                "repo": _result_repo(),
                 "item_status": {"item_id": "bd-plan", "status": "closed"},
             },
             budget={"deadline": "2099-08-11T00:00:00Z", "max_handoffs": 3},
