@@ -525,7 +525,8 @@ def test_scenario191_a_cluster_row_uses_the_last_valid_state_bearing_verdict_lin
         suite=_gate_with_two_verdict_lines(first_state="PASSED", last_state="FAILED"),
     )
 
-    assert revised.row.get(_GATE_STATE_FIELD) == "PASSED"
+    assert revised.row.get(_GATE_STATE_FIELD) == "FAILED"
+    assert (revised.outcome.status, revised.outcome.stage) == ("failed", _JANITOR_STAGE)
 
 
 def test_scenario191_a_host_local_row_carries_no_gate_field_at_all(tmp_path: Path) -> None:
