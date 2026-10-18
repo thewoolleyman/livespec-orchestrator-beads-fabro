@@ -5,6 +5,13 @@ when the run conclusion only says the terminal has no outgoing fail edge.
 Read that field, never command.started's script source (which contains every
 sentinel by construction). The port has already normalized the event stream.
 
+BOTH ENGINES' RECORD SHAPES ARE READ HERE, and the Petri-era one is the reason
+this module has a per-record reading at all rather than four inline `get`s. That
+engine wraps every record in an envelope, renames the ending, and renames the
+node, so a reader written against the pinned spelling returns a clean,
+plausible "this node recorded nothing" for every node of every run it is given
+— see `_event_record`, `_records_a_failure` and `_event_node`.
+
 THE RUN CONCLUSION IS THE WRONG PLACE TO ASK WHY A RUN WAS ROUTED HERE, and
 that is the second reading this module exists for. `needs_human` is a dead-end
 script that exits 1 by design, so on an engine-routed ending the conclusion's
@@ -55,6 +62,23 @@ __all__: list[str] = [
     "terminal_event_output",
 ]
 
+# Where a record's event name lives, in the descending preference the stall
+# reader and the open-command-node reader already use, so one stream shape is
+# not read three ways.
+_NAME_KEYS: tuple[str, ...] = ("event", "name", "event_name", "type")
+
+# The two engines' spellings of the node a record belongs to. `node_id` is the
+# pinned engine's; `firing` is the Petri-era engine's own word for the
+# transition that ran, measured on its `step.started` body (research note 006).
+_NODE_KEYS: tuple[str, ...] = ("node_id", "firing")
+
+# The two engines' spellings of a FAILED stage ending. The pinned engine NAMES
+# the event (bare `stage.failed` or namespaced `fabro.stage.failed`, hence the
+# suffix match); the Petri-era engine names every ending `step.finished` and
+# carries the verdict in `outcome`.
+_FAILED_NAME_SUFFIX = "stage.failed"
+_FAILED_OUTCOME = "failed"
+
 
 def terminal_event_output(*, payload: object | None) -> str:
     """The latest terminal stage's emitted sentinel lines, or no observation."""
@@ -87,10 +111,21 @@ def routing_stage_failure(
     own failure lives, so the fallback would report the exact sentence this
     reader exists to suppress — and would report it indistinguishably from a
     genuine attribution.
+
+    THE TERMINAL IS REFUSED THROUGH `graph_node_id` AND NEVER BY A DIRECT
+    COMPARISON, which is what keeps the Petri-era read below SAFE. That engine
+    spells the same node `needs_human@1`, so a bare equality test matches
+    nothing and the refusal silently stops refusing — and the terminal's own
+    designed `exit 1` would then be reported as this ending's innermost cause,
+    which is strictly worse than naming none: it is true of every needs-human
+    ending there has ever been, so it reads as a finding while carrying no
+    information. `_fabro_terminal_evidence` excludes the terminal from the
+    verdict this `stage` comes off too, so the two exclusions are belt and
+    braces; this one must still be able to fire.
     """
     routed = (
         None
-        if stage == ESCALATION_NODE_ID
+        if graph_node_id(node=stage) == ESCALATION_NODE_ID
         else _routed_failure(
             inspect_payload=inspect_payload,
             events_payload=events_payload,
@@ -178,7 +213,7 @@ def _failure_detail(*, block: dict[str, object]) -> FabroFailureDetail | None:
 
 
 def _stage_failures(*, payload: object | None, node: str) -> tuple[dict[str, object], ...]:
-    """Every stage.failed failure block one node recorded, oldest first.
+    """Every failed-stage failure block one node recorded, oldest first.
 
     The node match is normalized on BOTH sides because the two engines spell a
     stage differently: the pinned engine keys its outcome map `implement` while
@@ -187,6 +222,15 @@ def _stage_failures(*, payload: object | None, node: str) -> tuple[dict[str, obj
     therefore cannot match a Petri-derived `stage` against any event it was
     looking for, and would report a clean, plausible "this node recorded
     nothing" for a node whose failure is right there.
+
+    EVERY OTHER FIELD IS READ THROUGH THE SAME TOLERANCE, because normalizing
+    the node alone was not enough and the shortfall was measured. On the
+    Petri-era engine this reader returned nothing for EVERY node of EVERY run —
+    the envelope hides the event's own fields (`_event_record`), the ending is
+    named `step.finished` rather than `stage.failed`, and the node is named
+    `firing` — so a needs-human record written on that engine carried no
+    innermost cause at all, with no error and nothing to say one was missing
+    (`bd-ib-3nu5vv`, measured on hp-candidate).
     """
     if not isinstance(payload, list):
         return ()
@@ -195,16 +239,84 @@ def _stage_failures(*, payload: object | None, node: str) -> tuple[dict[str, obj
     for raw in cast("list[object]", payload):
         if not isinstance(raw, dict):
             continue
-        event = cast("dict[str, object]", raw)
-        properties = _mapping(value=event.get("properties"))
-        name = event.get("event", event.get("name", event.get("event_name", event.get("type"))))
-        event_node = event.get("node_id", properties.get("node_id"))
-        if not isinstance(name, str) or not name.endswith("stage.failed"):
+        record = _event_record(envelope=cast("dict[str, object]", raw))
+        event_node = _event_node(record=record)
+        if not _records_a_failure(record=record):
             continue
-        if not isinstance(event_node, str) or graph_node_id(node=event_node) != wanted:
+        if event_node is None or graph_node_id(node=event_node) != wanted:
             continue
-        failures.append(_mapping(value=properties.get("failure", event.get("failure"))))
+        failures.append(_event_failure_block(record=record))
     return tuple(failures)
+
+
+def _event_record(*, envelope: dict[str, object]) -> dict[str, object]:
+    """One event's OWN fields, unwrapped from the Petri-era envelope.
+
+    The pinned engine prints the event, so its record is the mapping as it
+    stands. The Petri-era engine prints an ENVELOPE — `{run_id, stream_seq,
+    kind, id, recorded_at, item: {seq, recorded_at, record: {kind, body}}}`,
+    measured on v0.378.0-nightly.0 (research note 006) and already relied on by
+    the stall watchdog's `recorded_at` reading — and puts every field this
+    reader needs two levels in, under `item.record.body`.
+
+    An envelope whose body is unreadable falls back to the envelope itself,
+    which matches NOTHING rather than half-matching: the envelope's own `kind`
+    duplicates the body's event name but carries neither the node nor the
+    failure, so a record assembled from it would name a stage and no cause.
+    """
+    item = _mapping(value=envelope.get("item"))
+    record = _mapping(value=item.get("record"))
+    return _mapping(value=record.get("body")) or envelope
+
+
+def _records_a_failure(*, record: dict[str, object]) -> bool:
+    """Whether this event record is one node's FAILED ending.
+
+    BOTH spellings are tested because neither subsumes the other: reading only
+    the event NAME sees no failure on the Petri-era engine, whose endings are
+    all called `step.finished`, and reading only the `outcome` sees none on the
+    pinned engine, whose stage events carry no such field. A succeeded Petri
+    ending carries `outcome: "succeeded"` on that same field and so matches
+    neither arm.
+    """
+    name = _event_text(record=record, keys=_NAME_KEYS)
+    if name is not None and name.endswith(_FAILED_NAME_SUFFIX):
+        return True
+    outcome = _event_text(record=record, keys=("outcome",))
+    return outcome is not None and outcome.casefold() == _FAILED_OUTCOME
+
+
+def _event_node(*, record: dict[str, object]) -> str | None:
+    """The node this event belongs to, under either engine's key, or None.
+
+    `None` for a record naming no node is what keeps an unattributable event
+    out of every node's failure list: the whole read is node-scoped, so a
+    record that cannot be placed must not be placed anywhere.
+    """
+    return _event_text(record=record, keys=_NODE_KEYS)
+
+
+def _event_failure_block(*, record: dict[str, object]) -> dict[str, object]:
+    """This record's failure block, nested under `properties` or beside it."""
+    properties = _mapping(value=record.get("properties"))
+    return _mapping(value=properties.get("failure", record.get("failure")))
+
+
+def _event_text(*, record: dict[str, object], keys: tuple[str, ...]) -> str | None:
+    """The first of `keys` carrying non-blank text, read beside the record then
+    under its `properties`.
+
+    The record's own level is preferred because the engine puts `node_id` on
+    the envelope of its stage events while other event families nest their
+    fields — the same order `_dispatcher_stall_run_reading` reads them in, so
+    one stream shape is not read two ways.
+    """
+    for source in (record, _mapping(value=record.get("properties"))):
+        for key in keys:
+            value = source.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
 
 
 def _mapping(*, value: object) -> dict[str, object]:
