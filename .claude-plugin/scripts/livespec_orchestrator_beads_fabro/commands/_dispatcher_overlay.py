@@ -150,6 +150,12 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     dispatch_id: str | None = None,
     proof_store_env: str = "",
     proof_credentials_env: str = "",
+    # The `factory_captured` assertions the sandbox's own per-assertion grade
+    # reads a record's verdicts for, already rendered as an env line: the
+    # derivation reads a WORK-ITEM and this builder is handed none. A caller
+    # rendering none projects nothing, which the grade reads as an UNESTABLISHED
+    # question and fails closed on rather than as an empty set (bd-ib-kcq6pu).
+    proof_grade_env: str = "",
     git_author: GitAuthor | None = None,
     credential_use: CredentialUseDeclaration | None = None,
     resume_checkout: ResumeCheckout | None = None,
@@ -367,6 +373,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + codex_otel_env
         + credential_use_env
         + proof_store_env
+        + proof_grade_env
         # A resumed clone has no publication file from the earlier run. Both
         # publication stages consume this validated anchor as their fallback;
         # never infer it from a branch tip that may have moved since validation.

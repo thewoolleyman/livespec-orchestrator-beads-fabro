@@ -51,6 +51,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projecti
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_record import RecordedDispatch
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_grade_program import (
+    proof_grade_assertions_env_lines,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
     journaled_proof_rendering,
     publish_branch_for,
@@ -188,4 +191,12 @@ def materialize_dispatch_overlay(*, overlay: DispatchOverlay) -> str | None:
         # and without this projection it falls back to the publish branch name
         # as its title and keeps `publish_draft`'s placeholder body.
         publication_metadata=publication_metadata_for(item=overlay.item),
+        # The item's `factory_captured` assertions, for the sandbox's own
+        # per-assertion grade of the verified record. Rendered HERE for the same
+        # reason the publication metadata above is: this is the one call site
+        # holding the work-item, `proof_grade` is a command node that cannot read
+        # the rendered goal, and judging a record against the assertions the
+        # RECORD happens to list is the fail-open this grade exists to close
+        # (bd-ib-kcq6pu).
+        proof_grade_env=proof_grade_assertions_env_lines(item=overlay.item),
     )

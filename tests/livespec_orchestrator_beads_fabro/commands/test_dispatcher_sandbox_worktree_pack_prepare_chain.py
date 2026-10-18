@@ -379,6 +379,15 @@ def _materialized_pack_argv(*, rendered: str) -> list[list[str]]:
     cannot hide the step being looked for. The positive cases above are what hold
     that claim: if the renderer ever stopped emitting a basic string, they fail
     rather than reporting an absence.
+
+    THE RECIPE IS LOOKED FOR IN THE SCRIPT TEXT, AND THAT IS WHAT SELECTS A STEP;
+    tokenizing happens only to the step already selected. A sibling block's basic
+    string may carry a QUOTED HEREDOC whose payload is arbitrary text — the
+    proof-grade block ships the record reader's own source that way
+    (bd-ib-kcq6pu) — and `shlex` cannot model a heredoc, so an apostrophe in that
+    payload raises `No closing quotation` and this helper would report an
+    instrument failure for every case rather than an answer about this block. A
+    payload the shell never lexes must not decide whether this scan can run.
     """
     materialized = rendered[rendered.index(_MATERIALIZED_MARKER) :]
     recipe = SANDBOX_CHECKOUT_PROVISION_DEFAULT[-1]
@@ -389,9 +398,9 @@ def _materialized_pack_argv(*, rendered: str) -> list[list[str]]:
             continue
         script = json.loads(line[len("script = ") :])
         assert isinstance(script, str)
-        tokens = shlex.split(script)
-        if recipe in tokens:
-            argv.append(tokens)
+        if recipe not in script:
+            continue
+        argv.append(shlex.split(script))
     return argv
 
 

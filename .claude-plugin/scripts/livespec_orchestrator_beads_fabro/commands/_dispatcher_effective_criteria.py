@@ -64,6 +64,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria 
     criteria_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    PROOF_MODE_FACTORY_CAPTURED,
     PROOF_MODE_HOST_CAPTURED,
     PROOF_MODE_HUMAN_ATTESTED,
     definition_of_done,
@@ -147,6 +148,18 @@ class EffectiveCriteria:
     def gradeable(self) -> bool:
         """Whether the set carries at least one gradeable assertion."""
         return bool(self.assertions)
+
+    @property
+    def factory_captured_assertions(self) -> tuple[str, ...]:
+        """The assertions the factory legs capture and replay, in section order.
+
+        Empty for a legacy source, exactly as the two projections below are: such
+        an item declares no mode at all, so it is graded by merged-diff
+        vocabulary rather than by a Proof of Done record, and the sandbox's own
+        per-assertion grade (`_dispatcher_proof_grade_program`) therefore has
+        nothing to read a verdict for.
+        """
+        return self._with_mode(mode=PROOF_MODE_FACTORY_CAPTURED)
 
     @property
     def host_captured_assertions(self) -> tuple[str, ...]:
