@@ -1,8 +1,8 @@
 """What one surveyed dispatch claim earns: a recovery route, or a named hold.
 
 PURE. Every measurement the ladder reads is taken elsewhere and handed in, so
-each of the fourteen holds and the release route is exercisable without a
-factory, a forge, a lock or a ledger — which is the only way a condition
+each of the fourteen holds and both absent-run routes is exercisable without
+a factory, a forge, a lock or a ledger — which is the only way a condition
 ladder whose whole job is to not act can be checked at all.
 
 THE ORDER IS THE CONTRACT'S OWN, and it is load-bearing rather than tidy.
@@ -49,11 +49,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatching_host imp
 
 __all__: list[str] = [
     "ACTION_ABSENT_RUN_RELEASE",
+    "ACTION_ABSENT_RUN_REPEATED",
     "ATTRIBUTION_PENDING_REMEDY",
     "FORGE_MERGED_PR",
     "FORGE_NO_MERGED_PR",
     "FORGE_UNOBSERVABLE",
+    "HISTORY_ABSENT_RUN_RELEASE",
     "HISTORY_NO_PREDECESSOR",
+    "HISTORY_OTHER_OUTCOME",
     "HISTORY_UNAVAILABLE",
     "HOLD_ATTRIBUTION_PENDING",
     "HOLD_CLAIM_CHANGED",
@@ -153,6 +156,8 @@ FORGE_MERGED_PR = "merged-pr"
 FORGE_UNOBSERVABLE = "unobservable"
 
 HISTORY_NO_PREDECESSOR = "no-predecessor"
+HISTORY_ABSENT_RUN_RELEASE = "absent-run-release"
+HISTORY_OTHER_OUTCOME = "other-outcome"
 HISTORY_UNAVAILABLE = "unavailable"
 
 # Every status kind under which the factory is reporting a run that has NOT
@@ -176,10 +181,13 @@ LIVE_RUN_STATUS_KINDS: frozenset[str] = frozenset(
 _SUCCEEDED_RUN_STATUS_KINDS: frozenset[str] = frozenset({"succeeded"})
 
 # ---------------------------------------------------------------------------
-# The recovery route this subsection owns.
+# The two absent-run routes. They are PEERS rather than a route and its
+# refusal: the release returns the item to the queue and the repeat rests it
+# for a human, and which one a claim earns is decided by its predecessor.
 # ---------------------------------------------------------------------------
 
 ACTION_ABSENT_RUN_RELEASE = "absent-run-release"
+ACTION_ABSENT_RUN_REPEATED = "absent-run-repeated"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -322,4 +330,6 @@ def _absent_run_grade(*, measurements: ClaimMeasurements) -> ClaimRoute | ClaimH
         return ClaimHold(reason=HOLD_MERGED_PR)
     if measurements.predecessor == HISTORY_UNAVAILABLE:
         return ClaimHold(reason=HOLD_HISTORY_UNAVAILABLE)
+    if measurements.predecessor == HISTORY_ABSENT_RUN_RELEASE:
+        return ClaimRoute(action=ACTION_ABSENT_RUN_REPEATED)
     return ClaimRoute(action=ACTION_ABSENT_RUN_RELEASE)
