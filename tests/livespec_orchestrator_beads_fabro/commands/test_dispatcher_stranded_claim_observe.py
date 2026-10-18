@@ -220,3 +220,56 @@ def test_a_journal_line_that_is_not_a_mapping_is_dropped_rather_than_raising(
     _ = path.write_text('{"stage": "one"}\nnot json\n[1, 2]\n', encoding="utf-8")
 
     assert module.journal_records_or_none(journal_path=path) == ({"stage": "one"},)
+
+
+@pytest.mark.parametrize(
+    ("records", "expected"),
+    [
+        (None, "unavailable"),
+        ((), "unavailable"),
+        (({"stage": "dispatch-id", "work_item_id": "bd-ib-other"},), "unavailable"),
+        (({"stage": "dispatch-id", "work_item_id": _ITEM_ID},), "no-predecessor"),
+        (
+            (
+                {"stage": "dispatch-id", "work_item_id": _ITEM_ID},
+                {"stage": "outcome", "work_item_id": _ITEM_ID},
+                {"stage": "dispatch-id", "work_item_id": _ITEM_ID},
+            ),
+            "other-outcome",
+        ),
+        (
+            (
+                {"stage": "dispatch-id", "work_item_id": _ITEM_ID},
+                {"stage": "stranded-claim-release", "work_item_id": _ITEM_ID},
+                {"stage": "dispatch-id", "work_item_id": _ITEM_ID},
+            ),
+            "absent-run-release",
+        ),
+    ],
+)
+def test_the_predecessor_reading_is_about_the_preceding_dispatch(
+    *,
+    records: tuple[dict[str, object], ...] | None,
+    expected: str,
+) -> None:
+    module = _module()
+
+    assert module.observe_predecessor_history(records=records, work_item_id=_ITEM_ID) == expected
+
+
+def test_a_release_outside_the_preceding_segment_is_not_the_predecessors_ending() -> None:
+    """A lifetime count would disagree, and the clause says PRECEDING."""
+    module = _module()
+    records = (
+        {"stage": "dispatch-id", "work_item_id": _ITEM_ID},
+        {"stage": "stranded-claim-release", "work_item_id": _ITEM_ID},
+        {"stage": "dispatch-id", "work_item_id": _ITEM_ID},
+        {"stage": "outcome", "work_item_id": _ITEM_ID},
+        {"stage": "dispatch-id", "work_item_id": _ITEM_ID},
+    )
+
+    # The release sits two dispatches back, so the PRECEDING dispatch ended some
+    # other way and the next absent run earns a release rather than a rest.
+    assert module.observe_predecessor_history(records=records, work_item_id=_ITEM_ID) == (
+        "other-outcome"
+    )

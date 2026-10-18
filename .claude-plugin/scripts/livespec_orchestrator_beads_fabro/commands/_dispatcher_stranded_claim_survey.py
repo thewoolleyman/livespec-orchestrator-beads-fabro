@@ -17,9 +17,9 @@ enumerates terminal runs, which is what makes a run id absent from an answered
 listing POSITIVELY absent rather than merely unseen.
 
 EVERY EXPENSIVE MEASUREMENT IS CONDITIONAL, and the conditions are the grading
-ladder's own. The forge is asked only about an ABSENT run, because the
-merged-pull-request question is one of the absent-run release's preconditions
-and nothing else reads it. The attribution holds are graded FIRST, through the
+ladder's own. The forge and the predecessor history are read only for an ABSENT
+run, because only that branch of the ladder consults either. The attribution
+holds are graded FIRST, through the
 same `attribute_claim` the full ladder exposes, so a claim stamped by another
 host costs this host no lock reads and no forge call — which is what keeps a
 fleet of hosts from each paying for every other host's claims.
@@ -33,6 +33,7 @@ it could release a deliberate operator window, and skipping it costs one pass.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,6 +45,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Comman
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade import (
+    ACTION_ABSENT_RUN_REPEATED,
     ATTRIBUTION_PENDING_REMEDY,
     FORGE_NO_MERGED_PR,
     HISTORY_NO_PREDECESSOR,
@@ -57,8 +59,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade
     run_state_from_inventory,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_observe import (
+    journal_records_or_none,
     observe_merged_pull_request,
     observe_owner_liveness,
+    observe_predecessor_history,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_records import (
     HeldClaim,
@@ -89,6 +93,14 @@ __all__: list[str] = [
 _ACTIVE_STATUS = "active"
 _FABRO_ASSIGNEE = "fabro"
 _MERGE_HOLD_UNHELD = "unheld"
+_RUN_STAMP_STAGE = "dispatch-run-stamp"
+_RUN_ID_KEY = "run_id"
+_STAGE_KEY = "stage"
+_WORK_ITEM_KEY = "work_item_id"
+# How many launch stamps an item needs before one of them names a PREDECESSOR
+# run: the newest is this claim's own, so a second is the earliest that can be
+# somebody else's.
+_STAMPS_BEFORE_A_PREDECESSOR = 2
 
 _LEDGER_READ_ERRORS: tuple[type[Exception], ...] = (
     WorkItemNotFoundError,
@@ -206,14 +218,17 @@ def _measure_and_act(
         status_kinds=inventory.status_kinds,
         run_id=attributed.run_id,
     )
+    records = journal_records_or_none(journal_path=inputs.journal.path)
     graded = grade_claim(
         measurements=ClaimMeasurements(
             attributed=attributed,
             run_state=run_state,
             owner_liveness=observe_owner_liveness(repo=inputs.repo, work_item_id=item.id),
-            # The forge is asked ONLY about an absent run, because only the
-            # absent-run branch of the ladder consults it. The pass-through
-            # value on the other branches is never read there.
+            # Both absent-run readings are asked ONLY of an absent run,
+            # because only the absent-run branch of the ladder consults them.
+            # The pass-through values on the other branches are never read
+            # there, and the forge call is the one round trip this survey can
+            # spend per claim.
             forge=(
                 observe_merged_pull_request(
                     repo=inputs.repo, runner=inputs.runner, work_item_id=item.id
@@ -221,7 +236,11 @@ def _measure_and_act(
                 if run_state == RUN_ABSENT
                 else FORGE_NO_MERGED_PR
             ),
-            predecessor=HISTORY_NO_PREDECESSOR,
+            predecessor=(
+                observe_predecessor_history(records=records, work_item_id=item.id)
+                if run_state == RUN_ABSENT
+                else HISTORY_NO_PREDECESSOR
+            ),
         )
     )
     if isinstance(graded, ClaimHold):
@@ -239,6 +258,16 @@ def _measure_and_act(
             factory_name=inventory.name,
             factory_server_url=inventory.server_url,
             action=graded.action,
+            predecessor_run_id=(
+                # `records or ()` rather than an optional parameter: this arm is
+                # reachable only on the repeat route, which the ladder reaches
+                # only when the predecessor reading was NOT `unavailable` — so
+                # an unreadable journal cannot arrive here, and a guard for it
+                # would be a branch no pass can take.
+                _predecessor_run_id(records=records or (), work_item_id=item.id)
+                if graded.action == ACTION_ABSENT_RUN_REPEATED
+                else None
+            ),
         ),
     )
 
@@ -266,6 +295,31 @@ def _projected(
         status=item.status,
         effects_written=(),
     )
+
+
+def _predecessor_run_id(
+    *,
+    records: tuple[Mapping[str, object], ...],
+    work_item_id: str,
+) -> str | None:
+    """The run id of the dispatch BEFORE the one holding this claim.
+
+    Read off the launch STAMP rows, which are the only rows that name a run id
+    at launch: the newest is this claim's own run and the one before it is its
+    predecessor's. Fewer than two means no predecessor run was ever recorded —
+    a dispatch that died before it learned one — which the comment STATES
+    rather than omitting; the alternative is printing a run id belonging to
+    nothing.
+    """
+    stamped = [
+        record
+        for record in records
+        if record.get(_STAGE_KEY) == _RUN_STAMP_STAGE and record.get(_WORK_ITEM_KEY) == work_item_id
+    ]
+    if len(stamped) < _STAMPS_BEFORE_A_PREDECESSOR:
+        return None
+    previous = stamped[-2].get(_RUN_ID_KEY)
+    return previous if isinstance(previous, str) and previous != "" else None
 
 
 def _claim_stamp(*, repo: Path, work_item_id: str) -> ClaimStamp | None:

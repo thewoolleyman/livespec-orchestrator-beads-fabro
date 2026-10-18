@@ -122,13 +122,14 @@ def _journal(*, repo: Path) -> JournalFile:
     return JournalFile(path=path)
 
 
-def _request(*, module: object, item: WorkItem) -> object:
+def _request(*, module: object, item: WorkItem, action: str = "absent-run-release") -> object:
     return module.ClaimRecoveryRequest(
         item=item,
         run_id=_RUN_ID,
         factory_name="hp",
         factory_server_url="https://hp.example:32276",
-        action="absent-run-release",
+        action=action,
+        predecessor_run_id="01PREVIOUSRUN",
     )
 
 
@@ -367,3 +368,61 @@ def test_a_row_re_stamped_between_the_comment_and_the_transition_is_not_overwrit
     # The records were already written when the re-read refused: that is the
     # cost of ordering the audit trail first, and it is the cheaper direction.
     assert _stages(journal=journal) == [STRANDED_CLAIM_RELEASE_STAGE]
+
+
+def test_the_repeat_route_rests_the_item_and_names_both_runs(tmp_path: Path) -> None:
+    module = _module()
+    repo = _repo(tmp_path=tmp_path)
+    item = _item()
+    _seed(item=item)
+    journal = _journal(repo=repo)
+
+    outcome = module.recover_claim(
+        repo=repo,
+        journal=journal,
+        request=_request(module=module, item=item, action="absent-run-repeated"),
+    )
+
+    assert outcome.status == "blocked"
+    assert outcome.reason == "run-absent-repeated"
+    assert _stages(journal=journal) == ["stranded-claim-run-absent-repeated"]
+    rested = next(iter(read_work_items(path=_config())))
+    assert (rested.status, rested.blocked_reason) == ("blocked", "needs-human")
+    bodies = [
+        str(entry.get("text", ""))
+        for entry in make_beads_client(config=_config()).list_comments(issue_id=_ITEM_ID)
+    ]
+    assert any("01PREVIOUSRUN" in body and _RUN_ID in body for body in bodies)
+
+
+def test_a_repeat_rest_that_fails_leaves_the_records_standing(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    repo = _repo(tmp_path=tmp_path)
+    item = _item()
+    _seed(item=item)
+    journal = _journal(repo=repo)
+
+    def _refuse(
+        *,
+        path: StoreConfig,
+        item_id: str,
+        status: str,
+        blocked_reason: str | None,
+        admission_policy: str | None = None,
+    ) -> None:
+        _ = (path, item_id, status, blocked_reason, admission_policy)
+        raise BeadsCommandError(command="bd update", exit_code=1, stderr="refused")
+
+    monkeypatch.setattr(module, "update_work_item_blocked_state", _refuse)
+
+    outcome = module.recover_claim(
+        repo=repo,
+        journal=journal,
+        request=_request(module=module, item=item, action="absent-run-repeated"),
+    )
+
+    assert outcome.hold_reason == "effect-unobservable"
+    assert _stages(journal=journal) == ["stranded-claim-run-absent-repeated"]
+    assert next(iter(read_work_items(path=_config()))).status == "active"

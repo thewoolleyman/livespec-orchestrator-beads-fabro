@@ -40,9 +40,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade
     FORGE_MERGED_PR,
     FORGE_NO_MERGED_PR,
     FORGE_UNOBSERVABLE,
+    HISTORY_ABSENT_RUN_RELEASE,
+    HISTORY_NO_PREDECESSOR,
+    HISTORY_OTHER_OUTCOME,
+    HISTORY_UNAVAILABLE,
     OWNER_LIVE,
     OWNER_NONE,
     OWNER_UNOBSERVABLE,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_records import (
+    STRANDED_CLAIM_RELEASE_STAGE,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tenant_checkouts import (
     tenant_checkouts,
@@ -50,13 +57,24 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_tenant_checkouts imp
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt, parse_json
 
 __all__: list[str] = [
+    "DISPATCH_ID_JOURNAL_STAGE",
     "journal_records_or_none",
     "observe_merged_pull_request",
     "observe_owner_liveness",
+    "observe_predecessor_history",
 ]
 
 _GH_TIMEOUT_SECONDS = 120.0
 _MERGED_STATE = "MERGED"
+
+# The stage every dispatch writes at launch, which is what delimits one
+# dispatch's journal segment from the next. Spelled here rather than imported
+# for the reason `_dispatcher_recovery_release` gives about the same literal:
+# its writer keeps it private, and recognising the row is all this needs.
+DISPATCH_ID_JOURNAL_STAGE = "dispatch-id"
+
+_STAGE_KEY = "stage"
+_WORK_ITEM_KEY = "work_item_id"
 
 
 def observe_owner_liveness(*, repo: Path, work_item_id: str) -> str:
@@ -151,3 +169,53 @@ def journal_records_or_none(*, journal_path: Path) -> tuple[Mapping[str, object]
         return None
     parsed = (parse_json(text=line) for line in read.splitlines())
     return tuple(cast("Mapping[str, object]", one) for one in parsed if isinstance(one, dict))
+
+
+def observe_predecessor_history(
+    *,
+    records: tuple[Mapping[str, object], ...] | None,
+    work_item_id: str,
+) -> str:
+    """Whether the item's PRECEDING dispatch ended in an absent-run release.
+
+    The journal's launch rows for the item delimit its dispatches, so the
+    newest row opens the dispatch whose claim is standing now and the row
+    before it opens its predecessor. Whatever the journal recorded BETWEEN the
+    two belongs to that predecessor, which is where its ending sits: a
+    stranded-claim release is written after the dispatch died and before any
+    successor announced itself.
+
+    READ AS "the PRECEDING dispatch", never "ever released". A lifetime count
+    of release rows agrees with this reading on a journal holding nothing else
+    and disagrees on the sequence that actually occurs — a release, a human
+    move, an unrelated dispatch, then a vanished run — where the clause calls
+    for a release and a lifetime count would rest the item for a human. It is
+    the same trap `_dispatcher_stall_disposition` records for its own repeat
+    arm, and the journal already carries the discriminator.
+
+    A journal that could not be read is `unavailable`, and so is one carrying
+    NO launch row for the item: without a boundary there is no segment to read,
+    and the dispatch most likely to have left a claim stranded is exactly the
+    one whose record went missing. Exactly ONE launch row is a confirmed first
+    dispatch, which has no predecessor to have released anything.
+    """
+    if records is None:
+        return HISTORY_UNAVAILABLE
+    starts = [
+        index
+        for index, record in enumerate(records)
+        if _names(record=record, work_item_id=work_item_id, stage=DISPATCH_ID_JOURNAL_STAGE)
+    ]
+    if not starts:
+        return HISTORY_UNAVAILABLE
+    if len(starts) == 1:
+        return HISTORY_NO_PREDECESSOR
+    released = any(
+        _names(record=record, work_item_id=work_item_id, stage=STRANDED_CLAIM_RELEASE_STAGE)
+        for record in records[starts[-2] : starts[-1]]
+    )
+    return HISTORY_ABSENT_RUN_RELEASE if released else HISTORY_OTHER_OUTCOME
+
+
+def _names(*, record: Mapping[str, object], work_item_id: str, stage: str) -> bool:
+    return record.get(_STAGE_KEY) == stage and record.get(_WORK_ITEM_KEY) == work_item_id

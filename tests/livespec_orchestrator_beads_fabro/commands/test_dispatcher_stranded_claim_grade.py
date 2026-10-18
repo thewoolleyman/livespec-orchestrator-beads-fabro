@@ -181,6 +181,28 @@ def test_a_proven_absent_run_earns_the_release_route() -> None:
     assert graded.action == module.ACTION_ABSENT_RUN_RELEASE
 
 
+@pytest.mark.parametrize("predecessor", ["no-predecessor", "other-outcome"])
+def test_a_predecessor_that_did_not_release_still_earns_the_release(*, predecessor: str) -> None:
+    module = _module()
+
+    graded = module.grade_claim(measurements=_measurements(module=module, predecessor=predecessor))
+
+    assert isinstance(graded, module.ClaimRoute)
+    assert graded.action == module.ACTION_ABSENT_RUN_RELEASE
+
+
+def test_a_predecessor_that_ended_in_an_absent_run_release_earns_the_repeat() -> None:
+    """The release is bounded to ONE per consecutive sequence of absent runs."""
+    module = _module()
+
+    graded = module.grade_claim(
+        measurements=_measurements(module=module, predecessor="absent-run-release")
+    )
+
+    assert isinstance(graded, module.ClaimRoute)
+    assert graded.action == module.ACTION_ABSENT_RUN_REPEATED
+
+
 @pytest.mark.parametrize(
     ("surveyed", "status_kinds", "expected"),
     [

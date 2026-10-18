@@ -1,5 +1,12 @@
 """Performing one claim recovery: ordered effects, and a re-read before each.
 
+BOTH ABSENT-RUN ROUTES TRAVEL ONE SEQUENCE. The release returns the item to
+`ready` and the repeat rests it at `blocked / needs-human`, and they differ in
+exactly three values — the journal stage, the recorded reason, and the status
+the transition writes. `_route` resolves those three in one place, so the
+ordering guarantee below is asserted once for both rather than implemented
+twice.
+
 THE ORDER IS THE CONTRACT'S. The journal record first, then the ledger
 comment, then the status transition LAST, so the item becomes dispatchable only
 after its audit trail exists. An operator who finds a `ready` item can always
@@ -40,21 +47,28 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
+    update_work_item_blocked_state,
+)
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
 from livespec_orchestrator_beads_fabro._store_dispatch_claim import ClaimRow, claim_row_for
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade import (
+    ACTION_ABSENT_RUN_RELEASE,
     HOLD_CLAIM_CHANGED,
     HOLD_EFFECT_UNOBSERVABLE,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_records import (
     REASON_RUN_ABSENT,
+    REASON_RUN_ABSENT_REPEATED,
     STRANDED_CLAIM_RELEASE_STAGE,
+    STRANDED_CLAIM_REPEATED_STAGE,
     HeldClaim,
     RecoveredClaim,
     recovery_journal_record,
     release_comment_body,
+    repeated_comment_body,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
@@ -82,6 +96,9 @@ EFFECT_TRANSITION = "status-transition"
 _ACTIVE_STATUS = "active"
 _FABRO_ASSIGNEE = "fabro"
 _READY_STATUS = "ready"
+_BLOCKED_STATUS = "blocked"
+_NEEDS_HUMAN_REASON = "needs-human"
+_MANUAL_ADMISSION = "manual"
 
 _LEDGER_ERRORS: tuple[type[Exception], ...] = (
     WorkItemNotFoundError,
@@ -101,6 +118,12 @@ class ClaimRecoveryRequest:
     factory_name: str
     factory_server_url: str | None
     action: str
+    # The run of the dispatch BEFORE this claim's, which only the repeat route
+    # renders: its comment has to NAME both runs, because the pair is the
+    # finding and an operator reading the newer run alone cannot see it. It is
+    # optional because the predecessor may have recorded no run id, which the
+    # comment states rather than omitting.
+    predecessor_run_id: str | None = None
 
 
 def recover_claim(
@@ -130,10 +153,16 @@ def _write_release_effects(
     journal: JournalFile,
     request: ClaimRecoveryRequest,
 ) -> RecoveredClaim | HeldClaim:
-    """The journal record, the ledger comment, and the transition, in that order."""
+    """The journal record, the ledger comment, and the transition, in that order.
+
+    BOTH absent-run routes travel this one sequence, differing only in the
+    three values `_route` resolves: a second writer for the repeat arm would be
+    a second ordering of the same three effects, and the ordering is the
+    guarantee.
+    """
     journal.append(
         record=recovery_journal_record(
-            stage=STRANDED_CLAIM_RELEASE_STAGE,
+            stage=_route(request=request).stage,
             recovered=_recovered(request=request, effects=()),
         )
     )
@@ -155,17 +184,52 @@ def _write_release_effects(
     )
 
 
+@dataclass(frozen=True, kw_only=True)
+class _Route:
+    """What distinguishes the two absent-run routes: a stage, a reason, a rest."""
+
+    stage: str
+    reason: str
+    status: str
+
+
+def _route(*, request: ClaimRecoveryRequest) -> _Route:
+    if request.action == ACTION_ABSENT_RUN_RELEASE:
+        return _Route(
+            stage=STRANDED_CLAIM_RELEASE_STAGE,
+            reason=REASON_RUN_ABSENT,
+            status=_READY_STATUS,
+        )
+    return _Route(
+        stage=STRANDED_CLAIM_REPEATED_STAGE,
+        reason=REASON_RUN_ABSENT_REPEATED,
+        status=_BLOCKED_STATUS,
+    )
+
+
+def _comment_body(*, request: ClaimRecoveryRequest) -> str:
+    if request.action == ACTION_ABSENT_RUN_RELEASE:
+        return release_comment_body(
+            work_item_id=request.item.id,
+            run_id=request.run_id,
+            factory_name=request.factory_name,
+            factory_server_url=request.factory_server_url,
+        )
+    return repeated_comment_body(
+        work_item_id=request.item.id,
+        run_id=request.run_id,
+        predecessor_run_id=request.predecessor_run_id,
+        factory_name=request.factory_name,
+        factory_server_url=request.factory_server_url,
+    )
+
+
 def _append_comment(*, repo: Path, request: ClaimRecoveryRequest) -> bool:
     written = attempt(
         action=lambda: append_work_item_comment(
             path=store_config(repo=repo),
             work_item_id=request.item.id,
-            body=release_comment_body(
-                work_item_id=request.item.id,
-                run_id=request.run_id,
-                factory_name=request.factory_name,
-                factory_server_url=request.factory_server_url,
-            ),
+            body=_comment_body(request=request),
         ),
         exceptions=_LEDGER_ERRORS,
     )
@@ -173,12 +237,27 @@ def _append_comment(*, repo: Path, request: ClaimRecoveryRequest) -> bool:
 
 
 def _transition(*, repo: Path, request: ClaimRecoveryRequest) -> bool:
-    """`ready` with the claim dropped, through the shared release seam.
+    """`ready` with the claim dropped, or the `needs-human` rest of a repeat.
 
-    The SAME seam the pre-run and stall releases use — `status="ready"` with
-    `clear_assignee=True` — so a released stranded claim leaves the ledger in
-    one shape rather than a third that merely looks like the other two.
+    The release goes through the SAME seam the pre-run and stall releases use —
+    `status="ready"` with `clear_assignee=True` — so a released stranded claim
+    leaves the ledger in one shape rather than a third that merely looks like
+    the other two. The repeat goes through the escalation seam, which REPLACES
+    the blocked-reason label rather than adding one beside it, and sets
+    `admission:manual` so nothing automatic leaves that state.
     """
+    if request.action != ACTION_ABSENT_RUN_RELEASE:
+        rested = attempt(
+            action=lambda: update_work_item_blocked_state(
+                path=store_config(repo=repo),
+                item_id=request.item.id,
+                status=_BLOCKED_STATUS,
+                blocked_reason=_NEEDS_HUMAN_REASON,
+                admission_policy=_MANUAL_ADMISSION,
+            ),
+            exceptions=_LEDGER_ERRORS,
+        )
+        return not isinstance(rested, AttemptFailure)
     applied = attempt(
         action=lambda: update_work_item_status(
             path=store_config(repo=repo),
@@ -207,14 +286,15 @@ def _claim_unchanged(*, row: ClaimRow, run_id: str) -> bool:
 
 
 def _recovered(*, request: ClaimRecoveryRequest, effects: tuple[str, ...]) -> RecoveredClaim:
+    route = _route(request=request)
     return RecoveredClaim(
         work_item_id=request.item.id,
         run_id=request.run_id,
         factory_name=request.factory_name,
         factory_server_url=request.factory_server_url,
-        reason=REASON_RUN_ABSENT,
+        reason=route.reason,
         route=request.action,
-        status=_READY_STATUS,
+        status=route.status,
         effects_written=effects,
     )
 

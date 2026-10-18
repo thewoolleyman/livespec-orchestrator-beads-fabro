@@ -33,7 +33,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_records import (
     STRANDED_CLAIM_HOLD_STAGE,
 )
-from livespec_orchestrator_beads_fabro.store import append_work_item, read_work_items
+from livespec_orchestrator_beads_fabro.store import (
+    append_work_item,
+    read_work_item_comments,
+    read_work_items,
+)
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 _MODULE_PATH = (
@@ -124,10 +128,22 @@ def _label(*, label: str) -> None:
     make_beads_client(config=_config()).update_issue(issue_id=_ITEM_ID, add_labels=[label])
 
 
-def _journal(*, repo: Path) -> JournalFile:
+def _journal(*, repo: Path, launches: int = 1) -> JournalFile:
+    """A journal carrying `launches` launch rows for this item.
+
+    One row is a CONFIRMED FIRST DISPATCH, which is what makes the absent-run
+    release reachable: a journal carrying none leaves the predecessor question
+    unanswered, and the clause holds such a claim rather than releasing it.
+    """
     path = repo / "tmp" / "journal.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
-    _ = path.write_text("", encoding="utf-8")
+    _ = path.write_text(
+        "".join(
+            json.dumps({"stage": "dispatch-id", "work_item_id": _ITEM_ID}) + "\n"
+            for _ in range(launches)
+        ),
+        encoding="utf-8",
+    )
     return JournalFile(path=path)
 
 
@@ -184,9 +200,11 @@ def _inputs(
 
 
 def _stages(*, journal: JournalFile) -> list[object]:
+    """Every stage the pass APPENDED, with the seeded launch rows dropped."""
     return [
-        json.loads(line).get("stage")
+        stage
         for line in journal.path.read_text(encoding="utf-8").splitlines()
+        if (stage := json.loads(line).get("stage")) != "dispatch-id"
     ]
 
 
@@ -386,3 +404,78 @@ def test_a_dry_projection_journals_no_hold_either(tmp_path: Path) -> None:
 
     assert [held.hold_reason for held in survey.held] == ["owner-elsewhere"]
     assert _stages(journal=journal) == []
+
+
+def test_a_claim_whose_dispatch_history_cannot_be_established_is_held(tmp_path: Path) -> None:
+    """A journal carrying NO launch row for the item leaves the predecessor open.
+
+    Unavailable history is not proof of no predecessor, and the dispatch most
+    likely to have left a claim stranded is exactly the one whose record went
+    missing — so the claim is held rather than released.
+    """
+    module = _module()
+    repo = _repo(tmp_path=tmp_path)
+    item = _item()
+    _seed(item=item, stamp=_stamp())
+    journal = _journal(repo=repo, launches=0)
+
+    survey = module.survey_stranded_claims(
+        inputs=_inputs(module=module, repo=repo, items=(item,), runner=_Runner(), journal=journal)
+    )
+
+    assert [held.hold_reason for held in survey.held] == ["history-unavailable"]
+    assert next(iter(read_work_items(path=_config()))).status == "active"
+
+
+def _repeat_journal(*, repo: Path, stamps: tuple[object, ...]) -> JournalFile:
+    """Two dispatches, the first released, with `stamps` naming run ids."""
+    path = repo / "tmp" / "journal.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows: list[dict[str, object]] = [
+        {"stage": "dispatch-id", "work_item_id": _ITEM_ID},
+        {"stage": "stranded-claim-release", "work_item_id": _ITEM_ID},
+        {"stage": "dispatch-id", "work_item_id": _ITEM_ID},
+    ]
+    rows.extend(
+        {"stage": "dispatch-run-stamp", "work_item_id": _ITEM_ID, "run_id": stamp}
+        for stamp in stamps
+    )
+    _ = path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    return JournalFile(path=path)
+
+
+@pytest.mark.parametrize(
+    "stamps",
+    [
+        (_RUN_ID,),
+        (7, _RUN_ID),
+        ("", _RUN_ID),
+    ],
+)
+def test_a_repeat_whose_predecessor_run_was_never_recorded_states_so(
+    *, tmp_path: Path, stamps: tuple[object, ...]
+) -> None:
+    """A predecessor that died before learning a run has no id to name.
+
+    The comment states that rather than omitting the sentence: printing a run
+    id belonging to nothing is the one thing worse than saying none was
+    recorded.
+    """
+    module = _module()
+    repo = _repo(tmp_path=tmp_path)
+    item = _item()
+    _seed(item=item, stamp=_stamp())
+    journal = _repeat_journal(repo=repo, stamps=stamps)
+
+    survey = module.survey_stranded_claims(
+        inputs=_inputs(module=module, repo=repo, items=(item,), runner=_Runner(), journal=journal)
+    )
+
+    assert [recovered.reason for recovered in survey.recovered] == ["run-absent-repeated"]
+    bodies = [
+        comment.text
+        for comment in read_work_item_comments(path=_config(), work_item_id=_ITEM_ID)
+        if comment.text.startswith("livespec-stranded-claim-run-absent-repeated")
+    ]
+    assert len(bodies) == 1
+    assert "(run id not recorded)" in bodies[0]
