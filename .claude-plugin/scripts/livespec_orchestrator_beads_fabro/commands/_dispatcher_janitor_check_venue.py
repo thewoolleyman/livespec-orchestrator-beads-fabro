@@ -137,6 +137,7 @@ _STATE_FIELD = "state"
 # names together. Folding them into one constant would make a rename of either
 # surface silently rename the other.
 _ROW_VENUE_FIELD = "venue"
+_ROW_GATE_STATE_FIELD = "gate_state"
 
 
 def cluster_venue_declared(*, block: dict[str, Any]) -> bool:
@@ -195,7 +196,7 @@ def cluster_janitor_red(*, result: CommandResult, checkout: Path) -> str | None:
     second as the first sends them to read a verdict that does not exist;
     reporting the first as the second tells them their red tree was plumbing.
     """
-    state = _gate_state(text=result.stderr)
+    state = _state_of(line=_verdict_line(text=result.stderr))
     if state == _GATE_PASSED:
         return None
     if state == _GATE_FAILED:
@@ -210,38 +211,68 @@ def cluster_janitor_red(*, result: CommandResult, checkout: Path) -> str | None:
     )
 
 
-def janitor_check_row_fields(*, on_the_cluster: bool) -> dict[str, object]:
+def janitor_check_row_fields(*, on_the_cluster: bool, result: CommandResult) -> dict[str, object]:
     """The `janitor-post-merge` row's venue account, as ONE projection.
 
-    PURE, over the venue the selection already resolved. The venue reported is
-    the RESOLVED one and never the declared value: a row echoing the
-    declaration would report `cluster` -- or any other unrecognised word -- for
-    a repository whose suite ran on the dispatching host, which is exactly the
-    reading the fail-closed selection above exists to prevent anyone making.
+    PURE, over the venue the selection already resolved and the check-suite
+    command's own result. The venue reported is the RESOLVED one and never the
+    declared value: a row echoing the declaration would report `cluster` -- or
+    any other unrecognised word -- for a repository whose suite ran on the
+    dispatching host, which is exactly the reading the fail-closed selection
+    above exists to prevent anyone making.
 
     ONE projection over both venues rather than a builder each, because the
     row's whole claim is that a reader can tell the two apart from it: a pair of
     builders is how one arm comes to spell a shared field differently from the
     other.
+
+    The HOST-LOCAL arm returns before any gate field, and that omission is
+    load-bearing rather than tidy. The cluster arm writes `gate_state` as
+    `null` where the client reached no verdict, which is a reading a later
+    operator must be able to see; a host-local row carrying the same `null`
+    would read as a cluster run whose gate said nothing, so the two states
+    would be indistinguishable in exactly the place the field was added to
+    distinguish them.
     """
-    return {
+    fields: dict[str, object] = {
         _ROW_VENUE_FIELD: JANITOR_VENUE_CLUSTER_JOB if on_the_cluster else JANITOR_VENUE_HOST_LOCAL
     }
+    if not on_the_cluster:
+        return fields
+    fields[_ROW_GATE_STATE_FIELD] = _state_of(line=_verdict_line(text=result.stderr))
+    return fields
 
 
-def _gate_state(*, text: str) -> str | None:
-    """The state the gate client reported, or `None` for no readable reading.
+def _verdict_line(*, text: str) -> dict[str, Any] | None:
+    """The gate client's VERDICT LINE, parsed, or `None` for no readable reading.
 
-    Read from the LAST state-bearing line rather than the first. The client logs
-    one verdict line per run today, so the two agree; keying on the last is what
-    keeps that true if it ever narrates its progress first, because the verdict
-    is the thing it says once it knows.
+    The verdict line is the LAST standard-error line that parses as a JSON
+    object carrying a STRING `state`. Last rather than first: the client logs
+    one verdict line per run today, so the two agree, and keying on the last is
+    what keeps that true if it ever narrates its progress first, because the
+    verdict is the thing it says once it knows.
+
+    The whole LINE is returned rather than just its state word, because the
+    row's account and the janitor's verdict are two readings of one line -- and
+    the row additionally copies whichever Job keys that line carries. Returning
+    the state alone would make the row re-parse the same output to find them,
+    which is two readings of one thing where one will do.
     """
     for line in reversed(text.splitlines()):
         parsed = parse_json(text=line)
         if isinstance(parsed, JsonParseFailure) or not isinstance(parsed, dict):
             continue
-        state = cast("dict[str, Any]", parsed).get(_STATE_FIELD)
-        if isinstance(state, str):
-            return state
+        fields = cast("dict[str, Any]", parsed)
+        if isinstance(fields.get(_STATE_FIELD), str):
+            return fields
     return None
+
+
+def _state_of(*, line: dict[str, Any] | None) -> str | None:
+    """The verdict line's state word, or `None` when there was no verdict line.
+
+    A `cast` rather than a second `isinstance`: `_verdict_line` selects a line
+    only once its `state` IS a string, so re-testing it here would be a branch
+    no input can take and a quiet denial of what that selection guarantees.
+    """
+    return None if line is None else cast("str", line[_STATE_FIELD])
