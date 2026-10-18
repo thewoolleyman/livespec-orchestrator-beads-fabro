@@ -50,6 +50,7 @@ _JANITOR_STAGE = "janitor-post-merge"
 # production projection. A case that named the field set it is grading could
 # not tell a projection missing a field from one that never claimed it.
 _VENUE_FIELD = "venue"
+_GATE_STATE_FIELD = "gate_state"
 
 # The two venue words, likewise spelled out: these are the values an operator
 # reads, so a rename is a diff a reviewer sees rather than a constant that
@@ -156,6 +157,38 @@ def _gate(*, state: str) -> CommandResult:
     )
 
 
+def _gate_announcing_on_stdout(*, state: str) -> CommandResult:
+    """A gate client that printed its state on the stream the verdict is NOT read from.
+
+    The ratified reading is the last STANDARD-ERROR line carrying a string
+    `state`, and the client's standard output is explicitly not read for it. A
+    build that scanned both streams would report this as a verdict.
+    """
+    return CommandResult(
+        exit_code=0, stdout=json.dumps({"event": "delegated gate", "state": state}), stderr=""
+    )
+
+
+def _gate_whose_state_is_not_a_word() -> CommandResult:
+    """A JSON line carrying a `state` that is not a string, so it is not a verdict line.
+
+    The selection rule asks for a JSON object carrying a STRING `state`, which
+    is the part a reader keying merely on the key's presence would drop.
+    """
+    return CommandResult(
+        exit_code=1, stdout="", stderr=json.dumps({"event": "delegated gate", "state": 3})
+    )
+
+
+def _gate_without_a_verdict() -> CommandResult:
+    """A gate client that decided nothing: a traceback, and no state-bearing line at all."""
+    return CommandResult(
+        exit_code=1,
+        stdout="",
+        stderr="Traceback (most recent call last):\nModuleNotFoundError: no module named any\n",
+    )
+
+
 def _green() -> CommandResult:
     """A host-local check suite that passed: on that venue the exit code IS the verdict."""
     return CommandResult(exit_code=0, stdout="every target green", stderr="")
@@ -221,3 +254,70 @@ def test_scenario191_the_row_names_the_venue_the_suite_was_resolved_to_and_attem
     # Every drive reached the check suite, so each row above is an account of a
     # venue that was really attempted rather than of a flow that degraded first.
     assert [drive.outcome.stage for drive in (cluster, host, misdeclared)] == ["done"] * 3
+
+
+def test_scenario191_a_cluster_row_carries_the_gate_state_word_and_null_where_there_is_none(
+    tmp_path: Path,
+) -> None:
+    """The row carries the verdict line's state word, and `null` when no line carried one.
+
+    Four readings of ONE field, and the three nulls are what make the first one
+    worth anything. A row that simply omitted the field whenever it could not
+    read a state would be indistinguishable, to a later reader, from a build
+    that predates the field entirely -- which is the position both earlier
+    sessions were in. So the field's PRESENCE is asserted separately from its
+    value, with `in` rather than `get`.
+
+    The three null arms are the three ways the ratified reading can decline,
+    and each one is a different wrong build. A reader scanning both streams
+    would call the stdout line a verdict. A reader keying on the `state` key's
+    presence rather than on its being a STRING would call `3` a verdict. And a
+    reader that simply took the exit code would call the traceback FAILED --
+    the one reading the clause forbids outright, because a gate that decided
+    nothing is not a red tree.
+    """
+    passed = _drive(
+        tmp_path=tmp_path, name="passed", venue=_CLUSTER_JOB, suite=_gate(state="PASSED")
+    )
+    on_stdout = _drive(
+        tmp_path=tmp_path,
+        name="on-stdout",
+        venue=_CLUSTER_JOB,
+        suite=_gate_announcing_on_stdout(state="PASSED"),
+    )
+    not_a_word = _drive(
+        tmp_path=tmp_path,
+        name="not-a-word",
+        venue=_CLUSTER_JOB,
+        suite=_gate_whose_state_is_not_a_word(),
+    )
+    silent = _drive(
+        tmp_path=tmp_path, name="silent", venue=_CLUSTER_JOB, suite=_gate_without_a_verdict()
+    )
+
+    assert passed.row.get(_GATE_STATE_FIELD) == "PASSED"
+    for drive in (on_stdout, not_a_word, silent):
+        assert _GATE_STATE_FIELD in drive.row
+        assert drive.row[_GATE_STATE_FIELD] is None
+    # The row's reading and the janitor's own verdict come from one rule, so a
+    # row reporting no state sits on a run the flow called red.
+    assert passed.outcome.stage == "done"
+    assert [drive.outcome.stage for drive in (on_stdout, not_a_word, silent)] == [
+        _JANITOR_STAGE
+    ] * 3
+
+
+def test_scenario191_a_host_local_row_carries_no_gate_field_at_all(tmp_path: Path) -> None:
+    """On the host-local venue the gate fields are OMITTED, never nulled.
+
+    This is the mirror of the case above and it is why that one asserts
+    presence: a `gate_state` of `null` on a host-local row would read as a
+    cluster run whose gate said nothing -- the exact conflation the nulls above
+    exist to make legible. No gate was asked here, so the row has nothing to
+    report about one.
+    """
+    host = _drive(tmp_path=tmp_path, name="host-no-gate", venue=_HOST_LOCAL, suite=_green())
+
+    assert host.row.get(_VENUE_FIELD) == _HOST_LOCAL
+    assert _GATE_STATE_FIELD not in host.row
+    assert host.outcome.stage == "done"
