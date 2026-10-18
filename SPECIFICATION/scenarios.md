@@ -7305,3 +7305,42 @@ Feature: A fix turn does not spend its time limit on a duplicate check suite
     When the turn completes the repair successfully
     Then the fix prompt directs no second run of the suite on that integrated tree in the same turn
 ```
+
+## Scenario 200 — A refresh whose conflicts lie only in declared record files merges them without a repair round
+
+```gherkin
+Feature: Concurrent additions to shared record files do not cost a run a repair round
+  As the maintainer of a repository dispatched to the factory
+  I want conflicts confined to declared record files merged entry by entry during a refresh
+  So that two changes that each add their own records do not send a run to the fix agent or to a human
+
+  Scenario: Different objects changed by each side of a declared JSON record merge cleanly
+    Given a repository whose committed dispatcher.record_files declares tests/heading-coverage-debt.json with format json-array and key spec_root, spec_file and heading
+    And the default branch removed the object for one heading while the run removed the object for a different heading
+    When pr_refresh rebases the run onto the default branch and the rebase conflicts only in that file
+    Then the stage merges the file with both objects removed, completes the rebase and runs the repository-declared gate on the refreshed head
+    And the stage records the merged file with its format and the count taken from each side
+    And no refresh-repair round is counted and the run does not enter fix
+
+  Scenario: Insertions by both sides at the same place in a declared Markdown record keep both
+    Given a repository that declares tests/integration/CLAUDE.md with format markdown-insertions
+    And the default branch and the run each inserted a section at the same position in that file
+    When publish_draft or pr_refresh refreshes the run and the refresh conflicts only in that file
+    Then the merged file holds the default branch's inserted lines followed by the run's inserted lines
+    And the stage proceeds as after a refresh that did not conflict
+
+  Scenario: The same object changed differently by both sides takes refresh repair
+    Given a declared json-array record in which both the default branch and the run changed the object with the same key to different values
+    When pr_refresh rebases the run and the rebase conflicts in that file
+    Then the stage restores the pre-refresh head, records a refresh-repair brief naming the file, and routes to fix
+
+  Scenario: A conflict outside the declared record files takes refresh repair
+    Given a refresh that conflicts in a declared record file and in a Python module
+    When pr_refresh rebases the run
+    Then the stage merges nothing, restores the pre-refresh head, and routes to fix with a refresh-repair brief naming both paths
+
+  Scenario: A merged head the gate rejects takes refresh repair
+    Given a refresh whose conflicts were all resolved by the record-file merge
+    When the repository-declared gate rejects the refreshed head
+    Then the stage restores the pre-refresh head and routes to fix with a refresh-repair brief naming each failed gate target
+```
