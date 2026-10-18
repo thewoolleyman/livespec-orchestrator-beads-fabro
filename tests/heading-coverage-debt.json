@@ -922,12 +922,5 @@
     "heading": "## Scenario 198 \u2014 A sandbox agent cannot signal the sandbox's PID 1 or its own adapter, and signals to its own processes still run",
     "work_item": "bd-ib-dpkip6",
     "first_seen": "2026-10-18"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 199 \u2014 A fix turn runs the check suite once per tree and counts a commit hook's full green run",
-    "work_item": "bd-ib-k6dwyv",
-    "first_seen": "2026-10-18"
   }
 ]

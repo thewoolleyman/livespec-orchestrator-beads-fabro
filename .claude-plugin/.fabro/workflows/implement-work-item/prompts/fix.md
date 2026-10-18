@@ -28,10 +28,13 @@ conflict or the gate failure:
    run's work onto it yourself, resolving each conflicted path on its merits.
    Do NOT resolve by taking one side wholesale — a conflict means both sides
    changed something, and discarding either loses work somebody shipped.
-2. Re-run the repository's check suite (`{{ inputs.sandbox_check_suite }}`)
-   against the integrated tree and fix what the integration broke. A gate
-   target the brief names failed on the REFRESHED tree, so a green suite on
-   the pre-refresh tree is not evidence.
+2. Run the repository's check suite (`{{ inputs.sandbox_check_suite }}`)
+   against the integrated tree and fix what the integration broke.
+   Run it ONCE per tree, under the once-per-tree rule below, which counts a
+   commit whose pre-commit hook ran the full suite green on the exact
+   integrated tree it committed as that tree's run. A gate target the brief
+   names failed on the REFRESHED tree, so a green suite on the pre-refresh
+   tree is not evidence.
 3. Leave the branch at the integrated, green head. The graph re-enters
    janitor, then `publish_draft`, then `proof_capture`, so publication is
    re-earned on the repaired head rather than claimed here.
@@ -112,12 +115,55 @@ The complete work-item goal is in the Fabro-injected `Goal:` preamble above.
    never an edit under an existing Green); commit trailer
    `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`; never
    create or switch branches, never touch `.beads/` or `core.bare`.
-3. Re-run the repository's check suite (`{{ inputs.sandbox_check_suite }}`) yourself until it is green.
+3. Run the repository's check suite (`{{ inputs.sandbox_check_suite }}`)
+   yourself until it is green — ONCE per tree, under the once-per-tree rule
+   below, which counts a commit whose pre-commit hook ran the full suite green
+   on the exact tree it committed as that tree's run.
 4. Re-run the failed reproduction and report the before/after result,
    naming the source stage and assertion alongside the diagnosis and fix.
    Suite success alone is not evidence that the semantic finding is fixed.
    The graph still re-earns janitor, capture, review and independent replay;
    do not claim their downstream approval on their behalf.
+
+## The check suite runs ONCE per tree — a commit hook's green run counts
+
+This repository's pre-commit hook runs the whole declared check suite, so a
+commit the hook admitted has ALREADY run that suite in full on the exact tree
+it committed. That hook run IS this turn's run of the suite for that tree.
+Do NOT launch a second run of the suite on a tree a hook already passed it on
+in this turn.
+
+Two full runs of a long suite inside one turn exhaust this node's time limit by
+construction, and the limit kills the SECOND one — after the fix is committed,
+leaving the turn nothing to show for work it had already finished. Measured
+2026-10-18 on run 01M56YAEWMS8: the pre-commit hook ran the aggregate green in
+1364 seconds, the turn then launched a second aggregate on the identical tree,
+and the 3600-second ceiling killed it.
+
+This relaxes NOTHING. The suite must still have passed IN FULL on the tree you
+leave the branch at, and the `janitor` visit the graph re-enters after a
+successful turn runs the whole suite again as a hard gate. What changes is only
+that you do not pay for the same tree twice.
+
+So before you end the turn, ask which tree your last full passing run covered:
+
+- A commit whose pre-commit hook ran the FULL suite to a passing result on the
+  exact tree it committed: that tree is COVERED. Leave the branch at that
+  commit and end the turn without running the suite again.
+- The tree CHANGED after that run — a later commit, an amend, or any edit still
+  sitting in the working tree: the suite is OWED on the new tree. Run it in
+  full before the turn ends.
+- No commit in this turn ran the full suite: the suite is OWED. A Red commit
+  takes the hook's fast path, which runs only part of the suite, and a hook run
+  that covered only part of it counts for nothing here. Run it in full before
+  the turn ends.
+- You cannot tell which of these holds: run it in full. This rule removes a
+  duplicate run, never the obligation.
+
+The same rule governs the refresh-repair steps above, on the tree the repair
+produced: a commit whose hook ran the full suite green on the INTEGRATED tree
+is that tree's run, and no second run of the suite on that integrated tree is
+owed in the same turn.
 
 ## When the failure is not auto-resolvable (needs-human protocol)
 
