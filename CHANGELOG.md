@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.215.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.214.1...v0.215.0) (2026-10-18)
+
+
+### Features
+
+* **dispatcher:** grade the verified Proof of Done record per assertion in the sandbox (bd-ib-kcq6pu) ([b591d95](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b591d95c18adb2ec0f19699d0185291a40196ac2))
+* **workflow:** add the proof_grade command node between proof_verify and pr_refresh (bd-ib-kcq6pu) ([716ffb2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/716ffb26c78f372a49602734e4f1c45a710830e8))
+* **workflow:** bound the grade retry at three recorded failures (bd-ib-kcq6pu) ([e504756](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e5047569c6650dd7c9d820120b73578fe758df84))
+* **workflow:** route an ungradeable record back to proof_verify through proof_grade_route (bd-ib-kcq6pu) ([e2162d0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e2162d0789c1bd30558c31d6c4ce402d8af48ffb))
+
+
+### Bug Fixes
+
+* **dispatcher:** count a grade failure from the count that stood, not from a truncated file (bd-ib-kcq6pu) ([d5ec86c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d5ec86c037936dc0cc520ec55be6a65dee6d8b36))
+
 ## [0.214.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.214.0...v0.214.1) (2026-10-18)
 
 
