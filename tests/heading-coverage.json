@@ -1930,5 +1930,13 @@
     "test": "TODO",
     "reason": "Ratified by the revision accepting proposal sandbox-agent-run-survival (plan checkpoint-commit-hook-failures, epic bd-ib-hcwmnq). The PID 1 and adapter signal protection is not implemented yet; an integration-tier test is owed for the six sub-scenarios, and work-item bd-ib-dpkip6 implements them and owns that binding.",
     "work_item": "bd-ib-dpkip6"
+  },
+  {
+    "heading": "## Scenario 199 \u2014 A fix turn runs the check suite once per tree and counts a commit hook's full green run",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by revision v159 accepting proposal fix-turn-suite-once (plan sandbox-commit-gate-ceiling, epic bd-ib-qy5wol). The fix prompt's once-per-tree check-suite rule is not implemented yet; an integration-tier test is owed for the three sub-scenarios, and work-item bd-ib-k6dwyv implements them and owns that binding.",
+    "work_item": "bd-ib-k6dwyv"
   }
 ]

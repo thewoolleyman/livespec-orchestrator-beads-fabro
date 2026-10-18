@@ -3205,6 +3205,8 @@ refresh-repair round the run re-enters `janitor`, then `publish_draft`, then
 `proof_capture`, exactly as an accepted fix round does, so only proof for the
 repaired head can reach publication.
 
+**A fix turn runs the check suite once per tree.** This paragraph governs only a `fix` turn that completes successfully and routes to `janitor`, whether it was a fix round or a refresh-repair round. A `fix` turn that ends through the needs-human protocol, by its node's resolved timeout, or by any other failure keeps its existing handling, which this paragraph does not change. A successful `fix` turn MUST leave the run's working branch at a head on which the repository's sandbox check suite passed in full during that turn. A commit whose repository pre-commit hook ran the full check suite to a passing result on the exact tree it committed satisfies that obligation for that tree. The `fix` prompt MUST NOT direct a second run of the suite on that same tree in the same turn, because the `janitor` visit that follows a successful `fix` turn runs the suite again. A hook run that covered only part of the suite, such as a Red commit on the hook's fast path, does not satisfy the obligation. A change to the tree after the last passing full run means the suite MUST be run in full again before a successful turn ends. Scenario 199 in `scenarios.md` exercises this paragraph.
+
 The `publish_draft` visit that follows a refresh-repair round is the visit
 immediately after the `janitor` visit that follows a `fix` visit entered with a
 refresh-repair brief; a `publish_draft` visit reached through a review-fix
