@@ -77,6 +77,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_materialize imp
     MaterializationRefusal,
     materialize_dispatch,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routing import (
+    RecoveryRouting,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_command import (
     _admit_and_dispatch_resume,  # pyright: ignore[reportPrivateUsage]
 )
@@ -479,6 +482,12 @@ def test_a_targeted_dispatch_launches_with_the_admission_verdict(
         journal=JournalFile(path=tmp_path / "journal.jsonl"),
         janitor=None,
         marked=False,
+        # The EMPTY routing, which is what a selection recovery routing never
+        # measured looks like: every item reads back no route, so both pins
+        # apply and nothing about recovery enters this case. The routing step's
+        # own decisions are exercised in the `recovery_routing` modules; here it
+        # must not shadow the verdict hand-off under test.
+        routing=RecoveryRouting(routes=()),
     )
 
     assert seen[0]["verdict"] is evaluated

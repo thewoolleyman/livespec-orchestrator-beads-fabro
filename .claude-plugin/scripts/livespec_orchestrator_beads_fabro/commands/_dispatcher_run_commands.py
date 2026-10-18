@@ -38,6 +38,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_readiness_diagnostics import (
     not_ready_requested_items_error,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routing import (
+    route_recovery,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import (
     rework_redispatch_eligible_ids,
 )
@@ -79,6 +82,21 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
     wall_exit = pre_dispatch_wall_exit(args=args, repo=repo, items=[target], journal=journal)
     if wall_exit is not None:
         return wall_exit
+    # RECOVERY ROUTING, which the clause places after the pre-dispatch wall and
+    # strictly BEFORE the admission valve, while the target is still `ready`. It
+    # reads only; a target with no earlier dispatch that released it is routed
+    # `fresh` without any remote measurement, so an ordinary dispatch pays
+    # nothing for it.
+    routing = route_recovery(args=args, repo=repo, candidates=[target], journal=journal)
+    held = routing.held_report(work_item_id=target.id)
+    if held is not None:
+        # The drain reports a hold as a deferred outcome; `dispatch --item` names
+        # it as a precondition error instead, "before any run exists, as `resume
+        # --item` refuses today" -- which is what this POSITION buys: the valve
+        # below is the only thing that writes `ready -> active`, so a refusal
+        # above it leaves no claim to release.
+        _ = write_stderr(text=held)
+        return EXIT_PRECONDITION_ERROR
     outcome = admit_and_dispatch_target(
         args=args,
         repo=repo,
@@ -87,6 +105,7 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
         journal=journal,
         janitor=janitor,
         marked=marked,
+        routing=routing,
     )
     # Every post-verdict stage, as ONE sequence. The SAME tail the resume runs,
     # which is what makes "both paths journal the same" a property of one
