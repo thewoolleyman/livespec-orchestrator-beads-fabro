@@ -39,8 +39,10 @@ other one.
 from __future__ import annotations
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import (
+    PR_STATE_MERGED,
     ResumeObservation,
     lock_refusals,
+    pull_request_state_refusals,
 )
 
 __all__: list[str] = [
@@ -56,4 +58,23 @@ def non_fallback_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
     and deliberately not the same as "there are no refusals", which is the
     precondition for a `resume`.
     """
-    return lock_refusals(observation=observation)
+    return (
+        *lock_refusals(observation=observation),
+        *_merged_refusals(observation=observation),
+    )
+
+
+def _merged_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
+    """The merged-pull-request refusal, and never the closed one beside it.
+
+    `pull_request_state_refusals` renders BOTH states, and they fall on opposite
+    sides of the line: a pull request closed without merging names a plain
+    dispatch, which is what a fallback route performs, while a MERGED one names
+    `reconcile-merged --item`, which nothing in routing can perform. So the
+    state is tested here and the TEXT is still taken from that arm — selecting
+    rather than re-deriving, which is what keeps the journal row and the refusal
+    an operator reads one account of one measurement.
+    """
+    if observation.pull_request_state != PR_STATE_MERGED:
+        return ()
+    return pull_request_state_refusals(observation=observation)

@@ -35,18 +35,28 @@ dispatch for a merged pull request sends an operator to cut an empty branch
 against work that has already landed, and to spend an `acceptance_rework_cap`
 attempt failing.
 
-WHY THREE ARMS ARE PUBLIC WHILE THE REST ARE PRIVATE. Recovery routing has to
+WHY SOME ARMS ARE PUBLIC WHILE THE REST ARE PRIVATE. Recovery routing has to
 CLASSIFY these refusals — the contracts section "Factory-configurable ACP
 fallback priority" grades each one as fallback-permitting, non-fallback, or an
 unobservable measurement, and routes on the class. It must do so without
 re-wording any of them, because that clause requires a held item's record to
 carry "every applicable non-fallback refusal with its EXISTING remedy in the
-order the resume's refusals are listed". The arms that render an
-unobservable-measurement refusal are therefore a real interface rather than
-internals: a classifier reaching for them privately is what the private-calls
-gate forbids, and a classifier that respelled their text would be a second
-account of one measurement — free to drift from the refusal an operator reads
-here.
+order the resume's refusals are listed". Every arm that renders either an
+unobservable-measurement refusal or a non-fallback one is therefore a real
+interface rather than an internal: a classifier reaching for them privately is
+what the private-calls gate forbids, and a classifier that respelled their text
+would be a second account of one measurement — free to drift from the refusal an
+operator reads here.
+
+The public set is consequently the union of two lists the clause draws, not one
+category: `anchor_refusals`, `head_refusals` and `liveness_refusals` render the
+unobservable measurements, while `liveness_refusals`, `lock_refusals` and
+`pull_request_state_refusals` render the non-fallback ones. `liveness_refusals`
+is in BOTH, which is not an accident of naming — a factory that cannot be asked
+and a factory reporting a live run are two readings of one measurement, and the
+clause treats the first as a hold on the measurement and the second as a hold on
+the refusal. The arms that render ONLY fallback-permitting refusals stay private,
+because routing never has to quote one: it carries their advice out instead.
 """
 
 from __future__ import annotations
@@ -64,6 +74,7 @@ __all__: list[str] = [
     "head_refusals",
     "liveness_refusals",
     "lock_refusals",
+    "pull_request_state_refusals",
     "resume_refusals",
 ]
 
@@ -168,7 +179,7 @@ def resume_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
         *_definition_of_done_refusals(observation=observation),
         *liveness_refusals(observation=observation),
         *lock_refusals(observation=observation),
-        *_pull_request_state_refusals(observation=observation),
+        *pull_request_state_refusals(observation=observation),
         *_resume_chain_refusals(observation=observation),
     )
 
@@ -376,8 +387,19 @@ def lock_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
     return (held,)
 
 
-def _pull_request_state_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
-    """The closed and merged refusals, each with the remedy its state calls for."""
+def pull_request_state_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
+    """The closed and merged refusals, each with the remedy its state calls for.
+
+    PUBLIC for the reason this module's header gives about its other public
+    arms, and this one carries the sharpest version of that argument: the two
+    states it renders fall on OPPOSITE sides of the fallback line — a closed
+    pull request's remedy is a plain dispatch, so recovery routing may carry it
+    out unattended, while a merged one's is `reconcile-merged --item`, which
+    nothing in routing can perform. A classifier that respelled either would be
+    free to drift into advising the other, and that drift cuts an empty branch
+    over work that has already landed. It therefore SELECTS on the state and
+    renders through this arm rather than re-deriving the text.
+    """
     if observation.pull_request is None or observation.pull_request_state is None:
         return ()
     if observation.pull_request_state == PR_STATE_MERGED:
