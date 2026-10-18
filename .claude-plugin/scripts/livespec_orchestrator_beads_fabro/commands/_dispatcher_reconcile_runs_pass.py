@@ -244,6 +244,11 @@ def _survey(
                     DEFAULT_BLOCKED_RUN_GRACE_SECONDS
                 )
             ),
+            # The CLAIM lane, armed. This pass is the head of every `loop`
+            # iteration AND of every `dispatch`, which is two of the three
+            # reconciliation surfaces the stranded-claim clause names; the
+            # third is the standalone sweep, which arms it the same way.
+            claim_journal=journal,
         ),
         factories=factories,
         dry_run=False,
