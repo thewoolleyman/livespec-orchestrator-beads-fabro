@@ -40,6 +40,9 @@ from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
     factory_bin_refusal,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_registry import (
+    factory_registry_refusal,
+)
 
 __all__: list[str] = [
     "factory_declaration_refusal",
@@ -97,4 +100,8 @@ def factory_declaration_refusal(*, factory: FactoryTarget | None) -> str | None:
     key and its own remedy, so an entry carrying two faults is told about one
     of them and re-graded on the next invocation.
     """
-    return factory_bin_refusal(factory=factory) or factory_environment_refusal(factory=factory)
+    return (
+        factory_bin_refusal(factory=factory)
+        or factory_environment_refusal(factory=factory)
+        or factory_registry_refusal(factory=factory)
+    )

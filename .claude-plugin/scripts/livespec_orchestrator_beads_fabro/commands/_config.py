@@ -75,6 +75,11 @@ from livespec_orchestrator_beads_fabro.commands._factory_environment import (
     FactoryEnvironment,
     factory_environment_from_entry,
 )
+from livespec_orchestrator_beads_fabro.commands._factory_registry import (
+    NO_FACTORY_REGISTRY,
+    FactoryRegistryReading,
+    factory_registry_from_entry,
+)
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     NodeTimeouts,
     node_timeouts_from_block,
@@ -95,20 +100,19 @@ __all__: list[str] = [
     "dispatcher_block",
     "has_fabro_factories",
     "has_fabro_factory",
-    "resolve_credential_wrapper",
     "resolve_fabro_bin",
     "resolve_fabro_factory",
     "resolve_fabro_sandbox_image",
     "resolve_node_timeouts",
     "resolve_store_config",
     "resolve_workflow_variant",
+    "root_mapping",
 ]
 
 _LIVESPEC_CONFIG = ".livespec.jsonc"
 _PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
 _CONNECTION_KEY = "connection"
 _DISPATCHER_KEY = "dispatcher"
-_CREDENTIAL_WRAPPER_KEY = "credential_wrapper"
 
 _DEFAULT_SERVER_HOST = "127.0.0.1"
 _DEFAULT_SERVER_PORT = 3307
@@ -154,6 +158,13 @@ class FactoryTarget:
     # evidence of a daemon's whereabouts — a loopback url is as likely to be a
     # forwarded tunnel as a local engine.
     docker_host: str | None = None
+    # What the HOST factory registry said about this entry, when the entry is
+    # registry-backed, as READ. Like `environment` it is deliberately not an
+    # `_optional_str` projection: `_factory_registry` owns why an unresolvable
+    # registry must stay distinguishable from an entry that simply names no
+    # server — both leave `server` at None, and only one of them may dispatch —
+    # and `_dispatcher_factory_registry` owns the grade of the reading.
+    registry: FactoryRegistryReading = NO_FACTORY_REGISTRY
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -330,42 +341,20 @@ def resolve_fabro_sandbox_image(*, cwd: Path) -> IOResult[str | None, ConfigUnre
     return _read_dispatcher_block(cwd=cwd).map(lambda block: _configured_sandbox_image(block=block))
 
 
-def resolve_credential_wrapper(*, cwd: Path) -> IOResult[list[str], ConfigUnreadable]:
-    """The top-level `credential_wrapper` argv-prefix; `[]` when none is configured.
-
-    An ABSENT config file, an absent key, and a non-list value all yield `[]` on
-    the SUCCESS track — each is an ANSWER: this repo configures no wrapper. A file
-    that EXISTS and will not parse rides the FAILURE track instead.
-
-    ⛔ THE DISTINCTION IS LOAD-BEARING, and it used to be lost here. The sole
-    consumer is the pre-push `check-ledger-conformance-live` gate, which invokes
-    the ledger check UNDER this wrapper and SKIPS when there is none. Folding an
-    unreadable config into `[]` therefore let a stray comma SILENTLY TURN THE
-    PRE-PUSH GATE OFF, reported in the same words as a repo that never wanted one.
-
-    ⚠️ It stays fail-SOFT at the consumer by deliberate design — that recipe runs
-    on every push and a false-fail would brick them all — so this failure track
-    exists to be REPORTED, not to block. Returning it is what makes the two
-    outcomes tellable apart; deciding what to do about them is the caller's.
-    """
-    return _read_root_mapping(cwd=cwd).map(lambda root: _credential_wrapper_tokens(root=root))
-
-
-def _credential_wrapper_tokens(*, root: dict[str, Any]) -> list[str]:
-    """The `credential_wrapper` argv tokens in a root mapping, or [] when unset."""
-    raw = root.get(_CREDENTIAL_WRAPPER_KEY)
-    if not isinstance(raw, list):
-        return []
-    return [str(token) for token in cast("list[Any]", raw)]
-
-
-def _read_root_mapping(*, cwd: Path) -> IOResult[dict[str, Any], ConfigUnreadable]:
+def root_mapping(*, cwd: Path) -> IOResult[dict[str, Any], ConfigUnreadable]:
     """`.livespec.jsonc`'s root object; `{}` on the SUCCESS track when absent.
 
     An absent config file is an ANSWER — this repo runs on documented defaults
     without one — so it rides the success track as an empty mapping. A file
     that will not parse, and a root that is not an object, are failures: the
     file is there and says something the loader cannot use.
+
+    PUBLIC for the reason `dispatcher_block` beside it is: a concern whose key
+    sits at the ROOT rather than under the plugin block reads it from OUTSIDE
+    this module (`_config_credential_wrapper`), and importing a `_`-prefixed
+    name across a module boundary is exactly what pyright strict and the
+    `private_calls` check refuse. The reader is the interface rather than each
+    of its uses, so a second root-level key does not owe this file a seam.
     """
     config_path = cwd / _LIVESPEC_CONFIG
     if not config_path.is_file():
@@ -423,11 +412,11 @@ def _read_plugin_sub_block(*, cwd: Path, key: str) -> IOResult[dict[str, Any], C
 
     An ABSENT plugin block or sub-block yields `{}` on the success track, so
     each caller applies its own defaults; an UNREADABLE file propagates the
-    failure from `_read_root_mapping`. Shared by the connection and dispatcher
+    failure from `root_mapping`. Shared by the connection and dispatcher
     readers so the JSONC -> plugin-block -> sub-block traversal is
     single-sourced rather than duplicated per sub-block.
     """
-    return _read_root_mapping(cwd=cwd).map(lambda root: _sub_block(root=root, key=key))
+    return root_mapping(cwd=cwd).map(lambda root: _sub_block(root=root, key=key))
 
 
 def _sub_block(*, root: dict[str, Any], key: str) -> dict[str, Any]:
@@ -480,13 +469,25 @@ def _resolve_configured_factory_name(*, block: dict[str, Any]) -> str:
 
 
 def _factory_target_for(*, name: str, block: dict[str, Any]) -> FactoryTarget:
+    """One named factory, with a registry-backed entry's address already resolved.
+
+    A registry-backed entry's `server` comes from the REGISTRY rather than from
+    the committed entry, and it lands on the SAME field, which is the whole of
+    how every downstream surface gets the registry address without changing:
+    the dispatch argv, the resume, the claim stamp, the reconcile survey and the
+    liveness reads all read `FactoryTarget.server`, and none of them learns that
+    the address came from a file. An entry that is not registry-backed reads
+    exactly as it did before the key existed.
+    """
     entry = _factory_entry(block=block, name=name)
+    registry = factory_registry_from_entry(entry=entry, name=name)
     return FactoryTarget(
         name=name,
-        server=_optional_str(value=entry.get("server")),
+        server=registry.server if registry.declared else _optional_str(value=entry.get("server")),
         fabro_bin=_optional_str(value=entry.get(_FACTORY_BIN_KEY)),
         environment=factory_environment_from_entry(entry=entry),
         docker_host=_optional_str(value=entry.get(_FACTORY_DOCKER_HOST_KEY)),
+        registry=registry,
         dev_token=_optional_str(value=os.environ.get(f"{_FABRO_DEV_AUTH_ENV_PREFIX}{name}")),
     )
 
