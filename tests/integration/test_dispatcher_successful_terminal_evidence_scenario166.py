@@ -162,14 +162,14 @@ def _held_merge(*, repo: Path, work_item_id: str) -> CurrentMergeHold:
     return "held"
 
 
-def _plan(*, root: Path) -> DispatchPlan:
+def _plan(*, root: Path, workflow_toml: Path = _WORKFLOW) -> DispatchPlan:
     root.mkdir(parents=True, exist_ok=True)
     repo = root / "repo"
     repo.mkdir()
     return build_plan(
         repo=repo,
         work_item_id="proof-terminal",
-        workflow_toml=_WORKFLOW,
+        workflow_toml=workflow_toml,
         goal_file=root / "goal.md",
         fabro_bin="synthetic-fabro",
         janitor=("mise", "exec", "--", "just", "check"),
@@ -248,8 +248,9 @@ def _dispatch(
     repository_exit_code: int = 0,
     repository_stdout: str | None = None,
     launcher_stderr: str = _WORKER_EXIT_MESSAGE,
+    workflow_toml: Path = _WORKFLOW,
 ) -> tuple[DispatchOutcome, _Journal, _Runner]:
-    plan = _plan(root=root)
+    plan = _plan(root=root, workflow_toml=workflow_toml)
     runner = _Runner(
         plan=plan,
         inspect_record=(
@@ -611,6 +612,68 @@ def test_unavailable_or_unstructured_evidence_retains_the_failed_disposition(
                 repository_stdout=repository_stdout,
             ),
             exceptions=(AttributeError, TypeError),
+        )
+        observed.append(
+            (name, dispatched if isinstance(dispatched, AttemptFailure) else dispatched[0])
+        )
+
+    assert [
+        (name, value.status, value.stage, value.pr_number)
+        if isinstance(value, DispatchOutcome)
+        else (name, type(value.error).__name__, "raised", None)
+        for name, value in observed
+    ] == [(name, "failed", "fabro-run", None) for name, *_rest in cases]
+
+
+def test_unmeasurable_configured_route_fails_closed_without_raising(
+    tmp_path: Path,
+) -> None:
+    """A configured green terminal nobody can READ is no evidence, not a crash.
+
+    These four faults belong to the CONFIGURED WORKFLOW rather than to the
+    engine record, which is why no checkpoint fixture can reach them: a run
+    config that cannot be read, one declaring no ``[workflow] graph``, a graph
+    file the declaration names but that is not there, and a graph whose shape
+    the success derivation refuses.  Each is a failure to MEASURE the green
+    terminal, so the dispatch keeps its ordinary non-green outcome -- the same
+    treatment the sibling malformed-node-outcome legs get, because reading an
+    unmeasurable route as a success and raising out of ``run_dispatch`` are
+    both ways of abandoning the dispatch mid-flight.
+
+    ``exceptions`` catches ``OSError`` beside the two the sibling legs catch,
+    because two of these faults are unreadable FILES rather than unreadable
+    engine evidence, and a raise has to be OBSERVED as a case outcome instead
+    of ending the whole case list at the first one.
+    """
+    unsupported_graph = (
+        "digraph fabricated {\n"
+        "  verify_pr [shape=box];\n"
+        "  exit [shape=Msquare];\n"
+        "  verify_pr -> exit;\n"
+        "}\n"
+    )
+    cases: tuple[tuple[str, str | None, str | None], ...] = (
+        ("absent-run-config", None, None),
+        ("no-graph-key", '[workflow]\nname = "fabricated"\n', None),
+        ("absent-graph-file", '[workflow]\ngraph = "fabricated.fabro"\n', None),
+        ("unsupported-graph", '[workflow]\ngraph = "fabricated.fabro"\n', unsupported_graph),
+    )
+    observed: list[tuple[str, DispatchOutcome | AttemptFailure]] = []
+    for name, manifest, graph_text in cases:
+        workflow_dir = tmp_path / name / "workflow"
+        workflow_dir.mkdir(parents=True)
+        workflow_toml = workflow_dir / "workflow.toml"
+        if manifest is not None:
+            _ = workflow_toml.write_text(manifest, encoding="utf-8")
+        if graph_text is not None:
+            _ = (workflow_dir / "fabricated.fabro").write_text(graph_text, encoding="utf-8")
+        dispatched = attempt(
+            action=partial(
+                _dispatch,
+                root=tmp_path / name / "dispatch",
+                workflow_toml=workflow_toml,
+            ),
+            exceptions=(AttributeError, OSError, TypeError),
         )
         observed.append(
             (name, dispatched if isinstance(dispatched, AttemptFailure) else dispatched[0])
