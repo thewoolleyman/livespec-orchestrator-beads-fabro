@@ -57,6 +57,11 @@ _SUCCESSFUL_NODES = (
     "proof_capture",
     "review",
     "proof_verify",
+    # The per-assertion grade of the verified record (v156; bd-ib-kcq6pu). It is
+    # on the success route because it is the ONLY route out of a `verified`
+    # replay: the clause forbids any edge from `proof_verify` to `pr_refresh` or
+    # `pr`, so a green run that skipped it took a path the graph does not carry.
+    "proof_grade",
     "pr",
     "pr_route",
     "pr_refresh_head",

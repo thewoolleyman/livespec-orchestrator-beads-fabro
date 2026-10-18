@@ -81,6 +81,14 @@ _REFRESH_REPAIR_ADDED = {"refresh_repair"}
 # are the publication stages' and the proof loop's, because the route re-enters
 # `pr_refresh` and a changed head re-earns the trio.
 _PR_ROUTE_ADDED = {"pr_route"}
+
+# The per-assertion grade of the verified record (v156; work-item bd-ib-kcq6pu),
+# kept as its own constant for the reason the two sets above give: the subject of
+# this module is the PORT, so an addition merged into the port's own set would make
+# a future port regression read as part of this route. The nodes it moves are the
+# publication stages' and the replay's, because every `verified` outcome now
+# reaches `pr_refresh` through it.
+_PROOF_GRADE_ADDED = {"proof_grade"}
 _REFRESH_REPAIR_LOOP = _REFRESH_REPAIR_ADDED | {
     "fix",
     "janitor",
@@ -619,12 +627,13 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
     ported = budget(text=_graph_text())
     pre_port = budget(text=_ROLLBACK.read_text(encoding="utf-8"))
 
-    # The two new stages plus the v134 refresh-repair classifier are the ONLY
-    # nodes added, and nothing was dropped: a node the ported graph lost would be
-    # an executable path missing from a figure still presented as an allowance.
+    # The two new stages, the v134 refresh-repair classifier, the v145 refresh
+    # route and the v156 per-assertion grade are the ONLY nodes added, and nothing
+    # was dropped: a node the ported graph lost would be an executable path
+    # missing from a figure still presented as an allowance.
     assert (
         set(ported.node_visits) - set(pre_port.node_visits)
-        == _PUBLICATION_STAGES_ADDED | _REFRESH_REPAIR_ADDED | _PR_ROUTE_ADDED
+        == _PUBLICATION_STAGES_ADDED | _REFRESH_REPAIR_ADDED | _PR_ROUTE_ADDED | _PROOF_GRADE_ADDED
     )
     assert set(pre_port.node_visits) - set(ported.node_visits) == set()
 
@@ -638,7 +647,13 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         if (ported.node_visits.get(node), ported.node_attempts.get(node))
         != (pre_port.node_visits.get(node), pre_port.node_attempts.get(node))
     }
-    reachable = _PUBLICATION_STAGES | _REFRESH_LOOP | _REFRESH_REPAIR_LOOP | _PR_ROUTE_ADDED
+    reachable = (
+        _PUBLICATION_STAGES
+        | _REFRESH_LOOP
+        | _REFRESH_REPAIR_LOOP
+        | _PR_ROUTE_ADDED
+        | _PROOF_GRADE_ADDED
+    )
     assert moved <= reachable, sorted(moved - reachable)
     # And the direction is the honest one: the graph grew, so the allowance grew.
     # Asserted rather than left implicit, because an allowance that SHRANK after
