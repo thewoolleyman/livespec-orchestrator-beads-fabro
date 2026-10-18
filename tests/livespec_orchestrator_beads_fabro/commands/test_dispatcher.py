@@ -269,10 +269,13 @@ def test_dispatcher_plan_decomposition_contract() -> None:
     # `_dispatcher_overlay_siblings`: the overlay renders a run config, while
     # that module answers which family repos a dispatched sandbox clones, where
     # they land, and which env keys point at them.
+    # `escape_minijinja_literal` moved OUT in the same spirit, into
+    # `_dispatcher_minijinja_escape`: the overlay renders a run config and renders
+    # none of its own output through the escaper, so the escaper was a guest
+    # concern (bd-ib-tlmq3m).
     assert set(_dispatcher_overlay.__all__) == {
         "CURRENCY_GATE_ENV_VALUE",
         "CURRENCY_GATE_ENV_VAR",
-        "escape_minijinja_literal",
         "harness_shell_env_lines",
         "render_run_config_overlay",
         "workflow_graph_path",

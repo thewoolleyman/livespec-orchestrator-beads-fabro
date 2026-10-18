@@ -24,7 +24,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_minijinja_escape import (
     escape_minijinja_literal,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroCommand

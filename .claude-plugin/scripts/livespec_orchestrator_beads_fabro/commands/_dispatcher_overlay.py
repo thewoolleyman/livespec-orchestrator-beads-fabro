@@ -1,8 +1,13 @@
-"""Run-config overlay rendering (plus MiniJinja literal escaping) for the Dispatcher.
+"""Run-config overlay rendering for the Dispatcher.
 
-The run goal itself is assembled in `_dispatcher_goal`; this module keeps
-`escape_minijinja_literal` — the shared escaper the goal renderer (and any
-future MiniJinja-templated text) routes untrusted prose through.
+The run goal itself is assembled in `_dispatcher_goal`, and
+`escape_minijinja_literal` — the shared escaper that renderer routes untrusted
+prose through — now LIVES in `_dispatcher_minijinja_escape`. It was hosted here
+and was always a guest: this module renders a run config and renders none of its
+own output through the escaper. It moved out by COHESION when the sandbox
+worktree-pack prepare step below needed room under this file's LLOC ceiling
+(bd-ib-tlmq3m), and deliberately left NO re-export shim behind — a shim would
+have bought none of the room the split was for.
 
 `harness_shell_env_lines` now LIVES in `_dispatcher_harness_shell_policy`, which
 owns the harness shell-tool policy's keys and both of its projections — the env
@@ -94,7 +99,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_toml_read import (
 __all__: list[str] = [
     "CURRENCY_GATE_ENV_VALUE",
     "CURRENCY_GATE_ENV_VAR",
-    "escape_minijinja_literal",
     "harness_shell_env_lines",
     "render_run_config_overlay",
     "workflow_graph_path",
@@ -105,58 +109,6 @@ __all__: list[str] = [
 # credential.
 CURRENCY_GATE_ENV_VAR = "LIVESPEC_CURRENCY_GATE"
 CURRENCY_GATE_ENV_VALUE = "fail"
-# MiniJinja's three OPENING delimiters: expression `{{`, statement `{%`,
-# comment `{#` (fabro v0.254.0 renders the run goal through MiniJinja —
-# fabro issue #124 — storing it in the graph's `goal` attribute and
-# interpolating it into the prompts as `{{ goal }}`). The lexer only
-# enters template mode at one of these openers; closing delimiters and
-# every other character are inert outside a tag. Neutralizing every
-# opener therefore guarantees arbitrary goal prose cannot alter graph
-# semantics regardless of content (work-item livespec-impl-beads-ajv).
-_MINIJINJA_OPEN_DELIMITER_RE = re.compile(r"\{\{|\{%|\{#")
-
-
-def escape_minijinja_literal(*, text: str) -> str:
-    """Neutralize MiniJinja syntax in `text` so it renders back verbatim.
-
-    Fabro v0.254.0 renders the run goal through MiniJinja (fabro issue
-    #124): the goal lands in the graph's `goal` attribute and is
-    interpolated into the prompts as `{{ goal }}`. Untrusted item prose
-    containing a literal MiniJinja construct — a `{{ ... }}` expression
-    (e.g. justfile recipe syntax), a `{% ... %}` statement, or a
-    `{# ... #}` comment — would otherwise re-enter template mode and
-    raise `template_undefined_variable` (or worse: this is also a mild
-    template-INJECTION surface, since the prose could introduce arbitrary
-    template constructs). Three v5k-leg dispatches failed pre-flight this
-    way (livespec-wwfu, livespec-runtime-ani, livespec-driver-claude-3bk;
-    work-item livespec-impl-beads-ajv).
-
-    MiniJinja's lexer only enters template mode at one of the three
-    OPENING delimiters (`{{`, `{%`, `{#`); the closing delimiters and
-    every other character (backslashes, quotes, newlines) are inert
-    outside a tag. So replacing each opener with the MiniJinja expression
-    that emits those two literal characters — `{{` -> `{{ "{{" }}`,
-    `{%` -> `{{ "{%" }}`, `{#` -> `{{ "{#" }}` — makes the lexer never
-    enter a tag from the original prose, and the inserted expressions
-    render back to the exact original characters after one render. This
-    transform is self-cancelling by construction: it is correct only when
-    the consumer renders exactly once, because that render restores the
-    original opener text. This is preferred over a `{% raw %}...{% endraw
-    %}` wrapper, which is NOT content-agnostic: a goal containing the
-    literal text `{% endraw %}` would close the raw block early and
-    re-expose the tail. The single `re.sub` pass does not re-scan its own
-    replacement text, so the inserted `{{ ... }}` expressions are never
-    themselves neutralized during this transform.
-    """
-    return _MINIJINJA_OPEN_DELIMITER_RE.sub(
-        # The replacement always OPENS with the expression delimiter `{{`
-        # (only `{{ ... }}` emits a value) and quotes the matched opener as
-        # a string literal: `{{` -> `{{ "{{" }}`, `{%` -> `{{ "{%" }}`,
-        # `{#` -> `{{ "{#" }}`. Using the matched opener as the prefix would
-        # be wrong — `{%`/`{#` are themselves live openers, not literals.
-        lambda match: '{{ "' + match.group(0) + '" }}',
-        text,
-    )
 
 
 def workflow_graph_path(*, committed_text: str, workflow_dir: Path) -> Path | None:
