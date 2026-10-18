@@ -788,7 +788,14 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   than on "changes a product `.py`", which reads naturally and would retire the
   clause for the one shape it was built for. The control for that case adds a
   product `.py` to the SAME three paths, which is a genuinely half-authored
-  commit and must still report.
+  commit and must still report. The POSITIVE case for that test-alone shape is
+  deliberately NOT duplicated here: it is
+  `test_open_red_needs_human_reason.py::test_the_terminal_reason_names_the_open_red_commit_at_the_branch_head`,
+  whose head commit changes exactly one `tests/*.py`, and it is the guard that
+  makes the narrowing honest rather than a quiet retirement. Measured by
+  mutation on 2026-10-18: replacing this module's any-`.py` reading with a
+  product-`.py` one reds that case and two siblings in the same module, so a
+  future narrowing cannot pass while only this module's cases are consulted.
 
 - `test_needs_human_preservation_ref_identity.py` — binds work-item
   bd-ib-zddbkq against Scenario 103's requirement that a needs-human outcome
