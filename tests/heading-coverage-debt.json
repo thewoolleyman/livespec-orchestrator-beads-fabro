@@ -922,5 +922,12 @@
     "heading": "## Scenario 198 \u2014 A sandbox agent cannot signal the sandbox's PID 1 or its own adapter, and signals to its own processes still run",
     "work_item": "bd-ib-dpkip6",
     "first_seen": "2026-10-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 182 \u2014 A registry-backed factory resolves its address from the host registry, and an unresolvable one refuses before claim",
+    "work_item": "bd-ib-fubkcv",
+    "first_seen": "2026-10-18"
   }
 ]

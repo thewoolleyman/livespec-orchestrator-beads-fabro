@@ -6895,6 +6895,85 @@ MUST record, for each launch, which source supplied the sandbox image:
 `dispatcher.fabro_sandbox_image`. Scenario 169 in `scenarios.md` exercises
 this subsection.
 
+### Factory addresses resolved from a host registry
+
+A `dispatcher.factories` entry MAY declare `"registry": true` in place of a
+`server` value. The server address of such a REGISTRY-BACKED entry MUST be
+resolved by the entry's own name from the factory registry: a JSON file whose
+path is the value of `LIVESPEC_FABRO_FACTORY_REGISTRY` when that variable is set
+and non-empty, and otherwise `/etc/livespec/fabro-factories.json`. The registry
+is host state rendered by the fleet's provisioning from its inventory; no
+committed file in a governed repository writes it. An entry that carries
+`server` and no `registry` key keeps its existing meaning unchanged, and
+`server` remains the supported form for an adopter repository outside the
+livespec fleet.
+
+Every committed `dispatcher.factories` entry in this repository's own
+`.livespec.jsonc` MUST be registry-backed and MUST NOT carry a `server` or a
+`docker_host` value.
+A fleet member repository's committed entries SHOULD be registry-backed, so that
+binding a factory to a machine is a change to the provisioning inventory alone.
+
+Resolution reads only what the selected entry needs. The registry file MUST
+parse as JSON whose top-level value is an object; within it, the value under the
+selected factory's name MUST be an object whose `server` value is a string that
+is non-empty after surrounding whitespace is removed. That object MAY carry a
+`docker_host` string, spelled as the Docker CLI's `DOCKER_HOST`; when it does,
+it is the registry-backed factory's container-daemon address, exactly as a
+committed entry's `docker_host` is for an entry that carries `server`, and when
+it does not, the factory declares no container-daemon address. A `docker_host`
+value that is present but is not a string non-empty after trimming is refused
+like an invalid `server`. Other entries in the registry are not validated by
+that resolution and do not affect it.
+
+The Dispatcher MUST refuse, before any claim, ledger write of any kind (status,
+metadata or comment) or Fabro run creation, a dispatch whose resolved factory
+is registry-backed when the registry file is absent or unreadable, does not
+parse as JSON, has a top-level value that is not an object, has no entry for
+that factory name, or gives that entry no valid `server` string. The refusal
+MUST name the factory and the registry path it read. The Dispatcher MUST NOT
+fall back to the ambient local Fabro target, to `dispatcher.default_factory`,
+or to any other factory in that case. An entry declaring `"registry": true`
+together with `server` or `docker_host` MUST be refused the same way, naming
+the factory.
+
+Every surface that turns a declared factory into an address MUST use this one
+resolution, and every surface whose behaviour depends on whether a factory is
+remote MUST treat a registry-backed entry as naming a server. That includes
+dispatch and resume, the reconcile survey of declared factories, the liveness
+question asked of each factory a journal names, the availability-evidence reads
+of §"Factory-configurable ACP fallback priority", the run-turn telemetry
+export's remote-factory classification, plan run liveness, the merge-hold
+liveness guard, the run-event projection, and the needs-human valve
+enrichment. A surface that cannot resolve a registry-backed factory MUST keep
+the failure behaviour already ratified for an unreachable factory on that
+surface: a survey or liveness read reports that factory as unobservable, naming
+it, and MUST NOT skip it silently or treat it as holding no runs; the valve
+enrichment costs the enrichment and never the valve. One unresolvable factory
+MUST NOT prevent the reconcile survey from observing the other declared
+factories. A resolved registry-backed dispatch MUST record the resolved server
+address in the item's dispatch-factory record exactly as a `server` entry does.
+A factory's per-name settings — its dev token, its secret-channel declaration,
+its `bin` and its `environment` — stay keyed by the factory name, unchanged.
+
+The registry refusal applies only to resolving a DECLARED, registry-backed
+entry. It does not change the factory selection order: an explicit
+`--factory` is taken first, then `LIVESPEC_FABRO_FACTORY` when it is set and
+non-empty; then the
+item's recorded factory; then `dispatcher.default_factory`. A recorded factory
+name that `dispatcher.factories` no longer declares keeps its existing
+treatment: when no explicit selection is made it is ignored and the dispatch
+falls back to `dispatcher.default_factory`, so renaming a factory re-routes the
+later unpinned dispatches of every item that recorded the old name onto the
+default factory. A `dispatcher.default_factory` that names no declared entry
+keeps its existing treatment as well; this clause does not govern it.
+
+A factory name SHOULD name the Fabro server instance it addresses and SHOULD
+stay the same for that instance's whole life. Which instance serves a
+repository by default MUST be carried only by `dispatcher.default_factory`, so
+that moving the default from one instance to another changes that one key and
+renames nothing.
+
 ## Built-in ACP node defaults
 
 The factory's ACP nodes run a model the Dispatcher CHOOSES from configuration,
