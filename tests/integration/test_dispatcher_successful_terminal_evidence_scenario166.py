@@ -833,3 +833,57 @@ def test_missing_or_malformed_per_node_outcomes_fail_closed_without_raising(
         else (name, type(value.error).__name__, "raised", None)
         for name, value in observed
     ] == [(name, "failed", "fabro-run", None) for name, _checkpoint in cases]
+
+
+def test_the_engines_own_entry_marker_proves_the_route_without_the_graph_start_id(
+    tmp_path: Path,
+) -> None:
+    """A REAL record's entry marker proves the route, and no record carries ``start``.
+
+    Every qualifying case above lists the graph's literal ``start`` id in
+    ``completed_nodes``.  No engine writes it: ``start [shape=Mdiamond]``
+    declares no backend and runs no script, so nothing executes there and
+    ``completed_nodes`` -- the engine's own account of the nodes it RAN --
+    cannot contain it.  Both committed ``fabro inspect --json`` captures open
+    with ``setup``, the engine's own name for that marker, and NEITHER names
+    ``start``.
+
+    So a completion requirement reaching for ``start`` refuses 100% of real
+    records while reporting the same clean non-green a genuine failure
+    reports.  That is the one failure this rule cannot have: it is
+    indistinguishable at every surface from the correct fail-closed answer,
+    so Definition-of-Done assertions 1 and 2 would deliver nothing while
+    every test built on a substituted ``start`` still passed.
+
+    The entry marker is therefore relieved of COMPLETION exactly as it is
+    already relieved of the GRADE, and nothing is given up by it: the marker
+    dominates every node in the graph, so it carries no discriminating
+    information, and the route still rests on every EXECUTABLE dominator
+    completing and on the terminal-shape test.  The ``required-failed`` and
+    ``incomplete-route`` controls above keep the fail-closed direction.
+    """
+    entry_markers = {
+        path.name: json.loads(path.read_text(encoding="utf-8"))[0]["checkpoint"]["completed_nodes"]
+        for path in sorted(_NATIVE_INSPECT.parent.glob("*.json"))
+    }
+    marker = entry_markers["background.json"][0]
+
+    real = _successful_checkpoint()
+    real["completed_nodes"] = [marker, *(node for node in _SUCCESSFUL_NODES if node != "start")]
+    real["node_outcomes"] = {
+        node: {"status": "succeeded"} for node in _SUCCESSFUL_NODES if node != "start"
+    }
+    outcome, _journal, _runner = _dispatch(
+        root=tmp_path,
+        inspect_record=_failed_inspect(checkpoint=real),
+    )
+
+    assert marker == "setup"
+    assert [name for name, nodes in entry_markers.items() if "start" in nodes] == []
+    assert [nodes[0] for nodes in entry_markers.values()] == ["setup", "setup"]
+    assert (outcome.status, outcome.stage, outcome.pr_number, outcome.merge_sha) == (
+        "green",
+        "done",
+        41,
+        _MERGE_SHA,
+    )
