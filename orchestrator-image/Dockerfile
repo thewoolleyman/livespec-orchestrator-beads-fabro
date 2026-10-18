@@ -163,10 +163,12 @@ RUN curl -fsSL -o /tmp/dolt.tar.gz \
 
 # --- Fabro binary. Pin the version + the glibc floor together. The binary is
 #     COPIED in (not apt-installed). It is fetched into the build context from
-#     the host's ~/.fabro/bin/fabro (v0.254.0) by build-and-verify.sh and is
-#     gitignored — NEVER committed (it is a 111MB blob, and pinning the floor
-#     here documents the coupling). ---
-ENV FABRO_VERSION=0.254.0
+#     $HOST_FABRO_BIN by build-and-verify.sh and is gitignored — NEVER
+#     committed (a 143MB blob; pinning the floor here documents the coupling).
+#     The pinned bundle is v0.382.0-nightly.0 (adeefec, bd-ib-sxcnj7; see the
+#     README's release-bundle section): bake it with HOST_FABRO_BIN pointed at
+#     that binary. The default ~/.fabro/bin/fabro is still the legacy 0.254. ---
+ENV FABRO_VERSION=0.382.0-nightly.0
 COPY fabro /usr/local/bin/fabro
 RUN chmod +x /usr/local/bin/fabro \
  && /usr/local/bin/fabro version | head -1
