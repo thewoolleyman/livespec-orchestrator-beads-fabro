@@ -74,6 +74,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults import (
     JANITOR_CLUSTER_GATE_DEFAULT,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_schema import (
+    JANITOR_CHECK_SUITE_KEY,
+)
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 if TYPE_CHECKING:
@@ -144,6 +147,17 @@ _STATE_FIELD = "state"
 # surface silently rename the other.
 _ROW_VENUE_FIELD = "venue"
 _ROW_STARTED_AT_FIELD = "started_at"
+_ROW_SUITE_SOURCE_FIELD = "suite_source"
+
+# Which RULE chose the suite, per venue. On the host that is the committed key
+# this plugin reads, so the row names it from the schema's own spelling rather
+# than from a literal here -- a row naming a key an operator cannot find is
+# worse than no row at all. On the cluster it is the key the GATE CLIENT
+# resolves its own suite from, in the janitor checkout's
+# `[tool.livespec_dev_tooling]` block, because that venue does not apply the
+# committed declaration AT ALL: naming the committed key there would send an
+# operator to edit a declaration the run never consulted.
+_CLUSTER_SUITE_SOURCE = "gate_check_suite"
 _ROW_GATE_STATE_FIELD = "gate_state"
 _ROW_GATE_TREE_HASH_FIELD = "gate_tree_hash"
 
@@ -318,6 +332,9 @@ def janitor_check_row_fields(
     """
     fields: dict[str, object] = {
         _ROW_VENUE_FIELD: JANITOR_VENUE_CLUSTER_JOB if on_the_cluster else JANITOR_VENUE_HOST_LOCAL,
+        _ROW_SUITE_SOURCE_FIELD: (
+            _CLUSTER_SUITE_SOURCE if on_the_cluster else JANITOR_CHECK_SUITE_KEY
+        ),
         _ROW_STARTED_AT_FIELD: started_at,
     }
     if not on_the_cluster:
