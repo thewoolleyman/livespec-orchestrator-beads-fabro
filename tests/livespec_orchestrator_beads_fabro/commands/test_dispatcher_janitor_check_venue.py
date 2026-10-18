@@ -2,16 +2,19 @@
 
 The venue's behaviour THROUGH the post-merge flow lives in
 `test_dispatcher_engine_janitor.py`; this module covers the readings that flow
-cannot produce -- a gate whose output carries no readable state, and one that
-narrates before it decides.
+cannot produce -- a gate whose output carries no readable state, one that
+narrates before it decides, and a janitor checkout whose HEAD does not resolve.
 """
 
 import json
+import subprocess
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_check_venue import (
     cluster_janitor_red,
+    gate_tree_hash,
 )
 
 _CHECKOUT = Path("/tmp/janitor-x-1")
@@ -62,3 +65,57 @@ def test_cluster_gate_output_carrying_no_readable_state_is_red() -> None:
 
     assert red is not None
     assert str(_CHECKOUT) in red
+
+
+def test_submitted_tree_reading_that_could_not_be_taken_is_an_absence(tmp_path: Path) -> None:
+    """A checkout whose HEAD does not resolve yields `None`, not a plausible-looking value.
+
+    Run against REAL git through the production runner, because the behaviour
+    under test is git's own: asked to resolve a revision it cannot, `git
+    rev-parse` ECHOES the revision it was given onto standard output and exits
+    128. So the reading declines by writing nothing rather than by failing to
+    write, and an `or None` guard over a bare `rev-parse` can never fire -- the
+    row would carry the literal `HEAD^{tree}` where the field's whole promise is
+    an absence. A canned runner could assert nothing here: it would report
+    whatever shape this module chose to hand it.
+
+    The checkout is a `git init` with no commit, which is the state this field is
+    read in when the janitor checkout could not be provisioned -- and the row's
+    tree hash is exactly what an operator reads to find, or rule out, the gate
+    Job for that tree, so a non-hex string there sends them looking for a Job
+    whose name cannot exist.
+
+    The POSITIVE CONTROL is the same reading one commit later, through the same
+    runner against the same checkout. Without it, `None` is equally consistent
+    with a build that answers `None` for every checkout, and the assertion would
+    hold against a function that reads nothing at all.
+    """
+    checkout = tmp_path / "janitor-co"
+    checkout.mkdir()
+    _ = subprocess.run(["git", "init", "--quiet"], cwd=str(checkout), check=True)
+    runner = ShellCommandRunner()
+
+    unresolvable = gate_tree_hash(runner=runner, checkout=checkout)
+
+    _ = (checkout / "merged.txt").write_text("the merged tree\n", encoding="utf-8")
+    _ = subprocess.run(["git", "add", "merged.txt"], cwd=str(checkout), check=True)
+    _ = subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Janitor Fixture",
+            "-c",
+            "user.email=janitor@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "the merged default-branch tip",
+        ],
+        cwd=str(checkout),
+        check=True,
+    )
+    resolvable = gate_tree_hash(runner=runner, checkout=checkout)
+
+    assert unresolvable is None
+    assert resolvable is not None
+    assert len(resolvable) == 40
