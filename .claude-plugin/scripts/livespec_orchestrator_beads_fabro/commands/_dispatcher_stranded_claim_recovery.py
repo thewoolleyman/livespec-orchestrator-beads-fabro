@@ -55,11 +55,13 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_effects import (
-    append_claim_comment,
     claim_row,
     claim_unchanged,
     release_claim_to_ready,
     rest_claim_for_a_human,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_fence import (
+    claim_recovery_fence,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade import (
     ACTION_ABSENT_RUN_RELEASE,
@@ -78,6 +80,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_recor
     recovery_journal_record,
     release_comment_body,
     repeated_comment_body,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_replay import (
+    EFFECT_WRITTEN,
+    establish_comment,
+    establish_journal_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_terminal import (
     TerminalObservation,
@@ -131,7 +138,28 @@ def recover_claim(
     request: ClaimRecoveryRequest,
     now_iso: str,
 ) -> RecoveredClaim | HeldClaim:
-    """Release this claim, writing its three effects in the clause's order.
+    """Release this claim under the primary checkout's lock, in the clause's order.
+
+    The FENCE is outermost, so every path below it — each hold, each convergent
+    skip, and the terminal delegation that reaches the Dispatcher's own
+    dispositions — drops the lock on the way out.
+    """
+    with claim_recovery_fence(
+        repo=repo, work_item_id=request.item.id, run_id=request.run_id
+    ) as fenced:
+        if not fenced:
+            return _held(request=request, reason=HOLD_EFFECT_UNOBSERVABLE)
+        return _recover_fenced(repo=repo, journal=journal, request=request, now_iso=now_iso)
+
+
+def _recover_fenced(
+    *,
+    repo: Path,
+    journal: JournalFile,
+    request: ClaimRecoveryRequest,
+    now_iso: str,
+) -> RecoveredClaim | HeldClaim:
+    """One recovery, with the exclusion already held.
 
     The PRECONDITION read is kept apart from the writes below it so that the
     one thing a reader has to check — that nothing is written before the row
@@ -198,16 +226,29 @@ def _write_release_effects(
     three values `_route` resolves: a second writer for the repeat arm would be
     a second ordering of the same three effects, and the ordering is the
     guarantee.
+
+    EACH DURABLE EFFECT IS SKIPPED IF IT ALREADY LANDED, which is what makes an
+    interrupted recovery converge rather than duplicate. The skips do not relax
+    the ORDER: a replay still establishes the record, then the comment, then
+    re-reads and transitions, and the effects it reports are the ones it
+    actually performed.
     """
-    journal.append(
+    stage = _route(request=request).stage
+    recorded = establish_journal_record(
+        journal=journal,
+        stage=stage,
+        work_item_id=request.item.id,
+        run_id=request.run_id,
         record=recovery_journal_record(
-            stage=_route(request=request).stage,
-            recovered=_recovered(request=request, effects=()),
-        )
+            stage=stage, recovered=_recovered(request=request, effects=())
+        ),
     )
-    if not append_claim_comment(
+    if recorded is None:
+        return _held(request=request, reason=HOLD_EFFECT_UNOBSERVABLE)
+    commented = establish_comment(
         repo=repo, work_item_id=request.item.id, body=_comment_body(request=request)
-    ):
+    )
+    if commented is None:
         return _held(request=request, reason=HOLD_EFFECT_UNOBSERVABLE)
     # IMMEDIATELY before the transition, after both durable records: the one
     # re-read the clause names, and the only one whose failure withholds the
@@ -221,8 +262,17 @@ def _write_release_effects(
         return _held(request=request, reason=HOLD_EFFECT_UNOBSERVABLE)
     return _recovered(
         request=request,
-        effects=(EFFECT_JOURNAL_RECORD, EFFECT_COMMENT, EFFECT_TRANSITION),
+        effects=(
+            *_performed(outcome=recorded, effect=EFFECT_JOURNAL_RECORD),
+            *_performed(outcome=commented, effect=EFFECT_COMMENT),
+            EFFECT_TRANSITION,
+        ),
     )
+
+
+def _performed(*, outcome: str, effect: str) -> tuple[str, ...]:
+    """The effect name, or nothing when this pass found it already written."""
+    return (effect,) if outcome == EFFECT_WRITTEN else ()
 
 
 @dataclass(frozen=True, kw_only=True)
