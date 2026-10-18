@@ -115,6 +115,28 @@ def test_a_conflicted_manifest_allows_the_call_without_running_the_guard(
     assert invocations == [], "the guard must not be launched while the manifest is conflicted"
 
 
+def test_a_conflicted_manifest_says_on_stderr_which_guard_it_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A silent stand-down is indistinguishable from a guard that passed.
+
+    The one line is the whole operator surface for this state: it has to name
+    the manifest as the cause and the guard as what was given up, or an agent
+    whose write sailed through has no way to know the guard did not decide it.
+    """
+    launcher = _load_launcher()
+    _write_manifest(project=tmp_path, body=_CONFLICTED_MANIFEST)
+    _ = _record_invocations(launcher=launcher, monkeypatch=monkeypatch)
+
+    assert _drive(launcher=launcher, project=tmp_path, monkeypatch=monkeypatch) == 0
+    notice = capsys.readouterr().err.splitlines()
+    assert len(notice) == 1, f"exactly one line belongs on stderr, got: {notice}"
+    assert str(tmp_path / _MANIFEST_NAME) in notice[0], "the line must name the manifest"
+    assert "unparseable" in notice[0], "the line must say the manifest is unparseable"
+    assert "skipped" in notice[0], "the line must say the guard was skipped"
+    assert " ".join(_GUARD_COMMAND) in notice[0], "the line must name the skipped guard"
+
+
 # --- the control: a parseable manifest changes nothing ---------------------
 
 
@@ -141,3 +163,15 @@ def test_a_parseable_manifest_returns_the_wrapped_guards_own_refusal(
     assert (
         _drive(launcher=launcher, project=tmp_path, monkeypatch=monkeypatch) == _REFUSAL_STATUS
     ), "a refusal the guard reached on a parseable manifest must reach Claude Code"
+
+
+def test_a_parseable_manifest_writes_nothing_to_stderr(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The notice belongs to the stand-down alone, not to every guarded call."""
+    launcher = _load_launcher()
+    _write_manifest(project=tmp_path, body=_PARSEABLE_MANIFEST)
+    _ = _record_invocations(launcher=launcher, monkeypatch=monkeypatch)
+
+    assert _drive(launcher=launcher, project=tmp_path, monkeypatch=monkeypatch) == 0
+    assert capsys.readouterr().err == ""
