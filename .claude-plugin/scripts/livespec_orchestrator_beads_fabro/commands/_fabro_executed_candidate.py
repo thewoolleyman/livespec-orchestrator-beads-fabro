@@ -72,6 +72,7 @@ __all__: list[str] = [
     "attributed_provider_limit_failure",
     "executed_candidate_identity",
     "graph_node_id",
+    "recorded_availability_keys",
 ]
 
 # The Petri-era stage key's leading execution ordinal, as the only prefix this
@@ -121,6 +122,31 @@ def executed_candidate_identity(
         node=graph_node,
         availability_key=availability,
         candidate_key=_label(labels=labels, node=graph_node, suffix=CANDIDATE_LABEL_SUFFIX),
+    )
+
+
+def recorded_availability_keys(*, labels: Mapping[str, str]) -> frozenset[str]:
+    """EVERY availability key these run labels record, across every node.
+
+    This is the question a run record nobody could READ leaves open. The
+    attribution above asks which entitlement ONE named node spent, which needs
+    the record to say which node failed; when the record is unreadable it says
+    nothing of the kind, and any of the node attempts the labels name could
+    have been the one that spent an allowance. So the honest answer is the
+    whole recorded set, and the caller treats each of those entitlements as
+    unconfirmed rather than picking one.
+
+    It is derived from the label KEYS rather than from a node list, because
+    `dispatch_run_label_pairs` emits a pair only for a node that resolved an
+    identity: a reader asking about nodes it already knew could only ever
+    return the nodes it already knew.
+    """
+    prefix = f"{NODE_LABEL_PREFIX}."
+    suffix = f".{AVAILABILITY_LABEL_SUFFIX}"
+    return frozenset(
+        value.strip()
+        for key, value in labels.items()
+        if key.startswith(prefix) and key.endswith(suffix) and value.strip()
     )
 
 

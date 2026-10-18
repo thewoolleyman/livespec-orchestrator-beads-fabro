@@ -103,11 +103,21 @@ class AcpSuccessfulAttempt:
 
 @dataclass(frozen=True, kw_only=True)
 class AcpHoldLedger:
-    """Every live typed hold, plus what could not be read as one."""
+    """Every live typed hold, plus what could not be read as one.
+
+    `unconfirmed_keys` is which ENTITLEMENTS the unreadable half leaves
+    unconfirmed, and the journal fold always leaves it empty: an observation
+    whose `schema_version` this build does not know is surfaced UNINTERPRETED,
+    so reading its `hold_key` to scope a skip would be exactly the "interpreted
+    as v1" the contract forbids. It is filled by the host-wide union, where the
+    unreadable source is a factory run whose own labels name its entitlements
+    without any unknown-version field being read.
+    """
 
     holds: tuple[AcpAvailabilityHold, ...]
     unobservable: tuple[Mapping[str, object], ...]
     observation_ids: frozenset[str]
+    unconfirmed_keys: frozenset[str] = frozenset()
 
 
 def read_acp_hold_ledger(*, journal_path: Path | None, now_iso: str) -> AcpHoldLedger:

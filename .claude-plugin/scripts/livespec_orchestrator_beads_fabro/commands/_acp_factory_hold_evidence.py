@@ -64,6 +64,19 @@ identifier-shaped key verbatim and marks any other as a `sha256:` digest, so
 evidence derived from a digested key names the digest. Reading it as it stands
 is honest about what the run recorded; the digest is one-way so no decoding
 exists, and broadening the key would name an entitlement nobody declared.
+
+AN UNREADABLE ROW NAMES THE ENTITLEMENTS IT LEAVES UNCONFIRMED, which is what
+turns "this source is unavailable" from a label into a decision a candidate
+filter can act on. "It MAY continue with candidates whose availability evidence
+is independently complete; it MUST NOT treat an unobserved candidate as
+confirmed unheld." The two unobservable ROW arms both name a run, and a run row
+carries the entitlement labels the dispatch stamped on it, so each one reports
+EVERY availability key that run recorded -- the whole set rather than one,
+because an unreadable record does not say which of its node attempts failed. An
+unreadable LISTING names none: there are no rows, so there is no entitlement it
+could be about, and that is why a refused listing is surfaced and retried
+without emptying any chain. A reading that let it empty every chain would wedge
+every dispatch in the fleet the moment one factory became unreachable.
 """
 
 from __future__ import annotations
@@ -92,6 +105,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_facto
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_labels import REPOSITORY_LABEL_KEY
 from livespec_orchestrator_beads_fabro.commands._fabro_executed_candidate import (
     executed_candidate_identity,
+    recorded_availability_keys,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     FabroRunSummary,
@@ -144,10 +158,17 @@ class FactoryRunReader(Protocol):
 
 @dataclass(frozen=True, kw_only=True)
 class FactoryHoldEvidence:
-    """What one host-wide read derived, and which reads could not be taken."""
+    """What one host-wide read derived, and which reads could not be taken.
+
+    `unconfirmed_keys` is the SECOND half of an unobservable entry and is a
+    field rather than something a consumer derives from `unobservable`: the
+    entry's shape belongs to this read, and a candidate filter interpreting one
+    would be a second reader of a record it never produced.
+    """
 
     observations: tuple[FactoryHoldObservation, ...] = ()
     unobservable: tuple[Mapping[str, object], ...] = ()
+    unconfirmed_keys: frozenset[str] = frozenset()
 
     @property
     def holds(self) -> tuple[AcpAvailabilityHold, ...]:
@@ -175,13 +196,11 @@ def factory_hold_evidence(
     repository dispatches to can never be one it declines to read evidence
     from.
     """
-    observations: list[FactoryHoldObservation] = []
-    unobservable: list[Mapping[str, object]] = []
-    for factory in declared_factory_names(block=dispatcher_block(cwd=repo)):
-        read = _factory_evidence(factory=factory, reader=reader, now_iso=now_iso)
-        observations.extend(read.observations)
-        unobservable.extend(read.unobservable)
-    return FactoryHoldEvidence(observations=tuple(observations), unobservable=tuple(unobservable))
+    reads = tuple(
+        _factory_evidence(factory=factory, reader=reader, now_iso=now_iso)
+        for factory in declared_factory_names(block=dispatcher_block(cwd=repo))
+    )
+    return _merged(reads=reads)
 
 
 def _factory_evidence(
@@ -193,13 +212,25 @@ def _factory_evidence(
         return FactoryHoldEvidence(
             unobservable=({"factory": factory, "reason": LISTING_UNREADABLE},)
         )
-    observations: list[FactoryHoldObservation] = []
-    unobservable: list[Mapping[str, object]] = []
-    for row in rows:
-        read = _row_evidence(factory=factory, row=row, reader=reader, now_iso=now_iso)
-        observations.extend(read.observations)
-        unobservable.extend(read.unobservable)
-    return FactoryHoldEvidence(observations=tuple(observations), unobservable=tuple(unobservable))
+    return _merged(
+        reads=tuple(
+            _row_evidence(factory=factory, row=row, reader=reader, now_iso=now_iso) for row in rows
+        )
+    )
+
+
+def _merged(*, reads: tuple[FactoryHoldEvidence, ...]) -> FactoryHoldEvidence:
+    """Several reads as one, in read order, with their key sets unioned.
+
+    Shared by both accumulation levels so a factory's rows and a host's
+    factories combine identically -- and so a field added to the value cannot
+    be threaded at one level and dropped at the other.
+    """
+    return FactoryHoldEvidence(
+        observations=tuple(observation for read in reads for observation in read.observations),
+        unobservable=tuple(entry for read in reads for entry in read.unobservable),
+        unconfirmed_keys=frozenset(key for read in reads for key in read.unconfirmed_keys),
+    )
 
 
 def _row_evidence(
@@ -210,14 +241,12 @@ def _row_evidence(
         return EMPTY_FACTORY_HOLD_EVIDENCE
     instant = _attempt_instant(row=row)
     if instant is None:
-        return FactoryHoldEvidence(unobservable=(_row_unobservable(factory=factory, row=row),))
+        return _row_unreadable(factory=factory, row=row)
     if not _within_hold_window(occurred=instant, now_iso=now_iso):
         return EMPTY_FACTORY_HOLD_EVIDENCE
     payload = reader.inspect_payload(factory=factory, run_id=row.run_id)
     if payload is None:
-        return FactoryHoldEvidence(
-            unobservable=(_row_unobservable(factory=factory, row=row, reason=INSPECT_UNREADABLE),)
-        )
+        return _row_unreadable(factory=factory, row=row, reason=INSPECT_UNREADABLE)
     observation = _observation(
         factory=factory, row=row, payload=payload, occurred_at=instant.strftime(_ISO_FORMAT)
     )
@@ -226,11 +255,20 @@ def _row_evidence(
     return FactoryHoldEvidence(observations=(observation,))
 
 
-def _row_unobservable(
+def _row_unreadable(
     *, factory: str, row: FabroRunSummary, reason: str = OCCURRENCE_UNREADABLE
-) -> Mapping[str, object]:
-    """The surfaced entry one unreadable row or run record contributes."""
-    return {"factory": factory, "run_id": row.run_id, "reason": reason}
+) -> FactoryHoldEvidence:
+    """One unreadable row's whole contribution: the entry, and what it leaves open.
+
+    The surfaced entry and the unconfirmed entitlements are produced together
+    because they are one reading: an entry naming a run whose entitlements were
+    dropped is a condition nothing downstream can act on, and a key set with no
+    entry is a skip with no surfaced reason behind it.
+    """
+    return FactoryHoldEvidence(
+        unobservable=({"factory": factory, "run_id": row.run_id, "reason": reason},),
+        unconfirmed_keys=recorded_availability_keys(labels=row.labels),
+    )
 
 
 def _observation(
