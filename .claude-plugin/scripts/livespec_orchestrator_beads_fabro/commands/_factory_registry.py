@@ -96,6 +96,13 @@ class FactoryRegistryReading:
     the detail rather than on the address's absence — which is the state an
     ordinary serverless entry is also in.
 
+    `docker_host` is the container-daemon address the selected entry declared,
+    or None when it declared none. None here is an ANSWER rather than a fault —
+    the sandbox-container sweep reports that factory's containers as unobserved,
+    naming it — which is exactly why an entry whose `docker_host` is present and
+    unusable is reported through `detail` instead: without that, a typo would be
+    indistinguishable from a deliberate omission at every surface.
+
     `conflicting_keys` is the committed address keys the entry carried BESIDE
     `registry`, and it is kept apart from `detail` rather than folded into it
     because the two faults are in different files: this one is in the governed
@@ -108,6 +115,7 @@ class FactoryRegistryReading:
     declared: bool = False
     path: str = ""
     server: str | None = None
+    docker_host: str | None = None
     detail: str | None = None
     conflicting_keys: tuple[str, ...] = ()
 
@@ -165,7 +173,8 @@ def _entry_reading(*, table: dict[str, Any], path: str, name: str) -> FactoryReg
             path=path,
             detail=f"it holds no object entry named {name!r}",
         )
-    server = _trimmed(value=cast("dict[str, Any]", selected).get(_SERVER_KEY))
+    entry = cast("dict[str, Any]", selected)
+    server = _trimmed(value=entry.get(_SERVER_KEY))
     if server is None:
         return FactoryRegistryReading(
             declared=True,
@@ -174,7 +183,36 @@ def _entry_reading(*, table: dict[str, Any], path: str, name: str) -> FactoryReg
                 f"its {name!r} entry gives no `server` string that is non-empty" " after trimming"
             ),
         )
-    return FactoryRegistryReading(declared=True, path=path, server=server)
+    return _resolved_reading(entry=entry, path=path, name=name, server=server)
+
+
+def _resolved_reading(
+    *, entry: dict[str, Any], path: str, name: str, server: str
+) -> FactoryRegistryReading:
+    """One entry whose server resolved, graded on its optional `docker_host`.
+
+    MEMBERSHIP decides whether the key is graded at all, never truthiness. An
+    ABSENT key is a complete answer — this factory declares no container-daemon
+    address, which is what a committed entry carrying only a `server` already
+    says and what makes the sweep report its containers as unobserved. A key the
+    operator WROTE and that is not a usable address is refused like an invalid
+    `server`, because falling back to the absent reading is indistinguishable
+    from it at every surface: the sweep would report an unobserved factory for
+    ever and name no fault.
+    """
+    if _DOCKER_HOST_KEY not in entry:
+        return FactoryRegistryReading(declared=True, path=path, server=server)
+    docker_host = _trimmed(value=entry[_DOCKER_HOST_KEY])
+    if docker_host is None:
+        return FactoryRegistryReading(
+            declared=True,
+            path=path,
+            detail=(
+                f"its {name!r} entry gives a `docker_host` that is not a string"
+                " non-empty after trimming"
+            ),
+        )
+    return FactoryRegistryReading(declared=True, path=path, server=server, docker_host=docker_host)
 
 
 def _registry_table(*, path: str) -> dict[str, Any] | str:
