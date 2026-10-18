@@ -44,6 +44,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall im
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_launch import (
     LaunchPins,
+    journal_recovery_route,
     recovery_launch_args,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routing import (
@@ -166,6 +167,14 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
         items=[item for item in picked if routing.reclaims(work_item_id=item.id)],
         journal=journal,
     )
+    # Each launching item's route, recorded now that the valve has decided it
+    # will launch. Here rather than at the measurement, because a route is valid
+    # only for the pass that measured it and a deferred item must carry nothing
+    # out of this one. Written on this thread, in `picked` order, so the journal
+    # reads as the wave's own sequence rather than as whatever order the pool
+    # happened to start the launches in.
+    for item in picked:
+        journal_recovery_route(route=routing.route_for(work_item_id=item.id), journal=journal)
     with ThreadPoolExecutor(max_workers=max(1, args.parallel)) as pool:
         futures = [
             pool.submit(

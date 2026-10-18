@@ -59,7 +59,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records imp
     PRESERVED_WORK_VERIFIED,
     RECOVERY_HELD_STAGE,
     recovery_held_record,
-    recovery_route_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_release import (
     released_for_recovery,
@@ -76,9 +75,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
     read_journal_records,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import (
-    resume_journal_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation import (
     ResumeGather,
@@ -242,17 +238,6 @@ def _released_route(
     pull_request = gather.observation.pull_request
     if resume_refusals(observation=gather.observation) or anchor is None or pull_request is None:
         return _fallback_route(gather=gather, item=item, repo=repo, runner=runner, journal=journal)
-    journal.append(
-        record=resume_journal_record(
-            work_item_id=item.id,
-            earlier_run_ids=gather.earlier_run_ids,
-            pull_request=pull_request,
-            head=anchor.head,
-            resumed_at=anchor.resumed_at,
-            source=anchor.source,
-        )
-    )
-    journal.append(record=recovery_route_record(work_item_id=item.id, route=ROUTE_RESUME))
     return RecoveryRoute(
         work_item_id=item.id,
         route=ROUTE_RESUME,
@@ -304,25 +289,18 @@ def _fallback_route(
             ),
         )
     if preserved is None:
-        # Confirmed absence, with the loss recorded: every source was asked and
-        # named nothing, which is what permits the default branch.
-        journal.append(
-            record=recovery_route_record(
-                work_item_id=item.id,
-                route=ROUTE_FRESH,
-                preserved_work=PRESERVED_WORK_ABSENT,
-            )
+        # Confirmed absence: every source was asked and named nothing, which is
+        # what permits the default branch. The LOSS is recorded by the launch's
+        # own route row, for the reason that module's docstring gives.
+        return RecoveryRoute(
+            work_item_id=item.id, route=ROUTE_FRESH, preserved_work=PRESERVED_WORK_ABSENT
         )
-        return RecoveryRoute(work_item_id=item.id, route=ROUTE_FRESH)
-    journal.append(
-        record=recovery_route_record(
-            work_item_id=item.id,
-            route=ROUTE_SEEDED,
-            seed=preserved,
-            preserved_work=PRESERVED_WORK_VERIFIED,
-        )
+    return RecoveryRoute(
+        work_item_id=item.id,
+        route=ROUTE_SEEDED,
+        seed=preserved,
+        preserved_work=PRESERVED_WORK_VERIFIED,
     )
-    return RecoveryRoute(work_item_id=item.id, route=ROUTE_SEEDED, seed=preserved)
 
 
 def _held_route(*, item: WorkItem, journal: JournalFile, hold: RecoveryHold) -> RecoveryRoute:
