@@ -387,6 +387,40 @@ def test_the_long_no_dereference_flag_is_recognised_too() -> None:
     )
 
 
+# The four spellings of "treat the last operand as a plain name" that the
+# `-n` reading alone cannot see. They are listed once and graded twice, because
+# the mark and the refusal are separate questions: the mark is what
+# `removal_targets` decides from the command, and the refusal is what
+# `refused_path` decides once the filesystem has reported that operand a
+# directory — which it does for every one of these, exactly as it does for an
+# ordinary destination.
+_PLAIN_DESTINATION_COMMANDS = [
+    f"mv -T /tmp/x {_LINK}",
+    f"mv --no-target-directory /tmp/x {_LINK}",
+    f"ln -sfT /tmp/elsewhere {_LINK}",
+    f"ln -sf --no-target-directory /tmp/elsewhere {_LINK}",
+]
+
+
+@pytest.mark.parametrize("command", _PLAIN_DESTINATION_COMMANDS)
+def test_no_target_directory_makes_the_last_operand_a_replacement(command: str) -> None:
+    """`-T` is the same semantic as `ln -n`, and it is `mv`'s ONLY spelling of it.
+
+    coreutils gives both verbs `-T` / `--no-target-directory`, "treat DEST as a
+    normal file", so under it `ln` RE-POINTS a link instead of writing through
+    it and `mv` overwrites the name instead of moving inside it. Measured
+    against real coreutils on an isolated layout mirroring this one: `mv -T
+    <file> <link-to-directory>` exits 0, leaves a regular file where the link
+    was, and a later `cd` into it fails `Not a directory` — which is the
+    engine's own run-ending condition from the 2026-10-15 incident.
+    """
+    policy = _load_policy()
+
+    assert policy.removal_targets(command=command, working_directory=_CLONE)[-1] == policy.Target(
+        path=_LINK, into_directory=False
+    )
+
+
 def test_a_no_clobber_move_still_has_a_destination() -> None:
     """`-n` is read only for `ln`: on GNU `mv` it is `--no-clobber` and means another thing.
 
@@ -491,6 +525,21 @@ def test_repointing_the_working_directory_link_is_refused_even_as_a_directory() 
         _refused(policy=policy, command=f"ln -sfn /tmp/elsewhere {_LINK}", directories={_LINK})
         == _LINK
     )
+
+
+@pytest.mark.parametrize("command", _PLAIN_DESTINATION_COMMANDS)
+def test_a_plain_destination_spelling_is_refused_even_as_a_directory(command: str) -> None:
+    """The `-T` half of the trap the `ln -sfn` case above describes.
+
+    `_is_directory` follows the link, so the filesystem reports it as a
+    directory under every one of these spellings just as it does under an
+    ordinary destination — and every one of them destroys it. A build reading
+    only `-n` allowed all four, which is the unsafe direction: an allowance of
+    a run-ending command rather than an over-refusal.
+    """
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command=command, directories={_LINK}) == _LINK
 
 
 def test_moving_a_protected_path_away_is_still_refused_when_its_destination_exists() -> None:

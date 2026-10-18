@@ -118,14 +118,24 @@ _NO_DESTINATION = -1
 # A destination means nothing without a source beside it, so a segment needs
 # both before its last operand is read as one.
 _DESTINATION_NEEDS_OPERANDS = 2
-# `-n` asks `ln` NOT to dereference a destination that is a symbolic link to a
-# directory, which is what makes `ln -sfn` RE-POINT the link instead of writing
-# inside it. Read for `ln` ALONE: GNU `mv -n` is `--no-clobber`, a flag whose
-# whole purpose is to destroy less, and reading it here would turn the safest
-# move an agent can type into a refusal.
-_NO_DEREFERENCE_VERBS = frozenset({"ln"})
-_NO_DEREFERENCE_SHORT_FLAG = "n"
-_NO_DEREFERENCE_LONG_FLAG = "--no-dereference"
+# The flag spellings that make a destination a PLAIN NAME the segment
+# replaces, rather than a directory it writes inside — each paired with the
+# verbs it may be read for, because the two spellings do NOT share a verb set.
+#
+# `-T` / `--no-target-directory` is coreutils' "treat DEST as a normal file",
+# and it means that to BOTH verbs: under it `ln` RE-POINTS a link instead of
+# writing through it, and `mv` overwrites the name instead of moving inside
+# it. It is also `mv`'s ONLY spelling of that semantic.
+#
+# `-n` / `--no-dereference` is the same reading for `ln`, and `ln -sfn` is
+# exactly how the engine's own working-directory link would be destroyed. It
+# is read for `ln` ALONE: GNU `mv -n` is `--no-clobber`, a flag whose whole
+# purpose is to destroy less, and reading it here would turn the safest move
+# an agent can type into a refusal.
+_PLAIN_DESTINATION_FLAGS = (
+    (frozenset({"ln", "mv"}), "T", "--no-target-directory"),
+    (frozenset({"ln"}), "n", "--no-dereference"),
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -333,21 +343,32 @@ def _destination_index(*, verb: str, arguments: Sequence[str], operand_count: in
     /workspace` links INTO the working directory rather than writing the word
     it names. So a lone operand is never one.
 
-    `ln -n` is the exception inside the exception, and it is the one that
-    matters most here. No-dereference is how a symbolic link to a directory is
-    RE-POINTED — `ln -sfn` is exactly how the engine's own working-directory
-    link would be destroyed — so under it the last operand is a replacement
-    again, however plainly the filesystem reports it as a directory.
+    A PLAIN-DESTINATION flag is the exception inside the exception, and it is
+    the one that matters most here. It is how a symbolic link to a directory
+    is RE-POINTED — `ln -sfn` and `ln -sfT` are exactly how the engine's own
+    working-directory link would be destroyed, and `mv -T` overwrites that
+    link with whatever it is handed — so under one the last operand is a
+    replacement again, however plainly the filesystem reports it as a
+    directory.
     """
     if verb not in _DESTINATION_VERBS or operand_count < _DESTINATION_NEEDS_OPERANDS:
         return _NO_DESTINATION
-    if verb in _NO_DEREFERENCE_VERBS and _asks(
-        arguments=arguments,
-        short=_NO_DEREFERENCE_SHORT_FLAG,
-        long_flag=_NO_DEREFERENCE_LONG_FLAG,
-    ):
+    if _replaces_its_destination(verb=verb, arguments=arguments):
         return _NO_DESTINATION
     return operand_count - 1
+
+
+def _replaces_its_destination(*, verb: str, arguments: Sequence[str]) -> bool:
+    """True iff this segment's own flags make its last operand a replacement.
+
+    Each spelling is paired with its verbs rather than tested against one
+    shared set, because `-T` is read for `ln` AND `mv` while `-n` is read for
+    `ln` alone — and a single set would have to be wrong for one of them.
+    """
+    for verbs, short, long_flag in _PLAIN_DESTINATION_FLAGS:
+        if verb in verbs and _asks(arguments=arguments, short=short, long_flag=long_flag):
+            return True
+    return False
 
 
 def _executed(*, segment: list[str]) -> tuple[str, list[str]]:
@@ -410,7 +431,13 @@ def _asks(*, arguments: Sequence[str], short: str, long_flag: str) -> bool:
     A short-flag CLUSTER counts, because `-sfn` is how a link is re-pointed
     and BOTH letters in it are load-bearing: the `f` is what lets the link
     replace what is already there, and the `n` is what makes it replace the
-    LINK rather than write inside the directory the link points at.
+    LINK rather than write inside the directory the link points at. `-sfT`
+    says the same thing with the other letter, so the cluster reading is what
+    covers both without enumerating their orderings.
+
+    CASE-SENSITIVE, which here separates two different flags rather than two
+    spellings of one: coreutils reads `-T` as `--no-target-directory` and `-t`
+    as `--target-directory`, and only the capital makes a destination plain.
     """
     for argument in arguments:
         if argument.startswith("--"):
