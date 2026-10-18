@@ -65,6 +65,7 @@ __all__: list[str] = [
     "RELEASE_REPOSITORY_MASTER_REF",
     "RELEASE_REPOSITORY_RELEASE_REF",
     "RELEASE_REPOSITORY_URL",
+    "SANDBOX_CHECKOUT_PROVISION_DEFAULT",
     "SANDBOX_CHECK_SUITE_DEFAULT",
     "SANDBOX_EXEMPT_MARKERS",
     "SANDBOX_EXEMPT_MARKER_DEFAULT",
@@ -176,13 +177,55 @@ JANITOR_CLUSTER_GATE_DEFAULT: tuple[str, ...] = (
 JANITOR_TRUST_DEFAULT: tuple[str, ...] = (FLEET_TOOL_RUNNER, "trust")
 
 # The IN-SANDBOX-GATE venue's check-suite. It is the same declared check-suite
-# with the host-venue provisioning dropped: a Fabro sandbox is a fresh full
-# clone whose own prepare chain has already run, so the worktree-pack
-# provisioning the host janitor needs is not a premise there. The two venues
-# differing ONLY in their fleet default is what the ratified venue dimension
-# buys -- before it, this argv lived as a bare literal in the publish prompts
-# with nothing binding it to the host one.
+# with the host-venue provisioning dropped -- NOT because the sandbox needs none,
+# but because the sandbox provisions the pack in its PREPARE CHAIN instead, through
+# `SANDBOX_CHECKOUT_PROVISION_DEFAULT` below. This comment used to say the sandbox
+# is "a fresh full clone whose own prepare chain has already run, so the
+# worktree-pack provisioning the host janitor needs is not a premise there"; the
+# premise was real all along and nothing satisfied it, which is the defect
+# `bd-ib-tlmq3m` closes. The two venues differing ONLY in their fleet default is
+# what the ratified venue dimension buys -- before it, this argv lived as a bare
+# literal in the publish prompts with nothing binding it to the host one.
+#
+# The host venue provisions INSIDE its suite and the sandbox venue provisions
+# BEFORE it, and that asymmetry is deliberate: the host janitor's suite is the only
+# thing that runs in its fresh worktree, while a sandbox runs a whole implement
+# stage -- whose own in-session `just check`, and whose `pr_refresh` gate, both read
+# the pack long before the janitor node does.
 SANDBOX_CHECK_SUITE_DEFAULT: tuple[str, ...] = (*_FLEET_RECIPE_INVOCATION, "check")
+
+# The IN-SANDBOX venue's PER-CLONE provisioning recipe -- the twin of the
+# host-janitor one above, and the correction of the paragraph beside it. That
+# paragraph said a Fabro sandbox is "a fresh full clone whose own prepare chain has
+# already run, so the worktree-pack provisioning the host janitor needs is not a
+# premise there". The first half is true and the conclusion does not follow: the
+# prepare chain never installed the pack. The pack arrived as a SIDE EFFECT of the
+# hook-manager's pre-commit hook, which installs it on the implement agent's first
+# commit -- so every ordinary run had it by the time its janitor ran, and a run
+# whose implement stage makes NO commit of its own reached the janitor with none.
+# That is exactly what a seeded re-dispatch is: it reuses already-reviewed commits.
+# Measured on hp run 01M515AA906VCTAFFZ5JRAJJKX (work-item bd-ib-sufca7): all 41
+# setup commands exited 0, none installed the pack, and janitor@1 failed only
+# `check-no-workflow-edits` -- `No such file or directory`, exit 127, on a pack
+# member. A fix visit then ran this very recipe and the full suite passed 93
+# targets.
+#
+# It is spelled apart from `JANITOR_CHECKOUT_PROVISION_DEFAULT` even though the two
+# are the same argv today, for the reason `CONFORMANCE_NO_OP` is spelled apart from
+# `TOOLCHAIN_NO_OP`: they answer different premises -- one provisions a
+# fresh WORKTREE on the dispatching host, the other a fresh CLONE inside a sandbox
+# -- and one of them changing must not silently change the other.
+#
+# It is a fleet PREMISE and not an obligation every governed repository owes, so
+# `_dispatcher_sandbox_worktree_pack` renders it only where the sandbox gate itself
+# resolved to this fleet's default. The pack is this fleet's own dev-tooling
+# artifact, and a repository running its own check suite in the sandbox never reads
+# it -- imposing this recipe there would run a recipe that repository does not have
+# and fail the prepare step, killing every dispatch before any work.
+SANDBOX_CHECKOUT_PROVISION_DEFAULT: tuple[str, ...] = (
+    *_FLEET_RECIPE_INVOCATION,
+    "install-worktree-pack",
+)
 
 # How this fleet INVOKES its hook-install recipe. `just` reaches these hosts
 # through mise, so the default's argv keeps the `mise exec --` prefix the shipped
