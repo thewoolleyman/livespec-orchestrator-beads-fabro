@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.211.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.211.4...v0.211.5) (2026-10-18)
+
+
+### Bug Fixes
+
+* **dispatcher:** give the targeted dispatch's admit-and-launch step its own module ([0fbc33a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0fbc33a84db16314791106f3776327313ad961f8))
+* **dispatcher:** hold a released item whose earlier run has not ended ([bd6f1b9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bd6f1b973461a732209a7a49355db89e095cce15))
+* **dispatcher:** hold a released item whose forge or factory cannot be asked ([902952e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/902952e0935fd256f3d7d93ed759b11abc973d8f))
+* **dispatcher:** hold a released item whose ownership lock is held by a live process ([164fb53](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/164fb53f4c08cc2948124966f5bc9841c4360f69))
+* **dispatcher:** hold a released item whose publish branch already merged ([d88f3fc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d88f3fcdbb694f08a6f1a78b1d884ab03011b8e7))
+* **dispatcher:** journal a recovery route at the launch, not at the measurement ([fd6f8c4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fd6f8c4d2abc10d907adb9f4984ad3d9f18a4500))
+* **dispatcher:** route a released item to a resume before admission ([8a8b602](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8a8b602e4026928af733faa90c23eedb19af207c))
+* **dispatcher:** seed an unanchorable released item from its preserved commit ([8bb36fd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8bb36fd3d58802c659dde10f3e786c2c5b30e38c))
+
 ## [0.211.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.211.3...v0.211.4) (2026-10-18)
 
 
