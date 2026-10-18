@@ -105,14 +105,27 @@ trap inside it. A DESTINATION — the last operand of `mv` or of a dereferencing
 moved or linked path is created INSIDE it; the clause says as much, its
 refusal condition being unmet by a segment that "removes, moves, or replaces
 only paths that are not protected paths". So `mv /tmp/patch.diff .` must run.
-The trap is `ln -n`: no-dereference is how a symbolic link to a directory is
-RE-POINTED, so `ln -sfn /tmp/elsewhere <link>` destroys the engine's own
-working-directory link while the filesystem reports that link as a directory
-exactly as an ordinary destination. No filesystem reading can separate those
-two, and the command's own flags can — which is why the destination mark is
-decided in `removal_targets`, from the command, and the directory reading
-arrives separately at `refused_path`. The SOURCE side is untouched by any of
-it: `mv /workspace /tmp/moved-root` moves the root away and is refused.
+The trap is the flag that makes a destination a PLAIN NAME: under it a
+symbolic link to a directory is RE-POINTED rather than written through, so
+`ln -sfn /tmp/elsewhere <link>` destroys the engine's own working-directory
+link while the filesystem reports that link as a directory exactly as an
+ordinary destination. No filesystem reading can separate those two, and the
+command's own flags can — which is why the destination mark is decided in
+`removal_targets`, from the command, and the directory reading arrives
+separately at `refused_path`. The SOURCE side is untouched by any of it: `mv
+/workspace /tmp/moved-root` moves the root away and is refused.
+
+That trap has TWO flag spellings and they do not share a verb set, which is
+the part a reader is most likely to get wrong. `-T` /
+`--no-target-directory` is coreutils' "treat DEST as a normal file" and means
+that to BOTH `ln` and `mv`; it is `mv`'s only spelling of it, so `mv -T
+<file> <link>` leaves a regular file where the link was and the engine's next
+checkpoint cannot chdir into its working directory. `-n` is the same reading
+for `ln` ALONE, because GNU `mv -n` is `--no-clobber`, a flag whose whole
+purpose is to destroy less. `_PLAIN_DESTINATION_FLAGS` therefore pairs each
+spelling with its own verbs rather than testing both against one set. The
+reading is also case-sensitive on purpose: `-t` is `--target-directory`, a
+different flag.
 
 ## The shared shell reading
 
