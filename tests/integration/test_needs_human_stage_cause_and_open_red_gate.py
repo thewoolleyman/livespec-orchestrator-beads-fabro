@@ -50,6 +50,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state import (
+    PUBLICATION_STATE_GIT_PATH,
+    PUBLISH_HEAD_STATE_FILENAME,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _GRAPH_PATH = (
@@ -62,7 +66,9 @@ _GRAPH_PATH = (
 )
 
 _TERMINAL = "needs_human"
+_REFRESH_CLASSIFIER = "refresh_repair"
 _DEFAULT_BRANCH = "master"
+_PUBLISH_BRANCH = "feat/bd-ib-rv7g4z"
 
 # A run id the terminal accepts: its uniqueness filter refuses anything
 # carrying a character outside `[0-9A-Za-z]`, so a hyphenated id would take the
@@ -109,12 +115,25 @@ def _graph_text() -> str:
     return _GRAPH_PATH.read_text(encoding="utf-8")
 
 
-def _terminal_script() -> str:
-    """The shipped terminal's own script bytes, with the one engine token bound."""
+def _node_script(*, node: str) -> str:
+    """One shipped node's own script bytes, with the engine's tokens bound.
+
+    The tokens are the pinned engine's own expansion and a per-repository
+    DECLARATION; binding them stands in for the engine and the declaration,
+    never for the node. `sandbox_check_suite` resolves to `true` because no
+    case below reaches a gate — every one of them fails before any rebase.
+    """
     graph = parse_dot_graph(text=_graph_text())
     assert not isinstance(graph, str), graph
-    script: str = graph.nodes[_TERMINAL]["script"]
-    return script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH)
+    script: str = graph.nodes[node]["script"]
+    return script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH).replace(
+        "{{ inputs.sandbox_check_suite }}", "true"
+    )
+
+
+def _terminal_script() -> str:
+    """The shipped terminal's own script bytes, with the one engine token bound."""
+    return _node_script(node=_TERMINAL)
 
 
 def _fixture_env() -> dict[str, str]:
@@ -172,6 +191,7 @@ def _world(*, root: Path, changed: dict[str, str], message: str) -> _World:
     _ = _git("add", "seed.txt", cwd=clone)
     _ = _git("commit", "--quiet", "-m", "chore: seed", cwd=clone)
     _ = _git("remote", "add", "origin", str(origin), cwd=clone)
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_DEFAULT_BRANCH}", cwd=clone)
     for path, text in changed.items():
         target = clone / path
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -257,3 +277,99 @@ def test_a_recorded_stage_cause_outranks_the_open_red_commit_reason(tmp_path: Pa
     assert _GENERIC_REASON not in stderr
     assert f"{_OPEN_RED_CLAUSE} {control.head}" in control_stderr
     assert _HALF_PAIR_CLAUSE in control_stderr
+
+
+def _run_node(*, world: _World, node: str) -> subprocess.CompletedProcess[str]:
+    """Execute one shipped node's bytes in this world's clone, environment EXPLICIT.
+
+    Explicit because the subprocess-spawn allowlist requires it and because an
+    inherited `LIVESPEC_*` from the enclosing factory run could otherwise
+    satisfy a guard the case meant to exercise. The gh-refresh root names a
+    directory holding no helper, so the push helper's inline fallback is taken
+    identically here and on a CI runner that carries no production helper.
+    """
+    return subprocess.run(
+        ["sh", "-c", _node_script(node=node)],
+        cwd=str(world.clone),
+        env={
+            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "HOME": str(world.clone.parent / "home"),
+            "LIVESPEC_PUBLISH_BRANCH": _PUBLISH_BRANCH,
+            "LIVESPEC_GIT_AUTHOR_NAME": _OPERATOR_NAME,
+            "LIVESPEC_GIT_AUTHOR_EMAIL": _OPERATOR_EMAIL,
+            "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
+        },
+        check=False,
+        text=True,
+        capture_output=True,
+        input=f"{_RUN}\n",
+    )
+
+
+def _merged_and_deleted_publication(*, root: Path) -> _World:
+    """The measured state: this run published, the pull request merged, the branch is gone.
+
+    `pr_refresh` establishes its pre-refresh head from the run's own
+    publication record and then asks origin for both the default branch and
+    the publish branch in ONE fetch. Deleting the publish branch — which is
+    what the forge does the moment auto-merge lands — makes that fetch fail
+    outright, which is how a finished publication reaches the stage as
+    `LIVESPEC_PR_REFRESH_ORIGIN_UNOBSERVABLE`. Nothing is stood in: the branch
+    is really published and really deleted, so the stage meets the real
+    failure rather than a stand-in for one.
+    """
+    world = _world(
+        root=root,
+        changed={_PRODUCT_IMPL_PATH: "the half-authored product edit\n"},
+        message=_OPEN_RED_MESSAGE,
+    )
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_PUBLISH_BRANCH}", cwd=world.clone)
+    published = _git("rev-parse", "HEAD", cwd=world.clone).stdout.strip()
+    state = world.git_path(name=PUBLICATION_STATE_GIT_PATH)
+    state.mkdir(parents=True, exist_ok=True)
+    _ = (state / PUBLISH_HEAD_STATE_FILENAME).write_text(published, encoding="utf-8")
+    _ = _git(
+        "push", "--quiet", "origin", "--delete", f"refs/heads/{_PUBLISH_BRANCH}", cwd=world.clone
+    )
+    return world
+
+
+def test_a_failed_pr_refresh_carries_its_own_cause_through_the_classifier_to_the_terminal(
+    tmp_path: Path,
+) -> None:
+    """END TO END across the seam the defect sat in: stage, classifier, terminal.
+
+    No layer can establish this alone, which is why the three are composed
+    here rather than asserted apart. The classifier ALREADY said it routes
+    "to needs_human with that stage own cause", so a reading of its text
+    proves nothing; and the terminal's precedence, proved by the case above,
+    is satisfied by a record no stage ever writes. What was missing is the
+    carry, and only running the shipped bytes of all three in one clone can
+    show it.
+
+    THE CONTROL IS THE SAME COMPOSITION WITH ONLY THE RECORD REMOVED, taken
+    after `pr_refresh` has really failed, so the world is identical in every
+    other respect. It is load-bearing twice: it proves the open-Red arm was
+    REACHABLE here — this head really does carry Red trailers over a product
+    implementation path, which is exactly the shape the measured incident
+    reported — and it therefore proves the cause DISPLACED that reason rather
+    than the terminal having forgotten how to give it.
+    """
+    world = _merged_and_deleted_publication(root=tmp_path / "carried")
+    control = _merged_and_deleted_publication(root=tmp_path / "control")
+
+    refresh = _run_node(world=world, node="pr_refresh")
+    classifier = _run_node(world=world, node=_REFRESH_CLASSIFIER)
+    stderr = _run_terminal(world=world)
+    control_refresh = _run_node(world=control, node="pr_refresh")
+    control.git_path(name=_STAGE_CAUSE_GIT_PATH).unlink(missing_ok=True)
+    control_stderr = _run_terminal(world=control)
+
+    assert refresh.returncode != 0, refresh.stdout
+    assert "LIVESPEC_PR_REFRESH_ORIGIN_UNOBSERVABLE" in refresh.stderr
+    assert classifier.returncode != 0, classifier.stdout
+    assert "LIVESPEC_REFRESH_REPAIR_ABSENT" in classifier.stderr
+    assert f"stage {_PR_REFRESH_STAGE} failed: LIVESPEC_PR_REFRESH_ORIGIN_UNOBSERVABLE" in stderr
+    assert _OPEN_RED_CLAUSE not in stderr
+    assert control_refresh.returncode != 0, control_refresh.stdout
+    assert f"{_OPEN_RED_CLAUSE} {control.head}" in control_stderr
