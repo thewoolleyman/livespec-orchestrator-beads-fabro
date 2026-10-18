@@ -28,6 +28,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_run_launch as launch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
 )
@@ -679,6 +680,11 @@ def _exercise_invalid_dispatch(
         "_target_item",
         lambda **_kwargs: pytest.fail("selection ran after invalid configuration"),
     )
+    monkeypatch.setattr(
+        launch,
+        "admit_and_dispatch_target",
+        lambda **_kwargs: pytest.fail("the launch ran after invalid configuration"),
+    )
     rc = command.run_dispatch_command(
         args=argparse.Namespace(
             repo=str(repo),
@@ -1041,6 +1047,11 @@ def _exercise_direct_entry(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         "_target_item",
         lambda **_kwargs: pytest.fail("direct selection ran before the factory-size gate"),
     )
+    monkeypatch.setattr(
+        launch,
+        "admit_and_dispatch_target",
+        lambda **_kwargs: pytest.fail("the direct launch ran before the factory-size gate"),
+    )
     direct_outcomes: list[DispatchOutcome] = []
 
     def _direct_tail(**kwargs: object) -> int:
@@ -1219,7 +1230,8 @@ def _run_successful_public_dispatch(
         return 0
 
     monkeypatch.setattr(command, "dispatch_tail_exit", _terminal_tail)
-    monkeypatch.setattr(command, "dispatch_one", _factory_dispatch)
+    # The launch is its own module; the factory stand-in goes where it is.
+    monkeypatch.setattr(launch, "dispatch_one", _factory_dispatch)
     rc = command.run_dispatch_command(args=args)
     assert rc == 0
     assert len(terminal) == 1

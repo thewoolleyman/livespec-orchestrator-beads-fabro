@@ -39,6 +39,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_dispatch_tail,
     _dispatcher_loop_command,
     _dispatcher_run_commands,
+    _dispatcher_run_launch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import Admission
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
@@ -642,24 +643,28 @@ def _stub_dispatch(
     monkeypatch.setattr(module, "prepare", lambda **_kwargs: ([item], journal))
     monkeypatch.setattr(module, "ready_items", lambda **_kwargs: [item])
     _stub_wall_siblings(monkeypatch=monkeypatch)
+    # The claim and the run live in the targeted dispatch's own admit-and-launch
+    # module, so the two seams whose entry IS the claim and the run are stood in
+    # THERE rather than on the command module.
+    launch = _dispatcher_run_launch
     monkeypatch.setattr(
-        module,
+        launch,
         "admit_and_select",
         lambda **_kwargs: log.append("claim")
         or Admission(admitted=[item], deferred=[], refused=[]),
     )
     monkeypatch.setattr(
-        module,
+        launch,
         "args_with_dispatch_factory_target",
         lambda **kwargs: kwargs["args"],
     )
     monkeypatch.setattr(
-        module,
+        launch,
         "args_with_dispatch_workflow_name",
         lambda **kwargs: kwargs["args"],
     )
     monkeypatch.setattr(
-        module,
+        launch,
         "dispatch_one",
         lambda **_kwargs: log.append("launch")
         or DispatchOutcome(
