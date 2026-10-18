@@ -48,6 +48,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_reclaim import
     ActiveClaimAccounting,
     claimed_active_accounting,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_stamp import (
+    stamp_pending_claim,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_decision_journal import (
     auto_disposition_journal_record,
 )
@@ -214,10 +217,17 @@ def admit_and_select(
         )
     for item, assignee in plan.admitted:
         journal_item = replace(item, status="ready") if item.id in approved_ids else item
+        dispatch_id = selfup.run_id()
+        # BEFORE the transition, deliberately: the row must never be `active`
+        # under this dispatch while still stamped with the PREVIOUS dispatch's
+        # run id, which the factory now reports absent and a reconciler would
+        # release. `_dispatcher_claim_stamp` carries the full reasoning.
+        stamp_pending_claim(
+            repo=repo, work_item_id=item.id, dispatch_id=dispatch_id, journal=journal
+        )
         update_work_item_status(
             path=config, item_id=journal_item.id, status="active", assignee=assignee
         )
-        dispatch_id = selfup.run_id()
         _ = write_dispatch_lock(repo=repo, work_item_id=item.id, dispatch_id=dispatch_id)
         journal.append(
             record={"stage": "ledger-admit", "work_item_id": item.id, "assignee": assignee}

@@ -263,6 +263,14 @@ def test_watched_launcher_reaps_queued_run_after_item_closes(
     )
     assert isinstance(stamp_failure_detail, str)
     assert "record_dispatch_run" in stamp_failure_detail
+    # The CLAIM stamp fails open on the same absent row, and names its own
+    # cause for the same reason — read off the record, not restated here.
+    claim_failure_detail = next(
+        record["claim_stamp_failure_detail"]
+        for record in journal.records
+        if record["stage"] == "dispatch-claim-stamp-run"
+    )
+    assert isinstance(claim_failure_detail, str)
     assert journal.records == [
         {
             "work_item_id": "bd-ib-queued",
@@ -287,6 +295,13 @@ def test_watched_launcher_reaps_queued_run_after_item_closes(
             # fails open — and says so, rather than leaving the miss silent.
             "stamped": False,
             "stamp_failure_detail": stamp_failure_detail,
+        },
+        {
+            "work_item_id": "bd-ib-queued",
+            "stage": "dispatch-claim-stamp-run",
+            "run_id": "01QUEUED",
+            "claim_stamped": False,
+            "claim_stamp_failure_detail": claim_failure_detail,
         },
         {
             "work_item_id": "bd-ib-queued",
@@ -895,6 +910,9 @@ def test_watched_launcher_polls_its_bound_run_by_id_without_listing_the_factory(
     assert [record["stage"] for record in journal.records] == [
         "watchdog-discovery-poll",
         "dispatch-run-stamp",
+        # Learning the run writes the CLAIM stamp too, right after the run
+        # stamp and before the bound polls begin.
+        "dispatch-claim-stamp-run",
         "watchdog-bound-poll",
         "watchdog-bound-poll",
     ]
