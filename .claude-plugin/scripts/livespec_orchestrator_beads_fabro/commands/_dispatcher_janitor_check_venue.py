@@ -144,6 +144,26 @@ _ROW_VENUE_FIELD = "venue"
 _ROW_GATE_STATE_FIELD = "gate_state"
 _ROW_GATE_TREE_HASH_FIELD = "gate_tree_hash"
 
+# The Job identity and timing keys the verdict line MAY carry. Each one present
+# on that line is COPIED under the same name with the same value -- a value of
+# `null` included, because the gate saying its Job had not started is a
+# different fact from a key the line never mentioned -- and each absent one is
+# OMITTED.
+#
+# NONE of them is ever DERIVED here, and the gate's naming convention is
+# exactly why that rule needs stating: the Job is `gate-<repository>-<first
+# twelve of the tree hash>` in the `gates` namespace, and the row already
+# carries that tree hash, so a name could be constructed from what is in hand.
+# A constructed name reads on the row exactly like a reported one and is wrong
+# whenever the gate did not in fact create that Job -- which is precisely the
+# case an operator reads this row to investigate.
+_ROW_JOB_FIELDS: tuple[str, ...] = (
+    "job_name",
+    "namespace",
+    "job_started_at",
+    "job_finished_at",
+)
+
 # The submitted-tree reading, and how long it may take. `HEAD^{tree}` resolves
 # the TREE rather than the commit: both render as forty hex characters and both
 # look entirely plausible in a journal, but only the tree is the value the gate
@@ -279,8 +299,19 @@ def janitor_check_row_fields(
     }
     if not on_the_cluster:
         return fields
-    fields[_ROW_GATE_STATE_FIELD] = _state_of(line=_verdict_line(text=result.stderr))
+    line = _verdict_line(text=result.stderr)
+    fields[_ROW_GATE_STATE_FIELD] = _state_of(line=line)
     fields[_ROW_GATE_TREE_HASH_FIELD] = tree_hash
+    # ONE reading of the verdict line serves both the state word and the Job
+    # keys, which is the whole reason `_verdict_line` yields the line rather
+    # than the state: a second parse would be a second reading nothing proves
+    # agrees with the first about the output it describes.
+    #
+    # An absent line stands in as an EMPTY mapping, which carries no Job key
+    # and is not a reading in its own right: a verdict line always holds its
+    # own string `state`, so no real one can be empty.
+    reported = line or {}
+    fields.update({name: reported[name] for name in _ROW_JOB_FIELDS if name in reported})
     return fields
 
 

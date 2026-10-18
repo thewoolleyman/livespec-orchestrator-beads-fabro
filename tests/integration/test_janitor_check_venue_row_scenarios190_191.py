@@ -57,10 +57,30 @@ _VENUE_FIELD = "venue"
 _GATE_STATE_FIELD = "gate_state"
 _GATE_TREE_HASH_FIELD = "gate_tree_hash"
 
-# Every field the row owes on the CLUSTER venue and must omit on the host-local
-# one. Collected so the host-local omission case grades the whole gate account
-# rather than whichever field was added last.
-_GATE_ROW_FIELDS: tuple[str, ...] = (_GATE_STATE_FIELD, _GATE_TREE_HASH_FIELD)
+# The Job identity and timing keys the verdict line MAY carry, which the row
+# copies when present and omits when absent.
+_JOB_ROW_FIELDS: tuple[str, ...] = (
+    "job_name",
+    "namespace",
+    "job_started_at",
+    "job_finished_at",
+)
+
+# Every field the row may carry on the CLUSTER venue and must omit on the
+# host-local one. Collected so the host-local omission case grades the whole
+# gate account rather than whichever field was added last.
+_GATE_ROW_FIELDS: tuple[str, ...] = (
+    _GATE_STATE_FIELD,
+    _GATE_TREE_HASH_FIELD,
+    *_JOB_ROW_FIELDS,
+)
+
+# A Job name and namespace shaped exactly as the gate client's own convention
+# renders them -- `gate-<repository>-<first twelve of the tree hash>` in the
+# `gates` namespace -- so a build that DERIVED them rather than copying them
+# would produce something very close to these values.
+_JOB_NAME = "gate-livespec-orchestrator-beads-fabro-1c5e8de33c1f"
+_GATES_NAMESPACE = "gates"
 
 # The substring that identifies the venue's own reading of the tree it is about
 # to submit. The runner routes that one command to the production
@@ -178,6 +198,20 @@ def _gate(*, state: str) -> CommandResult:
         exit_code=0 if state == "PASSED" else 1,
         stdout="",
         stderr=json.dumps({"event": "delegated gate", "state": state}),
+    )
+
+
+def _gate_naming_its_job(*, state: str, job_fields: dict[str, object]) -> CommandResult:
+    """A gate client whose verdict line also reports the Job it ran as.
+
+    The Job keys ride the SAME line as the state word, which is where the
+    clause says the row copies them from, so one fixture cannot accidentally
+    prove that a row read them off some other line.
+    """
+    return CommandResult(
+        exit_code=0 if state == "PASSED" else 1,
+        stdout="",
+        stderr=json.dumps({"event": "delegated gate", "state": state, **job_fields}),
     )
 
 
@@ -441,3 +475,49 @@ def test_scenario191_a_cluster_row_carries_the_tree_the_gate_was_asked_about(
     # The two checkouts hold different trees, so neither row could be carrying
     # the other's reading -- or one value this module supplied to both.
     assert _head_tree(checkout=silent.checkout) != submitted
+
+
+def test_scenario191_a_cluster_row_copies_only_the_job_keys_the_verdict_line_carries(
+    tmp_path: Path,
+) -> None:
+    """Each Job key present on the verdict line is copied; each absent one is omitted.
+
+    The explicit `null` is the whole reason the clause distinguishes copying
+    from reporting. `job_started_at: null` is the gate SAYING the Job it names
+    had not started, which is a different fact from a key the line never
+    mentioned -- and a projection that dropped falsy values, or that filled
+    every declared key with `null`, would collapse the two in opposite
+    directions while looking equally well-formed.
+
+    The control is a verdict line naming NO Job at all, against a row that
+    carries the submitted tree hash. The gate's own convention is
+    `gate-<repository>-<first twelve of the tree hash>` in the `gates`
+    namespace, so that row holds every ingredient a derivation would need: if
+    the row names no Job there, nothing was derived, which is what the clause
+    forbids outright. A derived name is indistinguishable from a reported one
+    at the row, and wrong whenever the gate did not actually create that Job.
+    """
+    reported = _drive(
+        tmp_path=tmp_path,
+        name="job-reported",
+        venue=_CLUSTER_JOB,
+        suite=_gate_naming_its_job(
+            state="PASSED",
+            job_fields={
+                "job_name": _JOB_NAME,
+                "namespace": _GATES_NAMESPACE,
+                "job_started_at": None,
+            },
+        ),
+    )
+    unreported = _drive(
+        tmp_path=tmp_path, name="job-unreported", venue=_CLUSTER_JOB, suite=_gate(state="PASSED")
+    )
+
+    assert reported.row.get("job_name") == _JOB_NAME
+    assert reported.row.get("namespace") == _GATES_NAMESPACE
+    assert "job_started_at" in reported.row
+    assert reported.row["job_started_at"] is None
+    assert "job_finished_at" not in reported.row
+    assert [name for name in _JOB_ROW_FIELDS if name in unreported.row] == []
+    assert unreported.row.get(_GATE_TREE_HASH_FIELD) is not None
