@@ -63,6 +63,18 @@ def _config() -> StoreConfig:
     )
 
 
+def _result_repo() -> str:
+    """The repository identity a required result may name in these fixtures.
+
+    `_config()` carries no `repo_root`, so a plan write resolves its result
+    repository against the invoking checkout, whose own directory name is the
+    identity the shared authoritative result reader resolves there. A
+    placeholder the reader could never resolve is refused at the write
+    (`bd-ib-eebjcl`), because every observation of it would be unobservable.
+    """
+    return Path.cwd().name
+
+
 def _fake() -> FakeBeadsClient:
     client = make_beads_client(config=_config())
     assert isinstance(client, FakeBeadsClient)
@@ -238,7 +250,7 @@ def test_handoff_append_is_ledger_comment_and_timeline_readable(tmp_path: Path) 
             ref="bd-ib-child",
             text="Dispatch bd-ib-child through the factory.",
             required_result={
-                "repo": "repo",
+                "repo": _result_repo(),
                 "item_status": {"item_id": created["epic_id"], "status": "closed"},
             },
             budget={"deadline": "2099-08-11T00:00:00Z", "max_handoffs": 3},
@@ -261,7 +273,7 @@ def test_handoff_append_is_ledger_comment_and_timeline_readable(tmp_path: Path) 
         "ref": "bd-ib-child",
         "text": "Dispatch bd-ib-child through the factory.",
         "required_result": {
-            "repo": "repo",
+            "repo": _result_repo(),
             "item_status": {"item_id": created["epic_id"], "status": "closed"},
         },
         "budget": {

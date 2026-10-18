@@ -67,14 +67,15 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import (
     ChainFinding,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
-    LEGACY_TRACKING,
     NextAction,
     next_action_metadata,
     plan_record_metadata,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_next_action_admission import (
+    admit_next_action,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_next_action_validation import (
     NextActionRefusal,
-    validate_next_action,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_obligation import (
     obligation_of,
@@ -179,10 +180,10 @@ def derived_operation_id(*, request: TrackedWriteRequest) -> str:
 
 def commit_tracked_write(*, request: TrackedWriteRequest) -> TrackedWrite | NextActionRefusal:
     """Admit, serialize and persist one sanctioned plan pointer write."""
-    refusal = validate_next_action(
+    refusal = admit_next_action(
         action=request.action,
         epic_id=request.epic_id,
-        legacy_tracking=LEGACY_TRACKING,
+        config=request.config,
     )
     if refusal is not None:
         return refusal
