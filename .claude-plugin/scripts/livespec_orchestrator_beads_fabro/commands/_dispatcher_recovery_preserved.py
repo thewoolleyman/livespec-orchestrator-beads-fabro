@@ -71,6 +71,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
 
 __all__: list[str] = [
     "NEEDS_HUMAN_REF_PREFIX",
+    "PRESERVED_SOURCE_CHECKPOINT_FAILED_PUBLISHED_TREE",
     "PRESERVED_SOURCE_EARLIER_PRESERVED_PUBLISH_REF",
     "PRESERVED_SOURCE_PUBLISHED_HEAD",
     "PRESERVED_SOURCE_TERMINAL_TREE",
@@ -85,13 +86,19 @@ __all__: list[str] = [
 # ref it was found at rather than from a separate reading that could disagree.
 NEEDS_HUMAN_REF_PREFIX = "refs/heads/needs-human"
 
-# The sources a loss record names, as the stable tokens it names them by. The
-# clause requires a plain dispatch after confirmed absence to record that loss,
-# and the row cannot be a MEASUREMENT unless it says which sources were asked: a
-# source that answered nothing and a source this build never asked support
-# opposite conclusions about whether the work was really lost, and neither is
-# visible from the word "absent" on its own.
+# The four sources, as the stable tokens a loss record names them by. The clause
+# requires a plain dispatch after confirmed absence to record that loss, and the
+# row cannot be a MEASUREMENT unless it says which sources were asked: a source
+# that answered nothing and a source this build never asked support opposite
+# conclusions about whether the work was really lost, and neither is visible from
+# the word "absent" on its own.
+#
+# A source added to the order above takes a token here IN THE SAME CHANGE, and
+# the order of these four matches the order they are asked in. A source asked
+# under no name is one a loss record stays silent about while reporting the
+# absence it concluded — four round trips described as three.
 PRESERVED_SOURCE_TERMINAL_TREE = "needs-human-terminal-tree"
+PRESERVED_SOURCE_CHECKPOINT_FAILED_PUBLISHED_TREE = "checkpoint-failed-published-tree"
 PRESERVED_SOURCE_PUBLISHED_HEAD = "observed-published-head"
 PRESERVED_SOURCE_EARLIER_PRESERVED_PUBLISH_REF = "earlier-preserved-publish-ref"
 
@@ -141,10 +148,11 @@ class PreservedWorkAbsent:
     which is the identifier an operator looks it up on its factory by.
     `sources_asked` names the sources this reading actually spent a round trip
     on, so a source that answered nothing is distinguishable from one that was
-    never asked; it is a list rather than the full set because the terminal-tree
-    source is per RUN and is skipped entirely for an item naming no run, and a
-    record claiming three readings where two were taken reports a measurement
-    that did not happen.
+    never asked; it is a list rather than the full set because TWO of the four
+    sources are addressed by something an item may not have — the terminal tree
+    by a run identifier, the published tree by a journal row naming one — and are
+    skipped entirely when it does not, so a record claiming four readings where
+    two were taken reports a measurement that did not happen.
     """
 
     source_run_id: str
@@ -162,11 +170,13 @@ def verified_preserved_seed(
     """The seed the failed run's preserved work supports: one, unaskable, or absent.
 
     THE ASKED-SOURCE LIST IS BUILT HERE, BY THE CODE THAT DOES THE ASKING, which
-    is why the terminal source's own precondition moved up out of
-    `_needs_human_seed`: a second expression of that condition — one deciding
-    whether to ask and one deciding whether to report having asked — is free to
-    drift, and the direction it drifts in is a loss record naming a round trip
-    nobody took.
+    is why the two SKIPPABLE sources have their own preconditions up here rather
+    than inside the helpers that read them: a second expression of such a
+    condition — one deciding whether to ask and one deciding whether to report
+    having asked — is free to drift, and the direction it drifts in is a loss
+    record naming a round trip nobody took. The terminal ref's precondition moved
+    up out of `_needs_human_seed`, and the published tree's row lookup moved up
+    out of `_preserved_tree_seed`, for that one reason.
 
     `journal_records` has NO DEFAULT, for the reason `_dispatcher_sandbox_image_
     source` gives about its own record: a default is how a caller that HAD a
@@ -182,11 +192,15 @@ def verified_preserved_seed(
         terminal = _needs_human_seed(runner=runner, repo=repo, earlier_run_ids=earlier_run_ids)
         if terminal is not None:
             return terminal
-    tree = _preserved_tree_seed(
-        runner=runner, repo=repo, work_item_id=work_item_id, journal_records=journal_records
-    )
-    if tree is not None:
-        return tree
+    # The published tree is named by this item's OWN journal, so with no row
+    # naming one there is no ref that source could stand at and the round trip
+    # would ask origin about nothing.
+    published_tree = _newest_preserved_tree_row(records=journal_records, work_item_id=work_item_id)
+    if published_tree is not None:
+        asked.append(PRESERVED_SOURCE_CHECKPOINT_FAILED_PUBLISHED_TREE)
+        tree = _preserved_tree_seed(runner=runner, repo=repo, named=published_tree)
+        if tree is not None:
+            return tree
     asked.append(PRESERVED_SOURCE_PUBLISHED_HEAD)
     published = _published_head_seed(
         runner=runner, repo=repo, work_item_id=work_item_id, earlier_run_ids=earlier_run_ids
@@ -256,8 +270,7 @@ def _preserved_tree_seed(
     *,
     runner: CommandRunner,
     repo: Path,
-    work_item_id: str,
-    journal_records: tuple[dict[str, object], ...],
+    named: tuple[str, str, str],
 ) -> RecoverySeed | PreservedWorkUnobservable | None:
     """The tree a checkpoint-failed run published, which nothing else carries.
 
@@ -287,10 +300,11 @@ def _preserved_tree_seed(
     it, the base that tree was taken against — a fact no ref listing carries at
     all. Origin is still ASKED whether the ref stands, so the seed remains a
     commit origin itself named rather than one this journal remembered.
+
+    `named` is that row already resolved — the ref, its base commit and its run —
+    rather than the journal to resolve it from, and the lookup sits in the caller
+    for the reason that function's docstring gives about its asked-source list.
     """
-    named = _newest_preserved_tree_row(records=journal_records, work_item_id=work_item_id)
-    if named is None:
-        return None
     ref, base, run_id = named
     result = runner.run(
         argv=["git", "ls-remote", SEED_REMOTE, ref],
