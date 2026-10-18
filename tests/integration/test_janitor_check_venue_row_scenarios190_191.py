@@ -32,6 +32,7 @@ import json
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -56,6 +57,17 @@ _JANITOR_STAGE = "janitor-post-merge"
 _VENUE_FIELD = "venue"
 _GATE_STATE_FIELD = "gate_state"
 _GATE_TREE_HASH_FIELD = "gate_tree_hash"
+_STARTED_AT_FIELD = "started_at"
+
+# The journal's own append instant, stamped by `JournalFile` on every record.
+# It is the OTHER half of the stage's duration, so a case that reads one reads
+# both from the same row.
+_APPENDED_AT_FIELD = "at"
+
+# The instant format both fields are written in. Parsing with it rather than
+# with a tolerant reader is itself an assertion: a value that is not a
+# seconds-precision UTC instant raises here instead of comparing oddly.
+_INSTANT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 # The Job identity and timing keys the verdict line MAY carry, which the row
 # copies when present and omits when absent.
@@ -98,8 +110,14 @@ _HOST_LOCAL = "host_local"
 # case can assert that it ran or that it did not.
 _HOST_SUITE: tuple[str, ...] = ("sh", "-c", "exit 0")
 
+# The same declaration, slowed down by a known amount. A check suite that
+# really takes time is the only way to observe that the start instant was taken
+# BEFORE the launch rather than beside the journal append.
+_SLEEP_SECONDS = 2
+_SLOW_HOST_SUITE: tuple[str, ...] = ("sh", "-c", f"sleep {_SLEEP_SECONDS}")
 
-def _config_text(*, venue: str | None) -> str:
+
+def _config_text(*, venue: str | None, check_suite: tuple[str, ...]) -> str:
     """A governed repository's declaration, carrying the venue under test.
 
     `compat.pinned` is one of the contract's REQUIRED fields: without it the
@@ -111,7 +129,7 @@ def _config_text(*, venue: str | None) -> str:
         {
             "livespec-orchestrator-beads-fabro": {
                 "compat": {"pinned": "master"},
-                "dispatcher": {"janitor": {**janitor, "check_suite": list(_HOST_SUITE)}},
+                "dispatcher": {"janitor": {**janitor, "check_suite": list(check_suite)}},
             }
         }
     )
@@ -128,7 +146,9 @@ class _VenueRunner:
 
     The CHECK SUITE answers whatever the case hands it, which is how one fixture
     stands in for a gate client that passed, one that failed, one that printed
-    its state on the wrong stream, and one that decided nothing.
+    its state on the wrong stream, and one that decided nothing. A `suite` of
+    `None` means RUN IT, through the production runner -- the only way a case
+    can give the stage a command that really takes time.
 
     The SUBMITTED-TREE READING is not canned at all: it runs for real, through
     the production `ShellCommandRunner`, against the real git checkout the
@@ -137,7 +157,7 @@ class _VenueRunner:
     the venue happened to send.
     """
 
-    suite: CommandResult
+    suite: CommandResult | None
     check_suite: tuple[str, ...]
     shell: ShellCommandRunner = field(default_factory=ShellCommandRunner)
     calls: list[list[str]] = field(default_factory=list)
@@ -155,9 +175,10 @@ class _VenueRunner:
         assert cwd.exists()
         self.calls.append(list(argv))
         self.envs.append(env)
-        if self._is_check_suite(argv=argv):
-            return self.suite
-        if _SUBMITTED_TREE_READ in argv:
+        canned = self.suite if self._is_check_suite(argv=argv) else None
+        if canned is not None:
+            return canned
+        if self._is_check_suite(argv=argv) or _SUBMITTED_TREE_READ in argv:
             return self.shell.run(argv=argv, cwd=cwd, timeout_seconds=timeout_seconds, env=env)
         return CommandResult(exit_code=0, stdout="", stderr="")
 
@@ -310,10 +331,33 @@ def _head_commit(*, checkout: Path) -> str:
     return _git(cwd=checkout, argv=("show", "-s", "--format=%H", "HEAD"))
 
 
-def _drive(*, tmp_path: Path, name: str, venue: str | None, suite: CommandResult) -> _Drive:
+def _elapsed_seconds(*, row: dict[str, object]) -> float:
+    """The stage's own duration, read from the row's two instants and nothing else.
+
+    This IS the clause's requirement rather than a convenience: the row has to
+    make the stage's duration readable, so the reading is taken exactly as an
+    operator would take it.
+    """
+    started = datetime.strptime(str(row[_STARTED_AT_FIELD]), _INSTANT_FORMAT).replace(
+        tzinfo=timezone.utc
+    )
+    appended = datetime.strptime(str(row[_APPENDED_AT_FIELD]), _INSTANT_FORMAT).replace(
+        tzinfo=timezone.utc
+    )
+    return (appended - started).total_seconds()
+
+
+def _drive(
+    *,
+    tmp_path: Path,
+    name: str,
+    venue: str | None,
+    suite: CommandResult | None,
+    check_suite: tuple[str, ...] = _HOST_SUITE,
+) -> _Drive:
     repo = tmp_path / name
     repo.mkdir(parents=True, exist_ok=True)
-    config_text = _config_text(venue=venue)
+    config_text = _config_text(venue=venue, check_suite=check_suite)
     _ = (repo / ".livespec.jsonc").write_text(config_text, encoding="utf-8")
     checkout = _janitor_checkout(repo=repo)
     plan = build_plan(
@@ -521,3 +565,50 @@ def test_scenario191_a_cluster_row_copies_only_the_job_keys_the_verdict_line_car
     assert "job_finished_at" not in reported.row
     assert [name for name in _JOB_ROW_FIELDS if name in unreported.row] == []
     assert unreported.row.get(_GATE_TREE_HASH_FIELD) is not None
+
+
+def test_scenario191_the_row_carries_the_suites_start_so_the_stage_duration_is_readable(
+    tmp_path: Path,
+) -> None:
+    """The start instant is taken before the launch, so the row's two fields bound the stage.
+
+    The check suite RUNS HERE, through the production runner, and one of the
+    two legs really sleeps. That is the only way to observe what the clause
+    actually asks for: a canned result returns instantly, so every stamp -- one
+    taken before the launch, one taken beside the journal append, one taken at
+    the top of the post-merge flow -- would read identically.
+
+    The quick leg is the control, and without it the slow leg proves nothing: a
+    duration of two seconds is equally consistent with a start instant taken
+    before the launch and with a fixture that simply takes two seconds to do
+    anything. The two legs differ only in their declared check suite, so the
+    difference between their durations is the sleep.
+
+    Both instants are parsed with the exact seconds-precision UTC format, so a
+    value that is not one raises here rather than comparing oddly, and the
+    duration is read from the ROW as an operator reads it rather than from any
+    clock this module holds.
+    """
+    slow = _drive(
+        tmp_path=tmp_path,
+        name="slow",
+        venue=_HOST_LOCAL,
+        suite=None,
+        check_suite=_SLOW_HOST_SUITE,
+    )
+    quick = _drive(tmp_path=tmp_path, name="quick", venue=_HOST_LOCAL, suite=None)
+    cluster = _drive(
+        tmp_path=tmp_path, name="started-cluster", venue=_CLUSTER_JOB, suite=_gate(state="PASSED")
+    )
+
+    assert [
+        drive.row.get(_VENUE_FIELD)
+        for drive in (slow, quick, cluster)
+        if _STARTED_AT_FIELD not in drive.row
+    ] == []
+    assert _elapsed_seconds(row=slow.row) >= _SLEEP_SECONDS
+    assert _elapsed_seconds(row=quick.row) < _SLEEP_SECONDS
+    # Owed on BOTH venues: the field is not part of the gate account, so a
+    # cluster row carries it too and parses the same way.
+    assert _elapsed_seconds(row=cluster.row) < _SLEEP_SECONDS
+    assert (slow.outcome.stage, quick.outcome.stage) == ("done", "done")

@@ -41,6 +41,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_check_venue 
     gate_tree_hash,
     host_janitor_red,
     janitor_check_row_fields,
+    janitor_check_started_at,
     janitor_runs_on_the_cluster,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_degraded import (
@@ -197,6 +198,10 @@ def _check_suite_red(
     tree_hash = (
         gate_tree_hash(runner=runner, checkout=plan.janitor_checkout) if on_the_cluster else None
     )
+    # Stamped LAST before the launch, after the tree reading above, so the
+    # row's two instants bound the check suite itself rather than the readings
+    # taken for its account.
+    started_at = janitor_check_started_at()
     result = runner.run(
         argv=argv, cwd=plan.janitor_checkout, timeout_seconds=_JANITOR_TIMEOUT_SECONDS, env=env
     )
@@ -214,7 +219,10 @@ def _check_suite_red(
             retention=plan.janitor_retention,
             removed_env_vars=janitor_removed_env_vars(),
             extra_fields=janitor_check_row_fields(
-                on_the_cluster=on_the_cluster, result=result, tree_hash=tree_hash
+                on_the_cluster=on_the_cluster,
+                result=result,
+                tree_hash=tree_hash,
+                started_at=started_at,
             ),
         ),
     )

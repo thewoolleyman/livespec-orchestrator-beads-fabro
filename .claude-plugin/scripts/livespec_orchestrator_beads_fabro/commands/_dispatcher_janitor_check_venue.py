@@ -66,6 +66,7 @@ mistake is merely expensive rather than unsound.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
@@ -93,6 +94,7 @@ __all__: list[str] = [
     "gate_tree_hash",
     "host_janitor_red",
     "janitor_check_row_fields",
+    "janitor_check_started_at",
     "janitor_runs_on_the_cluster",
 ]
 
@@ -141,6 +143,7 @@ _STATE_FIELD = "state"
 # names together. Folding them into one constant would make a rename of either
 # surface silently rename the other.
 _ROW_VENUE_FIELD = "venue"
+_ROW_STARTED_AT_FIELD = "started_at"
 _ROW_GATE_STATE_FIELD = "gate_state"
 _ROW_GATE_TREE_HASH_FIELD = "gate_tree_hash"
 
@@ -244,6 +247,25 @@ def cluster_janitor_red(*, result: CommandResult, checkout: Path) -> str | None:
     )
 
 
+def janitor_check_started_at() -> str:
+    """The instant the check-suite command is about to be launched at.
+
+    Taken by the CALLER, immediately before the launch, and handed to the row
+    projection afterwards. It cannot be stamped where the row is built: that
+    happens once the command has returned, and the row already carries its own
+    append instant, so a start taken there would report every stage as having
+    taken no time at all.
+
+    The seconds-precision UTC format is `_dispatcher_io.utc_now_iso`'s, and
+    this is a private copy of it rather than an import, because that module
+    imports `_dispatcher_engine`, whose own import chain reaches this one --
+    so the shared reader cannot be reached from here without closing a cycle.
+    `_needs_attention_ready_aging` and `_dispatcher_host_record_post` carry the
+    same copy for the same reason.
+    """
+    return datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def gate_tree_hash(*, runner: CommandRunner, checkout: Path) -> str | None:
     """The full tree hash of the janitor checkout's HEAD: the tree submitted to the gate.
 
@@ -270,7 +292,7 @@ def gate_tree_hash(*, runner: CommandRunner, checkout: Path) -> str | None:
 
 
 def janitor_check_row_fields(
-    *, on_the_cluster: bool, result: CommandResult, tree_hash: str | None
+    *, on_the_cluster: bool, result: CommandResult, tree_hash: str | None, started_at: str
 ) -> dict[str, object]:
     """The `janitor-post-merge` row's venue account, as ONE projection.
 
@@ -295,7 +317,8 @@ def janitor_check_row_fields(
     distinguish them.
     """
     fields: dict[str, object] = {
-        _ROW_VENUE_FIELD: JANITOR_VENUE_CLUSTER_JOB if on_the_cluster else JANITOR_VENUE_HOST_LOCAL
+        _ROW_VENUE_FIELD: JANITOR_VENUE_CLUSTER_JOB if on_the_cluster else JANITOR_VENUE_HOST_LOCAL,
+        _ROW_STARTED_AT_FIELD: started_at,
     }
     if not on_the_cluster:
         return fields
