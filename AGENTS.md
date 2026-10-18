@@ -1613,6 +1613,23 @@ references passes with its guidance orphaned.
   also BEFORE messaging any other session: inter-session messages go through
   Claude's `SendMessage`, never `herdr agent prompt` into another session's
   pane (maintainer ruling 2026-10-14).
+- Read `.ai/factory-dispatch-preflight-and-triage.md` BEFORE dispatching a
+  work-item or triaging a dispatch that ended badly — `filing_display`
+  passing does not mean `dod_gate` will, a primary behind origin fails every
+  dispatch at 0 ms, a workflow fix ships only through a `fix:` release, and a
+  post-merge janitor red names no failing target.
+- Read `.ai/factory-working-method.md` BEFORE starting a canary, test
+  campaign or local build, proposing an upstream Fabro change, designing a
+  measurement, or retracting a claim — the maintainer's throughput,
+  host-load, upstream-last-resort and instrument-in-Honeycomb directions.
+- Read `.ai/hosts-and-shell-gotchas.md` BEFORE reaching a factory host or
+  scripting with `ls`, `cat` or `grep` — this checkout runs ON vps, hp
+  accepts only `root` or `cwoolley`, and the shell aliases corrupt command
+  substitution.
+- Read `.ai/git-pr-and-release-mechanics.md` BEFORE arming auto-merge,
+  staging an `AGENTS.md` edit, surveying `spec/*` branches, or touching
+  `.github/workflows/` — each trap ships a change without its content or
+  reports landed work as unlanded.
 
 ## Decision authority — when to ask, proceed, or self-resolve
 

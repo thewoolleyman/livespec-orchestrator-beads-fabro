@@ -122,3 +122,77 @@ shell; `herdr pane list --workspace <ws>` shows the state, and
   `bd-ib-ctagnf`: a handoff script printed success, and only the
   `read_timeline` read-back showed the entry was absent. Check the return
   value, then compare the read-back body for equality.
+
+## An unrelated finding gets its own plan (maintainer-declared 2026-09-30)
+
+When a plan session surfaces a defect or design question that is not the
+plan's topic, it gets a NEW plan, driven from a different session; it is never
+folded into the current plan's next action. On 2026-09-30 the factory
+test-first finding surfaced while a dispatch was being watched under the
+fallback plan `bd-ib-jxvgq5`, and the predecessor session wrote it into that
+epic's `next_action`. The maintainer's first words were "we're not going to do
+that as part of this plan. This plan is completely unrelated. We need a new
+plan." A plan epic is the durable resume state for exactly one topic, and an
+unrelated next action derails the unattended resume and hides the finding
+from the session that should own it. Research the finding, `create_thread` a
+new plan with an opening research note, append its opening handoff, then
+append a handoff on the ORIGINAL epic that discharges the misplaced pointer and
+names the new epic, and return to the original plan's own queue.
+
+## Importing the plan package and core's governance journal from a script
+
+Driving the plan operation's package primitives (`read_timeline`,
+`append_handoff`, `record_scope_event`, `resume_directive`,
+`plan_record_rate_warnings`) from a script needs BOTH the scripts directory
+and its `_vendor` directory on `sys.path`:
+
+```python
+sys.path.insert(0, ".claude-plugin/scripts")
+sys.path.insert(0, ".claude-plugin/scripts/_vendor")
+from livespec_orchestrator_beads_fabro.commands import plan as P
+from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+cfg = resolve_store_config(cwd=Path(".").resolve(), work_items_arg=None)
+```
+
+With only the first path the import fails with `ModuleNotFoundError: No
+module named 'livespec_runtime'`, because `livespec_runtime`, `returns` and
+`typing_extensions` are vendored rather than installed; the error names the
+module, not the missing path, so it reads as a broken install. Run the script
+under `with-livespec-env.sh --` or the beads calls underneath fail with an
+access-denied that looks like a missing secret. Measured 2026-08-22.
+
+Call shapes measured 2026-10-01 on build v0.158.0:
+`is_unattended_session(env=os.environ)` takes a keyword-only `env`;
+`plan_record_rate_warnings(entries=..., research_paths=...)` needs `Path`
+objects, not strings; `archive_thread(...)` accepts a worktree as
+`project_root`, which keeps the primary clean while it renames `plan/<slug>/`
+and closes the epic in the same call; and
+`record_completeness_review_evidence` (now in
+`commands/_plan_completeness_evidence.py`; it was in
+`commands/_plan_archive_review.py` when measured) is valid only with `separate_reviewer=True`,
+`attests_complete_requirement_coverage=True` and a `reviewer_identity`
+different from the archiving author.
+
+livespec core's governance journal has the same trap. To append the batch-mode
+`authoring_auto_consumption` event that the propose-change prose requires
+before invoking the CLI, put core's `scripts` AND `scripts/_vendor` on
+`sys.path` (the core root comes from the Driver's
+`lib/resolve_core_root.py --project-root .`); without `_vendor` the error
+names `structlog`:
+
+```python
+sys.path.insert(0, f"{C}/scripts"); sys.path.insert(0, f"{C}/scripts/_vendor")
+from livespec.spec_governance import journal as J
+digest = J.digest_json_bytes(payload=envelope)
+J.append_journal_payload(project_root=Path.cwd(), event={...})
+```
+
+Required event fields: `event_type`, `operation` (`propose-change` or
+`critique`), `governing_key`, `effective_source` (one of `hard-floor`,
+`invocation`, `proposal`, `global`, `default`), `input_envelope_digest` (a
+sha256 hex digest) and `outcome` (`consumed`, `spawned`, `selected`,
+`blocked`, `failed`, `dismissed` or `deferred`). Raw `intent` or `topic`
+fields are rejected; send digests only. The journal lands at
+`tmp/livespec-spec-governance-journal.jsonl`, which is gitignored. Measured
+2026-09-06 while filing the `pluggable-factory-workflow-configs` proposal.
+These two sections were migrated from auto-memory notes on 2026-10-18.

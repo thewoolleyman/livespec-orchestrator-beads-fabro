@@ -229,3 +229,21 @@ accepts `--timeout <ms>`, so it covers the terminal state this trap is about,
 the blocked state a replay can genuinely reach, and the deadline a hand-written
 `until` loop has no way to express. If you do write a condition by hand, accept
 either word and give it an arm for the target disappearing.
+
+## The record's release tag must belong to the item's own repository
+
+A host-captured proof record's `build.release_tag` must name a release tag
+carried by the repository the WORK ITEM lives in: for a `livespec-dev-tooling`
+item, a dev-tooling tag such as `v1.94.0`, never this plugin's `v0.186.0`. A
+repository that carries tags rejects `none` ("states release none, and a
+release applies to its release repository") and a foreign tag. The trap is
+that `post-host-record` still posts and exits 0; acceptance just journals
+`host_verified_record` as null and leaves the item parked in `acceptance` with
+an identical, unchanged parking record. Measured 2026-10-11 on
+`livespec-dev-tooling-fe62lh`: the first record said `release none`, the replay
+brief named `v0.186.0`, both posted, and the item never closed. The wording
+lives in `commands/_plan_proof_leg.py` (`NOT_EVIDENCE_NO_RELEASE`). Before
+capturing, run `git tag --contains <merge sha>` in the item's own repository
+and capture against that release, re-applying from the released tree if
+needed, and put the same `build` block verbatim in the replay brief. Migrated
+from an auto-memory note on 2026-10-18.
