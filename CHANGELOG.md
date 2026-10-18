@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.212.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.211.6...v0.212.0) (2026-10-18)
+
+
+### Features
+
+* **gate:** branch the pre-push gate onto the delegated client ([e7c000f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e7c000f220296faefe48f7f7cbc3119c128263a8))
+* **gate:** opt in to the delegated pre-push gate ([6657a29](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6657a2935d494c485bf106dafa332227f4acb28c))
+
 ## [0.211.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.211.5...v0.211.6) (2026-10-18)
 
 
