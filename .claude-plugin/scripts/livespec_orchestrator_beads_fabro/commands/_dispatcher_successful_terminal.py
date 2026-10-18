@@ -19,6 +19,10 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroInspectR
 from livespec_orchestrator_beads_fabro.commands._fabro_port_checkpoints import (
     fabro_inspect_checkpoints,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port_node_outcomes import (
+    fabro_node_outcomes,
+    fabro_stage_node,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     fabro_inspect_record,
 )
@@ -90,6 +94,14 @@ def successful_store_loss_evidence(
     record = None if inspect is None else fabro_inspect_record(payload=inspect.payload)
     checkpoints = () if record is None else fabro_inspect_checkpoints(record=record)
     checkpoint: dict[str, Any] = {} if not checkpoints else checkpoints[-1]
+    # ONE reading of the engine's grading, shared with `_fabro_terminal_evidence`
+    # through the port rather than re-derived: that reader already resolves BOTH
+    # inputs the two engines write -- the checkpoint's `node_outcomes`, else the
+    # record's own top-level `stages` map, visit-collapsed -- and a second
+    # reading here would make the two disagree about whether one record is
+    # readable at all, which is the answer that keeps a merged pull request
+    # classified as a failed dispatch.
+    outcomes = {} if record is None else fabro_node_outcomes(record=record, checkpoint=checkpoint)
     failure = None if inspect is None else inspect.failure
     timestamp_raw: object = checkpoint.get("timestamp")
     commit_raw: object = checkpoint.get("git_commit_sha")
@@ -111,7 +123,9 @@ def successful_store_loss_evidence(
     if configured is None:
         return None
     graph, route = configured
-    if not _checkpoint_completed_route(checkpoint=checkpoint, graph=graph, route=route):
+    if not _checkpoint_completed_route(
+        checkpoint=checkpoint, outcomes=outcomes, graph=graph, route=route
+    ):
         return None
     current_node = cast("str", checkpoint.get("current_node"))
     next_node_raw: object = checkpoint.get("next_node_id")
@@ -173,6 +187,7 @@ def _configured_success_route(
 def _checkpoint_completed_route(
     *,
     checkpoint: dict[str, Any],
+    outcomes: dict[str, dict[str, Any]],
     graph: WorkflowGraph,
     route: SuccessCriticalNodes,
 ) -> bool:
@@ -182,58 +197,73 @@ def _checkpoint_completed_route(
     a checkpoint AT the green terminal, and a checkpoint at the final
     successful stage whose next node IS that terminal. The incident's own
     record is the second shape, so requiring a completed exit-node entry would
-    refuse the very evidence this rule exists to read. Either way every stage
-    DOMINATING the terminal must also be completed AND successful, which is
-    what keeps an intermediate checkpoint and a failed required stage out.
+    refuse the very evidence this rule exists to read.
+
+    THE TWO QUESTIONS ASKED OF THE DOMINATING STAGES ARE SEPARATE, and conflating
+    them refused every real record. COMPLETION is asked of all of them, against
+    `completed_nodes`, which is the engine's own account of what it ran and is
+    what keeps an intermediate checkpoint out. SUCCESS is asked only of the ones
+    the engine ACTUALLY GRADED, because the outcome map is not complete over that
+    list: both committed `fabro inspect --json` captures name `dod_gate` in
+    `completed_nodes` with no outcome entry at all, and the graph's own entry
+    marker -- `start [shape=Mdiamond]`, no backend, no script -- has never had
+    anything for any engine to grade. Demanding a `succeeded` entry per dominator
+    therefore reported NO evidence for the shape this rule exists to read, which
+    is indistinguishable at every surface from the correct fail-closed answer. A
+    dominator the engine never graded is UNGRADED, never failed; one it graded as
+    anything but succeeded still refuses, which is what keeps a genuinely failed
+    required stage out.
+
+    The entry marker is relieved of the GRADE and not of the COMPLETION, which is
+    deliberate rather than an oversight: `completed_nodes` is the engine's own
+    account of the nodes it ran, nothing measured here says any engine omits the
+    marker from it, and a record that does omit it is unavailable evidence --
+    which keeps the ordinary non-green outcome, the conservative direction.
+
+    The `outcomes` map arrives ALREADY RESOLVED from the port, keyed as the
+    engine wrote it, so a Petri `<node>@<visit>` key is divided here through
+    that port's own reading rather than compared whole against a node id.
     """
     completed_raw: object = checkpoint.get("completed_nodes")
-    outcomes_raw: object = checkpoint.get("node_outcomes")
     current_raw: object = checkpoint.get("current_node")
-    # FAIL CLOSED on a checkpoint whose own shape cannot be read. An unreadable
-    # node list or outcome map is a failure to MEASURE the route, not a route
+    # FAIL CLOSED on a checkpoint whose own shape cannot be read, and on a record
+    # that graded NOTHING. Either is a failure to MEASURE the route, not a route
     # that was measured and found complete -- and the natural coding of "no
     # missing stage found" is a pass earned on data nobody could read.
-    if (
-        not isinstance(completed_raw, list)
-        or not isinstance(outcomes_raw, dict)
-        or not isinstance(current_raw, str)
-    ):
+    if not isinstance(completed_raw, list) or not isinstance(current_raw, str) or not outcomes:
         return False
     completed = frozenset(
         item for item in cast("list[object]", completed_raw) if isinstance(item, str)
     )
-    outcomes = cast("dict[object, object]", outcomes_raw)
+    states = {fabro_stage_node(stage=stage): outcome for stage, outcome in outcomes.items()}
+    successful = frozenset(node for node in states if _node_succeeded(states=states, node=node))
     required = dominators(graph=graph, start=route.start)[route.green_terminal]
     preceding = required - {route.green_terminal}
-    successful = frozenset(
-        cast("str", node)
-        for node in outcomes
-        if _node_succeeded(outcomes=outcomes, node=cast("str", node))
+    route_completed = preceding.issubset(completed) and (preceding & frozenset(states)).issubset(
+        successful
     )
-    required_completed = preceding.issubset(completed & successful)
     terminal_completed = (
         current_raw == route.green_terminal
         and route.green_terminal in completed
-        and _node_succeeded(outcomes=outcomes, node=route.green_terminal)
+        and route.green_terminal in successful
     )
     final_stage_selected_terminal = (
         checkpoint.get("next_node_id") == route.green_terminal
         and current_raw in graph.predecessors(node=route.green_terminal)
-        and _node_succeeded(outcomes=outcomes, node=current_raw)
+        and current_raw in successful
     )
-    return required_completed and (terminal_completed or final_stage_selected_terminal)
+    return route_completed and (terminal_completed or final_stage_selected_terminal)
 
 
-def _node_succeeded(*, outcomes: dict[object, object], node: str) -> bool:
-    """Treat an ABSENT or non-mapping outcome as not succeeded, never as a bug.
+def _node_succeeded(*, states: dict[str, dict[str, Any]], node: str) -> bool:
+    """Treat an ABSENT or ungradeable outcome as not succeeded, never as a bug.
 
-    A required node with no recorded outcome, or one holding a string, a number
-    or null, is evidence that could not be read -- so it fails this test and the
-    dispatch keeps its ordinary non-green classification. Indexing it as a
-    mapping raised instead, which turned unreadable engine evidence into a
-    traceback out of the middle of `run_dispatch`.
+    A node with no recorded outcome, or one the port could not read, is evidence
+    that could not be read -- so it fails this test, and a node the ROUTE requires
+    is then judged on completion alone rather than refused for an entry no engine
+    writes. Indexing an unreadable entry as a mapping raised instead, which turned
+    unreadable engine evidence into a traceback out of the middle of
+    `run_dispatch`.
     """
-    raw = outcomes.get(node)
-    if not isinstance(raw, dict):
-        return False
-    return cast("dict[object, object]", raw).get("status") == "succeeded"
+    outcome = states.get(node)
+    return outcome is not None and outcome.get("status") == "succeeded"
