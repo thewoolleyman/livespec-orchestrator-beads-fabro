@@ -78,7 +78,10 @@ from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_js
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+        CommandResult,
+        CommandRunner,
+    )
 
 __all__: list[str] = [
     "CLUSTER_GATE_ARGV",
@@ -87,6 +90,7 @@ __all__: list[str] = [
     "JANITOR_VENUE_KEY",
     "cluster_janitor_red",
     "cluster_venue_declared",
+    "gate_tree_hash",
     "host_janitor_red",
     "janitor_check_row_fields",
     "janitor_runs_on_the_cluster",
@@ -138,6 +142,15 @@ _STATE_FIELD = "state"
 # surface silently rename the other.
 _ROW_VENUE_FIELD = "venue"
 _ROW_GATE_STATE_FIELD = "gate_state"
+_ROW_GATE_TREE_HASH_FIELD = "gate_tree_hash"
+
+# The submitted-tree reading, and how long it may take. `HEAD^{tree}` resolves
+# the TREE rather than the commit: both render as forty hex characters and both
+# look entirely plausible in a journal, but only the tree is the value the gate
+# Job's own `livespec.gate/tree-hash` label holds -- so a row carrying the
+# commit would send an operator looking for a Job that cannot exist.
+_SUBMITTED_TREE_REVISION = "HEAD^{tree}"
+_SUBMITTED_TREE_TIMEOUT_SECONDS = 30.0
 
 
 def cluster_venue_declared(*, block: dict[str, Any]) -> bool:
@@ -211,7 +224,34 @@ def cluster_janitor_red(*, result: CommandResult, checkout: Path) -> str | None:
     )
 
 
-def janitor_check_row_fields(*, on_the_cluster: bool, result: CommandResult) -> dict[str, object]:
+def gate_tree_hash(*, runner: CommandRunner, checkout: Path) -> str | None:
+    """The full tree hash of the janitor checkout's HEAD: the tree submitted to the gate.
+
+    Read BEFORE the client is launched, because it is the tree the gate is
+    being ASKED about -- which is why the row can name it even when no gate Job
+    ever started, and why it is the value that lets an operator find, or rule
+    out, the Job that ran for it.
+
+    Taken DIRECTLY on the runner rather than through `run_stage`, exactly as
+    the venue resolution's own merge-containment probe is: this is a reading
+    taken FOR a journal row, and journaling it as a stage of its own would put
+    a second row beside the one it belongs to.
+
+    `None` is a reading that could not be TAKEN, and never the empty string:
+    an empty string compares as a value, so a row carrying it would report a
+    tree hash of nothing rather than the absence of one.
+    """
+    result = runner.run(
+        argv=["git", "-C", str(checkout), "rev-parse", _SUBMITTED_TREE_REVISION],
+        cwd=checkout,
+        timeout_seconds=_SUBMITTED_TREE_TIMEOUT_SECONDS,
+    )
+    return result.stdout.strip() or None
+
+
+def janitor_check_row_fields(
+    *, on_the_cluster: bool, result: CommandResult, tree_hash: str | None
+) -> dict[str, object]:
     """The `janitor-post-merge` row's venue account, as ONE projection.
 
     PURE, over the venue the selection already resolved and the check-suite
@@ -240,6 +280,7 @@ def janitor_check_row_fields(*, on_the_cluster: bool, result: CommandResult) -> 
     if not on_the_cluster:
         return fields
     fields[_ROW_GATE_STATE_FIELD] = _state_of(line=_verdict_line(text=result.stderr))
+    fields[_ROW_GATE_TREE_HASH_FIELD] = tree_hash
     return fields
 
 

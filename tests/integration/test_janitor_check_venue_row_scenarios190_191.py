@@ -29,6 +29,7 @@ put a venue into the flow.
 from __future__ import annotations
 
 import json
+import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,7 +39,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import post_merge
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
+    JournalFile,
+    ShellCommandRunner,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_check_venue import (
     CLUSTER_GATE_ARGV,
 )
@@ -51,6 +55,17 @@ _JANITOR_STAGE = "janitor-post-merge"
 # not tell a projection missing a field from one that never claimed it.
 _VENUE_FIELD = "venue"
 _GATE_STATE_FIELD = "gate_state"
+_GATE_TREE_HASH_FIELD = "gate_tree_hash"
+
+# Every field the row owes on the CLUSTER venue and must omit on the host-local
+# one. Collected so the host-local omission case grades the whole gate account
+# rather than whichever field was added last.
+_GATE_ROW_FIELDS: tuple[str, ...] = (_GATE_STATE_FIELD, _GATE_TREE_HASH_FIELD)
+
+# The substring that identifies the venue's own reading of the tree it is about
+# to submit. The runner routes that one command to the production
+# `ShellCommandRunner` against the real checkout.
+_SUBMITTED_TREE_READ = "rev-parse"
 
 # The two venue words, likewise spelled out: these are the values an operator
 # reads, so a rename is a diff a reviewer sees rather than a constant that
@@ -94,10 +109,17 @@ class _VenueRunner:
     The CHECK SUITE answers whatever the case hands it, which is how one fixture
     stands in for a gate client that passed, one that failed, one that printed
     its state on the wrong stream, and one that decided nothing.
+
+    The SUBMITTED-TREE READING is not canned at all: it runs for real, through
+    the production `ShellCommandRunner`, against the real git checkout the
+    fixture built. A canned answer there would turn the tree-hash assertion
+    into a reading of this module's own constant, which would hold for any argv
+    the venue happened to send.
     """
 
     suite: CommandResult
     check_suite: tuple[str, ...]
+    shell: ShellCommandRunner = field(default_factory=ShellCommandRunner)
     calls: list[list[str]] = field(default_factory=list)
     envs: list[Mapping[str, str | None] | None] = field(default_factory=list)
 
@@ -115,6 +137,8 @@ class _VenueRunner:
         self.envs.append(env)
         if self._is_check_suite(argv=argv):
             return self.suite
+        if _SUBMITTED_TREE_READ in argv:
+            return self.shell.run(argv=argv, cwd=cwd, timeout_seconds=timeout_seconds, env=env)
         return CommandResult(exit_code=0, stdout="", stderr="")
 
     def _is_check_suite(self, *, argv: list[str]) -> bool:
@@ -194,13 +218,70 @@ def _green() -> CommandResult:
     return CommandResult(exit_code=0, stdout="every target green", stderr="")
 
 
+def _git(*, cwd: Path, argv: tuple[str, ...]) -> str:
+    """One git invocation in a fixture checkout, with its identity supplied per call.
+
+    The identity rides every invocation rather than a `git config` of its own,
+    because this host may carry no user identity in any scope and a commit
+    without one simply fails -- the measured trap behind Scenario 176.
+    """
+    completed = subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Janitor Fixture",
+            "-c",
+            "user.email=janitor@example.invalid",
+            *argv,
+        ],
+        cwd=str(cwd),
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    return completed.stdout.strip()
+
+
+def _janitor_checkout(*, repo: Path) -> Path:
+    """A REAL git checkout standing in for the merged default-branch tip.
+
+    Real, because the venue reads the tree it is about to submit by asking git
+    about this directory's HEAD: a bare `mkdir` would leave that reading
+    unobservable rather than wrong, and the case would pass against a build
+    that recorded nothing. The provisioning stages are canned, so nothing else
+    in the flow would create it.
+    """
+    checkout = repo / "janitor-co"
+    checkout.mkdir(parents=True, exist_ok=True)
+    _ = _git(cwd=checkout, argv=("init", "--quiet"))
+    _ = (checkout / "merged.txt").write_text(f"the merged tree of {repo.name}\n", encoding="utf-8")
+    _ = _git(cwd=checkout, argv=("add", "merged.txt"))
+    _ = _git(cwd=checkout, argv=("commit", "--quiet", "-m", "the merged default-branch tip"))
+    return checkout
+
+
+def _head_tree(*, checkout: Path) -> str:
+    """The checkout's HEAD tree, measured through a DIFFERENT git invocation.
+
+    `git show -s --format=%T` renders the commit object's own tree field, where
+    the venue asks `rev-parse` to resolve `HEAD^{tree}`. Measuring with the
+    production argv would be one reading taken twice: it would agree with the
+    row for whatever either command happened to answer, a wrong value included.
+    """
+    return _git(cwd=checkout, argv=("show", "-s", "--format=%T", "HEAD"))
+
+
+def _head_commit(*, checkout: Path) -> str:
+    """The checkout's HEAD commit id: the plausible wrong answer to rule out."""
+    return _git(cwd=checkout, argv=("show", "-s", "--format=%H", "HEAD"))
+
+
 def _drive(*, tmp_path: Path, name: str, venue: str | None, suite: CommandResult) -> _Drive:
     repo = tmp_path / name
     repo.mkdir(parents=True, exist_ok=True)
     config_text = _config_text(venue=venue)
     _ = (repo / ".livespec.jsonc").write_text(config_text, encoding="utf-8")
-    checkout = repo / "janitor-co"
-    checkout.mkdir(parents=True, exist_ok=True)
+    checkout = _janitor_checkout(repo=repo)
     plan = build_plan(
         repo=repo,
         work_item_id="bd-ib-nsrgxl",
@@ -308,16 +389,55 @@ def test_scenario191_a_cluster_row_carries_the_gate_state_word_and_null_where_th
 
 
 def test_scenario191_a_host_local_row_carries_no_gate_field_at_all(tmp_path: Path) -> None:
-    """On the host-local venue the gate fields are OMITTED, never nulled.
+    """On the host-local venue every gate field is OMITTED, never nulled.
 
-    This is the mirror of the case above and it is why that one asserts
-    presence: a `gate_state` of `null` on a host-local row would read as a
-    cluster run whose gate said nothing -- the exact conflation the nulls above
-    exist to make legible. No gate was asked here, so the row has nothing to
-    report about one.
+    This is the mirror of the state-word case above and it is why that one
+    asserts presence: a `gate_state` of `null` on a host-local row would read
+    as a cluster run whose gate said nothing -- the exact conflation the nulls
+    above exist to make legible. No gate was asked here, so the row has nothing
+    to report about one.
+
+    Graded over the WHOLE gate account rather than over one field, so a field
+    added to the cluster arm later cannot start leaking onto host-local rows
+    unnoticed.
     """
     host = _drive(tmp_path=tmp_path, name="host-no-gate", venue=_HOST_LOCAL, suite=_green())
 
     assert host.row.get(_VENUE_FIELD) == _HOST_LOCAL
-    assert _GATE_STATE_FIELD not in host.row
+    assert [field_name for field_name in _GATE_ROW_FIELDS if field_name in host.row] == []
     assert host.outcome.stage == "done"
+
+
+def test_scenario191_a_cluster_row_carries_the_tree_the_gate_was_asked_about(
+    tmp_path: Path,
+) -> None:
+    """The row names the submitted tree -- the checkout's HEAD tree -- even with no Job.
+
+    The expected value is MEASURED off the real checkout through a different
+    git invocation than the venue uses, so the assertion compares two readings
+    of one repository rather than the row against a constant this module also
+    fed the flow.
+
+    Two discriminators carry the case. The row must name the TREE and not
+    HEAD's own commit id: both are forty hex characters, both look entirely
+    plausible in a journal, and only the tree is what a gate Job's
+    `livespec.gate/tree-hash` label holds -- so a row carrying the commit sends
+    an operator looking for a Job that cannot exist. And it must be named where
+    the gate reached NO verdict, which is the arm an operator needs it in most:
+    that is the reading that lets them find, or rule out, a Job for that tree.
+    """
+    passed = _drive(
+        tmp_path=tmp_path, name="tree-passed", venue=_CLUSTER_JOB, suite=_gate(state="PASSED")
+    )
+    silent = _drive(
+        tmp_path=tmp_path, name="tree-silent", venue=_CLUSTER_JOB, suite=_gate_without_a_verdict()
+    )
+    submitted = _head_tree(checkout=passed.checkout)
+
+    assert len(submitted) == 40
+    assert submitted != _head_commit(checkout=passed.checkout)
+    assert passed.row.get(_GATE_TREE_HASH_FIELD) == submitted
+    assert silent.row.get(_GATE_TREE_HASH_FIELD) == _head_tree(checkout=silent.checkout)
+    # The two checkouts hold different trees, so neither row could be carrying
+    # the other's reading -- or one value this module supplied to both.
+    assert _head_tree(checkout=silent.checkout) != submitted
