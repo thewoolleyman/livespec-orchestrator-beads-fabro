@@ -486,7 +486,11 @@ def _factory_target_for(*, name: str, block: dict[str, Any]) -> FactoryTarget:
         server=registry.server if registry.declared else _optional_str(value=entry.get("server")),
         fabro_bin=_optional_str(value=entry.get(_FACTORY_BIN_KEY)),
         environment=factory_environment_from_entry(entry=entry),
-        docker_host=_optional_str(value=entry.get(_FACTORY_DOCKER_HOST_KEY)),
+        docker_host=(
+            registry.docker_host
+            if registry.declared
+            else _optional_str(value=entry.get(_FACTORY_DOCKER_HOST_KEY))
+        ),
         registry=registry,
         dev_token=_optional_str(value=os.environ.get(f"{_FABRO_DEV_AUTH_ENV_PREFIX}{name}")),
     )
