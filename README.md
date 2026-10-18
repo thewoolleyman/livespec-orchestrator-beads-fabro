@@ -218,5 +218,9 @@ The livespec family dogfoods its own telemetry. CI runs, Red→Green commit-gate
   substrate.
 - See [AGENTS.md](AGENTS.md) for the commit protocol and repo orientation.
 - See [SPECIFICATION/](SPECIFICATION/) for the live (dogfooded) spec.
+- See [ADOPTER-DISPATCH-SETUP.md](ADOPTER-DISPATCH-SETUP.md) to make
+  factory dispatch work against your OWN repo: the per-tenant Fabro
+  server recipe, the target-local workflow that needs no `--workflow`
+  flag, and the App `workflows` grant withheld by design.
 </content>
 </invoke>
