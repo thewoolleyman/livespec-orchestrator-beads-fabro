@@ -1888,17 +1888,13 @@
     "heading": "## Scenario 190 \u2014 The post-merge janitor runs its check suite where dispatcher.janitor.venue selects, and a cluster gate that reaches no verdict is red",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by revision v154 accepting proposal janitor-check-suite-venue (plan kubernetes-sandbox-backend, epic bd-ib-nmuyjc). The venue shipped in v0.210.0 (bd-ib-26deyw) with unit tests only; an integration-tier test is owed for the four sub-scenarios, and work-item bd-ib-nsrgxl, which changes the same janitor path, owns that binding.",
-    "work_item": "bd-ib-nsrgxl"
+    "test": "tests.integration.test_janitor_check_venue_row_scenarios190_191.test_scenario190_an_absent_or_unrecognised_venue_keeps_the_suite_on_the_dispatching_host"
   },
   {
     "heading": "## Scenario 191 \u2014 The janitor-post-merge journal row names the venue that ran and, on the cluster, the gate's reading",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by revision v154 accepting proposal janitor-check-suite-venue (plan kubernetes-sandbox-backend, epic bd-ib-nmuyjc). The janitor-post-merge venue, suite-source and gate-reading fields are not implemented yet; an integration-tier test is owed for the five sub-scenarios, and work-item bd-ib-nsrgxl implements them and owns that binding.",
-    "work_item": "bd-ib-nsrgxl"
+    "test": "tests.integration.test_janitor_check_venue_row_scenarios190_191.test_scenario191_the_row_names_the_venue_the_suite_was_resolved_to_and_attempted_in"
   },
   {
     "heading": "## Scenario 194 \u2014 A conflicted pyproject.toml does not make the repository's agent hooks refuse every tool call",

@@ -877,20 +877,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 190 \u2014 The post-merge janitor runs its check suite where dispatcher.janitor.venue selects, and a cluster gate that reaches no verdict is red",
-    "work_item": "bd-ib-nsrgxl",
-    "first_seen": "2026-10-18"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 191 \u2014 The janitor-post-merge journal row names the venue that ran and, on the cluster, the gate's reading",
-    "work_item": "bd-ib-nsrgxl",
-    "first_seen": "2026-10-18"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 196 \u2014 Reconciliation releases or completes a stranded dispatch claim on its owning host, and holds with a named reason every claim it cannot prove stranded",
     "work_item": "bd-ib-m0t0",
     "first_seen": "2026-10-18"

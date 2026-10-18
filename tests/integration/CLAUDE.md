@@ -950,6 +950,43 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   here: it needs the credential wrapper, the shared Dolt server and the backup
   timer, so work-item `bd-ib-rxf` carries it as a HOST-CAPTURED assertion
   instead. This file never connects to a tenant.
+- `test_janitor_check_venue_row_scenarios190_191.py` — binds
+  `SPECIFICATION/scenarios.md` Scenarios 190 and 191 and the
+  `SPECIFICATION/contracts.md` subsection they exercise, "Post-merge janitor
+  check-suite venue": which machine the post-merge janitor's check suite runs
+  on, how the delegated gate's verdict reads, and what the `janitor-post-merge`
+  journal row says about both. Every case drives the production `post_merge`
+  over a real on-disk `JournalFile` and reads the row back off that file,
+  because the row IS the clause's subject and a projection asserted in
+  isolation would pass while nothing wrote it into the record an operator
+  reads; the venue itself comes off a real `.livespec.jsonc`, which is where
+  the production reader takes it from, so no argument of the module can put a
+  venue into the flow. Two seams are not canned, and each is load-bearing. The
+  SUBMITTED-TREE reading runs for real through the production
+  `ShellCommandRunner` against a real git checkout the fixture commits into,
+  with the expected value measured through a DIFFERENT git invocation
+  (`git show -s --format=%T` against production's `rev-parse HEAD^{tree}`), so
+  the assertion compares two readings of one repository rather than the row
+  against a constant the module also fed the flow — and it asserts the row
+  names the TREE and not HEAD's commit id, which is equally plausible in a
+  journal and names an object no gate Job label holds. And the start-instant
+  case RUNS the check suite, one leg of it sleeping a known two seconds, since
+  a canned result returns instantly and would make a stamp taken before the
+  launch indistinguishable from one taken beside the journal append; its quick
+  leg is the control that the measured duration came from the sleep.
+  Three further pairings must not be split. The cluster row's three NULL
+  `gate_state` arms (a state word on standard output alone, a `state` that is
+  not a string, and no state-bearing line at all) sit beside the host-local
+  case that carries NO gate field, because a null on a host-local row and a
+  null on a cluster row are the two states the field exists to tell apart. The
+  Job-key case pairs a verdict line carrying an explicit `job_started_at: null`
+  and no `job_finished_at` with a line naming no Job at all on a row that DOES
+  carry the tree hash — every ingredient the gate's own naming convention
+  needs — so "nothing was derived" is observable rather than assumed. And the
+  no-verdict cases name `_gate(state="FAILED")` as their control, since a
+  janitor that called every non-pass reading a lost verdict would satisfy all
+  three of them.
+
 - `test_pre_push_deletion_only_scenario188.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 188 and `constraints.md` §"Pre-push
   gate refinements": a push whose every ref update is a deletion (an all-zero
