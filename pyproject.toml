@@ -335,6 +335,34 @@ exclude_also = [
 # ---------------------------------------------------------------------------
 
 [tool.livespec_dev_tooling]
+# OPT IN to the DELEGATED PRE-PUSH GATE (bd-ib-idp5g7, a child of the
+# livespec-dev-tooling plan `delegated-gate-fleet-rollout`). The contract is
+# livespec-dev-tooling's SPECIFICATION/contracts.md §"Delegated pre-push gate"
+# and the client is `livespec_dev_tooling.gate_remote_delegate`, pinned above;
+# the half that lives here is this one key plus the branch
+# `dev-tooling/just-check-pre-push.sh` takes on the client's answer. A push from
+# the VPS otherwise runs the whole `just check` aggregate on the VPS, measured
+# on this repository at about 17 minutes; delegated, that aggregate runs as a
+# Job in the self-hosted k3s cluster's `gates` namespace and the push gates on
+# its verdict.
+#
+# THIS KEY ALONE DOES NOT DELEGATE ANYTHING. It travels with the code and names
+# no host, so the client ANDs it with host eligibility — whether the pushing
+# user can read the gates kubeconfig. Every host that cannot (a Fabro sandbox,
+# a laptop, the gate pod itself) keeps the local aggregate and SAYS so, rather
+# than failing closed on a cluster it cannot reach.
+#
+# NO `gate_check_suite` IS DECLARED, deliberately. The client's own
+# fall-through is the shared pre-push sequence this repository's local gate
+# already runs (install-worktree-pack, install-commit-refuse-hooks,
+# check-pre-push), and it has already passed on the cluster for this repository
+# — gate Job gate-livespec-orchestrator-beads-fabro-1c5e8de33c1f, 92 targets.
+# A declaration here would gate the tree on recipes chosen in this file instead,
+# which is how a consumer's gate goes red on a tree whose CI is green.
+#
+# MUST stay above the [[...mirror_pairings]] array-of-tables below, for the same
+# reason `file_lloc_hard_gate` must.
+delegated_gate = true
 # Phase-2 file_lloc FLIP (fleet-check-coverage epic). With this key true, the
 # `file_lloc` check hard-gates this repo's WHOLE git-derived first-party-.py
 # universe (>250 LLOC => error/exit 1), superseding the hardcoded legacy-tree
