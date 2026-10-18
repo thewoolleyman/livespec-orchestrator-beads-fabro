@@ -72,6 +72,30 @@ instead.
   `tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_payload_implement_prompt.py`,
   per the rendering-seam convention below.
 
+- `test_fix_check_suite_once_per_tree_scenario199.py` — bd-ib-k6dwyv, and the
+  registry binding for `SPECIFICATION/scenarios.md` Scenario 199: the fix-stage
+  prompt counts a commit whose repository pre-commit hook ran the FULL check
+  suite green on the exact committed tree as that turn's run of the suite, and
+  directs no second run on that same tree — while a changed tree and a partial
+  hook run, such as a Red commit on the hook's fast path, both still owe a full
+  run before the turn ends, and the refresh-repair steps are governed
+  identically on the tree the repair produced. A prompt test because the
+  obligation is discharged by the agent out of this prose and is rendered by no
+  Python caller: nothing host-side can observe whether a turn chose to run the
+  suite twice, and the engine reports the resulting timeout as an ordinary node
+  failure. The bound node id is the DIRECTIVE-SITE enumeration, not a case
+  reading the new section: the defect was never a missing paragraph — each site
+  that directs a run said to re-run it until green with no exemption, so a rule
+  stated in a section the directive never references leaves the directive
+  saying the thing that cost run 01M56YAEWMS8 its turn. That case collects
+  every list item carrying the check-suite workflow input and requires the rule
+  AT each of them, so a third directive added later without it fails; its count
+  control asserts the enumeration reached both known sites, because a splitter
+  that matched nothing would otherwise report clean. Items are split at the
+  list MARKER rather than at blank lines, since the refresh-repair steps are
+  adjacent lines and a blank-line split would let a qualifier on step 1 satisfy
+  an assertion about step 2.
+
 Conventions:
 
 - Read the prompt as COMMITTED BYTES. Never render it through a template engine
