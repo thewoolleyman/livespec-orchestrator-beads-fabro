@@ -412,6 +412,16 @@ def test_an_unresolvable_registry_refuses_before_any_ledger_write_naming_the_fac
     The ledger snapshot is the second half of the clause. An unresolvable
     registry that refused AFTER stamping would satisfy a message-only assertion
     while leaving the row claimed by a dispatch that never placed work.
+
+    "And creates no Fabro run" is read off the SHORT-CIRCUIT rather than off a
+    launch stand-in, and the scope of that instrument is worth stating: a
+    non-None exit code out of `dispatch_preamble` is what every one of its three
+    callers — the single dispatch, the drain and the resume — returns
+    immediately, so the command ends before it arms a receiver, admits anything
+    or reaches a launcher. What this case does NOT establish is that a launch
+    seam handed the same refusal would decline; that claim belongs to whichever
+    case drives a whole `dispatcher.main` invocation, and asserting it here off
+    a runner this seam never consults would be asserting against the fixture.
     """
     registry = tmp_path / "fabro-factories.json"
     if case == "unreadable":
