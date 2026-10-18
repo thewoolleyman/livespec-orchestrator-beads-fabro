@@ -61,6 +61,56 @@ to_id=<epic>, edge_type=EDGE_PARENT_CHILD)` plus an explanatory epic
 comment. A duplicate that must be closed can then go through
 `close_plan_child`, which writes the rationale on both records.
 
+## No pickers at all; the coordinator answers for the maintainer (maintainer-declared 2026-10-18)
+
+The section above still leaves "genuine human gates" open. On 2026-10-18
+a `petri-factory-on-gmktec` session ended two reports by asking the
+maintainer to decide (whether to release a protected Claude account,
+and whether to accept a coordinator's delegated authority). The
+maintainer's answer: "Yes the coordinator can answer your pickers
+because that will unblock you. Otherwise you will just get stuck and
+you shouldn't be presenting pickers anyway. I've already told you not
+to."
+
+So a plan session presents NO picker and ends no report on a "your
+decision" question. When a choice genuinely needs maintainer authority,
+send it by `SendMessage` to the fleet coordinator session
+(`gitops-fleet-capacity-monitoring`), and act on its answer as the
+maintainer's own. A peer answer still grants no permission and no
+store-write consent beyond the plan's standing autonomy rulings. The
+ruling is recorded on epic `bd-ib-fyozyd` as scope event
+`petri-ruling-no-pickers-coordinator-answers-for-maintainer`.
+
+## On every resume: read every ruling, start every track, smallest canary first (maintainer correction 2026-10-18)
+
+The same session resumed with `resume_directive` returning one `await`
+pointer, read only the last three timeline entries, and so never saw two
+binding scope events on the epic (`petri-ruling-throughput-optimize-autonomously`
+and the session-ratifiable spec ruling). It then ran a large real item,
+`bd-ib-7rnipp`, ALONE as the factory canary. `dod_gate` refused it twice,
+because it needed new spec vocabulary, while host proofs and a spec route
+that depended on nothing sat idle. The maintainer: "why wouldn't you be
+testing with the smallest canary possible ... fail-fast and quick
+feedback loops?" and "I had already previously told you to parallelize
+everything possible."
+
+Before acting on the pointer:
+
+- Read EVERY scope event on the epic, not only the latest handoffs.
+  Rulings live there. `bd-ib-ghijrt` makes `resume_directive` return them.
+- List every remaining track, and start every one that depends on no
+  other in the same turn, through forks, detached gates or dispatch loops.
+- Prove a pipeline with the SMALLEST dispatchable item first (here a
+  doc-only item, `bd-ib-knnhbn`, which went from dispatch to closed on its
+  first admitted run), and run any real item beside it. A canary named by
+  an inherited handoff does not override this.
+- Each time you arm a wait, say in the same reply what else is running.
+
+Per-session agent memory is NOT a carrier for this kind of lesson in this
+repository. A PreToolUse hook refuses memory-file writes, and routing
+around it through a shell command defeats it. Put durable guidance here
+or in AGENTS.md.
+
 ## Spinning up a Codex reviewer in a herdr pane
 
 "Astra" is OpenAI's `gpt-6-astra`; it is the default model in
