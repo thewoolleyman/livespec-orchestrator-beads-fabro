@@ -16,6 +16,14 @@ protected set and must be EXACT — a protected path it reports wrongly refuses
 legitimate work. Each question therefore gets its own cases rather than being
 graded only through the end-to-end verdict.
 
+THE ONE TARGET THAT CAN BE SPARED is a DESTINATION — the last operand of `mv`
+or of a dereferencing `ln`, which the segment writes INTO rather than replaces
+when the path is already a directory. Whether it is one is a filesystem
+reading, so these cases supply it the same way they supply `resolved`: as the
+`directories` argument. The default here is the EMPTY set, which is the
+fail-closed reading, so every case that says nothing about directories is
+grading the unspared behaviour.
+
 The layout the cases are written against is the one the 2026-10-15 incident ran
 in (run 01M4YJGC55V86C9V1X07QG3Y2H): the engine's working directory is a LINK
 directly under the sandbox root, and the clone it points at lives outside that
@@ -86,12 +94,24 @@ def _refused(
     command: str,
     working_directory: str = _CLONE,
     resolved: dict[str, str] | None = None,
+    directories: set[str] | None = None,
 ) -> str | None:
     """The protected path `command` would destroy, end to end through both halves."""
     return policy.refused_path(
         targets=policy.removal_targets(command=command, working_directory=working_directory),
         resolved=resolved or {},
+        directories=directories or set(),
         protected=_protected(policy=policy),
+    )
+
+
+def _target_paths(
+    *, policy: ModuleType, command: str, working_directory: str = _CLONE
+) -> tuple[str, ...]:
+    """Just the paths a command acts on, for cases whose subject is not the mark."""
+    return tuple(
+        target.path
+        for target in policy.removal_targets(command=command, working_directory=working_directory)
     )
 
 
@@ -197,7 +217,7 @@ def test_an_unresolvable_sandbox_root_or_repository_protects_nothing(
 def test_a_removal_names_its_operands_and_not_its_flags() -> None:
     policy = _load_policy()
 
-    assert policy.removal_targets(command="rm -rf /tmp/one /tmp/two", working_directory=_CLONE) == (
+    assert _target_paths(policy=policy, command="rm -rf /tmp/one /tmp/two") == (
         "/tmp/one",
         "/tmp/two",
     )
@@ -231,40 +251,40 @@ def test_a_segment_that_executes_nothing_acts_on_nothing(prefix: str) -> None:
     """
     policy = _load_policy()
 
-    assert policy.removal_targets(
-        command=f"{prefix}; rm -rf /tmp/one", working_directory=_CLONE
-    ) == ("/tmp/one",)
+    assert _target_paths(policy=policy, command=f"{prefix}; rm -rf /tmp/one") == ("/tmp/one",)
 
 
 def test_a_wrapper_still_leaves_the_removal_it_wraps_visible() -> None:
     policy = _load_policy()
 
-    assert policy.removal_targets(command="sudo rm -rf /tmp/one", working_directory=_CLONE) == (
-        "/tmp/one",
-    )
+    assert _target_paths(policy=policy, command="sudo rm -rf /tmp/one") == ("/tmp/one",)
 
 
 @pytest.mark.parametrize("verb", ["rm", "rmdir", "unlink", "shred", "mv"])
 def test_every_removing_or_moving_verb_is_read_as_destructive(verb: str) -> None:
     """`mv` is in the set because moving a protected path away removes it.
 
-    Its DESTINATION counts too, which is why the operand list is read whole
-    rather than head-first: `mv /tmp/x /workspace` replaces the root.
+    Its DESTINATION is read too, which is why the operand list is read whole
+    rather than head-first — `mv /tmp/x /workspace` names the root in its
+    SECOND word. Whether that word is a path the command destroys is the
+    separate question the destination mark below carries.
     """
     policy = _load_policy()
 
-    assert policy.removal_targets(
-        command=f"{verb} /tmp/one /tmp/two", working_directory=_CLONE
-    ) == ("/tmp/one", "/tmp/two")
+    assert _target_paths(policy=policy, command=f"{verb} /tmp/one /tmp/two") == (
+        "/tmp/one",
+        "/tmp/two",
+    )
 
 
 def test_a_forcing_symlink_write_is_read_as_destructive() -> None:
     """`ln -sfn` REPLACES its target, which is how a link is re-pointed."""
     policy = _load_policy()
 
-    assert policy.removal_targets(
-        command="ln -sfn /tmp/elsewhere /tmp/link", working_directory=_CLONE
-    ) == ("/tmp/elsewhere", "/tmp/link")
+    assert _target_paths(policy=policy, command="ln -sfn /tmp/elsewhere /tmp/link") == (
+        "/tmp/elsewhere",
+        "/tmp/link",
+    )
 
 
 @pytest.mark.parametrize("command", ["ln -s /tmp/a /tmp/b", "ln /tmp/a /tmp/b"])
@@ -278,9 +298,10 @@ def test_a_link_that_cannot_replace_anything_is_not_destructive(command: str) ->
 def test_the_long_force_flag_is_recognised_as_forcing() -> None:
     policy = _load_policy()
 
-    assert policy.removal_targets(
-        command="ln --force -s /tmp/a /tmp/b", working_directory=_CLONE
-    ) == ("/tmp/a", "/tmp/b")
+    assert _target_paths(policy=policy, command="ln --force -s /tmp/a /tmp/b") == (
+        "/tmp/a",
+        "/tmp/b",
+    )
 
 
 def test_an_unrelated_long_flag_is_not_mistaken_for_the_force_flag() -> None:
@@ -289,6 +310,96 @@ def test_an_unrelated_long_flag_is_not_mistaken_for_the_force_flag() -> None:
     assert (
         policy.removal_targets(command="ln --symbolic /tmp/a /tmp/b", working_directory=_CLONE)
         == ()
+    )
+
+
+# ---------------------------------------------------------------------------
+# removal_targets — which operand is a DESTINATION rather than a casualty
+# ---------------------------------------------------------------------------
+
+
+def test_the_last_operand_of_a_move_is_marked_as_the_destination_it_writes_into() -> None:
+    """`mv` and `ln` write their last operand; every other operand is consumed.
+
+    The mark travels WITH the path rather than as a set of paths, because one
+    command can carry the same path in both roles — which is what the
+    later-segment case below grades.
+    """
+    policy = _load_policy()
+
+    assert policy.removal_targets(command="mv /tmp/one /tmp/two", working_directory=_CLONE) == (
+        policy.Target(path="/tmp/one", into_directory=False),
+        policy.Target(path="/tmp/two", into_directory=True),
+    )
+
+
+def test_a_removal_marks_no_operand_as_a_destination() -> None:
+    """`rm` writes nothing, so each of its operands is destroyed outright."""
+    policy = _load_policy()
+
+    assert policy.removal_targets(command="rm -rf /tmp/one /tmp/two", working_directory=_CLONE) == (
+        policy.Target(path="/tmp/one", into_directory=False),
+        policy.Target(path="/tmp/two", into_directory=False),
+    )
+
+
+def test_a_lone_operand_is_never_a_destination() -> None:
+    """A destination means nothing without a source beside it.
+
+    `mv /workspace` is an error the shell reports without touching anything,
+    and `ln -s /workspace` links INTO the working directory rather than
+    writing the word it names — so neither writes that operand, and sparing it
+    would spare a word this module has not modelled a destination for.
+    """
+    policy = _load_policy()
+
+    assert policy.removal_targets(command=f"mv {_SANDBOX_ROOT}", working_directory=_CLONE) == (
+        policy.Target(path=_SANDBOX_ROOT, into_directory=False),
+    )
+
+
+def test_a_link_asked_not_to_dereference_replaces_its_destination() -> None:
+    """`ln -sfn` RE-POINTS a link to a directory instead of writing inside it.
+
+    This is the exception inside the exception, and the one that matters most
+    here: the engine's own working-directory link IS such a link, and the
+    filesystem reports it as a directory whichever way the command means it.
+    Only the command's own flags separate the two readings.
+    """
+    policy = _load_policy()
+
+    assert policy.removal_targets(
+        command=f"ln -sfn /tmp/elsewhere {_LINK}", working_directory=_CLONE
+    ) == (
+        policy.Target(path="/tmp/elsewhere", into_directory=False),
+        policy.Target(path=_LINK, into_directory=False),
+    )
+
+
+def test_the_long_no_dereference_flag_is_recognised_too() -> None:
+    policy = _load_policy()
+
+    assert policy.removal_targets(
+        command=f"ln --force --no-dereference -s /tmp/elsewhere {_LINK}", working_directory=_CLONE
+    ) == (
+        policy.Target(path="/tmp/elsewhere", into_directory=False),
+        policy.Target(path=_LINK, into_directory=False),
+    )
+
+
+def test_a_no_clobber_move_still_has_a_destination() -> None:
+    """`-n` is read only for `ln`: on GNU `mv` it is `--no-clobber` and means another thing.
+
+    Reading it for `mv` as well would turn the commonest safe move an agent
+    types into a refusal, on a flag whose whole purpose is to destroy less.
+    """
+    policy = _load_policy()
+
+    assert policy.removal_targets(
+        command=f"mv -n /tmp/patch.diff {_CLONE}", working_directory=_CLONE
+    ) == (
+        policy.Target(path="/tmp/patch.diff", into_directory=False),
+        policy.Target(path=_CLONE, into_directory=True),
     )
 
 
@@ -315,6 +426,116 @@ def test_replacing_a_protected_path_through_a_forced_link_is_refused() -> None:
     policy = _load_policy()
 
     assert _refused(policy=policy, command=f"ln -sfn /tmp/elsewhere {_LINK}") == _LINK
+
+
+# ---------------------------------------------------------------------------
+# refused_path — a destination that is already a directory destroys nothing
+# ---------------------------------------------------------------------------
+
+
+def test_a_move_into_a_destination_that_is_already_a_directory_is_not_refused() -> None:
+    """The governing clause's own allowance, in the shape an agent reaches for.
+
+    `mv /tmp/patch.diff <clone>` moves a scratch file INTO the tree and
+    replaces nothing, so its executed segment moves only paths that are not
+    protected paths. Refusing it stops an implement agent restoring a scratch
+    file, which this repository's own Red-Green protocol prescribes.
+    """
+    policy = _load_policy()
+
+    assert (
+        _refused(policy=policy, command=f"mv /tmp/patch.diff {_CLONE}", directories={_CLONE})
+        is None
+    )
+
+
+@pytest.mark.parametrize(("written", "directory"), [(".", _CLONE), ("..", "/repos/thewoolleyman")])
+def test_a_move_into_the_working_directory_or_its_parent_is_not_refused(
+    written: str, directory: str
+) -> None:
+    """The same allowance in the relative forms an agent actually types.
+
+    Both resolve onto the protected set — `.` IS the clone and `..` is an
+    ancestor of it — so neither is spared by the path comparison. Only the
+    destination reading separates them from a removal.
+    """
+    policy = _load_policy()
+
+    assert (
+        _refused(policy=policy, command=f"mv /tmp/patch.diff {written}", directories={directory})
+        is None
+    )
+
+
+def test_a_link_written_inside_a_protected_directory_is_not_refused() -> None:
+    """`ln -sf` without no-dereference creates INSIDE the directory it names."""
+    policy = _load_policy()
+
+    assert (
+        _refused(policy=policy, command=f"ln -sf /tmp/elsewhere {_LINK}", directories={_LINK})
+        is None
+    )
+
+
+def test_repointing_the_working_directory_link_is_refused_even_as_a_directory() -> None:
+    """The filesystem cannot settle this one, and the flags can.
+
+    `ln -sfn /tmp/elsewhere <link>` destroys the link the engine sets its
+    working directory to, while the reading that spares an ordinary
+    destination reports that same link as a directory. A build that applied
+    the reading unconditionally would allow the incident's nearest neighbour.
+    """
+    policy = _load_policy()
+
+    assert (
+        _refused(policy=policy, command=f"ln -sfn /tmp/elsewhere {_LINK}", directories={_LINK})
+        == _LINK
+    )
+
+
+def test_moving_a_protected_path_away_is_still_refused_when_its_destination_exists() -> None:
+    """The SOURCE side is untouched by the destination reading.
+
+    `mv /workspace /tmp/moved-root` really does move the root away, and
+    assertion 1 depends on refusing it — so sparing ONE operand must never
+    read as sparing the operand list.
+    """
+    policy = _load_policy()
+
+    assert (
+        _refused(
+            policy=policy,
+            command=f"mv {_SANDBOX_ROOT} /tmp/moved-root",
+            directories={_SANDBOX_ROOT, "/tmp/moved-root"},
+        )
+        == _SANDBOX_ROOT
+    )
+
+
+def test_a_destination_a_later_segment_then_removes_is_still_refused() -> None:
+    """The reading is applied per TARGET, never per path.
+
+    `mv /tmp/x /workspace && rm -rf /workspace` writes into the root and then
+    removes it. Sparing by VALUE would spare the removal too, and the whole
+    command would read as an ordinary move.
+    """
+    policy = _load_policy()
+
+    assert (
+        _refused(
+            policy=policy,
+            command=f"mv /tmp/x {_SANDBOX_ROOT} && rm -rf {_SANDBOX_ROOT}",
+            directories={_SANDBOX_ROOT},
+        )
+        == _SANDBOX_ROOT
+    )
+
+
+def test_a_destination_the_reading_did_not_find_is_still_a_replacement() -> None:
+    """Nothing is spared on a reading that found no directory — the fail-closed arm."""
+    policy = _load_policy()
+
+    assert _refused(policy=policy, command=f"mv /tmp/x {_SANDBOX_ROOT}") == _SANDBOX_ROOT
 
 
 def test_a_mixed_removal_that_also_names_a_protected_path_is_refused_and_names_it() -> None:
@@ -586,7 +807,12 @@ def test_a_removal_on_the_line_after_a_closed_here_document_is_still_refused() -
 def test_a_removal_that_names_nothing_protected_is_not_refused() -> None:
     policy = _load_policy()
 
-    assert policy.refused_path(targets=(), resolved={}, protected=_protected(policy=policy)) is None
+    assert (
+        policy.refused_path(
+            targets=(), resolved={}, directories=set(), protected=_protected(policy=policy)
+        )
+        is None
+    )
 
 
 def test_nothing_is_refused_when_no_path_is_protected() -> None:
@@ -595,8 +821,9 @@ def test_nothing_is_refused_when_no_path_is_protected() -> None:
 
     assert (
         policy.refused_path(
-            targets=(_SANDBOX_ROOT,),
+            targets=(policy.Target(path=_SANDBOX_ROOT, into_directory=False),),
             resolved={},
+            directories=set(),
             protected=(),
         )
         is None

@@ -29,6 +29,19 @@ directions:
   Exact again, and the one place ancestry enters: a command naming a directory
   ABOVE a protected path destroys it just as surely as one naming it.
 
+WHAT A DESTINATION IS, and why it is the one target that can be spared. `mv`
+and `ln` WRITE their last operand, and when that operand is already a directory
+they create the moved or linked path INSIDE it rather than replacing it — the
+very semantics that keep `cp` out of `DESTRUCTIVE_VERBS` altogether. So `mv
+/tmp/patch.diff .` destroys nothing and the governing clause's refusal
+condition is not met by it, while refusing it would stop an agent restoring a
+scratch file into the tree it is working in. The SOURCE side is untouched by
+that reading: `mv /workspace /tmp/moved-root` really does move the root away.
+Whether a destination IS a directory is a filesystem reading, so it reaches
+`refused_path` as an argument like every other one, and the mark that says
+WHICH target is a destination travels with the target rather than as a set of
+paths — one command can carry the same path in both roles.
+
 WHAT "DESTROYS" MEANS, and why ancestry is in it. `rm -rf ..` from the
 repository root removes the repository. So does `rm -rf /repos`. Neither names
 a protected path, and both end the run exactly as the incident above did, so
@@ -58,7 +71,8 @@ from __future__ import annotations
 
 import fnmatch
 import posixpath
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
 
 from livespec_shell_shape import (
     leading_assignments,
@@ -71,6 +85,7 @@ from livespec_shell_shape import (
 
 __all__: list[str] = [
     "DESTRUCTIVE_VERBS",
+    "Target",
     "protected_paths",
     "refusal_message",
     "refused_path",
@@ -92,7 +107,44 @@ DESTRUCTIVE_VERBS = frozenset({"ln", "mv", "rm", "rmdir", "shred", "unlink"})
 # `ln` destroys its target only when forced — without a force flag it refuses
 # an existing path itself, so an unforced `ln` is not a replacement.
 _FORCE_ONLY_VERBS = frozenset({"ln"})
+_FORCE_SHORT_FLAG = "f"
 _FORCE_LONG_FLAG = "--force"
+# The verbs whose LAST operand is a path they WRITE rather than one they
+# consume. These two are exactly the ones that share `cp`'s into-directory
+# semantics for that operand, which is why they need the narrower reading and
+# why `rm`, `rmdir`, `shred` and `unlink` do not: those take no destination.
+_DESTINATION_VERBS = frozenset({"ln", "mv"})
+_NO_DESTINATION = -1
+# A destination means nothing without a source beside it, so a segment needs
+# both before its last operand is read as one.
+_DESTINATION_NEEDS_OPERANDS = 2
+# `-n` asks `ln` NOT to dereference a destination that is a symbolic link to a
+# directory, which is what makes `ln -sfn` RE-POINT the link instead of writing
+# inside it. Read for `ln` ALONE: GNU `mv -n` is `--no-clobber`, a flag whose
+# whole purpose is to destroy less, and reading it here would turn the safest
+# move an agent can type into a refusal.
+_NO_DEREFERENCE_VERBS = frozenset({"ln"})
+_NO_DEREFERENCE_SHORT_FLAG = "n"
+_NO_DEREFERENCE_LONG_FLAG = "--no-dereference"
+
+
+@dataclass(frozen=True, kw_only=True)
+class Target:
+    """One path an executed destructive segment would act on.
+
+    `into_directory` marks the segment's DESTINATION — the last operand of
+    `mv` or of a dereferencing `ln` — which destroys nothing when the path is
+    already a directory, because the moved or linked path is then created
+    inside it. Every other target is destroyed outright.
+
+    The mark travels WITH the path rather than as a set of paths, because one
+    command can carry the same path in both roles: `mv /tmp/x /workspace && rm
+    -rf /workspace` writes into the root and then removes it, and sparing by
+    value would spare the removal too.
+    """
+
+    path: str
+    into_directory: bool
 
 
 def protected_paths(
@@ -128,7 +180,7 @@ def protected_paths(
     return tuple(dict.fromkeys((root, *links, repository, clone)))
 
 
-def removal_targets(*, command: str, working_directory: str) -> tuple[str, ...]:
+def removal_targets(*, command: str, working_directory: str) -> tuple[Target, ...]:
     """The paths the executed destructive segment of `command` would act on.
 
     EVERY segment is read, not just the first, and that is the whole shape of
@@ -138,9 +190,12 @@ def removal_targets(*, command: str, working_directory: str) -> tuple[str, ...]:
 
     The whole operand list is read rather than just the first or last word,
     because a protected path can sit anywhere in it: `rm -rf /tmp/sim
-    /workspace` destroys the root with its SECOND operand, and `mv /tmp/x
-    /workspace` destroys it with its second as well. An operand list read
-    head-first or tail-first misses one of those.
+    /workspace` destroys the root with its SECOND operand, and `mv /workspace
+    /tmp/moved-root` destroys it with its first. An operand list read
+    head-first or tail-first misses one of those. What each operand MEANS
+    still differs by position — the last operand of `mv` or of a dereferencing
+    `ln` is a destination, marked as such on its `Target` — but that is a
+    reading of the operand, not a reason to stop looking at it.
 
     HERE-DOCUMENT BODIES GO FIRST, before the command is read at all. A body is
     file data, so its words are not commands — and because a body can carry a
@@ -161,7 +216,7 @@ def removal_targets(*, command: str, working_directory: str) -> tuple[str, ...]:
     """
     directory = working_directory
     assigned: dict[str, str] = {}
-    found: list[str] = []
+    found: list[Target] = []
     for line in without_heredoc_bodies(command=command).splitlines():
         tokens = shell_tokens(command=line)
         if tokens is None:
@@ -175,31 +230,31 @@ def removal_targets(*, command: str, working_directory: str) -> tuple[str, ...]:
 
 def refused_path(
     *,
-    targets: Sequence[str],
+    targets: Sequence[Target],
     resolved: Mapping[str, str],
+    directories: Collection[str],
     protected: Sequence[str],
 ) -> str | None:
     """The protected path `targets` would destroy, or `None` if they would not.
 
-    `resolved` maps a target to what it really is, so a symbolic link an agent
-    made itself cannot stand in for the path it points at.
+    Both filesystem readings arrive as arguments, because this module has
+    none. `resolved` maps a target's path to what it really is, so a symbolic
+    link an agent made itself cannot stand in for the path it points at.
+    `directories` holds the target paths that are ALREADY directories, which
+    is what settles a destination: `mv /tmp/patch.diff .` writes into the
+    working directory and destroys nothing, while `mv /workspace
+    /tmp/moved-root` destroys the root it names.
 
-    A target carrying a glob is matched as a PATTERN rather than compared, and
-    it is never looked up in `resolved`: a pattern is not a path, so there is
-    nothing on disk to resolve, and the only question worth asking is whether a
-    protected path is among what the shell would expand it to.
+    A reading the caller could not take is simply absent from either, which is
+    the fail-closed direction: an unreadable destination stays a replacement.
     """
     refusable = _refusable_targets(protected=protected)
     for target in targets:
-        if _GLOB_CHARACTERS & set(target):
-            matched = _matched_pattern(pattern=target, refusable=refusable)
-            if matched is not None:
-                return matched
-            continue
-        for candidate in (target, resolved.get(target, target)):
-            victim = _victim(candidate=candidate, refusable=refusable)
-            if victim is not None:
-                return victim
+        victim = _destroyed(
+            target=target, resolved=resolved, directories=directories, refusable=refusable
+        )
+        if victim is not None:
+            return victim
     return None
 
 
@@ -221,9 +276,36 @@ def refusal_message(*, protected_path: str, command: str) -> str:
     )
 
 
+def _destroyed(
+    *,
+    target: Target,
+    resolved: Mapping[str, str],
+    directories: Collection[str],
+    refusable: Sequence[tuple[str, str]],
+) -> str | None:
+    """The protected path ONE target destroys, or `None` if it destroys none.
+
+    A destination that is already a directory destroys nothing, so it is the
+    one target a reading can spare. Everything after that is the ordinary
+    comparison: a target carrying a glob is matched as a PATTERN rather than
+    compared, and is never looked up in `resolved` — a pattern is not a path,
+    so there is nothing on disk to resolve, and the only question worth asking
+    is whether a protected path is among what the shell would expand it to.
+    """
+    if target.into_directory and target.path in directories:
+        return None
+    if _GLOB_CHARACTERS & set(target.path):
+        return _matched_pattern(pattern=target.path, refusable=refusable)
+    for candidate in (target.path, resolved.get(target.path, target.path)):
+        victim = _victim(candidate=candidate, refusable=refusable)
+        if victim is not None:
+            return victim
+    return None
+
+
 def _walked(
     *, segment: list[str], directory: str, assigned: Mapping[str, str]
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[Target]]:
     """One segment: where it leaves the shell, and what it would destroy.
 
     The directory is returned rather than only the targets because a `cd`
@@ -236,7 +318,36 @@ def _walked(
         return _changed_directory(words=words, directory=directory), []
     if not _is_destructive(verb=verb, arguments=arguments):
         return directory, []
-    return directory, [_resolve(word=word, directory=directory) for word in words]
+    paths = [_resolve(word=word, directory=directory) for word in words]
+    destination = _destination_index(verb=verb, arguments=arguments, operand_count=len(paths))
+    return directory, [
+        Target(path=path, into_directory=index == destination) for index, path in enumerate(paths)
+    ]
+
+
+def _destination_index(*, verb: str, arguments: Sequence[str], operand_count: int) -> int:
+    """Which operand this segment WRITES INTO, or `_NO_DESTINATION` for none.
+
+    A destination means nothing without a source beside it: `mv /workspace` is
+    an error the shell reports without touching anything, and `ln -s
+    /workspace` links INTO the working directory rather than writing the word
+    it names. So a lone operand is never one.
+
+    `ln -n` is the exception inside the exception, and it is the one that
+    matters most here. No-dereference is how a symbolic link to a directory is
+    RE-POINTED — `ln -sfn` is exactly how the engine's own working-directory
+    link would be destroyed — so under it the last operand is a replacement
+    again, however plainly the filesystem reports it as a directory.
+    """
+    if verb not in _DESTINATION_VERBS or operand_count < _DESTINATION_NEEDS_OPERANDS:
+        return _NO_DESTINATION
+    if verb in _NO_DEREFERENCE_VERBS and _asks(
+        arguments=arguments,
+        short=_NO_DEREFERENCE_SHORT_FLAG,
+        long_flag=_NO_DEREFERENCE_LONG_FLAG,
+    ):
+        return _NO_DESTINATION
+    return operand_count - 1
 
 
 def _executed(*, segment: list[str]) -> tuple[str, list[str]]:
@@ -290,18 +401,24 @@ def _is_destructive(*, verb: str, arguments: Sequence[str]) -> bool:
         return False
     if verb not in _FORCE_ONLY_VERBS:
         return True
-    return any(_forces(argument=argument) for argument in arguments)
+    return _asks(arguments=arguments, short=_FORCE_SHORT_FLAG, long_flag=_FORCE_LONG_FLAG)
 
 
-def _forces(*, argument: str) -> bool:
-    """True iff one argument asks a force-only verb to replace what is there.
+def _asks(*, arguments: Sequence[str], short: str, long_flag: str) -> bool:
+    """True iff one argument asks for a flag, as a long flag or inside a cluster.
 
-    A short-flag CLUSTER counts, because `-sfn` is how a link is re-pointed and
-    the `f` in it is the whole reason that works.
+    A short-flag CLUSTER counts, because `-sfn` is how a link is re-pointed
+    and BOTH letters in it are load-bearing: the `f` is what lets the link
+    replace what is already there, and the `n` is what makes it replace the
+    LINK rather than write inside the directory the link points at.
     """
-    if argument.startswith("--"):
-        return argument == _FORCE_LONG_FLAG
-    return argument.startswith("-") and "f" in argument
+    for argument in arguments:
+        if argument.startswith("--"):
+            if argument == long_flag:
+                return True
+        elif argument.startswith("-") and short in argument:
+            return True
+    return False
 
 
 def _resolve(*, word: str, directory: str) -> str:

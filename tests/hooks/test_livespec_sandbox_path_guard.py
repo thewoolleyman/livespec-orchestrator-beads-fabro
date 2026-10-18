@@ -255,6 +255,105 @@ def test_removing_an_agent_made_link_to_a_scratch_directory_is_not_refused(
 
 
 # ---------------------------------------------------------------------------
+# A destination the command writes INTO, and the one it replaces
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("written", ["clone", "link", ".", ".."])
+def test_moving_a_scratch_file_into_an_existing_directory_is_not_refused(
+    written: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A destination that is ALREADY a directory is written into, not replaced.
+
+    All four spellings land on the protected set — the clone and the link are
+    in it outright, `.` IS the clone and `..` is an ancestor of it — so the
+    path comparison alone refuses every one, and only the filesystem reading
+    separates them from a removal. The LINK is the case that reading has to
+    FOLLOW rather than stop at: `mv x <link>` moves into the clone.
+    """
+    layout = _Layout(base=tmp_path)
+    destination = {"clone": str(layout.clone), "link": str(layout.link)}.get(written, written)
+    guard = _load_guard()
+
+    _run_guard(
+        guard=guard,
+        payload=_payload(command=f"mv /tmp/patch.diff {destination}", cwd=str(layout.clone)),
+        monkeypatch=monkeypatch,
+        sandbox_root=str(layout.root),
+        project_dir=str(layout.clone),
+    )
+
+    assert capsys.readouterr().out == ""
+
+
+def test_a_link_created_inside_the_working_directory_is_not_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`ln -sf` dereferences its destination, so it writes INSIDE the clone."""
+    layout = _Layout(base=tmp_path)
+    guard = _load_guard()
+
+    _run_guard(
+        guard=guard,
+        payload=_payload(command=f"ln -sf /tmp/elsewhere {layout.link}", cwd=str(layout.clone)),
+        monkeypatch=monkeypatch,
+        sandbox_root=str(layout.root),
+        project_dir=str(layout.clone),
+    )
+
+    assert capsys.readouterr().out == ""
+
+
+def test_repointing_the_working_directory_link_is_still_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The case the filesystem reading cannot settle, and the flags can.
+
+    `ln -sfn` RE-POINTS the link the engine sets its working directory to,
+    destroying it as surely as the incident's `rm -rf` did — while the reading
+    that spares an ordinary destination reports that very link as a directory.
+    A build that applied the reading unconditionally would allow this.
+    """
+    layout = _Layout(base=tmp_path)
+    guard = _load_guard()
+
+    _run_guard(
+        guard=guard,
+        payload=_payload(command=f"ln -sfn /tmp/elsewhere {layout.link}", cwd=str(layout.clone)),
+        monkeypatch=monkeypatch,
+        sandbox_root=str(layout.root),
+        project_dir=str(layout.clone),
+    )
+
+    assert str(layout.link) in _refusal_reason(captured=capsys.readouterr().out)
+
+
+def test_moving_the_sandbox_root_away_is_still_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Sparing a destination must not read as sparing the operand list.
+
+    The root here is the SOURCE, and `mv` moves it away as completely as a
+    removal would — so this is the control for every allowance above.
+    """
+    layout = _Layout(base=tmp_path)
+    guard = _load_guard()
+
+    _run_guard(
+        guard=guard,
+        payload=_payload(command=f"mv {layout.root} {tmp_path}/moved-root", cwd=str(layout.clone)),
+        monkeypatch=monkeypatch,
+        sandbox_root=str(layout.root),
+        project_dir=str(layout.clone),
+    )
+
+    assert str(layout.root) in _refusal_reason(captured=capsys.readouterr().out)
+
+
+# ---------------------------------------------------------------------------
 # What is NOT refused
 # ---------------------------------------------------------------------------
 

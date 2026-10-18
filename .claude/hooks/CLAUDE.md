@@ -90,7 +90,7 @@ present in the shipped binary. Reaching it needs the Dispatcher to project a
 `hooks.json` into the sandbox `$CODEX_HOME`, which no assertion of this
 work-item covers. That projection is unbuilt, not refused.
 
-Three properties of the policy an editor must not invert. The protected set is DISCOVERED
+Four properties of the policy an editor must not invert. The protected set is DISCOVERED
 from the layout the caller can read rather than configured, because the two
 engine layouts put the clone in different places and nothing in the sandbox
 announces which. That discovery is also what makes the policy INERT outside a
@@ -98,6 +98,21 @@ factory sandbox, which is the governing clause's own scope. And the comparison
 includes every directory ABOVE a protected path but nothing below one: `rm -rf
 ..` from the repository root ends the run, while removing the clone's `.git` or
 emptying the whole tree is in-tree and v142 allows it.
+
+The fourth is the only place the guard deliberately NARROWS, and it has a
+trap inside it. A DESTINATION — the last operand of `mv` or of a dereferencing
+`ln` — destroys nothing when the path is already a directory, because the
+moved or linked path is created INSIDE it; the clause says as much, its
+refusal condition being unmet by a segment that "removes, moves, or replaces
+only paths that are not protected paths". So `mv /tmp/patch.diff .` must run.
+The trap is `ln -n`: no-dereference is how a symbolic link to a directory is
+RE-POINTED, so `ln -sfn /tmp/elsewhere <link>` destroys the engine's own
+working-directory link while the filesystem reports that link as a directory
+exactly as an ordinary destination. No filesystem reading can separate those
+two, and the command's own flags can — which is why the destination mark is
+decided in `removal_targets`, from the command, and the directory reading
+arrives separately at `refused_path`. The SOURCE side is untouched by any of
+it: `mv /workspace /tmp/moved-root` moves the root away and is refused.
 
 ## The shared shell reading
 

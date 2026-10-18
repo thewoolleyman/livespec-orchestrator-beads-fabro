@@ -89,7 +89,13 @@ def _decision(*, raw: str, environ: dict[str, str]) -> str | None:
         # happens here rather than in the policy because the policy has no
         # filesystem; a glob target resolves to itself and the policy ignores
         # the pairing for one anyway.
-        resolved={target: _real_path(path=target) for target in targets},
+        resolved={target.path: _real_path(path=target.path) for target in targets},
+        # The second reading, supplied the same way and for the same reason: a
+        # DESTINATION that is already a directory is written INTO rather than
+        # replaced, so `mv /tmp/patch.diff .` destroys nothing. Every target is
+        # read rather than only the destinations, so which targets the sparing
+        # can reach stays the policy's decision rather than this hook's.
+        directories={target.path for target in targets if _is_directory(path=target.path)},
         protected=policy.protected_paths(
             sandbox_root=root,
             repository_path=repository,
@@ -105,6 +111,22 @@ def _decision(*, raw: str, environ: dict[str, str]) -> str | None:
 def _real_path(*, path: str) -> str:
     """What `path` really is, with every symbolic link in it resolved."""
     return str(Path(path).resolve())
+
+
+def _is_directory(*, path: str) -> bool:
+    """Whether `path` is already a directory, FOLLOWING a link to one.
+
+    Following is deliberate and is what a destination needs: `mv x
+    /workspace/<repo>`, where that name is the engine's working-directory
+    LINK, moves `x` into the clone and replaces nothing. The one command that
+    replaces such a link rather than entering it is `ln -n`, which the policy
+    reads off the command's own flags instead — no filesystem reading can tell
+    those two apart, because they see the same directory.
+
+    A path that cannot be read at all answers False, which leaves its target a
+    replacement; `Path.is_dir` already reports an unreadable path that way.
+    """
+    return Path(path).is_dir()
 
 
 def _entry_targets(*, root: str) -> dict[str, str]:
