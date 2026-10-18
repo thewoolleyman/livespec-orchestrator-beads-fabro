@@ -484,10 +484,13 @@
       // inspected and none is held — which is the escape hatch for a factory
       // whose parked runs must be left strictly alone.
       "blocked_run_grace_seconds": 1800,
-      // Every factory node runs a Claude adapter: the structured "acp_nodes"
-      // entries below put implement, fix, dod_gate, review_fix, proof_capture,
-      // proof_verify and review on Claude Opus 5, and pr and disposition on
-      // Claude Sonnet 4.6. No factory node runs Codex. Maintainer direction
+      // The structured "acp_nodes" entries below put implement on Codex
+      // (codex-acp / gpt-6-luna, effort high), fix, dod_gate, review_fix,
+      // proof_capture, proof_verify and review on Claude Opus 5, and pr and
+      // disposition on Claude Sonnet 4.6. Maintainer direction 2026-10-18
+      // (plan fabro-currency, maintainer item 40): implement runs GPT-6 Luna on
+      // high thinking for Codex, which is also the Codex-adapter dispatch the
+      // plan Definition of Done and bd-ib-iud52v require. Maintainer direction
       // 2026-10-14 (bd-ib-5pxtaw): gpt-6-astra is reserved for consensus and
       // reviews OUTSIDE the factory nodes (ratification_reviewer_model above)
       // and goes on no factory node for now. implement and fix ran codex-acp /
@@ -606,7 +609,7 @@
       },
       "acp_nodes": {
         "dod_gate": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" },
-        "implement": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" },
+        "implement": { "agent": "codex-acp", "model": "gpt-6-luna", "effort": "high" },
         "fix": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" },
         "review_fix": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" },
         "proof_capture": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" },
