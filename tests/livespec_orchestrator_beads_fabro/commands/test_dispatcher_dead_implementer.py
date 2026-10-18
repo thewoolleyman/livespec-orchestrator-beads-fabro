@@ -174,7 +174,10 @@ def _stub_unrelated_dispositions(*, monkeypatch: pytest.MonkeyPatch) -> None:
     the journal assertion depend on machinery this change does not own.
     """
     for name in (
-        "preserve_checkpointed_work_reference",
+        # BOTH preservations, which the terminal leg now runs as one step: the
+        # pointer reads the run record and the tree reaches the factory and the
+        # forge, so each is machinery this change does not own.
+        "preserve_terminated_run_work",
         "escalate_needs_human_block",
         # The GROUP of non-green terminal routes, which is where the
         # non-convergence bounce and the stall arm moved when the

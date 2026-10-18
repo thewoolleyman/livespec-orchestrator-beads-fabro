@@ -65,12 +65,18 @@ class _Runner:
         return CommandResult(exit_code=0, stdout="", stderr="")
 
 
-def _seed(*, runner: _Runner, earlier_run_ids: tuple[str, ...] = (_RUN, _OLDER_RUN)):
+def _seed(
+    *,
+    runner: _Runner,
+    earlier_run_ids: tuple[str, ...] = (_RUN, _OLDER_RUN),
+    journal_records: tuple[dict[str, object], ...] = (),
+):
     return verified_preserved_seed(
         runner=runner,
         repo=Path("/repo"),
         work_item_id=_ITEM_ID,
         earlier_run_ids=earlier_run_ids,
+        journal_records=journal_records,
     )
 
 

@@ -25,9 +25,16 @@ class OutcomeLike(Protocol):
     def status(self) -> str: ...
 
 
-def read_journal_records(*, journal_path: Path) -> tuple[dict[str, object], ...]:
-    """Read back the append-only journal file as parsed records."""
-    if not journal_path.is_file():
+def read_journal_records(*, journal_path: Path | None) -> tuple[dict[str, object], ...]:
+    """Read back the append-only journal file as parsed records.
+
+    `None` is accepted and answers the empty tuple, which is the same tolerance
+    `_acp_journal_records.journal_records` and `_dispatcher_provider_exhaustion`
+    already carry for this exact input: an IN-MEMORY journal has no file, and a
+    reader asking one where its history lives must get "none to offer" rather
+    than an `AttributeError` from a caller that had no way to know.
+    """
+    if journal_path is None or not journal_path.is_file():
         return ()
     records: list[dict[str, object]] = []
     for line in journal_path.read_text(encoding="utf-8").splitlines():
