@@ -384,18 +384,31 @@ def test_the_registry_path_is_the_override_when_it_is_set_and_the_default_otherw
         assert resolve_fabro_factory(cwd=tmp_path, factory=_FACTORY).server != _REGISTRY_SERVER
 
 
+# The two faults more than one state is refused for, spelled once. Each mirrors
+# the reading's own message, so a row asserts the fault rather than a paraphrase
+# of it.
+_NO_OBJECT_ENTRY = f"it holds no object entry named {_FACTORY!r}"
+_NO_USABLE_SERVER = (
+    f"its {_FACTORY!r} entry gives no `server` string that is non-empty after trimming"
+)
+
+
 @pytest.mark.parametrize(
-    ("case", "payload"),
+    ("case", "payload", "fault"),
     [
-        ("absent", None),
-        ("unreadable", "directory"),
-        ("not-json", "{"),
-        ("top-level-list", [{_FACTORY: {"server": _REGISTRY_SERVER}}]),
-        ("no-entry", {"legacy": {"server": _OTHER_SERVER}}),
-        ("entry-not-an-object", {_FACTORY: "a-server-string"}),
-        ("entry-without-server", {_FACTORY: {"docker_host": "ssh://host"}}),
-        ("server-not-a-string", {_FACTORY: {"server": 32276}}),
-        ("server-blank-after-trimming", {_FACTORY: {"server": "   "}}),
+        ("absent", None, "it is absent or unreadable (FileNotFoundError)"),
+        ("unreadable", "directory", "it is absent or unreadable (IsADirectoryError)"),
+        ("not-json", "{", "it does not parse as JSON"),
+        (
+            "top-level-list",
+            [{_FACTORY: {"server": _REGISTRY_SERVER}}],
+            "its top-level value is not an object",
+        ),
+        ("no-entry", {"legacy": {"server": _OTHER_SERVER}}, _NO_OBJECT_ENTRY),
+        ("entry-not-an-object", {_FACTORY: "a-server-string"}, _NO_OBJECT_ENTRY),
+        ("entry-without-server", {_FACTORY: {"docker_host": "ssh://host"}}, _NO_USABLE_SERVER),
+        ("server-not-a-string", {_FACTORY: {"server": 32276}}, _NO_USABLE_SERVER),
+        ("server-blank-after-trimming", {_FACTORY: {"server": "   "}}, _NO_USABLE_SERVER),
     ],
 )
 def test_an_unresolvable_registry_refuses_before_any_ledger_write_naming_the_factory(
@@ -405,15 +418,28 @@ def test_an_unresolvable_registry_refuses_before_any_ledger_write_naming_the_fac
     *,
     case: str,
     payload: object,
+    fault: str,
 ) -> None:
     """Every unresolvable registry state refuses, names both, and writes nothing.
 
     All nine states are parameterized because they have ONE remedy — fix the
     host registry — and must not fall into several messages or, worse, into the
     silent `server=None` that reads downstream as the ambient local factory.
-    `unreadable` is staged as a DIRECTORY at the registry path rather than by
-    clearing the mode bits, because this suite's own dispatch runs as root and a
-    mode-based refusal would not apply to it.
+
+    Each row also asserts the FAULT it is refused FOR, and that assertion is
+    what makes the nine rows nine cases rather than one run nine times. Every
+    state names the factory and the registry path and exits the same way, so the
+    names-and-exit assertions below hold for any of them and cannot tell them
+    apart — a row whose staging silently landed on an adjacent arm would report a
+    real refusal for the wrong reason and still pass. `unreadable` is the row
+    that happens to: it is staged as a DIRECTORY at the registry path rather than
+    by clearing the mode bits, because this suite's own dispatch runs as root and
+    a mode-based staging does not refuse root at all — the read succeeds, the
+    file parses, and what follows is the `no-entry` refusal, under the
+    `unreadable` label. `absent` and `unreadable` are therefore discriminated by
+    the `OSError` TYPE the reading reports, which is the only field that differs
+    between them, and which a mode-bit staging could not produce. The same rule
+    binds any capture or replay demonstrating this arm, not just this suite.
 
     The refusal must name the FACTORY and the REGISTRY PATH. A dispatch resolves
     its factory from `default_factory`, an explicit flag, the environment or a
@@ -460,6 +486,7 @@ def test_an_unresolvable_registry_refuses_before_any_ledger_write_naming_the_fac
     refusal = capsys.readouterr().err
     assert _FACTORY in refusal
     assert str(registry) in refusal
+    assert fault in refusal
     assert result == (None, _EXIT_PRECONDITION_ERROR)
     assert _item_state() == before
 
