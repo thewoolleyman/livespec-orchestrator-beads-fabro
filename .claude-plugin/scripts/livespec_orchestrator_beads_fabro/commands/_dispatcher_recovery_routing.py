@@ -335,6 +335,7 @@ def _fallback_route(
         repo=repo,
         work_item_id=item.id,
         earlier_run_ids=gather.earlier_run_ids,
+        journal_records=read_journal_records(journal_path=journal.path),
     )
     if isinstance(preserved, PreservedWorkUnobservable):
         return _held_route(

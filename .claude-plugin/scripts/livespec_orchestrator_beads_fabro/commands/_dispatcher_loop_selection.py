@@ -58,9 +58,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     plugin_root,
     workflow_toml,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference import (
-    preserve_checkpointed_work_reference,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
     record_provider_exhaustion_if_observed,
 )
@@ -74,6 +71,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_repo_config import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_staleness_gate import (
     apply_dispatcher_staleness_gate,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_preservation import (
+    preserve_terminated_run_work,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_routing import (
     dispose_terminal_routing,
 )
@@ -81,7 +81,6 @@ from livespec_orchestrator_beads_fabro.commands._ready_aging_order import ready_
 from livespec_orchestrator_beads_fabro.commands._sibling_status_lookup import (
     make_sibling_status_lookup,
 )
-from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -309,26 +308,12 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     _ = project_terminal_run_events(outcome=outcome, repo=repo, journal=journal)
     record_dead_implementer_truncation_if_observed(outcome=outcome, journal=journal)
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
-    preserved = attempt(
-        action=lambda: preserve_checkpointed_work_reference(
-            args=args,
-            repo=repo,
-            item=item,
-            outcome=outcome,
-            journal=journal,
-        ),
-        exceptions=(OSError,),
-    )
-    if isinstance(preserved, AttemptFailure):
-        journal.append(
-            record={
-                "stage": "preserve-by-reference-error",
-                "work_item_id": item.id,
-                "reason": type(preserved.error).__name__,
-                "outcome_stage": outcome.stage,
-                "outcome_status": outcome.status,
-            }
-        )
+    # BEFORE the escalation below, which is the blocked transition: the tree
+    # clause requires its ledger comment written "before the item's blocked
+    # transition", because that comment is the only durable pointer at the
+    # preservation ref. Both legs are fail-soft, so neither can cost the item
+    # its rest state or change this dispatch's exit code.
+    preserve_terminated_run_work(args=args, repo=repo, item=item, outcome=outcome, journal=journal)
     # BESIDE the pointer, by the ratified groom-cut clause's own word: a
     # groom-pinned run that terminated needs-human carries the drafted
     # decomposition, and the comment written here is where that draft rests

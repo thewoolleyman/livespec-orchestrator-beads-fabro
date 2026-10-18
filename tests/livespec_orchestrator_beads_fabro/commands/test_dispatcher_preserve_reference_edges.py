@@ -10,6 +10,9 @@ import pytest
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop_selection
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_preserve_reference as preserve
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_terminal_preservation as terminal_preservation,
+)
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
@@ -296,10 +299,19 @@ def test_post_run_dispositions_continue_after_preserve_failure(
         _ = kwargs
         calls.append("non-convergence")
 
+    # The pointer leg is failed where it now LIVES, so the assertion below still
+    # reads "a crashing preserve does not stop the dispositions after it". The
+    # tree leg beside it is silenced rather than exercised: it reaches a factory
+    # and a forge, which is machinery this test does not own.
     monkeypatch.setattr(
-        _dispatcher_loop_selection,
+        terminal_preservation,
         "preserve_checkpointed_work_reference",
         broken_preserve,
+    )
+    monkeypatch.setattr(
+        terminal_preservation,
+        "preserve_checkpoint_failed_tree",
+        lambda **_: None,
     )
     monkeypatch.setattr(_dispatcher_loop_selection, "escalate_needs_human_block", needs_human)
     monkeypatch.setattr(
