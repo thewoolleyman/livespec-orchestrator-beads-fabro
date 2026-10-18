@@ -1,0 +1,555 @@
+"""Scenario 182 — a registry-backed factory's address comes from the host registry.
+
+Binds `SPECIFICATION/scenarios.md` Scenario 182 and the host-factory-registry
+clause of `SPECIFICATION/contracts.md`. Every case starts from a
+`.livespec.jsonc` and a registry JSON file ON DISK and runs the production
+configuration, resolution, pre-claim grading and plan seams; the only things
+stood in are the `fabro` CLI (a recording runner, so the launch argv is
+observable without a server) and the ledger, through this repository's own
+hermetic `FakeBeadsClient`.
+
+WHY THE ADDRESS IS ASSERTED AT THE ARGV AND AT THE LEDGER, not at the resolver.
+`resolve_fabro_factory` answering with the registry's address proves the reading;
+it does not prove the address REACHES the run. The address crosses four hand-offs
+after resolution — the dispatch target, the plan, the port's argv, and the
+ledger's dispatch-factory record — and a registry-backed entry is exactly the
+case where a hand-off can drop it silently, because the committed entry carries
+no `server` for anything downstream to fall back to. A dropped address does not
+fail: it resolves to None, which every surface reads as "this factory declares no
+server" and therefore as the AMBIENT LOCAL factory. So the run would be created,
+on the wrong machine, with nothing in the record saying so.
+
+WHY THE REFUSAL IS TAKEN OFF `dispatch_preamble` AND THE LEDGER IS READ BACK.
+"Refused before any claim, ledger write of any kind, or Fabro run creation" is
+two claims, and a refusal string proves only the first. The preamble is the whole
+of what runs ahead of admission, so the item is snapshotted before it and
+compared after: an unresolvable registry that refuses AFTER stamping would
+satisfy a message-only assertion while leaving the row `active` under a dispatch
+that never placed work.
+
+WHY THE `env unset` PATH CASE ASSERTS A NEGATIVE AS WELL AS THE CONSTANT.
+Asserting only that `registry_path()` returns `/etc/livespec/fabro-factories.json`
+is an echo of the constant. The discriminating assertion is that with the
+variable unset the resolution does NOT return the override file's address — which
+an implementation reading the override unconditionally could not satisfy — and it
+is hermetic either way, because a host that happens to carry the default file
+cannot map `petri` to this test's own address.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import pytest
+from livespec_orchestrator_beads_fabro._beads_client import (
+    FakeBeadsClient,
+    IssueDraft,
+    make_beads_client,
+    reset_fake_singleton,
+)
+from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_factory
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_environment import (
+    factory_declaration_refusal,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
+    resolve_dispatch_factory_target,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import build_plan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_stamp import stamp_dispatch_run
+from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
+from livespec_orchestrator_beads_fabro.commands.dispatcher import dispatch_preamble
+from livespec_orchestrator_beads_fabro.store import record_dispatch_factory
+from livespec_orchestrator_beads_fabro.types import StoreConfig
+
+_COMMANDS_DIR = Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
+_READING_MODULE = "livespec_orchestrator_beads_fabro.commands._factory_registry"
+_GRADE_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_factory_registry"
+
+_FACTORY = "petri"
+_REGISTRY_SERVER = "https://gmktec.perch-rudd.ts.net:32276"
+_OTHER_SERVER = "https://hp-xubuntu.perch-rudd.ts.net:32276"
+_SPEC_DEFAULT_REGISTRY_PATH = "/etc/livespec/fabro-factories.json"
+_REGISTRY_PATH_ENV_VAR = "LIVESPEC_FABRO_FACTORY_REGISTRY"
+_FACTORY_SELECTION_ENV_VAR = "LIVESPEC_FABRO_FACTORY"
+
+_TENANT = "livespec-orch-beads-fabro"
+_PREFIX = "bd-ib"
+_WORK_ITEM_ID = "bd-ib-fubkcv"
+_RUN_ID = "01M580PF02S0VMFKX5HPB05Z8C"
+_EXIT_PRECONDITION_ERROR = 3
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_registry_env(monkeypatch: pytest.MonkeyPatch) -> object:
+    """A fresh in-memory tenant, and neither routing variable inherited.
+
+    Both deletions are load-bearing rather than hygiene. `LIVESPEC_FABRO_FACTORY`
+    is the scenario's own Background and overrides every selection below, so a
+    value leaking in from the dispatch that runs this suite would decide these
+    cases instead of the configuration they declare. The registry path variable
+    is the subject of one case and the override of all the others.
+    """
+    monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
+    monkeypatch.setenv("LIVESPEC_INVOKER", "session:factory-registry-scenario182")
+    monkeypatch.delenv(_FACTORY_SELECTION_ENV_VAR, raising=False)
+    monkeypatch.delenv(_REGISTRY_PATH_ENV_VAR, raising=False)
+    reset_fake_singleton()
+    yield
+    reset_fake_singleton()
+
+
+@dataclass(kw_only=True)
+class _Runner:
+    """Records every argv the launch hands the `fabro` CLI."""
+
+    argvs: list[list[str]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        del cwd, timeout_seconds, env, stdin
+        self.argvs.append(argv)
+        return CommandResult(exit_code=0, stdout=f"Run: {_RUN_ID}\n", stderr="")
+
+
+def _reading_module() -> Any:
+    """The registry READING module, imported inside the test body.
+
+    The module path is asserted FIRST so the Red is a genuine assertion failure
+    rather than a collection error: at Red the module does not exist, and a
+    top-level import of it would die before any assertion ran.
+    """
+    assert (_COMMANDS_DIR / "_factory_registry.py").is_file()
+    return importlib.import_module(_READING_MODULE)
+
+
+def _grade_module() -> Any:
+    """The registry GRADE module, imported inside the test body."""
+    assert (_COMMANDS_DIR / "_dispatcher_factory_registry.py").is_file()
+    return importlib.import_module(_GRADE_MODULE)
+
+
+def _store() -> StoreConfig:
+    """The hermetic tenant every case reads and writes through."""
+    return StoreConfig(
+        tenant=_TENANT,
+        prefix=_PREFIX,
+        server_user=_TENANT,
+        database=_TENANT,
+        bd_path="bd",
+        fake=True,
+    )
+
+
+def _fake() -> FakeBeadsClient:
+    client = make_beads_client(config=_store())
+    assert isinstance(client, FakeBeadsClient)
+    return client
+
+
+def _seed_item() -> None:
+    _ = _fake().create_issue(
+        draft=IssueDraft(
+            issue_id=_WORK_ITEM_ID,
+            issue_type="feature",
+            title="Resolve a registry-backed factory's address",
+            description="## Definition of Done\n\n- The address comes from the registry.\n",
+            assignee=None,
+            created_at="2026-10-18T00:00:00Z",
+        )
+    )
+
+
+def _item_state() -> dict[str, Any]:
+    """The item's status, metadata and comments, as one comparable snapshot."""
+    record = _fake().show_issue(issue_id=_WORK_ITEM_ID)
+    return {
+        "status": record.get("status"),
+        "assignee": record.get("assignee"),
+        "metadata": json.dumps(record.get("metadata"), sort_keys=True, default=repr),
+        "comments": [comment.text for comment in _fake().list_comments(issue_id=_WORK_ITEM_ID)],
+    }
+
+
+def _write_config(
+    *,
+    cwd: Path,
+    factories: dict[str, Any],
+    default_factory: str | None = None,
+) -> None:
+    dispatcher: dict[str, Any] = {"factories": factories}
+    if default_factory is not None:
+        dispatcher["default_factory"] = default_factory
+    _ = (cwd / ".livespec.jsonc").write_text(
+        json.dumps(
+            {
+                "livespec-orchestrator-beads-fabro": {
+                    "connection": {"tenant": _TENANT, "prefix": _PREFIX, "fake": True},
+                    "dispatcher": dispatcher,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_registry(*, path: Path, payload: object) -> None:
+    _ = path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _point_at_registry(*, monkeypatch: pytest.MonkeyPatch, path: Path) -> None:
+    monkeypatch.setenv(_REGISTRY_PATH_ENV_VAR, str(path))
+
+
+def _registry_backed_repo(
+    *,
+    cwd: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    entry: object,
+    committed: dict[str, Any] | None = None,
+) -> None:
+    """A repo declaring `petri` as registry-backed, beside a registry naming it."""
+    declared: dict[str, Any] = {"registry": True}
+    declared.update(committed or {})
+    _write_config(cwd=cwd, factories={_FACTORY: declared}, default_factory=_FACTORY)
+    registry = cwd / "fabro-factories.json"
+    _write_registry(path=registry, payload={_FACTORY: entry})
+    _point_at_registry(monkeypatch=monkeypatch, path=registry)
+
+
+def _run_argv(*, cwd: Path, runner: _Runner, server: str | None) -> list[str]:
+    """The `fabro run` argv one dispatch to `server` actually produces."""
+    plan = build_plan(
+        repo=cwd,
+        work_item_id=_WORK_ITEM_ID,
+        workflow_toml=cwd / "workflow.toml",
+        goal_file=cwd / "goal.md",
+        fabro_bin="/opt/fabro",
+        fabro_factory_name=_FACTORY,
+        fabro_factory_server=server,
+        janitor=None,
+        janitor_checkout=cwd / "janitor",
+    )
+    port = fabro_port_for_plan(plan=plan, runner=runner)
+    _ = port.run(
+        workflow_toml=plan.workflow_toml,
+        goal_file=plan.goal_file,
+        inputs=(),
+        timeout_seconds=42.0,
+    )
+    return next(argv for argv in runner.argvs if argv[1] == "run")
+
+
+def test_a_registry_backed_dispatch_runs_on_the_registry_address_and_records_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The registry's address reaches the run argv and the item's own record.
+
+    Three assertions in one case because they are three points on ONE hand-off
+    chain and a failure has to say which point dropped the address: the resolver,
+    the launch argv, or the ledger stamp. Splitting them would re-run the chain
+    three times to learn the same thing, and a per-point case could not tell an
+    address the resolver never produced from one the chain lost.
+
+    `--server` is asserted as the LAST two argv tokens because the pinned engine
+    requires it to stay last on the subcommand, and as adjacent TOKENS rather
+    than by substring because an address spliced onto the flag would satisfy a
+    substring probe and be rejected by the engine.
+    """
+    _registry_backed_repo(cwd=tmp_path, monkeypatch=monkeypatch, entry={"server": _REGISTRY_SERVER})
+    _seed_item()
+    _ = _reading_module()
+
+    target = resolve_fabro_factory(cwd=tmp_path, factory=_FACTORY)
+
+    assert target.name == _FACTORY
+    assert target.server == _REGISTRY_SERVER
+
+    argv = _run_argv(cwd=tmp_path, runner=_Runner(), server=target.server)
+
+    assert argv[-2:] == ["--server", _REGISTRY_SERVER]
+
+    plan = build_plan(
+        repo=tmp_path,
+        work_item_id=_WORK_ITEM_ID,
+        workflow_toml=tmp_path / "workflow.toml",
+        goal_file=tmp_path / "goal.md",
+        fabro_bin="/opt/fabro",
+        fabro_factory_name=target.name,
+        fabro_factory_server=target.server,
+        janitor=None,
+        janitor_checkout=tmp_path / "janitor",
+    )
+    _ = stamp_dispatch_run(
+        plan=plan,
+        journal=JournalFile(path=tmp_path / "journal.jsonl"),
+        run_id=_RUN_ID,
+    )
+
+    metadata = _fake().show_issue(issue_id=_WORK_ITEM_ID).get("metadata")
+    assert isinstance(metadata, dict)
+    assert metadata["dispatch_factory"] == {"name": _FACTORY, "server": _REGISTRY_SERVER}
+
+
+def test_a_resume_resolves_the_registry_address_the_recorded_pin_names(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A resume addresses the registry's address, through the item's own pin.
+
+    A resume carries no `--factory`: it resolves through
+    `resolve_dispatch_factory_target`, which takes the item's RECORDED pin. That
+    is a different selection leg from the dispatch case above — the name arrives
+    from the ledger rather than from the command line — and it is the leg a
+    registry-backed entry can regress on alone, because the pin is a bare name
+    with no address beside it.
+    """
+    _registry_backed_repo(cwd=tmp_path, monkeypatch=monkeypatch, entry={"server": _REGISTRY_SERVER})
+    _seed_item()
+    record_dispatch_factory(path=_store(), work_item_id=_WORK_ITEM_ID, factory=_FACTORY)
+    _ = _reading_module()
+
+    target = resolve_dispatch_factory_target(
+        args=argparse.Namespace(factory=None),
+        repo=tmp_path,
+        work_item_id=_WORK_ITEM_ID,
+    )
+
+    assert target.name == _FACTORY
+    assert target.server == _REGISTRY_SERVER
+
+
+def test_the_registry_path_is_the_override_when_it_is_set_and_the_default_otherwise(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`LIVESPEC_FABRO_FACTORY_REGISTRY` wins when non-empty; else the host path.
+
+    The two absent spellings — unset and empty — are asserted together because
+    they must answer identically: an implementation testing only for the key's
+    presence would read the empty string as a path and resolve nothing, which is
+    the same observable as a registry that holds no entry.
+
+    Each absent case asserts the negative beside the constant: with the variable
+    not selecting the override file, the resolution must NOT return that file's
+    address. The constant alone is an echo; the negative is what an
+    implementation reading the override unconditionally cannot satisfy, and it
+    stays hermetic because no host's `/etc/livespec/fabro-factories.json` maps
+    `petri` to this test's address.
+    """
+    reading = _reading_module()
+    _registry_backed_repo(cwd=tmp_path, monkeypatch=monkeypatch, entry={"server": _REGISTRY_SERVER})
+
+    assert reading.registry_path() == str(tmp_path / "fabro-factories.json")
+    assert resolve_fabro_factory(cwd=tmp_path, factory=_FACTORY).server == _REGISTRY_SERVER
+
+    for absent in (None, ""):
+        if absent is None:
+            monkeypatch.delenv(_REGISTRY_PATH_ENV_VAR, raising=False)
+        else:
+            monkeypatch.setenv(_REGISTRY_PATH_ENV_VAR, absent)
+
+        assert reading.registry_path() == _SPEC_DEFAULT_REGISTRY_PATH
+        assert reading.DEFAULT_REGISTRY_PATH == _SPEC_DEFAULT_REGISTRY_PATH
+        assert resolve_fabro_factory(cwd=tmp_path, factory=_FACTORY).server != _REGISTRY_SERVER
+
+
+@pytest.mark.parametrize(
+    ("case", "payload"),
+    [
+        ("absent", None),
+        ("unreadable", "directory"),
+        ("not-json", "{"),
+        ("top-level-list", [{_FACTORY: {"server": _REGISTRY_SERVER}}]),
+        ("no-entry", {"legacy": {"server": _OTHER_SERVER}}),
+        ("entry-not-an-object", {_FACTORY: "a-server-string"}),
+        ("entry-without-server", {_FACTORY: {"docker_host": "ssh://host"}}),
+        ("server-not-a-string", {_FACTORY: {"server": 32276}}),
+        ("server-blank-after-trimming", {_FACTORY: {"server": "   "}}),
+    ],
+)
+def test_an_unresolvable_registry_refuses_before_any_ledger_write_naming_the_factory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    case: str,
+    payload: object,
+) -> None:
+    """Every unresolvable registry state refuses, names both, and writes nothing.
+
+    All nine states are parameterized because they have ONE remedy — fix the
+    host registry — and must not fall into several messages or, worse, into the
+    silent `server=None` that reads downstream as the ambient local factory.
+    `unreadable` is staged as a DIRECTORY at the registry path rather than by
+    clearing the mode bits, because this suite's own dispatch runs as root and a
+    mode-based refusal would not apply to it.
+
+    The refusal must name the FACTORY and the REGISTRY PATH. A dispatch resolves
+    its factory from `default_factory`, an explicit flag, the environment or a
+    per-item pin, so "a registry-backed factory did not resolve" does not say
+    which entry to look at, and the path is the file the operator must fix — and
+    which of the two paths was read is itself a configuration question.
+
+    The ledger snapshot is the second half of the clause. An unresolvable
+    registry that refused AFTER stamping would satisfy a message-only assertion
+    while leaving the row claimed by a dispatch that never placed work.
+    """
+    registry = tmp_path / "fabro-factories.json"
+    if case == "unreadable":
+        registry.mkdir()
+    elif case == "not-json":
+        _ = registry.write_text("{", encoding="utf-8")
+    elif payload is not None:
+        _write_registry(path=registry, payload=payload)
+    _write_config(
+        cwd=tmp_path,
+        factories={_FACTORY: {"registry": True}},
+        default_factory=_FACTORY,
+    )
+    _point_at_registry(monkeypatch=monkeypatch, path=registry)
+    _seed_item()
+    _ = _grade_module()
+    before = _item_state()
+
+    result = dispatch_preamble(
+        args=argparse.Namespace(fabro_bin=None, janitor=None, journal=None),
+        repo=tmp_path,
+    )
+
+    refusal = capsys.readouterr().err
+    assert _FACTORY in refusal
+    assert str(registry) in refusal
+    assert result == (None, _EXIT_PRECONDITION_ERROR)
+    assert _item_state() == before
+
+
+def test_a_valid_selected_entry_resolves_beside_a_malformed_sibling(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the selected entry is validated; another entry's shape is not read.
+
+    The sibling is `null`, which is the shape that would raise rather than
+    refuse if the resolution walked the whole table. The clause says the other
+    entries "are not validated by that resolution and do not affect it", so a
+    registry mid-migration — one entry already rendered, one not — must keep
+    serving every factory it does name.
+    """
+    _write_config(
+        cwd=tmp_path,
+        factories={_FACTORY: {"registry": True}},
+        default_factory=_FACTORY,
+    )
+    registry = tmp_path / "fabro-factories.json"
+    _write_registry(path=registry, payload={_FACTORY: {"server": _REGISTRY_SERVER}, "legacy": None})
+    _point_at_registry(monkeypatch=monkeypatch, path=registry)
+    grade = _grade_module()
+
+    target = resolve_fabro_factory(cwd=tmp_path, factory=_FACTORY)
+
+    assert target.server == _REGISTRY_SERVER
+    assert grade.factory_registry_refusal(factory=target) is None
+
+
+def test_a_recorded_pin_to_an_undeclared_factory_still_falls_back_to_the_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pin naming an entry `dispatcher.factories` no longer declares is ignored.
+
+    The registry clause explicitly leaves this treatment alone, so it is asserted
+    HERE rather than assumed: the fallback has to land on the registry-backed
+    default and resolve ITS address, which is the composition the clause adds.
+    An implementation that refused an undeclared pin, or that fell back to the
+    default name without resolving its registry address, would both read as
+    "dispatched to petri" at the name and differ at the only field that decides
+    which machine runs the work.
+    """
+    _registry_backed_repo(cwd=tmp_path, monkeypatch=monkeypatch, entry={"server": _REGISTRY_SERVER})
+    _seed_item()
+    record_dispatch_factory(path=_store(), work_item_id=_WORK_ITEM_ID, factory="hp")
+    _ = _reading_module()
+
+    target = resolve_dispatch_factory_target(
+        args=argparse.Namespace(factory=None),
+        repo=tmp_path,
+        work_item_id=_WORK_ITEM_ID,
+    )
+
+    assert target.name == _FACTORY
+    assert target.server == _REGISTRY_SERVER
+
+
+def test_a_resolvable_registry_backed_entry_is_not_refused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The positive control for the refusal, and it is load-bearing.
+
+    A grade that convicted EVERY registry-backed entry would satisfy all nine
+    unresolvable cases above while making the key impossible to use, and the two
+    are indistinguishable at the only surface that reports either: both read as
+    "the dispatch was refused naming this factory's registry". The whole
+    declaration grade is asserted beside the per-key one, because the
+    composition in `_dispatcher_factory_environment` is what the pre-dispatch
+    arm actually calls, and a per-key grade nothing composed would satisfy every
+    other assertion in this module while refusing nothing at a dispatch.
+    """
+    _registry_backed_repo(cwd=tmp_path, monkeypatch=monkeypatch, entry={"server": _REGISTRY_SERVER})
+    grade = _grade_module()
+    target = resolve_fabro_factory(cwd=tmp_path, factory=_FACTORY)
+
+    assert grade.factory_registry_refusal(factory=target) is None
+    assert factory_declaration_refusal(factory=target) is None
+
+
+def test_a_caller_holding_no_factory_target_has_no_registry_to_refuse() -> None:
+    """No resolved target is an answer, not a fault.
+
+    The needs-attention and standalone reconcile surfaces build their own
+    arguments and never run a dispatch preamble, so they hold no factory. That is
+    the pre-clause behaviour — the same reason the `bin` and `environment`
+    refusals tolerate it — and a refusal there would reject surfaces that
+    dispatch nothing.
+    """
+    grade = _grade_module()
+
+    assert grade.factory_registry_refusal(factory=None) is None
+
+
+def test_an_entry_carrying_a_server_and_no_registry_key_keeps_its_meaning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A committed `server` entry is unchanged, and is never graded as registry-backed.
+
+    The clause says so outright, and `server` remains the supported form for an
+    adopter outside this fleet. The registry file here maps the same name to a
+    DIFFERENT address, so an implementation that consulted the registry for every
+    entry would resolve the wrong machine rather than merely doing extra I/O.
+    """
+    _write_config(cwd=tmp_path, factories={_FACTORY: {"server": _OTHER_SERVER}})
+    registry = tmp_path / "fabro-factories.json"
+    _write_registry(path=registry, payload={_FACTORY: {"server": _REGISTRY_SERVER}})
+    _point_at_registry(monkeypatch=monkeypatch, path=registry)
+    grade = _grade_module()
+
+    target = resolve_fabro_factory(cwd=tmp_path, factory=_FACTORY)
+
+    assert target.server == _OTHER_SERVER
+    assert grade.factory_registry_refusal(factory=target) is None

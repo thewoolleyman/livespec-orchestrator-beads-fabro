@@ -30,9 +30,11 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_tmux_socket_root,
 )
 from livespec_orchestrator_beads_fabro.commands._config import (
-    resolve_credential_wrapper,
     resolve_fabro_bin,
     resolve_store_config,
+)
+from livespec_orchestrator_beads_fabro.commands._config_credential_wrapper import (
+    resolve_credential_wrapper,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
     SandboxImageSource,
