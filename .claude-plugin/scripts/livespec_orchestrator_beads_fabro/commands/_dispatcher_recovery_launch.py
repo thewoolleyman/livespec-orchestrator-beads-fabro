@@ -162,6 +162,7 @@ def journal_recovery_route(*, route: RecoveryRoute | None, journal: JournalFile)
             work_item_id=route.work_item_id,
             route=route.route,
             seed=route.seed,
+            loss=route.loss,
             preserved_work=route.preserved_work,
         )
     )

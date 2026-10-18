@@ -22,7 +22,11 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved import (
     NEEDS_HUMAN_REF_PREFIX,
+    PRESERVED_SOURCE_EARLIER_PRESERVED_PUBLISH_REF,
+    PRESERVED_SOURCE_PUBLISHED_HEAD,
+    PRESERVED_SOURCE_TERMINAL_TREE,
     SEED_REMOTE,
+    PreservedWorkAbsent,
     PreservedWorkUnobservable,
     verified_preserved_seed,
 )
@@ -244,13 +248,25 @@ def test_an_unaskable_preserved_publish_listing_is_unobservable() -> None:
 def test_three_silent_sources_are_confirmed_absence() -> None:
     """Every source asked, every one naming nothing: the one answer that permits `fresh`.
 
-    This is the control for all six cases above: a reading that returned `None`
+    This is the control for all six cases above: a reading that answered absence
     whatever it saw would satisfy them only here, and a reading that never
-    returned `None` would leave a genuinely clean item permanently held.
+    answered absence would leave a genuinely clean item permanently held.
+
+    The absence NAMES what it measured — the run whose work is being written off
+    and each source that was asked — because the clause requires the plain
+    dispatch it permits to record that loss, and the record cannot be a
+    measurement unless the reading reports one.
     """
     runner = _Runner()
 
-    assert _seed(runner=runner) is None
+    assert _seed(runner=runner) == PreservedWorkAbsent(
+        source_run_id=_RUN,
+        sources_asked=(
+            PRESERVED_SOURCE_TERMINAL_TREE,
+            PRESERVED_SOURCE_PUBLISHED_HEAD,
+            PRESERVED_SOURCE_EARLIER_PRESERVED_PUBLISH_REF,
+        ),
+    )
     assert _asked(runner=runner, needle=NEEDS_HUMAN_REF_PREFIX)
     assert _asked(runner=runner, needle=_BRANCH_REF)
     assert _asked(runner=runner, needle=f"{_PRESERVED_PUBLISH_PREFIX}/*")

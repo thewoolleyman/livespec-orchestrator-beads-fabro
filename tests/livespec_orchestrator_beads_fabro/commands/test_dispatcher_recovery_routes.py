@@ -43,6 +43,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurements import (
     MEASUREMENT_FORGE_PULL_REQUEST,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved import (
+    PRESERVED_SOURCE_EARLIER_PRESERVED_PUBLISH_REF,
+    PRESERVED_SOURCE_PUBLISHED_HEAD,
+    PRESERVED_SOURCE_TERMINAL_TREE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records import (
     PRESERVED_WORK_ABSENT,
     RECOVERY_ROUTE_STAGE,
@@ -53,6 +58,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_release imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import (
     ROUTE_FRESH,
     ROUTE_HELD,
+    RecoveryLoss,
     RecoveryResume,
     RecoveryRoute,
 )
@@ -224,15 +230,27 @@ def test_a_fallback_permitting_refusal_with_no_preserved_work_is_fresh_with_the_
 
     This is the one route that discards work, so it is the one that has to be
     earned: the refusal is fallback-permitting, every preserved-work source was
-    asked, and each named nothing. The route carries that finding, which is the
-    clause's "with that loss recorded".
+    asked, and each named nothing. The route carries that finding plus the loss
+    it names, which together are the clause's "with that loss recorded"; the
+    record the loss produces is covered by
+    `test_dispatcher_recovery_fresh_loss_record.py`.
     """
     _Shell.answers = {"gh pr list": CommandResult(exit_code=0, stdout="[]", stderr="")}
 
     routed = _route(tmp_path=tmp_path, monkeypatch=monkeypatch)
 
     assert routed.route_for(work_item_id=_ITEM_ID) == RecoveryRoute(
-        work_item_id=_ITEM_ID, route=ROUTE_FRESH, preserved_work=PRESERVED_WORK_ABSENT
+        work_item_id=_ITEM_ID,
+        route=ROUTE_FRESH,
+        loss=RecoveryLoss(
+            source_run_id=_RUN,
+            sources_asked=(
+                PRESERVED_SOURCE_TERMINAL_TREE,
+                PRESERVED_SOURCE_PUBLISHED_HEAD,
+                PRESERVED_SOURCE_EARLIER_PRESERVED_PUBLISH_REF,
+            ),
+        ),
+        preserved_work=PRESERVED_WORK_ABSENT,
     )
     assert len([call for call in _Shell.calls if "ls-remote" in call]) == 3
     # A `fresh` item IS reclaimed for: clearing the dead run's branch is what

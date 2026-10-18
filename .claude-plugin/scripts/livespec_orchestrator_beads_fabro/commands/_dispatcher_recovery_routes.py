@@ -41,6 +41,7 @@ __all__: list[str] = [
     "ROUTE_RESUME",
     "ROUTE_SEEDED",
     "RecoveryHold",
+    "RecoveryLoss",
     "RecoveryMeasurement",
     "RecoveryResume",
     "RecoveryRoute",
@@ -93,6 +94,22 @@ class RecoverySeed:
 
 
 @dataclass(frozen=True, kw_only=True)
+class RecoveryLoss:
+    """What a `fresh`-after-absence route is writing off, and what was asked first.
+
+    A GRAMMAR restatement of `_dispatcher_recovery_preserved`'s own
+    `PreservedWorkAbsent`, for the reason the module docstring gives about
+    `RecoveryResume` and `ResumeAnchor`: the reading's value belongs to the module
+    that took it, and this grammar may not import that module because it imports
+    this one. The two fields are the same two, because the loss record needs
+    exactly what the absence measured.
+    """
+
+    source_run_id: str
+    sources_asked: tuple[str, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
 class RecoveryResume:
     """Everything a `resume` route hands its launch, and nothing else.
 
@@ -131,6 +148,11 @@ class RecoveryRoute:
     carry ("with that loss recorded") and the `seeded` arm earns. It is null for
     every route that never asked, because "was not asked" is a third fact and not
     a shorthand for absence.
+
+    `loss` is the rest of what that clause requires recorded, and it rides the
+    `fresh`-after-absence arm ALONE — a `fresh` route taken because the item was
+    never released measured nothing and has no loss to name, which is the same
+    distinction `preserved_work` draws one field up.
     """
 
     work_item_id: str
@@ -138,4 +160,5 @@ class RecoveryRoute:
     resume: RecoveryResume | None = None
     seed: RecoverySeed | None = None
     hold: RecoveryHold | None = None
+    loss: RecoveryLoss | None = None
     preserved_work: str | None = None

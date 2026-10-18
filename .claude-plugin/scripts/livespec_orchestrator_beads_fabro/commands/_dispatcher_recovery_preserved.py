@@ -71,7 +71,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
 
 __all__: list[str] = [
     "NEEDS_HUMAN_REF_PREFIX",
+    "PRESERVED_SOURCE_EARLIER_PRESERVED_PUBLISH_REF",
+    "PRESERVED_SOURCE_PUBLISHED_HEAD",
+    "PRESERVED_SOURCE_TERMINAL_TREE",
     "SEED_REMOTE",
+    "PreservedWorkAbsent",
     "PreservedWorkUnobservable",
     "verified_preserved_seed",
 ]
@@ -80,6 +84,16 @@ __all__: list[str] = [
 # rather than per item, which is what lets the seed name the source run from the
 # ref it was found at rather than from a separate reading that could disagree.
 NEEDS_HUMAN_REF_PREFIX = "refs/heads/needs-human"
+
+# The sources a loss record names, as the stable tokens it names them by. The
+# clause requires a plain dispatch after confirmed absence to record that loss,
+# and the row cannot be a MEASUREMENT unless it says which sources were asked: a
+# source that answered nothing and a source this build never asked support
+# opposite conclusions about whether the work was really lost, and neither is
+# visible from the word "absent" on its own.
+PRESERVED_SOURCE_TERMINAL_TREE = "needs-human-terminal-tree"
+PRESERVED_SOURCE_PUBLISHED_HEAD = "observed-published-head"
+PRESERVED_SOURCE_EARLIER_PRESERVED_PUBLISH_REF = "earlier-preserved-publish-ref"
 
 # The remote every one of these refs is read from and the seed therefore names.
 # One constant because the seed record's `remote` field and the `ls-remote`
@@ -116,6 +130,27 @@ class PreservedWorkUnobservable:
     detail: str
 
 
+@dataclass(frozen=True, kw_only=True)
+class PreservedWorkAbsent:
+    """Every source that COULD be asked was asked, and each of them named nothing.
+
+    CONFIRMED ABSENCE — the one answer that permits a plain dispatch from the
+    default branch — and a TYPE rather than a bare `None` because the clause
+    requires that dispatch to record the loss, and both of these fields are part
+    of the loss. `source_run_id` names the run whose tree is being written off,
+    which is the identifier an operator looks it up on its factory by.
+    `sources_asked` names the sources this reading actually spent a round trip
+    on, so a source that answered nothing is distinguishable from one that was
+    never asked; it is a list rather than the full set because the terminal-tree
+    source is per RUN and is skipped entirely for an item naming no run, and a
+    record claiming three readings where two were taken reports a measurement
+    that did not happen.
+    """
+
+    source_run_id: str
+    sources_asked: tuple[str, ...]
+
+
 def verified_preserved_seed(
     *,
     runner: CommandRunner,
@@ -123,33 +158,49 @@ def verified_preserved_seed(
     work_item_id: str,
     earlier_run_ids: tuple[str, ...],
     journal_records: tuple[dict[str, object], ...],
-) -> RecoverySeed | PreservedWorkUnobservable | None:
-    """The seed the failed run's preserved work supports: one, unaskable, or none.
+) -> RecoverySeed | PreservedWorkUnobservable | PreservedWorkAbsent:
+    """The seed the failed run's preserved work supports: one, unaskable, or absent.
 
-    `None` is CONFIRMED ABSENCE — every source was asked and named nothing — which
-    is what permits a plain dispatch from the default branch with the loss
-    recorded.
+    THE ASKED-SOURCE LIST IS BUILT HERE, BY THE CODE THAT DOES THE ASKING, which
+    is why the terminal source's own precondition moved up out of
+    `_needs_human_seed`: a second expression of that condition — one deciding
+    whether to ask and one deciding whether to report having asked — is free to
+    drift, and the direction it drifts in is a loss record naming a round trip
+    nobody took.
 
     `journal_records` has NO DEFAULT, for the reason `_dispatcher_sandbox_image_
     source` gives about its own record: a default is how a caller that HAD a
     journal silently reports the answer of one that did not — here, "this item
     has no preserved tree" for an item whose tree was published minutes ago.
     """
-    terminal = _needs_human_seed(runner=runner, repo=repo, earlier_run_ids=earlier_run_ids)
-    if terminal is not None:
-        return terminal
+    asked: list[str] = []
+    # The terminal ref is per RUN, so with no identifier to name there is no ref
+    # it could exist at and the round trip would ask about a pattern that matches
+    # nothing.
+    if earlier_run_ids:
+        asked.append(PRESERVED_SOURCE_TERMINAL_TREE)
+        terminal = _needs_human_seed(runner=runner, repo=repo, earlier_run_ids=earlier_run_ids)
+        if terminal is not None:
+            return terminal
     tree = _preserved_tree_seed(
         runner=runner, repo=repo, work_item_id=work_item_id, journal_records=journal_records
     )
     if tree is not None:
         return tree
+    asked.append(PRESERVED_SOURCE_PUBLISHED_HEAD)
     published = _published_head_seed(
         runner=runner, repo=repo, work_item_id=work_item_id, earlier_run_ids=earlier_run_ids
     )
     if published is not None:
         return published
-    return _earlier_head_seed(
+    asked.append(PRESERVED_SOURCE_EARLIER_PRESERVED_PUBLISH_REF)
+    earlier = _earlier_head_seed(
         runner=runner, repo=repo, work_item_id=work_item_id, earlier_run_ids=earlier_run_ids
+    )
+    if earlier is not None:
+        return earlier
+    return PreservedWorkAbsent(
+        source_run_id=_leading(identifiers=earlier_run_ids), sources_asked=tuple(asked)
     )
 
 
@@ -163,9 +214,10 @@ def _needs_human_seed(
     matches nothing, while a call per identifier would be a round trip per
     identifier. The identifiers arrive newest-first — the anchoring record's own
     run leads — so the FIRST one origin answered for is the newest preserved tree.
+
+    Called only for a non-empty identifier list, which its caller establishes for
+    the reason that function's docstring gives.
     """
-    if not earlier_run_ids:
-        return None
     result = runner.run(
         argv=[
             "git",
@@ -386,9 +438,9 @@ def _leading(*, identifiers: tuple[str, ...]) -> str:
 
     The empty string rather than `None`, because the seed record's `source_run_id`
     is a field an operator reads to find the run on its factory and a record whose
-    other three fields are present says more than no record at all. The two arms
-    that reach here read a ref that names no run, so there is nothing better to
-    offer; the arm that CAN name one — the needs-human ref — takes it from the ref
-    itself.
+    other fields are present says more than no record at all. Every arm that
+    reaches here read a ref that names no run — the two lower-preference seeds and
+    the confirmed absence — so there is nothing better to offer; the arm that CAN
+    name one, the needs-human ref, takes it from the ref itself.
     """
     return identifiers[0] if identifiers else ""
