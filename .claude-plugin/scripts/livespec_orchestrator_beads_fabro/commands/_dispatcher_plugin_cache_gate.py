@@ -76,6 +76,9 @@ from __future__ import annotations
 from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_program import (
     carry_forward_program_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_grade_program import (
+    proof_grade_program_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head import (
     proof_head_program_prepare_steps_block,
 )
@@ -417,11 +420,11 @@ def plugin_cache_gate_prepare_steps_block() -> str:
     dispatch-time input whose absence would make the verification meaningless.
     A sandbox with nothing registered yet reports exactly that and exits 0.
 
-    The publication-head reader, the exact-head push program and the
-    carry-forward decision ride the SAME block for the reason the module
-    docstring records: all four land below one root, and a sandbox given a
-    subset fails closed at a stage whose refusal would name the wrong seam.
-    They follow the gate rather than precede it so the cheapest refusal — an
+    The publication-head reader, the exact-head push program, the carry-forward
+    decision and the per-assertion proof grade ride the SAME block for the reason
+    the module docstring records: all five land below one root, and a sandbox
+    given a subset fails closed at a stage whose refusal would name the wrong
+    seam. They follow the gate rather than precede it so the cheapest refusal — an
     unrepairable plugin cache — still aborts setup first.
     """
     lines = [
@@ -439,4 +442,5 @@ def plugin_cache_gate_prepare_steps_block() -> str:
         + proof_head_program_prepare_steps_block()
         + publication_push_program_prepare_steps_block()
         + carry_forward_program_prepare_steps_block()
+        + proof_grade_program_prepare_steps_block()
     )

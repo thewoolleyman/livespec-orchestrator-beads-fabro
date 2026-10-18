@@ -257,16 +257,19 @@ def test_factory_authentication_precedes_vault_materialization(
     outcome = loop_module.dispatch_one(
         args=SimpleNamespace(),
         repo=tmp_path,
-        # The three fields the dispatch reads off a work-item on the way to the
-        # overlay: the id for the publish branch, and the title and acceptance
+        # The four fields the dispatch reads off a work-item on the way to the
+        # overlay: the id for the publish branch, the title and acceptance
         # criteria the publication-metadata renderer shapes into the pull
-        # request's title and body. This control is about ORDERING, so the
-        # values are placeholders -- but they have to be PRESENT, because the
-        # renderer reads a typed `WorkItem` and a defensive read there would
-        # hide a real wiring fault behind an empty title.
+        # request's title and body, and the description the proof-grade
+        # projection resolves this item's `factory_captured` assertions from
+        # (bd-ib-kcq6pu). This control is about ORDERING, so the values are
+        # placeholders -- but they have to be PRESENT, because each renderer
+        # reads a typed `WorkItem` and a defensive read there would hide a real
+        # wiring fault behind an empty title or an empty assertion set.
         item=SimpleNamespace(
             id="wi-secret-review",
             title="a secret-review ordering control",
+            description="",
             acceptance_criteria=None,
         ),
         journal=JournalFile(path=tmp_path / "journal.jsonl"),

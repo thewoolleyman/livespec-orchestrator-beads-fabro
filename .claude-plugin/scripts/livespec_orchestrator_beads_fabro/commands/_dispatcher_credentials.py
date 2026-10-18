@@ -170,6 +170,11 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     # that holds none, which projects neither and leaves the stage's own
     # absent-title and absent-body sentinels to report the shortfall.
     publication_metadata: PublicationMetadata | None = None,
+    # The `factory_captured` assertions the sandbox's per-assertion Proof of Done
+    # grade reads a record's verdicts for, already rendered as an env line by the
+    # caller that holds the work-item. Empty for a direct caller, which the grade
+    # reads as an UNESTABLISHED question and fails closed on (bd-ib-kcq6pu).
+    proof_grade_env: str = "",
     # The CLIENT build this dispatch resolved for its factory, which decides how
     # the written config may NAME its graph. None is the pinned-engine posture —
     # the absolute path every overlay has always carried — so a caller that
@@ -404,6 +409,10 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # value minted a few lines above; every other one takes the
         # wrapper-supplied value out of this process's environment.
         proof_credentials_env=proof_credentials_env,
+        # The item's `factory_captured` assertions, forwarded rather than derived
+        # here: the derivation reads a work-item and this function is handed only
+        # an id, exactly as the publication metadata above is.
+        proof_grade_env=proof_grade_env,
         # The pre-launch dispatch id the sandbox declares as its
         # factory-provenance marker. This function runs BEFORE `fabro run`,
         # which is why the marker cannot carry the Fabro run id.
