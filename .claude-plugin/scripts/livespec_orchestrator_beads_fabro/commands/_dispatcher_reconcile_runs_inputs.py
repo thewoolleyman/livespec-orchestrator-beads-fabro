@@ -14,9 +14,10 @@ needs is a field of the bundle above it.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Protocol
 
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -36,6 +37,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_expor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_grace import (
     DEFAULT_BLOCKED_RUN_GRACE_SECONDS,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_records import (
+    ClaimLaneResult,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
     FabroHttpTransport,
@@ -48,9 +52,33 @@ from livespec_orchestrator_beads_fabro.commands._run_attribution import (
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
+    "ClaimLaneReconciler",
     "ReconcileInputs",
     "port_for",
 ]
+
+
+class ClaimLaneReconciler(Protocol):
+    """The CLAIM lane, as the run lane is allowed to see it.
+
+    A SEAM rather than an import, and the reason is a runtime cycle rather
+    than taste: the claim lane's terminal-completion route reaches the
+    Dispatcher's own terminal dispositions, and one of those reaches the
+    reconciler back. So the run lane names the shape and the two
+    reconciliation SURFACES — which no disposition imports — supply the
+    implementation.
+    """
+
+    def __call__(
+        self,
+        *,
+        inputs: ReconcileInputs,
+        factories: tuple[FactoryTarget, ...],
+        observed: Mapping[str, Mapping[str, str | None]],
+        dry_run: bool,
+    ) -> ClaimLaneResult:
+        """Survey this pass's dispatch claims against the inventory just read."""
+        ...
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -106,6 +134,10 @@ class ReconcileInputs:
     # Resolved ONCE by the caller rather than read here, so one pass cannot
     # stamp two answers; `None` falls through to this process's own identity.
     claim_host: str | None = None
+    # The lane itself. `None` runs no claim lane at all, which is the narrow
+    # observation-only callers' case and the default every existing caller
+    # keeps.
+    claim_lane: ClaimLaneReconciler | None = None
 
 
 def port_for(*, inputs: ReconcileInputs, factory: FactoryTarget) -> FabroPort:

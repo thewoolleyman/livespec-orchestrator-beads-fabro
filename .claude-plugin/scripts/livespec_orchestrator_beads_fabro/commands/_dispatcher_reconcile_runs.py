@@ -49,7 +49,6 @@ held set is carried separately from the reconciled set precisely so that
 
 from __future__ import annotations
 
-import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
@@ -57,17 +56,14 @@ from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_acp_projection import (
     replay_acp_projection,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_claim_lane import (
-    reconcile_claim_lane,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_one_run import (
+    reconcile_one_run,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
     FactoryRunInventory,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_containers import (
     pass_container_sweeps,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_export import (
-    export_orphan_reference,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_grace import (
     HeldRun,
@@ -78,7 +74,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_input
     port_for,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_join import (
-    OrphanRun,
     blocked_grace_candidate_ids,
     classify_blocked_holds,
     classify_orphans,
@@ -89,21 +84,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_recor
     ReconcileError,
     ReconcileRunsSummary,
     journal_error,
-    journal_export,
-    journal_reconciled,
-    journal_unauthenticated,
-    reconciled_from,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_spans import (
-    emit_reconcile_termination_spans,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_terminate import (
-    terminate_orphan_run,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_supersession import (
     supersession_held,
 )
-from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_records import (
+    ClaimLaneResult,
+)
 
 __all__: list[str] = [
     "JOURNAL_STAGE_ERROR",
@@ -196,7 +183,7 @@ def reconcile_runs(
     if not dry_run:
         for error in errors:
             journal_error(journal=inputs.journal, error=error)
-    claims = reconcile_claim_lane(
+    claims = _claim_lane(
         inputs=inputs, factories=tuple(factories), observed=observed, dry_run=dry_run
     )
     return ReconcileRunsSummary(
@@ -213,6 +200,27 @@ def reconcile_runs(
         recovered_claims=claims.recovered,
         held_claims=claims.held,
     )
+
+
+def _claim_lane(
+    *,
+    inputs: ReconcileInputs,
+    factories: tuple[FactoryTarget, ...],
+    observed: Mapping[str, Mapping[str, str | None]],
+    dry_run: bool,
+) -> ClaimLaneResult:
+    """Run the injected CLAIM lane, or report that no pass supplied one.
+
+    Injected rather than imported: the lane's terminal-completion route reaches
+    the Dispatcher's own terminal dispositions, one of which reaches this module
+    back, so importing it here would close a runtime cycle. The two
+    reconciliation surfaces supply it; the narrow observation-only callers do
+    not, and get the empty result.
+    """
+    lane = inputs.claim_lane
+    if lane is None:
+        return ClaimLaneResult()
+    return lane(inputs=inputs, factories=factories, observed=observed, dry_run=dry_run)
 
 
 def _reconcile_one_factory(
@@ -274,7 +282,7 @@ def _reconcile_one_factory(
         # sibling dispatch can stamp this run while the export is in flight.
         if supersession_held(orphan=orphan, inputs=inputs, dry_run=dry_run):
             continue
-        outcome = _reconcile_one_run(inputs=inputs, port=port, orphan=orphan, dry_run=dry_run)
+        outcome = reconcile_one_run(inputs=inputs, port=port, orphan=orphan, dry_run=dry_run)
         if outcome is None:
             continue
         if isinstance(outcome, ReconcileError):
@@ -286,71 +294,3 @@ def _reconcile_one_factory(
         run_statuses={run.run_id: run.status_kind for run in ps.runs},
         surveyed=True,
     )
-
-
-def _reconcile_one_run(
-    *,
-    inputs: ReconcileInputs,
-    port: FabroPort,
-    orphan: OrphanRun,
-    dry_run: bool,
-) -> ReconciledRun | ReconcileError | None:
-    if dry_run:
-        return reconciled_from(orphan=orphan, termination=None, export_comment_id=None)
-    export = export_orphan_reference(
-        orphan=orphan,
-        repo=inputs.repo,
-        # The PORT's client, not the bundle's global one. The export runs
-        # `fabro dump --server <this orphan's factory>`, so it is a call
-        # against a NAMED factory and takes that factory's client for the
-        # same reason every other verb on this port does.
-        fabro_bin=port.fabro_bin,
-        runner=inputs.runner,
-        ledger=inputs.ledger,
-    )
-    if not export.exported:
-        return ReconcileError(
-            factory_name=orphan.factory_name,
-            factory_server_url=orphan.factory_server_url,
-            run_id=orphan.run_id,
-            work_item_id=orphan.work_item_id,
-            reason=_ERROR_EXPORT_FAILED,
-            detail=export.detail,
-        )
-    if export.journal_body is not None:
-        journal_export(journal=inputs.journal, orphan=orphan, body=export.journal_body)
-    if port.server_api().bearer_token() is None:
-        journal_unauthenticated(journal=inputs.journal, orphan=orphan)
-    # Export, ledger write, and read-back are an unconditional precondition of
-    # termination. Re-read only after all three so a sibling's stamp landing
-    # during that work invalidates the stale supersession before any destructive
-    # route is entered. `None` is the held outcome; `supersession_held` records
-    # why this pass declined to act.
-    if supersession_held(orphan=orphan, inputs=inputs, dry_run=False):
-        return None
-    termination = terminate_orphan_run(
-        port=port,
-        run_id=orphan.run_id,
-        status_kind=orphan.status_kind,
-        destructive_action_held=lambda: supersession_held(
-            orphan=orphan,
-            inputs=inputs,
-            dry_run=False,
-        ),
-    )
-    if termination is None:
-        return None
-    run = reconciled_from(
-        orphan=orphan,
-        termination=termination,
-        export_comment_id=export.comment_id,
-    )
-    journal_reconciled(journal=inputs.journal, run=run)
-    if inputs.telemetry_spans_path is not None and inputs.cancelling_actor is not None:
-        emit_reconcile_termination_spans(
-            run=run,
-            cancelling_actor=inputs.cancelling_actor,
-            spans_path=inputs.telemetry_spans_path,
-            now_ns=time.time_ns(),
-        )
-    return run

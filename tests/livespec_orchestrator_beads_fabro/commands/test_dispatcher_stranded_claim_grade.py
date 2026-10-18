@@ -140,6 +140,7 @@ def _measurements(*, module: object, **overrides: object) -> object:
         "owner_liveness": module.OWNER_NONE,
         "forge": module.FORGE_NO_MERGED_PR,
         "predecessor": module.HISTORY_NO_PREDECESSOR,
+        "terminal_evidence_readable": True,
     }
     fields.update(overrides)
     return module.ClaimMeasurements(**fields)
@@ -156,7 +157,10 @@ def _measurements(*, module: object, **overrides: object) -> object:
         ({"forge": "unobservable"}, "forge-unobservable"),
         ({"forge": "merged-pr"}, "merged-pr"),
         ({"predecessor": "unavailable"}, "history-unavailable"),
-        ({"run_state": "failed"}, "terminal-evidence-unavailable"),
+        (
+            {"run_state": "failed", "terminal_evidence_readable": False},
+            "terminal-evidence-unavailable",
+        ),
     ],
 )
 def test_each_observation_that_cannot_prove_the_claim_stranded_holds(
@@ -230,3 +234,17 @@ def test_the_run_state_is_read_off_the_listing_this_pass_already_took(
         module.run_state_from_inventory(surveyed=surveyed, status_kinds=status_kinds, run_id=_RUN)
         == expected
     )
+
+
+def test_a_readable_terminal_failure_earns_the_completion_route() -> None:
+    """The route that adds no disposition of its own, only the Dispatcher's."""
+    module = _module()
+
+    graded = module.grade_claim(
+        measurements=_measurements(
+            module=module, run_state="failed", terminal_evidence_readable=True
+        )
+    )
+
+    assert isinstance(graded, module.ClaimRoute)
+    assert graded.action == module.ACTION_TERMINAL_COMPLETION

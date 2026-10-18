@@ -42,6 +42,7 @@ __all__: list[str] = [
     "STRANDED_CLAIM_RELEASE_STAGE",
     "STRANDED_CLAIM_REPEATED_STAGE",
     "STRANDED_CLAIM_TERMINAL_STAGE",
+    "ClaimLaneResult",
     "HeldClaim",
     "RecoveredClaim",
     "hold_journal_record",
@@ -120,6 +121,23 @@ class RecoveredClaim:
     route: str
     status: str
     effects_written: tuple[str, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class ClaimLaneResult:
+    """What one pass's CLAIM lane recovered and what it left alone.
+
+    It lives here, with the records, rather than beside the lane that produces
+    it, for an import reason that is load-bearing: `ReconcileInputs` declares
+    the lane as an injected seam and therefore has to name this type, while the
+    lane itself imports `ReconcileInputs`. A result type defined beside the lane
+    would close that loop — and the loop is not hypothetical, because the
+    terminal-completion route reaches the Dispatcher's own disposition modules,
+    one of which reaches the reconciler back.
+    """
+
+    recovered: tuple[RecoveredClaim, ...] = ()
+    held: tuple[HeldClaim, ...] = ()
 
 
 def recovery_journal_record(*, stage: str, recovered: RecoveredClaim) -> dict[str, object]:

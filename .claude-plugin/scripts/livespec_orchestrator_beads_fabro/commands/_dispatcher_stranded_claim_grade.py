@@ -50,6 +50,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatching_host imp
 __all__: list[str] = [
     "ACTION_ABSENT_RUN_RELEASE",
     "ACTION_ABSENT_RUN_REPEATED",
+    "ACTION_TERMINAL_COMPLETION",
     "ATTRIBUTION_PENDING_REMEDY",
     "FORGE_MERGED_PR",
     "FORGE_NO_MERGED_PR",
@@ -181,13 +182,16 @@ LIVE_RUN_STATUS_KINDS: frozenset[str] = frozenset(
 _SUCCEEDED_RUN_STATUS_KINDS: frozenset[str] = frozenset({"succeeded"})
 
 # ---------------------------------------------------------------------------
-# The two absent-run routes. They are PEERS rather than a route and its
-# refusal: the release returns the item to the queue and the repeat rests it
-# for a human, and which one a claim earns is decided by its predecessor.
+# The three recovery routes. The first two are PEERS rather than a route and
+# its refusal: the release returns the item to the queue and the repeat rests
+# it for a human, and which one a claim earns is decided by its predecessor.
+# The third adds no disposition of its own — it hands a terminal run to the
+# Dispatcher's own terminal handling.
 # ---------------------------------------------------------------------------
 
 ACTION_ABSENT_RUN_RELEASE = "absent-run-release"
 ACTION_ABSENT_RUN_REPEATED = "absent-run-repeated"
+ACTION_TERMINAL_COMPLETION = "terminal-run-completion"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -222,9 +226,19 @@ class AttributedClaim:
 class ClaimMeasurements:
     """Every measurement the ladder reads, taken before any of it is graded.
 
-    Each field is a CLOSED vocabulary rather than a boolean, because every one
-    of them has three answers and not two: the third is always "the
-    measurement could not be taken", and a boolean has nowhere to put it.
+    Each measurement field is a CLOSED vocabulary rather than a boolean,
+    because every one of them has three answers and not two: the third is
+    always "the measurement could not be taken", and a boolean has nowhere to
+    put it.
+
+    `terminal_evidence_readable` is the exception and IS a boolean, because its
+    third answer is already carried elsewhere: a run that is not terminal is
+    `run_state`'s business, so the only question left here is whether the
+    recorded failure of a FAILED run could be read. It is a SEPARATE field from
+    `run_state` because the two disagree in the one direction that matters — a
+    factory can report a run `failed` while the record carrying WHY cannot be
+    read, and a release route chosen without that record is chosen on no
+    evidence.
     """
 
     attributed: AttributedClaim
@@ -232,6 +246,7 @@ class ClaimMeasurements:
     owner_liveness: str
     forge: str
     predecessor: str
+    terminal_evidence_readable: bool
 
 
 def attribute_claim(
@@ -294,10 +309,9 @@ def grade_claim(*, measurements: ClaimMeasurements) -> ClaimRoute | ClaimHold:
         return ClaimHold(reason=observation)
     if measurements.run_state == RUN_ABSENT:
         return _absent_run_grade(measurements=measurements)
-    # A terminal run that did not succeed is a FAILED one, and completing its
-    # disposition needs its recorded failure evidence. Nothing reads that
-    # evidence yet, so it is unavailable, which is a hold rather than a verdict.
-    return ClaimHold(reason=HOLD_TERMINAL_EVIDENCE_UNAVAILABLE)
+    if not measurements.terminal_evidence_readable:
+        return ClaimHold(reason=HOLD_TERMINAL_EVIDENCE_UNAVAILABLE)
+    return ClaimRoute(action=ACTION_TERMINAL_COMPLETION)
 
 
 def _observation_hold(*, measurements: ClaimMeasurements) -> str | None:
