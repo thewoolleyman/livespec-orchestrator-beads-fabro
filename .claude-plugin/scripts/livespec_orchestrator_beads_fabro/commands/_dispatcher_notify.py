@@ -54,6 +54,9 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._run_attribution import (
+    NOTIFICATION_STAGE_PREFIX,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
@@ -98,6 +101,18 @@ _REDACTION_MARKER = "[redacted]"
 # Hard ceiling on every field that reaches the body, so an oversized id or
 # class can never carry a smuggled blob.
 _FIELD_MAX_LEN = 200
+
+# The journal stages this notifier writes, COMPOSED from the prefix
+# `_run_attribution` excludes from its Fabro-run reading rather than spelled
+# here. The `run_id` these rows carry is the DISPATCHER's own per-invocation
+# correlation id, so a reader that took it for a factory run id read every
+# notified dispatch as one that had created a run — which silently spent the
+# two-resume bound on attempts refused before any run existed (`bd-ib-upqaqw`).
+# Composing them is what makes that drift impossible: a stage renamed here can
+# only be renamed within the prefix the reader covers.
+_SENT_STAGE = f"{NOTIFICATION_STAGE_PREFIX}sent"
+_FAILED_STAGE = f"{NOTIFICATION_STAGE_PREFIX}failed"
+_SKIPPED_STAGE = f"{NOTIFICATION_STAGE_PREFIX}skipped"
 
 
 class JournalWriter(Protocol):
@@ -265,7 +280,7 @@ def _notify(
     env = dict(os.environ) if environ is None else environ
     topic = resolve_topic(environ=env)
     if topic is None:
-        journal.append(record={"stage": "notify-skipped", "reason": "no ntfy topic configured"})
+        journal.append(record={"stage": _SKIPPED_STAGE, "reason": "no ntfy topic configured"})
         return
     url = f"{resolve_server(environ=env)}/{topic}"
     safe_run_id = _clip(value=_scrub(value=run_id))
@@ -298,7 +313,7 @@ def _post_one(
     )
     journal.append(
         record={
-            "stage": "notify-sent" if delivered else "notify-failed",
+            "stage": _SENT_STAGE if delivered else _FAILED_STAGE,
             "work_item_id": work_item_id,
             "outcome_class": outcome_class,
             "run_id": run_id,
