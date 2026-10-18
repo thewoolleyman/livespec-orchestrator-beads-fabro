@@ -115,17 +115,54 @@ question maps onto, because the preflight's question is per-commit and
 per-job: did the aggregate job `ci-green` conclude `success` on the default
 branch head.
 
-Know the second-order consequence before you act on the check-runs reading,
-because it cuts the other way. The preflight's own instrument is
+Know what each surface actually answers before you act on the check-runs
+reading. The preflight's own instrument is
 `gh run list --branch <default-branch> --limit 1 --workflow CI --json status,conclusion,databaseId`
-followed by `gh run view <id> --json jobs`, and it treats a latest run whose
-status is `queued`, `in_progress`, `waiting`, `pending` or `requested` as an
-UNPROVABLE refusal — "the latest run `<id>` is still `<status>`" — not as a
-pass. So a watcher that sees green check-runs while `gh run list` still says
-`in_progress` should expect the dispatch to be refused as unprovable, not
-admitted. Read both surfaces: the check-runs endpoint answers whether the
-gating job passed, and the run-list surface answers whether the preflight will
-consider the question settled.
+followed by `gh run view <id> --json jobs`. So the check-runs endpoint answers
+whether the gating job passed on that commit, and the run-list surface answers
+what the preflight itself will read. A run-list reading of `in_progress` does
+NOT mean the dispatch will be refused — the preflight waits for that run's
+verdict, per the next section.
+
+## A pending run earns a bounded WAIT, not a refusal
+
+**The preflight waits up to 1800 seconds, polling every 60 seconds, on a latest
+default-branch CI run whose status is `queued`, `in_progress`, `waiting`,
+`pending` or `requested`, and refuses only on a concluded run that is not
+green.** A run that has not concluded has not failed, so a pending reading is
+deliberately not an outcome at all. The same five statuses earn the same wait
+when the RUN has completed but the aggregate job `ci-green` is still pending —
+the status the wait reports is whichever one the forge actually said.
+
+The module `_dispatcher_ci_preflight_wait.py`, under
+`.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/`, holds that
+bounded wait, so the numbers above can be re-read from the code rather than
+trusted from this prose: it declares `WAIT_BOUND_SECONDS = 1800.0` and
+`POLL_INTERVAL_SECONDS = 60.0`, both citing the ratified clause
+`SPECIFICATION/contracts.md` §"A still-running master CI run is not a failure".
+The bound is measured from the START of the preflight, not from the first
+pending reading, and each poll re-takes the WHOLE lookup — so a newer run that
+starts because master moved under the wait REPLACES the one being waited on.
+
+What is still refused immediately, without waiting: a run whose aggregate job
+concluded red, and every unprovable condition (no usable `gh` credential, an
+unresolvable pipeline, no runs yet on the branch, an unresolvable default
+branch, an aggregate conclusion that is neither green nor red). Only the bound
+expiring with the latest run still pending ends the step without a verdict, and
+that ending is a DEFERRAL, not a failure: journal reason `master-ci-pending`
+with `status: deferred`, no `ERROR:` prefix, no claim on the work item, and the
+remedy is simply to retry the dispatch when the run concludes.
+
+The consequence for anything watching master CI is the point of this file, and
+it inverts the advice this section replaced: **do not add a master-CI pre-check
+of your own.** `SPECIFICATION/contracts.md` §"A caller does not gate a dispatch
+on the default branch's CI" forbids a caller — operator, launch loop,
+supervising session or coordinator — from reading the default branch's latest
+run to decide whether to dispatch, or from holding, deferring or skipping a
+dispatch because that run is pending. On 2026-10-18 nine launching sessions
+each held launches behind a hand-rolled `ci-green` pre-check while the preflight
+would have waited the pending run out. Read the surfaces above to understand a
+refusal you have already been given, never to pre-empt one.
 
 ## A merge to master re-queues CI, so a green window is perishable
 
