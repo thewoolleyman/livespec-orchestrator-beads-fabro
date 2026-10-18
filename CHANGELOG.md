@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.215.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.215.0...v0.215.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **factory:** a Green-exempt non-.py head commit claims no open Red (bd-ib-rv7g4z) ([bb9364d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bb9364d2b4eed17431d04fbb3bbb1969d171639a))
+* **factory:** pr_refresh records its own cause for the needs_human terminal (bd-ib-rv7g4z) ([c6d80f4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c6d80f492a179dd39396578414267fa2229b7871))
+* **factory:** the needs_human terminal names the failing stage's own cause (bd-ib-rv7g4z) ([d09e651](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d09e6518ca59e6f5a6b3cd6c3b983ce849749427))
+* **factory:** the open-Red reason requires a changed .py in the head commit (bd-ib-rv7g4z) ([09437af](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/09437af484629fc127fd2b3dfbf1e92beb16517c))
+
 ## [0.215.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.214.1...v0.215.0) (2026-10-18)
 
 
