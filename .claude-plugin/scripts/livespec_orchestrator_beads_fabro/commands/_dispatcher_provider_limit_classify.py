@@ -62,6 +62,24 @@ provider ceiling the cause-text classification already recognised, so the item
 must not sit on a human for want of a signature somebody had not declared
 yet -- and taking the legacy arm there mints no hold, so nothing is asserted
 about an entitlement that was not measured.
+
+BUT A NON-ELIGIBLE GUARD CLASS OUTRANKS BOTH ARMS, THE LEGACY ONE INCLUDED.
+`SPECIFICATION/contracts.md` keeps those classes "non-eligible before
+configured matching" and says in as many words that they "mint no hold, are
+not released for re-dispatch, and keep their original identity and their
+existing route". The eligible arm already honours that, because
+`classify_acp_failure` checks the guard first; the legacy arm did not, and the
+gap is not theoretical: `provider_usage_limit` is derived from the cause TEXT,
+so a failure whose sentence happens to carry a provider's limit vocabulary
+sets the flag whatever the real fault was. A node deadline released that way
+returns a run that spent its whole node timeout making genuine progress to
+`ready` as though an allowance had been spent, and then re-dispatches it from
+scratch -- the one outcome the class exists to prevent.
+
+The guard is read from the failure's OWN sentence rather than from a verdict,
+so it applies with no resolved candidate at all. That matters, because the
+no-candidate reading is precisely the one that otherwise reaches the legacy
+route without any classification being attempted.
 """
 
 from __future__ import annotations
@@ -74,7 +92,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_failure_classifier import (
     AcpAvailabilityFailure,
     classify_acp_failure,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_failure_signals import AcpFailureSignal
+from livespec_orchestrator_beads_fabro.commands._acp_failure_signals import (
+    AcpFailureSignal,
+    non_eligible_reason,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import FabroFailureDetail
 
 __all__: list[str] = [
@@ -178,7 +199,13 @@ def classified_release(
     signatures` reads. `None` means no entitlement was recorded for that node,
     which is the identity-less legacy posture rather than a failure to measure.
     """
-    matched = _eligible(failure=failure, rendered=rendered)
+    signal = provider_limit_signal(failure=failure)
+    # BEFORE either arm, because the guard classes sit before configured
+    # matching and are "not released for re-dispatch" -- see the module
+    # docstring for why the legacy arm needs this and the eligible one does not.
+    if non_eligible_reason(signal=signal) is not None:
+        return None
+    matched = _eligible(signal=signal, rendered=rendered)
     if matched is None and not failure.provider_usage_limit:
         return None
     return ProviderLimitRelease(
@@ -197,7 +224,7 @@ def classified_release(
 
 
 def _eligible(
-    *, failure: FabroFailureDetail, rendered: RenderedCandidate | None
+    *, signal: AcpFailureSignal, rendered: RenderedCandidate | None
 ) -> AcpAvailabilityFailure | None:
     """This attempt's eligible availability verdict, or `None` for every other.
 
@@ -205,11 +232,15 @@ def _eligible(
     them all the same treatment -- the failure keeps its existing route -- and
     `AcpNonEligibleFailure` already carries the reason for a surface that needs
     to report it.
+
+    The signal is handed DOWN rather than rebuilt here, so the guard the caller
+    consulted and the classification taken afterwards are two readings of one
+    signal rather than of two that happen to agree.
     """
     if rendered is None:
         return None
     verdict = classify_acp_failure(
-        signal=provider_limit_signal(failure=failure),
+        signal=signal,
         candidate=rendered.candidate,
         builtin=rendered.builtin,
     )

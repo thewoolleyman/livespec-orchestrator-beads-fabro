@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.211.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.211.2...v0.211.3) (2026-10-17)
+
+
+### Bug Fixes
+
+* **proof-capture:** anchor a git-history reproduction step to a fixed sha ([3578320](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3578320f708f0aac196b33027622076ac0917603))
+* **proof-capture:** give the moving-HEAD reason inside the anchoring rule ([2529dcc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2529dccc827f9e06a32d81253b2297541d478807))
+* **proof-capture:** work the anchoring rule with a rejected and an accepted example ([21d59e8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/21d59e80262ffe94addc2e96c670f310385bace3))
+
+## [0.211.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.211.1...v0.211.2) (2026-10-17)
+
+
+### Bug Fixes
+
+* a node-deadline guard outranks the legacy release arm (bd-ib-yw7otf) ([296c7a0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/296c7a0709332f866e10fe577f99f0044388cd00))
+* classify an ACP turn timeout as a node deadline (bd-ib-yw7otf) ([1f752e4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1f752e4701ea08a8340a97d58c1c283ddf8c8af9))
+
 ## [0.211.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.211.0...v0.211.1) (2026-10-17)
 
 

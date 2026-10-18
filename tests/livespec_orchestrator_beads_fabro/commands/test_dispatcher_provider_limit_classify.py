@@ -66,6 +66,16 @@ _SOURCE = (
 # this way in one day and every one rested at `blocked / needs-human`
 # (ledger rider on `bd-ib-6itdjz`).
 _SESSION_LIMIT = "You have hit your session limit, resets 7:20pm (UTC)"
+# MEASURED 2026-10-17 on hp, run 01M54W4YM2SWANMK515YNPFY7J of `bd-ib-6itdjz`:
+# the implement attempt's recorded `causes[-1]` after four hours of genuine
+# progress -- 360 completed tool calls, 14 git commits, and no 429, overloaded,
+# rate-limit, stream-reset or headroom text anywhere in `run.log`. Fabro
+# categorised it `transient_infra`, which is the SAME category the session-limit
+# cause above carries, so the category cannot tell the two apart.
+_TURN_TIMEOUT = (
+    "ACP turn timed out after 345 tool call(s) and 3658 session update(s); "
+    "last update at 13344311ms"
+)
 _SIGNATURE = "implement|transient_infra|acp turn failed"
 
 _DECLARED_QUOTA = {
@@ -256,6 +266,57 @@ def test_a_failure_recording_no_cause_at_all_keeps_its_route() -> None:
         _release(
             failure=_failure(cause=None),
             rendered=_rendered(identity=_IDENTITY, declared=_DECLARED_QUOTA),
+        )
+        is None
+    )
+
+
+def test_a_turn_timeout_is_not_released_even_carrying_the_typed_flag() -> None:
+    """A non-eligible GUARD verdict outranks the legacy provider-usage-limit arm.
+
+    The two arms above are a disjunction, so the legacy arm releases a failure
+    whose declared signatures did not match -- and `unmatched` is exactly where
+    an unrecognised cause lands. A node deadline must NOT travel that route:
+    `SPECIFICATION/contracts.md` section "Factory-configurable ACP fallback
+    priority" puts "node deadline or stall expiry" among the classes that "mint
+    no hold, are not released for re-dispatch, and keep their original identity
+    and their existing route", and Scenario 127's "Non-eligible failures
+    outrank configured text overlap" names `node timeout` in that list.
+
+    The flag is derived from the cause TEXT, so a timeout sentence that happens
+    to carry a provider's limit vocabulary sets it -- and releasing on it would
+    return a run that spent four hours making genuine progress to `ready` as
+    though an allowance had been spent, then re-dispatch it from scratch. The
+    guard is read from the failure's own sentence, so it outranks the flag
+    whether or not a candidate was resolved for the failing node: both arms are
+    asserted, because the identity-less arm is the one that reaches the legacy
+    route with no classification at all.
+
+    The POSITIVE CONTROL is `test_an_identity_less_adapter_releases_on_the_
+    typed_flag_alone` above, which carries the identical flag on a genuine
+    provider sentence and DOES release. Without it this case would also pass
+    against a build that had stopped honouring the typed flag entirely.
+    """
+    assert _SOURCE.is_file()
+    timeout = _failure(cause=_TURN_TIMEOUT, usage_limit=True)
+
+    assert _release(failure=timeout, rendered=_rendered(identity=None, declared=None)) is None
+    assert _release(failure=timeout, rendered=None) is None
+    # And with an identity plus a declared signature whose literal the timeout
+    # sentence satisfies, the guard still wins: the class sits BEFORE configured
+    # matching, so no declaration can claim it.
+    assert (
+        _release(
+            failure=timeout,
+            rendered=_rendered(
+                identity=_IDENTITY,
+                declared={
+                    "source": "protocol.message",
+                    "cause": "quota",
+                    "scope": "availability-domain",
+                    "all_literals": ["timed out"],
+                },
+            ),
         )
         is None
     )

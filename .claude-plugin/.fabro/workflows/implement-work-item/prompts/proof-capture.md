@@ -88,6 +88,15 @@ concrete, copy-pasteable action or command. The steps must be:
 
 - **Deterministic.** No "check that it looks right"; name the exact
   command and the exact expected observation.
+  A step that reads git history MUST name a fixed commit sha, or use a
+  depth-independent predicate. It MUST NEVER expect a commit inside a
+  fixed-size window counted from HEAD.
+  The reason: the engine appends a checkpoint commit after every node,
+  so HEAD moves between capture and replay. A commit the window held
+  when you captured sits below it by the time the replay leg looks.
+  Rejected: `git log --max-count=2 --format=%H HEAD`, expecting a given
+  sha among its lines.
+  Accepted: `git merge-base --is-ancestor <sha> HEAD`.
 - **Rooted in this sandbox.** Start from the clone's working directory and
   the tooling the sandbox actually has.
 - **Credential-safe.** Where a step needs a credential, name it by its
