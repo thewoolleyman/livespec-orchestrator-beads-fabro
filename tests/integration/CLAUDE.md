@@ -844,7 +844,11 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   satisfied identically by the one outcome the clause forbids — a confident
   claim that the factory dropped the run, earned from a read that saw nothing.
   Every case asserts a poll-count FLOOR and the shape of the tail rather than an
-  exact count, because a poll can still land while the launch thread unwinds.
+  exact count, because the floor is what each clause is about. That used to be a
+  concession to a race as well — a poll could still land while the launch thread
+  unwound — and it is not any more: the fixture releases the run through
+  `end_run_and_await_launcher_return`, which waits on the LAUNCHER's own thread
+  rather than on the fake runner's too-early signal (bd-ib-spc6xr).
 
 - `test_workflow_refresh_repair_scenario176.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 176 and the two `contracts.md`

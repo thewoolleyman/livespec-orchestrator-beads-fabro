@@ -63,6 +63,8 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import REPOSITORY
 from livespec_orchestrator_beads_fabro.commands._otel_heartbeat import read_beats
 from livespec_orchestrator_beads_fabro.commands._otel_receive import HeartbeatSink
 
+from tests.conftest import end_run_and_await_launcher_return
+
 # ---------------------------------------------------------------------------
 # Shared fakes / helpers
 # ---------------------------------------------------------------------------
@@ -344,6 +346,12 @@ _INSPECT_RUNNING = '[{"run_id": "01RUN", "status": {"kind": "running"}}]'
 _HEARTBEAT_WORK_ITEM_ID = "livespec-impl-beads-oyg"
 _HEARTBEAT_DISPATCH_ID = "ba06d4268df24488a01beb352a6d0e7f"
 
+# The gap a poll-counting case injects between the fake runner's own return
+# signal and its return, so the launcher is still publishing its result when
+# the fixture's wait is asked whether the run is over. The fixture's wait is
+# what makes the count deterministic, so this number bounds nothing.
+_RETURN_GAP_SECONDS = 0.2
+
 # The one frozen `fabro events` reading the launcher fixtures below share,
 # with its epoch spelled beside it so a heartbeat fixture can be stamped on
 # the SAME clock. Two layers stamped in different eras cannot model a run:
@@ -387,9 +395,22 @@ class _ScriptedFabroRunner:
     `fabro rm` sets `run_done`. The wall-clock event reading is whatever
     `events_jsons` supplies — but with a heartbeat present the launcher's
     PRIMARY layer is the heartbeat file, not these events.
+
+    `run_returned` is this fake's OWN account of returning, and NO fixture
+    below waits on it: it fires before `port.run` has returned and so before
+    the launcher has published anything, which is one step too early to read
+    as the run being over (bd-ib-spc6xr). It stays because it MARKS that
+    too-early instant, which is what `return_gap_seconds` is measured from —
+    the gap widens the stretch between this signal and this fake's return,
+    which is the stretch the launcher then spends publishing its result
+    before setting its own signal. A case that pins how many times the watch
+    loop polled declares a gap here, so that count is decided by
+    `end_run_and_await_launcher_return` rather than by how promptly the host
+    schedules the run thread.
     """
 
     events_jsons: list[str]
+    return_gap_seconds: float = 0.0
     run_done: threading.Event = field(default_factory=threading.Event)
     run_returned: threading.Event = field(default_factory=threading.Event)
     rm_calls: list[str] = field(default_factory=list)
@@ -408,6 +429,8 @@ class _ScriptedFabroRunner:
         if verb == "run":
             _ = self.run_done.wait(timeout=10.0)
             self.run_returned.set()
+            # The gap this fake declares, held between its signal and its return.
+            _ = threading.Event().wait(timeout=self.return_gap_seconds)
             return CommandResult(exit_code=0, stdout="    Run: 01RUN\n", stderr="")
         if verb == "ps":
             return CommandResult(exit_code=0, stdout=_PS_RUNNING, stderr="")
@@ -470,13 +493,14 @@ def test_launcher_never_cancels_while_events_advance_past_a_frozen_heartbeat(
 
     def _sleep_then_finish(_seconds: float) -> None:
         # End the run from the (single-threaded under test) sleep hook once
-        # enough polls have confirmed CONTINUE, and WAIT for the background
-        # run to return so the loop stops at a known poll count rather than
-        # spinning extra polls while the OS schedules the run thread.
+        # enough polls have confirmed CONTINUE, and WAIT for the LAUNCHER to
+        # observe that return, so the loop stops at a known poll count rather
+        # than taking one more sample while the launcher publishes its result.
         polls["n"] += 1
         if polls["n"] >= 4:
-            runner.run_done.set()
-            assert runner.run_returned.wait(timeout=1.0)
+            end_run_and_await_launcher_return(
+                run_done=runner.run_done, work_item_id=_HEARTBEAT_WORK_ITEM_ID
+            )
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(
@@ -547,16 +571,26 @@ def test_launcher_with_fresh_advancing_heartbeat_never_cancels(tmp_path: Path) -
     heartbeat_path = tmp_path / "j-otel-heartbeat.json"
     sink = HeartbeatSink(path=heartbeat_path)
     sink.beat(key=_HEARTBEAT_WORK_ITEM_ID, at=_FROZEN_EVENT_EPOCH)
-    runner = _ScriptedFabroRunner(events_jsons=[_FROZEN_EVENT_JSON])
+    runner = _ScriptedFabroRunner(
+        events_jsons=[_FROZEN_EVENT_JSON], return_gap_seconds=_RETURN_GAP_SECONDS
+    )
     polls = {"n": 0}
 
     def _advance_heartbeat_then_finish(_seconds: float) -> None:
         # Each poll the live run exports a fresh metric -> the heartbeat
-        # advances; after a few polls end the run so launch() returns.
+        # advances; after a few polls end the run and WAIT for the LAUNCHER to
+        # observe that return, so the loop stops at a known poll count. This
+        # hook took no wait at all until bd-ib-spc6xr, so it kept polling for
+        # as long as the launcher took to publish its result and the count
+        # below was whatever the host's scheduling happened to produce —
+        # measured at 420 polls against this baseline of 4 under the gap the
+        # runner now injects.
         polls["n"] += 1
         sink.beat(key=_HEARTBEAT_WORK_ITEM_ID, at=_FROZEN_EVENT_EPOCH + polls["n"] * 600.0)
         if polls["n"] >= 4:
-            runner.run_done.set()
+            end_run_and_await_launcher_return(
+                run_done=runner.run_done, work_item_id=_HEARTBEAT_WORK_ITEM_ID
+            )
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(
@@ -567,3 +601,4 @@ def test_launcher_with_fresh_advancing_heartbeat_never_cancels(tmp_path: Path) -
     result = launcher.launch(plan=_watchdog_plan(repo=tmp_path), runner=runner, journal=journal)
     assert result.stalled_run_id is None
     assert runner.rm_calls == []
+    assert polls["n"] == 4
