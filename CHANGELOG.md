@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.211.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.211.3...v0.211.4) (2026-10-18)
+
+
+### Bug Fixes
+
+* **dispatcher:** authenticate publication before mutation ([a4e8acc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a4e8acca07c5554298038bb07b7f5e9e1be7622b))
+* **dispatcher:** authenticate terminal publication ([c934b61](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c934b6108fb19d9b163a25ce9d12f003d6317ebc))
+* **dispatcher:** complete the route the engine actually ran ([468f47b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/468f47bf1b422d54040a7a804666308c86d11b7c))
+* **dispatcher:** fail closed on an unmeasurable success route ([01b16b4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/01b16b47b51287c661d60b5b13e94784f20e6e8b))
+* **dispatcher:** fail closed on malformed node outcomes ([e303ace](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e303ace5632b861aac54c7b33d7d65dad4ae7c1a))
+* **dispatcher:** fail closed on unavailable terminal evidence ([90fee96](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/90fee96a0726cc8a2de6029ac1d60c483690e929))
+* **dispatcher:** grade the route the engine actually graded ([c4808ca](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c4808cacdfb99f11f311026019e4abc871cadcc5))
+* **dispatcher:** journal terminal evidence conflict ([612d9cd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/612d9cd85be008ad129dd9d2430c918298a94ec9))
+* **dispatcher:** preserve non-green terminal controls ([2ae200b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2ae200b7dc26dd03a1d0fc66a8d8e1a6bce065ea))
+* **dispatcher:** reauthenticate publication before mutation ([fac0a47](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fac0a4769f8dffa20a8bfdf958f6a6afefa84061))
+* **dispatcher:** reconcile terminal success after store loss ([675c7a5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/675c7a5b88e50a72b58fe475f4ac55aa120f4cb0))
+
 ## [0.211.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.211.2...v0.211.3) (2026-10-17)
 
 
