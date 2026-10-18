@@ -107,6 +107,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import (
     AcpHoldLedger,
     read_acp_hold_ledger,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_hold_retirement import retained_holds
 from livespec_orchestrator_beads_fabro.commands._acp_node_repository import repository_acp_chains
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import (
     AcpPreflightVerdict,
@@ -441,10 +442,24 @@ def _host_wide_ledger(
 
 
 def _unioned(*, ledger: AcpHoldLedger, evidence: FactoryHoldEvidence) -> AcpHoldLedger:
-    """One repository's journal fold and one host-wide read, as one ledger."""
+    """One repository's journal fold and one host-wide read, as one ledger.
+
+    The RETIREMENT ROUTES ARE APPLIED HERE, over both halves at once, because
+    this is the only place both are in hand. Neither producer can do it: the
+    factory read cannot be handed a journal, so it can neither see an
+    operator's clearance line nor know that one exists, and the journal fold
+    cannot see a factory, so it can neither derive a later success nor apply
+    one. Appending the two halves raw was therefore two separate losses -- a
+    factory-derived record no clearance could retire, and a later success no
+    record could be retired BY.
+    """
     return replace(
         ledger,
-        holds=(*ledger.holds, *evidence.holds),
+        holds=retained_holds(
+            holds=(*ledger.holds, *evidence.holds),
+            successes=evidence.successes,
+            retired_observation_ids=ledger.retired_observation_ids,
+        ),
         unobservable=(*ledger.unobservable, *evidence.unobservable),
         unconfirmed_keys=evidence.unconfirmed_keys,
     )
