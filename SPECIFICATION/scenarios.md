@@ -7058,3 +7058,85 @@ Feature: The claim half of run reconciliation
     Then no second stranded-claim-release record and no second ledger comment is written
     And the item stays ready
 ```
+
+## Scenario 197 — A sandbox agent cannot remove the clone's repository or empty its whole tree, and ordinary in-tree removals still run
+
+Governing clause: `contracts.md` §"ACP node timeouts" → "The run's repository survives the agent." and "One decision covers the run's protections."
+
+```gherkin
+Feature: The clone's repository and its whole tree survive the agent inside the factory sandbox
+  As the maintainer of a repository dispatched through the factory
+  I want an agent command that would destroy the clone's repository or empty its tree refused before it runs
+  So that the engine's next checkpoint commit neither fails nor deletes the run's work
+
+  Background:
+    Given the implement-stage agent's ACP adapter runtime offers a hook that runs before each shell command
+    And an implement-stage agent inside a factory sandbox whose clone is <clone>
+    And the top level of <clone> holds the directory .git, the directories src and build, and the file README.md
+
+  Scenario: removing the clone's .git directory is refused before it runs
+    When the agent runs a shell command "rm -rf <clone>/.git"
+    Then the command is refused before any part of it executes
+    And the refusal names <clone>/.git as the protected path
+
+  Scenario: emptying the clone's top level through a glob is refused
+    When the agent runs a shell command "cd <clone> && rm -rf ./*"
+    Then the command is refused and the refusal names <clone> as the protected path
+
+  Scenario: an allowed removal does not exempt a refused one in the same command
+    When the agent runs a shell command "rm -rf <clone>/build <clone>/.git"
+    Then the command is refused and the refusal names <clone>/.git as the protected path
+
+  Scenario: removals that leave a top-level entry still run
+    When the agent runs "rm -rf <clone>/build" and then "rm <clone>/README.md"
+    Then neither command is refused
+    And <clone>/src still exists
+
+  Scenario: the clone's .git directory mentioned only as data is not refused
+    When the agent runs a shell command that passes "rm -rf <clone>/.git" to echo
+    Then the command is not refused
+```
+
+## Scenario 198 — A sandbox agent cannot signal the sandbox's PID 1 or its own adapter, and signals to its own processes still run
+
+Governing clause: `contracts.md` §"ACP node timeouts" → "The run's sandbox processes survive the agent." and "One decision covers the run's protections."
+
+```gherkin
+Feature: The sandbox's PID 1 and the agent adapter survive the agent's signals inside the factory sandbox
+  As the maintainer of a repository dispatched through the factory
+  I want an agent command that would signal the sandbox's PID 1 or its own adapter refused before it runs
+  So that a cleanup step cannot kill the sandbox the engine still needs
+
+  Background:
+    Given the implement-stage agent's ACP adapter runtime offers a hook that runs before each shell command
+    And a factory sandbox whose PID 1 command line is "/bin/bash -lc mkdir -p /workspace && sleep infinity"
+    And the ACP agent adapter process has process id <adapter-pid> and the command line "node /usr/local/lib/claude-agent-acp/dist/index.js"
+    And the guard can read the command lines of PID 1 and of the ACP agent adapter process
+    And the agent started "python3 -m http.server 8765" in the background and recorded its process id <own-pid>
+    And neither the name nor the command line of PID 1 or of the ACP agent adapter process matches the pattern "http.server 8765"
+
+  Scenario: a pattern that matches PID 1's command line is refused
+    When the agent runs a shell command "pkill -f 'sleep'"
+    Then the command is refused before any part of it executes
+    And the refusal names PID 1 and the pattern sleep
+
+  Scenario: a selection filter does not remove a pattern's match on PID 1
+    When the agent runs a shell command "pkill -f -P <own-pid> 'sleep'"
+    Then the command is refused and the refusal names PID 1 and the pattern sleep
+
+  Scenario: signalling PID 1, or every process, by id is refused
+    When the agent runs a shell command "kill -TERM 1" or "kill -TERM -- -1"
+    Then each command is refused and the refusal names the protected process and the operand it matched
+
+  Scenario: signalling the adapter by id or by pattern is refused
+    When the agent runs a shell command "kill <adapter-pid>" or "pkill -f 'claude-agent-acp'"
+    Then each command is refused and the refusal names the ACP agent adapter process and the operand or pattern it matched
+
+  Scenario: an allowed segment does not exempt a refused one in the same command
+    When the agent runs a shell command "rm -rf /tmp/layout-sim; kill -TERM 1"
+    Then the command is refused and the refusal names PID 1
+
+  Scenario: signalling a process the agent started still runs
+    When the agent runs "kill <own-pid>", "kill -1 <own-pid>" and "pkill -f 'http.server 8765'"
+    Then none of the commands is refused
+```
