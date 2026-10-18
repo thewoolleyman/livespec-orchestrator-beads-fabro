@@ -37,6 +37,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_pl
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
+from tests.conftest import end_run_and_await_launcher_return
+
 _WORK_ITEM_ID = "bd-ib-6pdigz"
 _RUN_ID = "01M4BOUNDRUN"
 # The factory's listing, carrying the one row this dispatch owns. Reachable
@@ -86,6 +88,13 @@ class _FactoryRunner:
     clamped to the last entry so a case states only the readings it cares
     about. Every argv is kept whole rather than reduced to a verb, because a
     read addressed to the wrong run answers perfectly well.
+
+    `run_returned` is THIS FAKE'S account of its own `fabro run` call ending,
+    and NO fixture may end a healthy run on it: it fires before `_run`
+    returns, so the launcher is still inside `port.run` — and publishes its
+    own signal strictly later — when a fixture waiting on it resumes.
+    `end_run_and_await_launcher_return` is the only correct wait; its
+    docstring carries the measurement.
     """
 
     inspect_readings: list[tuple[int, str, str]]
@@ -199,8 +208,7 @@ def _launch(
         # rather than an exact poll count.
         slept["polls"] += 1
         if slept["polls"] > polls_before_the_run_ends:
-            runner.run_done.set()
-            assert runner.run_returned.wait(timeout=5.0)
+            end_run_and_await_launcher_return(run_done=runner.run_done, work_item_id=_WORK_ITEM_ID)
 
     repo = _repo(tmp_path=tmp_path)
     _ = WatchedFabroLauncher(sleep=_sleep, clock=lambda: 0.0).launch(

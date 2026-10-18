@@ -63,6 +63,8 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import REPOSITORY
 from livespec_orchestrator_beads_fabro.commands._otel_heartbeat import read_beats
 from livespec_orchestrator_beads_fabro.commands._otel_receive import HeartbeatSink
 
+from tests.conftest import end_run_and_await_launcher_return
+
 # ---------------------------------------------------------------------------
 # Shared fakes / helpers
 # ---------------------------------------------------------------------------
@@ -387,6 +389,13 @@ class _ScriptedFabroRunner:
     `fabro rm` sets `run_done`. The wall-clock event reading is whatever
     `events_jsons` supplies — but with a heartbeat present the launcher's
     PRIMARY layer is the heartbeat file, not these events.
+
+    `run_returned` is THIS FAKE'S account of its own `fabro run` call
+    ending, and NO fixture may end a healthy run on it: it fires before
+    this method returns, so the launcher is still inside `port.run` — and
+    publishes its own signal strictly later — when a fixture waiting on it
+    resumes. `end_run_and_await_launcher_return` is the only correct wait;
+    its docstring carries the measurement.
     """
 
     events_jsons: list[str]
@@ -470,13 +479,14 @@ def test_launcher_never_cancels_while_events_advance_past_a_frozen_heartbeat(
 
     def _sleep_then_finish(_seconds: float) -> None:
         # End the run from the (single-threaded under test) sleep hook once
-        # enough polls have confirmed CONTINUE, and WAIT for the background
-        # run to return so the loop stops at a known poll count rather than
-        # spinning extra polls while the OS schedules the run thread.
+        # enough polls have confirmed CONTINUE, and WAIT for the LAUNCHER to
+        # observe that return so the loop stops at a known poll count rather
+        # than spinning extra polls while the OS schedules the run thread.
         polls["n"] += 1
         if polls["n"] >= 4:
-            runner.run_done.set()
-            assert runner.run_returned.wait(timeout=1.0)
+            end_run_and_await_launcher_return(
+                run_done=runner.run_done, work_item_id=_HEARTBEAT_WORK_ITEM_ID
+            )
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(

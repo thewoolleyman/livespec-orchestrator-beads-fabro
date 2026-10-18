@@ -30,6 +30,12 @@ the top level so it reaches every subtree; it points `CODEX_HOME` at a
 per-test scratch dir carrying a far-future-`exp` fake credential. Tests
 asserting the missing/stale paths override it explicitly (delenv / point
 at an empty dir / monkeypatch the read).
+
+It also carries ONE non-fixture helper — `end_run_and_await_launcher_return`
+— for the same reason the fixtures are here: its callers live in two
+different test trees, and the whole point of it is that all of them take the
+SAME wait. Its own section below records what it measures and why no fixture
+may measure it any other way.
 """
 
 from __future__ import annotations
@@ -38,6 +44,7 @@ import base64
 import json
 import os
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -657,3 +664,80 @@ def resolve_test_acp_nodes() -> ResolveAcpNodes:
         return resolution
 
     return _resolve
+
+
+# ---------------------------------------------------------------------------
+# The watched launcher's own run thread — the ONE signal a fixture may end a
+# healthy scripted run on
+# ---------------------------------------------------------------------------
+
+# How long a fixture waits for the launcher's `fabro run` call to come back.
+# It is a FIXTURE'S patience and not a production budget: every scripted
+# runner returns the moment its `run_done` is set, so a wait that reaches
+# this bound is a wedged test rather than a slow one.
+_LAUNCHER_RUN_THREAD_JOIN_SECONDS = 5.0
+
+
+def end_run_and_await_launcher_return(*, run_done: threading.Event, work_item_id: str) -> None:
+    """End a scripted healthy run and wait until the LAUNCHER has observed its return.
+
+    Every watchdog-launcher case that lets a healthy run finish does it from
+    the injected sleep hook, because that hook is the only place a
+    single-threaded test can act between two polls. The hook therefore has to
+    answer one question before it hands control back: has the WATCH LOOP's own
+    end-of-run condition become true? If it has not, the loop resumes and takes
+    another liveness sample — and under the 600-seconds-per-call clock these
+    cases inject, one extra sample is 600 seconds of quiet, which is how a
+    fixture manufactures the very stall its case asserts never happens.
+
+    The fake runner's OWN `run_returned` cannot answer it, and that is the
+    defect this helper repairs. `_ScriptedFabroRunner._run` sets that event and
+    THEN returns, so the launcher is still inside `port.run` when a fixture
+    waiting on it resumes: `WatchedFabroLauncher.launch` sets its own
+    `run_returned` only after `port.run` has returned AND the result has been
+    published, which is strictly later. Under load the gap widens, and a
+    fixture released into it takes the extra sample. Measured 2026-10-18 in
+    gate run 20261018T062039Z-3681040 at load15 16-20: one failure in 9,335
+    tests, `test_watched_launcher_does_not_cancel_while_a_command_node_is_open`
+    asserting `stalled_run_id is None` and getting `'01RUN'`, passing 5 of 5 in
+    isolation. Production is unaffected — with a real clock an extra sample
+    costs seconds, not 600 — and `f760ca40` already ends the watch on the run's
+    return; `86f0dad7` moved the fixture's wait onto the fake runner's signal,
+    which is one step too early.
+
+    So the wait is taken on the LAUNCHER's side, by joining the run thread the
+    launcher names `fabro-run-<work item id>`. The thread exits only after
+    `_run_fabro` has published the result and set the launcher's own signal, so
+    a returned join means the loop's condition is already true whatever the
+    scheduler did in between.
+
+    The thread is LOCATED BEFORE the run is released, which is a correctness
+    requirement and not tidiness: released first, the thread can finish and
+    leave `threading.enumerate()` before this function looks, and a lookup that
+    found nothing would report a healthy run as a missing one.
+    """
+    thread = _launcher_run_thread(work_item_id=work_item_id)
+    run_done.set()
+    thread.join(timeout=_LAUNCHER_RUN_THREAD_JOIN_SECONDS)
+    assert not thread.is_alive(), (
+        f"{thread.name} was still running {_LAUNCHER_RUN_THREAD_JOIN_SECONDS}s "
+        "after the scripted run was released"
+    )
+
+
+def _launcher_run_thread(*, work_item_id: str) -> threading.Thread:
+    """The launcher's own `fabro run` thread for one work item.
+
+    EXACTLY ONE is required rather than "the first that matches", because
+    both other answers are silent. Zero means this fixture's wait would be a
+    no-op — which is the pre-repair behaviour arriving by a different route,
+    and the one failure mode a wait helper must not have — and it is also what
+    a rename of the launcher's thread name looks like from here, since the name
+    is composed inline in `_dispatcher_io_fabro_launcher` and no import binds
+    the two spellings together. More than one means a previous case leaked a
+    live thread, so this case's wait would join the wrong run.
+    """
+    name = f"fabro-run-{work_item_id}"
+    matched = [thread for thread in threading.enumerate() if thread.name == name]
+    assert len(matched) == 1, f"expected exactly one live {name!r} thread, found {len(matched)}"
+    return matched[0]
