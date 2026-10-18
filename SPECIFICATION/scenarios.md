@@ -6854,3 +6854,23 @@ Feature: A node-timeout cut neither discards a commit under way nor hides its ca
     Then the dispatch journal has a hook-over-limit row naming the fix node, the git commit operation and the node's resolved timeout in seconds
     And every process of that hook run is terminated before the next git commit or push in the sandbox starts
 ```
+
+## Scenario 194 — A conflicted pyproject.toml does not make the repository's agent hooks refuse every tool call
+
+```gherkin
+Feature: The repository's agent hooks survive an unparseable project manifest
+  As an agent repairing a refresh conflict in this repository
+  I want the repository's PreToolUse hooks to leave my tools usable while pyproject.toml is conflicted
+  So that the repair can fix the file whose conflict would otherwise disable it
+
+  Scenario: A conflicted pyproject.toml lets a guarded tool call through and says so
+    Given this repository's pyproject.toml carries unresolved merge-conflict markers
+    When an agent makes a Bash, Write, Edit or MultiEdit call that a uv-launched PreToolUse hook command of this repository guards
+    Then that hook command allows the call
+    And it writes one line to standard error naming pyproject.toml as unparseable and stating that its guard was skipped for that call
+
+  Scenario: A parseable pyproject.toml leaves every guard decision unchanged
+    Given this repository's pyproject.toml parses
+    When an agent makes a tool call that a uv-launched PreToolUse hook command of this repository guards
+    Then that hook command returns the same allow or refuse decision it returned before this scenario was ratified
+```
