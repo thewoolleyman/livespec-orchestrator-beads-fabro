@@ -45,7 +45,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_prese
     create_ref_argv,
     preserved_publish_ref,
 )
-from livespec_orchestrator_beads_fabro.commands._fabro_run_files import RunFile
+from livespec_orchestrator_beads_fabro.commands._fabro_run_files import RunFile, RunFiles
 
 __all__: list[str] = [
     "STEP_BLOB",
@@ -79,11 +79,22 @@ _TREES_ENDPOINT = "/repos/{owner}/{repo}/git/trees"
 
 @dataclass(frozen=True, kw_only=True)
 class PreservedTree:
-    """The ref the run's tree now rests on, and the commit it carries."""
+    """The ref the run's tree now rests on, and the commit it carries.
+
+    `scope` and `source` are the factory's OWN account of what it served, read
+    off the run-files response and carried here unchanged, because they are
+    what decide what this ref CONTAINS: a `committed` scope means the ref
+    carries the run's committed work only, so uncommitted work in the dead
+    sandbox is not in it. Both are optional readings and both are REQUIRED
+    arguments -- a default is how one publication silently reports the
+    nothing-was-served answer for a read that did report one.
+    """
 
     ref: str
     commit: str
     file_count: int
+    scope: str | None
+    source: str | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -100,10 +111,18 @@ def publish_preserved_tree(
     repo: Path,
     work_item_id: str,
     base_commit: str,
-    files: tuple[RunFile, ...],
+    read: RunFiles,
     message: str,
 ) -> PreservedTree | PublishFailure:
-    """Put `files` on a preservation ref as one commit over `base_commit`.
+    """Put one run-files read on a preservation ref as a commit over `base_commit`.
+
+    THE WHOLE READ ARRIVES, not just its files, because the factory's own
+    account of what it served -- the scope it answered from and where it read
+    that -- says what the published ref CONTAINS, and the ledger comment that
+    names the ref is rendered from this result. Passing the two readings
+    alongside the files instead would let a caller publish one read's bytes
+    under another read's provenance; they travel together because they are one
+    reading. This module still touches no factory and reads neither.
 
     The base TREE is read before anything is created, because a tree built
     without it would carry only the files the run touched and would read as a
@@ -122,7 +141,7 @@ def publish_preserved_tree(
             step=STEP_TREE,
             detail=f"the forge named no tree for the run's base commit {base_commit}",
         )
-    tree = _changed_tree(runner=runner, repo=repo, base_tree=base_tree, files=files)
+    tree = _changed_tree(runner=runner, repo=repo, base_tree=base_tree, files=read.files)
     if isinstance(tree, PublishFailure):
         return tree
     commit = _posted(
@@ -150,7 +169,13 @@ def publish_preserved_tree(
                 f" exited {created.exit_code}"
             ),
         )
-    return PreservedTree(ref=ref, commit=commit, file_count=len(files))
+    return PreservedTree(
+        ref=ref,
+        commit=commit,
+        file_count=len(read.files),
+        scope=read.scope,
+        source=read.source,
+    )
 
 
 def _changed_tree(

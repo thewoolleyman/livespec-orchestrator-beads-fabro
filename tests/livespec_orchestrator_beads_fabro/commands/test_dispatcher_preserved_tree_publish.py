@@ -10,7 +10,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_publi
     PreservedTree,
     publish_preserved_tree,
 )
-from livespec_orchestrator_beads_fabro.commands._fabro_run_files import RunFile
+from livespec_orchestrator_beads_fabro.commands._fabro_run_files import RunFile, RunFiles
 
 _BASE_COMMIT = "5d511335aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
@@ -62,7 +62,11 @@ def test_the_publication_creates_blobs_a_tree_a_commit_and_a_ref_through_the_git
         repo=tmp_path,
         work_item_id="bd-ib-na2xvm",
         base_commit=_BASE_COMMIT,
-        files=(RunFile(path="a.py", content=b"changed\n", mode="100644"),),
+        read=RunFiles(
+            files=(RunFile(path="a.py", content=b"changed\n", mode="100644"),),
+            scope="committed",
+            source="sandbox",
+        ),
         message="preserved tree",
     )
     assert isinstance(published, PreservedTree), published

@@ -36,7 +36,9 @@ def test_a_successful_preservation_names_the_run_the_factory_the_ref_and_its_com
         run_id=_RUN_ID,
         factory=_FACTORY,
         base_commit=_BASE_COMMIT,
-        preserved=PreservedTree(ref=_REF, commit=_COMMIT, file_count=3),
+        preserved=PreservedTree(
+            ref=_REF, commit=_COMMIT, file_count=3, scope="committed", source="sandbox"
+        ),
     )
     assert body.splitlines()[0] == "livespec-preserved-tree"
     assert record.PRESERVED_TREE_MARKER == "livespec-preserved-tree"
