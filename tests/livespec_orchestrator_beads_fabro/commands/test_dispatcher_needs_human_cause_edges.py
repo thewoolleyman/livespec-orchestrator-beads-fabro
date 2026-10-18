@@ -34,6 +34,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_cause im
     needs_human_cause_body,
     record_needs_human_cause,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_detail import (
+    NEEDS_HUMAN_CAUSE_ABSENT,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import STAGE_FAILURE
 from livespec_orchestrator_beads_fabro.errors import BeadsCommandError
 from livespec_orchestrator_beads_fabro.store import append_work_item
@@ -142,17 +145,20 @@ def test_a_stage_failure_with_no_attributed_stage_names_none() -> None:
     assert "transport fault: adapter-exited" in body
 
 
-def test_a_stage_failure_with_no_cause_classifies_nothing() -> None:
-    """A failed stage the engine classified no cause for reports the stage alone.
+def test_a_stage_failure_with_no_cause_states_the_absence_and_classifies_nothing() -> None:
+    """A failed stage the engine classified no cause for SAYS the cause is absent.
 
     This is the `publish_draft` refusal shape: the node writes its whole
     diagnosis to its own output and the engine records no cause chain at all.
-    A classification here would be invented from nothing.
+    A classification here would be invented from nothing, so none is made —
+    but the missing cause is itself reported (`bd-ib-3nu5vv`), because this
+    kind has already claimed a fault and omitting the clause made this record
+    identical to one for an ending that genuinely had no cause.
     """
     body = needs_human_cause_body(outcome=_fault_outcome(stages=("publish_draft",), cause=None))
 
     assert "failed stage: publish_draft" in body
-    assert "innermost cause" not in body
+    assert NEEDS_HUMAN_CAUSE_ABSENT in body
     assert "transport fault" not in body
     assert "no answer is owed" in body
 

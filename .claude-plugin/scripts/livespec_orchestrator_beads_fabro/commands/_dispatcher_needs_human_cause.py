@@ -57,6 +57,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit impo
     hook_over_limit_cause_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_detail import (
+    NEEDS_HUMAN_CAUSE_ABSENT,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
     comment_safe_external_text,
@@ -186,13 +189,27 @@ def _attribution(*, outcome: DispatchOutcome) -> tuple[str, ...]:
     that attributed none would invent one, and a `transport fault:` line on a
     cause the classifier declined would be the item's own prohibition on
     treating every ACP failure as a backgrounded tool.
+
+    THE CAUSE IS THE ONE EXCEPTION TO THAT SILENCE, and it is an exception
+    because this kind has already claimed a fault. An attributed ending OWES a
+    cause, so an unreadable one is a gap in the record's own account rather than
+    an absence of evidence about something it never claimed — and omitting the
+    clause made this record, the only one that outlives the run, identical to
+    the record of an ending that genuinely had no cause to report. The absence
+    is therefore STATED, through the one wording
+    `_dispatcher_needs_human_detail` owns for both surfaces, and that wording is
+    OUR text so it does not pass through `_safe`. The other two kinds keep the
+    silence above: for them a line about a missing cause would assert something
+    about a fault neither record claims.
     """
     if outcome.needs_human_kind != STAGE_FAILURE:
         return ()
     lines: list[str] = []
     if outcome.needs_human_stages:
         lines.append(f"failed stage: {', '.join(outcome.needs_human_stages)}")
-    if outcome.fabro_failure_cause is not None:
+    if outcome.fabro_failure_cause is None:
+        lines.append(NEEDS_HUMAN_CAUSE_ABSENT)
+    else:
         lines.append(f"innermost cause: {_safe(text=outcome.fabro_failure_cause)}")
         lines.extend(_fault(cause=outcome.fabro_failure_cause))
     # The hook-over-limit classification, when the ending is attributed to one.

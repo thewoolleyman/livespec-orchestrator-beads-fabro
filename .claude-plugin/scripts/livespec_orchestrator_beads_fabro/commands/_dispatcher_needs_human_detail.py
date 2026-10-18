@@ -48,10 +48,32 @@ from livespec_orchestrator_beads_fabro.commands._fabro_transport_fault import (
 )
 
 __all__: list[str] = [
+    "NEEDS_HUMAN_CAUSE_ABSENT",
     "needs_human_terminal_detail",
     "needs_human_terminal_preservation",
     "needs_human_terminal_reason",
 ]
+
+# What an ATTRIBUTED ending reports in place of a cause it could not read.
+#
+# PUBLIC because TWO surfaces make this one claim and neither may word it for
+# itself: `_attribution` below renders it into the dispatch RESULT and
+# `_dispatcher_needs_human_cause` renders it into the item's DURABLE record.
+# Two wordings that merely looked alike would make an operator grepping either
+# surface for a known phrase miss the other.
+#
+# IT IS A STATED ABSENCE AND DELIBERATELY NOT AN EMPTY OR PLACEHOLDER CAUSE. A
+# bare `innermost cause:` with nothing after it, or one carrying `?`,
+# `unknown` or `None`, sits exactly where a real cause sits and so reads as one
+# the engine supplied — worse than silence rather than better. And OMITTING the
+# clause, which is what both renderers used to do, makes a record whose cause
+# could not be READ byte-for-byte identical to a record of an ending that had
+# none to report; those two support different next actions, and a ledger
+# comment cannot be edited afterwards to tell them apart (`bd-ib-3nu5vv`).
+NEEDS_HUMAN_CAUSE_ABSENT = (
+    "innermost cause: ABSENT — the routing stage recorded no failure cause for "
+    "this ending, so none is named rather than an empty or placeholder one"
+)
 
 _UNKNOWN_RUN = "unknown-run"
 _POINTER_PHRASE = "the preserve-by-reference pointer on the item for the dump digest"
@@ -202,6 +224,15 @@ def _attribution(
     no idea it was a transport fault, which is the whole misreading this clause
     exists to prevent.
 
+    AN UNREADABLE CAUSE IS REPORTED AS ABSENT, not omitted, and only under the
+    attributed kind. A stage failure is the one ending that OWES a cause — the
+    record has already claimed a fault, so a missing cause is a gap in its own
+    account and the reader has to know the gap is the engine's rather than the
+    reader's. The other two kinds stay silent, because for them a line about a
+    missing cause would assert something about a fault neither record claims.
+    `NEEDS_HUMAN_CAUSE_ABSENT` above records why a stated absence and not a
+    placeholder.
+
     HISTORY IS REPORTED UNDER EVERY KIND, and labelled as history. A loop
     signature whose stage is not currently failed survives from a failure the
     run outlived; the engine never clears it. Dropping it loses the run's own
@@ -211,9 +242,12 @@ def _attribution(
     """
     clauses: list[str] = []
     if causal.is_stage_failure:
-        if failure is not None and failure.cause is not None:
-            clauses.append(f"innermost cause: {failure.cause}")
-            fault = transport_fault_from_cause(cause=failure.cause)
+        cause = None if failure is None else failure.cause
+        if cause is None:
+            clauses.append(NEEDS_HUMAN_CAUSE_ABSENT)
+        else:
+            clauses.append(f"innermost cause: {cause}")
+            fault = transport_fault_from_cause(cause=cause)
             if fault is not None:
                 clauses.append(transport_fault_clause(fault=fault))
         if causal.signatures:
