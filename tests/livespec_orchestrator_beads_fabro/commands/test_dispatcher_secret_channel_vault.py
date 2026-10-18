@@ -90,6 +90,7 @@ def test_a_native_dispatch_with_no_vault_wired_refuses() -> None:
         overlay_text=_complete_bundle(),
         channel=SECRET_CHANNEL_NATIVE_SECRETS,
         proof_credentials_env="",
+        routes_codex=True,
         sink=None,
     )
     assert isinstance(refusal, SecretChannelRefusal)
@@ -97,7 +98,13 @@ def test_a_native_dispatch_with_no_vault_wired_refuses() -> None:
 
 
 def test_a_bundle_missing_a_required_family_refuses_through_the_dispatch_path() -> None:
-    """The family refusal reaches the dispatch, not just the name collector."""
+    """The family refusal reaches the dispatch, not just the name collector.
+
+    The dispatch ROUTES a Codex node, which is what makes the absent
+    `CODEX_AUTH_JSON` line a dropped credential rather than one this dispatch
+    correctly projects nothing for -- the Anthropic-only direction is owned by
+    `test_dispatcher_secret_channel_codex_routing.py`.
+    """
     bundle = (
         "[environments.sandbox.env]\n"
         f"CLAUDE_CODE_OAUTH_TOKEN = {json.dumps(_ANTHROPIC_VALUE)}\n"
@@ -107,6 +114,7 @@ def test_a_bundle_missing_a_required_family_refuses_through_the_dispatch_path() 
         overlay_text=bundle,
         channel=SECRET_CHANNEL_NATIVE_SECRETS,
         proof_credentials_env="",
+        routes_codex=True,
         sink=_AcceptingSink(),
     )
     assert isinstance(refusal, SecretChannelRefusal)
@@ -127,6 +135,7 @@ def test_a_routing_refusal_stores_nothing_at_all() -> None:
         overlay_text=bundle,
         channel=SECRET_CHANNEL_NATIVE_SECRETS,
         proof_credentials_env="",
+        routes_codex=True,
         sink=sink,
     )
     assert isinstance(refusal, SecretChannelRefusal)
@@ -146,6 +155,7 @@ def test_a_vault_that_refuses_a_write_refuses_the_dispatch() -> None:
         overlay_text=_complete_bundle(),
         channel=SECRET_CHANNEL_NATIVE_SECRETS,
         proof_credentials_env="",
+        routes_codex=True,
         sink=_RefusingSink(refuse=refused_key),
     )
     assert isinstance(refusal, SecretChannelRefusal)
@@ -166,6 +176,7 @@ def test_a_routing_refusal_leaves_no_overlay_file_behind(tmp_path: Path) -> None
         rendered=_complete_bundle(),
         channel=SECRET_CHANNEL_NATIVE_SECRETS,
         proof_credentials_env="",
+        routes_codex=True,
         sink=None,
     )
     assert refusal is not None
@@ -188,6 +199,7 @@ def test_a_routing_refusal_removes_a_preexisting_credential_overlay(
         rendered=_complete_bundle(),
         channel=SECRET_CHANNEL_NATIVE_SECRETS,
         proof_credentials_env="",
+        routes_codex=True,
         sink=None,
     )
 
@@ -205,6 +217,7 @@ def test_a_routed_bundle_is_written_mode_600(tmp_path: Path) -> None:
             rendered=_complete_bundle(),
             channel=SECRET_CHANNEL_NATIVE_SECRETS,
             proof_credentials_env="",
+            routes_codex=True,
             sink=sink,
         )
         is None
@@ -303,6 +316,7 @@ def test_a_declared_proof_credential_is_routed_with_the_dispatch_set() -> None:
         overlay_text=_complete_bundle() + proof_env,
         channel=SECRET_CHANNEL_NATIVE_SECRETS,
         proof_credentials_env=proof_env,
+        routes_codex=True,
         sink=sink,
     )
     assert isinstance(routed, RoutedOverlay)

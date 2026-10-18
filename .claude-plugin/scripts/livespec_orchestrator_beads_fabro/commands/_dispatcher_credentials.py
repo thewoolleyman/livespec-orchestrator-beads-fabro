@@ -278,6 +278,18 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     if isinstance(siblings, str):
         return siblings
     sandbox_otel_endpoint = resolve_sandbox_otel_endpoint(environ=dict(os.environ))
+    # WHETHER THIS DISPATCH ROUTES ANY NODE TO CODEX, resolved ONCE here because
+    # TWO consumers below are scoped by it and they must not disagree: the
+    # projection leg, which decides whether there is a Codex credential to grade,
+    # stamp a deadline from and write into a `$CODEX_HOME` at all, and the secret
+    # channel's required-family list, which decides whether the written bundle
+    # must carry a line for it. A second resolution for the second consumer
+    # cannot be proven to agree with the first, and the disagreement would be
+    # invisible — both reads produce a well-formed routing — while the direction
+    # it fails in is the measured one: the channel demanded a credential the leg
+    # had correctly declined to project, and every native-channel dispatch
+    # without a Codex node was refused before launch.
+    codex_routing = codex_routing_for_dispatch(repo=repo)
     # EVERYTHING THIS DISPATCH PROJECTS INTO ITS SANDBOX `$CODEX_HOME`: the run
     # budget, the graded host snapshot, the credential-use enforcement inputs, the
     # launch-route guard, and the Codex telemetry table. One unit because the order
@@ -295,17 +307,14 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # The ONE wall-clock seam the leg reads, held here so the whole dispatch
         # path has a single place a test stands time still.
         clock=lambda: int(time.time()),
-        # WHETHER THIS DISPATCH ROUTES ANY NODE TO CODEX, which decides whether
-        # there is a credential for the leg to grade and stamp a deadline from,
-        # and whether there is a `$CODEX_HOME` for its telemetry table to be
-        # written into. Resolved from the SAME pure function the pre-dispatch
-        # wall's gate consults, against the same host-side checkout, so the
-        # pre-claim and post-claim halves cannot scope themselves differently; it
-        # is read here rather than threaded down from the wall because the wall
-        # grades a whole selection while this runs per dispatch, and a value
-        # carried across that boundary would have to ride every plan and seam
-        # between them to reach one call site.
-        codex_routing=codex_routing_for_dispatch(repo=repo),
+        # Resolved from the SAME pure function the pre-dispatch wall's gate
+        # consults, against the same host-side checkout, so the pre-claim and
+        # post-claim halves cannot scope themselves differently; it is read above
+        # rather than threaded down from the wall because the wall grades a whole
+        # selection while this runs per dispatch, and a value carried across that
+        # boundary would have to ride every plan and seam between them to reach
+        # one call site.
+        codex_routing=codex_routing,
         # The telemetry table's three inputs. The endpoint is the SAME reading the
         # Claude-Code OTel overlay below is rendered from, resolved once above, so
         # the sandbox's two exporters cannot be pointed at different receivers.
@@ -426,6 +435,10 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         rendered=rendered,
         channel=channel,
         proof_credentials_env=proof_credentials_env,
+        # The SAME routing the projection leg above scoped itself by, so the
+        # families the channel requires are exactly the ones this bundle set out
+        # to carry.
+        routes_codex=codex_routing.routes_codex,
         sink=secret_sink,
     )
     if write_refusal is not None:

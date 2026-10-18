@@ -38,6 +38,7 @@ def write_routed_overlay(
     rendered: str,
     channel: str,
     proof_credentials_env: str,
+    routes_codex: bool,
     sink: VaultSecretSink | None,
 ) -> str | None:
     """Route `rendered` onto `channel` and write it; a refusal message, or None.
@@ -46,6 +47,13 @@ def write_routed_overlay(
     lines, passed so the routed name list can be read back off what that
     projection actually emitted rather than from a second reading of the
     declaration it owns.
+
+    `routes_codex` is this dispatch's RESOLVED routing, which decides whether
+    the Codex credential is a family the bundle must carry or one the dispatch
+    was right not to project. It is threaded from the caller rather than
+    re-resolved here for the same reason the proof-credential lines are: the
+    caller has already asked that question, and a second resolution cannot be
+    proven to agree with the one the Codex projection leg scoped itself by.
 
     The write is `O_EXCL` over a path unlinked immediately before, which is how
     the mode argument is load-bearing rather than advisory: an `open` onto an
@@ -57,6 +65,7 @@ def write_routed_overlay(
         overlay_text=rendered,
         channel=channel,
         proof_credentials_env=proof_credentials_env,
+        routes_codex=routes_codex,
         sink=sink,
     )
     if isinstance(routed, SecretChannelRefusal):
