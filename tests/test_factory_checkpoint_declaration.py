@@ -104,24 +104,30 @@ predecessors and no run reaches it, which is the correct direction for a
 credential floor.
 
 IT HAPPENED AGAIN AT v156 (the per-assertion proof grade, work-item
-bd-ib-kcq6pu), and this one is worth stating because the node is CHEAP and the
-move is large anyway. `proof_grade` is one `gh pr view` plus a sub-second parse,
-and it adds no cycle; what makes it expensive is WHERE it sits. It is the single
-edge out of a `verified` replay, so the derivation bills it at `proof_verify`'s
-own 22 visits, and at the 1800 s default that one node demanded 63690 seconds —
-more than the 31430 of headroom the paragraph above measured. So the node is
-declared DOWNWARD in this repository's `.livespec.jsonc` at 600 s, which is still
-three times a generous budget for a forge read and brings its demand to 37290;
-that declaration is the gate's own documented remedy ("a shorter configured
-timeout"), applied to a node whose work genuinely takes seconds, and NOT a visit
-cap sized below what the graph can reach. Measured against THIS tree with that
-declaration in place: 1245060 at the retired `"15m"` and 805860 shipped, so the
-bound moves to 840000 to stay between them, with 34140 seconds of headroom.
+bd-ib-kcq6pu), and this one is worth stating because both new nodes are CHEAP
+and the move is large anyway. `proof_grade` is one `gh pr view` plus a
+sub-second parse, and `proof_grade_route` is a `cat` of one counter file; what
+makes them expensive is WHERE they sit. The grade is the single edge out of a
+`verified` replay, so the derivation bills it at `proof_verify`'s own visit
+count, and the route closes a CYCLE back into that replay, so it raises the
+replay's count by its own `max_visits` and the replay is the most expensive
+node in the graph at two attempts of 1800 s each. Both nodes are therefore
+declared DOWNWARD in this repository's `.livespec.jsonc` at 600 s -- still three
+times a generous budget for a forge read and a file read -- which is the gate's
+own documented remedy ("a shorter configured timeout") applied to work that
+genuinely takes seconds, and NOT a visit cap sized below what the graph can
+reach. Measured against THIS tree with those declarations in place: 1310580 at
+the retired `"15m"` and 842580 shipped, so the bound moves to 880000 to stay
+between them, with 37420 seconds of headroom.
 
-WHAT THAT COSTS, STATED RATHER THAN ABSORBED: the shipped figure plus
-`CODEX_FRESHNESS_MARGIN_SECONDS` now demands 809460 of a token's remaining
-life -- about 9.37 days -- so a ten-day Codex token has to be under roughly
-0.63 days old to pass the freshness gate.
+WHAT THAT COSTS, STATED RATHER THAN ABSORBED, and it is the tightest this figure
+has been: the shipped figure plus `CODEX_FRESHNESS_MARGIN_SECONDS` now demands
+846180 of a token's remaining life -- about 9.79 days -- so a ten-day Codex
+token has to be under roughly 0.21 days old to pass the freshness gate. The next
+widening of this graph will not be absorbable by declaring the new node's own
+timeout downward: the remaining headroom is in `implement` (14400) and
+`review_fix` (7200), which are measured against real turns, so the honest move
+then is a credential-gate change rather than another bound.
 This repository routes NO factory node to Codex (`.livespec.jsonc`'s `acp_nodes`
 put every node on a Claude adapter), so nothing here is refused by it; a
 repository that does route one and raises its node timeouts should expect that
@@ -147,12 +153,12 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 
 # The bound the freshness requirement has to sit under, and the figure the
 # RETIRED `"15m"` resolved. The bound is deliberately looser than the measured
-# 805860 seconds this budget yields: the requirement also sums the resolved node
+# 842580 seconds this budget yields: the requirement also sums the resolved node
 # timeouts, so pinning it exactly would make every unrelated timeout edit fail
 # this case. The control below pins the 15m figure exactly, because that one is
 # the thing being moved away from and a drifting comparand would hide the move.
-_FRESHNESS_BOUND_SECONDS = 840_000
-_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_245_060
+_FRESHNESS_BOUND_SECONDS = 880_000
+_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_310_580
 
 
 def _checkpoint() -> dict[str, Any]:

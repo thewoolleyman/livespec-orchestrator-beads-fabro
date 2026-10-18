@@ -240,16 +240,21 @@ def test_proof_verify_carries_a_worst_case_visit_budget() -> None:
     CHANGED published head from `pr_refresh_head` back through `proof_capture`
     and `review` and so into this node again, bounded at the contract's three
     refreshes — a second cycle the review loop's own guard says nothing about.
-    Six is therefore the honest figure, and the direction matters: a node
-    budgeted below what the graph can spend is one the Dispatcher's own
-    subprocess timeout can kill mid-run.
+
+    PLUS THREE MORE FOR THE GRADE LOOP (v156; work-item bd-ib-kcq6pu). An
+    UNGRADEABLE verified record re-enters this node DIRECTLY through
+    `proof_grade_route`, bounded at the ratified three recorded grade failures,
+    and that cycle reaches neither `review` nor `fix` — so neither of the two
+    loops above accounts for it. NINE is therefore the honest figure, and the
+    direction matters: a node budgeted below what the graph can spend is one the
+    Dispatcher's own subprocess timeout can kill mid-run.
     """
     raised = 14400
     longer = node_timeouts_from_block(block={"node_timeouts": {_VERIFY: raised}})
 
     assert not isinstance(longer, str), longer
     assert default_node_timeouts().seconds_for(node=_VERIFY) == 1800
-    assert derive_fabro_timeout_seconds(timeouts=longer) == DEFAULT_FABRO_TIMEOUT_SECONDS + 6 * (
+    assert derive_fabro_timeout_seconds(timeouts=longer) == DEFAULT_FABRO_TIMEOUT_SECONDS + 9 * (
         raised - 1800
     )
 
@@ -312,20 +317,26 @@ def test_no_review_edge_reaches_pr_and_the_ship_on_cap_hatch_is_gone() -> None:
     assert _target_of(edge=approve[0]) == _VERIFY
 
 
-def test_proof_verify_is_entered_only_from_review() -> None:
-    """Nothing but `review` reaches the replay node.
+def test_proof_verify_is_entered_only_from_review_or_its_own_grade_route() -> None:
+    """Nothing but `review` and the grade's own retry route reaches the replay node.
 
-    The contract says "entered from `review`", and the reason is the record: the
-    replay reads the capture that `review` has already read, so an entry from
-    anywhere else could run before any capture existed — or, worse, before the
-    reviewer had seen the tree the replay is about to bless for merge.
+    The contract says "entered from `review` or from `proof_grade_route`", and
+    the reason the set is CLOSED is the record: the replay reads the capture that
+    `review` has already read, so an entry from anywhere else could run before
+    any capture existed — or, worse, before the reviewer had seen the tree the
+    replay is about to bless for merge.
+
+    `proof_grade_route` is admissible precisely because it cannot violate that
+    (v156; work-item bd-ib-kcq6pu): it is reached only AFTER a `verified` replay
+    on a reviewed tree, so the capture and the review have both already happened
+    and the only thing being re-done is the replay's own record.
     """
     entries = [
         edge for edge in _edges(text=_dot(payload=_BUNDLE)) if _target_of(edge=edge) == _VERIFY
     ]
 
     assert entries, "the reserved workflow routes nothing into proof_verify"
-    assert {_source_of(edge=edge) for edge in entries} == {"review"}
+    assert {_source_of(edge=edge) for edge in entries} == {"review", "proof_grade_route"}
 
 
 def test_the_verify_node_dominates_every_green_path_so_it_is_success_critical() -> None:
