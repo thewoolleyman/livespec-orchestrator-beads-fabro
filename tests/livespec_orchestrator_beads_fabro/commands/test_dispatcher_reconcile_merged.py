@@ -217,6 +217,56 @@ def test_reconcile_merged_resolves_merged_pr_by_title_search(
     ]
 
 
+def test_reconcile_merged_resolves_a_hand_carried_pr_by_body_search(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A merged PR whose title and branch omit the item remains discoverable."""
+    _assert_reconcile_command_registered(capsys=capsys)
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(status="active")
+    append_work_item(path=_config(), item=item)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            CommandResult(exit_code=1, stdout="", stderr="not found"),
+            _ok(
+                stdout=json.dumps(
+                    [
+                        {
+                            **_list_pr(
+                                number=18,
+                                title="Repair the launch configuration",
+                                sha="body777",
+                                head="fix-launch-configuration",
+                            ),
+                            "body": f"Implements work-item {item.id}.",
+                        }
+                    ]
+                )
+            ),
+            _ok(),
+            *_venue_resolution(),
+            *[_ok() for _ in range(8)],
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        lambda **_: _AcceptancePass(verdict="PASS"),
+    )
+
+    exit_code = main(argv=["reconcile-merged", "--repo", str(repo), "--item", item.id])
+
+    assert exit_code == 0
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert stored.audit is not None
+    assert (stored.audit.pr_number, stored.audit.merge_sha) == (18, "body777")
+    assert any("body" in argument for argument in runner.calls[2][0])
+
+
 @pytest.mark.parametrize("status", ["backlog", "ready", "blocked"])
 def test_reconcile_merged_accepts_merge_verified_parked_items(
     status: str,
