@@ -157,12 +157,21 @@ def _unreadable_stages_inspect() -> list[object]:
 
 
 def _petri_events(*, failure: dict[str, Any]) -> list[object]:
-    """The routing stage's own failed ending, in the Petri-era envelope."""
+    """The routing stage's own failed ending, in the MEASURED Petri-era shape.
+
+    Every spelling here is transcribed rather than reconstructed: the envelope
+    from research note 006, and the body's `event`, its failure block at
+    `outcome.status.failure` and the node at `item.subject.node.name` from this
+    repository's committed reproducer
+    `plan/fabro-currency/research/004-acp-spend-limit-repro.py` (candidate
+    v0.371.0-nightly.0). The sibling module
+    `test_dispatcher_needs_human_petri_routing_cause.py` records each citation
+    field by field, including which of its own keys are composed.
+    """
     body = {
         "event": "step.finished",
-        "firing": _ROUTING_STAGE,
-        "outcome": "failed",
-        "failure": failure,
+        "attempt": 1,
+        "outcome": {"status": {"failure": failure}},
     }
     return [
         {
@@ -174,6 +183,7 @@ def _petri_events(*, failure: dict[str, Any]) -> list[object]:
             "item": {
                 "seq": 12,
                 "recorded_at": _RECORDED_AT_MS,
+                "subject": {"node": {"name": _ROUTING_STAGE}},
                 "record": {"kind": "step.finished", "body": body},
             },
         }
