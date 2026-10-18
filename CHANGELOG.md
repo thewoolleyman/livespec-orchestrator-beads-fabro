@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.213.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.213.0...v0.213.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **hooks:** allow a guarded tool call while pyproject.toml is conflicted ([9aa2e36](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9aa2e36d3893e15a7fe355f966d4df26a868992d))
+* **hooks:** route every uv-launched PreToolUse guard through the launcher ([accc235](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/accc235dfafbc6733e52e0388fb9ecb2f347f45f))
+* **hooks:** say on stderr which guard a conflicted manifest stood down ([3b654ab](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3b654abedeea7e7dbc05b71c2430616d46bf73e4))
+* read a Petri-era routing stage's failure cause for needs-human records ([9a42327](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9a42327968b4790ff4d4f9c17f7df3f6462b49fc))
+* read a Petri-era routing-stage failure through its measured event shape ([7b68a13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7b68a13db23f57ae8b114d83d461ffc07d6a93c7))
+* **resume:** count only resumes that created a factory run toward the bound ([168ea53](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/168ea537e635026553e2a9c89a2cf3efaf89c975))
+* state an absent needs-human cause rather than omitting the clause ([ab8e2c7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ab8e2c72b155ee1484c883f4b68da96cf6ebb9ec))
+
 ## [0.213.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.212.0...v0.213.0) (2026-10-18)
 
 
