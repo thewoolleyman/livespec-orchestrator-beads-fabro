@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.216.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.215.2...v0.216.0) (2026-10-18)
+
+
+### Features
+
+* **dispatcher:** name the served scope and source on the preserved tree ([a1a0869](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a1a086931c561e6ab8ecac1f541ae9398ca594c0))
+
+
+### Bug Fixes
+
+* **dispatcher:** read a removal in the server's nested run-files shape ([835b1fa](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/835b1fa82dac1f60123fed28b72c58e2b62e3aaa))
+* **dispatcher:** read the deployed factory server's run-files shape ([5e4af39](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5e4af39f566ffc1981d6d2309512c89e12563137))
+
 ## [0.215.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.215.1...v0.215.2) (2026-10-18)
 
 
