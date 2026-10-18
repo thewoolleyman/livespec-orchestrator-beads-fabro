@@ -52,6 +52,18 @@ unresolvable chain table names no admission-required node and no observation,
 and no amount of waiting repairs it, so it yields no wait rather than an
 instant. Manufacturing one would report a committed configuration fault as a
 provider outage that expires on its own.
+
+AN UNAVAILABLE EVIDENCE SOURCE SCHEDULES A WAIT EVEN WHEN NO CHAIN EMPTIED, and
+that arm is the one a reader is most likely to delete as redundant. "An
+unreadable or incomplete evidence source is unavailable, not an empty hold set.
+The Dispatcher MUST surface that condition and retry observation on a bounded
+cadence." Keying the whole derivation on `exhausted` satisfied the surfacing and
+nothing else: a factory whose listing refuses leaves every candidate's evidence
+incomplete without emptying anything, so the condition was reported on the
+verdict and then never looked at again. Such a wait names NO node -- there is no
+admission-required node lacking a candidate -- which is why `node` is optional
+rather than carrying the empty string: a reader joining on a node name must be
+able to tell "no node is empty" from a node whose id did not survive.
 """
 
 from __future__ import annotations
@@ -125,9 +137,15 @@ class GoverningHold:
 
 @dataclass(frozen=True, kw_only=True)
 class AvailabilityWait:
-    """The scheduled reevaluation one emptied-chain evaluation produced."""
+    """The scheduled reevaluation one admission evaluation produced.
 
-    node: str
+    `node` is `None` exactly when NO admission-required chain emptied, which is
+    the unavailable-evidence arm described in the module docstring: the
+    condition is real and bounded, and there is no node it can be attributed
+    to. The empty string would read as a node whose id was lost.
+    """
+
+    node: str | None
     nodes: tuple[str, ...]
     governing_condition: str
     reevaluate_at: str
@@ -144,12 +162,12 @@ def availability_wait(
 ) -> AvailabilityWait | None:
     """Schedule the next admission evaluation, or `None` when none is owed.
 
-    `None` means there is nothing to look again for: either every
-    admission-required chain still holds a candidate, or the verdict is a
-    configuration refusal that waiting cannot repair, or the evaluation clock
-    itself could not be read.
+    `None` means there is nothing to look again for: every admission-required
+    chain still holds a candidate AND every evidence source was readable, or the
+    verdict is a configuration refusal that waiting cannot repair, or the
+    evaluation clock itself could not be read.
     """
-    if verdict.refusal is not None or not verdict.exhausted:
+    if verdict.refusal is not None or not (verdict.exhausted or verdict.unobservable):
         return None
     now = parse_hold_instant(text=now_iso)
     if now is None:
@@ -171,7 +189,7 @@ def availability_wait(
     emptied = tuple(by_node[node] for node in verdict.exhausted if node in by_node)
     governing = _governing_holds(emptied=emptied, holds=holds)
     return AvailabilityWait(
-        node=verdict.exhausted[0],
+        node=verdict.exhausted[0] if verdict.exhausted else None,
         nodes=verdict.exhausted,
         governing_condition=_governing_condition(emptied=emptied),
         reevaluate_at=_reevaluate_at(
