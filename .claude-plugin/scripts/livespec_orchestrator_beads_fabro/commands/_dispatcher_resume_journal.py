@@ -56,6 +56,15 @@ row in particular would be wrong in the very direction this fix corrects: that
 row is written before the launch, so a dispatch refused at the goal preflight or
 at materialization would anchor a resume that created no run.
 
+AND WHY ASKING THAT MODULE WAS NOT ENOUGH ON ITS OWN. The narrowing above landed
+with no effect on the case it was filed for, because the refusal path ALARMS and
+the alarm journaled the DISPATCHER's own uuid4 correlation id under the key
+`run_id`. Every refused resume was therefore followed by a row naming a `run_id`
+for the item, so the pending record resolved as launched exactly as a real run
+would have made it. `_run_attribution` now excludes the notifier's `notify-`
+stages from that reading (`bd-ib-upqaqw`), which is where the exclusion belongs:
+this reader asks what names a Fabro run and must not hold a private answer to it.
+
 AND WHY THE WINDOW CLOSES AT THE ITEM'S NEXT ATTEMPT. A reader that simply asked
 whether the item has ever had a run would let ONE launched resume vouch for every
 refused attempt around it — including the attempt that came before it, whose own
