@@ -18,6 +18,24 @@ nothing renders is indistinguishable from a run nobody is watching, which is
 the failure the grace arm exists to bound, so the held lane is emitted on
 every run — dry or not.
 
+IT CARRIES THE CLAIM LANE ON THE SAME TWO KEYS, because the stranded-claim
+clause says stranded claims JOIN that output rather than replacing it. The
+claim lane graded, journaled and disposed of claims correctly before this
+emission existed and reported none of it: every pass printed `"held": []` and
+`"reconciled": []`, and a pass that had just released a stranded claim printed
+`(no orphaned fabro runs found)`. That left the dispatch journal as the only
+surface carrying a claim's disposition — and it lives under the `tmp/` tree of
+whichever checkout happened to run the pass, so it is gone the moment that
+checkout is pruned, which is the same invisibility the held lane exists to end
+one lane over.
+
+Each entry NAMES its kind, because one array now carries two dataclasses whose
+key sets differ: a run holds a park measurement and a termination route, a
+claim holds a dispatching host and a ledger status. A reader forced to
+discriminate them by which keys happened to be present would be reading a
+shape-dependent listing — and reading one wrong is how a held claim comes to
+be reported as a run that could not be terminated.
+
 `--dry-run --json` is the read-only projection over the FACTORY: it emits the
 orphan set and performs no export, no termination, and no per-run journal
 write, so a caller can render "orphaned factory runs" without the survey
@@ -91,6 +109,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_spans
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_stamp import (
     repo_run_attribution,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_records import (
+    HeldClaim,
+)
 from livespec_orchestrator_beads_fabro.io import write_stdout
 
 __all__: list[str] = ["run_reconcile_runs_command"]
@@ -99,6 +120,17 @@ _NO_FACTORY_LINE = (
     "ERROR   (none)  no-factory-surveyed: this pass surveyed no factory, so it "
     "reconciled nothing and observed nothing\n"
 )
+
+# The two object kinds either lane's array carries. One vocabulary rather than
+# one per key, because the discrimination a reader makes is the same question
+# in both: is this entry about a factory RUN or about a dispatch CLAIM.
+_KIND_RUN = "run"
+_KIND_CLAIM = "claim"
+
+# What a claim stamp that named no run, factory or host renders as. A blank
+# where a value belongs reads as a rendering fault rather than as the absence
+# that IS the `claim-unattributable` finding.
+_UNNAMED = "(none)"
 
 
 def run_reconcile_runs_command(*, args: argparse.Namespace) -> int:
@@ -176,10 +208,10 @@ def _emit(
             "containers": [asdict(sweep) for sweep in summary.containers],
             "dry_run": summary.dry_run,
             "errors": [asdict(error) for error in summary.errors],
-            "held": [asdict(run) for run in summary.held],
+            "held": _held_entries(summary=summary),
             "factories_surveyed": record.factories_surveyed,
             "factory_names": list(record.factory_names),
-            "reconciled": [asdict(run) for run in summary.reconciled],
+            "reconciled": _reconciled_entries(summary=summary),
         }
         _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
         return
@@ -208,5 +240,67 @@ def _emit(
                 f"reason={run.hold_reason} remaining={run.seconds_remaining}\n"
             )
         )
-    if not summary.errors and not summary.reconciled and not summary.held:
+    for recovered in summary.recovered_claims:
+        _ = write_stdout(
+            text=(
+                f"RECLAIM {recovered.work_item_id}  {recovered.run_id}  "
+                f"factory={recovered.factory_name} reason={recovered.reason} "
+                f"route={recovered.route} status={recovered.status}\n"
+            )
+        )
+    for claim in summary.held_claims:
+        _ = write_stdout(text=_claim_hold_line(held=claim))
+    if not _acted(summary=summary):
         _ = write_stdout(text="(no orphaned fabro runs found)\n")
+
+
+def _held_entries(*, summary: ReconcileRunsSummary) -> list[dict[str, object]]:
+    """Every hold this pass reports, from both lanes, each naming its kind."""
+    runs: list[dict[str, object]] = [{"kind": _KIND_RUN, **asdict(run)} for run in summary.held]
+    claims: list[dict[str, object]] = [
+        {"kind": _KIND_CLAIM, **asdict(claim)} for claim in summary.held_claims
+    ]
+    return runs + claims
+
+
+def _reconciled_entries(*, summary: ReconcileRunsSummary) -> list[dict[str, object]]:
+    """Every disposition this pass performed, from both lanes, each naming its kind."""
+    runs: list[dict[str, object]] = [
+        {"kind": _KIND_RUN, **asdict(run)} for run in summary.reconciled
+    ]
+    claims: list[dict[str, object]] = [
+        {"kind": _KIND_CLAIM, **asdict(claim)} for claim in summary.recovered_claims
+    ]
+    return runs + claims
+
+
+def _claim_hold_line(*, held: HeldClaim) -> str:
+    """One held claim's line, naming a remedy only where the clause owes one."""
+    remedy = "" if held.remedy is None else f" remedy={held.remedy}"
+    return (
+        f"CLAIM   {held.work_item_id}  {_named(value=held.run_id)}  "
+        f"factory={_named(value=held.factory_name)} "
+        f"host={_named(value=held.dispatching_host)} "
+        f"reason={held.hold_reason}{remedy}\n"
+    )
+
+
+def _named(*, value: str | None) -> str:
+    return value if value is not None else _UNNAMED
+
+
+def _acted(*, summary: ReconcileRunsSummary) -> bool:
+    """Whether this pass has anything at all to report.
+
+    It reads BOTH lanes, because the fall-through below it is the measured
+    defect: a pass that released a stranded claim — writing a journal record,
+    a ledger comment and a status transition — printed that it had found
+    nothing, since the only collections consulted were the run lane's.
+    """
+    return bool(
+        summary.errors
+        or summary.reconciled
+        or summary.held
+        or summary.recovered_claims
+        or summary.held_claims
+    )

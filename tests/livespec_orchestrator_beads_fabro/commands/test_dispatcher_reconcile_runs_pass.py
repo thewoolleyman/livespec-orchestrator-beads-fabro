@@ -43,6 +43,8 @@ def test_an_unwritable_telemetry_path_never_breaks_reconciliation(tmp_path: Path
             orphans_reconciled=0,
             errors=0,
             failure_detail=None,
+            claims_recovered=0,
+            claims_held=0,
         ),
         tenant="bd-ib",
         cancelling_actor="timer:reconcile-runs",
@@ -103,6 +105,11 @@ def test_a_pass_surveys_every_factory_and_journals_its_own_summary(
             "orphans_reconciled": 1,
             "errors": 0,
             "failure_detail": None,
+            # Kept APART from the two orphan counts above: this pass surveyed
+            # two runs and no claim, and a claim folded into the orphan census
+            # would read as a factory run the pass failed to terminate.
+            "claims_recovered": 0,
+            "claims_held": 0,
         }
     ]
 

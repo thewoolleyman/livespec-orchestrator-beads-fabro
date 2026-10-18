@@ -143,6 +143,14 @@ class ReconcilePassSummary:
     `dry_run` is on the record because a dry pass reconciles nothing by
     design. Without the flag its record is byte-identical to a live pass that
     found nothing, and the two mean opposite things about the inventory.
+
+    `claims_recovered` and `claims_held` are the CLAIM lane's counts, and they
+    are their own fields rather than additions to the orphan census: an orphan
+    is a run the join produced and a claim is a ledger row whose run is gone,
+    so folding one into the other would make a stranded claim read as a
+    factory run this pass failed to terminate. Without them a timer tick that
+    released a claim leaves a record byte-identical to an idle one, which is
+    the same invisibility the two orphan counts are kept apart to avoid.
     """
 
     factories_surveyed: int
@@ -152,6 +160,8 @@ class ReconcilePassSummary:
     orphans_reconciled: int
     errors: int
     failure_detail: str | None
+    claims_recovered: int
+    claims_held: int
 
 
 def reconcile_runs_pass(*, args: argparse.Namespace, repo: Path) -> ReconcilePassSummary:
@@ -189,6 +199,8 @@ def reconcile_pass_summary(
         orphans_reconciled=sum(1 for run in summary.reconciled if run.termination_succeeded),
         errors=len(summary.errors),
         failure_detail=None,
+        claims_recovered=len(summary.recovered_claims),
+        claims_held=len(summary.held_claims),
     )
 
 
@@ -204,6 +216,8 @@ def journal_reconcile_pass(*, journal: JournalWriter, summary: ReconcilePassSumm
             "orphans_reconciled": summary.orphans_reconciled,
             "errors": summary.errors,
             "failure_detail": summary.failure_detail,
+            "claims_recovered": summary.claims_recovered,
+            "claims_held": summary.claims_held,
         }
     )
 
@@ -295,4 +309,6 @@ def _failed_pass(*, outcome: AttemptFailure) -> ReconcilePassSummary:
         orphans_reconciled=0,
         errors=1,
         failure_detail=f"{type(outcome.error).__name__}: {outcome.error}",
+        claims_recovered=0,
+        claims_held=0,
     )

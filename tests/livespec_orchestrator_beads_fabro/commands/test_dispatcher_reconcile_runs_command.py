@@ -147,6 +147,12 @@ def test_every_invocation_leaves_exactly_one_pass_record_carrying_its_invoker(
         "orphans_reconciled": 1,
         "errors": 0,
         "failure_detail": None,
+        # The claim lane's own counts, zero here because this pass surveyed a
+        # run and no claim -- and present rather than omitted, because a tick
+        # that released a claim must not leave a record an idle tick could
+        # also have written.
+        "claims_recovered": 0,
+        "claims_held": 0,
     }
 
 
