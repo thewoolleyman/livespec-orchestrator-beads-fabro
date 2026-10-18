@@ -74,9 +74,17 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import REPOSITORY_LAYER
 
+from tests.conftest import end_run_and_await_launcher_return
+
 # ---------------------------------------------------------------------------
 # Shared fakes
 # ---------------------------------------------------------------------------
+
+# The work item every plan below launches, and so the suffix of the launcher's
+# own `fabro run` thread name — which is what `end_run_and_await_launcher_
+# return` joins to wait for the launcher's return rather than the fake
+# runner's.
+_WORK_ITEM_ID = "livespec-impl-beads-oyg"
 
 
 def _plan(*, repo: Path, stall_seconds: float | None = None) -> DispatchPlan:
@@ -95,7 +103,7 @@ def _plan(*, repo: Path, stall_seconds: float | None = None) -> DispatchPlan:
     )
     return build_plan(
         repo=repo,
-        work_item_id="livespec-impl-beads-oyg",
+        work_item_id=_WORK_ITEM_ID,
         workflow_toml=repo / "wf.toml",
         goal_file=repo / "goal.md",
         fabro_bin="fabro",
@@ -708,6 +716,14 @@ _JANITOR_COMPLETED_EVENT = (
 )
 _JANITOR_STARTED_JSON = f"[{_JANITOR_STARTED_EVENT}]"
 
+# The gap a sample-counting case injects between the fake runner's own return
+# signal and its return, so the launcher is still publishing its result when
+# the fixture's wait is asked whether the run is over. Long enough that no
+# host schedules through it by accident, short enough to cost the suite
+# nothing; the fixture's wait is what makes the count deterministic, so this
+# number does not need to bound anything.
+_RETURN_GAP_SECONDS = 0.2
+
 
 @dataclass(kw_only=True)
 class _ScriptedFabroRunner:
@@ -723,6 +739,18 @@ class _ScriptedFabroRunner:
     are exercised. Every verb the launcher issues is recorded in `verbs`,
     so a test can assert WHICH probe each poll spent. NEVER launches a
     real process.
+
+    `run_returned` is this fake's OWN account of returning, and NO fixture
+    below waits on it: it fires before `port.run` has returned and so before
+    the launcher has published anything, which is one step too early to read
+    as the run being over (bd-ib-spc6xr). It stays because it MARKS that
+    too-early instant, which is what `return_gap_seconds` is measured from —
+    the gap widens the stretch between this signal and this fake's return,
+    which is the stretch the launcher then spends publishing its result
+    before setting its own signal. A case that pins how many samples the
+    watch loop took declares a gap here, so that count is decided by
+    `end_run_and_await_launcher_return` rather than by how promptly the host
+    schedules the run thread.
     """
 
     events_jsons: list[str]
@@ -731,6 +759,7 @@ class _ScriptedFabroRunner:
     inspect_exit: int = 0
     inspect_stderr: str = "boom"
     events_exit: int = 0
+    return_gap_seconds: float = 0.0
     run_done: threading.Event = field(default_factory=threading.Event)
     run_returned: threading.Event = field(default_factory=threading.Event)
     rm_calls: list[str] = field(default_factory=list)
@@ -758,6 +787,8 @@ class _ScriptedFabroRunner:
         # the healthy-path tests set run_done during or before polling).
         _ = self.run_done.wait(timeout=10.0)
         self.run_returned.set()
+        # The gap this fake declares, held between its signal and its return.
+        _ = threading.Event().wait(timeout=self.return_gap_seconds)
         return CommandResult(exit_code=0, stdout="    Run: 01RUN\n", stderr="")
 
     def _ps(self) -> CommandResult:
@@ -990,8 +1021,7 @@ def test_a_bound_run_that_goes_terminal_is_observed_and_never_stall_cancelled(
     def _sleep_then_finish(_seconds: float) -> None:
         polls["n"] += 1
         if polls["n"] >= 4:
-            runner.run_done.set()
-            assert runner.run_returned.wait(timeout=1.0)
+            end_run_and_await_launcher_return(run_done=runner.run_done, work_item_id=_WORK_ITEM_ID)
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
@@ -1029,8 +1059,7 @@ def test_a_failed_per_run_read_leaves_a_record_and_cancels_nothing(
     def _sleep_then_finish(_seconds: float) -> None:
         polls["n"] += 1
         if polls["n"] >= 4:
-            runner.run_done.set()
-            assert runner.run_returned.wait(timeout=1.0)
+            end_run_and_await_launcher_return(run_done=runner.run_done, work_item_id=_WORK_ITEM_ID)
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
@@ -1062,14 +1091,15 @@ def test_watched_launcher_does_not_cancel_while_a_command_node_is_open(tmp_path:
     janitor's completion event in it carries no open node, so the window
     governs alone and the run IS cancelled.
     """
-    runner = _ScriptedFabroRunner(events_jsons=[_JANITOR_STARTED_JSON])
+    runner = _ScriptedFabroRunner(
+        events_jsons=[_JANITOR_STARTED_JSON], return_gap_seconds=_RETURN_GAP_SECONDS
+    )
     polls = {"n": 0}
 
     def _sleep_then_finish(_seconds: float) -> None:
         polls["n"] += 1
         if polls["n"] >= 4:
-            runner.run_done.set()
-            assert runner.run_returned.wait(timeout=1.0)
+            end_run_and_await_launcher_return(run_done=runner.run_done, work_item_id=_WORK_ITEM_ID)
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
@@ -1078,6 +1108,7 @@ def test_watched_launcher_does_not_cancel_while_a_command_node_is_open(tmp_path:
     )
     assert result.stalled_run_id is None
     assert runner.rm_calls == []
+    assert runner.verbs.count("events") == 3
 
 
 def test_watched_launcher_cancels_once_the_open_command_node_has_completed(
@@ -1111,8 +1142,7 @@ def test_watched_launcher_lets_a_healthy_run_complete(tmp_path: Path) -> None:
     def _sleep_then_finish(_seconds: float) -> None:
         polls["n"] += 1
         if polls["n"] >= 3:
-            runner.run_done.set()
-            assert runner.run_returned.wait(timeout=1.0)
+            end_run_and_await_launcher_return(run_done=runner.run_done, work_item_id=_WORK_ITEM_ID)
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
@@ -1217,8 +1247,7 @@ def test_watched_launcher_does_not_cancel_when_events_advance(tmp_path: Path) ->
         # while the OS gets round to scheduling the run thread.
         polls["n"] += 1
         if polls["n"] >= 4:
-            runner.run_done.set()
-            assert runner.run_returned.wait(timeout=1.0)
+            end_run_and_await_launcher_return(run_done=runner.run_done, work_item_id=_WORK_ITEM_ID)
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
@@ -1244,8 +1273,7 @@ def test_watched_launcher_treats_probe_failure_as_no_signal_never_cancels(
     def _sleep_then_finish(_seconds: float) -> None:
         polls["n"] += 1
         if polls["n"] >= 5:
-            runner.run_done.set()
-            assert runner.run_returned.wait(timeout=1.0)
+            end_run_and_await_launcher_return(run_done=runner.run_done, work_item_id=_WORK_ITEM_ID)
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
@@ -1287,8 +1315,7 @@ def test_watched_launcher_continues_when_discovered_run_item_is_absent(
     def _sleep_then_finish(_seconds: float) -> None:
         polls["n"] += 1
         if polls["n"] >= 3:
-            runner.run_done.set()
-            assert runner.run_returned.wait(timeout=1.0)
+            end_run_and_await_launcher_return(run_done=runner.run_done, work_item_id=_WORK_ITEM_ID)
 
     monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", _no_items)
     journal = _RecordingJournal()
@@ -1314,8 +1341,7 @@ def test_watched_launcher_events_probe_error_is_no_signal_never_cancels(
     def _sleep_then_finish(_seconds: float) -> None:
         polls["n"] += 1
         if polls["n"] >= 5:
-            runner.run_done.set()
-            assert runner.run_returned.wait(timeout=1.0)
+            end_run_and_await_launcher_return(run_done=runner.run_done, work_item_id=_WORK_ITEM_ID)
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())

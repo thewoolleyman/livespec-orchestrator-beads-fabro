@@ -37,6 +37,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_pl
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
+from tests.conftest import end_run_and_await_launcher_return
+
 _WORK_ITEM_ID = "bd-ib-6pdigz"
 _RUN_ID = "01M4BOUNDRUN"
 # The factory's listing, carrying the one row this dispatch owns. Reachable
@@ -86,6 +88,12 @@ class _FactoryRunner:
     clamped to the last entry so a case states only the readings it cares
     about. Every argv is kept whole rather than reduced to a verb, because a
     read addressed to the wrong run answers perfectly well.
+
+    `run_returned` is this fake's OWN account of returning, and no case waits
+    on it: it fires before `port.run` has returned and so before the launcher
+    has published anything, which is one step too early to read as the run
+    being over (bd-ib-spc6xr). `end_run_and_await_launcher_return` waits on
+    the launcher's own thread instead.
     """
 
     inspect_readings: list[tuple[int, str, str]]
@@ -193,14 +201,15 @@ def _launch(
 
     def _sleep(_seconds: float) -> None:
         # The watch loop sleeps BEFORE each poll, so the run is released on
-        # the sleep AFTER the last poll this case wants. A poll beyond that
-        # is possible while the launch thread finishes unwinding, which is
-        # why every case below asserts a FLOOR and the shape of the tail
-        # rather than an exact poll count.
+        # the sleep AFTER the last poll this case wants — and the release
+        # WAITS for the launcher itself to observe that return, so the loop
+        # cannot take one more sample while the launcher is still publishing
+        # its result. Every case below still asserts a FLOOR and the shape of
+        # the tail rather than an exact poll count, because the floor is what
+        # each clause is about; it is no longer a concession to that race.
         slept["polls"] += 1
         if slept["polls"] > polls_before_the_run_ends:
-            runner.run_done.set()
-            assert runner.run_returned.wait(timeout=5.0)
+            end_run_and_await_launcher_return(run_done=runner.run_done, work_item_id=_WORK_ITEM_ID)
 
     repo = _repo(tmp_path=tmp_path)
     _ = WatchedFabroLauncher(sleep=_sleep, clock=lambda: 0.0).launch(

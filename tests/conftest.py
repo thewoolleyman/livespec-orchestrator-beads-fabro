@@ -38,6 +38,7 @@ import base64
 import json
 import os
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -598,6 +599,62 @@ def _git_init_origin_reachable(*, root: Path) -> None:
             capture_output=True,
             env={**env, **author},
         )
+
+
+# ---------------------------------------------------------------------------
+# The watchdog launcher fixtures' END-OF-RUN wait
+# ---------------------------------------------------------------------------
+
+# `WatchedFabroLauncher` runs `fabro run` on a thread it names after the work
+# item it launched, and sets its OWN `run_returned` signal LAST — after
+# `port.run` has returned AND the result has been published — because the
+# watch loop reads that signal as the run being over.
+#
+# A fixture that releases a healthy fake run and then waits on the FAKE
+# runner's own `run_returned` is therefore one step too early: the scripted
+# runner sets that signal BEFORE it returns its `CommandResult`, so the watch
+# loop can resume while the launcher's signal is still unset, find the run
+# apparently still live, and take one more liveness sample. Under the injected
+# clocks those fixtures use — which jump 600 seconds per reading — that extra
+# sample pushes the quiet window past the bound the case declares, and the
+# watchdog correctly cancels a run the case calls healthy. Measured
+# 2026-10-18 in gate run 20261018T062039Z-3681040 at load15 16 to 20: one
+# failure in 9335 tests, `stalled_run_id` reading `'01RUN'` where the case
+# asserts None, while the same case passed 5 of 5 in isolation (bd-ib-spc6xr).
+# Production is unaffected — with a real clock an extra sample costs seconds
+# rather than 600 — so the defect is in the fixtures' wait and nowhere else.
+#
+# Joining the launcher's own thread is the wait that CANNOT be early: that
+# thread exits only after the launcher has set its signal, so once the join
+# returns the next check at the top of the watch loop ends the watch with no
+# further sample.
+_LAUNCHER_RUN_THREAD_PREFIX = "fabro-run-"
+
+# Generous, because it bounds nothing a healthy fixture depends on: the fake
+# runner returns as soon as it is released, so this only decides how long a
+# genuinely wedged launcher thread is given before the wait reports it.
+_LAUNCHER_RETURN_TIMEOUT_SECONDS = 10.0
+
+
+def end_run_and_await_launcher_return(*, run_done: threading.Event, work_item_id: str) -> None:
+    """Release a healthy fake `fabro run` and wait for the LAUNCHER to observe it.
+
+    The wait every watchdog launcher fixture takes when it ends a healthy run
+    from its injected sleep, so the watch loop cannot poll again between the
+    run's return and the launcher's own return signal.
+
+    The launcher thread is REQUIRED to be found rather than waited on if it
+    happens to exist: a lookup that silently matched nothing would hand the
+    caller back the early wait it is replacing, and report it as the
+    launcher-side one.
+    """
+    run_done.set()
+    name = f"{_LAUNCHER_RUN_THREAD_PREFIX}{work_item_id}"
+    launcher_threads = [thread for thread in threading.enumerate() if thread.name == name]
+    assert launcher_threads, f"no launcher run thread named {name} is alive"
+    for thread in launcher_threads:
+        thread.join(timeout=_LAUNCHER_RETURN_TIMEOUT_SECONDS)
+        assert not thread.is_alive(), f"{name} did not return within its wait"
 
 
 # ---------------------------------------------------------------------------
