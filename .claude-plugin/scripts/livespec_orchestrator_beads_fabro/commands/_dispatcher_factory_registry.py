@@ -46,6 +46,12 @@ def factory_registry_refusal(*, factory: FactoryTarget | None) -> str | None:
     existing meaning and remains the supported form for an adopter outside this
     fleet.
 
+    The CONFLICT arm is graded ahead of the registry's own answer, because the
+    two faults live in different files and only one of them is this
+    repository's: a committed entry that declares both sources is wrong whatever
+    the host registry happens to say, and reporting the registry's answer first
+    would send an operator to edit host state over a fault in a tracked file.
+
     `factory` is optional for the same reason the `bin` and `environment`
     refusals' are: a caller that never ran the dispatch preamble — the
     needs-attention and standalone reconcile surfaces build their own arguments
@@ -54,6 +60,8 @@ def factory_registry_refusal(*, factory: FactoryTarget | None) -> str | None:
     """
     if factory is None or not factory.registry.declared:
         return None
+    if factory.registry.conflicting_keys:
+        return _conflict_refusal(factory=factory)
     if factory.registry.detail is None:
         return None
     return (
@@ -64,4 +72,26 @@ def factory_registry_refusal(*, factory: FactoryTarget | None) -> str | None:
         " host, or point LIVESPEC_FABRO_FACTORY_REGISTRY at the file that"
         f" carries it; this dispatch is refused rather than sent to whichever"
         " Fabro this host runs\n"
+    )
+
+
+def _conflict_refusal(*, factory: FactoryTarget) -> str:
+    """The refusal a registry-backed entry that also commits an address earns.
+
+    Every conflicting key is enumerated rather than only the first, because they
+    are ONE fault in ONE entry with ONE remedy — delete the committed address
+    lines — and an operator told about half of it edits the entry, re-dispatches,
+    and is refused again.
+    """
+    keys = ", ".join(
+        f"dispatcher.factories.{factory.name}.{key}" for key in factory.registry.conflicting_keys
+    )
+    return (
+        f"ERROR: factory {factory.name} declares"
+        f" dispatcher.factories.{factory.name}.registry together with {keys};"
+        " a registry-backed entry names no machine, so its addresses come from"
+        " the factory registry and a committed one beside it is a second answer"
+        " with no rule for choosing between them. Remove the committed"
+        f" address(es), or remove the registry key and let factory"
+        f" {factory.name} keep naming its machine itself\n"
     )

@@ -67,6 +67,12 @@ REGISTRY_PATH_ENV_VAR = "LIVESPEC_FABRO_FACTORY_REGISTRY"
 DEFAULT_REGISTRY_PATH = "/etc/livespec/fabro-factories.json"
 
 _SERVER_KEY = "server"
+_DOCKER_HOST_KEY = "docker_host"
+
+# The committed address keys a registry-backed entry may not also carry. Each
+# names an address the registry is the source of, so an entry declaring both
+# has two answers and no rule for choosing between them.
+_COMMITTED_ADDRESS_KEYS = (_SERVER_KEY, _DOCKER_HOST_KEY)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -89,12 +95,21 @@ class FactoryRegistryReading:
     unresolvable one carries a detail and no address, and the grade refuses on
     the detail rather than on the address's absence — which is the state an
     ordinary serverless entry is also in.
+
+    `conflicting_keys` is the committed address keys the entry carried BESIDE
+    `registry`, and it is kept apart from `detail` rather than folded into it
+    because the two faults are in different files: this one is in the governed
+    repository's own `.livespec.jsonc` and is fixed by a commit, while a detail
+    is in host state and is fixed by the provisioning. A refusal that named the
+    registry path for a conflict would point the operator at a file that had no
+    part in the decision.
     """
 
     declared: bool = False
     path: str = ""
     server: str | None = None
     detail: str | None = None
+    conflicting_keys: tuple[str, ...] = ()
 
 
 # The reading every entry that is not registry-backed yields. A named constant
@@ -122,10 +137,19 @@ def factory_registry_from_entry(*, entry: dict[str, Any], name: str) -> FactoryR
 
     An entry that is not registry-backed returns before the registry is looked
     at, so a repository that declares none performs no filesystem read at all.
+
+    A CONFLICTING entry returns before the read as well, and that ordering is
+    deliberate: the dispatch is refused either way, so reading a file whose
+    answer cannot be used would put a filesystem fault on the critical path of
+    a refusal the committed configuration already earned — and would let the
+    message report whichever fault it hit first.
     """
     if entry.get(REGISTRY_KEY) is not True:
         return NO_FACTORY_REGISTRY
     path = registry_path()
+    conflicting = tuple(key for key in _COMMITTED_ADDRESS_KEYS if key in entry)
+    if conflicting:
+        return FactoryRegistryReading(declared=True, path=path, conflicting_keys=conflicting)
     table = _registry_table(path=path)
     if isinstance(table, str):
         return FactoryRegistryReading(declared=True, path=path, detail=table)
