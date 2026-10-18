@@ -71,9 +71,23 @@ _UNKNOWN_EPIC = "bd-ib-admitunknown"
 _UNKNOWN_TARGET = "bd-ib-admitunknowntarget"
 _HANDOFF_EPIC = "bd-ib-admithandoff"
 _HANDOFF_TARGET = "bd-ib-admithandofftarget"
+_SUGGEST_EPIC = "bd-ib-admitsuggest"
+_SUGGEST_TARGET = "bd-ib-admitsuggesttarget"
+_FOREIGN_PATH_EPIC = "bd-ib-admitforeign"
+_FOREIGN_PATH_TARGET = "bd-ib-admitforeigntarget"
+_BARE_EPIC = "bd-ib-admitbare"
+_BARE_TARGET = "bd-ib-admitbaretarget"
 # A repository identity carrying no path separator at all, so its refusal cannot
 # be satisfied by anything this project's own spellings happen to share.
 _UNKNOWN_REPO = "a-repository-this-host-has-never-cloned"
+# The same unresolvable name written as a forge path. Its LAST SEGMENT does not
+# resolve either, which is what makes it the control for a bare-name suggestion
+# that is COMPUTED rather than pasted out of the identity it was handed.
+_FOREIGN_PATH = f"thewoolleyman/{_UNKNOWN_REPO}"
+# The phrase a refusal uses to name a bare identity that WOULD resolve. The bare
+# project name is a substring of its own forge path, so the assertion keys on
+# this phrase and the quoted identity rather than on the name alone.
+_SUGGESTION = "resolves as"
 _SESSION = "claude:plan-admission"
 _NOW = "2026-10-18T18:30:00Z"
 # Far enough ahead that the resume's own real-clock expiry reading can never
@@ -253,3 +267,55 @@ def test_an_unresolvable_repository_is_refused_naming_the_identity(tmp_path: Pat
         assert _UNKNOWN_REPO in refusal.detail, refusal.detail
     assert _epic_state(config=config, epic_id=_UNKNOWN_EPIC) == pointer_before
     assert _epic_state(config=config, epic_id=_HANDOFF_EPIC) == handoff_before
+
+
+def test_the_forge_path_form_of_this_project_is_refused_naming_the_bare_identity(
+    tmp_path: Path,
+) -> None:
+    """A path-form identity whose last segment resolves is refused with that segment.
+
+    This is the measured incident's own shape, and the author who wrote it had
+    no way to see what was wrong: `thewoolleyman/<repo>` is the project's real
+    forge path, so a refusal that only reported the value back reads as a
+    refusal of the correct answer. Naming the identity that WOULD resolve is
+    what makes the one-character fix visible.
+
+    THE REFUSAL IS NEVER A NORMALIZATION. Stripping the owner would make
+    `<any-owner>/<this-repo-name>` resolve to THIS checkout, which is the one
+    thing the reader's own origin-name resolution refuses to do, so a wrong
+    owner would have its result read as this project's and reported satisfied.
+
+    THE TWO CONTROLS ARE WHAT MAKE THE SUGGESTION MEAN ANYTHING. A path whose
+    last segment does NOT resolve, and an identity carrying no separator at all,
+    must each be refused with NO suggestion — otherwise a refusal that simply
+    pasted a fragment of whatever it was handed would satisfy the case above.
+    """
+    config = _project(tmp_path=tmp_path)
+    for epic_id, target_id in (
+        (_SUGGEST_EPIC, _SUGGEST_TARGET),
+        (_FOREIGN_PATH_EPIC, _FOREIGN_PATH_TARGET),
+        (_BARE_EPIC, _BARE_TARGET),
+    ):
+        _seed_epic(config=config, epic_id=epic_id, target_id=target_id)
+
+    def _refuse(*, epic_id: str, target_id: str, repo: str) -> NextActionRefusal:
+        refusal = set_next_action(
+            config=config,
+            epic_id=epic_id,
+            action=_action(target_id=target_id, repo=repo),
+            session=_SESSION,
+            now=_NOW,
+        )
+        assert isinstance(refusal, NextActionRefusal), refusal
+        return refusal
+
+    suggested = _refuse(epic_id=_SUGGEST_EPIC, target_id=_SUGGEST_TARGET, repo=_OWNER_PATH)
+    foreign = _refuse(
+        epic_id=_FOREIGN_PATH_EPIC, target_id=_FOREIGN_PATH_TARGET, repo=_FOREIGN_PATH
+    )
+    bare = _refuse(epic_id=_BARE_EPIC, target_id=_BARE_TARGET, repo=_UNKNOWN_REPO)
+
+    assert _OWNER_PATH in suggested.detail, suggested.detail
+    assert f"{_SUGGESTION} {_PROJECT_NAME!r}" in suggested.detail, suggested.detail
+    assert _SUGGESTION not in foreign.detail, foreign.detail
+    assert _SUGGESTION not in bare.detail, bare.detail

@@ -75,6 +75,23 @@ Tests for the thin-transport command modules under
   defect these cases were added to close, where a merge nobody could read graded
   as a merge nobody recorded and the containment relation then did not run.
 
+- `test_plan_next_action_admission.py` sits beside those too, on the WRITER's
+  side of the same repository identity: a `repo` value the writer accepted could
+  be one the reader can never resolve, which locked a plan for its whole budget
+  (`bd-ib-eebjcl`). Every case drives a PUBLIC writer — `set_next_action` or
+  `append_handoff` — rather than the admission in isolation, because the defect
+  was a disagreement between two sides and only the writer's own path
+  establishes which side this repository takes; the accepted case then reads the
+  obligation back through `resume_directive`, the surface whose withheld
+  dispatch was the measured cost. Two pairings are load-bearing. The project's
+  own bare directory name is written into the SAME tenant and asserted both
+  accepted AND observed, because a writer that refused every identity would
+  satisfy each refusal case here. And the bare-identity suggestion sits beside
+  two negatives — a forge path whose last segment ALSO does not resolve, and an
+  identity carrying no separator at all — since a refusal that simply pasted a
+  fragment of whatever it was handed would satisfy the positive case exactly as
+  well as one that resolved the segment first.
+
 - `test_fabro_executed_candidate_attribution.py` — the attribution of a
   provider ceiling to the candidate that ran. Its two CONTROLS are the
   load-bearing cases and neither works without the other: an unlabelled failing

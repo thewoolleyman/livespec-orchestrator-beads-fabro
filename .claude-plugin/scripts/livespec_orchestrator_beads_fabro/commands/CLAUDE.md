@@ -1418,6 +1418,31 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `unsatisfied`-versus-`unobservable` reasoning catches because the verdict is
   neither of them.
 
+- `_plan_next_action_admission.py` — the WRITE-TIME half of that reader's
+  repository identity (`bd-ib-eebjcl`): whether the repository a candidate
+  pointer's `required_result` names is one `resolve_result_repository` can
+  actually resolve for this project. It is the impure companion of
+  `_plan_next_action_validation`, which grades the pointer's SHAPE and is pure
+  over the value handed to it, and `_plan_tracked_write` calls it in that
+  module's place so every sanctioned writer takes one admission. Three
+  properties an editor must not invert. It calls the READER'S OWN RESOLVER
+  rather than restating what resolves, so the two sides cannot drift: the parse
+  admitted any non-empty `repo` string while the resolution accepts four
+  identities, and a value the writer accepted could therefore be one no
+  observation could ever resolve — which `resume_directive` answers by
+  withholding dispatch, while replacing an unobservable obligation is refused by
+  design, so ONE malformed field locked a plan for its whole budget (measured
+  2026-10-18 on plan epic `bd-ib-6tcjfx`, whose pointer named this project's own
+  repository as `<owner>/<repo>`). A forge-path identity is REFUSED with the
+  bare identity it was reaching for, never normalized onto it, because stripping
+  the owner would make `<any-owner>/<this-repo-name>` resolve to THIS checkout —
+  the exact inference `_plan_result_repository._origin_repository_name` refuses,
+  since it reads another repository's result as this project's and reports it
+  satisfied. And a reference the PARSE refuses passes through with no refusal of
+  its own: the shape grade has already named the parse fault, and a `human` or
+  `none` pointer names no repository at all, so an opinion here would either
+  restate another module's refusal or invent one for a correct pointer.
+
 - The PLAN-AUTHORITY EPOCH CHAIN of `contracts.md`'s "Required result, budget
   and progress epoch" clause (`bd-ib-wdl577`, Scenario 147) — how a plan epic's
   authority transitions serialize when several writers commit from one epoch at
