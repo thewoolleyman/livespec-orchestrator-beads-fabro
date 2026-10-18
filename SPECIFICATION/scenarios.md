@@ -6737,3 +6737,32 @@ Feature: The janitor's check verdict depends on the merge, not on how the dispat
     When the post-merge janitor runs
     Then the janitor-post-merge journal row records an empty list of removed variables
 ```
+
+## Scenario 192 — A turn cut by its node timeout leaves its commit run to finish or be named, and a hook still executing at the cut is a hook-over-limit event
+
+```gherkin
+Feature: A node-timeout cut neither discards a commit under way nor hides its cause
+  As an operator recovering a needs-human run
+  I want a commit run interrupted by a node timeout to finish or be named, and the cut to name its limit
+  So that a proved repair is preserved and the stop is not presented as an agent's decision
+
+  Scenario: A commit run that passes after the cut is preserved and named
+    Given a fix turn that started a commit run through the commit runner
+    And the fix node's resolved timeout ends the turn while that commit run is running
+    When the commit run reaches passed before the needs_human node begins preservation
+    Then the preserved tree's history contains that commit run's resulting HEAD commit
+    And the item's needs-human cause names node-timeout, the fix node, its resolved timeout in seconds, and the commit run's identity with state passed
+
+  Scenario: A commit run still running when the bounded wait ends is stopped before preservation
+    Given a fix turn ended by its node's resolved timeout while a commit run it started is running
+    When the needs_human node's bounded wait ends with that commit run still running
+    Then the commit run is stopped before the preservation commit starts
+    And the item's needs-human cause names the commit run with state no-verdict
+
+  Scenario: An in-turn commit whose hook is still executing at the cut is a hook-over-limit event
+    Given a fix turn that runs git commit inside its own tool call rather than through the commit runner
+    And the fix node's resolved timeout ends the turn while that commit's hook run is executing
+    When the run records the event
+    Then the dispatch journal has a hook-over-limit row naming the fix node, the git commit operation and the node's resolved timeout in seconds
+    And every process of that hook run is terminated before the next git commit or push in the sandbox starts
+```
