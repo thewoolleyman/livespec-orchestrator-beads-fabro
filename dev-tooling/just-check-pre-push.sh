@@ -67,5 +67,43 @@ if uv run python -m livespec_dev_tooling.green_token check 2>&1; then
     echo ":: pre-push: green token matched - tree byte-identical to last green check; skipping full aggregate (CI is authoritative)"
     exit 0
 fi
+
+# The DELEGATED-GATE fall-through (work-item bd-ib-idp5g7, a child of the
+# livespec-dev-tooling plan `delegated-gate-fleet-rollout`; the contract is that
+# repository's SPECIFICATION/contracts.md section "Delegated pre-push gate").
+# This repository HAS opted in - `delegated_gate = true` in its own
+# `[tool.livespec_dev_tooling]` block - so which branch a push takes is decided
+# by the HOST, not by this file. A push from the VPS otherwise runs the whole
+# aggregate below on the VPS, measured here at about 17 minutes; delegated, that
+# same aggregate runs as a Job in the self-hosted k3s cluster's `gates`
+# namespace and this push gates on its verdict.
+#
+# Only the FALL-THROUGH is ever replaced. The green-token skip above is
+# untouched, because a delegated pass writes the SAME token through the SAME CLI
+# a local aggregate does, so a byte-identical tree is skippable whichever path
+# gated it. The deletion-only skip at the top of this file is untouched for a
+# stronger reason still: it publishes no tree, so there is nothing for EITHER
+# gate to judge.
+#
+# The probe's exit code is the whole answer, and it answers for THIS PUSH: the
+# switch AND whether the pushing user can read the gates kubeconfig on this
+# host. From the VPS, which holds the credential, that is 0 and the gate runs on
+# the cluster; from a Fabro sandbox or a laptop it is non-zero and the probe
+# itself prints that this push is gating locally. Every doubt it can have - an
+# absent key, a `false`, a malformed pyproject, a traceback, no credential -
+# exits non-zero and lands here, on the strict local path, which is the only
+# direction in which a mistake is merely expensive rather than an ungated push.
+# Nothing re-delegates inside the gate pod either: it holds no gates kubeconfig,
+# so the `check-pre-push` the Job runs takes this same local fall-through.
+#
+# Once delegation IS selected, this is the last local branch, and the `exec` is
+# what makes that so: a delegated run that reaches no verdict must REFUSE the
+# push rather than fall through to the aggregate below. "We could not gate this"
+# must never quietly become "we gated it some other way".
+if uv run python -m livespec_dev_tooling.gate_remote_delegate enabled; then
+    echo ":: pre-push: delegated gate is enabled for this repo; gating on the cluster"
+    exec uv run python -m livespec_dev_tooling.gate_remote_delegate run
+fi
+
 echo ":: pre-push: skipping same-repo live TUI picker gate; run just check-codex-skill-picker explicitly for live Codex picker acceptance"
 just check-skipping check-codex-skill-picker
