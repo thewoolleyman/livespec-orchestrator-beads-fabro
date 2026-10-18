@@ -6900,3 +6900,161 @@ Feature: The verified record is graded per assertion before publication
     When the proof_grade node runs
     Then it records the third failure and proof_grade_route routes the run to non_converged
 ```
+
+## Scenario 196 — Reconciliation releases or completes a stranded dispatch claim on its owning host, and holds with a named reason every claim it cannot prove stranded
+
+```gherkin
+Feature: The claim half of run reconciliation
+  As a maintainer whose dispatch died before applying its terminal disposition
+  I want the owning host's reconciliation to finish what that dispatch left undone
+  So that the item is never stranded at active, and a claim that may still be live is never touched
+
+  Background:
+    Given an item active with assignee fabro, carrying neither rework:pending nor a merge-hold: label
+    And its ledger run stamp names its run id, a declared factory, and this host as the dispatching host
+
+  Scenario: A first absent run with no live owner is released
+    Given the factory, queried by its declared server target, positively reports that the run does not exist
+    And every ownership lock location for the item on this host was read and none is held by a live process
+    And the forge reports no merged pull request for the item
+    And the item's predecessor history is available and its preceding dispatch did not end in an absent-run release
+    When a reconcile-runs pass runs
+    Then the item is ready with no blocked_reason and no fabro assignee
+    And one stranded-claim-release journal record names the item, the run id, the factory and the reason run-absent
+    And one ledger comment on the item names the same facts
+
+  Scenario: A second consecutive absent run rests for a human
+    Given the factory positively reports that the run does not exist
+    And no live owner is established and the forge reports no merged pull request
+    And the item's predecessor history shows its preceding dispatch ended in an absent-run release
+    When a reconcile-runs pass runs
+    Then the item rests at blocked with blocked_reason needs-human
+    And a ledger comment names both runs and the reason run-absent-repeated
+
+  Scenario: A terminal failed run with no live owner receives the Dispatcher's own terminal disposition
+    Given the run is terminal and failed, and no live owner is established
+    And its recorded failure classifies as an eligible provider-limit cause
+    When a reconcile-runs pass runs
+    Then the item takes the provider-limit release of Factory-configurable ACP fallback priority, with its provider-limit-release record
+    And a replay of the same pass writes no second release record and no second ledger comment
+
+  Scenario: A first-stall cancel with no live owner is completed as a first-stall release
+    Given the run is terminal, cancelled by the progress watchdog as the item's first stall, and no live owner is established
+    When a reconcile-runs pass runs
+    Then the item takes the first-stall release of Dispatcher progress watchdog
+
+  Scenario: A repeated adapter launch failure keeps its retained route
+    Given the run is terminal and failed, and no live owner is established
+    And its unrecovered failing attempt is an adapter launch failure whose preceding dispatch also ended in an adapter launch failure
+    When a reconcile-runs pass runs
+    Then no adapter-launch-release record is written
+    And the item rests at blocked with blocked_reason needs-human and its needs-human cause comment
+
+  Scenario: An ordinary failed run rests for a human with its cause
+    Given the run is terminal and failed with a failure no release route of Factory-configurable ACP fallback priority or Dispatcher progress watchdog claims, and no live owner is established
+    When a reconcile-runs pass runs
+    Then the item rests at blocked with blocked_reason needs-human
+    And a needs-human cause comment names the run id and its innermost cause
+
+  Scenario Outline: A claim that cannot be proved stranded is held with the reason of its first failing condition
+    Given every condition graded before <reason> in the hold order passes
+    And <condition>
+    When a reconcile-runs pass runs
+    Then the item stays active with assignee fabro and its labels unchanged
+    And the pass lists the claim in held with the reason <reason>
+
+    Examples:
+      | condition                                                                        | reason                        |
+      | the item carries no readable run stamp                                           | claim-unattributable          |
+      | the item carries a pending stamp with no run id                                  | attribution-pending           |
+      | the run stamp names another host as the dispatching host                         | owner-elsewhere               |
+      | the declared factory cannot be reached                                           | factory-unobservable          |
+      | the factory reports the run running, blocked or queued                           | run-live                      |
+      | the run is terminal and one ownership lock location for the item cannot be read  | liveness-unobservable         |
+      | the run is terminal and a live process holds the item's ownership lock           | dispatch-live                 |
+      | the run is terminal and succeeded                                                | run-succeeded                 |
+      | the run is absent and the forge cannot be asked                                  | forge-unobservable            |
+      | the run is absent and a merged pull request exists for the item                  | merged-pr                     |
+      | the run is absent and the preceding dispatch's outcome cannot be established     | history-unavailable           |
+      | the run failed and its failure evidence cannot be read                           | terminal-evidence-unavailable |
+      | the run is absent and the item is re-stamped with a different run before writing | claim-changed                 |
+      | the run is absent and the presence of the journal record cannot be read          | effect-unobservable           |
+
+  Scenario: The earliest failing condition names the hold
+    Given the run stamp names another host as the dispatching host
+    And the declared factory cannot be reached
+    When a reconcile-runs pass runs
+    Then the pass lists the claim in held with the reason owner-elsewhere
+
+  Scenario: A claim owned by a live dispatch on another host is never released here
+    Given the run stamp names host A as the dispatching host, and a Dispatcher on host A is alive and owns the item
+    And the factory positively reports that the run does not exist
+    When a reconcile-runs pass runs on host B
+    Then the item stays active with assignee fabro
+    And host B lists the claim in held with the reason owner-elsewhere
+
+  Scenario: Marked and held items are not surveyed
+    Given one active fabro item carries rework:pending and another carries a merge-hold: label
+    And neither item's stamped run exists on its factory
+    When a reconcile-runs pass runs
+    Then neither item changes status
+    And held lists neither item
+
+  Scenario Outline: Every reconciliation surface releases a qualifying absent-run claim
+    Given a freshly prepared claim that satisfies every condition of the first absent-run release scenario
+    When reconciliation runs as <surface>
+    Then the item is ready with no fabro assignee and one stranded-claim-release record names the reason run-absent
+
+    Examples:
+      | surface                         |
+      | a Dispatcher loop tick          |
+      | the dispatch preamble           |
+      | the standalone reconcile-runs sweep |
+
+  Scenario: A claim re-stamped between the comment and the transition is not overwritten
+    Given a qualifying absent-run claim for run R whose journal record and ledger comment the recovery has written
+    And the item's ledger run stamp names a different run S when the recovery re-reads it immediately before the transition
+    When the recovery reaches the transition
+    Then no status transition is written and the item keeps its claim for run S
+    And the pass lists the claim in held with the reason claim-changed
+
+  Scenario: Two reconcilers in different checkouts on the owning host recover a claim once
+    Given two reconciliation passes start together on the owning host from different checkouts of the tenant's repository
+    And both survey the same qualifying absent-run claim
+    When both passes run
+    Then exactly one stranded-claim-release journal record and one ledger comment exist for that item and run
+    And the item is ready exactly once
+
+  Scenario: An interrupted recovery resumes from its first missing effect
+    Given a recovery wrote the stranded-claim-release journal record for a qualifying claim and stopped before the ledger comment
+    When the next reconcile-runs pass runs
+    Then it writes the ledger comment and then the status transition
+    And no second journal record is written
+
+  Scenario: An unreadable effect lookup writes nothing
+    Given a recovery wrote the stranded-claim-release journal record for a qualifying claim and stopped before the ledger comment
+    And the presence of the ledger comment cannot be read
+    When the next reconcile-runs pass runs
+    Then no ledger comment and no status transition is written
+    And the pass lists the claim in held with the reason effect-unobservable
+
+  Scenario: A newly admitted dispatch that has not learned its run is not mistaken for the old claim
+    Given an item whose earlier claim for run R was moved to ready by a human valve
+    And the item was then admitted again, and its admission wrote a pending stamp naming the new dispatch with no run id
+    When a reconcile-runs pass runs while the factory reports run R absent
+    Then the item stays active with assignee fabro
+    And the pass lists the claim in held with the reason attribution-pending, naming the move valve as the remedy
+
+  Scenario: A human valve that lands before the final re-read is respected
+    Given a qualifying absent-run claim for run R whose recovery has written its journal record and ledger comment
+    And a human valve moved the item to blocked before the recovery's final re-read
+    When the recovery reaches the transition
+    Then no status transition is written and the item stays blocked
+    And the pass lists the claim in held with the reason claim-changed
+
+  Scenario: A second recovery of the same claim writes nothing
+    Given a qualifying absent-run claim that one reconcile-runs pass has already released
+    When another reconciliation surface on the same host runs before any new dispatch
+    Then no second stranded-claim-release record and no second ledger comment is written
+    And the item stays ready
+```
