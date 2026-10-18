@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.214.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.213.2...v0.214.0) (2026-10-18)
+
+
+### Features
+
+* **dispatcher:** name a seeded placement in the goal brief as an interrupted prior attempt (bd-ib-kn7ktk) ([d117462](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d117462b8454f5563aab04a712ba66003d81f572))
+* **dispatcher:** name the lost run and the asked sources on a fresh recovery route (bd-ib-kn7ktk) ([fa382fe](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fa382fe02b80af6ee4217637f4fbdb863532dcbb))
+* **dispatcher:** name the published-tree source a loss record asked (bd-ib-kn7ktk) ([da02b01](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/da02b01011b5357a62df4f8f8fb7a59edecc1775))
+
 ## [0.213.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.213.1...v0.213.2) (2026-10-18)
 
 
