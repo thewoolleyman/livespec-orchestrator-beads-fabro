@@ -99,6 +99,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import (
     rendered_dispatch_candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_factory_hold_evidence import (
+    FactoryHoldEvidence,
     FactoryRunReader,
     factory_hold_evidence,
 )
@@ -214,6 +215,7 @@ def resolve_acp_preflight(
             builtin_pairs=builtin_pairs,
             probe=probe,
             headroom=headroom,
+            unconfirmed_keys=ledger.unconfirmed_keys,
         ),
     )
 
@@ -423,16 +425,28 @@ def _host_wide_ledger(
 
     The unobservable sets are unioned for the same reason the holds are. An
     unreadable factory is "unavailable, not an empty hold set", and the only
-    surface that can say so is the verdict every consumer already reads.
+    surface that can say so is the verdict every consumer already reads. The
+    ENTITLEMENTS that unreadable half leaves unconfirmed ride across with it,
+    because a surfaced condition no filter can act on is how an unobserved
+    candidate came to be treated as confirmed unheld: the entry said the source
+    was unavailable and the selection went ahead regardless.
     """
     ledger = read_acp_hold_ledger(journal_path=journal_path, now_iso=now_iso)
     if factory_runs is None:
         return ledger
-    evidence = factory_hold_evidence(repo=repo, reader=factory_runs, now_iso=now_iso)
+    return _unioned(
+        ledger=ledger,
+        evidence=factory_hold_evidence(repo=repo, reader=factory_runs, now_iso=now_iso),
+    )
+
+
+def _unioned(*, ledger: AcpHoldLedger, evidence: FactoryHoldEvidence) -> AcpHoldLedger:
+    """One repository's journal fold and one host-wide read, as one ledger."""
     return replace(
         ledger,
         holds=(*ledger.holds, *evidence.holds),
         unobservable=(*ledger.unobservable, *evidence.unobservable),
+        unconfirmed_keys=evidence.unconfirmed_keys,
     )
 
 
