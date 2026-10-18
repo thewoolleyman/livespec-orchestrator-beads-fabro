@@ -77,6 +77,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     spans_path,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
+    interrupted_attempt_for,
     minijinja_findings_detail,
     minijinja_openers_in_goal_sources,
     render_goal,
@@ -261,7 +262,15 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
             detail=overlay_error,
         )
     goal_text = render_goal(
-        item=item, repo=repo, branch=plan.branch, comments=recorded.comments, lessons=lessons
+        item=item,
+        repo=repo,
+        branch=plan.branch,
+        comments=recorded.comments,
+        lessons=lessons,
+        # The recovery placement is read off THIS item's own argument copy, which
+        # is the namespace `recovery_launch_args` pinned the route onto — never a
+        # wave-shared one, for the reason the clause forbids route state there.
+        interrupted=interrupted_attempt_for(args=args),
     )
     _ = goal_file.write_text(goal_text, encoding="utf-8")
     started_at, outcome = run_dispatch_with_watchdog(
