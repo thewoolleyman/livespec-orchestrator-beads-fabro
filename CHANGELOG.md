@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.214.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.214.0...v0.214.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **dispatcher:** complete a stranded terminal run through the Dispatcher's own disposition (bd-ib-m0t0) ([3da0c56](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3da0c563bdd95e40baf9329e46459c7ce45520f0))
+* **dispatcher:** emit what a reconcile-runs pass's claim lane did (bd-ib-m0t0) ([749af6d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/749af6d7bb379659ccfb9c8633b74a870be53721))
+* **dispatcher:** fence one claim recovery and converge its replay (bd-ib-m0t0) ([e335801](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e3358013569c1af7666b67c084493ab36cad4110))
+* **dispatcher:** release a stranded dispatch claim whose run the factory reports absent (bd-ib-m0t0) ([ff361df](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ff361df6b75d850a627b7e6272ea6404b1a2bdd0))
+* **dispatcher:** rest a second consecutive absent run at blocked / needs-human (bd-ib-m0t0) ([c6a7253](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c6a7253b94bf22cedff5456f58400aa285b5cf8e))
+* **dispatcher:** stamp a pending dispatch claim at admission and the host on the run stamp (bd-ib-m0t0) ([25f644c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/25f644c55b58f82789085503be5a81705193750d))
+
 ## [0.214.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.213.2...v0.214.0) (2026-10-18)
 
 
