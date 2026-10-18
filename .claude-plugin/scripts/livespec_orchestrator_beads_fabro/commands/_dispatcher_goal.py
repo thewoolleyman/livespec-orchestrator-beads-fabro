@@ -3,7 +3,7 @@
 Assembles the natural-language brief delivered to the Fabro phase graph
 from a work-item's fields, its ledger comments, and any ratified
 lessons, then routes the whole assembled brief through
-`escape_minijinja_literal` (hosted in `_dispatcher_overlay`) so Fabro's
+`escape_minijinja_literal` (hosted in `_dispatcher_minijinja_escape`) so Fabro's
 MiniJinja goal templating renders the untrusted prose verbatim.
 """
 
@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_minijinja_escape import (
     escape_minijinja_literal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_guard import (

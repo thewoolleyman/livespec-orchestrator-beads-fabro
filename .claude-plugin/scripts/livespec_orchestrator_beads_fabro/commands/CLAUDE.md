@@ -137,6 +137,16 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   in-memory `index: dict[str, WorkItem]`); callers (`next`,
   `list-work-items`, the Dispatcher) import them from there.
 - `_jsonc.py` — JSONC parsing for `.livespec.jsonc`.
+- `_dispatcher_minijinja_escape.py` — the shared MiniJinja literal escaper every
+  untrusted-prose renderer routes through, so arbitrary item prose cannot alter
+  graph semantics when Fabro renders the goal. It lived in `_dispatcher_overlay`
+  until `bd-ib-tlmq3m` and was always a guest there: that module renders a run
+  config and renders NONE of its own output through the escaper, which is why the
+  cut is clean. It moved by COHESION rather than by line count when the sandbox
+  worktree-pack prepare step needed room under the overlay's LLOC ceiling, and it
+  deliberately left NO re-export shim — AGENTS.md §"Refactoring for size" bans
+  one, and a shim would have bought the overlay none of the room the split was
+  for. Every caller imports from here.
 - `_ready_aging_order.py` — the orchestrator-side ready-AGE inputs
   `ready_sort_key` needs, injected for the same reason
   `_sibling_status_lookup` is: the durable, clone-independent `ready_since`
