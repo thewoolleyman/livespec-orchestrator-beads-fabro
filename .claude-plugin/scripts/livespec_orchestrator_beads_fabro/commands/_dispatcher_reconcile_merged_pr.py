@@ -106,7 +106,7 @@ def merged_pr_list_argv(*, item: WorkItem, default_branch: str) -> list[str]:
 def parse_merged_pr_list(
     *, stdout: str, item: WorkItem, branch: str, default_branch: str
 ) -> tuple[PrView, ...]:
-    """Parse merged PR search results, accepting either branch or title/id matches.
+    """Parse merged PR search results, accepting branch, title, or body/id matches.
 
     A candidate merged onto some OTHER base than `default_branch` is rejected,
     which is what stops a reconcile from disposing an item against a merge into
@@ -117,17 +117,13 @@ def parse_merged_pr_list(
     if isinstance(parsed_raw, JsonParseFailure) or not isinstance(parsed_raw, list):
         return ()
     matches: list[PrView] = []
-    body_matches: list[PrView] = []
     for entry_raw in cast("list[object]", parsed_raw):
         view = _pr_view_from_list_entry(
             entry_raw=entry_raw, item=item, branch=branch, default_branch=default_branch
         )
         if view is not None:
             matches.append(view)
-            body_raw: object = cast("dict[str, Any]", entry_raw).get("body")
-            if isinstance(body_raw, str) and item.id in body_raw:
-                body_matches.append(view)
-    return (body_matches[0],) if body_matches else tuple(matches)
+    return tuple(matches)
 
 
 def _ambiguous_pr_detail(*, candidates: tuple[PrView, ...]) -> str:
