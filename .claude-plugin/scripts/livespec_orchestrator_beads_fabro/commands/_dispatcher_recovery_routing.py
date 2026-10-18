@@ -50,6 +50,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurements import (
+    MEASUREMENT_PRESERVED_WORK,
+    unobservable_measurements,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved import (
     PreservedWorkUnobservable,
     verified_preserved_seed,
@@ -84,15 +88,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals impo
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
-    "MEASUREMENT_PRESERVED_WORK",
     "RecoveryRouting",
     "route_recovery",
 ]
-
-# The measurement name a preserved-work read that could not be taken reports
-# under. One token per measurement, so an operator greps the journal for the READ
-# that failed rather than for the route it stopped.
-MEASUREMENT_PRESERVED_WORK = "preserved-work"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -226,14 +224,28 @@ def _released_route(
 ) -> RecoveryRoute:
     """The route one RELEASED candidate takes, from the resume's own measurement.
 
-    The refusal ladder is the clause's own grading surface — "`resume`, when every
-    published-PR resume precondition of the `resume --item` clause passes" — so a
-    silent ladder IS the resume route and nothing here re-decides it. The anchor
+    THE UNOBSERVABLE MEASUREMENTS ARE GRADED FIRST, because "an unobservable or
+    unreadable measurement at any step routes `held`" and the ladder below cannot
+    express that: it renders a REFUSAL for such a read, and every refusal is then
+    classified as fallback-permitting or not — so an unanswered question would be
+    graded as an answer.
+
+    The refusal ladder is then the clause's own grading surface — "`resume`, when
+    every published-PR resume precondition of the `resume --item` clause passes" —
+    so a silent ladder IS the resume route and nothing here re-decides it. The anchor
     and the pull request number are narrowed as well, for the same fail-closed
     reason `run_resume_command` narrows them: without an anchor there is no head
     to check out and no record to attribute, so proceeding would launch a plain
     run while the journal recorded a resume.
     """
+    measurements = unobservable_measurements(observation=gather.observation)
+    if measurements:
+        # An unobservable measurement at ANY step routes `held`, which is why this
+        # precedes the ladder rather than riding it: every one of these reads also
+        # produces a REFUSAL, and a refusal is graded as fallback-permitting or
+        # not — so falling through would seed or dispatch around a question that
+        # was never answered, and the record would read like a measured decision.
+        return _held_route(item=item, journal=journal, hold=RecoveryHold(measurements=measurements))
     anchor = gather.anchor
     pull_request = gather.observation.pull_request
     if resume_refusals(observation=gather.observation) or anchor is None or pull_request is None:
