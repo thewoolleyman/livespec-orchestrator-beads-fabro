@@ -53,55 +53,24 @@ own on every run that reaches it. It runs only because something else already
 failed, which makes it the one node that cannot be the cause — and the
 unordered outcome map would otherwise let it be picked first.
 
-THE PETRI ENGINE RECORDS NO `node_outcomes` AT ALL, so the grading above has a
-second input rather than a second reader. A terminated run's checkpoint on that
-engine carries only `current_node`, `git_commit_sha` and `timestamp`; the
-per-stage results live in the record's own top-level `stages` map, keyed
-`<node>@<visit>`, each entry carrying `handler`, `state`, `output` and
-`response`. Reading that map is what keeps a Petri ending from landing in
-`UNESTABLISHED` — measured 2026-10-15 on run `01M4Y7EJWTQWK5CWWS0NKDHY7T`,
-whose `inspect` named 48 succeeded stages and 2 failed ones while the durable
-ledger comment said the record established nothing.
+WHICH MAP THE GRADING READS IS NOT THIS MODULE'S QUESTION. The pinned engine
+writes `node_outcomes` on the checkpoint and the Petri engine writes none at
+all, recording its per-stage results in the record's own top-level `stages` map
+instead; `_fabro_port_node_outcomes` owns that two-input reading, its visit
+collapse, and the reasons for both. It is a port module rather than a private
+helper here because `_dispatcher_successful_terminal` asks the same question of
+the same record for the opposite verdict, and two copies of the walk is how the
+two would come to disagree about whether one run is readable at all.
 
-It is a FALLBACK and never a merge: a record carrying `node_outcomes` is graded
-from them exactly as before, because that map is the checkpoint's own account
-of the ending while the stage map is the run's account of its whole history,
-and a reader preferring the broader one would answer a different question on
-the engine that supplies both. Only the `state` field is read, and an entry
-carrying none is dropped rather than counted — the honest-unknown lever above
-is what distinguishes "graded, and nothing failed" from "nothing to grade", so
-an ungradeable entry must not make the map look readable.
-
-BEING THE WHOLE HISTORY, THAT MAP IS COLLAPSED TO ONE VISIT PER NODE BEFORE IT
-IS GRADED, and this is the second reading of the recovered-stage measurement
-above rather than a new concern. `node_outcomes` is keyed by NODE and carries
-that node's CURRENT status, which is why `_node_failed` can say a retried node
-reports `succeeded`; the stage map is keyed `<node>@<visit>` and the engine
-never retires an entry, so a visit that failed and was then repaired by the
-graph's bounded fix loop keeps its own `failed` entry for the life of the
-record. Grading entry-by-entry therefore attributes a repaired node on the
-ORDINARY shape of every run the fix loop rescued — `janitor@1` failed, `fix@1`
-succeeded, `janitor@2` succeeded — which blames a stage nobody should look at
-and reports that no answer is owed on a run where one is. That per-visit
-entries persist is measured rather than supposed: the run this reading was
-filed from carries `proof_capture@1` succeeded beside `proof_capture@2` failed.
-
-The latest visit is chosen by the suffix AS A NUMBER, because neither
-alternative holds. Map order is this module's ordering fallback for SEQUENCE
-but is not evidence of visit order, and a text comparison puts `@10` before
-`@9` — both agree with the numeric answer on the measured record and disagree
-on a longer loop, so a fixture that never crossed ten would pass against either
-wrong rule. A suffix carrying no number is left to document order, which is the
-only ordering evidence such a record offers; retaining both entries because
-neither can be ranked would be the attribution defect returning through the one
-shape no engine writes.
-
-The collapse runs AFTER the ungradeable entries are dropped, which keeps one
-rule rather than two: an entry with no readable `state` is not a reading at
-all, so it is not a visit that can outlive an earlier one. Collapsing first
-would let an unreadable latest entry suppress its node's last readable state,
-and a node suppressed that way reads downstream as a node that did not fail —
-the direction that invents an agent, which the lever above exists to refuse.
+What this module still owns is what it does with the answer. `outcomes_observed`
+is the honest-unknown lever described above, so an EMPTY map has to stay
+distinguishable from a graded one in which nothing failed — which is why the
+port drops an ungradeable entry rather than counting it, and why a node whose
+last readable state is suppressed would read downstream as a node that did not
+fail. And the keys arrive AS THE ENGINE WROTE THEM, `proof_capture@2` included,
+so the terminal exclusion divides them through `fabro_stage_node`: comparing a
+NODE id straight against a visit-keyed stage key silently matched nothing and
+let the dead-end terminal be attributed on every Petri ending.
 """
 
 from __future__ import annotations
@@ -112,6 +81,10 @@ from typing import Any, cast
 from livespec_orchestrator_beads_fabro.commands._fabro_escalation import ESCALATION_NODE_ID
 from livespec_orchestrator_beads_fabro.commands._fabro_port_checkpoints import (
     fabro_inspect_checkpoints,
+)
+from livespec_orchestrator_beads_fabro.commands._fabro_port_node_outcomes import (
+    fabro_node_outcomes,
+    fabro_stage_node,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import fabro_inspect_record
 
@@ -155,7 +128,7 @@ def terminal_evidence(*, payload: object | None) -> TerminalEvidence | None:
     checkpoint = _terminal_checkpoint(record=record)
     if checkpoint is None:
         return None
-    outcomes = _node_outcomes(checkpoint=checkpoint) or _stage_state_outcomes(record=record)
+    outcomes = fabro_node_outcomes(record=record, checkpoint=checkpoint)
     failed = _failed_stages(checkpoint=checkpoint, outcomes=outcomes)
     return TerminalEvidence(
         current_predecessor=failed[-1] if failed else None,
@@ -198,80 +171,6 @@ def _sits_at_terminal(*, checkpoint: dict[str, Any]) -> bool:
     return _text(value=checkpoint.get("next_node_id")) is None
 
 
-def _node_outcomes(*, checkpoint: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """The per-node outcome map, keyed by node id, in the record's own order.
-
-    JSON object order is preserved by the parser, so the map's own order is the
-    engine's document order — a better fallback than sorting, which would
-    impose an alphabetical answer on a question about sequence.
-    """
-    return _mapping_entries(raw=checkpoint.get("node_outcomes"))
-
-
-def _stage_state_outcomes(*, record: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """The Petri `stages` map projected onto the outcome shape, in record order.
-
-    The projection keeps ONE grading path rather than giving the engine its own
-    reader: everything downstream asks whether a node is recorded failed and in
-    what order, which `state` answers exactly as `status` does. The stage KEY is
-    carried whole, visit suffix included, because `proof_capture@2` says which
-    visit failed and `proof_capture` would discard a fact the engine recorded.
-
-    The map is per VISIT, so only each node's newest visit survives the
-    projection — the module docstring records why, and why that step runs here
-    rather than against the already-graded outcomes.
-    """
-    graded = {
-        stage: {"status": state}
-        for stage, entry in _mapping_entries(raw=record.get("stages")).items()
-        if (state := _text(value=entry.get("state"))) is not None
-    }
-    newest = _newest_visits(stages=tuple(graded))
-    return {stage: outcome for stage, outcome in graded.items() if stage in newest}
-
-
-def _newest_visits(*, stages: tuple[str, ...]) -> frozenset[str]:
-    """One stage key per node — the newest visit of each, by visit number.
-
-    A frozenset of the SURVIVING KEYS rather than a node-to-key map, so the
-    caller filters its own already-ordered mapping and each retained entry
-    keeps its own position in the record. Carrying the node half out of here
-    would place every multi-visit node at its FIRST visit's position instead.
-    """
-    newest: dict[str, str] = {}
-    for stage in stages:
-        held = newest.get(_stage_node(stage=stage))
-        if held is None or _stage_visit(stage=stage) >= _stage_visit(stage=held):
-            newest[_stage_node(stage=stage)] = stage
-    return frozenset(newest.values())
-
-
-def _stage_visit(*, stage: str) -> int:
-    """The visit number of a `<node>@<visit>` key; 0 for one carrying none.
-
-    `>=` at the call site is what makes the no-number case fall back to
-    document order: two unnumbered visits of one node compare equal, so the
-    later-written entry replaces the earlier one.
-    """
-    visit = stage.partition("@")[2].strip()
-    return int(visit) if visit.isdigit() else 0
-
-
-def _mapping_entries(*, raw: object) -> dict[str, dict[str, Any]]:
-    """One engine-written map of node id to mapping, malformed entries dropped.
-
-    Shared by both outcome readers so a record whose keys or values are
-    unusable degrades the same way whichever engine wrote it.
-    """
-    if not isinstance(raw, dict):
-        return {}
-    entries: dict[str, dict[str, Any]] = {}
-    for key, value in cast("dict[object, object]", raw).items():
-        if isinstance(key, str) and key.strip() and isinstance(value, dict):
-            entries[key.strip()] = cast("dict[str, Any]", value)
-    return entries
-
-
 def _failed_stages(
     *,
     checkpoint: dict[str, Any],
@@ -286,7 +185,7 @@ def _failed_stages(
     failed = [
         node
         for node, outcome in outcomes.items()
-        if _stage_node(stage=node) != ESCALATION_NODE_ID and _node_failed(outcome=outcome)
+        if fabro_stage_node(stage=node) != ESCALATION_NODE_ID and _node_failed(outcome=outcome)
     ]
     ordered = [node for node in _completed_nodes(checkpoint=checkpoint) if node in failed]
     ordered.extend(node for node in failed if node not in ordered)
@@ -361,21 +260,6 @@ def _history_signatures(
             and stage not in failed
         )
     )
-
-
-def _stage_node(*, stage: str) -> str:
-    """The node half of a `<node>@<visit>` stage key, or the key as it stands.
-
-    It is the whole reason the terminal exclusion reaches a Petri record: the
-    excluded value is a NODE id, while Petri keys its stages by node AND visit,
-    so a direct comparison silently matched nothing and let the dead-end
-    terminal be attributed on every ending. `_newest_visits` reads it for the
-    other question a visit-keyed map raises — which entries describe one node —
-    and the two must agree on where that key divides, which is why there is one
-    reading of it rather than a split in each caller. A pinned-engine key
-    carries no `@` and is returned unchanged.
-    """
-    return stage.split("@", maxsplit=1)[0].strip()
 
 
 def _signature_stage(*, signature: str) -> str:
