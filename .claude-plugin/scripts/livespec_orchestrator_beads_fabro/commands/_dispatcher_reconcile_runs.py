@@ -57,6 +57,9 @@ from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_acp_projection import (
     replay_acp_projection,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_claim_lane import (
+    reconcile_claim_lane,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
     FactoryRunInventory,
 )
@@ -155,6 +158,12 @@ def reconcile_runs(
     # addresses each factory's OWN Docker daemon, so it needs to know WHICH
     # factories answered, not merely that one did.
     surveyed: list[FactoryTarget] = []
+    # Keyed BY FACTORY rather than merged into `run_statuses` above: the claim
+    # lane grades each claim against the listing of the factory its stamp
+    # names, and a factory absent from this mapping is one this pass did not
+    # survey — which is what holds its claims as `factory-unobservable` rather
+    # than grading them against an inventory nobody took.
+    observed: dict[str, Mapping[str, str | None]] = {}
     for factory in factories:
         if factory.server is None:
             errors.append(
@@ -182,10 +191,14 @@ def reconcile_runs(
         held.extend(surveyed_factory.held)
         run_statuses.update(surveyed_factory.run_statuses)
         if surveyed_factory.surveyed:
+            observed[factory.name] = surveyed_factory.run_statuses
             surveyed.append(factory)
     if not dry_run:
         for error in errors:
             journal_error(journal=inputs.journal, error=error)
+    claims = reconcile_claim_lane(
+        inputs=inputs, factories=tuple(factories), observed=observed, dry_run=dry_run
+    )
     return ReconcileRunsSummary(
         reconciled=tuple(reconciled),
         errors=tuple(errors),
@@ -197,6 +210,8 @@ def reconcile_runs(
             run_statuses=run_statuses,
             dry_run=dry_run,
         ),
+        recovered_claims=claims.recovered,
+        held_claims=claims.held,
     )
 
 

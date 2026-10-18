@@ -19,15 +19,31 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_tenant_checkouts imp
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt, parse_json
 
 __all__: list[str] = [
+    "LOCK_ABSENT",
+    "LOCK_DEAD",
+    "LOCK_LIVE",
+    "LOCK_UNREADABLE",
     "DispatchLock",
     "dispatch_lock_path",
     "live_dispatch_lock",
+    "observe_dispatch_lock",
     "recorded_dispatch_lock",
     "release_dispatch_lock",
     "write_dispatch_lock",
 ]
 
 _PROCESS_START_TOLERANCE_SECONDS = 2.0
+
+# The FOUR answers one lock location can give. `live_dispatch_lock` collapses
+# the last three into `None`, which is right for its caller — the WIP-cap
+# accounting, where over-counting is the safe direction — and wrong for a
+# caller deciding whether to RELEASE a claim: there, an unreadable lock read as
+# an absent one hands a live dispatch's item back to the queue. The two
+# readings therefore stay distinct surfaces over one reader.
+LOCK_ABSENT = "absent"
+LOCK_LIVE = "live"
+LOCK_DEAD = "dead"
+LOCK_UNREADABLE = "unreadable"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -107,6 +123,31 @@ def live_dispatch_lock(*, repo: Path, work_item_id: str) -> DispatchLock | None:
     if lock is None or not _lock_holder_matches_pid(lock=lock):
         return None
     return lock
+
+
+def observe_dispatch_lock(*, repo: Path, work_item_id: str) -> str:
+    """Which of the FOUR states this one lock location is in.
+
+    Only a FileNotFoundError is `absent`. Every other read failure — a
+    permission refusal, a directory where the file should be, bytes that are
+    not text, text that is not JSON, a payload whose shape cannot be read —
+    is `unreadable`, because none of them establishes that no lock is held
+    there and the caller's whole question is whether EVERY location was read.
+    """
+    path = dispatch_lock_path(repo=repo, work_item_id=work_item_id)
+    read = attempt(action=lambda: path.read_text(encoding="utf-8"), exceptions=(OSError,))
+    if isinstance(read, AttemptFailure):
+        return LOCK_ABSENT if isinstance(read.error, FileNotFoundError) else LOCK_UNREADABLE
+    parsed_raw = parse_json(text=read)
+    if not isinstance(parsed_raw, dict):
+        return LOCK_UNREADABLE
+    lock = _dispatch_lock_from_payload(
+        payload=cast("dict[str, object]", parsed_raw),
+        expected_work_item_id=work_item_id,
+    )
+    if lock is None:
+        return LOCK_UNREADABLE
+    return LOCK_LIVE if _lock_holder_matches_pid(lock=lock) else LOCK_DEAD
 
 
 def _stale_dispatch_lock_reclaimed(*, path: Path, work_item_id: str) -> bool:

@@ -127,6 +127,10 @@ def run_reconcile_runs_command(*, args: argparse.Namespace) -> int:
                     DEFAULT_BLOCKED_RUN_GRACE_SECONDS
                 )
             ),
+            # The CLAIM lane, armed. This command is the standalone sweep the
+            # host timer invokes — the third of the three reconciliation
+            # surfaces the stranded-claim clause names.
+            claim_journal=journal,
         ),
         factories=factories,
         dry_run=args.dry_run,

@@ -52,6 +52,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_termi
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_container_reclaim import (
     SandboxContainerSweep,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_records import (
+    HeldClaim,
+    RecoveredClaim,
+)
 
 __all__: list[str] = [
     "JOURNAL_STAGE_ERROR",
@@ -147,6 +151,15 @@ class ReconcileRunsSummary:
     dry_run: bool
     held: tuple[HeldRun, ...] = ()
     containers: tuple[SandboxContainerSweep, ...] = ()
+    # The CLAIM half of the same pass: the dispatch claims it recovered and the
+    # ones it left alone. SEPARATE collections from `reconciled` and `held`
+    # rather than merged into them, because a claim and a run are different
+    # objects with different dispositions — only a run reaches the termination
+    # path, and only a claim reaches a ledger status write — and merging the
+    # two would make "a held claim cannot be terminated" a convention instead
+    # of a structural property.
+    recovered_claims: tuple[RecoveredClaim, ...] = ()
+    held_claims: tuple[HeldClaim, ...] = ()
 
 
 def reconciled_from(

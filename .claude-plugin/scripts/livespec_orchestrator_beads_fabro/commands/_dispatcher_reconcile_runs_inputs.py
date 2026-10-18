@@ -26,6 +26,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
     factory_fabro_bin,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
     JournaledRuns,
 )
@@ -93,6 +94,18 @@ class ReconcileInputs:
     # Observation-only callers may use goal text as a hint. Destructive and
     # destructive-projection callers retain the fail-safe default.
     allow_goal_text_attribution: bool = False
+    # The CLAIM lane's journal, and the host it acts on behalf of. A
+    # `JournalFile` rather than the `JournalWriter` the run lane takes, because
+    # a claim recovery has to READ the journal — its own keyed effects, and the
+    # item's dispatch history — and `JournalWriter` only appends. `None` leaves
+    # the claim lane UNRUN, which is correct for the narrow observation-only
+    # callers that never dispose of a claim; the three reconciliation surfaces
+    # Scenario 196 enumerates (the loop tick and the dispatch preamble, both
+    # through `reconcile_runs_pass`, and the standalone sweep) all supply it.
+    claim_journal: JournalFile | None = None
+    # Resolved ONCE by the caller rather than read here, so one pass cannot
+    # stamp two answers; `None` falls through to this process's own identity.
+    claim_host: str | None = None
 
 
 def port_for(*, inputs: ReconcileInputs, factory: FactoryTarget) -> FabroPort:
