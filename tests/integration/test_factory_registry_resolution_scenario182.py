@@ -63,6 +63,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import build_plan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_stamp import stamp_dispatch_run
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_container_port import (
+    SandboxContainerPort,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
 from livespec_orchestrator_beads_fabro.commands.dispatcher import dispatch_preamble
 from livespec_orchestrator_beads_fabro.store import record_dispatch_factory
@@ -74,6 +77,7 @@ _GRADE_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_factory_
 
 _FACTORY = "petri"
 _REGISTRY_SERVER = "https://gmktec.perch-rudd.ts.net:32276"
+_REGISTRY_DOCKER_HOST = "ssh://cwoolley@gmktec.perch-rudd.ts.net"
 _OTHER_SERVER = "https://hp-xubuntu.perch-rudd.ts.net:32276"
 _SPEC_DEFAULT_REGISTRY_PATH = "/etc/livespec/fabro-factories.json"
 _REGISTRY_PATH_ENV_VAR = "LIVESPEC_FABRO_FACTORY_REGISTRY"
@@ -107,7 +111,7 @@ def _hermetic_registry_env(monkeypatch: pytest.MonkeyPatch) -> object:
 
 @dataclass(kw_only=True)
 class _Runner:
-    """Records every argv the launch hands the `fabro` CLI."""
+    """Records every argv a port hands a CLI — the `fabro` launch and `docker`."""
 
     argvs: list[list[str]] = field(default_factory=list)
 
@@ -599,5 +603,106 @@ def test_a_registry_backed_entry_carrying_a_committed_address_is_refused(
     refusal = capsys.readouterr().err
     assert _FACTORY in refusal
     assert f"dispatcher.factories.{_FACTORY}.{committed_key}" in refusal
+    assert result == (None, _EXIT_PRECONDITION_ERROR)
+    assert _item_state() == before
+
+
+def test_a_registry_docker_host_is_the_factorys_container_daemon_address(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A registry entry's `docker_host` addresses that factory's container daemon.
+
+    Asserted at the resolved target AND at the Docker CLI argv the container
+    sweep's own port produces, because the field alone is an echo: the address
+    has to reach `docker --host` as the GLOBAL option ahead of the verb, which
+    is the only position the CLI accepts it in, and a value that landed anywhere
+    else would read as a well-formed field while every sweep inventoried the
+    reconciling host's own daemon instead of the factory's.
+    """
+    _registry_backed_repo(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        entry={"server": _REGISTRY_SERVER, "docker_host": _REGISTRY_DOCKER_HOST},
+    )
+    _ = _reading_module()
+
+    target = resolve_fabro_factory(cwd=tmp_path, factory=_FACTORY)
+
+    assert target.server == _REGISTRY_SERVER
+    assert target.docker_host == _REGISTRY_DOCKER_HOST
+
+    runner = _Runner()
+    assert target.docker_host is not None
+    _ = SandboxContainerPort(
+        runner=runner, cwd=tmp_path, docker_host=target.docker_host
+    ).inventory()
+    argv = runner.argvs[0]
+
+    assert argv[:3] == ["docker", "--host", _REGISTRY_DOCKER_HOST]
+
+
+def test_a_registry_entry_without_a_docker_host_declares_no_container_daemon(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A registry entry carrying only a server declares no container-daemon address.
+
+    This is NOT the cosmetic complement of the case above. None is what makes
+    the sweep report that factory's containers as UNOBSERVED, naming it; a
+    resolution that substituted any address — the server's host, the empty
+    string, the local daemon — would inventory somebody else's containers and
+    report a clean sweep of the wrong machine. The committed-entry behaviour the
+    `docker_host` field already had is exactly this, and the registry must not
+    acquire a different one.
+    """
+    _registry_backed_repo(cwd=tmp_path, monkeypatch=monkeypatch, entry={"server": _REGISTRY_SERVER})
+    _ = _reading_module()
+
+    target = resolve_fabro_factory(cwd=tmp_path, factory=_FACTORY)
+
+    assert target.server == _REGISTRY_SERVER
+    assert target.docker_host is None
+
+
+@pytest.mark.parametrize("docker_host", ["   ", 2375, None, []])
+def test_an_unusable_registry_docker_host_is_refused_like_an_invalid_server(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    docker_host: object,
+) -> None:
+    """A present-but-unusable `docker_host` refuses, even beside a valid server.
+
+    The server is VALID in every case, which is what makes this a case about the
+    `docker_host`: the clause refuses such an entry "like an invalid `server`",
+    so the whole entry is unresolvable rather than resolving to a server with no
+    daemon — and the difference matters because the serverless-daemon reading is
+    a legitimate state a sweep reports, so a build that fell back to it would
+    convert a typo into a permanently unobserved factory nobody is told about.
+
+    An explicit `null` and a container shape are parameterized beside the
+    whitespace and numeric ones because they are what a JSONC author reaches by
+    accident, and because membership rather than truthiness is what decides the
+    arm: all four are PRESENT, which is what the clause grades.
+    """
+    _registry_backed_repo(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        entry={"server": _REGISTRY_SERVER, "docker_host": docker_host},
+    )
+    _seed_item()
+    _ = _grade_module()
+    before = _item_state()
+
+    result = dispatch_preamble(
+        args=argparse.Namespace(fabro_bin=None, janitor=None, journal=None),
+        repo=tmp_path,
+    )
+
+    refusal = capsys.readouterr().err
+    assert _FACTORY in refusal
+    assert str(tmp_path / "fabro-factories.json") in refusal
     assert result == (None, _EXIT_PRECONDITION_ERROR)
     assert _item_state() == before
