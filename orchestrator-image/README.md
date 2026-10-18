@@ -635,7 +635,7 @@ the production unit except the host, the service account and the GitHub App:
 | HOME, storage, settings | `/home/cwoolley/.fabro-candidate/{storage,settings.toml,environments}`; the unit sets `HOME` to that directory |
 | Bind, console | `127.0.0.1:32278`; `https://hp-xubuntu.perch-rudd.ts.net:32278` via `tailscale serve` (beside 32276 and 32277) |
 | Auth | `dev-token`, its OWN `server.env` (mode 600) with a fresh `SESSION_SECRET` and a fresh `FABRO_DEV_TOKEN` |
-| Scheduler | `max_concurrent_runs = 3`, deliberately small beside production's 10 |
+| Scheduler | `max_concurrent_runs = 2` (livespec-dev-tooling `host_vars/hp-xubuntu.yml`, and the live server's resolved setting on 2026-10-18), deliberately small beside production's 10 |
 | Storage engine | SQLite (`storage/db/fabro.sqlite3`); the legacy build used SlateDB objects. Nothing is migrated from production storage |
 
 Three Petri-era start-up refusals, each silent until the previous one is fixed:
