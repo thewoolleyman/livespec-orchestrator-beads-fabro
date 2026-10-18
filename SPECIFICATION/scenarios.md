@@ -6738,6 +6738,94 @@ Feature: The janitor's check verdict depends on the merge, not on how the dispat
     Then the janitor-post-merge journal row records an empty list of removed variables
 ```
 
+## Scenario 190 — The post-merge janitor runs its check suite where dispatcher.janitor.venue selects, and a cluster gate that reaches no verdict is red
+
+```gherkin
+Feature: Only an exact cluster_job declaration moves the janitor's check suite to the cluster,
+  where the gate client's suite resolution governs and the verdict is the state word on standard error
+
+  Scenario: An absent or unrecognised venue keeps the check suite on the dispatching host
+    Given a governed repository whose .livespec.jsonc declares no dispatcher.janitor.venue, or declares an unrecognised value
+    When the post-merge janitor runs the check suite for a merged item
+    Then the check suite resolved from dispatcher.janitor.check_suite runs on the dispatching host in the janitor checkout
+    And its exit code is the janitor's verdict
+
+  Scenario: On the cluster venue the gate client's suite resolution governs, not dispatcher.janitor.check_suite
+    Given a governed repository whose .livespec.jsonc declares dispatcher.janitor.venue as cluster_job
+    And whose .livespec.jsonc declares a dispatcher.janitor.check_suite command
+    And whose pyproject.toml declares a different gate_check_suite in its [tool.livespec_dev_tooling] block
+    When the post-merge janitor runs
+    Then the gate client is run in the janitor checkout and the declared dispatcher.janitor.check_suite command is not run
+
+  Scenario: A cluster gate that reports PASSED reads green even when the client exits non-zero
+    Given a governed repository whose .livespec.jsonc declares dispatcher.janitor.venue as cluster_job
+    And a delegated gate client whose last state-bearing standard-error line reports state PASSED and which exits non-zero
+    When the post-merge janitor runs
+    Then the janitor verdict is green
+
+  Scenario: A PASSED state word on standard output alone is not a verdict
+    Given a governed repository whose .livespec.jsonc declares dispatcher.janitor.venue as cluster_job
+    And a delegated gate client that prints a state PASSED line on standard output and no state-bearing line on standard error
+    When the post-merge janitor runs
+    Then the janitor verdict is red
+    And the red detail says the cluster gate reached no verdict
+
+  Scenario: A cluster gate that reports FAILED reads red as a failed Job
+    Given a governed repository whose .livespec.jsonc declares dispatcher.janitor.venue as cluster_job
+    And a delegated gate client whose last state-bearing standard-error line reports state FAILED
+    When the post-merge janitor runs
+    Then the janitor verdict is red
+    And the red detail says the cluster gate Job reported a FAILED verdict
+
+  Scenario: A cluster gate that reaches no verdict reads red, not degraded
+    Given a governed repository whose .livespec.jsonc declares dispatcher.janitor.venue as cluster_job
+    And a delegated gate client whose standard error carries no state-bearing line
+    When the post-merge janitor runs
+    Then the janitor verdict is red and not janitor-env-degraded
+    And the red detail says the cluster gate reached no verdict
+    And the item does not close
+```
+
+## Scenario 191 — The janitor-post-merge journal row names the venue that ran and, on the cluster, the gate's reading
+
+```gherkin
+Feature: A reader can tell from the janitor-post-merge row alone where the check suite ran, which rule chose it,
+  and what the cluster gate said
+
+  Scenario: A host-local janitor row names its venue, suite source and start and carries no gate fields
+    Given a governed repository whose check-suite venue resolves to host_local
+    When the post-merge janitor runs
+    Then the janitor-post-merge row carries venue host_local, suite_source dispatcher.janitor.check_suite and a started_at timestamp
+    And the row carries no gate_state, gate_tree_hash, job_name, namespace, job_started_at or job_finished_at
+
+  Scenario: A cluster janitor row carries the gate's state word and the submitted tree
+    Given a governed repository whose check-suite venue resolves to cluster_job
+    And a delegated gate client whose verdict line on standard error reports state PASSED
+    When the post-merge janitor runs
+    Then the janitor-post-merge row carries venue cluster_job, suite_source gate_check_suite, gate_state PASSED and a started_at timestamp
+    And the row's gate_tree_hash equals the full tree hash of the janitor checkout's HEAD
+
+  Scenario: A cluster janitor row names gate_check_suite as its suite source even when dispatcher.janitor.check_suite is declared
+    Given a governed repository whose check-suite venue resolves to cluster_job
+    And whose .livespec.jsonc declares a dispatcher.janitor.check_suite command
+    When the post-merge janitor runs
+    Then the janitor-post-merge row carries venue cluster_job and suite_source gate_check_suite
+
+  Scenario: A cluster janitor row copies only the Job keys the verdict line carries, including an explicit null
+    Given a governed repository whose check-suite venue resolves to cluster_job
+    And a delegated gate client whose verdict line carries job_name, namespace and job_started_at with the value null, and no job_finished_at
+    When the post-merge janitor runs
+    Then the janitor-post-merge row carries the reported job_name and namespace and carries job_started_at with the value null
+    And the row carries no job_finished_at
+
+  Scenario: A cluster gate with no verdict line records a null state word and still names the attempted venue and submitted tree
+    Given a governed repository whose check-suite venue resolves to cluster_job
+    And a delegated gate client whose standard error carries no state-bearing line
+    When the post-merge janitor runs
+    Then the janitor-post-merge row carries venue cluster_job and gate_state null
+    And the row's gate_tree_hash equals the full tree hash of the janitor checkout's HEAD
+```
+
 ## Scenario 192 — A turn cut by its node timeout leaves its commit run to finish or be named, and a hook still executing at the cut is a hook-over-limit event
 
 ```gherkin
