@@ -1015,6 +1015,24 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   it; its runner is keyed on the SUBCOMMAND rather than on call order, so the
   case does not encode the valve's stage sequence, which is not the subject.
 
+- `test_agent_hook_unparseable_manifest_scenario194.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 194 — A conflicted pyproject.toml does
+  not make the repository's agent hooks refuse every tool call": both of that
+  heading's sub-scenarios, driven against the launcher
+  `.claude/hooks/livespec_uv_hook_launcher.py` that each `uv run`-started
+  PreToolUse hook command is invoked through. This tier is the exception to the
+  `livespec_orchestrator_beads_fabro`-package framing above — the scenario is
+  about this repository's own committed agent hooks, and the heading taxonomy
+  still requires an integration-tier binding. Every case resolves those hook
+  commands from `.claude/settings.json` itself rather than retyping them, so a
+  rewiring that dropped a guard cannot keep the binding green; the committed
+  shape of that wiring is pinned one tier down, in
+  `tests/hooks/test_livespec_uv_hook_launcher.py`. The conflicted case is
+  parameterized across all four guarded tools AND every committed command,
+  because the claim is about the whole guarded surface rather than one call.
+  Nothing is spawned: the launcher's own `subprocess.run` is stood in for, which
+  is what makes "the guard was not launched" assertable at all.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

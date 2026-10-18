@@ -27,6 +27,7 @@ so a Red commit fails on a genuine assertion rather than at collection time.
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -37,11 +38,23 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _HOOKS_DIR = _REPO_ROOT / ".claude" / "hooks"
 _LAUNCHER_PATH = _HOOKS_DIR / "livespec_uv_hook_launcher.py"
+_SETTINGS_PATH = _REPO_ROOT / ".claude" / "settings.json"
 _MODULE_NAME = "livespec_uv_hook_launcher_under_test"
 
 _MANIFEST_NAME = "pyproject.toml"
+_PROJECT_DIR_ENV_VAR = "CLAUDE_PROJECT_DIR"
 _GUARD_COMMAND = ["mise", "exec", "--", "uv", "run", "--no-sync", "python", "guard.py"]
 _REFUSAL_STATUS = 2
+
+# The committed wiring, spelled out rather than derived: a test that recomputed
+# the expected command from the settings file would agree with any rewiring at
+# all, including one that dropped a guard.
+_UV_LAUNCH_TOKEN = "uv run"
+_LAUNCHER_PREFIX = 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/livespec_uv_hook_launcher.py"'
+_UV_LAUNCHED_GUARDS = (
+    'mise exec -- uv run --no-sync python "$CLAUDE_PROJECT_DIR/.claude/hooks/livespec_tdd_order_guard.py"',
+    "mise exec -- uv run --no-sync python -m livespec_dev_tooling.agent_hooks.pretooluse_background_guard",
+)
 
 _PARSEABLE_MANIFEST = '[project]\nname = "fixture"\nversion = "0.0.0"\n'
 _CONFLICTED_MANIFEST = (
@@ -175,3 +188,72 @@ def test_a_parseable_manifest_writes_nothing_to_stderr(
 
     assert _drive(launcher=launcher, project=tmp_path, monkeypatch=monkeypatch) == 0
     assert capsys.readouterr().err == ""
+
+
+# --- the committed wiring, and the arms that must not cost a guard --------
+
+
+def test_every_uv_launched_pretooluse_hook_command_is_routed_through_the_launcher() -> None:
+    """An unwired launcher protects nothing, and a rewired guard protects less.
+
+    The single equality carries both halves of the claim: the launcher sits in
+    FRONT of each uv-started PreToolUse command, and what follows it is that
+    command verbatim — so on a manifest that parses, each of these hook
+    commands still reaches exactly the decision it reached before.
+    """
+    settings = json.loads(_SETTINGS_PATH.read_text(encoding="utf-8"))
+    uv_launched = [
+        hook["command"]
+        for entry in settings["hooks"]["PreToolUse"]
+        for hook in entry["hooks"]
+        if _UV_LAUNCH_TOKEN in hook["command"]
+    ]
+
+    assert uv_launched == [f"{_LAUNCHER_PREFIX} {guard}" for guard in _UV_LAUNCHED_GUARDS]
+
+
+def test_the_manifest_is_resolved_from_the_working_directory_without_a_project_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Claude Code sets the project directory, and a call without it still decides."""
+    launcher = _load_launcher()
+    _write_manifest(project=tmp_path, body=_CONFLICTED_MANIFEST)
+    invocations = _record_invocations(launcher=launcher, monkeypatch=monkeypatch)
+    monkeypatch.delenv(_PROJECT_DIR_ENV_VAR, raising=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", [str(_LAUNCHER_PATH), *_GUARD_COMMAND])
+
+    assert launcher.main() == 0
+    assert invocations == []
+    assert _MANIFEST_NAME in capsys.readouterr().err
+
+
+def test_a_manifest_that_cannot_be_read_still_launches_the_guard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An absent manifest is not a conflicted one, so the guard must still decide.
+
+    Standing a guard down on every manifest this launcher cannot read would
+    turn an unrelated environment fault into a silent loss of enforcement, so
+    this arm fails toward the guard rather than toward the allow.
+    """
+    launcher = _load_launcher()
+    invocations = _record_invocations(launcher=launcher, monkeypatch=monkeypatch)
+
+    assert _drive(launcher=launcher, project=tmp_path, monkeypatch=monkeypatch) == 0
+    assert invocations == [_GUARD_COMMAND]
+
+
+def test_a_launcher_that_cannot_start_the_guard_allows_the_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The hook boundary is fail-open: trouble here must never read as a deny."""
+    launcher = _load_launcher()
+    _write_manifest(project=tmp_path, body=_PARSEABLE_MANIFEST)
+
+    def _explode(**_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        raise OSError("the wrapped guard could not be started")
+
+    monkeypatch.setattr(launcher.subprocess, "run", _explode)
+
+    assert _drive(launcher=launcher, project=tmp_path, monkeypatch=monkeypatch) == 0
