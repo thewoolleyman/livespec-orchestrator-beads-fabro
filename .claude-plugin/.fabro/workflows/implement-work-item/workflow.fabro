@@ -617,6 +617,27 @@ digraph ImplementWorkItem {
     // that is absent or unreadable fails the grade CLOSED rather than grading
     // against an empty set.
     //
+    // WHAT THIS GRADE CANNOT CATCH, AND WHERE THAT IS CLOSED INSTEAD. The grade
+    // asks the reader whether each assertion reads as reproduced; it cannot ask
+    // whether the reader resolved that assertion to the RIGHT section. Two
+    // authoring shapes make the reader answer about the wrong one, and both fail
+    // OPEN -- the grade passes and the record is still ungradeable afterwards.
+    // A payload carrying a three-backtick line inside a three-backtick fence
+    // closes that fence early, after which a heading the proof merely PRINTED
+    // opens a section and a `Reproduced:` line the proof printed reads as an
+    // authored verdict; and an assertion section quoting another assertion's text
+    // -- the Definition of Done pasted as a block is the common case -- absorbs
+    // that assertion through `_assertion_section`'s first-match rule, which is
+    // NOT fence-aware and therefore reads quoted payload lines too. Measured on
+    // this item's own capture record: all six assertions resolved to one 603-line
+    // `## Assertion 1` subtree and every one of them read True off a fixture's
+    // prose. Neither shape is reachable from here -- the record is already posted
+    // by the time this node runs, and the contract forbids editing it -- so they
+    // are closed at AUTHORING time, by the "Keep every assertion section
+    // gradeable on its own" section of BOTH `prompts/proof-capture.md` and
+    // `prompts/proof-verify.md`. A later editor widening this grade should know
+    // the prompts carry that half rather than re-deriving it here.
+    //
     // EVERY ARM THIS SCRIPT OWNS RECORDS ITS FAILURE AGAINST THE RUN, which is a
     // requirement and not tidiness: the failure edge leads to `proof_grade_route`,
     // which re-enters `proof_verify` while fewer than three failures stand, so an
