@@ -88,6 +88,7 @@ __all__: list[str] = [
     "cluster_janitor_red",
     "cluster_venue_declared",
     "host_janitor_red",
+    "janitor_check_row_fields",
     "janitor_runs_on_the_cluster",
 ]
 
@@ -117,6 +118,25 @@ _VENUE_FIELD = "venue"
 _GATE_PASSED = "PASSED"
 _GATE_FAILED = "FAILED"
 _STATE_FIELD = "state"
+
+# The `janitor-post-merge` row's own account of the venue, named here beside the
+# selection it reports rather than at the journal writer, so the word a row
+# carries and the word the selection answered cannot drift.
+#
+# THE ROW IS WHERE A LATER READER STANDS, and until it carried this field nobody
+# stood there. The cluster venue shipped while the row kept saying nothing about
+# which machine ran the suite, so two sessions established the venue from
+# OUTSIDE the journal -- one from the gate Job's own status in the cluster's
+# `gates` namespace plus this module's rule that only `PASSED` reads green, one
+# from a canary worktree's `.livespec.jsonc` and the stage's timing. Both
+# readings were right and neither survives the run.
+#
+# Spelled SEPARATELY from `_VENUE_FIELD` above even though the two strings
+# agree today: that one is the key a repository WRITES inside its `janitor`
+# block, this one is the field a journal row CARRIES, and nothing ties the two
+# names together. Folding them into one constant would make a rename of either
+# surface silently rename the other.
+_ROW_VENUE_FIELD = "venue"
 
 
 def cluster_venue_declared(*, block: dict[str, Any]) -> bool:
@@ -188,6 +208,25 @@ def cluster_janitor_red(*, result: CommandResult, checkout: Path) -> str | None:
         f"{checkout}, so nothing green may be concluded -- the missing cluster verdict is the "
         f"finding, not the tree: {tail(text=result.stderr)}"
     )
+
+
+def janitor_check_row_fields(*, on_the_cluster: bool) -> dict[str, object]:
+    """The `janitor-post-merge` row's venue account, as ONE projection.
+
+    PURE, over the venue the selection already resolved. The venue reported is
+    the RESOLVED one and never the declared value: a row echoing the
+    declaration would report `cluster` -- or any other unrecognised word -- for
+    a repository whose suite ran on the dispatching host, which is exactly the
+    reading the fail-closed selection above exists to prevent anyone making.
+
+    ONE projection over both venues rather than a builder each, because the
+    row's whole claim is that a reader can tell the two apart from it: a pair of
+    builders is how one arm comes to spell a shared field differently from the
+    other.
+    """
+    return {
+        _ROW_VENUE_FIELD: JANITOR_VENUE_CLUSTER_JOB if on_the_cluster else JANITOR_VENUE_HOST_LOCAL
+    }
 
 
 def _gate_state(*, text: str) -> str | None:
