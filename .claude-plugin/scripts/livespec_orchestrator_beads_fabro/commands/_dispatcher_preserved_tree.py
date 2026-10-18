@@ -68,6 +68,12 @@ def publish_run_tree(
     publication proceed on an empty file set: publishing nothing would create a
     ref whose tree equals the base commit's, which reads as a run that changed
     nothing -- the one conclusion this whole clause exists to prevent.
+
+    THE WHOLE READ is handed on rather than its files alone, so what the factory
+    said it SERVED -- the scope and the source -- reaches the ledger comment that
+    names the ref. Re-deriving either at the record would be a second account of
+    one reading, and nothing at the record could ask the factory anyway: by then
+    the run is pruned.
     """
     read = read_run_files(port=port, run_id=run_id)
     if isinstance(read, RunFilesUnreadable):
@@ -77,6 +83,6 @@ def publish_run_tree(
         repo=repo,
         work_item_id=work_item_id,
         base_commit=base_commit,
-        files=read.files,
+        read=read,
         message=preserved_tree_message(work_item_id=work_item_id, run_id=run_id),
     )

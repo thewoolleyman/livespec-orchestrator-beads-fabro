@@ -68,7 +68,11 @@ def test_the_journal_row_carries_the_failed_step_and_its_own_words() -> None:
         factory=_FACTORY,
         base_commit=_BASE_COMMIT,
         published=PreservedTree(
-            ref="refs/livespec/preserved-publish/x/y", commit="y", file_count=2
+            ref="refs/livespec/preserved-publish/x/y",
+            commit="y",
+            file_count=2,
+            scope="committed",
+            source="sandbox",
         ),
     )
     assert published["stage"] == record.PRESERVED_TREE_STAGE

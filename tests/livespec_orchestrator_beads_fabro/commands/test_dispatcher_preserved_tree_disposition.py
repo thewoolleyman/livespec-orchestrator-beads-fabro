@@ -31,7 +31,9 @@ _REF = f"refs/livespec/preserved-publish/{_ITEM}/abc123"
 
 # The engine's own wording for the ending, as measured on the incident run.
 _CHECKPOINT_FAILED = "git checkpoint commit failed for node implement: git add failed (exit 127)"
-_PRESERVED = PreservedTree(ref=_REF, commit="abc123", file_count=48)
+_PRESERVED = PreservedTree(
+    ref=_REF, commit="abc123", file_count=48, scope="committed", source="sandbox"
+)
 _PATCH = "diff --git a/x b/x\n"
 
 

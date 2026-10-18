@@ -82,6 +82,24 @@ _WORDS_ARE_IN_THE_JOURNAL = (
     " this record carries names and figures only"
 )
 
+# What the factory reported about the read, when it reported nothing. STATED
+# rather than left out, for the reason `preserved_tree_journal_record` gives
+# about its own nulls: an omitted line is what a record from a build predating
+# this reading looks like, so a reader could not tell "the factory named no
+# scope" from "this build never asked".
+_NOT_SERVED = "not reported by the factory"
+
+# The two served readings are figures whose MEANING is not self-evident, and a
+# record an operator reads has to explain its own notation. This is the whole
+# point of carrying them: it is what answers "does this ref hold the run's
+# UNCOMMITTED work" without another read of a factory that has since pruned the
+# run.
+_SERVED_PROSE = (
+    "served scope is the tree the factory answered from and served source is where it"
+    " read that tree; a committed scope means this ref carries the run's COMMITTED work"
+    " only, so work the run had not committed is NOT in it"
+)
+
 
 def preserved_tree_body(
     *,
@@ -98,6 +116,10 @@ def preserved_tree_body(
     is not a commit to land, so a recovery has to check out the parent and
     apply the tree, and the parent is the one name that makes those two one
     act. Naming it here also means the record survives the journal.
+
+    THE SERVED SCOPE AND SOURCE are named for the same reason one level on: they
+    say what this ref CONTAINS, the factory prunes the run that could be asked
+    again, and this comment is the only record that outlives it.
     """
     return "\n".join(
         [
@@ -110,10 +132,19 @@ def preserved_tree_body(
             f"commit id: {preserved.commit}",
             f"base commit: {base_commit}",
             f"changed files published: {preserved.file_count}",
+            f"served scope: {_served(reading=preserved.scope)}",
+            f"served source: {_served(reading=preserved.source)}",
+            "",
+            _SERVED_PROSE,
             "",
             _RECOVERY,
         ]
     )
+
+
+def _served(*, reading: str | None) -> str:
+    """One of the factory's two served readings, or the absence of it. PURE."""
+    return reading if reading else _NOT_SERVED
 
 
 def unpreserved_tree_body(

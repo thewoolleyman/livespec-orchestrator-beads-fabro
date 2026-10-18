@@ -17,7 +17,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_publi
     PublishFailure,
     publish_preserved_tree,
 )
-from livespec_orchestrator_beads_fabro.commands._fabro_run_files import RunFile
+from livespec_orchestrator_beads_fabro.commands._fabro_run_files import RunFile, RunFiles
 
 _BASE_COMMIT = "5d511335aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 _FILES = (RunFile(path="a.py", content=b"changed\n", mode="100644"),)
@@ -62,7 +62,7 @@ def _published(*, runner: _StagedRunner, files: tuple[RunFile, ...]) -> object:
         repo=Path("/nonexistent"),
         work_item_id="bd-ib-na2xvm",
         base_commit=_BASE_COMMIT,
-        files=files,
+        read=RunFiles(files=files, scope="committed", source="sandbox"),
         message="preserved tree",
     )
 
