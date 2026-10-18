@@ -296,9 +296,19 @@ def gate_tree_hash(*, runner: CommandRunner, checkout: Path) -> str | None:
     `None` is a reading that could not be TAKEN, and never the empty string:
     an empty string compares as a value, so a row carrying it would report a
     tree hash of nothing rather than the absence of one.
+
+    `--verify` is what makes that absence reachable, and it is load-bearing
+    rather than tidy. Asked to resolve a revision it cannot, a BARE `git
+    rev-parse` ECHOES the revision it was given onto standard output and exits
+    128 -- so the reading declines by WRITING SOMETHING, and the guard below
+    could never fire: the row would carry the literal `HEAD^{tree}`, which is
+    worse than the empty string this docstring already forbids, because it
+    reads as a value and sends an operator looking for a gate Job whose name
+    cannot exist. Under `--verify` the same failure writes nothing at all,
+    while a resolvable revision answers byte-identically.
     """
     result = runner.run(
-        argv=["git", "-C", str(checkout), "rev-parse", _SUBMITTED_TREE_REVISION],
+        argv=["git", "-C", str(checkout), "rev-parse", "--verify", _SUBMITTED_TREE_REVISION],
         cwd=checkout,
         timeout_seconds=_SUBMITTED_TREE_TIMEOUT_SECONDS,
     )
