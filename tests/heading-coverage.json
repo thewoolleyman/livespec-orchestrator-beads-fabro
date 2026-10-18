@@ -1908,5 +1908,13 @@
     "test": "TODO",
     "reason": "Ratified by revision v156 accepting proposal proof-record-per-assertion-verdict (plan definition-and-proof-of-done, epic bd-ib-7sjdzv). The proof_grade and proof_grade_route command nodes and their routing are not implemented yet; an integration-tier test is owed for the four sub-scenarios, and work-item bd-ib-kcq6pu implements them and owns that binding.",
     "work_item": "bd-ib-kcq6pu"
+  },
+  {
+    "heading": "## Scenario 196 \u2014 Reconciliation releases or completes a stranded dispatch claim on its owning host, and holds with a named reason every claim it cannot prove stranded",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by revision v157 accepting proposal stranded-claim-release (plan run-lifecycle-false-verdicts, epic bd-ib-qen6rr). The claim half of run reconciliation (owning-host absent-run release, terminal-run completion, graded holds, convergent recovery) is not implemented yet; an integration-tier test is owed for the sub-scenarios, and work-item bd-ib-m0t0 implements them and owns that binding.",
+    "work_item": "bd-ib-m0t0"
   }
 ]
