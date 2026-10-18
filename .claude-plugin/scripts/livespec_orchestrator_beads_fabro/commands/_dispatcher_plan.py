@@ -81,6 +81,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_goal import (
     minijinja_openers_in_text,
     render_goal,
 )
+
+# The recovery placement a seeded dispatch's brief narrates travels through this
+# façade beside `render_goal` rather than being imported at the dispatch path
+# directly, because it is that function's PAIRED INPUT: the one call site resolves
+# the attempt and renders the brief in a single statement, and two imports of one
+# goal surface is how a later reader comes to wonder which of them is canonical.
+from livespec_orchestrator_beads_fabro.commands._dispatcher_goal_recovery import (
+    InterruptedAttempt,
+    interrupted_attempt_for,
+    interrupted_attempt_section,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_only import (
     WORKFLOW_SCOPE_OVERRIDE_LABEL,
     declares_workflow_scope_refusal,
@@ -144,6 +155,7 @@ __all__: list[str] = [
     "DispatchPlan",
     "FleetMembers",
     "GoalBriefMiniJinjaFinding",
+    "InterruptedAttempt",
     "PrView",
     "SiblingClones",
     "assess_codex_credential_freshness",
@@ -154,6 +166,8 @@ __all__: list[str] = [
     "escape_minijinja_literal",
     "harness_shell_env_lines",
     "host_only_refusal_detail",
+    "interrupted_attempt_for",
+    "interrupted_attempt_section",
     "is_host_only_item",
     "is_needs_human_outcome",
     "is_non_convergence_outcome",

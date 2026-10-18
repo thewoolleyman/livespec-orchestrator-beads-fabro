@@ -5,6 +5,12 @@ from a work-item's fields, its ledger comments, and any ratified
 lessons, then routes the whole assembled brief through
 `escape_minijinja_literal` (hosted in `_dispatcher_minijinja_escape`) so Fabro's
 MiniJinja goal templating renders the untrusted prose verbatim.
+
+A recovery-placed dispatch's own section — the interrupted prior attempt a
+seeded sandbox starts on — is rendered by `_dispatcher_goal_recovery` and handed
+in, for the cohesion reason that module's docstring gives: it is authored by the
+Dispatcher from the invocation's resume attributes rather than read off the item,
+so it shares neither input nor provenance with anything assembled here.
 """
 
 from __future__ import annotations
@@ -14,6 +20,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_goal_recovery import (
+    InterruptedAttempt,
+    interrupted_attempt_section,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_minijinja_escape import (
     escape_minijinja_literal,
 )
@@ -113,11 +123,18 @@ def render_goal(
     branch: str,
     comments: tuple[WorkItemComment, ...] = (),
     lessons: str = "",
+    interrupted: InterruptedAttempt | None = None,
 ) -> str:
     """Render the per-item brief delivered to the phase graph.
 
     Item fields, ledger comments, and ratified lessons are assembled, then
     MiniJinja open delimiters are escaped so Fabro renders the prose verbatim.
+
+    `interrupted` is the recovery placement a seeded dispatch was given, absent
+    for every other route. It defaults to absent because every entry point that
+    is not a recovery launch has no placement to narrate — and that default is
+    also why the call site's own keyword is bound by a test: an omission here
+    renders the plain brief and says nothing about the section it dropped.
     """
     gap_line = f"Gap id: {item.gap_id}\n" if item.gap_id is not None else ""
     # PRESENCE IS THE WRONG QUESTION HERE, and this site is the one where
@@ -168,7 +185,12 @@ def render_goal(
     # human-merged lesson text like every other interpolated field. Empty
     # lessons leave the brief byte-identical (no heading or placeholder
     # bleed-through), matching the fail-open contract.
-    body = base
+    # The recovery placement rides immediately after the item's own fields and
+    # BEFORE the lessons and the riders, because it is a fact about the tree the
+    # agent is already standing on: a brief that names it after the standing
+    # guidance has the agent read the whole brief before learning that its
+    # working tree is somebody else's unfinished work.
+    body = base + interrupted_attempt_section(attempt=interrupted)
     if lessons:
         body += (
             "\nRatified lessons (human-merged via loop-reflection-gate/"
