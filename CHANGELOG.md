@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.213.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.213.1...v0.213.2) (2026-10-18)
+
+
+### Bug Fixes
+
+* **dispatch:** require the Codex credential only where the routing launches Codex ([10614eb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/10614eb4de48885d1fccacc3d65546d77193bc6d))
+
 ## [0.213.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.213.0...v0.213.1) (2026-10-18)
 
 
