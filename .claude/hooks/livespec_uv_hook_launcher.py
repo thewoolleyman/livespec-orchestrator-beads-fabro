@@ -32,6 +32,7 @@ command's own status, so a guard that refuses still refuses.
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -46,9 +47,26 @@ _CONFLICT_MARKER_PREFIXES = ("<<<<<<<", ">>>>>>>")
 def main() -> int:
     """Run the wrapped guard command unless the project manifest is conflicted."""
     manifest = Path(os.environ[_PROJECT_DIR_ENV_VAR]) / _MANIFEST_NAME
+    wrapped = sys.argv[1:]
     if _carries_conflict_markers(path=manifest):
+        _ = sys.stderr.write(_skip_notice(manifest=manifest, wrapped=wrapped) + "\n")
         return 0
-    return subprocess.run(args=sys.argv[1:], check=False).returncode
+    return subprocess.run(args=wrapped, check=False).returncode
+
+
+def _skip_notice(*, manifest: Path, wrapped: list[str]) -> str:
+    """Render the one-line stand-down notice.
+
+    One line, because this is written on a tool call an agent did not ask to
+    be narrated; and it names BOTH the manifest and the guard, because the
+    agent's remedy is to repair the one and its exposure is the loss of the
+    other.
+    """
+    return (
+        f"livespec uv hook launcher: {manifest} is unparseable — it carries unresolved "
+        f"merge-conflict markers — so the guard `{shlex.join(wrapped)}` was skipped for "
+        "this tool call."
+    )
 
 
 def _carries_conflict_markers(*, path: Path) -> bool:

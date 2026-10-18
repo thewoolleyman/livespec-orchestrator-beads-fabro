@@ -416,6 +416,10 @@ supervisor_entry_files = [
     ".claude/hooks/beads_access_guard.py",
     ".claude/hooks/livespec_footgun_guard.py",
     ".claude/hooks/livespec_tdd_order_guard.py",
+    # Not a guard but the front door two of them are launched through: it owns
+    # the one-line stand-down notice it writes to stderr when `pyproject.toml`
+    # cannot be parsed, which is the same hook-protocol contract the guards own.
+    ".claude/hooks/livespec_uv_hook_launcher.py",
     ".claude-plugin/hooks/codex_yolo_reapply.py",
     # Exact research entry points: the runner emits its evidence receipt and
     # the fake agent owns ACP JSON-RPC stdout. No tree-wide exemption.
