@@ -1136,6 +1136,41 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   work-item bd-ib-jgedjo's HOST-CAPTURED assertion, proved on the factory
   against a released build.
 
+- `test_factory_registry_resolution_scenario182.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 182 and the host-factory-registry clause
+  of `SPECIFICATION/contracts.md`: a `dispatcher.factories` entry declaring
+  `"registry": true` names no machine, and its server and container-daemon
+  addresses are resolved by the entry's own name from the host factory registry.
+  Every case starts from a `.livespec.jsonc` and a registry JSON file on disk
+  and runs the production configuration, resolution, pre-claim declaration grade
+  and plan seams; the only things stood in are the two CLIs (a recording runner,
+  so the `fabro run` and `docker --host` argvs are observable without a server
+  or a daemon) and the ledger, through the hermetic `FakeBeadsClient`. Three
+  things an editor must not weaken. The address is asserted at the ARGV and at
+  the LEDGER as well as at the resolver, because a dropped address does not fail
+  — it resolves to None, which every surface reads as "this factory declares no
+  server" and therefore as the ambient LOCAL factory, so the run is created on
+  the wrong machine with nothing in the record saying so, and a registry-backed
+  entry is exactly the case where no committed `server` exists downstream to
+  fall back to. Every refusal is taken off `dispatch_preamble` with the item
+  SNAPSHOTTED before and compared after, because "refused before any claim,
+  ledger write of any kind, or Fabro run creation" is two claims and a refusal
+  string proves only the first. And the `env unset` registry-path case asserts a
+  NEGATIVE beside the constant — the resolution must not return the override
+  file's address — since asserting the default path alone is an echo of the
+  constant, while the negative is what an implementation reading the override
+  unconditionally cannot satisfy and stays hermetic because no host's
+  `/etc/livespec/fabro-factories.json` maps `petri` to this module's address.
+  The `unreadable` registry is staged as a DIRECTORY at the registry path rather
+  than by clearing the mode bits, because this suite's own dispatch runs as root
+  and a mode-based refusal would not apply to it. The consumer surfaces the
+  clause also names — the reconcile survey, the liveness reads, the
+  availability-evidence reads, the needs-human valve enrichment and the run-turn
+  telemetry classification — are a sibling work-item's and owe their own cases
+  there; what this module establishes for them is that `FactoryTarget.server`
+  and `FactoryTarget.docker_host` already carry the registry's addresses, so no
+  consumer learns that an address came from a file.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
