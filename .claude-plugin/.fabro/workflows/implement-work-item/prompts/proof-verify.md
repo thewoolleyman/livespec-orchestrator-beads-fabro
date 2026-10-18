@@ -196,6 +196,44 @@ visibility measurement reached this run, and of the two forms only the
 inline one can publish a reference that leaks from a repository nobody
 established was public. Say in your final reply that you took the fallback.
 
+### Keep every assertion section gradeable on its own
+
+YOUR record is the one `proof_grade` grades, with the same parser the
+post-merge acceptance pass uses. That parser resolves one assertion to the
+NARROWEST heading-rooted section whose text contains it, and FIRST MATCH
+WINS; it reads a `Reproduced:` line only outside a fenced block. So a
+`verified` verdict is not enough on its own — two authoring habits make a
+correct record ungradeable, both silently and both in the fail-OPEN
+direction: the record renders perfectly on the forge, and an assertion
+reads as evidenced off a verdict belonging to some other assertion.
+
+**Fence a payload that itself contains a fence using a LONGER delimiter.**
+The parser closes a fenced block only on the same character with a run
+AT LEAST AS LONG as the one that opened it, so a three-backtick line
+inside the payload closes a three-backtick fence early, and every line
+after it is read as record PROSE — a heading your proof merely PRINTED
+opens a section, and a `Reproduced:` line your proof printed becomes a
+verdict you never authored. Count the longest backtick run in the payload and open
+with a strictly longer one: four backticks around a payload containing
+three, five around one containing four. Your replay re-prints the captured
+record's own lines, so a captured record that got this wrong does NOT
+license you to repeat it: re-fence the payload and say so in one line.
+
+**Never let one assertion's section carry ANOTHER assertion's text.** Not
+the Definition of Done quoted as a block, not an enumeration of every
+assertion, not a sibling assertion restated for context — and this binds
+your PROOF PAYLOADS too, not only your prose, because the first-match
+search reads fenced lines as well. A replay that prints this item's own
+Definition of Done pulls every later assertion into the section that
+printing sits in, and each of them then reports whatever verdict that one
+section states. Each section carries its own assertion's text, verbatim,
+and no other's. Where a replayed step genuinely prints the whole
+Definition of Done, do NOT truncate the payload and do NOT rewrite the
+step: ATTACH that proof instead, exactly as an over-allowance proof is
+attached below. The four reference lines carry no assertion text, so the
+absorbing bytes leave the record body while the full proof stays
+published and digest-checkable.
+
 ### Keep the record within its size budget
 
 Your record is ONE forge comment, and the forge enforces a ceiling on it. A
