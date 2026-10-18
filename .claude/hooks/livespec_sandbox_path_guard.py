@@ -82,30 +82,39 @@ def _decision(*, raw: str, environ: dict[str, str]) -> str | None:
     working = str(data.get("cwd", "") or "").strip()
     repository = environ.get(_PROJECT_DIR_ENV_VAR, "").strip() or working
     targets = policy.removal_targets(command=command, working_directory=working or repository)
+    # Each target paired with what it REALLY is, so a symbolic link the agent
+    # made itself cannot stand in for the path it points at. Pairing happens
+    # here rather than in the policy because the policy has no filesystem; a
+    # glob target resolves to itself and the policy ignores the pairing for one
+    # anyway.
+    resolved = {target.path: _real_path(path=target.path) for target in targets}
+    # The second reading, supplied the same way and for the same reason: a
+    # DESTINATION that is already a directory is written INTO rather than
+    # replaced, so `mv /tmp/patch.diff .` destroys nothing. Every target is read
+    # rather than only the destinations, so which targets the sparing can reach
+    # stays the policy's decision rather than this hook's.
+    directories = {target.path for target in targets if _is_directory(path=target.path)}
+    protected = policy.protected_paths(
+        sandbox_root=root,
+        repository_path=repository,
+        repository_clone=_real_path(path=repository),
+        sandbox_entry_targets=_entry_targets(root=root),
+    )
     matched = policy.refused_path(
-        targets=targets,
-        # Each target paired with what it REALLY is, so a symbolic link the
-        # agent made itself cannot stand in for the path it points at. Pairing
-        # happens here rather than in the policy because the policy has no
-        # filesystem; a glob target resolves to itself and the policy ignores
-        # the pairing for one anyway.
-        resolved={target.path: _real_path(path=target.path) for target in targets},
-        # The second reading, supplied the same way and for the same reason: a
-        # DESTINATION that is already a directory is written INTO rather than
-        # replaced, so `mv /tmp/patch.diff .` destroys nothing. Every target is
-        # read rather than only the destinations, so which targets the sparing
-        # can reach stays the policy's decision rather than this hook's.
-        directories={target.path for target in targets if _is_directory(path=target.path)},
-        protected=policy.protected_paths(
-            sandbox_root=root,
-            repository_path=repository,
-            repository_clone=_real_path(path=repository),
-            sandbox_entry_targets=_entry_targets(root=root),
-        ),
+        targets=targets, resolved=resolved, directories=directories, protected=protected
     )
     if matched is None:
         return None
-    return _deny_payload(reason=policy.refusal_message(protected_path=matched, command=command))
+    # WHICH protected path dies and HOW the command reached it are two
+    # questions, and the second is the one an agent can act on. Both are asked
+    # over the SAME three readings, so the refusal and its own account of
+    # itself cannot disagree about which target was spared.
+    stand_ins = policy.stand_in_targets(
+        targets=targets, resolved=resolved, directories=directories, protected=protected
+    )
+    return _deny_payload(
+        reason=policy.refusal_message(protected_path=matched, command=command, stand_ins=stand_ins)
+    )
 
 
 def _real_path(*, path: str) -> str:
@@ -118,10 +127,11 @@ def _is_directory(*, path: str) -> bool:
 
     Following is deliberate and is what a destination needs: `mv x
     /workspace/<repo>`, where that name is the engine's working-directory
-    LINK, moves `x` into the clone and replaces nothing. The one command that
-    replaces such a link rather than entering it is `ln -n`, which the policy
-    reads off the command's own flags instead — no filesystem reading can tell
-    those two apart, because they see the same directory.
+    LINK, moves `x` into the clone and replaces nothing. What replaces such a
+    link rather than entering it is a PLAIN-DESTINATION flag — `ln -n`, and
+    `-T` for both `ln` and `mv` — which the policy reads off the command's own
+    flags instead: no filesystem reading can tell those two apart, because
+    they see the same directory.
 
     A path that cannot be read at all answers False, which leaves its target a
     replacement; `Path.is_dir` already reports an unreadable path that way.

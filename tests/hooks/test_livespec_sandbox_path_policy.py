@@ -880,6 +880,84 @@ def test_nothing_is_refused_when_no_path_is_protected() -> None:
 
 
 # ---------------------------------------------------------------------------
+# stand_in_targets — the word a refusal has to quote to be actionable
+# ---------------------------------------------------------------------------
+
+
+def test_a_link_the_command_wrote_is_a_stand_in_for_the_path_it_resolves_to() -> None:
+    """The refusal names a path this command never wrote; this is why.
+
+    Measured 2026-10-18 on run 01M577JN5RK7220F6B50PN1227: `rm -f
+    /tmp/proof-capture/agent-made-link` was refused naming `/workspace`, which
+    appears nowhere in it, and the remedy the message gave — build the
+    simulation under /tmp — was the one the agent had already followed.
+    """
+    policy = _load_policy()
+    link = "/tmp/layout-sim/agent-made-link"
+
+    assert policy.stand_in_targets(
+        targets=(policy.Target(path=link, into_directory=False),),
+        resolved={link: _SANDBOX_ROOT},
+        directories=set(),
+        protected=_protected(policy=policy),
+    ) == (link,)
+
+
+def test_a_target_naming_a_protected_path_outright_is_not_a_stand_in() -> None:
+    """The message already names it, so quoting it again explains nothing."""
+    policy = _load_policy()
+
+    assert (
+        policy.stand_in_targets(
+            targets=(policy.Target(path=_SANDBOX_ROOT, into_directory=False),),
+            resolved={},
+            directories=set(),
+            protected=_protected(policy=policy),
+        )
+        == ()
+    )
+
+
+def test_a_glob_is_never_a_stand_in() -> None:
+    """A pattern is matched rather than resolved, so it stands in for nothing."""
+    policy = _load_policy()
+    pattern = f"{_SANDBOX_ROOT}/*"
+
+    assert (
+        policy.stand_in_targets(
+            targets=(policy.Target(path=pattern, into_directory=False),),
+            resolved={pattern: _SANDBOX_ROOT},
+            directories=set(),
+            protected=_protected(policy=policy),
+        )
+        == ()
+    )
+
+
+def test_a_spared_destination_is_not_a_stand_in_for_another_targets_refusal() -> None:
+    """A destination written INTO is not refused, so it explains no refusal.
+
+    `mv /tmp/x <link-to-clone> && rm -rf /workspace` is refused for the root.
+    Naming the destination would blame the one operand that destroyed nothing.
+    """
+    policy = _load_policy()
+    destination = "/tmp/layout-sim/link-to-clone"
+
+    assert (
+        policy.stand_in_targets(
+            targets=(
+                policy.Target(path=destination, into_directory=True),
+                policy.Target(path=_SANDBOX_ROOT, into_directory=False),
+            ),
+            resolved={destination: _CLONE},
+            directories={destination},
+            protected=_protected(policy=policy),
+        )
+        == ()
+    )
+
+
+# ---------------------------------------------------------------------------
 # refusal_message — the operator-facing refusal
 # ---------------------------------------------------------------------------
 
@@ -893,6 +971,32 @@ def test_the_refusal_message_names_the_protected_path_and_the_command() -> None:
     assert _SANDBOX_ROOT in message
     assert f"Command: {command}" in message
     assert "Do NOT retry" in message
+
+
+def test_the_refusal_message_quotes_a_stand_in_and_says_the_link_is_permanent() -> None:
+    """Without this the agent cannot tell why a /tmp-only command was refused."""
+    policy = _load_policy()
+    link = "/tmp/layout-sim/agent-made-link"
+
+    message = policy.refusal_message(
+        protected_path=_SANDBOX_ROOT, command=f"rm -f {link}", stand_ins=(link,)
+    )
+
+    assert link in message
+    assert f"does not name {_SANDBOX_ROOT}" in message
+    assert "cannot be cleaned up" in message
+    assert "no earlier run has used" in message
+
+
+def test_the_refusal_message_omits_the_disclosure_when_the_command_named_the_path() -> None:
+    """A command that wrote the path down needs no explanation of how it matched."""
+    policy = _load_policy()
+
+    message = policy.refusal_message(
+        protected_path=_SANDBOX_ROOT, command=f"rm -rf {_SANDBOX_ROOT}", stand_ins=()
+    )
+
+    assert "does not name" not in message
 
 
 def test_the_destructive_verb_set_is_published() -> None:

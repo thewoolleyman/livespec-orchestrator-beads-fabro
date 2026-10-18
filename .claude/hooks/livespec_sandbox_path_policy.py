@@ -90,6 +90,7 @@ __all__: list[str] = [
     "refusal_message",
     "refused_path",
     "removal_targets",
+    "stand_in_targets",
 ]
 
 _ROOT = "/"
@@ -268,8 +269,71 @@ def refused_path(
     return None
 
 
-def refusal_message(*, protected_path: str, command: str) -> str:
-    """Render the operator-facing refusal naming the protected path it matched."""
+def stand_in_targets(
+    *,
+    targets: Sequence[Target],
+    resolved: Mapping[str, str],
+    directories: Collection[str],
+    protected: Sequence[str],
+) -> tuple[str, ...]:
+    """The words this command wrote that reach a protected path only by RESOLVING to one.
+
+    WHY THIS IS A SEPARATE QUESTION FROM `refused_path`. That function answers
+    WHICH protected path dies, which is what the refusal must name. This one
+    answers HOW the command reached it, which is what an agent needs to act.
+    A refusal naming a path the command never wrote is the one refusal an
+    agent cannot act on: measured 2026-10-18, `rm -f
+    /tmp/proof-capture/agent-made-link` was refused naming `/workspace` —
+    absent from the command — while the remedy offered was to build the
+    simulation under a scratch directory, which is exactly where that link
+    already was.
+
+    The same two readings `refused_path` compares against are compared here,
+    so the two answers cannot disagree. A target SPARED there is absent, because
+    naming a destination that destroyed nothing would blame the wrong operand of
+    a command some other target got refused for. A GLOB is absent too: a pattern
+    is matched rather than resolved, so it stands in for nothing. And a target
+    that IS a protected path is absent, because the message already names it.
+    """
+    refusable = _refusable_targets(protected=protected)
+    found: list[str] = []
+    for target in targets:
+        if _spared(target=target, directories=directories):
+            continue
+        if _GLOB_CHARACTERS & set(target.path):
+            continue
+        if _victim(candidate=target.path, refusable=refusable) is not None:
+            continue
+        if _victim(candidate=resolved.get(target.path, target.path), refusable=refusable):
+            found.append(target.path)
+    return tuple(dict.fromkeys(found))
+
+
+def refusal_message(*, protected_path: str, command: str, stand_ins: Sequence[str] = ()) -> str:
+    """Render the operator-facing refusal naming the protected path it matched.
+
+    `stand_ins` are the words the command actually wrote that reach that path
+    only by resolving to it. They are rendered as their own paragraph, and
+    only when there are any, because a command that wrote the path down needs
+    no account of how the match happened — while one that did not cannot
+    otherwise get one.
+
+    The paragraph has to say that the link is PERMANENT, not merely that it
+    matched. A link pointing at a protected path is refused exactly as that
+    path is, and that includes the command removing the link itself, so the
+    name can never be reclaimed. An agent told only that it matched will
+    reasonably try to clean up and be refused again.
+    """
+    disclosure = ""
+    if stand_ins:
+        disclosure = (
+            f"This command does not name {protected_path}. What it writes resolves to "
+            f"it: {', '.join(stand_ins)}. A target counts for what it REALLY is, so a "
+            "symbolic link you made that points at a protected path is refused exactly "
+            "as that path is — including the command that would remove the link itself. "
+            "Such a link cannot be cleaned up once it exists, so a fixed name an earlier "
+            "run left behind can never be reused.\n\n"
+        )
     return (
         "REFUSED by livespec_sandbox_path_guard: this command would remove, move or "
         f"replace {protected_path}, which is one of this run's protected paths — the "
@@ -280,9 +344,12 @@ def refusal_message(*, protected_path: str, command: str) -> str:
         "no such file or directory` and publishes nothing, losing every commit the stage "
         "had already made.\n\n"
         f"Command: {command}\n\n"
+        f"{disclosure}"
         "This refusal is deterministic, not a transient failure. Do NOT retry the same "
         "command. To simulate a sandbox layout, build the whole simulation under a "
-        "scratch directory such as /tmp and leave this run's own paths alone."
+        "scratch directory such as /tmp, point every link inside it at a path inside "
+        "that same simulation rather than at one of this run's, and give it a name no "
+        "earlier run has used."
     )
 
 
@@ -302,7 +369,7 @@ def _destroyed(
     so there is nothing on disk to resolve, and the only question worth asking
     is whether a protected path is among what the shell would expand it to.
     """
-    if target.into_directory and target.path in directories:
+    if _spared(target=target, directories=directories):
         return None
     if _GLOB_CHARACTERS & set(target.path):
         return _matched_pattern(pattern=target.path, refusable=refusable)
@@ -311,6 +378,16 @@ def _destroyed(
         if victim is not None:
             return victim
     return None
+
+
+def _spared(*, target: Target, directories: Collection[str]) -> bool:
+    """True iff this target is a destination the segment writes INTO rather than replaces.
+
+    Read by `_destroyed` and by `stand_in_targets`, which is the whole point of
+    naming it: a target spared from the refusal must also be spared from the
+    account of why the refusal happened.
+    """
+    return target.into_directory and target.path in directories
 
 
 def _walked(
