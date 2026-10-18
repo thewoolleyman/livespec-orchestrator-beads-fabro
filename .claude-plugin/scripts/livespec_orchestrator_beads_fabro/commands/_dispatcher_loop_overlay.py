@@ -61,6 +61,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_metadata
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     resume_checkout_for,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_pack import (
+    fleet_toolchain_is_the_sandbox_gate_premise,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel import VaultSecretSink
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -143,6 +146,14 @@ def materialize_dispatch_overlay(*, overlay: DispatchOverlay) -> str | None:
         # `{{ inputs.* }}`, and the pinned engine renders that site for the
         # graph but not for `run.prepare`.
         prepare_inputs=contract_prompt_variables(resolved=plan.integration),
+        # Whether the gitignored worktree-discipline pack is a premise of THIS
+        # sandbox, read off the SAME resolved contract the inputs above are
+        # projected from. The pack is this fleet's own dev-tooling artifact and
+        # only this fleet's check suite reads it, so a repository that declared
+        # its own sandbox gate is imposed no recipe it may not have.
+        provision_worktree_pack=fleet_toolchain_is_the_sandbox_gate_premise(
+            resolved=plan.integration
+        ),
         git_author=overlay.recorded.git_author,
         # This repository's proof-asset rendering, as the pre-dispatch gate
         # MEASURED and journaled it. Read back from that record rather than

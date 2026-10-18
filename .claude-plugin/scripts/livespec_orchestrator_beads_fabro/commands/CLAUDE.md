@@ -137,6 +137,29 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   in-memory `index: dict[str, WorkItem]`); callers (`next`,
   `list-work-items`, the Dispatcher) import them from there.
 - `_jsonc.py` — JSONC parsing for `.livespec.jsonc`.
+- `_dispatcher_sandbox_worktree_pack.py` — the gitignored worktree-discipline pack
+  a fleet-default sandbox installs before anything reads it (`bd-ib-tlmq3m`,
+  Scenarios 30 and 96), plus the premise that decides whether it is owed. PURE,
+  and the repair of a defect that only a run making NO COMMIT could reach: the
+  pack arrived as a SIDE EFFECT of the hook-manager's pre-commit hook, so every
+  ordinary run had it by the time its janitor ran, and a seeded re-dispatch —
+  which reuses already-reviewed commits — reached the janitor with none and exited
+  127 on a pack member. Four properties an editor must not invert. The invocation
+  is read from the fleet-defaults module and never composed here, because
+  `constraints.md`'s fleet-toolchain-literal ban admits this fleet's recipe runner
+  in no other module. The step is rendered in the OVERLAY rather than written into
+  `workflow.toml`, for the two reasons `_dispatcher_default_branch_fetch` records —
+  that file is forked per repository, and the same ban SCANS it. It is rendered
+  AFTER the committed chain, which is a requirement rather than a position: the
+  recipe runs through the virtual environment the committed `uv sync` populates, so
+  the "as early as possible" instinct fails the prepare step and kills the run. And
+  the premise is read off the sandbox check-suite field's resolution ARM, never its
+  value — the same discipline `fleet_toolchain_is_the_host_janitor_premise` keeps
+  one venue over, because a repository may declare exactly the fleet convention and
+  a value comparison would read that deliberate declaration as an inheritance. It
+  renders NO worktree exclusion, and that is deliberate: every pack member is
+  already in the governed repository's own tracked `.gitignore`, which is the same
+  fact that makes the pack absent to begin with.
 - `_dispatcher_minijinja_escape.py` — the shared MiniJinja literal escaper every
   untrusted-prose renderer routes through, so arbitrary item prose cannot alter
   graph semantics when Fabro renders the goal. It lived in `_dispatcher_overlay`

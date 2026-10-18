@@ -29,6 +29,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     JournalWriter,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_contract import (
+    resolve_integration_contract,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_declaration import (
+    declaration_from_config_text,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_fabro_launcher import (
     WatchedFabroLauncher,
@@ -188,7 +194,14 @@ def test_factory_authentication_precedes_vault_materialization(
     plan = SimpleNamespace(
         review_fix_visit_cap=4,
         branch="feat/review-fix",
-        integration=object(),
+        # A REAL resolved contract rather than a bare `object()`. The overlay leg
+        # now reads one more answer off it — whether the gitignored
+        # worktree-discipline pack is a premise of this sandbox — and a double that
+        # carries no resolutions fails on its own shape rather than on the ORDER
+        # this case is about (bd-ib-tlmq3m).
+        integration=resolve_integration_contract(
+            declaration=declaration_from_config_text(config_text="{}")
+        ),
         acp_nodes=None,
         fabro_factory_name="candidate",
         # The resolved client build the dispatch hands the materializer, which
