@@ -41,6 +41,7 @@ from __future__ import annotations
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import (
     PR_STATE_MERGED,
     ResumeObservation,
+    liveness_refusals,
     lock_refusals,
     pull_request_state_refusals,
 )
@@ -59,9 +60,32 @@ def non_fallback_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
     precondition for a `resume`.
     """
     return (
+        *_live_run_refusals(observation=observation),
         *lock_refusals(observation=observation),
         *_merged_refusals(observation=observation),
     )
+
+
+def _live_run_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
+    """The still-live earlier run, and never the factory that could not be asked.
+
+    `liveness_refusals` renders BOTH, and the two are the same measurement read
+    two ways: an unanswered factory routes `held` on the MEASUREMENT, while an
+    answering factory naming a live run routes `held` on this REFUSAL. The
+    unobservable arm is already graded one step earlier, by
+    `unobservable_measurements`, so asking for it again here would put one hold
+    in both of the record's lists and tell an operator to wait for a read that
+    answered.
+
+    This arm is the most expensive of the three to omit: a released item whose
+    earlier run is ALIVE and one whose earlier run has ENDED present identically
+    at every other surface — both `ready`, both with a standing publish branch,
+    both with verifiable preserved work — so a fallback taken here starts a
+    second run against a branch the first is still pushing to.
+    """
+    if not observation.liveness_observed or not observation.live_runs:
+        return ()
+    return liveness_refusals(observation=observation)
 
 
 def _merged_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
