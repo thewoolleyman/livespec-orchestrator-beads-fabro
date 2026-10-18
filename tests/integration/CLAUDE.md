@@ -931,6 +931,38 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   pre-push command the skip cannot reach. This file never connects to a tenant
   and never pushes.
 
+- `test_delegated_pre_push_gate.py` — this repository's OPT-IN to the delegated
+  pre-push gate (work-item bd-ib-idp5g7), whose contract is
+  livespec-dev-tooling's `SPECIFICATION/contracts.md` §"Delegated pre-push
+  gate" and whose client is the pinned `gate_remote_delegate`. Only two facts
+  live in this tree — `delegated_gate = true` in this repository's own
+  `[tool.livespec_dev_tooling]` block, and the branch
+  `dev-tooling/just-check-pre-push.sh` takes on the client's answer — so the
+  subject is this repository's own committed files rather than a fixture, as in
+  the sibling module above, and the script is likewise executed as the SHIPPED
+  BYTES with `uv` and `just` stubbed on `PATH`: what it INVOKES is the only
+  observable that can tell a delegated gate from a local one, since both
+  complete and a completed push looks identical afterwards either way.
+  DELEGATION IS SELECTED BY TWO FACTS and only one of them is in the tree, so
+  the host half is driven through `GATES_KUBECONFIG` — the single override the
+  client and the shipped `with-gates-kubeconfig` wrapper BOTH resolve the
+  credential from — rather than read off whatever host the suite runs on: the
+  real credential is absent in a sandbox and PRESENT on the VPS, so a test
+  asserting on it would pass here for the very reason it would fail there. Both
+  host answers are asserted. The credential-holding arm is the positive control
+  without which the credential-less one proves only that nothing is switched
+  on, since a repository that never opted in ALSO fails that probe, and
+  silently. Three script cases carry the branch: its POSITION (after the
+  green-token skip, before the local fall-through — ahead of the token it would
+  re-gate a tree already proven green, behind the aggregate it would be
+  unreachable), the selected-delegation case asserting the local aggregate is
+  NOT also run, and the fail-closed case asserting a delegated run that reaches
+  no verdict refuses the push instead of falling through, which is what the
+  `exec` buys. No `gate_check_suite` is declared and a case asserts that
+  absence, because a declaration would gate the tree on recipes chosen in
+  `pyproject.toml` rather than the ones this repository's pre-push actually
+  runs. This file never connects to a tenant and never pushes.
+
 - `test_exhaustion_record_credential_identity_scenario186.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 186 and the credential-identity clause
   of `contracts.md` §"Dispatcher admission, WIP cap, and post-merge
