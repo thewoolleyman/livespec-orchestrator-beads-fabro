@@ -842,13 +842,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 179 \u2014 A sandbox commit whose hook outlasts one tool call completes with the hook's own verdict",
-    "work_item": "bd-ib-sufca7",
-    "first_seen": "2026-10-15"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 180 \u2014 A sandbox agent cannot remove the run's working tree, and ordinary removals still run",
     "work_item": "bd-ib-jgedjo",
     "first_seen": "2026-10-15"

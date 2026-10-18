@@ -85,6 +85,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
     publication_push_program_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_commit_runner import (
+    sandbox_commit_runner_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
     sandbox_plugins_root_expansion,
@@ -421,11 +424,15 @@ def plugin_cache_gate_prepare_steps_block() -> str:
     A sandbox with nothing registered yet reports exactly that and exits 0.
 
     The publication-head reader, the exact-head push program, the carry-forward
-    decision and the per-assertion proof grade ride the SAME block for the reason
-    the module docstring records: all five land below one root, and a sandbox
-    given a subset fails closed at a stage whose refusal would name the wrong
-    seam. They follow the gate rather than precede it so the cheapest refusal — an
-    unrepairable plugin cache — still aborts setup first.
+    decision, the per-assertion proof grade and the detached commit runner ride
+    the SAME block for the reason the module docstring records: all six land
+    below one root, and a sandbox given a subset fails closed at a stage whose
+    refusal would name the wrong seam. They follow the gate rather than precede
+    it so the cheapest refusal — an unrepairable plugin cache — still aborts
+    setup first. The commit runner is rendered unconditionally too, and for a
+    stronger reason than the others: every committing ACP stage's prompt names
+    it as the ONE route to a commit, and a stage that found it absent would
+    have to either refuse or commit around it.
     """
     lines = [
         "",
@@ -443,4 +450,5 @@ def plugin_cache_gate_prepare_steps_block() -> str:
         + publication_push_program_prepare_steps_block()
         + carry_forward_program_prepare_steps_block()
         + proof_grade_program_prepare_steps_block()
+        + sandbox_commit_runner_prepare_steps_block()
     )
