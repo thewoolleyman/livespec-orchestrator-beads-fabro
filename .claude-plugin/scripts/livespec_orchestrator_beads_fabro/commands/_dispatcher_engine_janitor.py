@@ -38,6 +38,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import INVOK
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_check_venue import (
     CLUSTER_GATE_ARGV,
     cluster_janitor_red,
+    gate_tree_hash,
     host_janitor_red,
     janitor_check_row_fields,
     janitor_runs_on_the_cluster,
@@ -189,6 +190,13 @@ def _check_suite_red(
         if on_the_cluster
         else janitor_env_delta(core_plugin_root=str(plan.janitor_core_checkout / ".claude-plugin"))
     )
+    # Read BEFORE the launch and only on the cluster venue, because it is the
+    # tree that venue is about to ASK the gate about -- and because the
+    # host-local row owes no gate account at all, so spending the reading there
+    # would measure something no row reports.
+    tree_hash = (
+        gate_tree_hash(runner=runner, checkout=plan.janitor_checkout) if on_the_cluster else None
+    )
     result = runner.run(
         argv=argv, cwd=plan.janitor_checkout, timeout_seconds=_JANITOR_TIMEOUT_SECONDS, env=env
     )
@@ -205,7 +213,9 @@ def _check_suite_red(
         journal_options=StageJournalOptions(
             retention=plan.janitor_retention,
             removed_env_vars=janitor_removed_env_vars(),
-            extra_fields=janitor_check_row_fields(on_the_cluster=on_the_cluster, result=result),
+            extra_fields=janitor_check_row_fields(
+                on_the_cluster=on_the_cluster, result=result, tree_hash=tree_hash
+            ),
         ),
     )
     if on_the_cluster:

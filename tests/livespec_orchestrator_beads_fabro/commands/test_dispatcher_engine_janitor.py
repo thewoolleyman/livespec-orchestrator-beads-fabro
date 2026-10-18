@@ -109,8 +109,10 @@ _CLUSTER_VENUE_CONFIG = (
 # Where the janitor's own check-suite stage sits in the runner's call log:
 # pull-primary, the venue merge-containment probe, the preclean, the checkout
 # add, the trust step, the bootstrap, the per-checkout bootstrap and the core
-# provision all precede it.
-_CHECK_SUITE_CALL = 8
+# provision all precede it -- and, on the CLUSTER venue only, the row's reading
+# of the tree about to be submitted sits between the core provision and the
+# gate run.
+_CHECK_SUITE_CALL = 9
 
 
 def _gate(*, state: str) -> CommandResult:
@@ -128,9 +130,20 @@ def _gate(*, state: str) -> CommandResult:
     )
 
 
+def _submitted_tree() -> CommandResult:
+    """What the cluster venue's `git rev-parse HEAD^{tree}` reading answers.
+
+    The reading is taken before the gate client is launched, so it occupies a
+    queue slot of its own on this venue and none on the host-local one.
+    """
+    return CommandResult(
+        exit_code=0, stdout="0ff1ce0ff1ce0ff1ce0ff1ce0ff1ce0ff1ce0ff1\n", stderr=""
+    )
+
+
 def _cluster_queue(*, gate: CommandResult) -> list[CommandResult]:
-    """pull-primary, the venue resolution, provisioning, the gate run, the cleanup."""
-    return [_ok(), _branch(), *[_ok() for _ in range(6)], gate, _ok()]
+    """pull-primary, the venue resolution, provisioning, the tree reading, the gate, the cleanup."""
+    return [_ok(), _branch(), *[_ok() for _ in range(6)], _submitted_tree(), gate, _ok()]
 
 
 def _write_cluster_venue(*, repo: Path) -> None:
