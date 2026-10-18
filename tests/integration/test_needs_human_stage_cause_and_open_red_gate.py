@@ -373,3 +373,40 @@ def test_a_failed_pr_refresh_carries_its_own_cause_through_the_classifier_to_the
     assert _OPEN_RED_CLAUSE not in stderr
     assert control_refresh.returncode != 0, control_refresh.stdout
     assert f"{_OPEN_RED_CLAUSE} {control.head}" in control_stderr
+
+
+def test_an_open_red_reason_requires_a_py_path_in_the_head_commit(tmp_path: Path) -> None:
+    """Red trailers alone are not the open-Red trigger; a changed `.py` is half of it.
+
+    `red_green_replay` buckets PRODUCT IMPLEMENTATION by `.py` suffix, so a
+    commit carrying no `.py` at all can never owe a Green stamp and its
+    trailer shape is complete rather than half authored. A terminal that read
+    the trailers alone therefore reported a half-authored pair on a commit
+    master CI had correctly passed.
+
+    THE CONTROL IS THE SAME TRAILERS OVER A PRODUCT `.py`, and it is what
+    keeps the narrowing honest: a terminal that had simply stopped reporting
+    open Reds would satisfy the first assertion and lose the diagnosis
+    bd-ib-qhv7qs added. The generic reason is asserted BY NAME on the narrowed
+    leg, because "the open-Red clause is absent" is equally true of a terminal
+    that printed nothing at all.
+    """
+    narrowed = _world(
+        root=tmp_path / "narrowed",
+        changed={"docs/note.md": "a documentation-only change\n"},
+        message=_OPEN_RED_MESSAGE,
+    )
+    control = _world(
+        root=tmp_path / "control",
+        changed={_PRODUCT_IMPL_PATH: "the half-authored product edit\n"},
+        message=_OPEN_RED_MESSAGE,
+    )
+
+    stderr = _run_terminal(world=narrowed)
+    control_stderr = _run_terminal(world=control)
+
+    assert _OPEN_RED_CLAUSE not in stderr
+    assert _HALF_PAIR_CLAUSE not in stderr
+    assert _GENERIC_REASON in stderr
+    assert f"{_OPEN_RED_CLAUSE} {control.head}" in control_stderr
+    assert _HALF_PAIR_CLAUSE in control_stderr
