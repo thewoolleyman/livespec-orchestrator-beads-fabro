@@ -141,6 +141,11 @@ _PR = "pr"
 # refresh leaves the head alone and the breaker falls through to `pr`.
 _PR_REFRESH = "pr_refresh"
 _PR_REFRESH_HEAD = "pr_refresh_head"
+# The per-assertion grade of the verified record (v156; bd-ib-kcq6pu): the only
+# route out of a `verified` replay, so every publishing path passes through it.
+# In this journey the record the replay published states every assertion as
+# reproduced, so the grade exits zero and the run proceeds to the refresh.
+_PROOF_GRADE = "proof_grade"
 # The five positions the Definition of Done names, in the order it names them.
 # Asserted as a SUBSEQUENCE of the route actually walked rather than as the route
 # itself, so the claim stays about these nodes while the exact route (which the
@@ -886,6 +891,7 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
         _PROOF_CAPTURE,
         _REVIEW,
         _PROOF_VERIFY,
+        _PROOF_GRADE,
         _PR_REFRESH,
         _PR_REFRESH_HEAD,
         _PR,
@@ -899,6 +905,10 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
     # what the ratified clause means by "only proof for the new head can reach
     # final publication".
     assert not _subsequence(route=run.visited, wanted=(_PROOF_VERIFY, _PR, _PR_REFRESH))
+    # Nor the refresh without the per-assertion GRADE between them (v156;
+    # bd-ib-kcq6pu): a `verified` verdict is a sentence about the record, and the
+    # clause admits no edge from the replay to either publication stage.
+    assert not _subsequence(route=run.visited, wanted=(_PROOF_VERIFY, _PR_REFRESH, _PROOF_GRADE))
     assert run.terminal in graph.with_shape(shape=GREEN_TERMINAL_SHAPE)
 
 

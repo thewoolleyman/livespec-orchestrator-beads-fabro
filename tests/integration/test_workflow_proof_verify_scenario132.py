@@ -357,29 +357,37 @@ def test_a_verified_verdict_is_the_only_thing_that_reaches_publication() -> None
     would then publish. So the edge is asserted to carry a condition, and to be
     the only one of its kind.
 
-    SINCE v121 THE TARGET IS `pr_refresh`, not `pr`: publication is scripted and
-    the refresh is its first stage, so that is where the ratified clause points
-    ("`proof_verify`, entered from `review` and exiting to `pr_refresh` on
-    success"). The sibling case below asserts `pr` is unreachable from here by
-    any direct edge, which is what keeps the refusal from being satisfied by a
-    second route that skips the refresh.
+    SINCE v121 PUBLICATION IS SCRIPTED and the refresh is its first stage, so
+    the clause used to point this edge at `pr_refresh`. SINCE v156 IT POINTS AT
+    `proof_grade` (work-item bd-ib-kcq6pu), which is a NARROWING rather than a
+    re-routing: the clause now says in as many words that "No edge MAY route from
+    `proof_verify` to `pr_refresh` or `pr`; a `verified` outcome reaches
+    `pr_refresh` only through `proof_grade`", because a replay's verdict is a
+    sentence ABOUT its record and the record itself has to be graded per
+    assertion before anything publishes. The sibling case below asserts that
+    NEITHER publication stage is reachable from here by a direct edge, which is
+    what keeps the refusal from being satisfied by a second route that skips the
+    grade.
     """
-    published = _verify_edges_to(target="pr_refresh")
+    published = _verify_edges_to(target="proof_grade")
 
     assert (
         len(published) == 1
-    ), f"expected exactly one proof_verify -> pr_refresh edge, got {published}"
+    ), f"expected exactly one proof_verify -> proof_grade edge, got {published}"
     assert "condition=" in published[0]
     assert "preferred_label=approve" in published[0]
 
 
-def test_no_edge_reaches_the_publication_stage_without_the_refresh() -> None:
-    """The replay cannot reach `pr` directly, on any verdict.
+def test_no_edge_reaches_the_publication_stages_without_the_grade() -> None:
+    """The replay cannot reach `pr_refresh` or `pr` directly, on any verdict.
 
-    The control for the case above: an edge straight to `pr` would publish on a
-    head the refresh never reconciled with the default branch, and the verified
-    record would then name a tree the pull request does not carry.
+    The control for the case above, and BOTH targets are load-bearing since v156:
+    an edge straight to `pr` would publish on a head the refresh never reconciled
+    with the default branch, and an edge straight to `pr_refresh` would publish on
+    a record nothing graded per assertion — the merge that parked `bd-ib-rszkjc`
+    NEEDS_ATTENTION with every assertion unevidenced.
     """
+    assert _verify_edges_to(target="pr_refresh") == []
     assert _verify_edges_to(target="pr") == []
 
 

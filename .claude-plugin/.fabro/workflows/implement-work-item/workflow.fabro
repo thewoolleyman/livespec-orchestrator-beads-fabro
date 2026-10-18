@@ -577,6 +577,70 @@ digraph ImplementWorkItem {
         prompt="@prompts/proof-verify.md"
     ]
 
+    // PER-ASSERTION GRADE OF THE VERIFIED RECORD (SPECIFICATION/contracts.md
+    // "Self-contained plugin dispatch" -> "The stages", ratified v156;
+    // scenarios.md Scenario 195; work-item bd-ib-kcq6pu). A COMMAND node, entered
+    // only from a `verified` proof_verify and exiting to `pr_refresh` exactly when
+    // every `factory_captured` assertion of the effective criteria reads as
+    // reproduced from the newest verified record attributed to this dispatch.
+    //
+    // WHY THE NODE EXISTS. `proof_verify`'s verdict is a SENTENCE ABOUT the
+    // record rather than a property OF it, and the two came apart on
+    // bd-ib-rszkjc, merged as pull request 3130: the replay published `verified`,
+    // every stage went green, the pull request merged, and the acceptance pass
+    // then parked the item NEEDS_ATTENTION with all three assertions pending a
+    // Proof of Done record. The published record carries NO `Reproduced:` line
+    // inside any assertion section -- only one record-wide line under a trailing
+    // `## Comparison against the captured proofs` heading, which the reader
+    // deliberately ignores because letting an assertion absorb a trailing
+    // section's verdict is the fail-OPEN direction. So nothing graded the record
+    // before the run advanced, and the prompt's own per-assertion instruction was
+    // the only thing standing between a conforming record and an unevidenceable
+    // merge.
+    //
+    // IT GRADES WITH THE ACCEPTANCE PASS'S OWN READER BYTES, which is the whole
+    // guarantee and is why this is a materialized PROGRAM rather than shell. The
+    // prepare step writes the package's own `_dispatcher_proof_record.py` and its
+    // one intra-package dependency into the sandbox verbatim, package prefix
+    // stripped, and the program imports them -- so the reading the run advances on
+    // and the reading the post-merge pass takes cannot disagree.
+    // `commands/_dispatcher_proof_grade_program.py` is where that choice is
+    // justified at length, and `_dispatcher_publication_head` is where a SECOND,
+    // hand-rolled account of this same format was measured returning nothing on
+    // 100% of real records.
+    //
+    // THE ASSERTIONS COME FROM THE DISPATCH, NOT FROM THE RECORD. Grading a record
+    // against the assertions the RECORD happens to list is the same fail-open the
+    // trailing-summary case is: an assertion the record omits is invisible to any
+    // check that reads only the record. The Dispatcher projects the item's
+    // `factory_captured` assertions into the sandbox environment, and a projection
+    // that is absent or unreadable fails the grade CLOSED rather than grading
+    // against an empty set.
+    //
+    // EVERY ARM THIS SCRIPT OWNS RECORDS ITS FAILURE AGAINST THE RUN, which is a
+    // requirement and not tidiness: the failure edge leads to `proof_grade_route`,
+    // which re-enters `proof_verify` while fewer than three failures stand, so an
+    // arm that failed WITHOUT counting would retry for ever and spend an agent
+    // turn each time. A counter that is present but not a number reads AT the cap
+    // for the same fail-closed reason `pr_refresh`'s does.
+    //
+    // THE PROGRAM RESOLVES THE PULL REQUEST FROM THE NUMBER THIS SCRIPT HANDS IT,
+    // so the publish-branch environment name is spelled HERE, beside every other
+    // stage's reading of it, rather than a second time inside the program.
+    //
+    // EVERY SINGLE QUOTE BELOW IS BARE, DELIBERATELY, for the reason the
+    // `pr_refresh` node records: a DOT attribute string escapes a double quote and
+    // a backslash and nothing else, so a backslash in front of a single quote is
+    // not an escape -- the pinned engine's reader drops it by accident while a
+    // Petri-era reader hands the shell a LITERAL quote character, and the `--jq`
+    // operand below is exactly where that is fatal.
+    proof_grade [
+        label="Grade the verified Proof of Done record per assertion"
+        shape=parallelogram
+        timeout="600s"
+        script="livespec_grade_failed() { state=$(git rev-parse --git-path livespec-publication); if test -n \"$state\"; then mkdir -p \"$state\"; count=$(cat \"$state/livespec-proof-grade-failures\" 2>/dev/null || echo 0); if ! test \"$count\" -ge 0 2>/dev/null; then count=3; fi; printf '%s\\n' \"$((count + 1))\" > \"$state/livespec-proof-grade-failures\"; printf '%s\\n' \"$1\" > \"$state/livespec-proof-grade-finding\"; fi; echo \"$1\" >&2; }; branch=\"${LIVESPEC_PUBLISH_BRANCH:-}\"; if test -z \"$branch\"; then livespec_grade_failed 'LIVESPEC_PROOF_GRADE_NO_BRANCH: no LIVESPEC_PUBLISH_BRANCH in this script environment, so the pull request carrying the verified record cannot be named; failing closed rather than advancing on a record nobody graded'; exit 1; fi; number=$(gh pr list --head \"$branch\" --state all --json number --jq 'map(.number)|max'); if test -z \"$number\" || test \"$number\" = \"null\"; then livespec_grade_failed \"LIVESPEC_PROOF_GRADE_PR_UNRESOLVED: the forge could not be asked which pull request carries $branch, so the verified record cannot be read\"; exit 1; fi; program=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-proof-grade.py\"; if test ! -f \"$program\"; then livespec_grade_failed \"LIVESPEC_PROOF_GRADE_PROGRAM_ABSENT: the Dispatcher-materialized per-assertion grade is not at $program, so the verified record cannot be graded with the reader the acceptance pass grades with\"; exit 1; fi; exec python3 \"$program\" --pull-request \"$number\""
+    ]
+
     // SCRIPTED PUBLICATION (SPECIFICATION/contracts.md
     // "Definition-of-Done and Proof-of-Done stages" ->
     // "Scripted publication and proof-head integrity", ratified v121). The three
@@ -1653,9 +1717,24 @@ digraph ImplementWorkItem {
     // returning here — so a proof loop costs a review visit, counted against the
     // review-fix budget like any other, which is what the contract says it is.
     proof_verify -> needs_human   [label="Blocked", condition="outcome=failed", weight=100]
-    proof_verify -> pr_refresh    [label="verified", condition="preferred_label=approve"]
+    proof_verify -> proof_grade   [label="verified", condition="preferred_label=approve"]
     proof_verify -> fix           [label="not reproduced", condition="preferred_label=fix"]
     proof_verify -> needs_human   [label="unmatched proof_verify outcome"]
+
+    // Per-assertion grade routing (v156; work-item bd-ib-kcq6pu). The clause is
+    // explicit that "No edge MAY route from `proof_verify` to `pr_refresh` or
+    // `pr`; a `verified` outcome reaches `pr_refresh` only through
+    // `proof_grade`", so the APPROVE edge above now targets the grade and the
+    // grade owns the only route onward.
+    //
+    // THE ADVANCE IS THE UNCONDITIONAL FALLTHROUGH and the ungradeable record is
+    // the named exception, which is the shape every command node here uses: the
+    // engine gives a command node exactly two outcomes, and a node whose every
+    // outgoing edge carries a condition is rejected outright by the engine before
+    // anything runs (`all_conditional_edges`, the defect that took the whole
+    // factory down twice).
+    proof_grade -> needs_human [label="ungradeable verified record", condition="outcome=failed"]
+    proof_grade -> pr_refresh
 
     // Scripted-publication routing (SPECIFICATION/contracts.md
     // "Scripted publication and proof-head integrity", ratified v121).

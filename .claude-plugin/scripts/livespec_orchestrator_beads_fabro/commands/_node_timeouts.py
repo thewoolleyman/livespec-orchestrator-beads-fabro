@@ -121,6 +121,13 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # node comments in `workflow.fabro` carry the derivation; this table mirrors it
 # rather than re-deriving it, because the two must agree.
 #
+# `proof_grade` (v156; work-item bd-ib-kcq6pu) is budgeted at `proof_verify`'s own
+# count, because it is entered exactly once per `verified` replay: it sits on the
+# single edge out of that verdict, and the clause forbids any other route into
+# `pr_refresh`. Budgeting it lower would under-bill the one node every publishing
+# path now passes through, and a node budgeted below what the graph can spend is
+# one the Dispatcher's own subprocess ceiling can kill mid-run.
+#
 # `pr` and the refresh-route decision node `pr_route` are FOUR each: each `pr`
 # visit either ends the run or spends one of the three counted refreshes, so one
 # entry plus three routed re-entries is the whole of it. `verify_pr` is ONE: it
@@ -136,6 +143,7 @@ _WORST_CASE_VISITS: Mapping[str, int] = {
     "proof_capture": 7,
     "review": 7,
     "proof_verify": 6,
+    "proof_grade": 6,
     "disposition": 3,
     "review_fix": 3,
     "pr_refresh": 8,

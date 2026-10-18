@@ -119,16 +119,22 @@ def test_implementation_routes_a_changed_head_back_through_capture() -> None:
     The spec forbids publication from reusing a verified record from before a
     head change, so the graph -- not a script's good intentions -- is what has
     to carry the route back to `proof_capture`.
+
+    SINCE v156 THE REPLAY REACHES THE REFRESH THROUGH `proof_grade`
+    (bd-ib-kcq6pu), so the first leg is asserted in two hops rather than one.
+    The claim is unchanged: a `verified` verdict reaches the refresh and nothing
+    else does.
     """
     dot = _graph(directory=_IMPLEMENT_DIR)
-    assert "pr_refresh" in _edge_targets(dot=dot, source="proof_verify")
+    assert "proof_grade" in _edge_targets(dot=dot, source="proof_verify")
+    assert "pr_refresh" in _edge_targets(dot=dot, source="proof_grade")
     assert "proof_capture" in _edge_targets(dot=dot, source="pr_refresh_head")
     assert "pr" in _edge_targets(dot=dot, source="pr_refresh_head")
     assert _edge_sources(dot=dot, target="pr") == ["pr_refresh_head"]
     # Every touched node keeps an UNCONDITIONAL outgoing edge: the pinned engine
     # rejects a node whose every outgoing edge carries a condition, before any
     # node runs.
-    for source in ("pr_refresh", "pr_refresh_head"):
+    for source in ("proof_grade", "pr_refresh", "pr_refresh_head"):
         unconditional = re.findall(rf"(?m)^[ \t]*{source}[ \t]*->[ \t]*\w+[ \t]*$", dot)
         assert unconditional, source
 

@@ -647,13 +647,26 @@
       // 96% of its suite. They are raised TOGETHER on purpose: a refresh
       // bounded at half its sibling's budget fails on the same suite one stage
       // later (bd-ib-xi63mq, Scenario 177).
+      //
+      // `proof_grade` is declared DOWNWARD, which is the only entry here that
+      // is. It is one `gh pr view` plus a sub-second parse of that payload
+      // through the acceptance pass's own record reader -- it runs no suite, no
+      // push and no agent turn -- so the 1800 s default is three times a
+      // generous budget for it. The reason to say so rather than inherit the
+      // default is that it sits on the single edge out of a `verified` replay,
+      // so the derivation bills it at that node's 22 visits and every one of
+      // those seconds lands in the Codex credential-lifetime floor
+      // tests/test_factory_checkpoint_declaration.py guards: inherited, the
+      // node alone demanded 63690 s of a token's remaining life, and declared
+      // at 600 it demands 37290 (bd-ib-kcq6pu).
       "node_timeouts": {
         "implement": 14400,
         "janitor": 4340,
         "fix": 3600,
         "review_fix": 7200,
         "publish_draft": 3600,
-        "pr_refresh": 3600
+        "pr_refresh": 3600,
+        "proof_grade": 600
       },
       // ACTIVE inventory, not endpoint history: an unnamed `reconcile-runs`
       // pass surveys every entry. Intentionally stopped or retired factories
