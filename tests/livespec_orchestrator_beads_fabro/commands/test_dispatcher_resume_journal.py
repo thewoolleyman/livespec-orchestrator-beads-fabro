@@ -276,6 +276,25 @@ def test_another_items_run_does_not_anchor_this_items_resume() -> None:
     assert module.resumes_anchored_on(records=records, work_item_id=_ITEM, pull_request=2639) == ()
 
 
+def test_attribution_still_links_a_resume_that_created_no_run() -> None:
+    """The record is the ATTRIBUTION link, and the bound's narrowing is not its.
+
+    The `resume` row is journaled before the resumed run exists, carrying the
+    earlier run's identifiers, so that "a `verified` record the earlier run
+    published grades the resumed run's merge". That chain is read off every one of
+    the item's resume records, and must stay read off every one of them: an
+    attempt that created no run anchors nothing for the bound, and still says
+    which runs a later resumed run set out to finish.
+    """
+    module = _journal_module()
+    records = [_resume_row(earlier_run_ids=("01M4ONE", "dispatch-id-hex")), _refused_row()]
+    assert module.resumes_anchored_on(records=records, work_item_id=_ITEM, pull_request=2639) == ()
+    assert module.resume_linked_run_ids(records=records, work_item_id=_ITEM) == (
+        "01M4ONE",
+        "dispatch-id-hex",
+    )
+
+
 def test_the_pointer_reader_does_not_narrow_with_the_bound() -> None:
     """`was_resumed` asks whether a MERGE was reached through a resume, not the cap.
 

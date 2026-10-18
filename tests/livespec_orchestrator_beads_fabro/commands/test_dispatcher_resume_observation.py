@@ -506,6 +506,96 @@ def test_earlier_resumes_of_the_same_pull_request_are_counted(repo: Path) -> Non
     assert gather.observation.earlier_resumes == (_EARLIER_RUN,)
 
 
+def _bound_journal(*, path: Path, launched: bool) -> Path:
+    """The ordinary journal plus TWO resume attempts of the same pull request.
+
+    `launched` decides the one thing under test: whether each attempt is followed
+    by the row naming the run it CREATED, or by the ACP preflight's own refusal,
+    which names none because there is none. Both shapes journal the same two
+    `resume` records — the record is written before the run exists — so a reader
+    counting records rather than runs cannot tell them apart.
+    """
+    journal = _journal(path=path)
+    rows: list[dict[str, object]] = []
+    for ordinal, earlier in enumerate((_EARLIER_RUN, _RESUMED_RUN), start=1):
+        rows.append(
+            {
+                "stage": "resume",
+                "work_item_id": _ITEM_ID,
+                "earlier_run_ids": [earlier],
+                "pull_request": _PR,
+                "resumed_at": "pr",
+            }
+        )
+        rows.append(
+            {
+                "stage": "dispatch-run-stamp",
+                "work_item_id": _ITEM_ID,
+                "run_id": f"01M4RESUMEDRUN{ordinal}",
+            }
+            if launched
+            else {
+                "stage": "acp-preflight-refusal",
+                "work_item_id": _ITEM_ID,
+                "detail": "session-headroom-shortfall",
+            }
+        )
+    with journal.open("a", encoding="utf-8") as handle:
+        for row in rows:
+            _ = handle.write(json.dumps(row) + "\n")
+    return journal
+
+
+def test_two_resumes_refused_before_any_run_do_not_refuse_a_third(repo: Path) -> None:
+    """The measured journal: two attempts, no Fabro run, and a bound still unspent.
+
+    Scenario 143's third-resume refusal is premised on a pull request that "has
+    already anchored two resumes", and the bound exists because the proof-loop
+    caps are per RUN. Two attempts the ACP preflight refused on session headroom
+    created no run and spent none of those caps, so the third resume proceeds —
+    which is asserted as the WHOLE refusal tuple being empty rather than as the
+    chain arm being absent, because a resume that is refused on some other arm
+    has not been let through either.
+    """
+    assert _GATHER_PATH.is_file()
+    module = importlib.import_module(_GATHER_MODULE)
+    gather = module.gather_resume(
+        args=_args(),
+        repo=repo,
+        item=_item(),
+        journal_path=_bound_journal(path=repo / "tmp" / "journal.jsonl", launched=False),
+        runner=_runner(),
+    )
+    assert gather.observation.earlier_resumes == ()
+    assert resume_refusals(observation=gather.observation) == ()
+
+
+def test_two_resumes_that_created_runs_still_refuse_a_third_naming_both(repo: Path) -> None:
+    """The bound is kept, not retired: two REAL resumes still refuse the third.
+
+    This is the control the preceding case needs. Narrowing the count to resumes
+    that created a run is only correct if a run-creating resume still anchors one,
+    and the pair differs in nothing but whether a run-naming row follows each
+    attempt — so a reader that had simply stopped counting would satisfy the other
+    case exactly as well.
+    """
+    assert _GATHER_PATH.is_file()
+    module = importlib.import_module(_GATHER_MODULE)
+    gather = module.gather_resume(
+        args=_args(),
+        repo=repo,
+        item=_item(),
+        journal_path=_bound_journal(path=repo / "tmp" / "journal.jsonl", launched=True),
+        runner=_runner(),
+    )
+    assert gather.observation.earlier_resumes == (_EARLIER_RUN, _RESUMED_RUN)
+    refusals = resume_refusals(observation=gather.observation)
+    assert len(refusals) == 1
+    assert "has already anchored 2 resumes" in refusals[0]
+    assert _EARLIER_RUN in refusals[0]
+    assert _RESUMED_RUN in refusals[0]
+
+
 def _cancel_journal(
     *,
     path: Path,
