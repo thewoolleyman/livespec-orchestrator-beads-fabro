@@ -12,15 +12,17 @@ created_at: 2026-10-15T06:36:00Z
 
 ### Summary
 
-A dispatcher.factories entry MAY declare "registry": true instead of a server value; its server address is then resolved by factory name from a host-side registry file that the fleet's provisioning renders from its inventory. Unresolvable registry-backed factories MUST be refused before claim and MUST NOT fall back to the ambient local target. The recorded-pin fallback is unchanged, and factory names SHOULD name instances while dispatcher.default_factory alone carries which instance serves.
+A dispatcher.factories entry MAY declare "registry": true instead of a server value; its server address is then resolved by factory name from a host-side registry file that the fleet's provisioning renders from its inventory. This repository's own committed entries MUST be registry-backed, fleet members' SHOULD be, and other adopters keep the literal server form. An unresolvable registry-backed factory MUST be refused before claim and MUST NOT fall back to any other target. Every consumer of a factory address shares the one resolution while keeping its established failure behaviour, and a registry-backed entry counts as a remote factory wherever the Dispatcher classifies a target as remote. The recorded-pin fallback is unchanged and applies only when no explicit selection is made. Factory names SHOULD name instances, while dispatcher.default_factory alone carries which instance serves.
 
 ### Motivation
 
 The maintainer ruled on 2026-10-15 (plan bd-ib-fyozyd, petri-factory-on-gmktec) that no committed factory entry may name a machine hostname, so that a factory is bound to a machine only in the gitops inventory, and the factory can move to gmktec-xubuntu now and onto Kubernetes later without repository changes. Measured: fifteen fleet repositories commit factory tables whose server values name hp-xubuntu or vps. A Tailscale Service cannot provide a machine-free name (only tagged devices host one, agents may not add tags, and tagging gmktec would remove it from the member SSH grant), and HTTPS through tailscale serve rules out DNS aliases. Today an entry with no server resolves to the ambient local Fabro target, so simply deleting server values would silently re-route dispatches; the refusal rule exists to close that. The naming rule and the recorded-pin note were agreed with the fabro-currency plan, which owns the cutover: 425 items in this tenant record the factory name hp, and a renamed factory re-routes their later dispatches to the default rather than refusing them.
 
+Revision 2 (2026-10-18) answers an independent read-only review (gpt-6-astra, review text preserved under plan/petri-factory-on-gmktec/research/003-reviews/). It qualifies the recorded-pin fallback by the ratified selection order, makes the hostname-free rule normative for this repository, extends shared resolution to address-dependent classification (the run-turn telemetry export reads a literal server key today) and to the non-Dispatcher readers with their existing failure semantics, fixes the validation scope to the selected entry, and widens Scenario 182.
+
 ### Proposed Changes
 
-Insert the following subsection into `contracts.md` §"Dispatcher policy settings", immediately after the subsection "### Sandbox image source" and before the next `## ` heading:
+Insert the following subsection into `contracts.md` §"Dispatcher policy settings", immediately after the subsection "### Sandbox image source" and before the next `## ` heading ("## Built-in ACP node defaults"):
 
 ```markdown
 ### Factory addresses resolved from a host registry
@@ -29,36 +31,64 @@ A `dispatcher.factories` entry MAY declare `"registry": true` in place of a
 `server` value. The server address of such a REGISTRY-BACKED entry MUST be
 resolved by the entry's own name from the factory registry: a JSON file whose
 path is the value of `LIVESPEC_FABRO_FACTORY_REGISTRY` when that variable is set
-and non-empty, and otherwise `/etc/livespec/fabro-factories.json`. The registry's
-top-level value MUST be an object mapping factory names to objects, each carrying
-a non-empty `server` string. The registry is host state rendered by the fleet's
-provisioning from its inventory; no committed file in a governed repository
-writes it. An entry that carries `server` keeps its existing meaning unchanged.
+and non-empty, and otherwise `/etc/livespec/fabro-factories.json`. The registry
+is host state rendered by the fleet's provisioning from its inventory; no
+committed file in a governed repository writes it. An entry that carries
+`server` and no `registry` key keeps its existing meaning unchanged, and
+`server` remains the supported form for an adopter repository outside the
+livespec fleet.
 
-The Dispatcher MUST refuse, before any claim, ledger mutation or Fabro run
-creation, a dispatch whose resolved factory is registry-backed when the registry
-file is absent or unreadable, is not a JSON object, has no entry for that factory
-name, or gives that entry no non-empty `server` string. The refusal MUST name the
-factory and the registry path it read. The Dispatcher MUST NOT fall back to the
-ambient local Fabro target, to `dispatcher.default_factory`, or to any other
-factory in that case. An entry declaring both `"registry": true` and `server`
-MUST be refused the same way, naming the factory.
+Every committed `dispatcher.factories` entry in this repository's own
+`.livespec.jsonc` MUST be registry-backed and MUST NOT carry a `server` value.
+A fleet member repository's committed entries SHOULD be registry-backed, so that
+binding a factory to a machine is a change to the provisioning inventory alone.
 
-Every Dispatcher surface that turns a declared factory into an address MUST use
-this one resolution: dispatch and resume, the reconcile survey of declared
-factories, the liveness question asked of each factory a journal names, and the
-availability-evidence reads of §"Factory-configurable ACP fallback priority". A
-survey or read that cannot resolve a registry-backed factory MUST report that
-factory as unobservable, naming it, and MUST NOT skip it silently or treat it as
-holding no runs. A resolved registry-backed dispatch MUST record the resolved
-server address in the item's dispatch-factory record exactly as a `server` entry
-does.
+Resolution reads only what the selected entry needs. The registry file MUST
+parse as JSON whose top-level value is an object; within it, the value under the
+selected factory's name MUST be an object whose `server` value is a string that
+is non-empty after surrounding whitespace is removed. Other entries in the
+registry are not validated by that resolution and do not affect it.
 
-The registry refusal applies only to resolving a DECLARED entry. A recorded
-factory name that `dispatcher.factories` no longer declares keeps its existing
-treatment: it is ignored and the dispatch falls back to
-`dispatcher.default_factory`. Renaming a factory therefore re-routes the later
-dispatches of every item that recorded the old name onto the default factory.
+The Dispatcher MUST refuse, before any claim, ledger write of any kind (status,
+metadata or comment) or Fabro run creation, a dispatch whose resolved factory
+is registry-backed when the registry file is absent or unreadable, does not
+parse as JSON, has a top-level value that is not an object, has no entry for
+that factory name, or gives that entry no valid `server` string. The refusal
+MUST name the factory and the registry path it read. The Dispatcher MUST NOT
+fall back to the ambient local Fabro target, to `dispatcher.default_factory`,
+or to any other factory in that case. An entry declaring both `"registry":
+true` and `server` MUST be refused the same way, naming the factory.
+
+Every surface that turns a declared factory into an address MUST use this one
+resolution, and every surface whose behaviour depends on whether a factory is
+remote MUST treat a registry-backed entry as naming a server. That includes
+dispatch and resume, the reconcile survey of declared factories, the liveness
+question asked of each factory a journal names, the availability-evidence reads
+of §"Factory-configurable ACP fallback priority", the run-turn telemetry
+export's remote-factory classification, plan run liveness, the merge-hold
+liveness guard, the run-event projection, and the needs-human valve
+enrichment. A surface that cannot resolve a registry-backed factory MUST keep
+the failure behaviour already ratified for an unreachable factory on that
+surface: a survey or liveness read reports that factory as unobservable, naming
+it, and MUST NOT skip it silently or treat it as holding no runs; the valve
+enrichment costs the enrichment and never the valve. One unresolvable factory
+MUST NOT prevent the reconcile survey from observing the other declared
+factories. A resolved registry-backed dispatch MUST record the resolved server
+address in the item's dispatch-factory record exactly as a `server` entry does.
+A factory's per-name settings — its dev token, its secret-channel declaration,
+its `bin` and its `environment` — stay keyed by the factory name, unchanged.
+
+The registry refusal applies only to resolving a DECLARED, registry-backed
+entry. It does not change the factory selection order: an explicit
+`--factory` is taken first, then `LIVESPEC_FABRO_FACTORY` when it is set and
+non-empty; then the
+item's recorded factory; then `dispatcher.default_factory`. A recorded factory
+name that `dispatcher.factories` no longer declares keeps its existing
+treatment: when no explicit selection is made it is ignored and the dispatch
+falls back to `dispatcher.default_factory`, so renaming a factory re-routes the
+later unpinned dispatches of every item that recorded the old name onto the
+default factory. A `dispatcher.default_factory` that names no declared entry
+keeps its existing treatment as well; this clause does not govern it.
 
 A factory name SHOULD name the Fabro server instance it addresses and SHOULD
 stay the same for that instance's whole life. Which instance serves a
@@ -75,7 +105,7 @@ renames nothing.
 
 ### Summary
 
-Adds Scenario 182, which states the observable behaviour of the registry clause: dispatch to the registry's address, refusal before claim for a missing entry or an unreadable registry with no local fallback, an unobservable report from the reconcile survey, and an unchanged recorded-pin fallback. The revise that accepts it MUST add a tests/heading-coverage.json entry for the new heading.
+Adds Scenario 182, which states the observable behaviour of the registry clause: dispatch and resume to the registry's address, the path override, refusal before any ledger write for a missing entry, an unreadable or malformed registry, or an entry declaring both forms, with no fallback; per-entry validation; the reconcile survey's unobservable report that leaves other factories observed; remote classification for telemetry; the recorded-pin fallback under the selection order; and a default switch that renames nothing. The revise that accepts it MUST add a tests/heading-coverage.json entry for the new heading.
 
 ### Motivation
 
@@ -83,7 +113,7 @@ Load-bearing behaviour MUST carry a Gherkin scenario beside its clause, and the 
 
 ### Proposed Changes
 
-Append the following scenario to `scenarios.md` after the highest-numbered scenario (number 182; 180 is reserved by a pending proposal and 181 is in use):
+Insert the following scenario into `scenarios.md` in numeric position, immediately before `## Scenario 183` (182 is unused on master):
 
 ````markdown
 ## Scenario 182 — A registry-backed factory resolves its address from the host registry, and an unresolvable one refuses before claim
@@ -94,38 +124,116 @@ Feature: Factory addresses come from a host registry, not from committed configu
   I want a committed factory entry to name no machine
   So that moving a factory is a provisioning change, never a repository change
 
-  Scenario: A registry-backed factory dispatches to the address the registry names
+  Background:
     Given dispatcher.factories declares a factory named "petri" with "registry": true and no server
-    And the factory registry maps "petri" to a server address
+    And LIVESPEC_FABRO_FACTORY is unset
+
+  Scenario: A registry-backed factory dispatches to the address the registry names
+    Given the factory registry maps "petri" to a server address
     When an item is dispatched to "petri"
     Then the Fabro run is created on the server address the registry maps "petri" to
     And the item's dispatch-factory record names "petri" and that server address
 
-  Scenario: A registry with no entry for the factory refuses before claim
-    Given dispatcher.factories declares a factory named "petri" with "registry": true
-    And the factory registry has no entry named "petri"
-    When an item is dispatched to "petri"
-    Then the dispatch is refused naming "petri" and the registry path
-    And the item's status is unchanged and no Fabro run exists for it
+  Scenario: Resume resolves the same address
+    Given the factory registry maps "petri" to a server address
+    And an item whose dispatch to "petri" left a resumable run
+    When the item is resumed
+    Then the resume addresses the server address the registry maps "petri" to
 
-  Scenario: An unreadable registry refuses rather than falling back to a local server
-    Given dispatcher.factories declares a factory named "petri" with "registry": true
-    And the factory registry file is absent
+  Scenario Outline: The registry path is the override when it is set and non-empty, and the default path otherwise
+    Given LIVESPEC_FABRO_FACTORY_REGISTRY is <override>
+    And the file at <read path> maps "petri" to a server address
+    And the file at <other path> holds no entry for "petri"
+    When an item is dispatched to "petri"
+    Then the Fabro run is created on the server address the file at <read path> maps "petri" to
+
+    Examples:
+      | override                 | read path                          | other path                         |
+      | set to a test file       | that test file                     | /etc/livespec/fabro-factories.json |
+      | unset                    | /etc/livespec/fabro-factories.json | a test file                        |
+      | set to the empty string  | /etc/livespec/fabro-factories.json | a test file                        |
+
+  Scenario Outline: An unresolvable registry refuses before any ledger write and never falls back
+    Given the factory registry <registry state>
     When an item is dispatched to "petri"
     Then the dispatch is refused naming "petri" and the registry path
+    And the item's status, metadata and comments are unchanged
     And no Fabro run is created on any server
 
-  Scenario: The reconcile survey reports an unresolvable registry-backed factory as unobservable
-    Given dispatcher.factories declares a registry-backed factory the registry does not name
+    Examples:
+      | registry state                                         |
+      | file is absent                                         |
+      | file exists but cannot be read                         |
+      | file does not parse as JSON                            |
+      | file's top-level value is a list                       |
+      | file has no entry named "petri"                        |
+      | file maps "petri" to a string rather than an object    |
+      | file maps "petri" to an object with no server          |
+      | file maps "petri" to an object whose server is a number |
+      | file maps "petri" to an object whose server is "   "   |
+
+  Scenario: Only the selected entry is validated
+    Given the factory registry maps "petri" to a server address and maps "legacy" to null
+    When an item is dispatched to "petri"
+    Then the Fabro run is created on the server address the registry maps "petri" to
+
+  Scenario: An entry declaring both forms refuses before any ledger write
+    Given dispatcher.factories instead declares "petri" with both "registry": true and a server value
+    And the factory registry maps "petri" to a server address
+    When an item is dispatched to "petri"
+    Then the dispatch is refused naming "petri"
+    And the item's status, metadata and comments are unchanged
+    And no Fabro run is created on any server
+
+  Scenario: The reconcile survey reports an unresolvable registry-backed factory as unobservable and still observes the others
+    Given dispatcher.factories also declares a factory "legacy" with a server value whose Fabro server answers and holds one run
+    And the factory registry has no entry named "petri"
     When the Dispatcher surveys every declared factory's runs
-    Then the survey reports that factory as unobservable, naming it
-    And it does not report that factory as holding no runs
+    Then the survey reports "petri" as unobservable, naming it
+    And it does not report "petri" as holding no runs
+    And it reports the one run "legacy" holds
+
+  Scenario: A journal liveness read of an unresolvable registry-backed factory is unobservable
+    Given the factory registry has no entry named "petri"
+    And a dispatch journal row names "petri" as the factory of a run
+    When the Dispatcher asks whether that run is live
+    Then the answer is unobservable, naming "petri"
+    And the run is not treated as gone
+
+  Scenario: An availability-evidence read of an unresolvable registry-backed factory is unobservable
+    Given the factory registry has no entry named "petri"
+    When the ACP fallback availability evidence for "petri" is read
+    Then that evidence is reported unobservable, naming "petri"
+    And it is not read as an available or exhausted provider
+
+  Scenario: The needs-human valve survives an unresolvable registry-backed factory
+    Given the factory registry has no entry named "petri"
+    And an item rests at a needs-human valve whose run was dispatched to "petri"
+    When the needs-human valve list is assembled
+    Then the item is listed at its valve
+    And only that item's run enrichment is missing
+
+  Scenario: A registry-backed factory is classified as remote for run-turn telemetry
+    Given the factory registry maps "petri" to a server address
+    And "petri" declares no run-turn telemetry export
+    When the run-turn telemetry observability of "petri" is assessed
+    Then "petri" is classified as a remote factory, exactly as an entry carrying a server value is
 
   Scenario: A recorded pin to an undeclared name still falls back to the default
-    Given an item whose recorded dispatch factory is "hp"
+    Given the factory registry maps "petri" to a server address
+    And an item whose recorded dispatch factory is "hp"
     And dispatcher.factories no longer declares "hp"
-    And dispatcher.default_factory names a registry-backed factory the registry maps
-    When the item is dispatched without an explicit factory
-    Then it is dispatched to the default factory
+    And dispatcher.default_factory names "petri"
+    When the item is dispatched with no --factory flag
+    Then it is dispatched to "petri"
+
+  Scenario: Switching the default instance renames nothing
+    Given dispatcher.factories also declares a registry-backed factory "next"
+    And the factory registry maps both "petri" and "next" to server addresses
+    And an unpinned item and an item whose recorded dispatch factory is "petri"
+    When dispatcher.default_factory is changed from "petri" to "next"
+    And both items are dispatched with no --factory flag
+    Then the unpinned item is dispatched to "next"
+    And the item recorded to "petri" is dispatched to "petri"
 ```
 ````

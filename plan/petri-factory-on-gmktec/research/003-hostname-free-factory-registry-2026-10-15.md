@@ -26,8 +26,10 @@ uncommitted canary posture adds `hp-candidate` = hp-xubuntu:32278.
 `_config.resolve_fabro_factory` picks a name (explicit flag, then
 `LIVESPEC_FABRO_FACTORY`, then `dispatcher.default_factory`) and builds a
 `FactoryTarget` from that entry's `server`, `bin` and `environment`. A dev token
-comes from `LIVESPEC_FABRO_DEV_TOKEN_<name>` (none is set in the fleet wrapper
-today, measured by name only). An entry with NO `server` resolves to
+comes from `FABRO_DEV_TOKEN__<name>` (`_config.py`, `_FABRO_DEV_AUTH_ENV_PREFIX`;
+corrected 2026-10-18, this note first named `LIVESPEC_FABRO_DEV_TOKEN_<name>`,
+which no code reads), with a URL-keyed login fallback in `_fabro_port_auth.py`;
+the gmktec canary of 2026-10-18 exported `FABRO_DEV_TOKEN__petri`. An entry with NO `server` resolves to
 `server=None`, which means "the ambient local Fabro CLI target". So simply
 deleting `server` values would silently re-route every dispatch to the local
 server: the new mechanism must refuse an unresolved factory, never fall back.
