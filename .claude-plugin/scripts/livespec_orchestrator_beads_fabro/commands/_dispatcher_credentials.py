@@ -187,6 +187,12 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     # byte-for-byte — which is what a caller that wires nothing rendered before
     # this decision existed.
     sandbox_image: SandboxImageSource = COMMITTED_RUN_CONFIG_IMAGE,
+    # Whether this dispatch's sandbox inherits the fleet's own check suite, and so
+    # needs the gitignored worktree-discipline pack that suite reads. Forwarded
+    # from the caller's ONE resolved contract rather than decided here, for the
+    # resolve-once reason the integration contract gives; False is the posture a
+    # caller that wires nothing rendered before the step existed (bd-ib-tlmq3m).
+    provision_worktree_pack: bool = False,
 ) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
@@ -376,6 +382,9 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # re-derived: the caller passes the SAME resolved contract the
         # `--input` pairs come from.
         prepare_inputs=prepare_inputs,
+        # The pack-provisioning premise, forwarded unchanged: it was decided from
+        # the same resolved contract the inputs above come from.
+        provision_worktree_pack=provision_worktree_pack,
         # The publish branch the `publish_draft` command node pushes, plus this
         # repository's resolved proof asset store. The branch and the tag are
         # resolved HERE, from the single shared derivation and the committed

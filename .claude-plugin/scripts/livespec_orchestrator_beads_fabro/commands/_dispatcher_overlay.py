@@ -88,6 +88,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source
     COMMITTED_RUN_CONFIG_IMAGE,
     SandboxImageSource,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_pack import (
+    sandbox_worktree_pack_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tmux_socket_root import (
     tmux_tmpdir_env_lines,
     tmux_tmpdir_prepare_steps_block,
@@ -151,6 +154,12 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     credential_use: CredentialUseDeclaration | None = None,
     resume_checkout: ResumeCheckout | None = None,
     publication_metadata: PublicationMetadata | None = None,
+    # Whether this dispatch's sandbox inherits the fleet's own check suite, and so
+    # needs the gitignored worktree-discipline pack that suite reads. Decided ONCE
+    # from the plan's resolved contract by `_dispatcher_loop_overlay` and forwarded
+    # here; False for a direct caller, which renders exactly the overlay it did
+    # before the step existed (bd-ib-tlmq3m).
+    provision_worktree_pack: bool = False,
 ) -> str | None:
     """Render the dispatch-time run-config overlay.
 
@@ -295,6 +304,14 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # preservation commit — finds the clone already carrying a committer. The
     # Petri-era engine configures only its own checkpoint commits (bd-ib-lsr3vf).
     git_identity_steps = git_identity_prepare_steps_block(author=git_author)
+    # Rendered among the Dispatcher's own steps rather than earlier, which is a
+    # requirement and not a preference: the recipe runs through the sandbox virtual
+    # environment the COMMITTED chain populates, so a step placed ahead of it fails
+    # in preparation. It is still ahead of everything that READS the pack — no
+    # prepare step does, and the three consumers that do all run after the chain.
+    worktree_pack_steps = sandbox_worktree_pack_prepare_steps_block(
+        provision=provision_worktree_pack
+    )
     # Rendered LAST among the prepare steps, so the startup check observes the
     # time preparation itself consumed. Placed earlier it would forgive exactly
     # the queue-and-prepare aging it exists to catch.
@@ -315,6 +332,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         rewritten
         + dispatch_base_steps
         + git_identity_steps
+        + worktree_pack_steps
         + factory_provenance_steps
         + sibling_steps
         + tmux_steps
