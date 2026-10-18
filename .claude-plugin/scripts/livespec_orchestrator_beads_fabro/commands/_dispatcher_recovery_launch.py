@@ -29,6 +29,22 @@ invisible: the attribute simply resolves absent, the dispatch proceeds as a plai
 one, and the run re-implements from `start` while the journal records a resume.
 Naming them through `_dispatcher_resume_entry`'s own constants is what makes the
 two ends impossible to spell differently.
+
+AND THIS MODULE OWNS THE TWO ROUTE RECORDS, FOR THE SAME POSITIONAL REASON. The
+`resume` record is journaled "before the run exists", which is here and NOT at the
+measurement, because "a route is valid only for the pass that measured it: an item
+the valve defers for capacity carries no route into the next pass". That record is
+the attribution link the acceptance pass reads, so one written for a dispatch the
+valve then deferred makes the earlier run's proof grade whatever merges next — and
+it counts against the two-resume chain bound, leaving the next attempt silently
+one closer to refusal with the journal reading as though a resume had happened.
+The route row rides with it for the mirror reason: a deferred item that recorded
+the route it did not take is a record of nothing.
+
+The HOLD record is the deliberate exception and stays at the measurement, because
+a held item is never offered to the valve at all — there is no later position for
+it to be written from, and the clause requires the row whether or not anything
+launched.
 """
 
 from __future__ import annotations
@@ -38,15 +54,23 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records import (
+    recovery_route_record,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoveryRoute
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     RESUME_ENTRY_NODE_ARG,
     RESUME_FETCH_REF_ARG,
     RESUME_HEAD_ARG,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import (
+    resume_journal_record,
+)
 
 __all__: list[str] = [
     "LaunchPins",
+    "journal_recovery_route",
     "recovery_launch_args",
 ]
 
@@ -105,3 +129,39 @@ def recovery_launch_args(
     setattr(seeded, RESUME_HEAD_ARG, seed.commit_sha)
     setattr(seeded, RESUME_FETCH_REF_ARG, seed.preservation_ref)
     return seeded
+
+
+def journal_recovery_route(*, route: RecoveryRoute | None, journal: JournalFile) -> None:
+    """Record this item's route, now that the valve has decided it will launch.
+
+    An item routing never measured writes NOTHING, because there is no route to
+    record — a marked rework row the valve re-admits is the case, and a row
+    claiming it was routed `fresh` would be reporting a decision nobody took.
+
+    The `resume` record goes FIRST, because it is the one a later reader joins on:
+    the route row says which route this pass took, while the resume record is the
+    attribution link, and an interrupted write that landed only the route row
+    would leave a resumed run looking plain rather than looking unattributed.
+    """
+    if route is None:
+        return
+    resume = route.resume
+    if resume is not None:
+        journal.append(
+            record=resume_journal_record(
+                work_item_id=route.work_item_id,
+                earlier_run_ids=resume.earlier_run_ids,
+                pull_request=resume.pull_request,
+                head=resume.head,
+                resumed_at=resume.entry_node,
+                source=resume.source,
+            )
+        )
+    journal.append(
+        record=recovery_route_record(
+            work_item_id=route.work_item_id,
+            route=route.route,
+            seed=route.seed,
+            preserved_work=route.preserved_work,
+        )
+    )

@@ -40,6 +40,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records import (
+    PRESERVED_WORK_ABSENT,
+    RECOVERY_ROUTE_STAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_release import (
     released_for_recovery,
 )
@@ -189,9 +193,12 @@ def test_a_released_item_whose_forge_cannot_be_asked_is_routed_fresh(
     )
 
     assert routed.route_for(work_item_id=_ITEM_ID) == RecoveryRoute(
-        work_item_id=_ITEM_ID, route=ROUTE_FRESH
+        work_item_id=_ITEM_ID, route=ROUTE_FRESH, preserved_work=PRESERVED_WORK_ABSENT
     )
+    # Neither record is written at the measurement: the valve has not decided
+    # anything yet, so a route this pass may not launch carries nothing out of it.
     assert _rows(journal=journal, stage="resume") == ()
+    assert _rows(journal=journal, stage=RECOVERY_ROUTE_STAGE) == ()
     # A `fresh` item IS reclaimed for: clearing the dead run's branch is what
     # lets the new run's `publish_draft` push a plain fast-forward.
     assert routed.reclaims(work_item_id=_ITEM_ID) is True
@@ -226,6 +233,21 @@ def _pins(*, seen: list[str]) -> launch.LaunchPins:
         return pinned
 
     return launch.LaunchPins(factory=_factory, workflow=_workflow)
+
+
+def test_an_unmeasured_item_journals_no_route_at_all(tmp_path: Path) -> None:
+    """A row routing never saw records nothing, rather than a route nobody took.
+
+    A marked rework row the valve re-admits is the case: it reaches the launch
+    with no route, and a `recovery-route` row claiming it was routed `fresh`
+    would report a decision that was never made — on the one stage a reader
+    greps to find out which route an item took.
+    """
+    journal = _journal(tmp_path=tmp_path, records=())
+
+    launch.journal_recovery_route(route=None, journal=journal)
+
+    assert _rows(journal=journal, stage=RECOVERY_ROUTE_STAGE) == ()
 
 
 def test_a_plain_route_takes_both_pins_and_carries_no_resume_state() -> None:

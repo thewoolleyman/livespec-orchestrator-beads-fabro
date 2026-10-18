@@ -125,6 +125,12 @@ class RecoveryRoute:
     and a union would make each of them a type test before either question could
     be asked. At most one of the three payloads is set, which
     `_dispatcher_recovery_routing` is the sole constructor of.
+
+    `preserved_work` is the FINDING rather than a payload: it records what the
+    preserved-work read answered, which the clause requires the `fresh` arm to
+    carry ("with that loss recorded") and the `seeded` arm earns. It is null for
+    every route that never asked, because "was not asked" is a third fact and not
+    a shorthand for absence.
     """
 
     work_item_id: str
@@ -132,3 +138,4 @@ class RecoveryRoute:
     resume: RecoveryResume | None = None
     seed: RecoverySeed | None = None
     hold: RecoveryHold | None = None
+    preserved_work: str | None = None
