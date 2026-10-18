@@ -58,6 +58,13 @@ _VENUE_FIELD = "venue"
 _GATE_STATE_FIELD = "gate_state"
 _GATE_TREE_HASH_FIELD = "gate_tree_hash"
 _STARTED_AT_FIELD = "started_at"
+_SUITE_SOURCE_FIELD = "suite_source"
+
+# The two rules that can choose the suite, named as the row names them: the
+# committed key this plugin reads on the host, and the `[tool.livespec_dev_
+# tooling]` key the gate client resolves its own suite from on the cluster.
+_HOST_SUITE_SOURCE = "dispatcher.janitor.check_suite"
+_CLUSTER_SUITE_SOURCE = "gate_check_suite"
 
 # The journal's own append instant, stamped by `JournalFile` on every record.
 # It is the OTHER half of the stage's duration, so a case that reads one reads
@@ -612,3 +619,32 @@ def test_scenario191_the_row_carries_the_suites_start_so_the_stage_duration_is_r
     # cluster row carries it too and parses the same way.
     assert _elapsed_seconds(row=cluster.row) < _SLEEP_SECONDS
     assert (slow.outcome.stage, quick.outcome.stage) == ("done", "done")
+
+
+def test_scenario191_the_row_names_the_rule_that_chose_the_suite(tmp_path: Path) -> None:
+    """The row names which rule resolved the suite, and the two venues name different rules.
+
+    BOTH repositories here declare `dispatcher.janitor.check_suite`, which is
+    what makes the cluster answer mean something: that declaration is NOT
+    applied on the cluster venue at all, so a row naming the committed key
+    there would send an operator to edit a declaration the run never consulted
+    -- while a row naming `gate_check_suite` tells them the suite came from the
+    janitor checkout's own `[tool.livespec_dev_tooling]` block, which is where
+    the gate client reads it.
+
+    The call log is the control for the claim behind the word. Reading the
+    field alone would pass for a projection that simply hard-codes a string per
+    venue while the venue still ran the committed command; asserting that the
+    declared argv ran on the host and did NOT run on the cluster, where the
+    gate client ran instead, is what ties the row's account to what happened.
+    """
+    host = _drive(tmp_path=tmp_path, name="source-host", venue=_HOST_LOCAL, suite=_green())
+    cluster = _drive(
+        tmp_path=tmp_path, name="source-cluster", venue=_CLUSTER_JOB, suite=_gate(state="PASSED")
+    )
+
+    assert host.row.get(_SUITE_SOURCE_FIELD) == _HOST_SUITE_SOURCE
+    assert cluster.row.get(_SUITE_SOURCE_FIELD) == _CLUSTER_SUITE_SOURCE
+    assert list(_HOST_SUITE) in host.calls
+    assert list(_HOST_SUITE) not in cluster.calls
+    assert list(CLUSTER_GATE_ARGV) in cluster.calls
