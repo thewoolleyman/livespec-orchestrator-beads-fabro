@@ -1167,9 +1167,21 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   assertion is false on exactly the host the registry maps `petri` on: measured
   2026-10-18, writing the production pair into that path reds the case while the
   code is correct, which is a false FAIL on every `just check` run there.
-  The `unreadable` registry is staged as a DIRECTORY at the registry path rather
-  than by clearing the mode bits, because this suite's own dispatch runs as root
-  and a mode-based refusal would not apply to it. The consumer surfaces the
+  Every refusal row also asserts the FAULT it is refused FOR, which is what
+  makes the nine rows nine cases: all nine name the factory and the path and
+  exit alike, so a names-only assertion holds for any of them and a row whose
+  staging landed on an adjacent arm would report a real refusal for the wrong
+  reason and still pass. The `unreadable` registry is therefore staged as a
+  DIRECTORY at the registry path and discriminated on the `OSError` TYPE
+  (`IsADirectoryError`), NEVER by clearing the mode bits. Mode bits do not
+  refuse root and every dispatch and sandbox here runs as root: the read
+  succeeds, the file parses, and what follows is the `no-entry` refusal wearing
+  the `unreadable` label — the adjacent arm, a different remedy, and nothing in
+  the output saying so. Measured 2026-10-18 against both this suite and a Proof
+  of Done capture of the same arm: with a mode-bit staging the directory
+  assertion reds, and without it the mode-bit staging passed while establishing
+  `no-entry` twice and `unreadable` never. The rule binds any CAPTURE or REPLAY
+  demonstrating that arm as much as it binds this module. The consumer surfaces the
   clause also names — the reconcile survey, the liveness reads, the
   availability-evidence reads, the needs-human valve enrichment and the run-turn
   telemetry classification — are a sibling work-item's and owe their own cases
