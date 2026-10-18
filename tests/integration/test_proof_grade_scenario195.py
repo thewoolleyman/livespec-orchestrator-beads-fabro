@@ -37,6 +37,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_grade_program 
     PROOF_GRADE_FINDING_FILENAME,
     proof_grade_program_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state import (
+    PUBLICATION_STATE_GIT_PATH,
+)
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     DEFAULT_NODE_TIMEOUT_SECONDS,
     node_timeouts_from_block,
@@ -45,6 +48,7 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PAYLOAD = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
 _GRAPH = _PAYLOAD / "workflow.fabro"
+_PROMPT = _PAYLOAD / "prompts" / "proof-verify.md"
 
 _GRADE = "proof_grade"
 _ROUTE = "proof_grade_route"
@@ -543,4 +547,157 @@ def test_a_verified_record_of_another_dispatch_is_not_this_dispatchs_evidence(
     assert result.returncode != 0, result.stderr
     assert "LIVESPEC_PROOF_GRADE_NO_RECORD" in result.stderr
     assert _SANDBOX_RUN_ID in result.stderr
+    assert _failures(tmp_path=tmp_path)[0] == "1"
+
+
+def _re_entry_section() -> str:
+    """The replay prompt's own section about a re-entry from `proof_grade_route`.
+
+    Located by the heading that NAMES the route node rather than by a pinned
+    title, and returned whitespace-COLLAPSED. Both choices are about the two
+    ways a prose probe here fails silently: the prompt is hard-wrapped, so a
+    needle straddling a line break reports ABSENT while the prompt says exactly
+    the thing; and a pinned title turns an ordinary reword into a failure that
+    names the wrong cause.
+    """
+    sections = _PROMPT.read_text(encoding="utf-8").split("\n## ")
+    owning = [one for one in sections if _ROUTE in one.split("\n", 1)[0]]
+    assert len(owning) == 1, [one.split("\n", 1)[0] for one in sections]
+    return " ".join(owning[0].split())
+
+
+def test_a_re_entered_proof_verify_is_told_to_post_a_new_record_never_to_edit_the_earlier_one() -> (
+    None
+):
+    """The clause's own words: "A re-entered `proof_verify` MUST publish a new record".
+
+    This is the one assertion of the slice that NO execution can establish. The
+    graph decides that a grade failure comes back here, and the program decides
+    which record is graded, but what the re-entered agent DOES is governed by the
+    prompt it is handed -- so the prompt bytes are the subject, and the shipped
+    bytes are what a dispatch loads.
+
+    The prompt already carried an unconditional "MUST NOT be edited after
+    posting" in Step 5, which is asserted below as the CONTROL. It is not enough
+    on its own and that is the whole reason this case exists: every sentence
+    around it addresses a verifier entered from `review`, replaying a record
+    some EARLIER stage captured. A re-entry is the one visit where the record
+    the agent would be tempted to correct is its OWN, where the obvious repair
+    is an edit, and where the prompt said nothing at all.
+
+    The three state tokens are asserted against the program's own constants
+    rather than retyped, because the prompt spells them inside a shell snippet
+    no import graph can see: a rename on either side leaves the prompt telling
+    the agent to read a file nothing writes, which reports as a first visit --
+    the fail-OPEN direction, since a verifier that believes it was never refused
+    republishes the shape that was refused.
+    """
+    section = _re_entry_section()
+    prose = section.lower()
+
+    assert PUBLICATION_STATE_GIT_PATH in section, section
+    assert PROOF_GRADE_FINDING_FILENAME in section, section
+    assert PROOF_GRADE_FAILURE_COUNT_FILENAME in section, section
+    assert "new record" in prose, section
+    assert "never edit the earlier one" in prose, section
+    assert "never delete" in prose, section
+    assert "MUST NOT be edited after posting" in _PROMPT.read_text(encoding="utf-8")
+
+
+def test_the_grade_reads_the_newest_verified_record_so_a_new_one_supersedes_a_refused_one(
+    tmp_path: Path,
+) -> None:
+    """A NEW record is only a remedy if the grade reads it, so that is asserted too.
+
+    "Post a new record rather than editing the earlier one" is advice an agent
+    could follow to no effect: were the grade reading the FIRST verified record
+    attributed to this dispatch, a conforming re-post would be graded against the
+    refused one for ever and the three-failure bound would fire on a run that had
+    already done the right thing twice.
+
+    The fixture is therefore both records on one pull request, in the order a
+    re-entry leaves them -- the refused record first, the conforming re-post
+    second -- and the grade must advance. This case holds against the shipped
+    reader already, which is the point of asserting it rather than assuming it:
+    the ordering is `latest_proof_record`'s and nothing in this slice owns it.
+    """
+    result = _graded(
+        tmp_path=tmp_path,
+        comments=[
+            {
+                "body": _record(
+                    run_id=_SANDBOX_RUN_ID,
+                    sections=(
+                        "## Assertion 1 — alpha holds.\n\nProof mode: `factory_captured`\n\n"
+                        "## Assertion 2 — beta holds.\n\nProof mode: `factory_captured`\n\n"
+                        "## Comparison against the captured proofs\n\n"
+                        "Reproduced: yes — assertion 1 and assertion 2 both reproduced.\n"
+                    ),
+                ),
+                "url": "https://forge/comment/1",
+            },
+            {
+                "body": _record(
+                    run_id=_SANDBOX_RUN_ID,
+                    sections=(
+                        "## Assertion 1 — alpha holds.\n\nReproduced: yes.\n\n"
+                        "## Assertion 2 — beta holds.\n\nReproduced: yes.\n"
+                    ),
+                ),
+                "url": "https://forge/comment/2",
+            },
+        ],
+        assertions=["alpha holds.", "beta holds."],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PROOF_GRADE_GRADED" in result.stderr
+    assert _failures(tmp_path=tmp_path) == ("", "")
+
+
+def test_an_earlier_conforming_record_does_not_rescue_a_later_ungradeable_one(
+    tmp_path: Path,
+) -> None:
+    """The control for the case above, and the direction that must NOT be symmetric.
+
+    Same two records, same run, REVERSED: the conforming one first and the
+    ungradeable one second. A grade that reported "some verified record of this
+    dispatch grades" -- rather than the NEWEST one -- passes the case above and
+    this one too, and it would advance exactly the record `bd-ib-rszkjc` merged
+    on. So the newest record governs in both directions: it is read when it
+    rescues, and it is read when it refuses.
+    """
+    result = _graded(
+        tmp_path=tmp_path,
+        comments=[
+            {
+                "body": _record(
+                    run_id=_SANDBOX_RUN_ID,
+                    sections=(
+                        "## Assertion 1 — alpha holds.\n\nReproduced: yes.\n\n"
+                        "## Assertion 2 — beta holds.\n\nReproduced: yes.\n"
+                    ),
+                ),
+                "url": "https://forge/comment/1",
+            },
+            {
+                "body": _record(
+                    run_id=_SANDBOX_RUN_ID,
+                    sections=(
+                        "## Assertion 1 — alpha holds.\n\nProof mode: `factory_captured`\n\n"
+                        "## Assertion 2 — beta holds.\n\nProof mode: `factory_captured`\n\n"
+                        "## Comparison against the captured proofs\n\n"
+                        "Reproduced: yes — assertion 1 and assertion 2 both reproduced.\n"
+                    ),
+                ),
+                "url": "https://forge/comment/2",
+            },
+        ],
+        assertions=["alpha holds.", "beta holds."],
+    )
+
+    assert result.returncode != 0, result.stderr
+    assert "LIVESPEC_PROOF_GRADE_UNGRADEABLE" in result.stderr
+    assert "alpha holds." in result.stderr
+    assert "beta holds." in result.stderr
     assert _failures(tmp_path=tmp_path)[0] == "1"

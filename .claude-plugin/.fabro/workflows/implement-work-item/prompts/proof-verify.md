@@ -26,6 +26,48 @@ The complete work-item goal is in the Fabro-injected `Goal:` preamble above.
 Its `## Definition of Done` section names the assertions under replay; the
 captured record on the pull request names the steps you replay for each one.
 
+## Find out whether `proof_grade_route` sent you back here
+
+You are normally entered from `review`. There is a SECOND door, and it
+changes what you owe: when your own `verified` record could not be graded
+per assertion, the `proof_grade` node refuses it and `proof_grade_route`
+sends the run straight back here — visiting neither `review` nor `fix`,
+because the tree is not what is wrong. The record is.
+
+Nothing in the goal says which door you came through, so read it off the
+run's own state before you replay anything:
+
+    state=$(git rev-parse --git-path livespec-publication)
+    cat "$state/livespec-proof-grade-finding" 2>/dev/null || echo "FIRST VISIT"
+    cat "$state/livespec-proof-grade-failures" 2>/dev/null || echo 0
+
+A finding means an earlier record of YOURS stated a verdict the grade could
+not attribute to any single assertion — no prose `Reproduced:` line inside
+that assertion's OWN section, or its only verdict line sitting inside a
+fenced proof or under a trailing record-wide summary heading. The grade is
+right to refuse all three shapes: an assertion that absorbs a later
+section's verdict reads as evidenced when nothing evidenced it, and that is
+the direction that merges work no acceptance pass can grade.
+
+On a re-entry, then:
+
+- **Post a new record. Never edit the earlier one, and never delete it** —
+  not your own, not the capture's. The grade reads the NEWEST `verified`
+  record attributed to this run, so a fresh comment is exactly what
+  supersedes a refused one; an edit breaks the record contract and changes
+  nothing the grade reads.
+- **Replay again, and state the verdict for EVERY assertion inside that
+  assertion's own section**, as Step 5 requires. The refusal is about WHERE
+  the verdict sits, so re-posting the earlier record's shape spends another
+  attempt and reaches the same refusal.
+- The finding NAMES the assertions it could not read. Fix those placements
+  specifically rather than rewriting the record from scratch, and do not
+  change a verdict the replay does not support — a refusal is about the
+  record's shape, never an invitation to grade an assertion differently.
+- The run allows **three** recorded refusals, and the count above tells you
+  how many stand. The third routes to `non_converged` instead of back here,
+  so a second visit is not a formality.
+
 ## You MUST NOT modify the tree, the steps, or the Definition of Done
 
 This stage is READ-ONLY on all three, and each prohibition closes a
