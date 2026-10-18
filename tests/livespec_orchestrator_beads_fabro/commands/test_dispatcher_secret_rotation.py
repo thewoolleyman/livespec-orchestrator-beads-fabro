@@ -123,6 +123,7 @@ def test_two_launches_with_rotated_credentials_need_no_source_bundle_edit(
                 rendered=_bundle(values=values),
                 channel=SECRET_CHANNEL_NATIVE_SECRETS,
                 proof_credentials_env="",
+                routes_codex=True,
                 sink=sink,
             )
             is None
@@ -143,6 +144,7 @@ def test_second_launch_replaces_each_stable_vault_value(tmp_path: Path) -> None:
             rendered=_bundle(values=values),
             channel=SECRET_CHANNEL_NATIVE_SECRETS,
             proof_credentials_env="",
+            routes_codex=True,
             sink=sink,
         )
     assert sink.stored == {

@@ -43,6 +43,7 @@ from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_js
 
 __all__: list[str] = [
     "ANTHROPIC_CREDENTIAL_ENV",
+    "CODEX_ROUTED_CREDENTIAL_ENV_NAMES",
     "GITHUB_CREDENTIAL_ENV",
     "OPENAI_CREDENTIAL_ENV",
     "OPTIONAL_CREDENTIAL_ENV_NAMES",
@@ -58,6 +59,7 @@ __all__: list[str] = [
     "VaultSecretSink",
     "credential_env_names",
     "declared_env_names",
+    "required_credential_env_names",
     "resolve_secret_channel",
     "route_dispatch_secrets",
     "route_secrets_through_vault",
@@ -96,6 +98,17 @@ REQUIRED_CREDENTIAL_ENV_NAMES: tuple[str, ...] = (
     OPENAI_CREDENTIAL_ENV,
     GITHUB_CREDENTIAL_ENV,
 )
+
+# The families above whose presence is decided by the dispatch's ROUTING rather
+# than by every dispatch. `_dispatcher_codex_overlay_leg` projects no Codex
+# credential at all for a dispatch that routes no node to the `codex-acp` agent
+# -- "routing decides whether there is a credential to project" -- so on such a
+# bundle this family is a credential that DOES NOT EXIST rather than one a
+# projection dropped, and the two are owed opposite treatments. Demanding it
+# unconditionally refused every native-channel dispatch without a Codex node,
+# naming a credential the dispatch was right not to carry (canary dispatch
+# 3239702d96d246b28af019dd63dc151f, 2026-10-18).
+CODEX_ROUTED_CREDENTIAL_ENV_NAMES: tuple[str, ...] = (OPENAI_CREDENTIAL_ENV,)
 
 # Credentials the overlay renders CONDITIONALLY, so they are routed when the
 # bundle carries them and absent without refusing. `GITHUB_PRIVATE_KEY` rides
@@ -217,29 +230,56 @@ def resolve_secret_channel(
     return declared
 
 
+def required_credential_env_names(*, routes_codex: bool) -> tuple[str, ...]:
+    """The families THIS dispatch's routing makes mandatory, in rendered order.
+
+    Scoped by the routing rather than by the bundle, which is the whole point:
+    reading the requirement off the bundle's own lines would make every missing
+    credential self-excusing, and the refusal exists precisely because the
+    projection and the routed name list come from two different code paths.
+    """
+    if routes_codex:
+        return REQUIRED_CREDENTIAL_ENV_NAMES
+    return tuple(
+        name
+        for name in REQUIRED_CREDENTIAL_ENV_NAMES
+        if name not in CODEX_ROUTED_CREDENTIAL_ENV_NAMES
+    )
+
+
 def credential_env_names(
-    *, overlay_text: str, optional: Sequence[str]
+    *, overlay_text: str, optional: Sequence[str], routes_codex: bool
 ) -> tuple[str, ...] | SecretChannelRefusal:
     """Which env lines of this bundle the native channel routes.
 
-    Every REQUIRED family must be present, and a missing one refuses: the three
-    are what the worker authenticates with, and a bundle lacking one is a broken
-    projection rather than a dispatch with fewer options. Refusing here names the
-    family before launch, where an unrouted inline value would instead persist in
-    the immutable workflow version and a reference to an unset vault entry would
-    fail the run late and opaquely.
+    Every family THIS DISPATCH'S ROUTING requires must be present, and a missing
+    one refuses: those are what the worker authenticates with, and a bundle
+    lacking one is a broken projection rather than a dispatch with fewer
+    options. Refusing here names the family before launch, where an unrouted
+    inline value would instead persist in the immutable workflow version and a
+    reference to an unset vault entry would fail the run late and opaquely.
 
-    Each OPTIONAL name is routed only when the bundle actually carries it. Those
-    credentials are rendered conditionally by projections that already own their
-    own conditions -- the host's App inputs, a declared proof credential whose
-    value resolved -- so reading the condition back off the rendered bundle is
-    what keeps this from being a second, drifting copy of each one.
+    `routes_codex` is this dispatch's RESOLVED routing and is REQUIRED rather
+    than defaulted, for the reason `_dispatcher_codex_overlay_leg` gives about
+    the same answer: either default is silently wrong for half the dispatches --
+    True refuses an Anthropic-only dispatch over a credential it does not
+    project, and False passes a Codex-routed bundle whose credential line a
+    projection dropped -- so the type system refusing the call is better than an
+    arm nobody notices.
+
+    Each OPTIONAL name is routed only when the bundle actually carries it, and a
+    family this routing does NOT require joins them rather than being dropped.
+    Those credentials are rendered conditionally by projections that already own
+    their own conditions -- the host's App inputs, a declared proof credential
+    whose value resolved, the Codex snapshot this dispatch's routing scoped away
+    -- so reading the condition back off the rendered bundle is what keeps this
+    from being a second, drifting copy of each one. Dropping an unrequired
+    family instead would leave its value INLINE wherever one was nonetheless
+    rendered, which on a Petri-era server persists it in the immutable workflow
+    version: the exposure this whole transport exists to close.
     """
-    missing = [
-        name
-        for name in REQUIRED_CREDENTIAL_ENV_NAMES
-        if not _carries(text=overlay_text, env_name=name)
-    ]
+    required = required_credential_env_names(routes_codex=routes_codex)
+    missing = [name for name in required if not _carries(text=overlay_text, env_name=name)]
     if missing:
         return SecretChannelRefusal(
             message=(
@@ -249,8 +289,12 @@ def credential_env_names(
                 "nothing set"
             )
         )
-    present = [name for name in optional if _carries(text=overlay_text, env_name=name)]
-    return tuple(sorted({*REQUIRED_CREDENTIAL_ENV_NAMES, *present}))
+    conditional = (
+        *optional,
+        *(name for name in REQUIRED_CREDENTIAL_ENV_NAMES if name not in required),
+    )
+    present = [name for name in conditional if _carries(text=overlay_text, env_name=name)]
+    return tuple(sorted({*required, *present}))
 
 
 def route_dispatch_secrets(
@@ -258,6 +302,7 @@ def route_dispatch_secrets(
     overlay_text: str,
     channel: str,
     proof_credentials_env: str,
+    routes_codex: bool,
     sink: VaultSecretSink | None,
 ) -> RoutedOverlay | SecretChannelRefusal:
     """Route one dispatch's whole bundle and store every value it displaced.
@@ -292,6 +337,7 @@ def route_dispatch_secrets(
             *OPTIONAL_CREDENTIAL_ENV_NAMES,
             *declared_env_names(text=proof_credentials_env),
         ),
+        routes_codex=routes_codex,
     )
     if isinstance(names, SecretChannelRefusal):
         return names

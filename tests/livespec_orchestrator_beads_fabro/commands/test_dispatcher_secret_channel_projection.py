@@ -204,9 +204,18 @@ def test_the_materializer_takes_the_factory_and_the_vault_it_stores_through() ->
 
 
 def test_required_families_are_named_and_complete() -> None:
-    """The three required credential families, by the env name each arrives under."""
+    """The three credential families, by the env name each arrives under.
+
+    All three are required of a dispatch whose routing launches Codex, which is
+    every dispatch these cases are about; `test_dispatcher_secret_channel_codex_
+    routing.py` owns the Anthropic-only routing, where the Codex family is one
+    the dispatch correctly projects nothing for.
+    """
     required = set(getattr(channel_module, "REQUIRED_CREDENTIAL_ENV_NAMES", ()))
     assert required == _EXPECTED_FAMILIES
+    assert set(channel_module.required_credential_env_names(routes_codex=True)) == (
+        _EXPECTED_FAMILIES
+    )
 
 
 def test_an_undeclared_factory_keeps_the_inline_overlay(tmp_path: Path) -> None:
@@ -258,13 +267,21 @@ def test_an_unrecognised_declaration_refuses_rather_than_guessing(tmp_path: Path
 
 
 def test_a_missing_required_family_refuses_before_any_reference_is_rendered() -> None:
-    """A bundle with no OpenAI credential line cannot be routed as if it had one."""
+    """A bundle with no OpenAI credential line cannot be routed as if it had one.
+
+    The routing is what makes this bundle incomplete rather than merely smaller:
+    a dispatch that launches a Codex node and carries no `CODEX_AUTH_JSON` line
+    is a projection that dropped a credential the worker will try to
+    authenticate with.
+    """
     bundle = (
         "[environments.sandbox.env]\n"
         f"CLAUDE_CODE_OAUTH_TOKEN = {json.dumps(_FAKE_TOKEN)}\n"
         f"GITHUB_TOKEN = {json.dumps(_FAKE_GITHUB_TOKEN)}\n"
     )
-    refusal = channel_module.credential_env_names(overlay_text=bundle, optional=())
+    refusal = channel_module.credential_env_names(
+        overlay_text=bundle, optional=(), routes_codex=True
+    )
     assert isinstance(refusal, channel_module.SecretChannelRefusal)
     assert "CODEX_AUTH_JSON" in refusal.message
 
@@ -285,7 +302,9 @@ def test_an_optional_credential_is_routed_only_when_the_bundle_carries_it() -> N
         f"GITHUB_PRIVATE_KEY = {json.dumps('pem-placeholder')}\n"
     )
     with_key = channel_module.credential_env_names(
-        overlay_text=present, optional=("GITHUB_PRIVATE_KEY", "ACME_STATUS_READER")
+        overlay_text=present,
+        optional=("GITHUB_PRIVATE_KEY", "ACME_STATUS_READER"),
+        routes_codex=True,
     )
     assert set(with_key) == _EXPECTED_FAMILIES | {"GITHUB_PRIVATE_KEY"}
 

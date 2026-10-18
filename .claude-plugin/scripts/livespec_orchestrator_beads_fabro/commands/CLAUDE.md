@@ -674,6 +674,21 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   comment gives: the same env table carries `CODEX_REFRESH_TOKEN_URL_OVERRIDE`
   and the credential-use deadline keys, none of which is a credential. A
   credential renderer added later must add its env name there.
+  WHICH of those names are REQUIRED is scoped by the dispatch's own ROUTING,
+  through `required_credential_env_names(routes_codex=)`, and the parameter is
+  threaded from the one resolution `_dispatcher_credentials` takes rather than
+  re-read — because `_dispatcher_codex_overlay_leg` scopes itself by the SAME
+  answer, and the two disagreeing is the measured defect: the channel demanded
+  `CODEX_AUTH_JSON` of every bundle while the leg correctly projects none for a
+  dispatch that routes no node to `codex-acp`, so every native-channel dispatch
+  without a Codex node was refused at the `run-config-overlay` stage naming a
+  credential it was right not to carry (canary dispatch
+  3239702d96d246b28af019dd63dc151f, 2026-10-18). A family this routing does NOT
+  require is demoted to an OPTIONAL name rather than dropped, so a value some
+  projection nonetheless rendered is still routed off the vault instead of
+  being left inline in an immutable workflow version; and neither
+  `credential_env_names` nor `route_dispatch_secrets` defaults the parameter,
+  since each default is silently wrong for half the dispatches.
 - `_dispatcher_pre_dispatch_wall.py` — the ONE wall both dispatch paths run,
   holding every refusal that must land after selection and BEFORE admission:
   the variant-aware acceptance-criteria wall, the proof-assets gate, the
