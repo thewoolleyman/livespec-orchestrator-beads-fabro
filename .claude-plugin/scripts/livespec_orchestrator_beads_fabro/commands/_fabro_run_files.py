@@ -6,18 +6,31 @@ server's own run directory, and the server serves it over
 ended on a failed engine checkpoint, because the checkpoint is what would have
 committed it and no stage diff artifact carries a failed node's tree.
 
-THE PARSE IS TOLERANT ON PURPOSE, AND SAYS SO RATHER THAN GUESSING. The exact
-response shape is a HOST-CAPTURED assertion of `bd-ib-na2xvm` and was NOT
-measured when this was written: fabro-currency measured the endpoint returning
-48 changed files with full contents on a live hp-candidate run, and the
-production engine answered 401 rather than 404, so the route exists on both --
-but the key names were read from neither. Every reading this accepts is
-therefore a shape the endpoint PLAUSIBLY uses, and a container or an entry it
-cannot read becomes `RunFilesUnreadable` naming what it saw. Fail-closed is the
-right direction here: an unreadable read writes a ledger comment saying the
-tree was NOT preserved, while a parse that silently dropped entries it did not
-recognize would publish a ref whose tree disagrees with the run -- a recovery
-artifact that misreports the work, which is worse than none.
+THE SHAPE THE DEPLOYED SERVER SERVES IS MEASURED, and it is NESTED. Read on hp
+:32276 on 2026-10-18 through `FabroHttpPort.run_files` against run
+01M57JEFQH7KJG4WVS0BFR82KA (HTTP 200, 601960 bytes, four committed changes):
+the response is `data` plus `meta`; each entry carries `change_kind`, a
+`new_file` object and an `old_file` object, each of those holding `name` and
+`contents`; and an entry has NO top-level `path`, `name` or `content` key at
+all. `meta` carries `scope` (`committed`) and `source` (where the server read
+from -- `sandbox` on that run, `final_patch` on another), which is why both are
+carried out of here and named on the ledger comment: the first real
+checkpoint-failed ending is the only thing that can say whether UNCOMMITTED
+work is served, and a record that did not name the scope could not be asked.
+
+The reader was written before that measurement and keyed on the top level
+alone, so it returned `RunFilesUnreadable` for every real run -- which wrote
+the "tree was NOT preserved" comment and published nothing, reporting a parse
+failure rather than the shape mismatch behind it.
+
+THE TOLERANT TOP-LEVEL READINGS ARE KEPT BESIDE THE MEASURED ONE, AND THE
+MEASURED ONE WINS. The two are disjoint on every shape seen so far, and a
+container or an entry neither can read still becomes `RunFilesUnreadable`
+naming what it saw. Fail-closed is the right direction here: an unreadable read
+writes a ledger comment saying the tree was NOT preserved, while a parse that
+silently dropped entries it did not recognize would publish a ref whose tree
+disagrees with the run -- a recovery artifact that misreports the work, which
+is worse than none.
 
 A REMOVAL IS `content is None`, WHICH IS NOT EMPTY CONTENT. A run that truncated
 a file reports zero bytes and a run that deleted it reports no content at all;
@@ -57,6 +70,21 @@ _STATE_KEYS = ("status", "change")
 _BASE64 = "base64"
 _MODE_LENGTH = 6
 
+# The measured nesting. `_NEW_FILE` is read for a path BEFORE `_OLD_FILE`, and
+# an empty name is passed over rather than taken: an ADDED entry carries
+# `old_file.name` as the empty string, which read as a path would publish a
+# blob at the repository root.
+_NEW_FILE = "new_file"
+_OLD_FILE = "old_file"
+_NESTED_PATH_KEY = "name"
+_NESTED_CONTENT_KEY = "contents"
+
+# The response's own account of what it served. Carried out of here unchanged,
+# including a reading that is absent.
+_META_KEY = "meta"
+_META_SCOPE_KEY = "scope"
+_META_SOURCE_KEY = "source"
+
 _READ_TIMEOUT_SECONDS = 300.0
 
 
@@ -71,9 +99,20 @@ class RunFile:
 
 @dataclass(frozen=True, kw_only=True)
 class RunFiles:
-    """Every file the run changed, with the bytes it left in each."""
+    """Every file the run changed, with the bytes it left in each.
+
+    `scope` and `source` are the server's OWN account of what it served, read
+    off the response's `meta` and never derived: the scope says which tree it
+    answered from and the source says where it read it. Both are optional
+    because a response that carries no readable `meta` has said neither, and
+    both are REQUIRED arguments for the reason `_dispatcher_sandbox_image_
+    source` gives about its own record -- a default is how one read silently
+    reports the no-declaration answer for a read that did declare one.
+    """
 
     files: tuple[RunFile, ...]
+    scope: str | None
+    source: str | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -123,7 +162,28 @@ def run_files_from_payload(*, payload: object) -> RunFiles | RunFilesUnreadable:
         if isinstance(read, RunFilesUnreadable):
             return read
         files.append(read)
-    return RunFiles(files=tuple(files))
+    scope, source = _served(payload=payload)
+    return RunFiles(files=tuple(files), scope=scope, source=source)
+
+
+def _served(*, payload: object) -> tuple[str | None, str | None]:
+    """What the response's `meta` says it served, and from where.
+
+    An unreadable or absent `meta` yields two absences rather than a refusal:
+    the scope and the source are PROVENANCE the comment reports, not inputs the
+    publication needs, so a response that named neither still carries a tree
+    worth preserving.
+    """
+    if not isinstance(payload, dict):
+        return (None, None)
+    held = cast("dict[object, object]", payload).get(_META_KEY)
+    if not isinstance(held, dict):
+        return (None, None)
+    meta = cast("dict[object, object]", held)
+    return (
+        _first_string(mapping=meta, keys=(_META_SCOPE_KEY,)),
+        _first_string(mapping=meta, keys=(_META_SOURCE_KEY,)),
+    )
 
 
 def _entries(*, payload: object) -> tuple[object, ...] | None:
@@ -147,10 +207,14 @@ def _run_file(*, entry: object) -> RunFile | RunFilesUnreadable:
             detail=f"a run-files entry was {type(entry).__name__} rather than an object"
         )
     mapping = cast("dict[object, object]", entry)
-    path = _first_string(mapping=mapping, keys=_PATH_KEYS)
+    path = _path(mapping=mapping)
     if path is None:
         return RunFilesUnreadable(
-            detail=f"a run-files entry named no path under any of {', '.join(_PATH_KEYS)}"
+            detail=(
+                "a run-files entry named no path under"
+                f" {_NEW_FILE}.{_NESTED_PATH_KEY}, {_OLD_FILE}.{_NESTED_PATH_KEY}"
+                f" or any of {', '.join(_PATH_KEYS)}"
+            )
         )
     mode = _mode(mapping=mapping)
     if _removed(mapping=mapping):
@@ -158,16 +222,39 @@ def _run_file(*, entry: object) -> RunFile | RunFilesUnreadable:
     return _with_content(mapping=mapping, path=path, mode=mode)
 
 
+def _path(*, mapping: dict[object, object]) -> str | None:
+    """The path one entry names, in the MEASURED nesting first.
+
+    `_OLD_FILE` is the fallback rather than an equal, because for every entry
+    that has both they agree, and where they differ -- a removal, or a rename --
+    the new name is the one the published tree must carry.
+    """
+    for key in (_NEW_FILE, _OLD_FILE):
+        nested = _nested_string(mapping=mapping, key=key, field=_NESTED_PATH_KEY)
+        if nested:
+            return nested
+    return _first_string(mapping=mapping, keys=_PATH_KEYS)
+
+
+def _nested_string(*, mapping: dict[object, object], key: str, field: str) -> str | None:
+    """One string `field` of the object `mapping` nests under `key`."""
+    held = mapping.get(key)
+    if not isinstance(held, dict):
+        return None
+    return _first_string(mapping=cast("dict[object, object]", held), keys=(field,))
+
+
 def _with_content(
     *, mapping: dict[object, object], path: str, mode: str
 ) -> RunFile | RunFilesUnreadable:
     """Decode the bytes one entry reports for `path`."""
-    held = _first_string(mapping=mapping, keys=_CONTENT_KEYS)
+    held = _content_text(mapping=mapping)
     if held is None:
         return RunFilesUnreadable(
             detail=(
                 f"the run-files entry for {path} is neither a removal nor carries content"
-                f" under any of {', '.join(_CONTENT_KEYS)}"
+                f" under {_NEW_FILE}.{_NESTED_CONTENT_KEY}"
+                f" or any of {', '.join(_CONTENT_KEYS)}"
             )
         )
     if mapping.get("encoding") != _BASE64:
@@ -181,6 +268,14 @@ def _with_content(
             detail=f"the run-files entry for {path} declared base64 content that does not decode"
         )
     return RunFile(path=path, content=decoded, mode=mode)
+
+
+def _content_text(*, mapping: dict[object, object]) -> str | None:
+    """The bytes one entry reports, in the MEASURED nesting first."""
+    nested = _nested_string(mapping=mapping, key=_NEW_FILE, field=_NESTED_CONTENT_KEY)
+    if nested is not None:
+        return nested
+    return _first_string(mapping=mapping, keys=_CONTENT_KEYS)
 
 
 def _removed(*, mapping: dict[object, object]) -> bool:

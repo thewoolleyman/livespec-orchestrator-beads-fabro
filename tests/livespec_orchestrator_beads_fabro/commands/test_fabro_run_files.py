@@ -50,6 +50,16 @@ def _port(*, result: FabroHttpResult) -> FabroHttpPort:
     )
 
 
+def _unserved(*files: RunFile) -> RunFiles:
+    """The expected read of a response that named no scope and no source.
+
+    Every payload in this module is a bare list, or a container carrying no
+    readable `meta`, so each one leaves both absent. The MEASURED shape and its
+    `meta` are covered by `test_fabro_run_files_measured_shape`.
+    """
+    return RunFiles(files=files, scope=None, source=None)
+
+
 def test_a_refused_read_is_unreadable_and_names_the_status_and_the_run() -> None:
     read = read_run_files(
         port=_port(
@@ -112,11 +122,11 @@ def test_a_successful_read_parses_the_served_payload() -> None:
         ),
         run_id=_RUN_ID,
     )
-    assert read == RunFiles(files=(RunFile(path="a.py", content=b"x\n", mode="100644"),))
+    assert read == _unserved(RunFile(path="a.py", content=b"x\n", mode="100644"))
 
 
 def test_a_bare_list_a_data_key_and_a_files_key_all_read_as_the_same_changes() -> None:
-    expected = RunFiles(files=(RunFile(path="a.py", content=b"x\n", mode="100644"),))
+    expected = _unserved(RunFile(path="a.py", content=b"x\n", mode="100644"))
     entry = {"path": "a.py", "content": "x\n"}
     assert run_files_from_payload(payload=[entry]) == expected
     assert run_files_from_payload(payload={"data": [entry]}) == expected
@@ -124,11 +134,11 @@ def test_a_bare_list_a_data_key_and_a_files_key_all_read_as_the_same_changes() -
 
 
 def test_a_name_key_stands_in_for_a_path_and_contents_or_text_for_content() -> None:
-    assert run_files_from_payload(payload=[{"name": "a.py", "contents": "x\n"}]) == RunFiles(
-        files=(RunFile(path="a.py", content=b"x\n", mode="100644"),)
+    assert run_files_from_payload(payload=[{"name": "a.py", "contents": "x\n"}]) == _unserved(
+        RunFile(path="a.py", content=b"x\n", mode="100644")
     )
-    assert run_files_from_payload(payload=[{"path": "a.py", "text": "x\n"}]) == RunFiles(
-        files=(RunFile(path="a.py", content=b"x\n", mode="100644"),)
+    assert run_files_from_payload(payload=[{"path": "a.py", "text": "x\n"}]) == _unserved(
+        RunFile(path="a.py", content=b"x\n", mode="100644")
     )
 
 
@@ -165,20 +175,18 @@ def test_both_removal_spellings_read_as_a_removal_and_neither_as_empty_content()
         {"path": "gone.py", "change": "removed"},
     ):
         read = run_files_from_payload(payload=[entry])
-        assert read == RunFiles(
-            files=(RunFile(path="gone.py", content=None, mode="100644"),)
-        ), entry
+        assert read == _unserved(RunFile(path="gone.py", content=None, mode="100644")), entry
 
 
 def test_a_non_removal_state_word_leaves_the_entry_on_the_content_path() -> None:
     read = run_files_from_payload(payload=[{"path": "a.py", "status": "modified", "text": "x\n"}])
-    assert read == RunFiles(files=(RunFile(path="a.py", content=b"x\n", mode="100644"),))
+    assert read == _unserved(RunFile(path="a.py", content=b"x\n", mode="100644"))
 
 
 def test_base64_content_is_decoded_and_undecodable_base64_is_unreadable() -> None:
     assert run_files_from_payload(
         payload=[{"path": "a.py", "content": "eA==", "encoding": "base64"}]
-    ) == RunFiles(files=(RunFile(path="a.py", content=b"x", mode="100644"),))
+    ) == _unserved(RunFile(path="a.py", content=b"x", mode="100644"))
     read = run_files_from_payload(
         payload=[{"path": "a.py", "content": "not base64!", "encoding": "base64"}]
     )
@@ -189,12 +197,10 @@ def test_base64_content_is_decoded_and_undecodable_base64_is_unreadable() -> Non
 def test_a_declared_mode_is_carried_and_an_unusable_one_falls_back_to_a_regular_file() -> None:
     assert run_files_from_payload(
         payload=[{"path": "run.sh", "text": "x\n", "mode": "100755"}]
-    ) == RunFiles(files=(RunFile(path="run.sh", content=b"x\n", mode="100755"),))
+    ) == _unserved(RunFile(path="run.sh", content=b"x\n", mode="100755"))
     for unusable in ("0644", 100644, "1006xx", None):
         read = run_files_from_payload(payload=[{"path": "a.py", "text": "x\n", "mode": unusable}])
-        assert read == RunFiles(
-            files=(RunFile(path="a.py", content=b"x\n", mode="100644"),)
-        ), unusable
+        assert read == _unserved(RunFile(path="a.py", content=b"x\n", mode="100644")), unusable
 
 
 def test_an_entry_whose_path_is_not_a_string_names_no_path() -> None:
