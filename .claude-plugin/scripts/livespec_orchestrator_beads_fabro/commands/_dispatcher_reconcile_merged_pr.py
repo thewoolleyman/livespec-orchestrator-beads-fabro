@@ -95,7 +95,7 @@ def merged_pr_list_argv(*, item: WorkItem, default_branch: str) -> list[str]:
         "--search",
         item.id,
         "--json",
-        "number,title,headRefName,baseRefName,state,mergeCommit",
+        "number,title,body,headRefName,baseRefName,state,mergeCommit",
         "--base",
         default_branch,
         "--limit",
@@ -117,13 +117,17 @@ def parse_merged_pr_list(
     if isinstance(parsed_raw, JsonParseFailure) or not isinstance(parsed_raw, list):
         return ()
     matches: list[PrView] = []
+    body_matches: list[PrView] = []
     for entry_raw in cast("list[object]", parsed_raw):
         view = _pr_view_from_list_entry(
             entry_raw=entry_raw, item=item, branch=branch, default_branch=default_branch
         )
         if view is not None:
             matches.append(view)
-    return tuple(matches)
+            body_raw: object = cast("dict[str, Any]", entry_raw).get("body")
+            if isinstance(body_raw, str) and item.id in body_raw:
+                body_matches.append(view)
+    return (body_matches[0],) if body_matches else tuple(matches)
 
 
 def _ambiguous_pr_detail(*, candidates: tuple[PrView, ...]) -> str:
@@ -164,7 +168,12 @@ def _pr_view_from_list_entry(
     base_raw: object = entry.get("baseRefName")
     if isinstance(base_raw, str) and base_raw != default_branch:
         return None
-    if head_raw != branch and not (isinstance(title_raw, str) and item.id in title_raw):
+    body_raw: object = entry.get("body")
+    if (
+        head_raw != branch
+        and not (isinstance(title_raw, str) and item.id in title_raw)
+        and not (isinstance(body_raw, str) and item.id in body_raw)
+    ):
         return None
     merge_sha = _list_entry_merge_sha(entry=entry)
     if merge_sha is None:
