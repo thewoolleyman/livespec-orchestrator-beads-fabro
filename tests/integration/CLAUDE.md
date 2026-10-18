@@ -1122,8 +1122,14 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   NEGATIVE beside the constant — the resolution must not return the override
   file's address — since asserting the default path alone is an echo of the
   constant, while the negative is what an implementation reading the override
-  unconditionally cannot satisfy and stays hermetic because no host's
-  `/etc/livespec/fabro-factories.json` maps `petri` to this module's address.
+  unconditionally cannot satisfy. That negative reads the real host
+  `/etc/livespec/fabro-factories.json`, which is unmanaged state this suite does
+  not own, so what keeps it hermetic is `_REGISTRY_SERVER` being a
+  RESERVED-domain sentinel no inventory can render — NOT an assumption about
+  what that file holds. Spelled as a machine this fleet provisions, the
+  assertion is false on exactly the host the registry maps `petri` on: measured
+  2026-10-18, writing the production pair into that path reds the case while the
+  code is correct, which is a false FAIL on every `just check` run there.
   The `unreadable` registry is staged as a DIRECTORY at the registry path rather
   than by clearing the mode bits, because this suite's own dispatch runs as root
   and a mode-based refusal would not apply to it. The consumer surfaces the

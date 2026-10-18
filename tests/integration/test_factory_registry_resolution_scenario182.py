@@ -76,7 +76,14 @@ _READING_MODULE = "livespec_orchestrator_beads_fabro.commands._factory_registry"
 _GRADE_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_factory_registry"
 
 _FACTORY = "petri"
-_REGISTRY_SERVER = "https://gmktec.perch-rudd.ts.net:32276"
+# A RESERVED-domain sentinel, not the address this factory really resolves to, and
+# it must stay one: the default-registry-path case below asserts that resolution
+# does NOT return this value, and reads the real host
+# `/etc/livespec/fabro-factories.json` to do it. Spelled as a machine this fleet
+# provisions, that assertion is false on exactly the host the registry maps
+# `petri` on — a false FAIL on every `just check` there, while the code is
+# correct. `.example` is reserved by RFC 2606, so no inventory can render it.
+_REGISTRY_SERVER = "https://registry-override.example:32276"
 _REGISTRY_DOCKER_HOST = "ssh://cwoolley@gmktec.perch-rudd.ts.net"
 _OTHER_SERVER = "https://hp-xubuntu.perch-rudd.ts.net:32276"
 _SPEC_DEFAULT_REGISTRY_PATH = "/etc/livespec/fabro-factories.json"
@@ -351,9 +358,14 @@ def test_the_registry_path_is_the_override_when_it_is_set_and_the_default_otherw
     Each absent case asserts the negative beside the constant: with the variable
     not selecting the override file, the resolution must NOT return that file's
     address. The constant alone is an echo; the negative is what an
-    implementation reading the override unconditionally cannot satisfy, and it
-    stays hermetic because no host's `/etc/livespec/fabro-factories.json` maps
-    `petri` to this test's address.
+    implementation reading the override unconditionally cannot satisfy.
+
+    The negative reads the real host `/etc/livespec/fabro-factories.json`, which
+    is unmanaged state this suite does not own, so what keeps it hermetic is
+    `_REGISTRY_SERVER` being a RESERVED-domain sentinel no inventory can render —
+    not an assumption about what that file happens to hold. Spelled as a machine
+    this fleet provisions, the assertion is false on exactly the host the
+    registry maps `petri` on, which is a false FAIL rather than a finding.
     """
     reading = _reading_module()
     _registry_backed_repo(cwd=tmp_path, monkeypatch=monkeypatch, entry={"server": _REGISTRY_SERVER})
