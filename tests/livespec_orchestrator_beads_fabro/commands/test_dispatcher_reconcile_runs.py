@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_reconcile_one_run as one_run
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_reconcile_runs as reconcile
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_reconcile_runs_inputs as inputs_module,
@@ -581,7 +582,7 @@ def test_an_unverified_export_leaves_the_run_untouched(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        reconcile,
+        one_run,
         "export_orphan_reference",
         lambda **_: ExportOutcome(
             exported=False,

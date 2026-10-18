@@ -41,9 +41,13 @@ _MODULE_PATH = (
     / "_dispatcher_stranded_claim_recovery.py"
 )
 _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_recovery"
+# The four ledger acts live one module over; a recovery arm that fails because
+# one of them failed is injected THERE, which is where the `attempt` ladder is.
+_EFFECTS_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_effects"
 
 _ITEM_ID = "bd-ib-recover"
 _RUN_ID = "01RECOVERRUN"
+_NOW = "2026-10-18T09:00:00Z"
 
 
 @pytest.fixture(autouse=True)
@@ -56,6 +60,10 @@ def _fresh_tenant(monkeypatch: pytest.MonkeyPatch) -> object:
 
 def _module() -> object:
     return importlib.import_module(_MODULE_NAME)
+
+
+def _effects() -> object:
+    return importlib.import_module(_EFFECTS_NAME)
 
 
 def _config() -> StoreConfig:
@@ -149,7 +157,7 @@ def test_the_three_effects_land_and_the_route_reports_each_of_them(tmp_path: Pat
     journal = _journal(repo=repo)
 
     outcome = module.recover_claim(
-        repo=repo, journal=journal, request=_request(module=module, item=item)
+        repo=repo, journal=journal, request=_request(module=module, item=item), now_iso=_NOW
     )
 
     assert outcome.effects_written == (
@@ -179,7 +187,7 @@ def test_a_row_that_no_longer_carries_the_claim_is_held_unchanged(
     journal = _journal(repo=repo)
 
     outcome = module.recover_claim(
-        repo=repo, journal=journal, request=_request(module=module, item=_item())
+        repo=repo, journal=journal, request=_request(module=module, item=_item()), now_iso=_NOW
     )
 
     assert outcome.hold_reason == "claim-changed"
@@ -200,7 +208,7 @@ def test_a_row_stamped_with_another_run_is_held_unchanged(
     journal = _journal(repo=repo)
 
     outcome = module.recover_claim(
-        repo=repo, journal=journal, request=_request(module=module, item=item)
+        repo=repo, journal=journal, request=_request(module=module, item=item), now_iso=_NOW
     )
 
     assert outcome.hold_reason == "claim-changed"
@@ -215,7 +223,7 @@ def test_a_row_carrying_no_stamp_at_all_is_held_unchanged(tmp_path: Path) -> Non
     journal = _journal(repo=repo)
 
     outcome = module.recover_claim(
-        repo=repo, journal=journal, request=_request(module=module, item=item)
+        repo=repo, journal=journal, request=_request(module=module, item=item), now_iso=_NOW
     )
 
     assert outcome.hold_reason == "claim-changed"
@@ -234,10 +242,10 @@ def test_a_row_that_cannot_be_read_is_held_as_effect_unobservable(
         _ = (path, work_item_id)
         raise BeadsCommandError(command="bd show", exit_code=1, stderr="refused")
 
-    monkeypatch.setattr(module, "claim_row_for", _refuse)
+    monkeypatch.setattr(_effects(), "claim_row_for", _refuse)
 
     outcome = module.recover_claim(
-        repo=repo, journal=journal, request=_request(module=module, item=item)
+        repo=repo, journal=journal, request=_request(module=module, item=item), now_iso=_NOW
     )
 
     assert outcome.hold_reason == "effect-unobservable"
@@ -257,10 +265,10 @@ def test_a_comment_write_that_fails_withholds_the_transition(
         _ = (path, work_item_id, body)
         raise BeadsCommandError(command="bd comment", exit_code=1, stderr="refused")
 
-    monkeypatch.setattr(module, "append_work_item_comment", _refuse)
+    monkeypatch.setattr(_effects(), "append_work_item_comment", _refuse)
 
     outcome = module.recover_claim(
-        repo=repo, journal=journal, request=_request(module=module, item=item)
+        repo=repo, journal=journal, request=_request(module=module, item=item), now_iso=_NOW
     )
 
     assert outcome.hold_reason == "effect-unobservable"
@@ -286,10 +294,10 @@ def test_a_transition_that_fails_leaves_the_records_standing(
         _ = (path, item_id, status, clear_assignee)
         raise BeadsCommandError(command="bd update", exit_code=1, stderr="refused")
 
-    monkeypatch.setattr(module, "update_work_item_status", _refuse)
+    monkeypatch.setattr(_effects(), "update_work_item_status", _refuse)
 
     outcome = module.recover_claim(
-        repo=repo, journal=journal, request=_request(module=module, item=item)
+        repo=repo, journal=journal, request=_request(module=module, item=item), now_iso=_NOW
     )
 
     assert outcome.hold_reason == "effect-unobservable"
@@ -318,7 +326,7 @@ def test_a_final_re_read_that_cannot_be_taken_withholds_the_transition(
     item = _item()
     _seed(item=item)
     journal = _journal(repo=repo)
-    real = module.claim_row_for
+    real = _effects().claim_row_for
     reads: list[int] = []
 
     def _refuse_the_second_read(*, path: StoreConfig, work_item_id: str) -> object:
@@ -327,10 +335,10 @@ def test_a_final_re_read_that_cannot_be_taken_withholds_the_transition(
             raise BeadsCommandError(command="bd show", exit_code=1, stderr="refused")
         return real(path=path, work_item_id=work_item_id)
 
-    monkeypatch.setattr(module, "claim_row_for", _refuse_the_second_read)
+    monkeypatch.setattr(_effects(), "claim_row_for", _refuse_the_second_read)
 
     outcome = module.recover_claim(
-        repo=repo, journal=journal, request=_request(module=module, item=item)
+        repo=repo, journal=journal, request=_request(module=module, item=item), now_iso=_NOW
     )
 
     assert outcome.hold_reason == "effect-unobservable"
@@ -346,7 +354,7 @@ def test_a_row_re_stamped_between_the_comment_and_the_transition_is_not_overwrit
     item = _item()
     _seed(item=item)
     journal = _journal(repo=repo)
-    real = module.claim_row_for
+    real = _effects().claim_row_for
     reads: list[int] = []
 
     def _restamp_after_first_read(*, path: StoreConfig, work_item_id: str) -> object:
@@ -357,10 +365,10 @@ def test_a_row_re_stamped_between_the_comment_and_the_transition_is_not_overwrit
             )
         return real(path=path, work_item_id=work_item_id)
 
-    monkeypatch.setattr(module, "claim_row_for", _restamp_after_first_read)
+    monkeypatch.setattr(_effects(), "claim_row_for", _restamp_after_first_read)
 
     outcome = module.recover_claim(
-        repo=repo, journal=journal, request=_request(module=module, item=item)
+        repo=repo, journal=journal, request=_request(module=module, item=item), now_iso=_NOW
     )
 
     assert outcome.hold_reason == "claim-changed"
@@ -381,6 +389,7 @@ def test_the_repeat_route_rests_the_item_and_names_both_runs(tmp_path: Path) -> 
         repo=repo,
         journal=journal,
         request=_request(module=module, item=item, action="absent-run-repeated"),
+        now_iso=_NOW,
     )
 
     assert outcome.status == "blocked"
@@ -415,12 +424,13 @@ def test_a_repeat_rest_that_fails_leaves_the_records_standing(
         _ = (path, item_id, status, blocked_reason, admission_policy)
         raise BeadsCommandError(command="bd update", exit_code=1, stderr="refused")
 
-    monkeypatch.setattr(module, "update_work_item_blocked_state", _refuse)
+    monkeypatch.setattr(_effects(), "update_work_item_blocked_state", _refuse)
 
     outcome = module.recover_claim(
         repo=repo,
         journal=journal,
         request=_request(module=module, item=item, action="absent-run-repeated"),
+        now_iso=_NOW,
     )
 
     assert outcome.hold_reason == "effect-unobservable"

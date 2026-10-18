@@ -5,6 +5,11 @@ claim" is a claim about the PASS, and the survey passing in isolation says
 nothing about whether a pass reaches it. These cases drive `reconcile_runs`
 itself.
 
+THE LANE IS AN INJECTED SEAM, which is why these cases supply it the way the
+two reconciliation surfaces do. The run lane cannot import the claim lane: the
+terminal-completion route reaches the Dispatcher's own terminal dispositions,
+and one of those reaches the reconciler back.
+
 TWO PROPERTIES ARE WHAT THE WIRING HAS TO GET RIGHT, and each has a case.
 The lane rides the SAME `fabro ps -a --json` listing the orphan join read — a
 second listing would let the two lanes describe one factory two ways — so the
@@ -33,6 +38,9 @@ from livespec_orchestrator_beads_fabro.commands import _dispatcher_reconcile_run
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_claim_lane import (
+    reconcile_claim_lane,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
     journaled_runs,
 )
@@ -176,6 +184,10 @@ def _inputs(
         blocked_run_grace_seconds=0,
         claim_journal=claim_journal,
         claim_host=_HOST,
+        # The lane is INJECTED, exactly as the two reconciliation surfaces inject
+        # it: the run lane cannot import it without closing a runtime cycle
+        # through the Dispatcher's own terminal dispositions.
+        claim_lane=reconcile_claim_lane,
     )
 
 

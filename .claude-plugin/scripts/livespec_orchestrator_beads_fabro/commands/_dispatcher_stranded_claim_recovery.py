@@ -31,6 +31,12 @@ finding about the row, which an unreadable row cannot support. Reporting the
 failure to measure is both honest and fail-closed — nothing is written either
 way, and the next pass takes the reading again.
 
+THE FOUR LEDGER ACTS LIVE IN `_dispatcher_stranded_claim_effects`, so this
+module is the ORDER and that one is what the order is over. None of them
+raises: a recovery runs inside a pass that must not die on one unreachable
+tenant, and every failure there means the same thing here — the effect could
+not be established, so nothing further is written.
+
 THE LEDGER WRITES DELIBERATELY DO NOT GO THROUGH THE RECONCILER'S OWN SEAM.
 `_dispatcher_reconcile_runs_inputs` hands the RUN lane a comments-only ledger
 surface, precisely so that reconciling a run structurally cannot change an
@@ -47,15 +53,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
-    update_work_item_blocked_state,
-)
-from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
-from livespec_orchestrator_beads_fabro._store_dispatch_claim import ClaimRow, claim_row_for
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_effects import (
+    append_claim_comment,
+    claim_row,
+    claim_unchanged,
+    release_claim_to_ready,
+    rest_claim_for_a_human,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade import (
     ACTION_ABSENT_RUN_RELEASE,
+    ACTION_TERMINAL_COMPLETION,
     HOLD_CLAIM_CHANGED,
     HOLD_EFFECT_UNOBSERVABLE,
 )
@@ -64,21 +72,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_recor
     REASON_RUN_ABSENT_REPEATED,
     STRANDED_CLAIM_RELEASE_STAGE,
     STRANDED_CLAIM_REPEATED_STAGE,
+    STRANDED_CLAIM_TERMINAL_STAGE,
     HeldClaim,
     RecoveredClaim,
     recovery_journal_record,
     release_comment_body,
     repeated_comment_body,
 )
-from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
-from livespec_orchestrator_beads_fabro.errors import (
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-    WorkItemNotFoundError,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_terminal import (
+    TerminalObservation,
+    apply_terminal_disposition,
 )
-from livespec_orchestrator_beads_fabro.store import update_work_item_status
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -94,19 +98,8 @@ EFFECT_COMMENT = "ledger-comment"
 EFFECT_TRANSITION = "status-transition"
 
 _ACTIVE_STATUS = "active"
-_FABRO_ASSIGNEE = "fabro"
 _READY_STATUS = "ready"
 _BLOCKED_STATUS = "blocked"
-_NEEDS_HUMAN_REASON = "needs-human"
-_MANUAL_ADMISSION = "manual"
-
-_LEDGER_ERRORS: tuple[type[Exception], ...] = (
-    WorkItemNotFoundError,
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -124,6 +117,11 @@ class ClaimRecoveryRequest:
     # optional because the predecessor may have recorded no run id, which the
     # comment states rather than omitting.
     predecessor_run_id: str | None = None
+    # The already-OBSERVED terminal reading, carried rather than re-taken: the
+    # grading needed it to decide whether the failure evidence was readable at
+    # all, and a second `fabro inspect` here could answer about a record the
+    # first reading already judged.
+    terminal: TerminalObservation | None = None
 
 
 def recover_claim(
@@ -131,6 +129,7 @@ def recover_claim(
     repo: Path,
     journal: JournalFile,
     request: ClaimRecoveryRequest,
+    now_iso: str,
 ) -> RecoveredClaim | HeldClaim:
     """Release this claim, writing its three effects in the clause's order.
 
@@ -139,12 +138,52 @@ def recover_claim(
     has been re-read and found unchanged — is visible without following the
     effect sequence.
     """
-    row = _claim_row(repo=repo, work_item_id=request.item.id)
+    row = claim_row(repo=repo, work_item_id=request.item.id)
     if row is None:
         return _held(request=request, reason=HOLD_EFFECT_UNOBSERVABLE)
-    if not _claim_unchanged(row=row, run_id=request.run_id):
+    if not claim_unchanged(row=row, run_id=request.run_id):
         return _held(request=request, reason=HOLD_CLAIM_CHANGED)
+    if request.action == ACTION_TERMINAL_COMPLETION:
+        return _complete_terminal(repo=repo, journal=journal, request=request, now_iso=now_iso)
     return _write_release_effects(repo=repo, journal=journal, request=request)
+
+
+def _complete_terminal(
+    *,
+    repo: Path,
+    journal: JournalFile,
+    request: ClaimRecoveryRequest,
+    now_iso: str,
+) -> RecoveredClaim | HeldClaim:
+    """Hand a terminal run to the Dispatcher's own disposition.
+
+    The announcement row is written BEFORE the dispositions, which is the
+    opposite order from the absent-run route and is deliberate: the
+    dispositions are DELEGATED and each owns its own records, so the row saying
+    reconciliation finished what a dead Dispatcher left undone has to exist
+    before control leaves this module. It restates no disposition it did not
+    decide, which is why it carries the observed terminal STATUS as its reason
+    rather than a route name of its own.
+    """
+    terminal = request.terminal
+    if terminal is None:
+        return _held(request=request, reason=HOLD_EFFECT_UNOBSERVABLE)
+    journal.append(
+        record=recovery_journal_record(
+            stage=STRANDED_CLAIM_TERMINAL_STAGE,
+            recovered=_terminal_recovered(request=request, terminal=terminal, effects=()),
+        )
+    )
+    applied = apply_terminal_disposition(
+        repo=repo,
+        item=request.item,
+        observation=terminal,
+        journal=journal,
+        now_iso=now_iso,
+    )
+    return _terminal_recovered(
+        request=request, terminal=terminal, effects=(EFFECT_JOURNAL_RECORD, *applied)
+    )
 
 
 def _write_release_effects(
@@ -166,15 +205,17 @@ def _write_release_effects(
             recovered=_recovered(request=request, effects=()),
         )
     )
-    if not _append_comment(repo=repo, request=request):
+    if not append_claim_comment(
+        repo=repo, work_item_id=request.item.id, body=_comment_body(request=request)
+    ):
         return _held(request=request, reason=HOLD_EFFECT_UNOBSERVABLE)
     # IMMEDIATELY before the transition, after both durable records: the one
     # re-read the clause names, and the only one whose failure withholds the
     # status write.
-    final = _claim_row(repo=repo, work_item_id=request.item.id)
+    final = claim_row(repo=repo, work_item_id=request.item.id)
     if final is None:
         return _held(request=request, reason=HOLD_EFFECT_UNOBSERVABLE)
-    if not _claim_unchanged(row=final, run_id=request.run_id):
+    if not claim_unchanged(row=final, run_id=request.run_id):
         return _held(request=request, reason=HOLD_CLAIM_CHANGED)
     if not _transition(repo=repo, request=request):
         return _held(request=request, reason=HOLD_EFFECT_UNOBSERVABLE)
@@ -194,6 +235,12 @@ class _Route:
 
 
 def _route(*, request: ClaimRecoveryRequest) -> _Route:
+    """Which of the TWO absent-run routes this request is.
+
+    Reached only for those two: the terminal completion renders its own record
+    through `_terminal_recovered`, because its reason is the observed terminal
+    status rather than a route name this module chose.
+    """
     if request.action == ACTION_ABSENT_RUN_RELEASE:
         return _Route(
             stage=STRANDED_CLAIM_RELEASE_STAGE,
@@ -205,6 +252,13 @@ def _route(*, request: ClaimRecoveryRequest) -> _Route:
         reason=REASON_RUN_ABSENT_REPEATED,
         status=_BLOCKED_STATUS,
     )
+
+
+def _transition(*, repo: Path, request: ClaimRecoveryRequest) -> bool:
+    """The status write each absent-run route owes, through its shared seam."""
+    if request.action == ACTION_ABSENT_RUN_RELEASE:
+        return release_claim_to_ready(repo=repo, work_item_id=request.item.id)
+    return rest_claim_for_a_human(repo=repo, work_item_id=request.item.id)
 
 
 def _comment_body(*, request: ClaimRecoveryRequest) -> str:
@@ -224,67 +278,6 @@ def _comment_body(*, request: ClaimRecoveryRequest) -> str:
     )
 
 
-def _append_comment(*, repo: Path, request: ClaimRecoveryRequest) -> bool:
-    written = attempt(
-        action=lambda: append_work_item_comment(
-            path=store_config(repo=repo),
-            work_item_id=request.item.id,
-            body=_comment_body(request=request),
-        ),
-        exceptions=_LEDGER_ERRORS,
-    )
-    return not isinstance(written, AttemptFailure)
-
-
-def _transition(*, repo: Path, request: ClaimRecoveryRequest) -> bool:
-    """`ready` with the claim dropped, or the `needs-human` rest of a repeat.
-
-    The release goes through the SAME seam the pre-run and stall releases use —
-    `status="ready"` with `clear_assignee=True` — so a released stranded claim
-    leaves the ledger in one shape rather than a third that merely looks like
-    the other two. The repeat goes through the escalation seam, which REPLACES
-    the blocked-reason label rather than adding one beside it, and sets
-    `admission:manual` so nothing automatic leaves that state.
-    """
-    if request.action != ACTION_ABSENT_RUN_RELEASE:
-        rested = attempt(
-            action=lambda: update_work_item_blocked_state(
-                path=store_config(repo=repo),
-                item_id=request.item.id,
-                status=_BLOCKED_STATUS,
-                blocked_reason=_NEEDS_HUMAN_REASON,
-                admission_policy=_MANUAL_ADMISSION,
-            ),
-            exceptions=_LEDGER_ERRORS,
-        )
-        return not isinstance(rested, AttemptFailure)
-    applied = attempt(
-        action=lambda: update_work_item_status(
-            path=store_config(repo=repo),
-            item_id=request.item.id,
-            status=_READY_STATUS,
-            clear_assignee=True,
-        ),
-        exceptions=_LEDGER_ERRORS,
-    )
-    return not isinstance(applied, AttemptFailure)
-
-
-def _claim_row(*, repo: Path, work_item_id: str) -> ClaimRow | None:
-    row = attempt(
-        action=lambda: claim_row_for(path=store_config(repo=repo), work_item_id=work_item_id),
-        exceptions=_LEDGER_ERRORS,
-    )
-    return None if isinstance(row, AttemptFailure) else row
-
-
-def _claim_unchanged(*, row: ClaimRow, run_id: str) -> bool:
-    if row.status != _ACTIVE_STATUS or row.assignee != _FABRO_ASSIGNEE:
-        return False
-    stamp = row.stamp
-    return stamp is not None and not stamp.pending and stamp.run_id == run_id
-
-
 def _recovered(*, request: ClaimRecoveryRequest, effects: tuple[str, ...]) -> RecoveredClaim:
     route = _route(request=request)
     return RecoveredClaim(
@@ -295,6 +288,32 @@ def _recovered(*, request: ClaimRecoveryRequest, effects: tuple[str, ...]) -> Re
         reason=route.reason,
         route=request.action,
         status=route.status,
+        effects_written=effects,
+    )
+
+
+def _terminal_recovered(
+    *,
+    request: ClaimRecoveryRequest,
+    terminal: TerminalObservation,
+    effects: tuple[str, ...],
+) -> RecoveredClaim:
+    """The record a terminal completion leaves.
+
+    It carries the OBSERVED terminal status as its reason and reports the item
+    as it stands, because this route decides no disposition: whichever route
+    the Dispatcher's own handling took has already written its own account of
+    where the item went, and restating it here would be a second account of
+    one event.
+    """
+    return RecoveredClaim(
+        work_item_id=request.item.id,
+        run_id=request.run_id,
+        factory_name=request.factory_name,
+        factory_server_url=request.factory_server_url,
+        reason=terminal.outcome.status,
+        route=request.action,
+        status=_ACTIVE_STATUS,
         effects_written=effects,
     )
 

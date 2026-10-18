@@ -8,6 +8,15 @@ questions about one reading, and only one of them may write a work-item's
 status. Keeping the claim lane's seam here is what lets a reader see that the
 run lane's comments-only ledger surface is untouched.
 
+IT IS INJECTED INTO THE RUN LANE RATHER THAN IMPORTED BY IT, and that is a
+necessity rather than a taste. The terminal-completion route reaches the
+Dispatcher's own terminal dispositions, and one of those reaches the
+reconciler back (`_dispatcher_terminal_routing` → `_dispatcher_completion` →
+`_dispatcher_lifecycle_writes` → `_dispatcher_run_reconcile_hook` →
+`_dispatcher_reconcile_runs`). An import from the run lane to here therefore
+closes a runtime cycle; `ReconcileInputs` declares the lane as a seam, and the
+two reconciliation SURFACES — which no disposition imports — supply it.
+
 IT CONSUMES THE READING RATHER THAN TAKING ONE. The lane is handed what the run
 lane already measured — the `fabro ps -a --json` listing, keyed by the factory
 that answered it — because two listings a moment apart disagree about any run
@@ -27,7 +36,6 @@ two is exactly the unsurveyed population.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatching_host import (
@@ -39,8 +47,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_input
     ReconcileInputs,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_records import (
-    HeldClaim,
-    RecoveredClaim,
+    ClaimLaneResult,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_survey import (
     FactoryInventory,
@@ -49,17 +56,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_surve
 )
 
 __all__: list[str] = [
-    "ClaimLaneResult",
     "reconcile_claim_lane",
 ]
-
-
-@dataclass(frozen=True, kw_only=True)
-class ClaimLaneResult:
-    """The claim half's result, or the empty one when the lane is not wired."""
-
-    recovered: tuple[RecoveredClaim, ...] = ()
-    held: tuple[HeldClaim, ...] = ()
 
 
 def reconcile_claim_lane(

@@ -60,6 +60,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     journal_path,
     store_config,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_claim_lane import (
+    reconcile_claim_lane,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs import (
     ReconcileRunsSummary,
     reconcile_runs,
@@ -131,6 +134,7 @@ def run_reconcile_runs_command(*, args: argparse.Namespace) -> int:
             # host timer invokes — the third of the three reconciliation
             # surfaces the stranded-claim clause names.
             claim_journal=journal,
+            claim_lane=reconcile_claim_lane,
         ),
         factories=factories,
         dry_run=args.dry_run,

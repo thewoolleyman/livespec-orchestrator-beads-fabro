@@ -60,6 +60,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     journal_path,
     store_config,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_claim_lane import (
+    reconcile_claim_lane,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs import (
     ReconcileRunsSummary,
     reconcile_runs,
@@ -249,6 +252,7 @@ def _survey(
             # reconciliation surfaces the stranded-claim clause names; the
             # third is the standalone sweep, which arms it the same way.
             claim_journal=journal,
+            claim_lane=reconcile_claim_lane,
         ),
         factories=factories,
         dry_run=False,
