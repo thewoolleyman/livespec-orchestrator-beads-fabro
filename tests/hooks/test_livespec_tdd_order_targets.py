@@ -13,6 +13,16 @@ loaded by file location — the same idiom `test_livespec_footgun_guard.py` uses
 The import happens INSIDE each test body via `importlib`, and the first
 assertion is that the module file exists, so the Red commit fails on a genuine
 assertion rather than at collection time.
+
+Loading by file location is not enough on its own, though: the module under
+test imports its sibling `livespec_shell_shape` the way a SCRIPT does, with a
+bare module name, and `spec_from_file_location` puts nothing on `sys.path`. So
+the hooks directory goes on `sys.path` before the load, exactly as
+`test_livespec_shell_shape.py`, `test_livespec_sandbox_path_guard.py` and the
+order-guard tests do. Without it the sibling import resolves ONLY when some
+earlier test in the same interpreter happened to insert that directory, which
+makes the outcome depend on test order — measured on 2026-10-18 as a CI-only
+`ModuleNotFoundError` on one xdist worker, invisible to a whole-suite run.
 """
 
 from __future__ import annotations
@@ -35,6 +45,8 @@ _PREFIXES = (".claude-plugin/scripts/livespec_orchestrator_beads_fabro/", ".clau
 def _load(*, path: Path, name: str) -> ModuleType:
     """Load a hook module by file location, asserting it exists first."""
     assert path.is_file(), f"module not implemented yet: {path}"
+    if str(_HOOKS_DIR) not in sys.path:
+        sys.path.insert(0, str(_HOOKS_DIR))
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None
     assert spec.loader is not None
