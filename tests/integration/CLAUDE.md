@@ -763,6 +763,40 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   correctly and publishes a graph `fabro validate` rejects outright — the
   `all_conditional_edges` defect that took the whole factory down twice.
 
+- `test_needs_human_stage_cause_and_open_red_gate.py` — binds work-item
+  bd-ib-rv7g4z against the same Scenario 103, one layer on from the module
+  above: the terminal reported an OPEN RED where the real cause was a
+  `pr_refresh` failure, and the Red it reported was not open. Both halves are
+  measured on run 01M51D4RYHCB. The shipped `pr_refresh`, `refresh_repair` and
+  `needs_human` bytes are taken through the canonical parser and EXECUTED by
+  `sh` in throwaway clones with real bare origins, because every arm under test
+  is shell and a substring assertion cannot tell a precedence arm that RUNS
+  from one sitting behind an earlier `elif`. The carry is asserted END TO END
+  across all three nodes in one clone, since the classifier ALREADY claimed to
+  route "with that stage own cause" and the terminal's precedence is satisfied
+  by a record no stage ever writes — only the composition can show the carry.
+  The publication is real: the branch is pushed to origin and then DELETED, so
+  the stage meets the genuine origin-unobservable failure a merged-and-deleted
+  pull request produces rather than a stand-in for one. FOUR CONTROLS CARRY THE
+  MODULE, and each one asserts the open-Red clause is PRESENT, because the
+  defect is a reason that fires too often and the cheapest wrong fix is one
+  that never fires at all. The path discrimination is the subtle half: a
+  genuine open Red stages the TEST ALONE, so its head commit touches `tests/`
+  and nothing else, while the measured false positive carries non-`.py`
+  IMPLEMENTATION beside its test — so the exempt case is keyed on
+  `red_green_replay`'s own `_stages_non_python_implementation` premise rather
+  than on "changes a product `.py`", which reads naturally and would retire the
+  clause for the one shape it was built for. The control for that case adds a
+  product `.py` to the SAME three paths, which is a genuinely half-authored
+  commit and must still report. The POSITIVE case for that test-alone shape is
+  deliberately NOT duplicated here: it is
+  `test_open_red_needs_human_reason.py::test_the_terminal_reason_names_the_open_red_commit_at_the_branch_head`,
+  whose head commit changes exactly one `tests/*.py`, and it is the guard that
+  makes the narrowing honest rather than a quiet retirement. Measured by
+  mutation on 2026-10-18: replacing this module's any-`.py` reading with a
+  product-`.py` one reds that case and two siblings in the same module, so a
+  future narrowing cannot pass while only this module's cases are consulted.
+
 - `test_needs_human_preservation_ref_identity.py` — binds work-item
   bd-ib-zddbkq against Scenario 103's requirement that a needs-human outcome
   preserve the tree on a RUN-SCOPED ref, which holds only while the name the
@@ -844,7 +878,11 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   satisfied identically by the one outcome the clause forbids — a confident
   claim that the factory dropped the run, earned from a read that saw nothing.
   Every case asserts a poll-count FLOOR and the shape of the tail rather than an
-  exact count, because a poll can still land while the launch thread unwinds.
+  exact count, because the floor is what each clause is about. That used to be a
+  concession to a race as well — a poll could still land while the launch thread
+  unwound — and it is not any more: the fixture releases the run through
+  `end_run_and_await_launcher_return`, which waits on the LAUNCHER's own thread
+  rather than on the fake runner's too-early signal (bd-ib-spc6xr).
 
 - `test_workflow_refresh_repair_scenario176.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 176 and the two `contracts.md`
