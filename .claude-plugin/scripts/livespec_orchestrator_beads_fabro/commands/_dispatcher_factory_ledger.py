@@ -36,6 +36,7 @@ __all__: list[str] = [
     "args_with_dispatch_factory_target",
     "dispatch_factory_targets",
     "resolve_dispatch_factory_target",
+    "unrecorded_dispatch_factory_target",
 ]
 
 _ENV_FABRO_FACTORY = "LIVESPEC_FABRO_FACTORY"
@@ -77,11 +78,51 @@ def dispatch_factory_targets(
     explicit = _explicit_factory(args=args)
     targets: dict[str, FactoryTarget] = {}
     for work_item_id in work_item_ids:
-        recorded = _recorded_pin(config=config, work_item_id=work_item_id)
-        factory = explicit or _usable_recorded_factory(repo=repo, recorded=recorded)
-        target = resolve_fabro_factory(cwd=repo, factory=factory)
+        target = _unrecorded_target(
+            repo=repo, config=config, work_item_id=work_item_id, explicit=explicit
+        )
         _ = targets.setdefault(target.name, target)
     return tuple(targets.values())
+
+
+def unrecorded_dispatch_factory_target(
+    *,
+    repo: Path,
+    work_item_id: str,
+    explicit: str | None = None,
+) -> FactoryTarget:
+    """ONE item's factory target under the dispatch precedence, UNRECORDED.
+
+    The single-item form of `dispatch_factory_targets`, for a caller that holds
+    no `argparse.Namespace` to read an explicit flag out of — admission, which
+    stamps the pending claim before any factory has been recorded. `explicit`
+    is therefore a NAME rather than a namespace, defaulting to none, and the
+    environment override is still honoured because `resolve_fabro_factory`
+    reads it itself.
+
+    Both forms route through `_unrecorded_target`, so the precedence exists
+    once: a second spelling of "explicit, else pin, else default" is how two
+    callers come to disagree about which factory an item dispatches to.
+    """
+    return _unrecorded_target(
+        repo=repo,
+        config=_pin_store(repo=repo),
+        work_item_id=work_item_id,
+        explicit=explicit,
+    )
+
+
+def _unrecorded_target(
+    *,
+    repo: Path,
+    config: StoreConfig | None,
+    work_item_id: str,
+    explicit: str | None,
+) -> FactoryTarget:
+    """The precedence itself: explicit name, else the item's usable pin, else default."""
+    recorded = _recorded_pin(config=config, work_item_id=work_item_id)
+    factory = explicit or _usable_recorded_factory(repo=repo, recorded=recorded)
+    return resolve_fabro_factory(cwd=repo, factory=factory)
 
 
 def _pin_store(*, repo: Path) -> StoreConfig | None:

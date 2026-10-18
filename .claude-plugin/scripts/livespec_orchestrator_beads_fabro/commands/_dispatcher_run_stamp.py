@@ -39,6 +39,7 @@ from livespec_orchestrator_beads_fabro._store_dispatch_factory import (
     dispatch_run_ids_for,
     record_dispatch_run,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_stamp import stamp_run_claim
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
     read_journal_records,
@@ -102,6 +103,22 @@ def stamp_dispatch_run(
             "stamped": failure_detail is None,
             "stamp_failure_detail": failure_detail,
         }
+    )
+    # The CLAIM stamp is a separate key with a separate consumer, written after
+    # this record rather than folded into it. This one answers "which run is
+    # this item's, and on which factory"; the claim answers "whose dispatch
+    # holds this `active` row, and on which HOST is that dispatcher's liveness
+    # observable". Only the host named on the claim may recover it, so an
+    # unstamped host leaves every claim `owner-elsewhere` and recoverable by
+    # nobody. It journals its OWN stage because the two ledger writes fail
+    # independently and one `stamped` flag cannot report two outcomes.
+    stamp_run_claim(
+        repo=plan.repo,
+        work_item_id=plan.work_item_id,
+        run_id=run_id,
+        factory_name=plan.fabro_factory_name,
+        factory_server=plan.fabro_factory_server,
+        journal=journal,
     )
     return RunAttribution(metadata_run_ids={run_id: plan.work_item_id})
 

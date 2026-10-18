@@ -4326,6 +4326,13 @@ def test_dispatch_green_closes_item_and_journals(
         # item. It refuses nothing here: the hermetic reading reports an
         # untouched window, so the dispatch runs to `green` with it present.
         "acp-session-headroom",
+        # The PENDING claim stamp, written immediately before the `ready ->
+        # active` transition `ledger-admit` reports — which is the whole of its
+        # ordering guarantee (bd-ib-m0t0). Its position here is the assertion
+        # worth having: stamped after the transition, the row would be `active`
+        # under this dispatch while still naming the PREVIOUS dispatch's run,
+        # which is the window a reconciler releases a live claim in.
+        "dispatch-claim-stamp-pending",
         "ledger-admit",
         # The recovery route this dispatch took, written straight after the
         # claim -- at the LAUNCH rather than at the measurement, because a route

@@ -120,7 +120,12 @@ def test_stamp_writes_both_dispatch_keys_and_journals_the_write(tmp_path: Path) 
         "name": "hp",
         "server": "https://hp-xubuntu.perch-rudd.ts.net:32276",
     }
-    assert journal.records == [
+    # Scoped to this stage rather than asserting the whole journal: the same
+    # call also writes the CLAIM stamp's own record, which
+    # `test_dispatcher_claim_stamp_dispatch.py` owns.
+    assert [
+        record for record in journal.records if record["stage"] == module.STAMP_JOURNAL_STAGE
+    ] == [
         {
             "work_item_id": "bd-ib-owner",
             "stage": module.STAMP_JOURNAL_STAGE,
@@ -262,7 +267,9 @@ def test_stamped_attribution_stamps_once_and_then_passes_through(tmp_path: Path)
     )
 
     assert second is first
-    assert [record["stage"] for record in journal.records] == [module.STAMP_JOURNAL_STAGE]
+    # ONCE, which is the claim here — counted per stage, because one stamp call
+    # writes both the run-stamp and the claim-stamp record.
+    assert [record["stage"] for record in journal.records].count(module.STAMP_JOURNAL_STAGE) == 1
 
 
 def test_repo_attribution_reads_the_ledger_stamp_and_the_journal(tmp_path: Path) -> None:
