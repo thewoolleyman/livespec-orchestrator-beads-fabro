@@ -27,6 +27,13 @@ carries one at the start of a line, so the markers themselves are the detector.
 
 Exits 0 whenever it stands a guard down, and otherwise exits with the wrapped
 command's own status, so a guard that refuses still refuses.
+
+THE TWO FAIL DIRECTIONS ARE ASYMMETRIC, as they are in the guards themselves.
+A manifest this module cannot READ fails toward the GUARD: it is launched and
+decides as usual, because standing a guard down on every unrelated filesystem
+fault would trade a loud wedge for a silent loss of enforcement. The hook
+BOUNDARY fails open, because trouble inside this module must never reach
+Claude Code as the one status it reads as a deny.
 """
 
 from __future__ import annotations
@@ -45,13 +52,34 @@ _CONFLICT_MARKER_PREFIXES = ("<<<<<<<", ">>>>>>>")
 
 
 def main() -> int:
-    """Run the wrapped guard command unless the project manifest is conflicted."""
-    manifest = Path(os.environ[_PROJECT_DIR_ENV_VAR]) / _MANIFEST_NAME
-    wrapped = sys.argv[1:]
+    """Read the wrapped guard command off argv and run it, or stand it down."""
+    try:
+        return _launch(wrapped=sys.argv[1:], environ=dict(os.environ))
+    # The BOUNDARY is fail-open: an exit status 2 out of this module would be
+    # read as a deny, which is the very failure it exists to remove.
+    except Exception:  # noqa: BLE001 — sole fail-open hook boundary: silent pass-through, exit 0
+        return 0
+
+
+def _launch(*, wrapped: list[str], environ: dict[str, str]) -> int:
+    """Delegate to the wrapped guard unless the project manifest is conflicted."""
+    manifest = _manifest_path(environ=environ)
     if _carries_conflict_markers(path=manifest):
         _ = sys.stderr.write(_skip_notice(manifest=manifest, wrapped=wrapped) + "\n")
         return 0
     return subprocess.run(args=wrapped, check=False).returncode
+
+
+def _manifest_path(*, environ: dict[str, str]) -> Path:
+    """Resolve the governed repository's manifest.
+
+    Claude Code exports the project directory to every hook; the working
+    directory is the fallback rather than a refusal, because a launcher that
+    cannot locate the manifest must still let the guard decide.
+    """
+    declared = environ.get(_PROJECT_DIR_ENV_VAR, "").strip()
+    root = Path(declared) if declared else Path.cwd()
+    return root / _MANIFEST_NAME
 
 
 def _skip_notice(*, manifest: Path, wrapped: list[str]) -> str:
@@ -70,8 +98,15 @@ def _skip_notice(*, manifest: Path, wrapped: list[str]) -> str:
 
 
 def _carries_conflict_markers(*, path: Path) -> bool:
-    """True iff the manifest holds an unresolved merge-conflict marker."""
-    text = path.read_text(encoding="utf-8", errors="replace")
+    """True iff the manifest holds an unresolved merge-conflict marker.
+
+    A manifest that cannot be read is NOT reported as conflicted: that arm
+    fails toward the guard, which is launched and decides as it always did.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
     return any(line.startswith(_CONFLICT_MARKER_PREFIXES) for line in text.splitlines())
 
 

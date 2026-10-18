@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "mise exec -- uv run --no-sync python \"$CLAUDE_PROJECT_DIR/.claude/hooks/livespec_tdd_order_guard.py\"",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/livespec_uv_hook_launcher.py\" mise exec -- uv run --no-sync python \"$CLAUDE_PROJECT_DIR/.claude/hooks/livespec_tdd_order_guard.py\"",
             "timeout": 15
           }
         ]
@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "mise exec -- uv run --no-sync python -m livespec_dev_tooling.agent_hooks.pretooluse_background_guard",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/livespec_uv_hook_launcher.py\" mise exec -- uv run --no-sync python -m livespec_dev_tooling.agent_hooks.pretooluse_background_guard",
             "timeout": 15
           },
           {

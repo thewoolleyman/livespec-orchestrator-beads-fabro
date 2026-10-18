@@ -19,6 +19,27 @@ Rules:
   package still belongs in the package.
 - Do not print secrets.
 
+## The uv hook launcher
+
+`livespec_uv_hook_launcher.py` is not a guard. It is the front door the two
+`uv run`-started PreToolUse hook commands in `.claude/settings.json` are
+invoked through, and it owns the one decision those guards cannot make for
+themselves. `uv run` exits 2 before the interpreter starts when `pyproject.toml`
+cannot be parsed, and Claude Code reads a PreToolUse exit status 2 as a deny —
+so a manifest left with merge-conflict markers refuses every guarded tool call,
+including the ones that would repair it, and no guard's own fail-open boundary
+is ever reached. The launcher detects that state ahead of `uv`, allows the call,
+and writes one line to stderr naming the manifest and the guard it skipped.
+`SPECIFICATION/scenarios.md` "Scenario 194" is the ratified behaviour.
+
+It runs under bare `python3` and imports nothing outside the standard library,
+because the project virtualenv is exactly what is unreachable in the state it
+exists for. Its two fail directions are opposite, as the guards' are: a manifest
+it cannot READ fails toward the guard, which is launched and decides as usual,
+since standing a guard down on an unrelated filesystem fault would trade a loud
+wedge for a silent loss of enforcement; the hook BOUNDARY fails open, because
+trouble inside the launcher must never reach Claude Code as a deny.
+
 ## The test-first order guard
 
 Four modules, split by cohesion rather than by size, with only public names

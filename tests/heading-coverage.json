@@ -1897,9 +1897,7 @@
     "heading": "## Scenario 194 \u2014 A conflicted pyproject.toml does not make the repository's agent hooks refuse every tool call",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by revision v155 accepting proposal agent-hooks-unparseable-manifest (plan sandbox-commit-gate-ceiling, epic bd-ib-qy5wol). The uv-launched PreToolUse hooks' handling of an unparseable pyproject.toml is not implemented yet; an integration-tier test is owed for the two sub-scenarios, and work-item bd-ib-cap6t7 implements them and owns that binding.",
-    "work_item": "bd-ib-cap6t7"
+    "test": "tests.integration.test_agent_hook_unparseable_manifest_scenario194"
   },
   {
     "heading": "## Scenario 195 \u2014 A verified record is graded per assertion before the run advances, and a record-wide verdict line re-enters proof_verify",
