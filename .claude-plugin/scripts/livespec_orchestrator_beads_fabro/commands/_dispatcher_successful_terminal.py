@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_success_critical import (
@@ -23,6 +22,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_checkpoints import (
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     fabro_inspect_record,
 )
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
@@ -107,7 +107,10 @@ def successful_store_loss_evidence(
     )
     if not conflict_qualifies or failure is None:
         return None
-    graph, route = _configured_success_route(plan=plan)
+    configured = _configured_success_route(plan=plan)
+    if configured is None:
+        return None
+    graph, route = configured
     if not _checkpoint_completed_route(checkpoint=checkpoint, graph=graph, route=route):
         return None
     current_node = cast("str", checkpoint.get("current_node"))
@@ -124,18 +127,47 @@ def successful_store_loss_evidence(
     )
 
 
-def _configured_success_route(*, plan: DispatchPlan) -> tuple[WorkflowGraph, SuccessCriticalNodes]:
-    """Read the green terminal from the exact graph configured for this run."""
-    manifest = plan.workflow_toml.read_text(encoding="utf-8")
-    graph_path = cast(
-        "Path",
-        workflow_graph_path(
-            committed_text=manifest,
-            workflow_dir=plan.workflow_toml.parent.resolve(),
-        ),
+def _configured_success_route(
+    *, plan: DispatchPlan
+) -> tuple[WorkflowGraph, SuccessCriticalNodes] | None:
+    """Read the green terminal from the exact graph configured for this run.
+
+    EVERY arm that cannot MEASURE that terminal yields no evidence rather than
+    raising, which is the same rule `_node_succeeded` states one level down and
+    for the same reason: a route nobody could read is unavailable evidence, and
+    letting it escape turned an unreadable workflow into a traceback out of the
+    middle of `run_dispatch` -- abandoning the dispatch and leaving the ledger
+    claim dangling instead of keeping the ordinary non-green outcome. Four
+    conditions reach it, each measured against this tree: a run config that
+    cannot be read, one declaring no `[workflow] graph`, a declared graph file
+    that is not there, and a graph whose shape `derive_success_critical`
+    refuses. The two refusals are DOCUMENTED return arms -- `Path | None` and
+    `SuccessCriticalNodes | str` -- so they are branched on here as every peer
+    reader in this package already branches on them, never cast away.
+    """
+    manifest = attempt(
+        action=lambda: plan.workflow_toml.read_text(encoding="utf-8"),
+        exceptions=(OSError, UnicodeDecodeError),
     )
-    graph = parse_workflow_graph(text=graph_path.read_text(encoding="utf-8"))
-    return graph, cast("SuccessCriticalNodes", derive_success_critical(graph=graph))
+    if isinstance(manifest, AttemptFailure):
+        return None
+    graph_path = workflow_graph_path(
+        committed_text=manifest,
+        workflow_dir=plan.workflow_toml.parent.resolve(),
+    )
+    if graph_path is None:
+        return None
+    graph_text = attempt(
+        action=lambda: graph_path.read_text(encoding="utf-8"),
+        exceptions=(OSError, UnicodeDecodeError),
+    )
+    if isinstance(graph_text, AttemptFailure):
+        return None
+    graph = parse_workflow_graph(text=graph_text)
+    route = derive_success_critical(graph=graph)
+    if isinstance(route, str):
+        return None
+    return graph, route
 
 
 def _checkpoint_completed_route(
