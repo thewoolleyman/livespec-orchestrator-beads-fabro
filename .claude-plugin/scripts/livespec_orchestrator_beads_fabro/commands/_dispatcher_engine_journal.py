@@ -52,6 +52,14 @@ class StageJournalOptions:
     # EMPTY TUPLE means it scrubs and removed nothing, which is a reading its
     # row must carry rather than omit. A single tuple cannot say both.
     removed_env_vars: tuple[str, ...] | None = None
+    # Extra row fields one stage's record carries beside the shared ones, as a
+    # plain mapping the CALLER computed. A mapping rather than a callable over
+    # the result, because a stage whose row reports on its own command's output
+    # already has that output in hand by the time it journals -- and a callable
+    # on a shared options type would be a seam for one call site that every
+    # other one has to read past. `None` means this stage owes no account
+    # beyond the shared fields.
+    extra_fields: Mapping[str, object] | None = None
 
 
 # The row field naming what a stage's child environment LOST against the
@@ -192,8 +200,16 @@ def journal_stage(
     "removed nothing" about stages that scrub by construction. Its EMPTY arm is
     written rather than omitted, so a reader can tell a scrubbing build that
     found nothing to remove from a build that does not scrub.
+
+    `journal_options.extra_fields` are the row fields one stage owes beyond the
+    shared set, already computed. They are merged UNDERNEATH the shared fields
+    rather than over them, which is the whole guarantee that an extra account
+    ADDS to the record: a stage cannot redefine `stage`, `exit_code` or
+    `detail` by naming one of them, so a reader of any row can still read those
+    four the same way whatever else the row carries.
     """
     record: dict[str, object] = {
+        **(journal_options.extra_fields or {}),
         "work_item_id": plan.work_item_id,
         "stage": stage,
         "exit_code": result.exit_code,

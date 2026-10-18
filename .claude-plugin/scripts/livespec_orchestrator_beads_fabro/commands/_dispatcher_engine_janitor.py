@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import (
     StageJournalOptions,
+    journal_stage,
     run_stage,
     tail,
 )
@@ -38,6 +39,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_check_venue 
     CLUSTER_GATE_ARGV,
     cluster_janitor_red,
     host_janitor_red,
+    janitor_check_row_fields,
     janitor_runs_on_the_cluster,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_degraded import (
@@ -161,6 +163,15 @@ def _check_suite_red(
     only what this one stage runs: no earlier seam needs it, and nothing is
     journaled about the janitor before the flow reaches this point.
 
+    THE ROW IS WRITTEN HERE RATHER THAN THROUGH `run_stage`, which is the one
+    stage in this flow that composes the run and the journal itself. Its row
+    carries an account OF THE VENUE THAT RAN, and part of that account is read
+    off the command's own output -- which does not exist until the command has
+    returned. `run_stage` journals from inside, so it cannot be handed fields
+    derived from the result it is still producing; putting a callable on the
+    shared options for this one call site would make every other reader of that
+    type read past a seam nothing else uses.
+
     THE ROUTE SCRUB IS THE SAME IN BOTH VENUES, and the addition is not. The
     removals carry this module's own rule -- the verdict is about the merge,
     never about how the dispatch was routed -- which a delegated gate owes
@@ -178,12 +189,14 @@ def _check_suite_red(
         if on_the_cluster
         else janitor_env_delta(core_plugin_root=str(plan.janitor_core_checkout / ".claude-plugin"))
     )
-    result = run_stage(
-        runner=runner,
+    result = runner.run(
+        argv=argv, cwd=plan.janitor_checkout, timeout_seconds=_JANITOR_TIMEOUT_SECONDS, env=env
+    )
+    journal_stage(
         journal=journal,
         plan=plan,
         stage="janitor-post-merge",
-        command=(argv, plan.janitor_checkout, _JANITOR_TIMEOUT_SECONDS, env),
+        result=result,
         # The check suite is the command whose red the retention clause exists
         # for: its excerpt names the suite, and the failing target it reports
         # is on the stream the excerpt did not keep. The removal list rides the
@@ -192,6 +205,7 @@ def _check_suite_red(
         journal_options=StageJournalOptions(
             retention=plan.janitor_retention,
             removed_env_vars=janitor_removed_env_vars(),
+            extra_fields=janitor_check_row_fields(on_the_cluster=on_the_cluster),
         ),
     )
     if on_the_cluster:
