@@ -211,6 +211,74 @@ Every commit message body MUST end with the trailer line:
 
     Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 
+## Every commit goes through the sandbox commit runner
+
+This repository's commit gate runs INSIDE your `git commit`. On a loaded
+factory host that gate can run longer than one of your tool calls, and
+when the limit ends the call you are left with nothing: no exit status,
+no hook output, no verdict. That kill is indistinguishable from a hook
+REFUSAL, so a commit that was fine reads exactly like one that was
+refused, and the run ends with verified work unpublished. Measured on
+this factory: two `git commit --amend --no-edit` calls ended at about
+1202 seconds with the gate still running, and the same amend took 41
+minutes when a human finished it by hand on that host.
+
+So EVERY git commit you make — the Red commit, the Green amend, and any
+later commit — goes through the sandbox commit runner at
+
+    "${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-sandbox-commit"
+
+It runs the argv you give it UNCHANGED, with this repository's hooks
+firing exactly as they fire for a foreground commit, in a session that
+outlives the tool call that started it. Three steps:
+
+1. START it, in the FOREGROUND. It prints a commit run id and returns in
+   well under a second, before the hook has finished:
+
+       runner="${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-sandbox-commit"
+       run_id=$("$runner" start -- <the git commit argv you would have run>)
+
+2. WAIT on it, with a bound in whole seconds, in as many later tool calls
+   as it takes. Each wait blocks for AT MOST that bound, reports the
+   state, and leaves the commit run untouched:
+
+       "$runner" wait "$run_id" 600
+
+3. READ the `state:` line of that report. It is the verdict:
+
+   - `running` — the commit has not finished. Wait again.
+   - `passed` — the commit happened. The report carries `exit_status: 0`
+     and `head:`, the resulting commit id.
+   - `failed` — a hook refused it. The report carries the commit
+     process's own exit status and the final lines of its output, and
+     HEAD is unchanged. A failed commit run IS NOT A COMMIT: fix the
+     cause its output names, then start a new commit run.
+   - `no-verdict` — the commit was ended by a signal, or its process is
+     gone without having recorded an exit status. This IS NOT A COMMIT
+     either, and it is NOT a refusal: nothing is known about the gate.
+     Start a new commit run.
+
+Also:
+
+- `"$runner" status "$run_id"` reports the same thing without blocking.
+- `"$runner" stop "$run_id"` ends a commit run that must not finish. A
+  stopped run reports `no-verdict`, so it can never read as a commit.
+- Only ONE commit run may be in flight in this sandbox. A start while
+  another is `running` is refused and names the running commit run.
+- NEVER pass `--no-verify` and never set a variable that skips or
+  relaxes a check. The runner changes nothing about which hooks run or
+  how severely they fail; it only stops the verdict from depending on
+  one tool call.
+- If the runner is not at that path this sandbox was not provisioned
+  with it. Do NOT commit around it — report that absent path through the
+  needs-human protocol below.
+
+THE COMMIT RUN AND ITS BOUNDED WAITS ARE THE ONE EXCEPTION to the rule
+below against backgrounding a tool call, and the turn-end obligation is
+UNCHANGED: before your final message every commit run you started must
+be terminal — `passed`, `failed` or `no-verdict` — or stopped. Confirm
+that with a last `wait` or `status` on each commit run id you hold.
+
 ## Coverage before Green — run the per-file coverage check FIRST
 
 Before you attempt ANY Green commit or amend, run this repository's
