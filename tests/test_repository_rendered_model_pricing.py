@@ -164,6 +164,7 @@ def _repository_identities() -> frozenset[str]:
     return _table_identities(table=dispatcher_block(cwd=_REPO_ROOT).get(_ACP_NODES_KEY))
 
 
+@pytest.mark.committed_routing_lint
 def test_every_rendered_model_identity_resolves_a_complete_four_component_price() -> None:
     """No identity this repository renders is unpriceable.
 
@@ -183,6 +184,7 @@ def test_every_rendered_model_identity_resolves_a_complete_four_component_price(
     assert sorted(name for name, price in priced.items() if price is None) == []
 
 
+@pytest.mark.committed_routing_lint
 def test_every_rendered_identity_prices_all_four_token_categories() -> None:
     """Each resolved price carries four finite, non-negative per-million rates.
 
