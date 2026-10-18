@@ -60,6 +60,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_publish_branch_reclaim as reclaim,
 )
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_run_commands as run_commands
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_run_launch as run_launch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import Admission
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
@@ -412,19 +413,19 @@ def _stub_single_dispatch(
         fixture.events.append(_ADMIT)
         return admission
 
-    monkeypatch.setattr(run_commands, "admit_and_select", _admit)
+    monkeypatch.setattr(run_launch, "admit_and_select", _admit)
     monkeypatch.setattr(
-        run_commands, "args_with_dispatch_factory_target", lambda **kwargs: kwargs["args"]
+        run_launch, "args_with_dispatch_factory_target", lambda **kwargs: kwargs["args"]
     )
     monkeypatch.setattr(
-        run_commands, "args_with_dispatch_workflow_name", lambda **kwargs: kwargs["args"]
+        run_launch, "args_with_dispatch_workflow_name", lambda **kwargs: kwargs["args"]
     )
 
     def _launch(**kwargs: Any) -> DispatchOutcome:
         fixture.events.append(_LAUNCH)
         return _green_outcome(item_id=str(kwargs["item"].id))
 
-    monkeypatch.setattr(run_commands, "dispatch_one", _launch)
+    monkeypatch.setattr(run_launch, "dispatch_one", _launch)
     monkeypatch.setattr(run_commands, "dispatch_tail_exit", lambda **_kwargs: 0)
 
 

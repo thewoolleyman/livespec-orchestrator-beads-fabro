@@ -52,7 +52,7 @@ from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop as loop_
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop_record as record_module
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop_wave as wave_module
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_resume_command as resume_module
-from livespec_orchestrator_beads_fabro.commands import _dispatcher_run_commands as run_module
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_run_launch as run_module
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import PreflightInputs
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import resolve_acp_catalogs
 from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import AcpHoldLedger
@@ -81,8 +81,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_command impor
     _admit_and_dispatch_resume,  # pyright: ignore[reportPrivateUsage]
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
-from livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands import (
-    _admit_and_dispatch_target,  # pyright: ignore[reportPrivateUsage]
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_launch import (
+    admit_and_dispatch_target,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -471,7 +471,7 @@ def test_a_targeted_dispatch_launches_with_the_admission_verdict(
     monkeypatch.setattr(run_module, "args_with_dispatch_workflow_name", _same_args)
     monkeypatch.setattr(run_module, "post_admission_publish_branch_reclaim", _unused)
 
-    _ = _admit_and_dispatch_target(
+    _ = admit_and_dispatch_target(
         args=argparse.Namespace(),
         repo=tmp_path,
         items=[item],

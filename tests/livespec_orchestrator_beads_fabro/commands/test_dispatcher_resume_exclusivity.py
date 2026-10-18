@@ -44,7 +44,7 @@ from livespec_orchestrator_beads_fabro.commands import _dispatcher_pre_dispatch_
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_resume_command as resume_command,
 )
-from livespec_orchestrator_beads_fabro.commands import _dispatcher_run_commands as run_commands
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_run_launch as run_launch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
     pre_dispatch_wall_exit,
 )
@@ -119,5 +119,8 @@ def test_only_the_two_launch_paths_can_reach_the_reclaim() -> None:
     """
     assert hasattr(_dispatcher_pre_dispatch_wall, _RECLAIM)
     assert hasattr(loop_wave, _RECLAIM)
-    assert hasattr(run_commands, _RECLAIM)
+    # The targeted dispatch's reclaim moved with its admit-and-launch step into
+    # `_dispatcher_run_launch`; the entry point still belongs to a LAUNCH path,
+    # which is the whole of what this assertion is about.
+    assert hasattr(run_launch, _RECLAIM)
     assert not hasattr(resume_command, _RECLAIM)
