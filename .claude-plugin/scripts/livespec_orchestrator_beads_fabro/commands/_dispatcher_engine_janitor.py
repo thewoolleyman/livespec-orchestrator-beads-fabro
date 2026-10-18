@@ -39,6 +39,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_check_venue 
     CLUSTER_GATE_ARGV,
     cluster_janitor_red,
     gate_tree_hash,
+    gate_verdict,
     host_janitor_red,
     janitor_check_row_fields,
     janitor_check_started_at,
@@ -205,6 +206,10 @@ def _check_suite_red(
     result = runner.run(
         argv=argv, cwd=plan.janitor_checkout, timeout_seconds=_JANITOR_TIMEOUT_SECONDS, env=env
     )
+    # The verdict is a reading of the gate client's stderr, not of either
+    # consumer below. Read it once so the row and the post-merge outcome carry
+    # the same observed line, including a deliberate absence.
+    verdict = gate_verdict(result=result) if on_the_cluster else None
     journal_stage(
         journal=journal,
         plan=plan,
@@ -220,14 +225,14 @@ def _check_suite_red(
             removed_env_vars=janitor_removed_env_vars(),
             extra_fields=janitor_check_row_fields(
                 on_the_cluster=on_the_cluster,
-                result=result,
                 tree_hash=tree_hash,
                 started_at=started_at,
+                verdict=verdict,
             ),
         ),
     )
     if on_the_cluster:
-        return cluster_janitor_red(result=result, checkout=plan.janitor_checkout)
+        return cluster_janitor_red(result=result, checkout=plan.janitor_checkout, verdict=verdict)
     return host_janitor_red(result=result, checkout=plan.janitor_checkout)
 
 
