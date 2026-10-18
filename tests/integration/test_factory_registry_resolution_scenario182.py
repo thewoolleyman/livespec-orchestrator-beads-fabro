@@ -553,3 +553,51 @@ def test_an_entry_carrying_a_server_and_no_registry_key_keeps_its_meaning(
 
     assert target.server == _OTHER_SERVER
     assert grade.factory_registry_refusal(factory=target) is None
+
+
+@pytest.mark.parametrize("committed_key", ["server", "docker_host"])
+def test_a_registry_backed_entry_carrying_a_committed_address_is_refused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    committed_key: str,
+) -> None:
+    """`"registry": true` beside a committed address refuses, naming the factory.
+
+    The registry here maps `petri` to a VALID address, which is what makes this
+    a case about the CONFLICT rather than about an unresolvable registry: an
+    implementation that simply preferred one source over the other would resolve
+    and dispatch, and whichever source it preferred would be right half the time
+    and silently wrong the other half — the committed value naming a machine the
+    provisioning has already moved off, or the registry value overruling a
+    deliberate committed pin, with nothing in the record to say which happened.
+
+    The refusal names the FACTORY and the conflicting KEY, because the remedy is
+    an edit to one line of one entry and the operator has to be told which line.
+    The registry path is deliberately NOT asserted here: nothing was read from
+    it, so a message quoting it would be reporting a file that had no part in
+    the decision.
+    """
+    _write_config(
+        cwd=tmp_path,
+        factories={_FACTORY: {"registry": True, committed_key: _OTHER_SERVER}},
+        default_factory=_FACTORY,
+    )
+    registry = tmp_path / "fabro-factories.json"
+    _write_registry(path=registry, payload={_FACTORY: {"server": _REGISTRY_SERVER}})
+    _point_at_registry(monkeypatch=monkeypatch, path=registry)
+    _seed_item()
+    _ = _grade_module()
+    before = _item_state()
+
+    result = dispatch_preamble(
+        args=argparse.Namespace(fabro_bin=None, janitor=None, journal=None),
+        repo=tmp_path,
+    )
+
+    refusal = capsys.readouterr().err
+    assert _FACTORY in refusal
+    assert f"dispatcher.factories.{_FACTORY}.{committed_key}" in refusal
+    assert result == (None, _EXIT_PRECONDITION_ERROR)
+    assert _item_state() == before
