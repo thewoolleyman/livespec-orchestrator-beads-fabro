@@ -8,7 +8,7 @@ admission-time credential probe creates no observed record. For a fallback-
 enabled chain, a provider-limit/rate-limit probe refusal is an ephemeral
 candidate-local skip for that one admission evaluation."
 
-FOUR FILTERS, AND THE ORDER BETWEEN THEM IS LOAD-BEARING -- IT *IS* THE
+FIVE FILTERS, AND THE ORDER BETWEEN THEM IS LOAD-BEARING -- IT *IS* THE
 PRECEDENCE RULE. "Typed candidate evidence takes precedence over legacy
 cause-text attribution when a chain executed", and consulting typed records
 FIRST is what implements that: a candidate carrying typed evidence is skipped
@@ -17,6 +17,24 @@ re-attributed to a vendor string. Expressing the precedence as ordering rather
 than as a second guard also keeps it honest in the one direction that matters
 -- a typed record can only exist because the chain executed, so there is no
 state in which the guard and the ordering could disagree.
+
+THE UNAVAILABLE-EVIDENCE FILTER IS THIRD, BETWEEN THE RECORDS THAT WERE READ AND
+THE TWO THAT COST A ROUND TRIP, and both boundaries are deliberate. "It MAY
+continue with candidates whose availability evidence is independently complete;
+it MUST NOT treat an unobserved candidate as confirmed unheld." It sits BELOW
+the two durable-record filters because a record that WAS read says more than one
+that could not be -- reporting the unread source over a live hold would discard
+the one fact carrying a bounded expiry and an operator-clearable identity. It
+sits ABOVE the probe and the headroom reading because a candidate whose
+availability is unknown must not spend a provider request to learn something
+else about it; a skip taken here is one neither external filter is asked for.
+
+It is SCOPED TO THE ENTITLEMENTS THE UNREAD SOURCE COULD HAVE HELD, never
+applied to the whole chain, and that scoping is the whole of the clause's "MAY
+continue". A filter that emptied every chain whenever any source was unreadable
+would wedge every dispatch in the fleet the moment one factory became
+unreachable, which is not a conservative reading of the clause but a different
+rule.
 
 The two EXTERNAL filters run last because each costs a round trip and each
 one's answer is thrown away at the end of the evaluation. A candidate already
@@ -70,6 +88,7 @@ from dataclasses import dataclass
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import ResolvedAcpChain
 from livespec_orchestrator_beads_fabro.commands._acp_hold_coverage import (
+    candidate_domain_keys,
     hold_covers_candidate,
     legacy_record_covers_candidate,
 )
@@ -92,18 +111,28 @@ __all__: list[str] = [
     "PROJECTION_SKIP_KIND",
     "PROVIDER_LIMIT_CONDITIONS",
     "TYPED_HOLD_SKIP",
+    "UNAVAILABLE_EVIDENCE_SKIP",
     "NodePreflight",
     "PreflightInputs",
     "SkippedCandidate",
     "filter_node_candidates",
 ]
 
-# The four reasons a candidate leaves the selectable set, as stable machine
+# The five reasons a candidate leaves the selectable set, as stable machine
 # tokens so a verdict's explanation is greppable rather than prose-matched.
 TYPED_HOLD_SKIP = "typed-availability-hold"
 LEGACY_HOLD_SKIP = "legacy-provider-hold"
 PROBE_SKIP = "credential-probe-refusal"
 HEADROOM_SKIP = "session-headroom-shortfall"
+
+# The ONE token that is also a governing condition the contract spells, which
+# is why it is defined here rather than beside the wait that reports it: "it
+# MUST name the outstanding confirmation, unavailable evidence source,
+# admission-time credential-probe skip, or admission session-headroom skip".
+# `_acp_availability_wait` imports it as `UNAVAILABLE_EVIDENCE`, so the skip a
+# filter records and the condition a refusal names cannot drift apart into two
+# spellings of one fact.
+UNAVAILABLE_EVIDENCE_SKIP = "unavailable-availability-evidence"
 
 # WHICH of the two headroom shortfalls decided one `HEADROOM_SKIP`. They are a
 # second field rather than a second skip reason because the clause gives a
@@ -222,6 +251,12 @@ class PreflightInputs:
     builtin_pairs: frozenset[tuple[str, str]] = frozenset()
     probe: Callable[[str], str] | None = None
     headroom: SessionHeadroomPolicy | None = None
+    # The domain hold keys an UNREAD evidence source leaves unconfirmed. It is
+    # a key set rather than the unobservable entries themselves because the
+    # question asked of it is a coverage test, and because an entry's shape
+    # belongs to the read that produced it: a filter interpreting one would be
+    # the second reader of a record this module never sees.
+    unconfirmed_keys: frozenset[str] = frozenset()
 
 
 def filter_node_candidates(
@@ -266,7 +301,7 @@ def _skip_for(
     assessed: dict[str, str],
     assessments: list[SessionHeadroomReading],
 ) -> SkippedCandidate | None:
-    """The first filter this candidate fails, or `None` when it survives all four."""
+    """The first filter this candidate fails, or `None` when it survives all five."""
     for hold in inputs.holds:
         if hold_covers_candidate(hold=hold, candidate=candidate):
             return _record_skip(
@@ -279,6 +314,8 @@ def _skip_for(
     legacy = _legacy_provider(candidate=candidate, inputs=inputs)
     if legacy is not None:
         return _record_skip(candidate=candidate, reason=LEGACY_HOLD_SKIP, hold_key=legacy)
+    if _evidence_unconfirmed(candidate=candidate, inputs=inputs):
+        return _ephemeral_skip(candidate=candidate, reason=UNAVAILABLE_EVIDENCE_SKIP)
     probed = _probe_skip(candidate=candidate, probe=inputs.probe, assessed=assessed)
     if probed is not None:
         return probed
@@ -293,6 +330,25 @@ def _legacy_provider(*, candidate: AcpCandidate, inputs: PreflightInputs) -> str
         if legacy_record_covers_candidate(provider=provider, candidate=candidate, builtin=builtin):
             return provider
     return None
+
+
+def _evidence_unconfirmed(*, candidate: AcpCandidate, inputs: PreflightInputs) -> bool:
+    """Whether an unread source leaves this candidate's availability unknown.
+
+    The test is over the candidate's WHOLE domain set -- its `availability_key`
+    plus every override its domain signatures declare -- through the same
+    `candidate_domain_keys` a domain hold is matched by. A test against the
+    availability key alone would report a candidate routing through an
+    unobserved shared pool as confirmed unheld, which is the one thing the
+    clause forbids outright.
+
+    An IDENTITY-LESS candidate belongs to no typed domain, so the set is empty
+    and no unread typed source can be about it. That keeps the conservative
+    legacy posture intact: such an adapter is covered by every live legacy
+    record and by no typed one, and skipping it here would strand the one
+    adapter shape the contract allows to carry no identity.
+    """
+    return bool(candidate_domain_keys(candidate=candidate) & inputs.unconfirmed_keys)
 
 
 def _probe_skip(
