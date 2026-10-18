@@ -915,5 +915,19 @@
     "heading": "## Scenario 196 \u2014 Reconciliation releases or completes a stranded dispatch claim on its owning host, and holds with a named reason every claim it cannot prove stranded",
     "work_item": "bd-ib-m0t0",
     "first_seen": "2026-10-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 197 \u2014 A sandbox agent cannot remove the clone's repository or empty its whole tree, and ordinary in-tree removals still run",
+    "work_item": "bd-ib-quzpge",
+    "first_seen": "2026-10-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 198 \u2014 A sandbox agent cannot signal the sandbox's PID 1 or its own adapter, and signals to its own processes still run",
+    "work_item": "bd-ib-dpkip6",
+    "first_seen": "2026-10-18"
   }
 ]
