@@ -988,19 +988,44 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   is indistinguishable from a dispatch that recorded no identity to read.
 - The HOST-WIDE AVAILABILITY EVIDENCE of `contracts.md`'s "Holds are per
   provider domain and discoverable host-wide from factory-native run records"
-  paragraph (`bd-ib-hyuqv6`, Scenario 127) lives in TWO cohesive modules, split
+  paragraph (`bd-ib-hyuqv6`, Scenario 127) lives in FOUR cohesive modules, split
   record-from-read the way `_acp_hold_records` / `_acp_hold_ledger` are one
   level down, and the dependency direction reads bottom-up:
-  `_acp_factory_hold_records` (PURE: ONE derived attempt — its six identifying
-  fields, its bounded expiry, the typed hold it stands for and the journal line
-  that audits it) → `_acp_factory_hold_evidence` (the read: every factory under
-  `dispatcher.factories`, each one's `fabro ps -a --json` listing, and one
-  `fabro inspect --json` per failed row inside the hold window).
+  `_acp_factory_hold_records` (PURE: ONE derived FAILED attempt — its six
+  identifying fields, its bounded expiry, the typed hold it stands for and the
+  journal line that audits it) and `_acp_factory_success_records` (PURE: ONE
+  derived SUCCEEDED attempt, the retirement counterpart) →
+  `_acp_factory_hold_evidence` (the read: every factory under
+  `dispatcher.factories`, each one's `fabro ps -a --json` listing, and ONE
+  `fabro inspect --json` per row either arm's window reaches) →
+  `_acp_hold_retirement` (PURE: the two non-expiry retirement routes, applied to
+  the UNION of that read with the repository's own journal fold).
   `_dispatcher_acp_preflight.resolve_acp_preflight` is the one consumer; the
   reader is an injected seam defaulting to ABSENT, exactly as `probe` and
   `headroom` beside it, so wait attention and idle-factory compose a verdict
   that reaches no factory.
-  SEVEN PROPERTIES AN EDITOR MUST NOT INVERT. Neither module reads, writes, or
+  FOUR PROPERTIES OF THE RETIREMENT HALF (`bd-ib-bmbmlt`, Scenario 94) an editor
+  must not invert. The two routes are applied at the UNION and nowhere else,
+  because neither producer can reach both halves: the factory read cannot be
+  handed a journal — that absence is what makes observations reconstructible
+  after the journal is removed — so it can neither see an operator's clearance
+  line nor filter itself by one, and the journal fold cannot see a factory, so
+  it can neither derive a later success nor apply one. A confirmation is dated
+  from its run's START rather than its completion, which is the conservative
+  bound: a run that began after an observation cannot contain a node attempt
+  that began before it, while a run already executing when the outage was
+  observed would finish afterwards and clear a hold the contract says it proves
+  nothing about. A derived confirmation claims ONLY the allowance its labels
+  recorded, never a broader domain set, because a peer candidate's declared
+  domain overrides are the declaring repository's configuration. And the
+  confirmation arm no longer short-circuits on a non-failed row, because a run
+  still RUNNING can already carry a succeeded node attempt; what stays scoped to
+  a FAILED row is the occurrence-unreadable surface, since an undatable success
+  retires nothing and so is not a failure to measure anything a decision rests
+  on.
+  SEVEN PROPERTIES AN EDITOR MUST NOT INVERT. No module of the READ group —
+  `_acp_factory_hold_records`, `_acp_factory_success_records` and
+  `_acp_factory_hold_evidence` — reads, writes, or
   can be HANDED a repository-local dispatch journal, which is how "Hold
   observations ... MUST remain reconstructible after any repository-local
   dispatch journal is removed" holds structurally — there is no parameter a
@@ -1017,7 +1042,9 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   excludes `start_time` from its own park measurement. Expiry is computed from
   that occurrence and from no other input, so a re-derivation cannot push a
   hold forward. Every read that could not be TAKEN is surfaced as unobservable
-  and rides the verdict, because "An unreadable or incomplete evidence source
+  and rides the verdict ALONGSIDE the entitlements it leaves unconfirmed, which
+  is what lets the candidate filter act on it rather than merely report it,
+  because "An unreadable or incomplete evidence source
   is unavailable, not an empty hold set" — while a failure the cause chain does
   not classify, and a failing node the run recorded no entitlement for, are NOT
   surfaced: both were measured, and the second is the conservative legacy
@@ -1048,8 +1075,12 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `_dispatcher_session_headroom_gate` (the
   committed floor and horizon, the per-evaluation policy its memo lives in, and
   the journal
-  writer). The filter itself is the FOURTH filter of
-  `_acp_candidate_preflight`; `_dispatcher_admission` is the only caller that
+  writer). The filter itself is the LAST of the five filters of
+  `_acp_candidate_preflight`, below the unavailable-evidence filter the
+  retirement work added (`bd-ib-bmbmlt`) and below the credential probe, which
+  is the ordering the headroom clause requires — "a successful credential-
+  usability probe MUST NOT override a headroom skip";
+  `_dispatcher_admission` is the only caller that
   supplies a policy, and it hands the policy the SAME journal path it resolves
   the verdict against, because `dispatcher.py` accepts a `--journal` override
   and a re-derived path cannot be proven to name the file this pass appends to.

@@ -92,11 +92,22 @@ class AcpSuccessfulAttempt:
 
     `domain_keys` is the succeeding candidate's whole domain set -- its
     `availability_key` plus every override its domain signatures declare
-    -- as `_acp_hold_coverage.candidate_domain_keys` computes it.
+    -- as `_acp_hold_coverage.candidate_domain_keys` computes it. An
+    attempt derived from a PEER repository's factory run carries only the
+    allowance its labels recorded, because that repository's declared
+    overrides are configuration this one does not hold.
+
+    `candidate_key` is OPTIONAL because the factory's run labels record
+    WHAT ran separately from WHOSE allowance it spent, and a sparse row
+    may carry the second without the first. Such an attempt still
+    retires the right DOMAIN record, and retires no CANDIDATE record at
+    all -- a candidate-scoped observation names its own key by
+    construction, so the pair can never match -- which is the
+    conservative direction retirement owes.
     """
 
     availability_key: str
-    candidate_key: str
+    candidate_key: str | None
     domain_keys: frozenset[str]
     started_at: str
 
@@ -118,6 +129,13 @@ class AcpHoldLedger:
     unobservable: tuple[Mapping[str, object], ...]
     observation_ids: frozenset[str]
     unconfirmed_keys: frozenset[str] = frozenset()
+    # Every id a retirement or clearance line NAMES, carried because the fold
+    # above can only apply them to the records this journal also carries. A
+    # factory-derived record mints the SAME `observation_id` a projection of the
+    # same evidence would -- the id digests the evidence plus its scope -- so an
+    # operator's exact clearance is addressing that record too, and the
+    # host-wide union is the only place both are in hand to say so.
+    retired_observation_ids: frozenset[str] = frozenset()
 
 
 def read_acp_hold_ledger(*, journal_path: Path | None, now_iso: str) -> AcpHoldLedger:
@@ -147,7 +165,10 @@ def read_acp_hold_ledger(*, journal_path: Path | None, now_iso: str) -> AcpHoldL
         if key not in retired and not hold_expired(hold=hold, now_iso=now_iso)
     )
     return AcpHoldLedger(
-        holds=live, unobservable=tuple(unobservable), observation_ids=frozenset(seen)
+        holds=live,
+        unobservable=tuple(unobservable),
+        observation_ids=frozenset(seen),
+        retired_observation_ids=frozenset(retired),
     )
 
 
