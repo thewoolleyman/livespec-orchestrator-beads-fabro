@@ -58,6 +58,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_non_fallbac
     non_fallback_refusals,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved import (
+    PreservedWorkAbsent,
     PreservedWorkUnobservable,
     verified_preserved_seed,
 )
@@ -77,6 +78,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
     ROUTE_RESUME,
     ROUTE_SEEDED,
     RecoveryHold,
+    RecoveryLoss,
     RecoveryMeasurement,
     RecoveryResume,
     RecoveryRoute,
@@ -347,12 +349,19 @@ def _fallback_route(
                 )
             ),
         )
-    if preserved is None:
-        # Confirmed absence: every source was asked and named nothing, which is
-        # what permits the default branch. The LOSS is recorded by the launch's
-        # own route row, for the reason that module's docstring gives.
+    if isinstance(preserved, PreservedWorkAbsent):
+        # Confirmed absence: every source that could be asked was asked and named
+        # nothing, which is what permits the default branch. The LOSS is recorded
+        # by the launch's own route row, for the reason that module's docstring
+        # gives — and it carries the run being written off plus the sources the
+        # READING asked, never a re-derivation of them here.
         return RecoveryRoute(
-            work_item_id=item.id, route=ROUTE_FRESH, preserved_work=PRESERVED_WORK_ABSENT
+            work_item_id=item.id,
+            route=ROUTE_FRESH,
+            loss=RecoveryLoss(
+                source_run_id=preserved.source_run_id, sources_asked=preserved.sources_asked
+            ),
+            preserved_work=PRESERVED_WORK_ABSENT,
         )
     return RecoveryRoute(
         work_item_id=item.id,
