@@ -7140,3 +7140,29 @@ Feature: The sandbox's PID 1 and the agent adapter survive the agent's signals i
     When the agent runs "kill <own-pid>", "kill -1 <own-pid>" and "pkill -f 'http.server 8765'"
     Then none of the commands is refused
 ```
+
+## Scenario 199 — A fix turn runs the check suite once per tree and counts a commit hook's full green run
+
+```gherkin
+Feature: A fix turn does not spend its time limit on a duplicate check suite
+  As the maintainer of a repository dispatched to the factory
+  I want a fix turn to count a commit hook's full green suite run as the turn's suite run
+  So that two full runs of a long suite do not exhaust the fix node's time limit
+
+  Scenario: A commit whose hook ran the full suite green ends the turn's suite obligation for that tree
+    Given a fix turn that commits its change
+    And the repository pre-commit hook ran the full check suite to a passing result on the committed tree
+    When the fix turn completes successfully on that tree
+    Then the fix prompt directs no second run of the suite on that tree in the same turn
+
+  Scenario: A partial hook run or a later change still requires a full run
+    Given a fix turn whose only commit took the hook's partial fast path, or whose tree changed after its last full passing run
+    When the fix turn completes successfully
+    Then the fix prompt directs a full run of the check suite before the turn ends
+
+  Scenario: A refresh-repair round applies the same rule to the integrated tree
+    Given a fix turn entered with a refresh-repair brief
+    And its commit on the integrated tree ran the full check suite green through the pre-commit hook
+    When the turn completes the repair successfully
+    Then the fix prompt directs no second run of the suite on that integrated tree in the same turn
+```
