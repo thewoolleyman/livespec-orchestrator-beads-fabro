@@ -66,7 +66,7 @@ _PATH_KEYS = ("path", "name")
 _CONTENT_KEYS = ("content", "contents", "text")
 _REMOVAL_FLAGS = ("deleted", "removed")
 _REMOVAL_STATES = ("deleted", "removed")
-_STATE_KEYS = ("status", "change")
+_STATE_KEYS = ("status", "change", "change_kind")
 _BASE64 = "base64"
 _MODE_LENGTH = 6
 
@@ -281,11 +281,22 @@ def _content_text(*, mapping: dict[object, object]) -> str | None:
 def _removed(*, mapping: dict[object, object]) -> bool:
     """Whether the entry says the run DELETED the path.
 
-    Both spellings are read -- a boolean flag and a state word -- because the
-    response shape is unmeasured and a removal misread as content is the one
-    error that publishes a deleted file back into the tree.
+    THIS ARM IS THE ONE PART OF THE MEASURED SHAPE THAT IS STILL UNMEASURED.
+    The 2026-10-18 control read carried `change_kind` values `modified` and
+    `added` and no removal at all, so neither the word the server spells a
+    deletion with nor what it puts in `new_file` for one was observed. Both
+    plausible spellings are therefore read: a `change_kind` (or either older
+    state key) naming a deletion, and a `new_file` of JSON null.
+
+    EVERY SPELLING IS READ RATHER THAN ONE BEING CHOSEN, because a removal
+    misread as content publishes the deleted file back into the preservation
+    tree and a file being PRESENT looks like the normal case -- while the
+    mirror error drops a file from the tree, which shows up the first time
+    anyone opens it.
     """
     if any(mapping.get(flag) is True for flag in _REMOVAL_FLAGS):
+        return True
+    if _NEW_FILE in mapping and mapping[_NEW_FILE] is None:
         return True
     for key in _STATE_KEYS:
         state = mapping.get(key)
