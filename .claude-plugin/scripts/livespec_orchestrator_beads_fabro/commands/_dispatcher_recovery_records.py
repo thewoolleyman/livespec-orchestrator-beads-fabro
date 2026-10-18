@@ -36,6 +36,7 @@ from __future__ import annotations
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import (
     RecoveryHold,
+    RecoveryLoss,
     RecoverySeed,
 )
 
@@ -65,19 +66,47 @@ def recovery_route_record(
     work_item_id: str,
     route: str,
     seed: RecoverySeed | None = None,
+    loss: RecoveryLoss | None = None,
     preserved_work: str | None = None,
 ) -> dict[str, object]:
-    """One non-held route's row, with the SAME key set whichever route it is."""
+    """One non-held route's row, with the SAME key set whichever route it is.
+
+    `source_run_id` is served by EITHER payload, because the two name the same
+    thing about the same run: the seed names the run whose work is being resumed
+    from, and the loss names the run whose work is being written off. A row that
+    carried the run only for a seed would leave the one route that DISCARDS work
+    as the one route whose subject is unnamed.
+
+    `preservation_sources_asked` is written only by the loss, and the asymmetry is
+    deliberate rather than an omission: a `seeded` row names the source that
+    ANSWERED, under `preservation_ref`, which says strictly more than the list of
+    sources that were asked. Only a confirmed absence has an asked-set with no
+    answer to point at, which is exactly why the clause requires that one
+    recorded.
+    """
     return {
         "stage": RECOVERY_ROUTE_STAGE,
         "work_item_id": work_item_id,
         "route": route,
         "preserved_work": preserved_work,
-        "source_run_id": None if seed is None else seed.source_run_id,
+        "source_run_id": _source_run_id(seed=seed, loss=loss),
         "remote": None if seed is None else seed.remote,
         "commit_sha": None if seed is None else seed.commit_sha,
         "preservation_ref": None if seed is None else seed.preservation_ref,
+        "preservation_sources_asked": None if loss is None else list(loss.sources_asked),
     }
+
+
+def _source_run_id(*, seed: RecoverySeed | None, loss: RecoveryLoss | None) -> str | None:
+    """The earlier run this row's route is about, from whichever payload names it.
+
+    At most one of the two is ever set — a route is seeded from preserved work or
+    taken after its confirmed absence, never both — so the order between them
+    decides nothing and is not a precedence.
+    """
+    if seed is not None:
+        return seed.source_run_id
+    return None if loss is None else loss.source_run_id
 
 
 def recovery_held_record(*, work_item_id: str, hold: RecoveryHold) -> dict[str, object]:
