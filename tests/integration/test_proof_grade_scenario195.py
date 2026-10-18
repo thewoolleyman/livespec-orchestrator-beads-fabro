@@ -19,6 +19,10 @@ record a stage would read.
 
 from __future__ import annotations
 
+import base64
+import json
+import os
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -26,6 +30,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import par
 from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_render import (
     node_timeout_seconds,
     render_workflow_graph,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_grade_program import (
+    PROOF_GRADE_ASSERTIONS_ENV_VAR,
+    PROOF_GRADE_FAILURE_COUNT_FILENAME,
+    PROOF_GRADE_FINDING_FILENAME,
+    proof_grade_program_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     DEFAULT_NODE_TIMEOUT_SECONDS,
@@ -48,6 +58,13 @@ _NON_CONVERGED = "non_converged"
 # carry: a figure that collided with either would pass for a node whose timeout
 # nothing resolved.
 _CONFIGURED_SECONDS = 1234
+
+# The ratified header separator, and the two values the end-to-end fixtures
+# share. The run identifier is what the clone's own provenance marker declares,
+# so a record stamped with anything else is another dispatch's.
+_EM_DASH = "\u2014"
+_SANDBOX_RUN_ID = "0f7c1b5fd4ff4a2f9c4f0d2b6e8a1c33"
+_PULL_REQUEST = "3130"
 
 
 def _graph_text() -> str:
@@ -269,3 +286,261 @@ def test_a_counter_nothing_can_compare_routes_to_non_converged_rather_than_retry
 
     assert result.returncode != 0, result.stderr
     assert "LIVESPEC_PROOF_GRADE_ROUTE_COUNT_UNREADABLE" in result.stderr
+
+
+def _record(*, run_id: str, verdict: str = "verified", sections: str) -> str:
+    """One Proof of Done record comment body, in the ratified header shape."""
+    return (
+        f"Proof of Done {_EM_DASH} {verdict} {_EM_DASH} run {run_id} "
+        f"{_EM_DASH} 2026-10-17T09:00:00Z\n"
+        f"\n"
+        f"Publish-branch head: {'a' * 40}\n"
+        f"\n"
+        f"{sections}"
+    )
+
+
+def _materialized_sandbox(*, tmp_path: Path, comments: list[dict[str, str]]) -> Path:
+    """A clone carrying the prepare step's OWN output and a forge stood in at `gh`.
+
+    The grade program and its reader are landed by EXECUTING the Dispatcher's
+    prepare-step script rather than by copying the bytes here, so what the
+    program imports is what a dispatch would have written. The forge is a script
+    on `PATH` answering the two reads the stage issues, which is the only way to
+    drive the node and the program as one chain without a network.
+    """
+    repo = _clone(tmp_path=tmp_path)
+    _ = subprocess.run(
+        ["git", "config", "livespec.factoryRunId", _SANDBOX_RUN_ID], cwd=repo, check=True
+    )
+    root = tmp_path / "plugins"
+    root.mkdir(parents=True)
+    block = proof_grade_program_prepare_steps_block()
+    step = json.loads(block.split("script = ", 1)[1])
+    assert isinstance(step, str)
+    _ = subprocess.run(
+        ["sh", "-c", step],
+        cwd=repo,
+        check=True,
+        env={**os.environ, "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(root)},
+    )
+    forge = tmp_path / "bin"
+    forge.mkdir()
+    payload = json.dumps({"comments": comments})
+    gh = forge / "gh"
+    _ = gh.write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        f'  *"pr list"*) printf \'%s\\n\' {_PULL_REQUEST};;\n'
+        f"  *'pr view'*) cat {shlex.quote(str(tmp_path / 'comments.json'))};;\n"
+        "  *) echo \"unexpected gh call: $*\" >&2; exit 1;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    gh.chmod(0o755)
+    _ = (tmp_path / "comments.json").write_text(payload, encoding="utf-8")
+    return repo
+
+
+def _graded(
+    *, tmp_path: Path, comments: list[dict[str, str]], assertions: list[str]
+) -> subprocess.CompletedProcess[str]:
+    """Drive the committed `proof_grade` node end to end in a materialized sandbox."""
+    repo = _materialized_sandbox(tmp_path=tmp_path, comments=comments)
+    parsed = parse_dot_graph(text=_graph_text())
+    assert not isinstance(parsed, str), parsed
+    payload = base64.b64encode(json.dumps(assertions).encode("utf-8")).decode("ascii")
+    return subprocess.run(
+        ["sh", "-c", parsed.nodes[_GRADE]["script"]],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}",
+            "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(tmp_path / "plugins"),
+            "LIVESPEC_PUBLISH_BRANCH": "feat/bd-ib-graded",
+            PROOF_GRADE_ASSERTIONS_ENV_VAR: payload,
+        },
+    )
+
+
+def _failures(*, tmp_path: Path) -> tuple[str, str]:
+    """The run's recorded grade-failure count and its last finding, as written."""
+    state = tmp_path / "clone" / ".git" / "livespec-publication"
+    count = state / PROOF_GRADE_FAILURE_COUNT_FILENAME
+    finding = state / PROOF_GRADE_FINDING_FILENAME
+    return (
+        count.read_text(encoding="utf-8").strip() if count.is_file() else "",
+        finding.read_text(encoding="utf-8").strip() if finding.is_file() else "",
+    )
+
+
+def test_a_record_verdicting_every_assertion_in_prose_advances(tmp_path: Path) -> None:
+    """The POSITIVE control, and it is what makes the three refusals mean anything.
+
+    A grade that refused every record would satisfy each case below exactly as a
+    correct one does, so this case has to run first in a reader's mind: the same
+    chain, the same materialized program, the same forge, and a record that
+    states both assertions as reproduced in PROSE inside their own sections. It
+    exits zero — which is the edge into `pr_refresh` — and it records NO failure,
+    because a counter advanced by a passing grade would spend the retry budget of
+    a run that never needed one.
+    """
+    result = _graded(
+        tmp_path=tmp_path,
+        comments=[
+            {
+                "body": _record(
+                    run_id=_SANDBOX_RUN_ID,
+                    sections=(
+                        "## Assertion 1 — alpha holds.\n\nReproduced: yes.\n\n"
+                        "## Assertion 2 — beta holds.\n\nReproduced: yes.\n"
+                    ),
+                ),
+                "url": "https://forge/comment/1",
+            }
+        ],
+        assertions=["alpha holds.", "beta holds."],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PROOF_GRADE_GRADED" in result.stderr
+    assert _failures(tmp_path=tmp_path) == ("", "")
+
+
+def test_a_record_wide_verdict_line_names_every_assertion_and_records_the_failure(
+    tmp_path: Path,
+) -> None:
+    """The INCIDENT, replayed: one trailing summary line and no per-assertion verdict.
+
+    This is `bd-ib-rszkjc`'s published record in miniature — a `verified` record
+    whose only `Reproduced:` line sits under a trailing summary heading — and the
+    reader is right to ignore it, because letting an assertion absorb a later
+    section's verdict is the fail-OPEN direction. So the grade must name EVERY
+    assertion rather than report a record-wide fault: the remedy is a new record
+    carrying a verdict for each, and an operator told only "the record is
+    ungradeable" has to diff the record against the Definition of Done by hand.
+
+    The recorded COUNT is asserted as well as the exit code, because the exit code
+    alone routes the run and says nothing about whether the retry budget moved —
+    and a failure that records nothing retries for ever.
+    """
+    result = _graded(
+        tmp_path=tmp_path,
+        comments=[
+            {
+                "body": _record(
+                    run_id=_SANDBOX_RUN_ID,
+                    sections=(
+                        "## Assertion 1 — alpha holds.\n\nProof mode: `factory_captured`\n\n"
+                        "## Assertion 2 — beta holds.\n\nProof mode: `factory_captured`\n\n"
+                        "## Comparison against the captured proofs\n\n"
+                        "Reproduced: yes — assertion 1 and assertion 2 both reproduced.\n"
+                    ),
+                ),
+                "url": "https://forge/comment/1",
+            }
+        ],
+        assertions=["alpha holds.", "beta holds."],
+    )
+
+    assert result.returncode != 0, result.stderr
+    assert "LIVESPEC_PROOF_GRADE_UNGRADEABLE" in result.stderr
+    assert "alpha holds." in result.stderr
+    assert "beta holds." in result.stderr
+    count, finding = _failures(tmp_path=tmp_path)
+    assert count == "1"
+    assert "LIVESPEC_PROOF_GRADE_UNGRADEABLE" in finding
+
+
+def test_a_verdict_printed_inside_a_fenced_proof_is_not_a_verdict(tmp_path: Path) -> None:
+    """A line the PROOF printed is output; only a line the verifier AUTHORED counts.
+
+    The discriminating fixture is MIXED on purpose: one assertion verdicts in
+    prose and the other only inside its fenced proof, so the grade has to name
+    exactly one of them. A reader that matched inside fences would name neither
+    and advance, and one that had stopped reading verdicts altogether would name
+    both — the two failures this shape separates.
+    """
+    result = _graded(
+        tmp_path=tmp_path,
+        comments=[
+            {
+                "body": _record(
+                    run_id=_SANDBOX_RUN_ID,
+                    sections=(
+                        "## Assertion 1 — alpha holds.\n\nReproduced: yes.\n\n"
+                        "## Assertion 2 — beta holds.\n\n"
+                        "```\n$ replay\nReproduced: yes.\n```\n"
+                    ),
+                ),
+                "url": "https://forge/comment/1",
+            }
+        ],
+        assertions=["alpha holds.", "beta holds."],
+    )
+
+    assert result.returncode != 0, result.stderr
+    assert "beta holds." in result.stderr
+    assert "1 of 2" in result.stderr
+    assert _failures(tmp_path=tmp_path)[0] == "1"
+
+
+def test_an_assertion_the_record_never_mentions_is_named_too(tmp_path: Path) -> None:
+    """The grade's question comes from the DISPATCH, not from the record's own list.
+
+    Judging a record against the assertions the RECORD happens to carry is the
+    same fail-open the trailing-summary case is: an assertion the record omits is
+    invisible to any check that reads only the record. The fixture therefore
+    verdicts one assertion perfectly and simply never mentions the other, which a
+    record-only reader would grade as complete.
+    """
+    result = _graded(
+        tmp_path=tmp_path,
+        comments=[
+            {
+                "body": _record(
+                    run_id=_SANDBOX_RUN_ID,
+                    sections="## Assertion 1 — alpha holds.\n\nReproduced: yes.\n",
+                ),
+                "url": "https://forge/comment/1",
+            }
+        ],
+        assertions=["alpha holds.", "beta holds."],
+    )
+
+    assert result.returncode != 0, result.stderr
+    assert "beta holds." in result.stderr
+    assert _failures(tmp_path=tmp_path)[0] == "1"
+
+
+def test_a_verified_record_of_another_dispatch_is_not_this_dispatchs_evidence(
+    tmp_path: Path,
+) -> None:
+    """Attribution is the same closed question the acceptance pass asks.
+
+    The control for every case above: the SAME per-assertion verdicts, published
+    under a run identifier this clone's provenance marker does not name. A grade
+    that had stopped filtering would advance on it, and the record it advanced on
+    would be about a run this dispatch is not.
+    """
+    result = _graded(
+        tmp_path=tmp_path,
+        comments=[
+            {
+                "body": _record(
+                    run_id="a-different-dispatch",
+                    sections="## Assertion 1 — alpha holds.\n\nReproduced: yes.\n",
+                ),
+                "url": "https://forge/comment/1",
+            }
+        ],
+        assertions=["alpha holds."],
+    )
+
+    assert result.returncode != 0, result.stderr
+    assert "LIVESPEC_PROOF_GRADE_NO_RECORD" in result.stderr
+    assert _SANDBOX_RUN_ID in result.stderr
+    assert _failures(tmp_path=tmp_path)[0] == "1"

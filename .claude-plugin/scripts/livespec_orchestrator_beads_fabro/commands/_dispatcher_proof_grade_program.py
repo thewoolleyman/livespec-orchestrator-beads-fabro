@@ -242,9 +242,20 @@ def recorded_failures(state):
 
 
 def record_failure(state, finding):
-    """Count this failure against the run, and keep its cause beside the count."""
+    """Count this failure against the run, and keep its cause beside the count.
+
+    The next count is computed BEFORE the file is opened for writing, and that
+    order is the whole of this function. `open(..., "w")` TRUNCATES on open, and
+    the context manager is entered before its body runs -- so reading the count
+    inside the `with` read an EMPTY file, fell through `recorded_failures`'
+    fail-closed arm to the cap, and recorded the FIRST failure as the fourth.
+    That trips the three-failure bound on the very first ungradeable record,
+    which retires the retry the clause ratifies while every surface still reads
+    like a correctly bounded run.
+    """
+    counted = recorded_failures(state) + 1
     with open(os.path.join(state, FAILURE_COUNT_FILENAME), "w", encoding="utf-8") as handle:
-        handle.write(str(recorded_failures(state) + 1) + "\\n")
+        handle.write(str(counted) + "\\n")
     with open(os.path.join(state, FINDING_FILENAME), "w", encoding="utf-8") as handle:
         handle.write(finding + "\\n")
 
