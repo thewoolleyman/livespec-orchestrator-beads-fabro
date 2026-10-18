@@ -12,13 +12,13 @@ created_at: 2026-10-15T06:36:00Z
 
 ### Summary
 
-A dispatcher.factories entry MAY declare "registry": true instead of a server value; its server address is then resolved by factory name from a host-side registry file that the fleet's provisioning renders from its inventory. This repository's own committed entries MUST be registry-backed, fleet members' SHOULD be, and other adopters keep the literal server form. An unresolvable registry-backed factory MUST be refused before claim and MUST NOT fall back to any other target. Every consumer of a factory address shares the one resolution while keeping its established failure behaviour, and a registry-backed entry counts as a remote factory wherever the Dispatcher classifies a target as remote. The recorded-pin fallback is unchanged and applies only when no explicit selection is made. Factory names SHOULD name instances, while dispatcher.default_factory alone carries which instance serves.
+A dispatcher.factories entry MAY declare "registry": true instead of a server value; its server address is then resolved by factory name from a host-side registry file that the fleet's provisioning renders from its inventory. A registry entry carries the factory's server address and, optionally, its container-daemon address (docker_host). This repository's own committed entries MUST be registry-backed and carry neither form, fleet members' SHOULD be registry-backed, and other adopters keep the literal server form. An unresolvable registry-backed factory MUST be refused before claim and MUST NOT fall back to any other target. Every consumer of a factory address shares the one resolution while keeping its established failure behaviour, and a registry-backed entry counts as a remote factory wherever the Dispatcher classifies a target as remote. The recorded-pin fallback is unchanged and applies only when no explicit selection is made. Factory names SHOULD name instances, while dispatcher.default_factory alone carries which instance serves.
 
 ### Motivation
 
 The maintainer ruled on 2026-10-15 (plan bd-ib-fyozyd, petri-factory-on-gmktec) that no committed factory entry may name a machine hostname, so that a factory is bound to a machine only in the gitops inventory, and the factory can move to gmktec-xubuntu now and onto Kubernetes later without repository changes. Measured: fifteen fleet repositories commit factory tables whose server values name hp-xubuntu or vps. A Tailscale Service cannot provide a machine-free name (only tagged devices host one, agents may not add tags, and tagging gmktec would remove it from the member SSH grant), and HTTPS through tailscale serve rules out DNS aliases. Today an entry with no server resolves to the ambient local Fabro target, so simply deleting server values would silently re-route dispatches; the refusal rule exists to close that. The naming rule and the recorded-pin note were agreed with the fabro-currency plan, which owns the cutover: 425 items in this tenant record the factory name hp, and a renamed factory re-routes their later dispatches to the default rather than refusing them.
 
-Revision 2 (2026-10-18) answers an independent read-only review (gpt-6-astra, review text preserved under plan/petri-factory-on-gmktec/research/003-reviews/). It qualifies the recorded-pin fallback by the ratified selection order, makes the hostname-free rule normative for this repository, extends shared resolution to address-dependent classification (the run-turn telemetry export reads a literal server key today) and to the non-Dispatcher readers with their existing failure semantics, fixes the validation scope to the selected entry, and widens Scenario 182.
+Revision 3 (2026-10-18) also carries `docker_host`: this repository's committed `hp` entry names its machine through `docker_host` (`ssh://...@hp-xubuntu...`), which the reconcile pass's container sweep reads, so a registry-backed entry resolves that address from the registry too and a committed one carries neither form (finding from the livespec-dev-tooling companion proposal's review). Revision 2 (2026-10-18) answers an independent read-only review (gpt-6-astra, review text preserved under plan/petri-factory-on-gmktec/research/003-reviews/). It qualifies the recorded-pin fallback by the ratified selection order, makes the hostname-free rule normative for this repository, extends shared resolution to address-dependent classification (the run-turn telemetry export reads a literal server key today) and to the non-Dispatcher readers with their existing failure semantics, fixes the validation scope to the selected entry, and widens Scenario 182.
 
 ### Proposed Changes
 
@@ -39,15 +39,22 @@ committed file in a governed repository writes it. An entry that carries
 livespec fleet.
 
 Every committed `dispatcher.factories` entry in this repository's own
-`.livespec.jsonc` MUST be registry-backed and MUST NOT carry a `server` value.
+`.livespec.jsonc` MUST be registry-backed and MUST NOT carry a `server` or a
+`docker_host` value.
 A fleet member repository's committed entries SHOULD be registry-backed, so that
 binding a factory to a machine is a change to the provisioning inventory alone.
 
 Resolution reads only what the selected entry needs. The registry file MUST
 parse as JSON whose top-level value is an object; within it, the value under the
 selected factory's name MUST be an object whose `server` value is a string that
-is non-empty after surrounding whitespace is removed. Other entries in the
-registry are not validated by that resolution and do not affect it.
+is non-empty after surrounding whitespace is removed. That object MAY carry a
+`docker_host` string, spelled as the Docker CLI's `DOCKER_HOST`; when it does,
+it is the registry-backed factory's container-daemon address, exactly as a
+committed entry's `docker_host` is for an entry that carries `server`, and when
+it does not, the factory declares no container-daemon address. A `docker_host`
+value that is present but is not a string non-empty after trimming is refused
+like an invalid `server`. Other entries in the registry are not validated by
+that resolution and do not affect it.
 
 The Dispatcher MUST refuse, before any claim, ledger write of any kind (status,
 metadata or comment) or Fabro run creation, a dispatch whose resolved factory
@@ -56,8 +63,9 @@ parse as JSON, has a top-level value that is not an object, has no entry for
 that factory name, or gives that entry no valid `server` string. The refusal
 MUST name the factory and the registry path it read. The Dispatcher MUST NOT
 fall back to the ambient local Fabro target, to `dispatcher.default_factory`,
-or to any other factory in that case. An entry declaring both `"registry":
-true` and `server` MUST be refused the same way, naming the factory.
+or to any other factory in that case. An entry declaring `"registry": true`
+together with `server` or `docker_host` MUST be refused the same way, naming
+the factory.
 
 Every surface that turns a declared factory into an address MUST use this one
 resolution, and every surface whose behaviour depends on whether a factory is
@@ -171,19 +179,37 @@ Feature: Factory addresses come from a host registry, not from committed configu
       | file maps "petri" to an object with no server          |
       | file maps "petri" to an object whose server is a number |
       | file maps "petri" to an object whose server is "   "   |
+      | file maps "petri" to an object with a valid server and a docker_host of "   " |
+      | file maps "petri" to an object with a valid server and a docker_host that is a number |
 
   Scenario: Only the selected entry is validated
     Given the factory registry maps "petri" to a server address and maps "legacy" to null
     When an item is dispatched to "petri"
     Then the Fabro run is created on the server address the registry maps "petri" to
 
-  Scenario: An entry declaring both forms refuses before any ledger write
-    Given dispatcher.factories instead declares "petri" with both "registry": true and a server value
+  Scenario Outline: An entry declaring the registry together with a committed address refuses before any ledger write
+    Given dispatcher.factories instead declares "petri" with "registry": true and a <committed key> value
     And the factory registry maps "petri" to a server address
     When an item is dispatched to "petri"
     Then the dispatch is refused naming "petri"
     And the item's status, metadata and comments are unchanged
     And no Fabro run is created on any server
+
+    Examples:
+      | committed key |
+      | server        |
+      | docker_host   |
+
+  Scenario: The registry entry's docker_host is the factory's container-daemon address
+    Given the factory registry maps "petri" to an object carrying a server address and a docker_host value
+    When the reconcile pass sweeps the sandbox containers of every declared factory
+    Then it reads "petri"'s containers through that docker_host value
+
+  Scenario: A registry entry with no docker_host declares no container-daemon address
+    Given the factory registry maps "petri" to an object carrying only a server address
+    When the reconcile pass sweeps the sandbox containers of every declared factory
+    Then the sweep reports "petri"'s sandbox containers as unobserved, naming "petri"
+    And it opens no container-daemon connection for "petri"
 
   Scenario: The reconcile survey reports an unresolvable registry-backed factory as unobservable and still observes the others
     Given dispatcher.factories also declares a factory "legacy" with a server value whose Fabro server answers and holds one run
