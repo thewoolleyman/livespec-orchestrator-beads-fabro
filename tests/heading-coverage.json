@@ -1809,9 +1809,8 @@
     "heading": "## Scenario 182 \u2014 A registry-backed factory resolves its address from the host registry, and an unresolvable one refuses before claim",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by the revision accepting proposal factory-addresses-from-a-gitops-registry (plan petri-factory-on-gmktec, epic bd-ib-fyozyd). Registry-backed factory resolution is not implemented yet; an integration-tier test is owed for the scenario's cases, and work-item bd-ib-fubkcv implements them and owns that binding.",
-    "work_item": "bd-ib-fubkcv"
+    "test": "tests.integration.test_factory_registry_resolution_scenario182.test_a_registry_backed_dispatch_runs_on_the_registry_address_and_records_it",
+    "reason": "Integration-tier acceptance for the whole heading: every gherkin case runs from a .livespec.jsonc and a registry JSON file on disk through the production resolution, the pre-claim declaration grade and the dispatch plan. The bound node id is the hand-off journey -- the registry's address reaching the fabro run argv and the item's own dispatch-factory record -- and its siblings in the same module carry the resume leg, the registry-path override and default, every unresolvable-registry refusal with the ledger read back unchanged, the malformed-sibling isolation, the registry-together-with-a-committed-address refusal, the docker_host resolution and its refusal, and the recorded-pin fallback. The consumer surfaces the clause also names -- the reconcile survey, the liveness reads, the availability-evidence reads, the needs-human valve enrichment and the run-turn telemetry classification -- are a sibling work-item of plan petri-factory-on-gmktec and owe their own cases there."
   },
   {
     "heading": "## Scenario 180 \u2014 A sandbox agent cannot remove the run's working tree, and ordinary removals still run",
