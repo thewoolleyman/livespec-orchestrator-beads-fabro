@@ -19,6 +19,7 @@ record a stage would read.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
@@ -160,3 +161,111 @@ def test_the_grade_routes_an_ungradeable_record_to_its_route_node_and_nothing_el
     assert (_ROUTE, "outcome=failed") in onward, onward
     assert ("pr_refresh", "") in onward, onward
     assert [condition for _, condition in onward if condition == ""] == [""]
+
+
+def _route_script() -> str:
+    """The committed `proof_grade_route` node's own script, decoded by the reader.
+
+    Taken through `parse_dot_graph` rather than retyped, so what executes below is
+    the bytes a stage executes: every guard in this node is shell, and a substring
+    assertion cannot tell an arm that RUNS from one sitting behind an earlier
+    `exit`.
+    """
+    parsed = parse_dot_graph(text=_graph_text())
+    assert not isinstance(parsed, str), parsed
+    return parsed.nodes[_ROUTE]["script"]
+
+
+def _clone(*, tmp_path: Path) -> Path:
+    """A throwaway git clone, which is what makes the state directory per-run.
+
+    The route resolves its counter through `git rev-parse --git-path`, so a
+    fixture that was not a repository would have it fail closed for the wrong
+    reason.
+    """
+    repo = tmp_path / "clone"
+    repo.mkdir(parents=True)
+    _ = subprocess.run(["git", "init", "--quiet"], cwd=repo, check=True)
+    return repo
+
+
+def _recorded(*, repo: Path, count: str, finding: str = "an earlier grade failure") -> None:
+    """Seed the run's recorded grade-failure count, as `proof_grade` writes it."""
+    state = repo / ".git" / "livespec-publication"
+    state.mkdir(parents=True, exist_ok=True)
+    _ = (state / "livespec-proof-grade-failures").write_text(f"{count}\n", encoding="utf-8")
+    _ = (state / "livespec-proof-grade-finding").write_text(f"{finding}\n", encoding="utf-8")
+
+
+def _routed(*, repo: Path) -> subprocess.CompletedProcess[str]:
+    """Execute the route node's script in one clone and report what it decided."""
+    return subprocess.run(
+        ["sh", "-c", _route_script()],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_the_route_retries_while_fewer_than_three_grade_failures_stand(tmp_path: Path) -> None:
+    """Zero, one and two recorded failures all exit ZERO, which re-enters the replay.
+
+    Every count below the bound is asserted rather than one of them, because the
+    comparison the arm rests on is an inequality and an off-by-one there is
+    exactly the defect that either retires the retry on its first use or spends a
+    fourth agent turn. The ZERO case is the one a reader is most likely to think
+    unreachable: `proof_grade_route` is entered only after a recorded failure, so
+    an absent counter means the grade could not record one — and retrying there is
+    correct, because the bound has not been reached.
+    """
+    for count in ("0", "1", "2"):
+        repo = _clone(tmp_path=tmp_path / count)
+        if count != "0":
+            _recorded(repo=repo, count=count)
+
+        result = _routed(repo=repo)
+
+        assert result.returncode == 0, (count, result.stderr)
+        assert "LIVESPEC_PROOF_GRADE_RETRY" in result.stderr, count
+
+
+def test_the_third_recorded_failure_routes_the_run_to_non_converged(tmp_path: Path) -> None:
+    """The third failure exits NON-ZERO, which is the edge into `non_converged`.
+
+    The exit code is the whole decision — the engine gives a command node two
+    outcomes — so this case and the one above are each other's control: a script
+    that always exited zero satisfies the first, and one that always exited
+    non-zero satisfies this. The last recorded FINDING is asserted present in the
+    output too, because a non-convergence that names no cause sends an operator
+    to read three dead stages by hand.
+    """
+    repo = _clone(tmp_path=tmp_path)
+    _recorded(repo=repo, count="3", finding="assertion 2 states no prose verdict")
+
+    result = _routed(repo=repo)
+
+    assert result.returncode != 0, result.stderr
+    assert "LIVESPEC_PROOF_GRADE_NON_CONVERGED" in result.stderr
+    assert "assertion 2 states no prose verdict" in result.stderr
+    assert (_NON_CONVERGED, "outcome=failed") in _targets(source=_ROUTE)
+
+
+def test_a_counter_nothing_can_compare_routes_to_non_converged_rather_than_retrying(
+    tmp_path: Path,
+) -> None:
+    """A corrupt count is at the bound, not below it.
+
+    This is the fail-closed direction and the one the natural coding of the
+    comparison gets WRONG: `test "$count" -ge 3` returns 2 on a non-numeric
+    value, which an `if` reads as "below the bound", so a counter nothing can
+    compare would retry for ever — spending an agent turn each time until the
+    engine's own visit cap aborted the run with no cause for anyone to read.
+    """
+    repo = _clone(tmp_path=tmp_path)
+    _recorded(repo=repo, count="not-a-number")
+
+    result = _routed(repo=repo)
+
+    assert result.returncode != 0, result.stderr
+    assert "LIVESPEC_PROOF_GRADE_ROUTE_COUNT_UNREADABLE" in result.stderr

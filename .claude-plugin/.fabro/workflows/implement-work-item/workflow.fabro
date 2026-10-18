@@ -683,7 +683,7 @@ digraph ImplementWorkItem {
         shape=parallelogram
         timeout="600s"
         max_visits=4
-        script="exit 0"
+        script="state=$(git rev-parse --git-path livespec-publication); if test -z \"$state\"; then echo 'LIVESPEC_PROOF_GRADE_ROUTE_NO_STATE_DIR: this run state directory could not be resolved inside the clone, so the recorded grade-failure count cannot be read; routing to non_converged rather than retrying against a bound nothing can enforce' >&2; exit 1; fi; count=$(cat \"$state/livespec-proof-grade-failures\" 2>/dev/null || echo 0); if ! test \"$count\" -ge 0 2>/dev/null; then echo \"LIVESPEC_PROOF_GRADE_ROUTE_COUNT_UNREADABLE: the recorded grade-failure count $count is not a number, so the three-failure bound cannot be enforced; routing to non_converged rather than retrying against a counter nothing can compare\" >&2; exit 1; fi; if test \"$count\" -ge 3; then finding=$(head -n 1 \"$state/livespec-proof-grade-finding\" 2>/dev/null || true); echo \"LIVESPEC_PROOF_GRADE_NON_CONVERGED: $count ungradeable verified records have been recorded for this run, so the replay is not converging on a record that states every factory_captured assertion as reproduced per assertion; the last recorded finding was: $finding\" >&2; exit 1; fi; echo \"LIVESPEC_PROOF_GRADE_RETRY: $count ungradeable verified record(s) recorded for this run, which is below the three-failure bound, so proof_verify is re-entered to post a NEW record; the retry visits neither review nor fix\" >&2; exit 0"
     ]
 
     // SCRIPTED PUBLICATION (SPECIFICATION/contracts.md
