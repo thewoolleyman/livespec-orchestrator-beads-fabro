@@ -27,6 +27,31 @@ yield NO identifier rather than a coerced one: a `str()`-ed non-string looks lik
 an id and matches nothing, which reads as a record belonging to another item
 rather than as a malformed row. And such a row must still COUNT toward the resume
 bound, or a malformed record would silently raise the cap by one.
+
+WHY THE BOUND IS ASSERTED AGAINST RESUMES THAT CREATED A RUN, NOT AGAINST
+ATTEMPTS. The record is journaled BEFORE the run exists, so a `resume` row is
+evidence of an attempt. The bound exists because "the proof-loop caps are per
+run", so an attempt refused before any run was created spent none of them and
+anchored nothing. Measured 2026-10-18 on `bd-ib-nsrgxl`: two resume attempts of
+pull request 3209 were each refused by the ACP preflight's session-headroom
+filter with no Fabro run, and the third was refused for having "already anchored
+2 resumes" — so a transient provider-headroom refusal had permanently cost the
+item its resume route, leaving only a plain dispatch, which reclaims the publish
+branch and discards the pull request's approved work.
+
+Each case here therefore says which rows name a run. The negative cases are the
+load-bearing ones and they come in two shapes, because a reader keyed on "has
+this item ever had a run" would satisfy the first and fail the second: an attempt
+with NO run-naming row after it, and an attempt whose window is closed by the
+item's NEXT attempt before any run appears — one launched resume must not vouch
+for the refused attempt that preceded it.
+
+WHY THE POINTER READER IS ASSERTED NOT TO NARROW WITH IT. `was_resumed` answers a
+different question — whether the MERGE an item reached was reached through a
+resume — and is asked only of an item that merged, whose resumed-run identifier
+comes from the merging outcome rather than from the journal. Narrowing it would
+make a pointer's provenance depend on a row the merging dispatch does not own, so
+the asymmetry is asserted directly rather than left to be rediscovered as a bug.
 """
 
 from __future__ import annotations
@@ -67,6 +92,31 @@ def _resume_row(
         resumed_at=resumed_at,
         source=module.SOURCE if hasattr(module, "SOURCE") else "pull-request-latest-record",
     )
+
+
+def _run_row(*, work_item_id: str = _ITEM, run_id: str = "01M4LAUNCHED") -> dict[str, object]:
+    """A row naming a factory run for one item, as every launched dispatch writes.
+
+    `dispatch-run-stamp` is the stage a dispatch writes on first sight of its run
+    id, but the STAGE is deliberately not what the reader keys on: a record counts
+    as naming a run when it carries both a `work_item_id` and a `run_id`, which is
+    the reading `_run_attribution` owns and the one a stage added later cannot
+    silently fall out of.
+    """
+    return {"stage": "dispatch-run-stamp", "work_item_id": work_item_id, "run_id": run_id}
+
+
+def _refused_row(*, work_item_id: str = _ITEM) -> dict[str, object]:
+    """The ACP preflight's own refusal row: an attempt that reached no factory.
+
+    It names no run because there is none — which is the whole condition under
+    test, and the measured one.
+    """
+    return {
+        "stage": "acp-preflight-refusal",
+        "work_item_id": work_item_id,
+        "detail": "session-headroom-shortfall",
+    }
 
 
 def test_the_record_names_everything_the_clause_requires() -> None:
@@ -140,12 +190,22 @@ def test_a_malformed_identifier_field_links_nothing() -> None:
 
 
 def test_resumes_are_counted_per_pull_request() -> None:
-    """A fresh pull request starts the bound over; the previous one's are not its."""
+    """A fresh pull request starts the bound over; the previous one's are not its.
+
+    Every resume here goes on to create a run, which is what makes the three
+    counted at all. The LEADING run row is the dispatch that published the pull
+    request in the first place: it precedes every attempt, so it also pins that a
+    run predating an attempt cannot be read as that attempt's own.
+    """
     module = _journal_module()
     records = [
+        _run_row(run_id="01M4PUBLISHED"),
         _resume_row(pull_request=2581, earlier_run_ids=("01M4ONE",)),
+        _run_row(run_id="01M4FIRSTRESUMED"),
         _resume_row(pull_request=2581, earlier_run_ids=("01M4TWO",)),
+        _run_row(run_id="01M4SECONDRESUMED"),
         _resume_row(pull_request=2639, earlier_run_ids=("01M4THREE",)),
+        _run_row(run_id="01M4THIRDRESUMED"),
     ]
     assert module.resumes_anchored_on(records=records, work_item_id=_ITEM, pull_request=2581) == (
         "01M4ONE",
@@ -157,11 +217,78 @@ def test_resumes_are_counted_per_pull_request() -> None:
 
 
 def test_a_resume_naming_no_identifier_still_counts_toward_the_bound() -> None:
-    """A malformed row must not silently raise the cap by one."""
+    """A malformed row that DID create a run must not silently raise the cap by one."""
     module = _journal_module()
-    records = [{"stage": module.RESUME_STAGE, "work_item_id": _ITEM, "pull_request": 2639}]
+    records = [
+        {"stage": module.RESUME_STAGE, "work_item_id": _ITEM, "pull_request": 2639},
+        _run_row(),
+    ]
     anchored = module.resumes_anchored_on(records=records, work_item_id=_ITEM, pull_request=2639)
     assert len(anchored) == 1
+
+
+def test_a_resume_refused_before_any_run_anchors_nothing() -> None:
+    """The bound replaces caps that are per RUN, so an attempt with none spent none."""
+    module = _journal_module()
+    records = [_resume_row(earlier_run_ids=("01M4ONE",)), _refused_row()]
+    assert module.resumes_anchored_on(records=records, work_item_id=_ITEM, pull_request=2639) == ()
+
+
+def test_two_resumes_refused_before_any_run_leave_the_bound_unspent() -> None:
+    """Scenario 143's third-resume refusal is premised on two ANCHORED resumes.
+
+    This is the measured journal: two attempts, each refused by the session-
+    headroom filter with no Fabro run between them, and nothing for the bound to
+    have counted.
+    """
+    module = _journal_module()
+    records = [
+        _resume_row(earlier_run_ids=("01M4ONE",)),
+        _refused_row(),
+        _resume_row(earlier_run_ids=("01M4TWO",)),
+        _refused_row(),
+    ]
+    assert module.resumes_anchored_on(records=records, work_item_id=_ITEM, pull_request=2639) == ()
+
+
+def test_a_launched_resume_does_not_vouch_for_the_attempt_before_it() -> None:
+    """The window closes at the item's next attempt, or one run would cover two.
+
+    Without the bound closing there, a reader would answer "has this item ever had
+    a run" — which the preceding case cannot distinguish, because it has none at
+    all — and both attempts would count off the one run the second created.
+    """
+    module = _journal_module()
+    records = [
+        _resume_row(earlier_run_ids=("01M4REFUSED",)),
+        _resume_row(earlier_run_ids=("01M4RESUMED",)),
+        _run_row(),
+    ]
+    assert module.resumes_anchored_on(records=records, work_item_id=_ITEM, pull_request=2639) == (
+        "01M4RESUMED",
+    )
+
+
+def test_another_items_run_does_not_anchor_this_items_resume() -> None:
+    """One journal serves every item, so a concurrent dispatch's run is not ours."""
+    module = _journal_module()
+    records = [_resume_row(earlier_run_ids=("01M4ONE",)), _run_row(work_item_id=_OTHER_ITEM)]
+    assert module.resumes_anchored_on(records=records, work_item_id=_ITEM, pull_request=2639) == ()
+
+
+def test_the_pointer_reader_does_not_narrow_with_the_bound() -> None:
+    """`was_resumed` asks whether a MERGE was reached through a resume, not the cap.
+
+    It is consulted only for an item that merged, and the identifier its pointer
+    names comes from the merging outcome rather than from the journal, so an
+    attempt that created no run cannot be the dispatch it credits. Narrowing it
+    alongside the bound would make a pointer's provenance depend on a row the
+    merging dispatch does not own.
+    """
+    module = _journal_module()
+    records = [_resume_row(earlier_run_ids=("01M4ONE",)), _refused_row()]
+    assert module.resumes_anchored_on(records=records, work_item_id=_ITEM, pull_request=2639) == ()
+    assert module.was_resumed(records=records, work_item_id=_ITEM, pull_request=2639) is True
 
 
 def test_was_resumed_is_keyed_on_the_pull_request() -> None:

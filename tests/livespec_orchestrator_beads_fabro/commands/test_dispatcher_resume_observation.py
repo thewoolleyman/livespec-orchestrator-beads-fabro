@@ -84,6 +84,7 @@ _HEAD = "f" * 40
 _MOVED_HEAD = "a" * 40
 _EARLIER_RUN = "01M49TZ44210GSEC8VTFR8VHKP"
 _EARLIER_DISPATCH = "5088bcaff2aa4bad99d9d0cf4fbbbe2f"
+_RESUMED_RUN = "01M4RJ3H6VQ0K4XBV9MTBSPXE4"
 _CANCELLED_RUN = "01M4Q4XBZ5398FJAWQ131QER60"
 _CANCELLED_DISPATCH = "7a636b5e7d60425c942ebdaf10fe7e53"
 _PR = 2639
@@ -462,7 +463,13 @@ def test_no_lock_is_reported_as_no_age_rather_than_zero(repo: Path) -> None:
 
 
 def test_earlier_resumes_of_the_same_pull_request_are_counted(repo: Path) -> None:
-    """The third-resume bound is per PULL REQUEST, so the number is part of the query."""
+    """The third-resume bound is per PULL REQUEST, so the number is part of the query.
+
+    The resume row is followed by the row naming the run it CREATED, which is what
+    makes it anchor one at all: the record is journaled before the run exists, so
+    an attempt refused before any run spent none of the per-run caps the bound
+    replaces and the reader counts it as nothing.
+    """
     assert _GATHER_PATH.is_file()
     journal = _journal(path=repo / "tmp" / "journal.jsonl")
     with journal.open("a", encoding="utf-8") as handle:
@@ -474,6 +481,16 @@ def test_earlier_resumes_of_the_same_pull_request_are_counted(repo: Path) -> Non
                     "earlier_run_ids": [_EARLIER_RUN],
                     "pull_request": _PR,
                     "resumed_at": "pr",
+                }
+            )
+            + "\n"
+        )
+        _ = handle.write(
+            json.dumps(
+                {
+                    "stage": "dispatch-run-stamp",
+                    "work_item_id": _ITEM_ID,
+                    "run_id": _RESUMED_RUN,
                 }
             )
             + "\n"
