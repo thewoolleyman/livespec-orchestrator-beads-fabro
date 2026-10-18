@@ -3111,15 +3111,34 @@ additional ACP nodes with these names and positions: `dod_gate`, the first node
 after `start` and before `implement`; `proof_capture`, entered from
 `publish_draft` or from a changed-head `pr_refresh` whose decision is
 `reproof_required` ("Proof carry-forward across a refresh" below) and exiting
-only to `review`; and `proof_verify`, entered from `review` and exiting to
-`pr_refresh` on success. It MUST also carry the command node `publish_draft`,
+only to `review`; and `proof_verify`, entered from `review` or from `proof_grade_route` and, on
+success, exiting to the command node `proof_grade`. It MUST also carry the command node `publish_draft`,
 entered only from a green janitor outcome and exiting to `proof_capture`, which
 MUST push the item's publish branch and, when no pull request for that branch
 exists, open one as a DRAFT; it MUST be idempotent across janitor re-entries
 and MUST fail closed to `needs_human` when origin cannot be reached; a refresh
 that conflicts, or a refreshed head that the repository's gate rejects, MUST
 instead take the refresh-repair route of "Refresh repair" below while that
-route's budget lasts. The command stages `pr_refresh` and `pr` MUST perform
+route's budget lasts. It MUST also carry the command node `proof_grade`, entered
+only from a `verified` outcome of `proof_verify`. `proof_grade` MUST read the
+newest `verified` record on the pull request whose run identifier the Dispatcher
+attributes to this dispatch, using the same record reader the acceptance pass
+grades with, and MUST exit zero, routing to `pr_refresh`, exactly when every
+`factory_captured` assertion of the effective criteria reads as reproduced from
+that record. Otherwise it MUST record the failure in the run's sandbox and exit
+non-zero naming each assertion that did not read as reproduced, or naming the
+absent record when it found none. Its failure edge MUST lead to the command node
+`proof_grade_route`, which exits zero while fewer than three `proof_grade`
+failures are recorded for the run, its success edge re-entering `proof_verify`,
+and exits non-zero otherwise, its failure edge leading to `non_converged`; each
+of the two nodes keeps exactly two outcomes, as `pr_refresh` and
+`pr_refresh_head` do. The count is kept by the run itself rather than read from
+an engine visit counter. A retry through `proof_grade_route` re-enters
+`proof_verify` directly, visits neither `review` nor `fix`, and is charged to
+neither the review-fix budget nor `fix`'s visit cap; it is bounded by the
+`proof_grade` failure count alone. A re-entered `proof_verify` MUST publish a new
+record rather than edit the earlier one. Scenario 195 in
+`scenarios.md` exercises `proof_grade`. The command stages `pr_refresh` and `pr` MUST perform
 publication as specified below; the publish breaker (`verify_pr`) retains its
 existing obligations. The command node `pr` MUST be followed by a command node `pr_route`, which exits non-zero exactly when `pr` recorded the refresh-route marker of "Scripted publication and proof-head integrity" for that visit, and zero otherwise. `pr_route` MUST consume the marker on every visit, so a marker left by an earlier `pr` visit can never route a later one. Its failure edge MUST lead to `pr_refresh`, and its unconditional edge MUST lead to the existing successor of `pr`. `pr`'s own failure edge is unchanged, so every command node keeps exactly two outcomes and an unconditional outgoing edge. Each of the three ACP nodes selects its adapter through
 exactly the mechanism the existing ACP nodes use, with its own adapter input
@@ -3459,14 +3478,16 @@ Definition of Done. It MUST publish its own record per §"Proof of Done
 record" with the verdict `verified` when every `factory_captured`
 assertion reproduced, or `not_reproduced` naming each assertion that did
 not; the record header renders the verdict verbatim. `verified` routes to
-`pr_refresh`; `not_reproduced` routes to `fix` while the node's own visit count is
+`proof_grade`, which routes to `pr_refresh` as above; `not_reproduced` routes to `fix` while the node's own visit count is
 below three, and the third `not_reproduced` routes to the existing
-`non_converged` terminal. A proof loop re-enters `review`, and those
-review visits count toward the review-fix budget like any other. The
+`non_converged` terminal. A `not_reproduced` proof loop re-enters `review`, and those
+review visits count toward the review-fix budget like any other; a
+`proof_grade` retry is bounded as stated above instead. The
 `review` node's ship-on-review-cap edge MUST target `proof_verify`, never
 `pr`, so `merge_on_review_cap` (§"Dispatcher policy settings") skips only
 the reviewer's approval and never the replay. No edge MAY route from
-`proof_verify` to `pr_refresh` or `pr` on any verdict but `verified`. As a backstop to
+`proof_verify` to `pr_refresh` or `pr`; a `verified` outcome reaches `pr_refresh`
+only through `proof_grade`. As a backstop to
 the review finding above, a `proof_verify` visit that meets a captured
 record whose proof of a behavioural assertion is test-suite output alone
 MUST end through the structured needs-human ending naming that
@@ -3535,7 +3556,11 @@ governing scenario (the referenced heading and the scenario title the steps
 exercise) or the statement that no scenario governs it, the numbered
 reproduction steps (naming every credential by environment-variable name and
 the wrapper that supplies it, never a value), and the proof — an inline image
-reference for each screenshot and a fenced code block for each text capture. A
+reference for each screenshot and a fenced code block for each text capture. In
+a `verified` or `not_reproduced` record, the section of each `factory_captured`
+assertion MUST carry its own prose line `Reproduced: yes` or `Reproduced: no`,
+outside any fenced block; a verdict line in another section, including a
+record-wide summary, MUST NOT be read as that assertion's verdict. A
 `captured` or `verified` record on an item with `human_attested` assertions
 MUST list those assertions under a heading stating they are pending human
 attestation, and one on an item with `host_captured` assertions MUST list those
@@ -7784,7 +7809,7 @@ in the workflow graph.
 
 **Keys.** `dispatcher.node_timeouts` is a table keyed by node name
 (`dod_gate`, `implement`, `fix`, `review_fix`, `proof_capture`, `review`,
-`disposition`, `proof_verify`, `publish_draft`, `pr_refresh`, `pr`, `janitor`) whose values are positive
+`disposition`, `proof_verify`, `proof_grade`, `publish_draft`, `pr_refresh`, `pr`, `janitor`) whose values are positive
 integers of seconds; `dispatcher.stall_timeout_seconds`
 is a positive integer of seconds for the run-level stall watchdog. A node with
 no configured value MUST resolve to **1800** seconds; the stall watchdog with

@@ -1900,5 +1900,13 @@
     "test": "TODO",
     "reason": "Ratified by revision v155 accepting proposal agent-hooks-unparseable-manifest (plan sandbox-commit-gate-ceiling, epic bd-ib-qy5wol). The uv-launched PreToolUse hooks' handling of an unparseable pyproject.toml is not implemented yet; an integration-tier test is owed for the two sub-scenarios, and work-item bd-ib-cap6t7 implements them and owns that binding.",
     "work_item": "bd-ib-cap6t7"
+  },
+  {
+    "heading": "## Scenario 195 \u2014 A verified record is graded per assertion before the run advances, and a record-wide verdict line re-enters proof_verify",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by revision v156 accepting proposal proof-record-per-assertion-verdict (plan definition-and-proof-of-done, epic bd-ib-7sjdzv). The proof_grade and proof_grade_route command nodes and their routing are not implemented yet; an integration-tier test is owed for the four sub-scenarios, and work-item bd-ib-kcq6pu implements them and owns that binding.",
+    "work_item": "bd-ib-kcq6pu"
   }
 ]

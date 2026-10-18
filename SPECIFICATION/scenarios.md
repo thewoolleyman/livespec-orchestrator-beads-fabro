@@ -6874,3 +6874,29 @@ Feature: The repository's agent hooks survive an unparseable project manifest
     When an agent makes a tool call that a uv-launched PreToolUse hook command of this repository guards
     Then that hook command returns the same allow or refuse decision it returned before this scenario was ratified
 ```
+
+## Scenario 195 — A verified record is graded per assertion before the run advances, and a record-wide verdict line re-enters proof_verify
+
+```gherkin
+Feature: The verified record is graded per assertion before publication
+  Scenario: A verified record with a verdict line in every assertion section advances
+    Given proof_verify posted a verified record whose every factory_captured assertion section carries a prose Reproduced: yes line
+    When the proof_grade node runs
+    Then it exits zero and the run proceeds to pr_refresh
+  Scenario: A record-wide verdict line is not a per-assertion verdict
+    Given fewer than two proof_grade failures are recorded for the run
+    And proof_verify posted a verified record whose only Reproduced: line sits under a trailing summary heading
+    When the proof_grade node runs
+    Then it records a failure and exits non-zero naming every factory_captured assertion
+    And proof_grade_route re-enters proof_verify without visiting review or fix
+    And proof_verify posts a new record without editing the earlier one
+  Scenario: A verdict line inside a fenced proof is not a verdict
+    Given proof_verify posted a verified record whose only Reproduced: yes line for an assertion is printed inside that assertion's fenced proof output
+    When the proof_grade node runs
+    Then it exits non-zero naming that assertion
+  Scenario: Ungradeable records are bounded by the proof_grade failure count
+    Given two proof_grade failures are already recorded for the run
+    And the re-posted verified record is still ungradeable
+    When the proof_grade node runs
+    Then it records the third failure and proof_grade_route routes the run to non_converged
+```
