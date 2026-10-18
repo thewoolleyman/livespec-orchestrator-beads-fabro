@@ -17,31 +17,49 @@ later, carry none. Legacy hp (`:32276`) records still carry the line, which is
 what localizes the gap to the Petri-era event shape rather than to the change
 itself.
 
-WHY THE READ COULD NOT RETURN A HIT. The pinned engine PRINTS the event; the
-Petri-era engine prints an ENVELOPE — `{run_id, stream_seq, kind, id,
-recorded_at, item: {seq, recorded_at, record: {kind, body}}}`, transcribed from
-`plan/fabro-currency/research/006-hp-candidate-first-measurements-2026-10-08.md`
-and already relied on by `test_dispatcher_watchdog_petri_events.py` — and puts
-the event's own `event`, node and `failure` fields two levels in, under
-`item.record.body`. It also names every ending `step.finished` and carries the
-verdict in `outcome`, never as a `stage.failed` event name, and names the node
-`firing` rather than `node_id`. So a reader of the envelope's own keys reports
-a clean, plausible "this node recorded nothing" with no error at all.
+WHERE EVERY PETRI-ERA SPELLING IN THIS MODULE WAS MEASURED, and what was NOT.
+This is stated field by field rather than as one citation, because the first
+delivery of this fix read three keys no engine has been observed writing and a
+test carrying them passed anyway — the fixture and the reader agreed with each
+other and with nothing else:
 
-THE FIXTURE'S STAGE KEYS ARE THE MEASURED ONES. `test_fabro_terminal_evidence_
-petri_stages.py` transcribes this carrier's `inspect` stage map as `<node>@<visit>`
-with no ordinal prefix (`proof_capture@2`, `needs_human@1`, measured 2026-10-15),
-so the routing stage here is `pr@1`. What was NOT measured is how a `firing`
-field spells the same node, so BOTH spellings are exercised — the stage key and
-the bare graph node id — because `graph_node_id` normalizes either and a fixture
-carrying only one would pass against a reader that handled only that one.
+* The ENVELOPE `{run_id, stream_seq, kind, id, recorded_at, item: {seq,
+  recorded_at, record: {kind, body}}}` is transcribed from
+  `plan/fabro-currency/research/006-hp-candidate-first-measurements-2026-10-08.md`
+  (candidate v0.378.0-nightly.0) and is already relied on by
+  `test_dispatcher_watchdog_petri_events.py`.
+* The event BODY at `item.record.body`, its `event` field, the ending name
+  `step.finished`, and the failure block at `outcome.status.failure` carrying
+  `message` are transcribed from this repository's own committed reproducer,
+  `plan/fabro-currency/research/004-acp-spend-limit-repro.py` — whose
+  `selected_evidence` reads `item.record.body` and whose `verify_case` reads
+  `body["outcome"]["status"]["failure"]["class"]` — with the recorded blocks in
+  `004-acp-spend-limit-evidence.json` (candidate v0.371.0-nightly.0). A
+  SUCCEEDED step carries `outcome.status == "success"` on that same field, so a
+  success and a failure are told apart by the block and not by a verdict word.
+* The NODE at `item.subject.node.name`, on the envelope's item rather than on
+  the event body, is from the same reproducer's `selected_evidence`
+  (`item.get("subject", {}).get("node", {}).get("name") == "probe"`). Note 006
+  does not mention `subject`: its envelope line describes the `run.created`
+  record, so it is silent about this key rather than contradicting it.
 
-A CAUSE CHAIN is likewise not something this engine has been measured emitting
-(research note 006 records "No `causes`, no `signature`" on its conclusion), and
-that is exactly why the chain case belongs here: the assertion is conditional —
-given events that DO carry one, the innermost element is what both surfaces must
-name — so the chain case grades the selection and the `detail.message` case
-grades the shape the engine is measured writing today.
+WHAT IS COMPOSED HERE AND SAID TO BE: the `causes` LIST of the first case, and
+the stage-key `pr@1` / bare `pr` node spellings of the parametrization. No
+Petri-era conclusion or event has been measured carrying a cause chain —
+research note 006 records "No `causes`, no `signature`" — which is exactly why
+the chain case is CONDITIONAL, matching the Definition of Done's own wording:
+given events that DO carry one, the innermost element is what both surfaces
+must name. The chain is carried INSIDE the measured container
+(`outcome.status.failure`) so only the one key is composed. And the node
+spelling is parametrized because note 004 measured a bare graph node name while
+`test_fabro_terminal_evidence_petri_stages.py` transcribes this carrier's
+`inspect` stage map as `<node>@<visit>` (`proof_capture@2`, `needs_human@1`,
+measured 2026-10-15): `graph_node_id` normalizes either, and a fixture carrying
+only one would pass against a reader that handled only that one.
+
+NONE OF THE PETRI KEYS HAS BEEN RE-MEASURED ON 0.382 ITSELF. If that engine
+moved any of them the reader reports an absent cause again — honestly, as an
+absence — and the remedy is a fresh measurement, not a guessed key.
 """
 
 from __future__ import annotations
@@ -81,9 +99,9 @@ _RECORDED_AT_MS = 1792000000000
 _WRAPPER_CAUSE = "ACP protocol error"
 _INNERMOST_CAUSE = "script exited with status 1"
 
-# The shape the Petri-era engine IS measured writing for a failure:
-# `{reason, detail: {message, category}}`, with no chain beside it.
-_DETAIL_MESSAGE = "goal gate unsatisfied for node pr and no retry target"
+# The shape the Petri-era engine IS measured writing for a failed step:
+# one `message` inside `outcome.status.failure`, with no chain beside it.
+_FAILURE_MESSAGE = "the agent process exited before the protocol completed"
 
 # The terminal's own failed step, which can never be the cause: it is a
 # dead-end script that exits 1 by design on every run that reaches it.
@@ -141,52 +159,52 @@ def _petri_inspect() -> list[object]:
     ]
 
 
-def _envelope(*, stream_seq: int, kind: str, body: dict[str, Any]) -> dict[str, Any]:
-    """One Petri-era event envelope, with the six keys research note 006 records."""
+def _envelope(*, stream_seq: int, node: str | None, body: dict[str, Any]) -> dict[str, Any]:
+    """One Petri-era event envelope, with the keys note 006 and note 004 record.
+
+    `node` is `None` for the one case that needs an event naming no node at all;
+    the `subject` block is then omitted entirely rather than carried empty,
+    because that is what a record the engine could not attribute looks like.
+    """
+    item: dict[str, Any] = {
+        "seq": stream_seq,
+        "recorded_at": _RECORDED_AT_MS + stream_seq,
+        "record": {"kind": body["event"], "body": body},
+    }
+    if node is not None:
+        item["subject"] = {"node": {"name": node}}
     return {
         "run_id": _RUN,
         "stream_seq": stream_seq,
-        "kind": kind,
+        "kind": body["event"],
         "id": f"{_RUN}-{stream_seq}",
-        "recorded_at": _RECORDED_AT_MS,
-        "item": {
-            "seq": stream_seq,
-            "recorded_at": _RECORDED_AT_MS,
-            "record": {"kind": kind, "body": body},
-        },
+        "recorded_at": _RECORDED_AT_MS + stream_seq,
+        "item": item,
     }
 
 
-def _petri_events(*, firing: str, failure: dict[str, Any]) -> list[object]:
+def _step_finished(*, stream_seq: int, node: str | None, status: object) -> dict[str, Any]:
+    """A `step.finished` envelope whose verdict sits where the engine puts it."""
+    return _envelope(
+        stream_seq=stream_seq,
+        node=node,
+        body={"event": "step.finished", "attempt": 1, "outcome": {"status": status}},
+    )
+
+
+def _petri_events(*, node: str, failure: dict[str, Any]) -> list[object]:
     """The routing stage's own failed ending, with the terminal's beside it."""
     return [
         _envelope(
             stream_seq=11,
-            kind="step.started",
-            body={"event": "step.started", "firing": firing, "attempt": 1},
+            node=node,
+            body={"event": "step.started", "attempt": 1},
         ),
-        _envelope(
-            stream_seq=12,
-            kind="step.finished",
-            body={
-                "event": "step.finished",
-                "firing": firing,
-                "outcome": "failed",
-                "failure": failure,
-            },
-        ),
-        _envelope(
+        _step_finished(stream_seq=12, node=node, status={"failure": failure}),
+        _step_finished(
             stream_seq=13,
-            kind="step.finished",
-            body={
-                "event": "step.finished",
-                "firing": _TERMINAL_STAGE,
-                "outcome": "failed",
-                "failure": {
-                    "reason": "node_error",
-                    "detail": {"message": _TERMINAL_MESSAGE, "category": "deterministic"},
-                },
-            },
+            node=_TERMINAL_STAGE,
+            status={"failure": {"message": _TERMINAL_MESSAGE, "class": "node_error"}},
         ),
     ]
 
@@ -234,9 +252,9 @@ def _outcome(
     return outcome
 
 
-@pytest.mark.parametrize("firing", [_ROUTING_STAGE, "pr"])
+@pytest.mark.parametrize("node", [_ROUTING_STAGE, "pr"])
 def test_a_petri_routing_stage_cause_chain_reaches_both_needs_human_surfaces(
-    tmp_path: Path, firing: str
+    tmp_path: Path, node: str
 ) -> None:
     """The chain's INNERMOST element, on the dispatch result and in the ledger.
 
@@ -251,12 +269,11 @@ def test_a_petri_routing_stage_cause_chain_reaches_both_needs_human_surfaces(
         tmp_path=tmp_path,
         inspect_payload=_petri_inspect(),
         events_payload=_petri_events(
-            firing=firing,
+            node=node,
             failure={
-                "reason": "node_error",
+                "class": "node_error",
                 "causes": [_WRAPPER_CAUSE, _INNERMOST_CAUSE],
                 "category": "deterministic",
-                "signature": "pr|deterministic|acp turn failed",
             },
         ),
     )
@@ -267,10 +284,10 @@ def test_a_petri_routing_stage_cause_chain_reaches_both_needs_human_surfaces(
     assert _WRAPPER_CAUSE not in outcome.detail
 
 
-def test_the_measured_petri_failure_detail_message_is_named_as_the_cause(
+def test_the_measured_petri_failure_message_is_named_as_the_cause(
     tmp_path: Path,
 ) -> None:
-    """The shape the engine writes today: one `detail.message`, no chain.
+    """The shape the engine IS measured writing: one `message`, no chain.
 
     This is the case a real Petri ending takes, and it is NOT redundant with
     the chain case above: the two travel through different arms of the shared
@@ -281,17 +298,102 @@ def test_the_measured_petri_failure_detail_message_is_named_as_the_cause(
         tmp_path=tmp_path,
         inspect_payload=_petri_inspect(),
         events_payload=_petri_events(
-            firing=_ROUTING_STAGE,
-            failure={
-                "reason": "node_error",
-                "detail": {"message": _DETAIL_MESSAGE, "category": "deterministic"},
-            },
+            node=_ROUTING_STAGE,
+            failure={"message": _FAILURE_MESSAGE, "class": "retry_requested"},
         ),
     )
 
-    assert outcome.fabro_failure_cause == _DETAIL_MESSAGE
-    assert f"innermost cause: {_DETAIL_MESSAGE}" in outcome.detail
-    assert f"innermost cause: {_DETAIL_MESSAGE}" in needs_human_cause_body(outcome=outcome)
+    assert outcome.fabro_failure_cause == _FAILURE_MESSAGE
+    assert f"innermost cause: {_FAILURE_MESSAGE}" in outcome.detail
+    assert f"innermost cause: {_FAILURE_MESSAGE}" in needs_human_cause_body(outcome=outcome)
+
+
+def test_a_succeeded_step_on_the_routing_node_is_not_read_as_its_failure(
+    tmp_path: Path,
+) -> None:
+    """The verdict is told by the failure BLOCK, never by a verdict word.
+
+    A succeeded Petri step carries `outcome.status == "success"` — a bare
+    string on the very field a failure nests its block under — so a reader
+    keyed on the presence of `outcome`, or on any word inside it, counts a
+    success as a failure. Here the node's only OTHER record is the success, so
+    a reader that did would attribute a cause-free block to the stage and then
+    report the absence clause for a run whose real ending it skipped.
+    """
+    events: list[object] = [
+        _step_finished(stream_seq=11, node=_ROUTING_STAGE, status="success"),
+        _step_finished(
+            stream_seq=12,
+            node=_ROUTING_STAGE,
+            status={"failure": {"message": _FAILURE_MESSAGE, "class": "retry_requested"}},
+        ),
+    ]
+
+    outcome = _outcome(tmp_path=tmp_path, inspect_payload=_petri_inspect(), events_payload=events)
+
+    assert outcome.fabro_failure_cause == _FAILURE_MESSAGE
+
+
+def test_a_later_cause_free_record_does_not_discard_the_cause_already_recorded(
+    tmp_path: Path,
+) -> None:
+    """The newest block that YIELDS a cause wins, not merely the newest block.
+
+    One node can record more than one failure — the bounded fix loop retries
+    it, and an engine may follow an ending with a further node-scoped record —
+    so taking the last block unconditionally lands on whichever happened to
+    come last. When that one carries no readable cause the real one, two
+    records earlier, is discarded and the surfaces report the absence clause
+    for a cause the engine did supply. That is strictly worse than the silence
+    this item is closing: it is a confident claim about the engine, drawn from
+    the reader's own choice of record.
+    """
+    events: list[object] = [
+        _step_finished(
+            stream_seq=11,
+            node=_ROUTING_STAGE,
+            status={
+                "failure": {
+                    "class": "node_error",
+                    "causes": [_WRAPPER_CAUSE, _INNERMOST_CAUSE],
+                }
+            },
+        ),
+        _step_finished(
+            stream_seq=12,
+            node=_ROUTING_STAGE,
+            status={"failure": {"class": "node_error"}},
+        ),
+    ]
+
+    outcome = _outcome(tmp_path=tmp_path, inspect_payload=_petri_inspect(), events_payload=events)
+
+    assert outcome.fabro_failure_cause == _INNERMOST_CAUSE
+    assert f"innermost cause: {_INNERMOST_CAUSE}" in needs_human_cause_body(outcome=outcome)
+
+
+def test_a_failure_naming_no_node_is_not_attributed_to_the_routing_stage(
+    tmp_path: Path,
+) -> None:
+    """An event the engine could not place must not be placed by this reader.
+
+    The whole read is node-scoped, so a record carrying a failure and no
+    subject belongs to no node's list. Attributing it to whichever stage the
+    checkpoint happened to name would report another node's fault — or a
+    run-level one — as this stage's innermost cause.
+    """
+    events: list[object] = [
+        _step_finished(
+            stream_seq=11,
+            node=None,
+            status={"failure": {"message": "run aborted by the scheduler"}},
+        )
+    ]
+
+    outcome = _outcome(tmp_path=tmp_path, inspect_payload=_petri_inspect(), events_payload=events)
+
+    assert outcome.fabro_failure_cause is None
+    assert "run aborted by the scheduler" not in outcome.detail
 
 
 def test_the_terminal_steps_own_failure_is_never_the_reported_cause(
@@ -311,11 +413,8 @@ def test_the_terminal_steps_own_failure_is_never_the_reported_cause(
         tmp_path=tmp_path,
         inspect_payload=_petri_inspect(),
         events_payload=_petri_events(
-            firing=_ROUTING_STAGE,
-            failure={
-                "reason": "node_error",
-                "detail": {"message": _DETAIL_MESSAGE, "category": "deterministic"},
-            },
+            node=_ROUTING_STAGE,
+            failure={"message": _FAILURE_MESSAGE, "class": "retry_requested"},
         ),
     )
 
