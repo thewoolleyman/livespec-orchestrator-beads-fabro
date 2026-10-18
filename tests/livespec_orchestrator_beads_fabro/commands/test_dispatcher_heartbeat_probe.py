@@ -563,10 +563,25 @@ def test_launcher_with_fresh_advancing_heartbeat_never_cancels(tmp_path: Path) -
     def _advance_heartbeat_then_finish(_seconds: float) -> None:
         # Each poll the live run exports a fresh metric -> the heartbeat
         # advances; after a few polls end the run so launch() returns.
+        #
+        # The wait is the LAUNCHER's — not the fake runner's signal, and not
+        # none at all, which is what this hook took before bd-ib-spc6xr.
+        # `end_run_and_await_launcher_return` joins the launcher's own run
+        # thread, which exits only once the watch loop's end-of-run condition
+        # is already true. Releasing the run without that wait lets the loop
+        # resume and sample again, and THIS case cannot notice: its heartbeat
+        # advances on every poll, so each extra sample reports progress and no
+        # stall is ever reachable. Measured 2026-10-18 with a 0.2s gap forced
+        # between the fake runner's return and the launcher's own signal: 537
+        # polls here against the 4 pinned below, with this case's assertions
+        # holding throughout. So the property had to be pinned by the poll
+        # count after `launch`, not by the stall assertions.
         polls["n"] += 1
         sink.beat(key=_HEARTBEAT_WORK_ITEM_ID, at=_FROZEN_EVENT_EPOCH + polls["n"] * 600.0)
         if polls["n"] >= 4:
-            runner.run_done.set()
+            end_run_and_await_launcher_return(
+                run_done=runner.run_done, work_item_id=_HEARTBEAT_WORK_ITEM_ID
+            )
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(
@@ -577,3 +592,8 @@ def test_launcher_with_fresh_advancing_heartbeat_never_cancels(tmp_path: Path) -
     result = launcher.launch(plan=_watchdog_plan(repo=tmp_path), runner=runner, journal=journal)
     assert result.stalled_run_id is None
     assert runner.rm_calls == []
+    # The discriminating instrument for the launcher-side wait in the hook
+    # above, and the reason this case can now fail if that wait regresses:
+    # the loop stops at a KNOWN poll count. The two stall assertions cannot
+    # carry it, because an advancing heartbeat holds them at any poll count.
+    assert polls["n"] == 4
