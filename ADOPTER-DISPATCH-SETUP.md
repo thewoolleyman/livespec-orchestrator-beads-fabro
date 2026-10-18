@@ -125,21 +125,53 @@ That writes `~/.fabro/auth.json`, keyed by the server url. A
 one named factory when you need something more specific than a login
 file shared by every client on the host.
 
-### The sandbox environment file
+### The sandbox environment
 
-Copy `environments/livespec-ci.toml` into your `FABRO_HOME`'s
-`environments/` directory. It is needed because the workflow's run
-environment names it:
+Your workflow's run environment names an id:
 
 ```toml
 [run.environment]
 id = "livespec-ci"
 ```
 
-A server home without that environment cannot run the graph. The file
-declares the sandbox provider, image and resources; copy the fleet's
-verbatim to start, then edit the image to one that can build your
-toolchain.
+**Where that id resolves depends on which engine your server runs**, and
+the two engines want different things from you. Settle which one you are
+on before writing anything, because each answer is inert on the other.
+
+**On the pinned 0.254 engine the committed workflow is the whole
+answer.** That engine has no `--environment` flag at all and keeps
+selecting from `workflow.toml`, which declares the environment *inline*
+beside the id it names — provider, image and resources together. So a
+server home needs no `environments/` directory, and you have nothing to
+copy: the fleet's own `provision_fabro` writes no such file, and this
+repository ships none.
+
+A host-local `~/.fabro/environments/livespec-ci.toml` is an **optional
+image override** for host-local `fabro run` invocations on a developer's
+machine — the pre-p60 fallback — never a dispatch prerequisite. If you
+keep one, it must carry **only** the provider and the image:
+
+```toml
+provider = "docker"
+
+[image]
+docker = "<an image that can build your toolchain>"
+```
+
+**Never an `[env]` table in that file.** The Dispatcher appends that
+table at dispatch time carrying the real credential values, and TOML
+forbids declaring one table twice — so an `[env]` block here is a
+collision that takes down every dispatch reading the file. This is the
+one way "copy the fleet's and edit the image" goes wrong silently, which
+is why the contents above are given in full rather than as a copy
+instruction.
+
+**On the Petri-era engine the server's own catalog governs instead**,
+and the workflow's id loses: that engine selects from the run intent's
+`environment_id` and *overrides* `[run.environment]` (the workflow's env
+and resources overlays still apply to whichever environment won). Name
+the catalog entry on the factory itself, with the `environment` key in
+the next section.
 
 ### Register it as a factory
 
@@ -150,13 +182,29 @@ Declare the server under `dispatcher.factories` in your repo's
 "dispatcher": {
   "default_factory": "mine",
   "factories": {
-    "mine": { "server": "http://127.0.0.1:<your own port>" }
+    "mine": {
+      "server": "http://127.0.0.1:<your own port>",
+      // Petri-era servers only — omit this key on the pinned 0.254 engine.
+      "environment": "<an id in your server's catalog>"
+    }
   }
 }
 ```
 
 `LIVESPEC_FABRO_FACTORY=<name>` overrides the choice for one invocation,
 and `dispatcher.py dispatch` takes `--factory <name>`.
+
+The `environment` key is the catalog selector the previous section
+names, and it is **opt-in**: omit it on the pinned 0.254 engine, whose
+dispatches would fail at argument parsing on a flag it does not have. On
+a Petri-era server, omitting it is what costs you — the run intent then
+carries no environment, the server falls back to its `default`
+(`buildpack-deps:noble`, with no version manager on `PATH`), and the
+dispatch dies in a prepare step with `sh: 1: mise: not found`. Nothing
+in that failure names the placement, so it reads as a work-item failure
+rather than the configuration one it is. A *declared* `environment` that
+is empty or not a string is refused before the item is claimed, rather
+than being treated as absent — which would restore exactly that failure.
 
 ### Credentials the dispatch itself needs
 
