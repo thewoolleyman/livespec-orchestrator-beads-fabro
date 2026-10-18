@@ -121,12 +121,16 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # node comments in `workflow.fabro` carry the derivation; this table mirrors it
 # rather than re-deriving it, because the two must agree.
 #
-# `proof_grade` (v156; work-item bd-ib-kcq6pu) is budgeted at `proof_verify`'s own
-# count, because it is entered exactly once per `verified` replay: it sits on the
-# single edge out of that verdict, and the clause forbids any other route into
-# `pr_refresh`. Budgeting it lower would under-bill the one node every publishing
-# path now passes through, and a node budgeted below what the graph can spend is
-# one the Dispatcher's own subprocess ceiling can kill mid-run.
+# THE GRADE LOOP ADDS THREE MORE ENTRIES TO `proof_verify` (v156; work-item
+# bd-ib-kcq6pu) and brings two nodes of its own. `proof_grade` is entered exactly
+# once per `verified` replay -- it sits on the single edge out of that verdict,
+# and the clause forbids any other route into `pr_refresh` -- so it carries the
+# replay's own count. `proof_grade_route` is entered once per recorded grade
+# failure and the third routes the run to `non_converged`, so THREE is the whole
+# of it, and `proof_verify` rises from six to nine because each of those three
+# re-enters it directly. Budgeting either lower would under-bill the one node
+# every publishing path now passes through, and a node budgeted below what the
+# graph can spend is one the Dispatcher's own subprocess ceiling can kill mid-run.
 #
 # `pr` and the refresh-route decision node `pr_route` are FOUR each: each `pr`
 # visit either ends the run or spends one of the three counted refreshes, so one
@@ -142,8 +146,9 @@ _WORST_CASE_VISITS: Mapping[str, int] = {
     "publish_draft": 4,
     "proof_capture": 7,
     "review": 7,
-    "proof_verify": 6,
-    "proof_grade": 6,
+    "proof_verify": 9,
+    "proof_grade": 9,
+    "proof_grade_route": 3,
     "disposition": 3,
     "review_fix": 3,
     "pr_refresh": 8,

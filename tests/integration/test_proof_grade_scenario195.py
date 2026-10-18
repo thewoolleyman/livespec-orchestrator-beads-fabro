@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_render import (
     node_timeout_seconds,
     render_workflow_graph,
@@ -35,6 +36,11 @@ _PAYLOAD = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-w
 _GRAPH = _PAYLOAD / "workflow.fabro"
 
 _GRADE = "proof_grade"
+_ROUTE = "proof_grade_route"
+_VERIFY = "proof_verify"
+_REVIEW = "review"
+_FIX = "fix"
+_NON_CONVERGED = "non_converged"
 
 # The one value the case configures, chosen so it can equal neither the
 # fully-defaulted resolution nor any literal the committed graph happens to
@@ -45,6 +51,27 @@ _CONFIGURED_SECONDS = 1234
 
 def _graph_text() -> str:
     return _GRAPH.read_text(encoding="utf-8")
+
+
+def _edges() -> tuple[tuple[str, str, str], ...]:
+    """Every edge of the committed graph as (source, target, condition).
+
+    Read through the PRODUCTION graph reader rather than a regular expression
+    here: a reader of this module's own would be a second account of the DOT
+    grammar, and the way that fails is that it silently drops an edge — a route
+    never offered an alternative looks exactly like a route that rejected it.
+    """
+    parsed = parse_dot_graph(text=_graph_text())
+    assert not isinstance(parsed, str), parsed
+    return tuple(
+        (edge.source, edge.destination, edge.attributes.get("condition", ""))
+        for edge in parsed.edges
+    )
+
+
+def _targets(*, source: str) -> list[tuple[str, str]]:
+    """One node's outgoing (target, condition) pairs, in declaration order."""
+    return [(target, condition) for one, target, condition in _edges() if one == source]
 
 
 def test_a_target_naming_proof_grade_in_node_timeouts_is_not_refused() -> None:
@@ -90,3 +117,46 @@ def test_the_configured_value_lands_as_the_literal_timeout_of_the_proof_grade_no
         node_timeout_seconds(graph_text=control.text, node=_GRADE) == DEFAULT_NODE_TIMEOUT_SECONDS
     )
     assert rendered.node_seconds[_GRADE] == _CONFIGURED_SECONDS
+
+
+def test_a_grade_failure_re_enters_proof_verify_through_its_own_route_node() -> None:
+    """The retry path is `proof_grade_route -> proof_verify`, and nothing else.
+
+    The clause is explicit that "A retry through `proof_grade_route` re-enters
+    `proof_verify` DIRECTLY, visits neither `review` nor `fix`, and is charged to
+    neither the review-fix budget nor `fix`'s visit cap". That is a claim about
+    the GRAPH, so it is read off the committed edges: a route that reached the
+    replay by way of `review` would re-review a tree nobody changed and would
+    spend one of the three review rounds an item gets for actual findings, while
+    one that reached it by way of `fix` would send an implementer to repair code
+    the replay already reproduced.
+
+    DIRECTNESS is asserted as the ABSENCE of the two forbidden targets as well as
+    the presence of the right one, because "there is an edge to `proof_verify`"
+    would be satisfied just as well by a node that also routed to `review` — and
+    on this engine an unconditional edge beside a conditional one is reached
+    whenever the condition does not match.
+    """
+    onward = _targets(source=_ROUTE)
+
+    assert (_VERIFY, "") in onward, onward
+    assert [target for target, _ in onward if target in (_REVIEW, _FIX)] == []
+    assert [target for target, _ in _targets(source=_GRADE) if target == _ROUTE] == [_ROUTE]
+
+
+def test_the_grade_routes_an_ungradeable_record_to_its_route_node_and_nothing_else() -> None:
+    """The failure edge leads to the route node, and the advance stays unconditional.
+
+    Both halves are the assertion, and the second is what keeps the engine
+    loading the graph at all: a command node whose every outgoing edge carries a
+    condition is rejected outright before anything runs
+    (`all_conditional_edges`), which took the whole factory down twice. So the
+    ungradeable record is the NAMED exception and `pr_refresh` is the
+    fallthrough — never the other way round, which would publish every
+    unreadable grade.
+    """
+    onward = _targets(source=_GRADE)
+
+    assert (_ROUTE, "outcome=failed") in onward, onward
+    assert ("pr_refresh", "") in onward, onward
+    assert [condition for _, condition in onward if condition == ""] == [""]

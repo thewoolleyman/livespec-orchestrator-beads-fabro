@@ -87,8 +87,9 @@ _PR_ROUTE_ADDED = {"pr_route"}
 # this module is the PORT, so an addition merged into the port's own set would make
 # a future port regression read as part of this route. The nodes it moves are the
 # publication stages' and the replay's, because every `verified` outcome now
-# reaches `pr_refresh` through it.
-_PROOF_GRADE_ADDED = {"proof_grade"}
+# reaches `pr_refresh` through it and its retry route closes a cycle back into
+# the replay.
+_PROOF_GRADE_ADDED = {"proof_grade", "proof_grade_route"}
 _REFRESH_REPAIR_LOOP = _REFRESH_REPAIR_ADDED | {
     "fix",
     "janitor",

@@ -641,6 +641,51 @@ digraph ImplementWorkItem {
         script="livespec_grade_failed() { state=$(git rev-parse --git-path livespec-publication); if test -n \"$state\"; then mkdir -p \"$state\"; count=$(cat \"$state/livespec-proof-grade-failures\" 2>/dev/null || echo 0); if ! test \"$count\" -ge 0 2>/dev/null; then count=3; fi; printf '%s\\n' \"$((count + 1))\" > \"$state/livespec-proof-grade-failures\"; printf '%s\\n' \"$1\" > \"$state/livespec-proof-grade-finding\"; fi; echo \"$1\" >&2; }; branch=\"${LIVESPEC_PUBLISH_BRANCH:-}\"; if test -z \"$branch\"; then livespec_grade_failed 'LIVESPEC_PROOF_GRADE_NO_BRANCH: no LIVESPEC_PUBLISH_BRANCH in this script environment, so the pull request carrying the verified record cannot be named; failing closed rather than advancing on a record nobody graded'; exit 1; fi; number=$(gh pr list --head \"$branch\" --state all --json number --jq 'map(.number)|max'); if test -z \"$number\" || test \"$number\" = \"null\"; then livespec_grade_failed \"LIVESPEC_PROOF_GRADE_PR_UNRESOLVED: the forge could not be asked which pull request carries $branch, so the verified record cannot be read\"; exit 1; fi; program=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-proof-grade.py\"; if test ! -f \"$program\"; then livespec_grade_failed \"LIVESPEC_PROOF_GRADE_PROGRAM_ABSENT: the Dispatcher-materialized per-assertion grade is not at $program, so the verified record cannot be graded with the reader the acceptance pass grades with\"; exit 1; fi; exec python3 \"$program\" --pull-request \"$number\""
     ]
 
+    // THE GRADE'S OWN RETRY ROUTE (v156; work-item bd-ib-kcq6pu). A command node
+    // reached only from an ungradeable grade, exiting ZERO back into
+    // `proof_verify` while fewer than three grade failures stand for this run and
+    // NON-ZERO to `non_converged` at the third.
+    //
+    // WHY A SECOND NODE RATHER THAN A ROUTE ON THE FIRST. The engine gives a
+    // command node exactly TWO outcomes, and `proof_grade` has already spent
+    // both: zero advances to `pr_refresh` and non-zero reports an ungradeable
+    // record. Discriminating "retry" from "give up" therefore needs a node of its
+    // own, exactly as `pr_refresh_head` asks `pr_refresh`'s head question and
+    // `pr_route` asks `pr`'s refresh question.
+    //
+    // THE RETRY RE-ENTERS `proof_verify` DIRECTLY and reaches neither `review`
+    // nor `fix`, because the ratified clause says so in as many words: the tree
+    // is unchanged and the record is the defect, so a review round would
+    // re-review bytes nobody touched while spending one of the three rounds an
+    // item gets for real findings, and a fix round would send an implementer to
+    // repair code the replay already reproduced.
+    //
+    // `max_visits=4` IS AN ENGINE-SIDE BACKSTOP AND NOTHING SHOULD REACH IT.
+    // This node closes a NEW cycle -- proof_verify -> proof_grade ->
+    // proof_grade_route -> proof_verify -- and the credential-lifetime derivation
+    // (`_dispatcher_execution_budget`) reports an uncut cycle UNBOUNDED and
+    // REFUSES the dispatch rather than giving it a plausible default. The
+    // visit-count edge conjunct is not the mechanism to cut it with: that key is
+    // not populated on the Petri-era engine, so the guard would be permanently
+    // false and a retry could never happen at all. The run's OWN counter fires
+    // first, on the third failure, and routes out through `non_converged` -- which
+    // is what produces an explicit non-convergence cause, where `max_visits`
+    // ABORTS and emits no outcome for any edge to carry. Four is three counted
+    // failures plus one.
+    //
+    // A CORRUPT COUNTER ROUTES TO NON-CONVERGENCE RATHER THAN RETRYING, which is
+    // the fail-closed direction and the one the natural coding of the comparison
+    // gets wrong: `test "$count" -ge 3` returns 2 on a non-numeric value, which an
+    // `if` reads as "below the bound", so a counter nothing can compare would
+    // retry for ever.
+    proof_grade_route [
+        label="Retry the replay for an ungradeable record, or stop at the third"
+        shape=parallelogram
+        timeout="600s"
+        max_visits=4
+        script="exit 0"
+    ]
+
     // SCRIPTED PUBLICATION (SPECIFICATION/contracts.md
     // "Definition-of-Done and Proof-of-Done stages" ->
     // "Scripted publication and proof-head integrity", ratified v121). The three
@@ -1733,8 +1778,10 @@ digraph ImplementWorkItem {
     // outgoing edge carries a condition is rejected outright by the engine before
     // anything runs (`all_conditional_edges`, the defect that took the whole
     // factory down twice).
-    proof_grade -> needs_human [label="ungradeable verified record", condition="outcome=failed"]
+    proof_grade -> proof_grade_route [label="ungradeable verified record", condition="outcome=failed"]
     proof_grade -> pr_refresh
+    proof_grade_route -> non_converged [label="third ungradeable record", condition="outcome=failed"]
+    proof_grade_route -> proof_verify
 
     // Scripted-publication routing (SPECIFICATION/contracts.md
     // "Scripted publication and proof-head integrity", ratified v121).
