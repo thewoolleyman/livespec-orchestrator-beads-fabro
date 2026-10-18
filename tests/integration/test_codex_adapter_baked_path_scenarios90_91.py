@@ -32,6 +32,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands import _jsonc as jsonc
 from livespec_orchestrator_beads_fabro.commands._acp_agent_entry import AcpAgentEntry
 from livespec_orchestrator_beads_fabro.commands._acp_agent_mechanism import (
@@ -333,6 +334,7 @@ def _model_and_effort_spellings(*, entry: dict[str, str], agent: AcpAgentEntry) 
     )
 
 
+@pytest.mark.committed_routing_lint
 def test_this_repository_committed_entries_reach_their_rendered_adapters() -> None:
     """The control graded on THIS repository's committed configuration.
 

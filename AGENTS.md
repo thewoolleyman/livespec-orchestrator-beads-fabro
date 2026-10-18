@@ -1684,6 +1684,16 @@ temporary testing of a specific model, isolated so it cannot change shared
 configuration or affect overall factory operation. A provider named in an old
 handoff is historical context, not authority to reroute a current dispatch.
 
+**No test may depend on which model a factory node runs** (maintainer ruling
+2026-10-18, after a second instance). `dispatcher.acp_nodes` is an operator
+dial the maintainer turns to balance provider spend, so a test that reads it
+turns a routing decision into a red build. The autouse fixture
+`_no_test_reads_the_committed_acp_routing` in `tests/conftest.py` enforces
+this: it replaces the committed `acp_nodes` table with a tripwire that fails
+any test reading it. A test that needs a routing writes its own fixture
+`.livespec.jsonc` naming the agent and model it is about. Never weaken or
+bypass the tripwire to get a test green.
+
 Fleet-standard guidance, ported from
 `livespec/AGENTS.md` §"When to ask, proceed, or self-resolve". The default is
 to decide and report, not to escalate.

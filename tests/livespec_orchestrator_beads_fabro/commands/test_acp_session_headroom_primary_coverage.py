@@ -16,17 +16,20 @@ routing on 2026-10-14, every one of its eight ACP nodes resolves to a
 `claude-acp` primary and the headroom filter took ZERO readings -- a feature
 that passed every unit test while assessing nothing the factory actually runs.
 
-THE LIVE CONTROL IS THE LOAD-BEARING ONE, and it is pointed at this
-repository's committed configuration rather than at a fixture. A fixture proves
-the attach path carries the field; only the live resolution proves the field
-survives the whole layer stack this repository's dispatches go through. Its
-first assertion establishes that the routing under test is still Claude, so a
-re-route to another provider fails here loudly instead of making the rest of
-the case vacuous.
+THE END-TO-END CONTROL IS THE LOAD-BEARING ONE: it runs the whole layer stack
+a dispatch goes through -- the committed workflow, the repository layer, the
+attach, the preflight -- rather than only the attach path. Its repository layer
+is a FIXTURE config that routes every node to `claude-acp`, NEVER this
+repository's committed `dispatcher.acp_nodes`: which model a node runs is an
+operator dial (maintainer ruling 2026-10-18), and this file once asserted
+"this repository must still route its ACP nodes to Claude", which turned a
+deliberate move of `implement` to Codex into a red build. The top-level
+conftest now fails any test that reads the committed routing.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -50,7 +53,33 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import
     resolve_acp_preflight,
 )
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+# Every ACP node this repository's workflow declares, routed to the Claude
+# agent this clause covers. A FIXTURE, deliberately: the committed routing is an
+# operator dial no test may read (see the module docstring).
+_CLAUDE_ROUTED_NODES = {
+    node: {"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"}
+    for node in (
+        "dod_gate",
+        "implement",
+        "fix",
+        "review_fix",
+        "proof_capture",
+        "proof_verify",
+        "review",
+        "pr",
+        "disposition",
+    )
+}
+
+
+def _claude_routed_repo(*, root: Path) -> Path:
+    config = {
+        "livespec-orchestrator-beads-fabro": {"dispatcher": {"acp_nodes": _CLAUDE_ROUTED_NODES}}
+    }
+    (root / ".livespec.jsonc").write_text(json.dumps(config), encoding="utf-8")
+    return root
+
+
 _NOW = "2026-10-14T12:00:00Z"
 _FLOOR = 20
 
@@ -101,13 +130,13 @@ def test_a_structured_node_entry_carries_its_agent_id_onto_the_rebuilt_primary()
     assert headroom.headroom_covers_candidate(candidate=primary, builtin_pairs=frozenset()) is True
 
 
-def test_this_repositorys_own_claude_routing_is_assessed_by_the_filter(
+def test_a_claude_routed_repository_is_assessed_by_the_filter(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The live control that caught the gap, kept as a standing one.
 
-    Every admission-required node of this repository -- all eight potentially
-    reachable ACP nodes -- resolves to a `claude-acp` primary today, so a
+    Every admission-required node of the fixture repository -- all eight
+    potentially reachable ACP nodes -- resolves to a `claude-acp` primary, so a
     below-floor reading must empty every one of them and the whole chain set
     must be refused.
 
@@ -134,8 +163,10 @@ def test_this_repositorys_own_claude_routing_is_assessed_by_the_filter(
     # -- which is the governing floor for every repository that has not set the
     # dial, and therefore the one this control should be measuring against.
     assert headroom.DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT == _FLOOR
+    (tmp_path / "repo").mkdir()
+    repo = _claude_routed_repo(root=tmp_path / "repo")
     verdict = resolve_acp_preflight(
-        repo=_REPO_ROOT,
+        repo=repo,
         journal_path=None,
         now_iso=_NOW,
         headroom=headroom_gate.session_headroom_policy(
@@ -149,7 +180,7 @@ def test_this_repositorys_own_claude_routing_is_assessed_by_the_filter(
     assert verdict.fallback_enabled is True
     assert all(
         node.candidates == () or node.skipped != () for node in verdict.nodes
-    ), "this repository must still route its ACP nodes to Claude"
+    ), "the fixture repository routes every ACP node to Claude"
 
     assert reads == ["projected-token"]
     assert [reading.credential_identity for reading in verdict.headroom_assessments] == ["cred-1"]
@@ -164,14 +195,16 @@ def test_this_repositorys_own_claude_routing_is_assessed_by_the_filter(
     )
 
 
-def test_an_above_floor_reading_leaves_this_repositorys_routing_admissible() -> None:
+def test_an_above_floor_reading_leaves_a_claude_routed_repository_admissible(
+    tmp_path: Path,
+) -> None:
     """The positive control: the filter is a filter, not a blanket refusal."""
     reading = headroom.session_headroom_reading(
         credential_identity="cred-1", observed_at=_NOW, utilization=5
     )
 
     verdict = resolve_acp_preflight(
-        repo=_REPO_ROOT,
+        repo=_claude_routed_repo(root=tmp_path),
         journal_path=None,
         now_iso=_NOW,
         headroom=headroom.SessionHeadroomPolicy(

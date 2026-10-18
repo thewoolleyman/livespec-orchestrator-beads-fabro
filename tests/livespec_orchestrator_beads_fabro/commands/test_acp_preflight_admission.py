@@ -738,14 +738,15 @@ def test_a_repository_with_no_fallback_configuration_gets_a_total_no_op() -> Non
     assert modules["_dispatcher_acp_preflight"].credential_reprobe_wait_applies(verdict=verdict)
 
 
+@pytest.mark.committed_routing_lint
 def test_this_repository_resolves_the_viable_no_op_verdict(tmp_path: Path) -> None:
     """The live composer, against both this repo and an empty target."""
     modules = _modules()
     composer = modules["_dispatcher_acp_preflight"]
 
-    # This repository's committed Codex routing (maintainer direction
-    # 2026-10-09, Codex-only) resolves through the chain composer, so the
-    # verdict reports the chain enabled; an empty target carries no chain.
+    # This repository's committed structured routing -- whatever agents and
+    # models it names -- resolves through the chain composer, so the verdict
+    # reports the chain enabled; an empty target carries no chain.
     for repo, fallback_enabled in ((_REPO_ROOT, True), (tmp_path, False)):
         verdict = composer.resolve_acp_preflight(repo=repo, journal_path=None, now_iso=_NOW)
         assert verdict.fallback_enabled is fallback_enabled

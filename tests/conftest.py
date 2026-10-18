@@ -285,6 +285,102 @@ def _hermetic_factory_credential_slots(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_COMMITTED_ROUTING_MESSAGE = (
+    "this test reads the repository's COMMITTED dispatcher.acp_nodes routing; which "
+    "model a factory node runs is an operator dial and no test may depend on it -- "
+    "give the test its own fixture .livespec.jsonc naming the agent and model it is about"
+)
+
+
+def _committed_acp_nodes() -> object:
+    from livespec_orchestrator_beads_fabro.commands._jsonc import loads
+
+    config = loads(text=(_REPO_ROOT / ".livespec.jsonc").read_text(encoding="utf-8"))
+    return (
+        config.get("livespec-orchestrator-beads-fabro", {}).get("dispatcher", {}).get("acp_nodes")
+    )
+
+
+class _CommittedRoutingTripwire(dict[str, Any]):
+    """Stands in for the committed `acp_nodes` table and fails the test on any read.
+
+    A `dict` subclass, because every reader validates the table with
+    `isinstance(..., dict)` first, and a non-dict would be refused as a config
+    error -- a plausible refusal a test could pass on. Its own storage is EMPTY
+    and every accessor is overridden, so no read path can see a model through it.
+    """
+
+    def _trip(self, *_args: object, **_kwargs: object) -> Any:
+        pytest.fail(_COMMITTED_ROUTING_MESSAGE, pytrace=False)
+
+    __getitem__ = __iter__ = __len__ = __contains__ = __eq__ = __ne__ = _trip
+    __bool__ = __repr__ = get = items = keys = values = copy = _trip
+
+
+_COMMITTED_ROUTING_LINT = "committed_routing_lint"
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers",
+        f"{_COMMITTED_ROUTING_LINT}: a LINT over this repository's committed "
+        "dispatcher.acp_nodes that asserts one property of EVERY configured node "
+        "(it resolves, it renders, it carries a complete price) and names no agent "
+        "or model; the only test allowed to read the committed routing",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _no_test_reads_the_committed_acp_routing(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fail any test that reads THIS repository's committed ACP routing.
+
+    WHICH MODEL A FACTORY NODE RUNS IS AN OPERATOR DIAL, and no test may be tied
+    to where it is set (maintainer ruling 2026-10-18, made after a second
+    instance). The dial is `.livespec.jsonc` `dispatcher.acp_nodes`, and the
+    maintainer turns it to balance provider spend, so a test that reads it
+    turns a routing decision into a red build. The instance that motivated
+    this guard: moving `implement` to `codex-acp` / `gpt-6-luna` failed
+    `test_acp_session_headroom_primary_coverage.py`, whose live control
+    asserted "this repository must still route its ACP nodes to Claude", and
+    so blocked the pre-push of a one-line config change.
+
+    It acts where EVERY dispatcher-block read passes, `_config._sub_block`, and
+    keys on the routing VALUE rather than on a path: a test that copies the
+    committed file into `tmp_path` reads the same dial with an extra step. The
+    rest of the block is returned untouched, so a test reading any OTHER
+    committed setting is unaffected; only `acp_nodes` becomes a tripwire. A
+    first draft guarded the overlay resolver instead and could never fire,
+    because the preflight path hands that resolver a SCOPED copy of the block,
+    so keep the guard at the read.
+
+    THE ONE EXCEPTION is a test marked `committed_routing_lint`: a lint over
+    WHATEVER the committed table says, asserting a property of every configured
+    node and naming no agent or model. Those tests protect the factory from a
+    routing choice that cannot dispatch -- a model nobody priced turns a run's
+    cost unobservable and the fail-closed cost gate then refuses every
+    unattended drain -- so a red there is the configuration being unusable, not
+    a test pinning a model. A test that names an agent or a model, or asserts
+    which provider a node uses, is never a lint and never takes the marker.
+    """
+    if request.node.get_closest_marker(_COMMITTED_ROUTING_LINT) is not None:
+        return
+    from livespec_orchestrator_beads_fabro.commands import _config
+
+    committed = _committed_acp_nodes()
+    real = _config._sub_block  # noqa: SLF001 -- the one read every dispatcher-block caller shares
+
+    def guarded(*, root: dict[str, Any], key: str) -> dict[str, Any]:
+        block = real(root=root, key=key)
+        if committed is not None and dict.get(block, "acp_nodes") == committed:
+            return {**block, "acp_nodes": _CommittedRoutingTripwire()}
+        return block
+
+    monkeypatch.setattr(_config, "_sub_block", guarded)
+
+
 @pytest.fixture(autouse=True)
 def _hermetic_session_headroom_reading(monkeypatch: pytest.MonkeyPatch) -> None:
     """Answer every admission pass's session-headroom read without a provider.

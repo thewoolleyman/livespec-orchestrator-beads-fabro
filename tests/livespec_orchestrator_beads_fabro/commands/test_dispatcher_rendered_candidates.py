@@ -33,6 +33,7 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
     PUBLICATION_ACP_NODE,
 )
@@ -97,6 +98,7 @@ def test_a_workflow_parameterizing_no_adapter_is_unreadable_not_empty(
     assert _resolve(repo=tmp_path) is None
 
 
+@pytest.mark.committed_routing_lint
 def test_this_repository_renders_one_candidate_for_every_resolved_node() -> None:
     """The control: the resolver CAN return a set, and does for this repository."""
     rendered = _resolve(repo=_REPO_ROOT)
@@ -112,6 +114,7 @@ def test_this_repository_renders_one_candidate_for_every_resolved_node() -> None
     )
 
 
+@pytest.mark.committed_routing_lint
 def test_a_repository_level_publication_entry_is_scoped_out_not_refused() -> None:
     """This resolver reads the WORKFLOW-SCOPED block, like its two siblings.
 
