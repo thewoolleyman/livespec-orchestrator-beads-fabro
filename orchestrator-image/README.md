@@ -65,7 +65,7 @@ payloads are cleaned up on exit.
 ## Tier-2 dispatch proof
 
 After Tier 1 is green, `tier2-dispatch-proof.sh` runs the next W7 proof: one
-explicit `dispatcher.py loop --mode shadow --item <id>` invocation from inside
+explicit `dispatcher.py loop --item <id>` invocation from inside
 the container. It uses the same entrypoint path as production, proves the inner
 Docker daemon is the only daemon available to Fabro, captures a redacted
 dispatcher journal tail, and leaves automatic item closure disabled with

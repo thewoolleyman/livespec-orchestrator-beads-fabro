@@ -258,7 +258,6 @@ run_dispatch() {
       loop \
       --repo "$1" \
       --budget 1 \
-      --mode shadow \
       --item "$2" \
       --no-close-on-merge \
       --journal "$3" \
