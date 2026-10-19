@@ -824,6 +824,24 @@
           "secret_channel": "native_secrets",
           "environment": "livespec-ci"
         }
+      },
+      // The priority-epic idle-slot audit (contracts.md, "Priority-epic
+      // idle-slot audit", Scenario 187; bd-ib-irh4js). Committed-only: it names
+      // the factory whose run board is read and the priority epics whose
+      // non-closed children are classified against it. It carries no slot or
+      // concurrency value by design. The set is the fleet capacity
+      // coordinator's ruling of 2026-10-19 (the maintainer's R226 priorities on
+      // livespec-dev-tooling-dfixhe): gmktec/petri, the Kubernetes sandbox
+      // backend and Fabro currency, audited against hp, which holds most of
+      // the factory slots. petri is to be added as a second audited factory
+      // once its scheduler fix lands.
+      "idle_slot_audit": {
+        "factory": "hp",
+        "priority": [
+          { "repo": ".", "epic": "bd-ib-fyozyd" },
+          { "repo": ".", "epic": "bd-ib-nmuyjc" },
+          { "repo": ".", "epic": "bd-ib-6tcjfx" }
+        ]
       }
     }
     // The Dispatcher also resolves its `fabro`
