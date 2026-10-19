@@ -53,6 +53,7 @@ __all__: list[str] = [
     "ExportOutcome",
     "LedgerComments",
     "export_orphan_reference",
+    "export_run_reference",
 ]
 
 _LEDGER_ERRORS = (
@@ -109,13 +110,51 @@ def export_orphan_reference(
     ledger: LedgerComments,
 ) -> ExportOutcome:
     """Preserve one orphan's record, verifying the write by read-back."""
+    return export_run_reference(
+        work_item_id=orphan.work_item_id,
+        work_item_status=orphan.work_item_status,
+        run_id=orphan.run_id,
+        factory_server_url=orphan.factory_server_url,
+        repo=repo,
+        fabro_bin=fabro_bin,
+        runner=runner,
+        ledger=ledger,
+    )
+
+
+def export_run_reference(  # noqa: PLR0913 — kw-only export; the run's identity, its factory and the three seams are independent inputs.
+    *,
+    work_item_id: str,
+    work_item_status: str | None,
+    run_id: str,
+    factory_server_url: str,
+    repo: Path,
+    fabro_bin: str,
+    runner: CommandRunner,
+    ledger: LedgerComments,
+) -> ExportOutcome:
+    """Preserve ONE run's record on its work-item, verifying it by read-back.
+
+    PUBLIC and orphan-free because the whole-run wall budget takes the same
+    export-then-terminate precondition for a run no reconciliation ever
+    classified: its run is the dispatch's OWN, live, and about to be cancelled.
+    A second copy of this procedure would write a pointer body one read-back
+    could recognise and the other could not, which is the one property the
+    module docstring above says the two paths must share.
+
+    The ORPHAN-shaped entry point above is kept rather than retired because its
+    caller holds an `OrphanRun` and nothing else: handing this the four fields
+    it actually reads is what keeps a budget cancel from having to invent an
+    orphan reason, a factory name and a status for a run that is none of those
+    things.
+    """
     pointer = attempt(
         action=lambda: pointer_record_for_run(
             fabro_bin=fabro_bin,
             repo=repo,
-            item_id=orphan.work_item_id,
-            run_id=orphan.run_id,
-            server_url=orphan.factory_server_url,
+            item_id=work_item_id,
+            run_id=run_id,
+            server_url=factory_server_url,
             command_runner=runner,
         ),
         exceptions=(OSError,),
@@ -127,23 +166,26 @@ def export_orphan_reference(
             journal_body=None,
             detail=f"fabro export failed with {type(pointer.error).__name__}: {pointer.error}",
         )
-    if orphan.work_item_status is None:
+    if work_item_status is None:
         return ExportOutcome(
             exported=True,
             comment_id=None,
             journal_body=pointer.body,
             detail="work-item absent from the ledger; pointer preserved in the dispatch journal",
         )
-    return _preserved_on_item(orphan=orphan, ledger=ledger, body=pointer.body)
+    return _preserved_on_item(
+        work_item_id=work_item_id, run_id=run_id, ledger=ledger, body=pointer.body
+    )
 
 
 def _preserved_on_item(
     *,
-    orphan: OrphanRun,
+    work_item_id: str,
+    run_id: str,
     ledger: LedgerComments,
     body: str,
 ) -> ExportOutcome:
-    located = _pointer_comment_id(ledger=ledger, orphan=orphan)
+    located = _pointer_comment_id(ledger=ledger, work_item_id=work_item_id, run_id=run_id)
     if isinstance(located, AttemptFailure):
         return _ledger_failure(error=located.error, verb="read")
     if located is not None:
@@ -151,19 +193,19 @@ def _preserved_on_item(
             exported=True,
             comment_id=located,
             journal_body=None,
-            detail=f"located an existing preserve-by-reference comment for {orphan.run_id}",
+            detail=f"located an existing preserve-by-reference comment for {run_id}",
         )
     written = attempt(
-        action=lambda: ledger.add_comment(issue_id=orphan.work_item_id, body=body),
+        action=lambda: ledger.add_comment(issue_id=work_item_id, body=body),
         exceptions=_LEDGER_ERRORS,
     )
     if isinstance(written, AttemptFailure):
         return _ledger_failure(error=written.error, verb="write")
-    return _read_back(orphan=orphan, ledger=ledger)
+    return _read_back(work_item_id=work_item_id, run_id=run_id, ledger=ledger)
 
 
-def _read_back(*, orphan: OrphanRun, ledger: LedgerComments) -> ExportOutcome:
-    confirmed = _pointer_comment_id(ledger=ledger, orphan=orphan)
+def _read_back(*, work_item_id: str, run_id: str, ledger: LedgerComments) -> ExportOutcome:
+    confirmed = _pointer_comment_id(ledger=ledger, work_item_id=work_item_id, run_id=run_id)
     if isinstance(confirmed, AttemptFailure):
         return _ledger_failure(error=confirmed.error, verb="read back")
     if confirmed is None:
@@ -172,15 +214,15 @@ def _read_back(*, orphan: OrphanRun, ledger: LedgerComments) -> ExportOutcome:
             comment_id=None,
             journal_body=None,
             detail=(
-                f"the preserve-by-reference comment for {orphan.run_id} did not read back "
-                f"from bd comments on {orphan.work_item_id}"
+                f"the preserve-by-reference comment for {run_id} did not read back "
+                f"from bd comments on {work_item_id}"
             ),
         )
     return ExportOutcome(
         exported=True,
         comment_id=confirmed,
         journal_body=None,
-        detail=f"preserve-by-reference comment written and read back for {orphan.run_id}",
+        detail=f"preserve-by-reference comment written and read back for {run_id}",
     )
 
 
@@ -196,15 +238,16 @@ def _ledger_failure(*, error: Exception, verb: str) -> ExportOutcome:
 def _pointer_comment_id(
     *,
     ledger: LedgerComments,
-    orphan: OrphanRun,
+    work_item_id: str,
+    run_id: str,
 ) -> str | AttemptFailure | None:
     comments = attempt(
-        action=lambda: ledger.list_comments(issue_id=orphan.work_item_id),
+        action=lambda: ledger.list_comments(issue_id=work_item_id),
         exceptions=_LEDGER_ERRORS,
     )
     if isinstance(comments, AttemptFailure):
         return comments
-    return _matching_comment_id(comments=comments, run_id=orphan.run_id)
+    return _matching_comment_id(comments=comments, run_id=run_id)
 
 
 def _matching_comment_id(*, comments: Sequence[Mapping[str, Any]], run_id: str) -> str | None:
