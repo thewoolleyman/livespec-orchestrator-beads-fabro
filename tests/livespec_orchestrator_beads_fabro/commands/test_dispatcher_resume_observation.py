@@ -825,3 +825,44 @@ def test_a_rework_stage_cancel_refuses_naming_the_stage_and_a_plain_dispatch(
         assert stage in refusals[0]
         assert "dispatch it plainly instead" in refusals[0]
         assert getattr(gather.observation, "unanchoring_cancel_stage", None) == stage
+
+
+def test_a_retained_run_republishing_after_its_latest_proof_resumes_at_fresh_capture(
+    repo: Path,
+) -> None:
+    """A moved head from the same retained run is re-captured instead of rebuilt.
+
+    The record's first capture is the latest proof on the pull request.  The
+    retained factory record then shows the next `publish_draft` visit succeeding,
+    its terminal checkpoint at the new pull-request head, and termination while
+    entering the second capture.  This is the one moved-head shape that may
+    resume: the new head is re-captured before review and replay can run again.
+    """
+    assert _GATHER_PATH.is_file()
+    payload = [
+        {
+            "status": "failed",
+            "stages": {
+                "proof_capture@1": {"state": "succeeded"},
+                "publish_draft@2": {"state": "succeeded"},
+                "proof_capture@2": {"state": "failed"},
+            },
+            "checkpoint": {
+                "current_node": "proof_capture",
+                "git_commit_sha": _MOVED_HEAD,
+            },
+        }
+    ]
+    runner = _runner(
+        listing=_ok(stdout=_pr_listing(head=_MOVED_HEAD)),
+        inspect=_ok(stdout=json.dumps(payload)),
+    )
+    runner.answers["merge-base"] = _ok(stdout="")
+
+    gather = _gather(repo=repo, item=_item(), runner=runner)
+
+    assert gather.anchor is not None
+    assert gather.anchor.head == _MOVED_HEAD
+    assert gather.anchor.resumed_at == "proof_capture"
+    assert gather.anchor.source == SOURCE_FACTORY_RUN
+    assert resume_refusals(observation=gather.observation) == ()
