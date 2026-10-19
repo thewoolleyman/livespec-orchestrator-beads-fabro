@@ -82,6 +82,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state im
     REFRESH_COUNT_STATE_FILENAME,
     publication_state_filenames,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_merge import (
+    RECORD_FILE_MERGE_PROGRAM_FILENAME,
+    record_file_merge_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import resume_checkout_for
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
@@ -104,6 +108,7 @@ _DEFAULT_BRANCH = "master"
 # stage must abort rather than resolve.
 _OWNED_FILE = "owned.txt"
 _SHARED_FILE = "shared.txt"
+_RECORD_FILE = "record.json"
 
 
 # The coverage hooks an allowlisted spawn must scrub, so no child of this file
@@ -302,7 +307,22 @@ def _origin_with_default(*, root: Path) -> Path:
     seed = root / "seed"
     _ = seed.mkdir()
     _ = _git("init", "--quiet", f"--initial-branch={_DEFAULT_BRANCH}", cwd=seed)
+    _ = (seed / ".livespec.jsonc").write_text(
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "record_files": [{"path": "record.json", "format": "json-array", "key": ["id"]}]
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    _ = _git("add", ".livespec.jsonc", cwd=seed)
     _ = _commit(cwd=seed, path=_SHARED_FILE, text="base\n", subject="chore: seed")
+    _ = _commit(
+        cwd=seed, path=_RECORD_FILE, text='[{"id": "base"}]\n', subject="chore: seed record"
+    )
     _ = _git("push", "--quiet", str(origin), f"HEAD:refs/heads/{_DEFAULT_BRANCH}", cwd=seed)
     return origin
 
@@ -319,6 +339,9 @@ def _materialized_plugins_root(*, root: Path) -> Path:
     push_program = plugins_root / PUBLICATION_PUSH_PROGRAM_FILENAME
     _ = push_program.write_text(publication_push_program_source(), encoding="utf-8")
     push_program.chmod(0o700)
+    record_merger = plugins_root / RECORD_FILE_MERGE_PROGRAM_FILENAME
+    _ = record_merger.write_text(record_file_merge_program_source(), encoding="utf-8")
+    record_merger.chmod(0o700)
     gate_script = root / "install-plugin-gate.sh"
     _ = gate_script.write_text(plugin_cache_gate_script(), encoding="utf-8")
     return plugins_root
@@ -903,6 +926,43 @@ def test_a_conflicting_rebase_is_aborted_with_no_side_chosen(tmp_path: Path) -> 
     assert "<<<<<<<" not in (box.clone / _SHARED_FILE).read_text(encoding="utf-8")
     assert box.remote_head(ref=_BRANCH) == published
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
+
+
+def test_a_declared_json_record_conflict_is_merged_and_republished_without_repair(
+    tmp_path: Path,
+) -> None:
+    """Scenario 200: the shipped stage resolves declared record entries before repair."""
+    box = _build(root=tmp_path)
+    published = _commit(
+        cwd=box.clone,
+        path=_RECORD_FILE,
+        text='[{"id": "base"}, {"id": "run"}]\n',
+        subject="feat: append the run record",
+    )
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=box.clone)
+    _ = (box.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(published, encoding="utf-8")
+    _ = _advance_default(
+        box=box,
+        path=_RECORD_FILE,
+        text='[{"id": "base"}, {"id": "default"}]\n',
+    )
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        f"LIVESPEC_RECORD_FILE_MERGED: path={_RECORD_FILE} format=json-array "
+        "default-count=2 run-count=1"
+    ) in result.stderr
+    assert "LIVESPEC_RECORD_FILE_REFRESH_RESOLVED: pr_refresh" in result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" not in result.stderr
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
+    assert json.loads((box.clone / _RECORD_FILE).read_text(encoding="utf-8")) == [
+        {"id": "base"},
+        {"id": "default"},
+        {"id": "run"},
+    ]
+    assert box.remote_head(ref=_BRANCH) == box.local_head()
 
 
 def test_a_failing_post_rebase_gate_pushes_nothing(tmp_path: Path) -> None:
