@@ -23,6 +23,10 @@ THE COMMENT EACH ROUTE WRITES LIVES IN `_dispatcher_stall_cancel_comments`,
 which is the PURE half of this pair and carries why the comment is the durable
 record and why an unreadable fact is stated rather than omitted.
 
+THE JOURNAL-READING MECHANICS live in `_dispatcher_journal_rows`, shared with
+the whole-run wall budget's own disposition; what stays here is WHICH rows a
+stall cancellation routes on and what their count means.
+
 THE THREE FACTS ARE READ BACK OFF THE JOURNAL RATHER THAN RE-DERIVED. The
 cancel site already read them from the run's own record while the run still
 existed, which is the one moment they are readable; by the time the disposition
@@ -79,7 +83,6 @@ the dispatch is taken first.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
@@ -90,6 +93,10 @@ from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_rows import (
+    journal_records,
+    names_stage,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_comments import (
     cancel_row_field,
@@ -200,7 +207,7 @@ def consecutive_stall_cancel_rows(
     journal would strand the item it was about to release. An empty tuple is
     read as "no row was found", which the comment states as such.
     """
-    records = _journal_records(journal=journal)
+    records = journal_records(journal=journal)
     ended_without_stalling = [
         index
         for index, record in enumerate(records)
@@ -210,7 +217,7 @@ def consecutive_stall_cancel_rows(
     return tuple(
         record
         for record in records[consecutive_from:]
-        if _names(record=record, item_id=item_id, stage=STALL_CANCEL_STAGE)
+        if names_stage(record=record, item_id=item_id, stage=STALL_CANCEL_STAGE)
     )
 
 
@@ -225,30 +232,6 @@ def _ends_a_dispatch_without_stalling(*, record: Mapping[str, object], item_id: 
     if terminal.get("work_item_id") != item_id:
         return False
     return terminal.get("status") != STALL_STATUS
-
-
-def _journal_records(*, journal: JournalFile) -> tuple[Mapping[str, object], ...]:
-    """Every mapping record the journal file holds, in append order.
-
-    Append order is what both readings above it depend on: the cancel rows are
-    counted in cancellation order, and the hold reading asks what the journal
-    recorded AFTER a particular cancellation. A record that is not a mapping is
-    dropped rather than raising, for the same reason every read failure yields
-    the empty tuple — a disposition that crashed on one malformed line would
-    strand the item it was about to release.
-    """
-    read = attempt(action=lambda: journal.path.read_text(encoding="utf-8"), exceptions=(OSError,))
-    if isinstance(read, AttemptFailure):
-        return ()
-    parsed = attempt(
-        action=lambda: [json.loads(line) for line in read.splitlines()], exceptions=(ValueError,)
-    )
-    if isinstance(parsed, AttemptFailure):
-        return ()
-    records = cast("list[object]", parsed)
-    return tuple(
-        cast("Mapping[str, object]", record) for record in records if isinstance(record, dict)
-    )
 
 
 def _release_hold_reason(*, journal: JournalFile, item_id: str) -> str | None:
@@ -270,21 +253,23 @@ def _release_hold_reason(*, journal: JournalFile, item_id: str) -> str | None:
     answered either way, and the one dispatch most likely to have left the item
     stranded is exactly the one whose record went missing.
     """
-    records = _journal_records(journal=journal)
+    records = journal_records(journal=journal)
     cancelled_at = [
         index
         for index, record in enumerate(records)
-        if _names(record=record, item_id=item_id, stage=STALL_CANCEL_STAGE)
+        if names_stage(record=record, item_id=item_id, stage=STALL_CANCEL_STAGE)
     ]
     if not cancelled_at:
         return None
     following = records[cancelled_at[-1] + 1 :]
     if any(
-        _names(record=record, item_id=item_id, stage=STALL_RELEASE_STAGE) for record in following
+        names_stage(record=record, item_id=item_id, stage=STALL_RELEASE_STAGE)
+        for record in following
     ):
         return _HELD_ALREADY_RELEASED
     if any(
-        _names(record=record, item_id=item_id, stage=_DISPATCH_ID_STAGE) for record in following
+        names_stage(record=record, item_id=item_id, stage=_DISPATCH_ID_STAGE)
+        for record in following
     ):
         return _HELD_NEWER_DISPATCH_CLAIM
     return None
@@ -466,8 +451,3 @@ def _rest_for_human(
             f"resume is invoked automatically.\n"
         )
     )
-
-
-def _names(*, record: Mapping[str, object], item_id: str, stage: str) -> bool:
-    """Whether this record is the named stage, written for the named item."""
-    return record.get("stage") == stage and record.get("work_item_id") == item_id
