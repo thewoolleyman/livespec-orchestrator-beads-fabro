@@ -5,9 +5,10 @@ priority" names both facts and they are deliberately DIFFERENT KINDS OF
 CLAIM, which is why one module composing both is the honest shape:
 
 - `hygiene:model-fallback-projection:<repo>:<run>:<node>` says a run's
-  event stream was never read, at `high` urgency, and while it stands an
-  unattended loop "MUST stop further picking for that repository". It is
-  a statement about an UNREAD surface.
+  event stream was never read, at `high` urgency. It is a statement about
+  an UNREAD surface, and it GATES NOTHING: v127 deleted the rule that an
+  unresolved one stops unattended picking, so an operator reads this row
+  and no drain waits on it.
 - `hygiene:model-fallback:<repo>:<node>` says a non-primary candidate
   actually ran. It "never refuses or disposes work", so it rides at
   `medium` urgency and hands over a read-only inspection.
@@ -68,8 +69,8 @@ _JOURNAL_SOURCE_PATH = "tmp/fabro-dispatch-journal.jsonl"
 
 # The warning is informational by contract -- it "never refuses or
 # disposes work" -- so it sits below the projection fact's `high`. A
-# `high` warning would compete for attention with the fact that stops the
-# drain, and an operator who learns to dismiss one dismisses both.
+# `high` warning would compete for attention with the row about an unread
+# surface, and an operator who learns to dismiss one dismisses both.
 _WARNING_URGENCY = "medium"
 
 
