@@ -204,12 +204,17 @@ start_container() {
   else
     publish_args=(-p "127.0.0.1:${HOST_PUBLISH_PORT}:${FABRO_PORT}")
   fi
+  # PYTHONDONTWRITEBYTECODE: the host checkout is bind-mounted and the
+  # container runs as root, so a Python import inside it would leave
+  # root-owned __pycache__ in the host tree, which the runner user cannot
+  # delete at the next checkout.
   docker run -d --name "$CONTAINER" \
     --privileged \
     --cgroupns=host \
     "${network_args[@]}" \
     -v "$VARLIB_VOL:/var/lib/docker" \
     -v "$MOUNT_REPO:$WORKSPACE_REPO" \
+    -e PYTHONDONTWRITEBYTECODE=1 \
     "${publish_args[@]}" \
     -e FABRO_PORT="$FABRO_PORT" \
     -e GITHUB_APP_ID \
