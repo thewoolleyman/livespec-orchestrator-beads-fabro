@@ -1946,5 +1946,13 @@
     "test": "TODO",
     "reason": "Ratified by revision v162 accepting proposal record-file-refresh-merge (plan sandbox-commit-gate-ceiling, epic bd-ib-qy5wol). The record-file merge in publish_draft and pr_refresh is not implemented yet; an integration-tier test is owed for the five sub-scenarios, and work-item bd-ib-davaxq implements them and owns that binding.",
     "work_item": "bd-ib-davaxq"
+  },
+  {
+    "heading": "## Scenario 201 \u2014 A clock-fired work supply drains a tenant on its interval without an interactive session, resolves the plugin build at each firing, and does not wait on a long pass",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by revision v163 accepting proposal clock-fired-work-supply (plan factory-idle-with-ready-work, epic bd-ib-opbzv3). The work-supply service, timer and installer are not implemented yet; an integration-tier test is owed for the five sub-scenarios (the first and last are host-captured), and work-item bd-ib-hlfw5p implements them and owns that binding.",
+    "work_item": "bd-ib-hlfw5p"
   }
 ]

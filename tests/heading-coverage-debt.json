@@ -908,5 +908,12 @@
     "heading": "## Scenario 200 \u2014 A refresh whose conflicts lie only in declared record files merges them without a repair round",
     "work_item": "bd-ib-davaxq",
     "first_seen": "2026-10-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 201 \u2014 A clock-fired work supply drains a tenant on its interval without an interactive session, resolves the plugin build at each firing, and does not wait on a long pass",
+    "work_item": "bd-ib-hlfw5p",
+    "first_seen": "2026-10-19"
   }
 ]
