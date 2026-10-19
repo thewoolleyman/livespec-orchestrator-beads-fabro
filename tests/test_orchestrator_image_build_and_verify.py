@@ -80,7 +80,7 @@ def _stage_build_context(*, tmp_path: Path) -> Path:
     """Copy the script into an isolated tree that mirrors the paths it reads.
 
     The script is exercised from a COPY rather than in place because a real run
-    mutates its own directory: it stages the fabro binary and two source trees
+    mutates its own directory: it stages the fabro binary and its plugin and guard trees
     into the build context and its cleanup trap deletes those paths
     unconditionally. Pointing it at the live checkout would make the test
     destructive.
@@ -88,9 +88,14 @@ def _stage_build_context(*, tmp_path: Path) -> Path:
     root = tmp_path / "checkout"
     image_dir = root / "orchestrator-image"
     image_dir.mkdir(parents=True)
-    for copied_tree in (root / ".claude-plugin" / "scripts", root / "bd-guard"):
+    for copied_tree in (
+        root / ".claude-plugin" / "scripts",
+        root / ".claude-plugin" / ".fabro",
+        root / "bd-guard",
+    ):
         copied_tree.mkdir(parents=True)
         _ = (copied_tree / "placeholder").write_text("", encoding="utf-8")
+    _ = (root / ".claude-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
     script = image_dir / "build-and-verify.sh"
     _ = script.write_bytes(_SCRIPT.read_bytes())
     script.chmod(0o755)

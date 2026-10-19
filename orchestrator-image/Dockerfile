@@ -196,6 +196,12 @@ EXPOSE 32276
 #     in-container clone exists; LIVESPEC_MINT_APP_TOKEN_BIN pins the baked
 #     location. Code only — the image stays secret-free. ---
 COPY plugin-scripts /opt/livespec-orchestrator/scripts
+# --- Plugin ROOT members (plugin.json + .fabro/), staged as `plugin-meta`.
+#     The launcher's payload check (scripts/bin/_payload_grading.py) refuses a
+#     plugin root lacking plugin.json or a non-empty .fabro/workflows, so
+#     without them every baked wrapper — mint_app_token.py first — exits
+#     before doing any work and the entrypoint cannot provision Fabro. ---
+COPY plugin-meta/ /opt/livespec-orchestrator/
 ENV LIVESPEC_MINT_APP_TOKEN_BIN=/opt/livespec-orchestrator/scripts/bin/mint_app_token.py
 
 # --- Entrypoint supervisor: starts dockerd -> waits for the socket ->
