@@ -142,8 +142,10 @@ DISCOVERY_ANCHORS: tuple[str, ...] = (
     "commands/_dispatcher_preserve_reference.py",
     "commands/_dispatcher_preserve_reference_check.py",
     "commands/_fabro_port.py",
+    "commands/_fabro_port_auth.py",
     "commands/_fabro_port_http.py",
     "commands/_fabro_port_run_launch.py",
+    "commands/_fabro_port_workflow.py",
 )
 
 # A module that is unambiguously the Dispatcher rather than the facade. If the

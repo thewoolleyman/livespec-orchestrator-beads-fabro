@@ -1,6 +1,21 @@
-"""Bearer-credential resolution for the Fabro server API.
+"""The factory credential: how `fabro auth login` leaves it, and how it is read.
 
-Two sources, in a fixed order. The `FABRO_DEV_TOKEN__<factory>` environment
+Two halves of ONE concern, which is why they sit together. `fabro_auth_login` is
+the invocation that OBTAINS the credential — it writes `~/.fabro/auth.json`,
+which is exactly the file the resolution below reads — so the write and the read
+of that file are stated in one place rather than one here and one as a line of
+the facade class. Part of the `_fabro_port` facade family either way, which is
+the only place this package reaches the engine.
+
+`fabro_auth_login` answers `None` without invoking anything when the target names
+no server or carries no dev token, because there is then no login to perform: a
+factory with no address cannot be logged in to, and a factory with no token has
+nothing to log in WITH. That is the same line the resolution below draws, and for
+the same reason — it is an answer worth journalling at the call site, not an
+error.
+
+Bearer-credential resolution has two sources, in a fixed order. The
+`FABRO_DEV_TOKEN__<factory>` environment
 variable wins when it is set, because an operator who exported it for THIS
 factory said something more specific than a login file shared by every
 client on the host. `_config.resolve_fabro_factory` has already read it into
@@ -29,7 +44,11 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
 
-from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroTarget
+from livespec_orchestrator_beads_fabro.commands._fabro_port_types import (
+    FabroCommandResult,
+    FabroRunner,
+    FabroTarget,
+)
 from livespec_orchestrator_beads_fabro.effects import (
     AttemptFailure,
     JsonParseFailure,
@@ -40,6 +59,7 @@ from livespec_orchestrator_beads_fabro.effects import (
 __all__: list[str] = [
     "FABRO_AUTH_FILE_RELATIVE",
     "fabro_auth_file",
+    "fabro_auth_login",
     "resolve_bearer_token",
 ]
 
@@ -57,6 +77,36 @@ def fabro_auth_file() -> Path:
     running it happens to be logged in to a factory.
     """
     return Path.home() / FABRO_AUTH_FILE_RELATIVE
+
+
+def fabro_auth_login(
+    *,
+    fabro_bin: str,
+    runner: FabroRunner,
+    cwd: Path,
+    target: FabroTarget,
+    timeout_seconds: float,
+) -> FabroCommandResult | None:
+    """Log this host in to ONE factory with that factory's dev token.
+
+    `--server` is spelled explicitly rather than taken from the shared server
+    suffix because this verb's argv names the server it is logging in TO as an
+    operand of the login itself; the credential and the address are one pair.
+    """
+    if target.server_url is None or target.dev_token is None:
+        return None
+    argv = [
+        fabro_bin,
+        "auth",
+        "login",
+        "--dev-token",
+        target.dev_token,
+        "--server",
+        target.server_url,
+    ]
+    return FabroCommandResult(
+        command=runner.run(argv=argv, cwd=cwd, timeout_seconds=timeout_seconds)
+    )
 
 
 def resolve_bearer_token(*, target: FabroTarget) -> str | None:
