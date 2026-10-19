@@ -372,7 +372,10 @@ def args_with_earlier_dispatch_factory_target(
     configured default for records created before factory pinning existed.
     """
     cloned = argparse.Namespace(**vars(args))
-    target = unrecorded_dispatch_factory_target(repo=repo, work_item_id=work_item_id)
+    config = _pin_store(repo=repo)
+    recorded = _recorded_pin(config=config, work_item_id=work_item_id)
+    factory = _usable_recorded_factory(repo=repo, recorded=recorded)
+    target = resolve_fabro_factory(cwd=repo, factory=factory or "")
     cloned.fabro_factory_target = target
     cloned.fabro_bin = factory_effective_fabro_bin(args=args, factory=target) or cloned.fabro_bin
     return cloned

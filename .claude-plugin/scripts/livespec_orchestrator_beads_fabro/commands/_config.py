@@ -303,13 +303,9 @@ def resolve_fabro_factory(*, cwd: Path, factory: str | None = None) -> FactoryTa
     preserve today's ambient Fabro CLI behavior.
     """
     block = dispatcher_block(cwd=cwd)
-    if factory is not None and factory != "":
-        return _factory_target_for(name=factory, block=block)
-    env_value = os.environ.get(_ENV_FABRO_FACTORY)
-    if env_value is not None and env_value != "":
-        return _factory_target_for(name=env_value, block=block)
+    name = factory if factory is not None else os.environ.get(_ENV_FABRO_FACTORY)
     return _factory_target_for(
-        name=configured_factory_name(block=block),
+        name=name or configured_factory_name(block=block),
         block=block,
     )
 

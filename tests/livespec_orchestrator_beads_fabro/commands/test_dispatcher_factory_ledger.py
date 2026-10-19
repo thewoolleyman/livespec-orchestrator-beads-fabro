@@ -9,6 +9,7 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import _config as config_module
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
     args_with_dispatch_factory_target,
+    args_with_earlier_dispatch_factory_target,
     resolve_dispatch_factory_target,
 )
 from livespec_orchestrator_beads_fabro.store import (
@@ -182,6 +183,43 @@ def test_unrecorded_factory_uses_current_default(
     assert target.name == "hp"
     assert target.server == "https://hp.example.test"
     assert dispatch_factory_for(path=_config(), work_item_id="li-factory") == "hp"
+
+
+def test_legacy_earlier_dispatch_factory_ignores_an_invocation_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing historical pin reads the configured default, not caller intent."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _ = (repo / ".livespec.jsonc").write_text(
+        """
+        {
+          "livespec-orchestrator-beads-fabro": {
+            "connection": {"prefix": "bd-ib"},
+            "dispatcher": {
+              "default_factory": "hp",
+              "factories": {
+                "hp": {"server": "https://hp.example.test"},
+                "caller": {"server": "https://caller.example.test"}
+              }
+            }
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    append_work_item(path=_config(), item=_item())
+    monkeypatch.setenv("LIVESPEC_FABRO_FACTORY", "caller")
+
+    earlier = args_with_earlier_dispatch_factory_target(
+        args=argparse.Namespace(fabro_bin=None),
+        repo=repo,
+        work_item_id="li-factory",
+    )
+
+    assert earlier.fabro_factory_target.name == "hp"
+    assert earlier.fabro_factory_target.server == "https://hp.example.test"
 
 
 def test_configured_recorded_factory_is_reused(
