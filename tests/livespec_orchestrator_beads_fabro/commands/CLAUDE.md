@@ -257,6 +257,31 @@ Tests for the thin-transport command modules under
   positive control is the `_repository` module, which resolves the same fixture
   and reads once as soon as a policy is supplied.
 
+- The `test_dispatcher_run_wall_*` family covers the whole-run wall budget
+  (`bd-ib-sdxfsn`). Scenario 175 is bound at the integration tier by
+  `tests/integration/test_run_wall_budget_scenario175.py`; these cover what that
+  tier cannot observe, and the split follows the one in the product tree.
+  `..._budget` and `..._budget_admission` own the three-layer resolution and the
+  pre-dispatch node-timeout refusal, with the ADMITTED dispatch as the control
+  for the refusal — a wall that refused every budget would satisfy the refusal
+  case exactly as well. `..._clock` owns the slot-holding clock, and its
+  load-bearing case is the NEGATIVE one: a record carrying `start_time` and no
+  running instant must leave the start UNFIXED, because a reader that accepted
+  it returns a larger, plausible elapsed value and the cancel it produces reads
+  like a legitimate one. `..._records` and `..._publication` own the two record
+  shapes, and the `held` record is asserted to carry NO stage, pull request or
+  head, since an omitted field is what every record written before the hold
+  existed looks like. `..._watch` and `..._held` own the per-poll verdict and the
+  read-back failure; the held case keeps the event stream FROZEN throughout, so
+  the run satisfies the stall rule as well and the arm's `continue` is graded on
+  the three stages that must be absent rather than on the one that is present.
+  `..._disposition` and `..._not_non_convergence` own the rest state, the second
+  being a control for the first: "the item rests at blocked" is otherwise
+  equally consistent with a build that also journals a non-convergence bounce.
+  `..._launcher` and `..._terminal` own the wiring — the budget arm reached
+  BEFORE `decide_stall`, and the engine routing a launcher's budget report to its
+  own terminal, which `run_dispatch` reaches and `launch` cannot.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr

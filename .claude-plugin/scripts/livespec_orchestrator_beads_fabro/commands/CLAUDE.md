@@ -571,6 +571,71 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   and that event would open a new window, so within one window a node once
   observed open is still open and a later reading that misses it has failed to
   observe it (the events reader tolerates a stream truncated mid-record).
+- The `_dispatcher_run_wall_*` family — the WHOLE-RUN WALL BUDGET
+  (`bd-ib-sdxfsn`, Scenario 175, `contracts.md` §"Dispatcher progress watchdog"
+  and §"ACP node timeouts", v133). The stall window above bounds a run's QUIET
+  TIME and cannot bound a run that keeps emitting events while heading for
+  `needs_human`; measured on hp, such a run holds a factory slot for hours and
+  no layer reclaims it. The budget is the second, orthogonal bound: past it the
+  run is exported and cancelled whatever its event stream says.
+  The family splits by what each piece can fail on, and the split is not
+  cosmetic — the clock is the half that is easiest to get silently wrong, so it
+  carries no I/O at all.
+  - `_dispatcher_run_wall_budget.py` — the budget VALUE and its three-layer
+    resolution (per-dispatch argument, then `dispatcher.run_wall_budget_seconds`,
+    then the workflow default of 21600 seconds), plus the pre-dispatch refusal
+    `node_timeout_conflict`. The resolved `RunWallBudget` carries its own LAYER,
+    which is what makes every downstream record able to name where the number
+    came from; a bare float would make the record say what the bound was and not
+    which surface an operator must edit to change it. The refusal names both keys
+    and both values and fires BEFORE any run exists, because a budget smaller
+    than a node's own timeout cancels a healthy node every time and the cancel
+    reads exactly like a legitimate one.
+  - `_dispatcher_run_wall_clock.py` — the SLOT-HOLDING clock. PURE, and the
+    module whose key tuple is the whole claim: `RUNNING_SINCE_KEYS` deliberately
+    EXCLUDES `start_time` and `start_record`, which include the time a run spent
+    `runnable` in the factory's queue. A run charged for queue time is cancelled
+    for a slot it never held, and the record would read identically. When no
+    running instant can be read and no poll has yet observed the run running the
+    start is UNFIXED, `slot_holding_seconds` answers `None`, and
+    `budget_exceeded` is `False` — unmeasured means no cancel, never a cancel on
+    a default. The start is fixed ONCE per run (the watch's `RunWallBudgetWatch`
+    holds it), so a later poll whose record has lost the instant cannot restart
+    the clock.
+  - `_dispatcher_run_wall_budget_preserve.py` and
+    `_dispatcher_run_wall_budget_watch.py` — the EXPORT-THEN-TERMINATE
+    precondition and the per-poll verdict. The pointer is written AND READ BACK
+    before `fabro rm -f`, and a read-back that fails yields `HELD` rather than
+    `CANCELLED`: the run keeps its slot for one more poll and the export is
+    re-attempted. The `HELD` arm must stay an explicit `continue` in the watch
+    loop and never a fall-through — a quiet run past its budget satisfies the
+    stall rule as well, so a fall-through cancels it as stalled, with the wrong
+    record, the wrong disposition, and the pointer the hold exists to secure
+    still unwritten.
+  - `_dispatcher_run_wall_budget_records.py`,
+    `_dispatcher_run_wall_budget_comment.py` and
+    `_dispatcher_run_wall_budget_disposition.py` — the two journal records, the
+    durable ledger comment, and the rest state. The `exceeded` record composes
+    the shared `watchdog_cancel_fields`, so a budget cancel and a stall cancel
+    describe one run the same way; the `held` record deliberately carries NO
+    stage, pull request or head, because nothing was cancelled and a record
+    naming a publication would read as a completed cancel. The disposition
+    writes the comment BEFORE the blocked transition and rests the item at
+    `blocked` / `needs-human` carrying the remedy `resolve-blocked:<id>:ready`;
+    it has no release arm, since a budget cancel is not a non-convergence
+    observation and must not bounce the slice to `backlog`.
+  The extractions that made room for it are leaves with no budget knowledge of
+  their own: `_fabro_record_instant.py` (the nested-record instant reader, moved
+  verbatim out of `_dispatcher_reconcile_runs_grace.py`),
+  `_dispatcher_journal_rows.py`, `_dispatcher_watchdog_run_probe.py`,
+  `_dispatcher_stale_item_reap.py`, `_dispatcher_watch_poll.py` (one poll's
+  whole observation — its `stamped_attribution` call is an explicit statement
+  BEFORE the `WatchPoll` construction, because field-order evaluation would
+  otherwise put the reap row ahead of the dispatch stamp rows in the journal),
+  and `_dispatcher_shell_runner.py` (`ShellCommandRunner` and `child_env`, split
+  out of `_dispatcher_io.py` to break the import cycle the budget's preserve leg
+  closed; `_dispatcher_io.py` still RE-EXPORTS both, and only a module inside the
+  launcher's own import reach needs to import the leaf directly).
 - `_dispatcher_sandbox_image_source.py` — WHICH of the three sources supplies one
   dispatch's sandbox image (`bd-ib-jy7fuh`, Scenario 169). PURE and a leaf; the
   decision is resolved ONCE in `_dispatcher_loop_plan`, rides
