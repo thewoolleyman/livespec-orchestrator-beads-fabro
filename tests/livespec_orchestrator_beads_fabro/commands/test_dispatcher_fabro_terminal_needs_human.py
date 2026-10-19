@@ -242,3 +242,4 @@ def test_petri_cancelled_reason_is_a_cancelled_fabro_run_outcome(tmp_path: Path)
     assert outcome.status == "cancelled"
     assert outcome.stage == "fabro-run"
     assert outcome.fabro_run_id == _PETRI_RUN_ID
+    assert getattr(outcome, "fabro_factory_name", None) == "hp"

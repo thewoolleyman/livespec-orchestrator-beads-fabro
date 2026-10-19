@@ -156,6 +156,7 @@ class DispatchOutcome:
     missing_integration_point: str | None = None
     remedy: str | None = None
     fabro_run_id: str | None = None
+    fabro_factory_name: str | None = None
     fabro_failure_cause: str | None = None
     fabro_failure_category: str | None = None
     fabro_failure_signature: str | None = None

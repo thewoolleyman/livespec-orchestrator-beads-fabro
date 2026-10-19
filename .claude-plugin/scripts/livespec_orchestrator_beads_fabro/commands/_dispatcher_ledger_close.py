@@ -326,6 +326,10 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # leave a consumer discriminating by its value instead of its presence.
     "base_advanced",
     "dead_implementer_condition",
+    # Factory identity is carried only by the terminal cancellation arm so
+    # its ledger disposition can name where the operator cancelled the run.
+    # A null here would falsely imply that every other outcome read a factory.
+    "fabro_factory_name",
     "fabro_failure_cause",
     "fabro_failure_category",
     "fabro_failure_signature",
