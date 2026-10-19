@@ -189,7 +189,20 @@ def _merged_json_array(*, entry, base, default, run):
             continue
         merged.append(record)
         taken[side] += 1
-    return json.dumps(merged, indent=2, ensure_ascii=False) + "\n", taken["default"], taken["run"]
+    # Serialize in the encoding the record's OWN sides carry, because an object
+    # neither side changed has to stay as it is ON DISK and not only in the
+    # parse. `ensure_ascii=True` can emit nothing but ASCII, so a side holding a
+    # raw non-ASCII character PROVES that side was not written that way; where
+    # all three sides are pure ASCII, escaping is the only encoding that
+    # reproduces their bytes. A fixed choice re-encodes every untouched entry of
+    # whichever convention it is wrong for -- and no gate catches it, since every
+    # reader of these records parses rather than compares bytes.
+    raw_non_ascii = any(not side.isascii() for side in (base, default, run))
+    return (
+        json.dumps(merged, indent=2, ensure_ascii=not raw_non_ascii) + "\n",
+        taken["default"],
+        taken["run"],
+    )
 
 
 def _insertions(*, base_lines, side_lines, path):

@@ -45,6 +45,23 @@ _MODULE_PATH = _COMMANDS / "_dispatcher_record_file_merge.py"
 _JSON_ENTRY = {"path": "record.json", "format": "json-array", "key": ["id"]}
 _MARKDOWN_ENTRY = {"path": "notes.md", "format": "markdown-insertions"}
 
+
+def _json_sides(*, dash: str) -> tuple[str, str, str]:
+    """The three sides of a record whose UNTOUCHED entry spells an em dash as `dash`.
+
+    One helper rather than six literals because the escaped and the raw spelling
+    differ by a single backslash, and a reader cannot see which literal is which
+    when the two sit side by side. The sides are built from one shared object, so
+    the only difference between the two calls is the spelling under test.
+    """
+    shared = '{"id": "shared", "note": "a ' + dash + ' dash"}'
+    return (
+        f"[{shared}]\n",
+        f'[{shared}, {{"id": "default"}}]\n',
+        f'[{shared}, {{"id": "run"}}]\n',
+    )
+
+
 _DECLARATION = """{
   // A comment, because the committed declaration this reads is JSONC.
   "livespec-orchestrator-beads-fabro": {
@@ -124,6 +141,40 @@ def test_a_json_array_record_each_side_removed_a_different_object_from_loses_bot
 
     assert json.loads(merged) == [{"id": "c"}]
     assert (from_default, from_run) == (1, 0)
+
+
+def test_a_json_array_record_is_rewritten_in_the_encoding_its_own_sides_carry(
+    tmp_path: Path,
+) -> None:
+    """An entry neither side touched stays as it is ON DISK, not only in the parse.
+
+    Both JSON records this arm was built for are committed ASCII-escaped, and a
+    merger that fixed its own serialization would re-encode every untouched entry
+    of them: a two-entry merge arrives as a whole-file diff in the one artifact an
+    operator reads to reconstruct what the merge did, it ping-pongs against the
+    canonical writer on the next ordinary edit, and — against this arm's own
+    purpose — it widens the conflict surface in exactly these files for every
+    in-flight run whose base predates the flip. Nothing downstream catches it,
+    because every reader of these records parses rather than compares bytes.
+
+    The two halves are ONE case because either alone is satisfied by a merger
+    that simply fixed the OTHER spelling: escaping everything keeps the escaped
+    record and mangles the raw one, and escaping nothing does the reverse. The
+    final assertion is what makes them halves of one claim rather than two
+    unrelated expectations — the merged CONTENT is identical, so the difference
+    under test is the encoding and nothing else.
+    """
+    program = _materialized(tmp_path=tmp_path)
+    base, default, run = _json_sides(dash="\\u2014")
+    escaped, _, _ = program.merged_record(entry=_JSON_ENTRY, base=base, default=default, run=run)
+    base, default, run = _json_sides(dash="—")
+    raw, _, _ = program.merged_record(entry=_JSON_ENTRY, base=base, default=default, run=run)
+
+    assert escaped.isascii()
+    assert '"note": "a \\u2014 dash"' in escaped
+    assert not raw.isascii()
+    assert '"note": "a — dash"' in raw
+    assert json.loads(escaped) == json.loads(raw)
 
 
 def test_a_json_array_record_object_both_sides_changed_differently_is_refused(
