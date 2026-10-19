@@ -37,13 +37,15 @@ WHICH DISPATCHES THE PASS WILL CORRELATE AT ALL. `contracts.md`'s "Dispatcher
 progress watchdog" → "Not non-convergence" rules a `stalled-no-progress`
 terminal out: it "is NOT factory non-convergence" and "the calibration analysis
 pass MUST NOT count it as a non-convergence observation, while a fix-loop-cap
-non-convergence still counts". The pass cannot honour that by reading the
-bounce signal alone, which is the trap `bd-ib-nfbyot` landed on: a stall row
-carries `bounced_to_regroom: false` and a null `bounce_cap` — both already
-correct — and is still carried in by `converged`, which is `outcome.status ==
-"green"` and so false for every cancellation. The two fields are independent
-inputs to one `or`, so repairing the bounce side changed nothing the pass
-counted.
+non-convergence still counts". The whole-run wall budget paragraph of the same
+section rules a `run-wall-budget-exceeded` terminal out "under the same rule",
+so the pass declines BOTH watchdog cancel classes. It cannot honour either by
+reading the bounce signal alone, which is the trap `bd-ib-nfbyot` landed on: a
+cancel row carries `bounced_to_regroom: false` and a null `bounce_cap` — both
+already correct — and is still carried in by `converged`, which is
+`outcome.status == "green"` and so false for every cancellation. The two fields
+are independent inputs to one `or`, so repairing the bounce side changed
+nothing the pass counted.
 
 Such a row is DECLINED ENTIRELY rather than recorded as a converged
 observation. Counting it as converged would satisfy the clause's letter and
@@ -53,10 +55,10 @@ SANDBOX, not about the slice, so feeding its diff size and assertion count to
 that size converges — the same two populations averaged, with the sign flipped,
 pushing the proposed ceiling UP instead of down. A cancellation's own figures
 (the resolved window, the layer that supplied it, the quiet duration confirmed)
-ride the `watchdog-stall-cancel` record the cancel journals, which is where
-they belong. `total_runs` therefore counts the runs the pass CORRELATED, which
-a journal holding cancellations makes smaller than the record count it was
-handed.
+ride the `watchdog-stall-cancel` or `run-wall-budget-exceeded` record the
+cancel journals, which is where they belong. `total_runs` therefore counts the
+runs the pass CORRELATED, which a journal holding cancellations makes smaller
+than the record count it was handed.
 
 Two design commitments hold the spec's guardrails:
 
@@ -131,19 +133,30 @@ _MIN_LIFT = 0.25
 _OUTCOME_CLASS_KEY = "outcome_class"
 _OUTCOME_CLASS_SEPARATOR = ":"
 
-# The engine's terminal status for a watchdog-confirmed stall, written from
-# exactly one place (`_dispatcher_engine_journal.stalled_outcome`) and owned as
-# a constant by `_dispatcher_stall_telemetry.STALL_STATUS`.
+# The engine's terminal statuses for the TWO watchdog cancel classes: a
+# confirmed stall (`_dispatcher_engine_journal.stalled_outcome`, owned as a
+# constant by `_dispatcher_stall_telemetry.STALL_STATUS`) and a run cancelled on
+# its whole-run wall budget (owned by
+# `_dispatcher_run_wall_budget_records.RUN_WALL_BUDGET_EXCEEDED_STAGE`).
 #
 # SPELLED HERE RATHER THAN IMPORTED, and not for convenience: this pass may
 # hold no `commands.` module at all. That isolation is asserted structurally —
 # an absent import, rather than "it wrote nothing on the cases a test ran" —
 # because it is what makes the pass unable to change lifecycle state, and
-# `_dispatcher_stall_telemetry` would be a hole in it for the sake of one
-# string. `_dispatcher_non_convergence_cap` spelled the same status locally for
-# the sibling reason (an import cycle). What stops the two spellings from
-# drifting is a test built from the constant itself, not this comment.
-_STALL_OUTCOME_STATUS = "stalled-no-progress"
+# either of those modules would be a hole in it for the sake of one string.
+# `_dispatcher_non_convergence_cap` spelled the stall status locally for the
+# sibling reason (an import cycle). What stops the spellings from drifting is a
+# test built from each constant itself, not this comment.
+#
+# BOTH DECLINE FOR ONE REASON, which is why they are one tuple rather than two
+# predicates: a cancellation is not a verdict about the SLICE. A stall says the
+# run went silent and a budget cancel says it outlived its slot allowance, and
+# neither says the work was too big — while both arrive carrying
+# `converged: false`, which is the signal this pass correlates.
+_WATCHDOG_CANCEL_STATUSES: tuple[str, ...] = (
+    "stalled-no-progress",
+    "run-wall-budget-exceeded",
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -177,9 +190,10 @@ class CalibrationProposal:
     `adopted` is `False` by construction — this pass NEVER enforces a
     threshold and NEVER adopts one; adoption is a separate maintainer act.
     `total_runs` / `non_converged_runs` summarize the runs the pass
-    CORRELATED, which is not every record it was handed: a stall-cancelled
-    dispatch is declined outright, so `total_runs` falls short of the record
-    count by the number of cancellations in the journal.
+    CORRELATED, which is not every record it was handed: a watchdog-cancelled
+    dispatch — stalled or past its wall budget — is declined outright, so
+    `total_runs` falls short of the record count by the number of
+    cancellations in the journal.
     """
 
     advisory: bool
@@ -240,14 +254,15 @@ def analyze_calibration(*, records: tuple[dict[str, object], ...]) -> Calibratio
     declining for want of signal otherwise. Every proposed ceiling is
     advisory by construction — the returned proposal enforces nothing.
 
-    A stall-cancelled dispatch is dropped before any of that, so it is neither
+    A WATCHDOG-cancelled dispatch -- a confirmed stall or a run cancelled on its
+    whole-run wall budget -- is dropped before any of that, so it is neither
     counted as a non-convergence nor averaged into a ceiling as a convergence;
     see the module docstring for why declining the record beats relabelling it.
     """
     observations = tuple(
         _to_observation(record=record)
         for record in records
-        if not _is_stall_cancelled(record=record)
+        if not _is_watchdog_cancelled(record=record)
     )
     non_converged = sum(1 for observation in observations if observation.non_converged)
     thresholds = tuple(
@@ -263,12 +278,12 @@ def analyze_calibration(*, records: tuple[dict[str, object], ...]) -> Calibratio
     )
 
 
-def _is_stall_cancelled(*, record: dict[str, object]) -> bool:
-    """Whether this record's terminal was a progress-watchdog cancellation.
+def _is_watchdog_cancelled(*, record: dict[str, object]) -> bool:
+    """Whether this record's terminal was EITHER progress-watchdog cancellation.
 
-    Keyed on `_STALL_OUTCOME_STATUS`, which is the engine's own literal and is
-    pinned to `_dispatcher_stall_telemetry.STALL_STATUS` by a test rather than
-    by an import; see that constant for why the import is not taken.
+    Keyed on `_WATCHDOG_CANCEL_STATUSES`, which are the engine's own literals
+    and are pinned to their owning constants by tests rather than by imports;
+    see that tuple for why the imports are not taken.
 
     The reading must be POSITIVE to exclude. A record whose `outcome_class` is
     absent or not a string cannot be identified as a cancellation, so it stays
@@ -279,7 +294,8 @@ def _is_stall_cancelled(*, record: dict[str, object]) -> bool:
     outcome_class = record.get(_OUTCOME_CLASS_KEY)
     if not isinstance(outcome_class, str):
         return False
-    return outcome_class.split(_OUTCOME_CLASS_SEPARATOR, 1)[0] == _STALL_OUTCOME_STATUS
+    status = outcome_class.split(_OUTCOME_CLASS_SEPARATOR, 1)[0]
+    return status in _WATCHDOG_CANCEL_STATUSES
 
 
 def _to_observation(*, record: dict[str, object]) -> _Observation:
@@ -287,7 +303,7 @@ def _to_observation(*, record: dict[str, object]) -> _Observation:
 
     A run is `non_converged` when it did not converge OR it bounced back to
     `backlog` (the empirical "too big" signal). Those are independent inputs,
-    which is why a stall cancel has to be declined by `_is_stall_cancelled`
+    which is why a watchdog cancel has to be declined by `_is_watchdog_cancelled`
     before reaching here: its bounce signal is already `false` and the
     `converged` disjunct carries it in regardless. Each numeric proxy is
     carried only when its recorded value is a usable `int` — a `None` (the
