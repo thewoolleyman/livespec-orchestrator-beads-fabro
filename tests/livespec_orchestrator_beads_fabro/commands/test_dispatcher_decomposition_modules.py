@@ -11,6 +11,7 @@ untouched by the move.
 
 from __future__ import annotations
 
+import ast
 import importlib
 from pathlib import Path
 
@@ -676,3 +677,59 @@ def test_loop_overlay_leg_is_its_own_module_rather_than_packed_call_sites() -> N
         assert hasattr(loop_overlay, name)
     assert dispatch_loop.__all__ == ["dispatch_one"]
     assert hasattr(dispatch_loop, "run_dispatch")
+
+
+def test_journal_file_importable_from_its_leaf_and_re_exported_from_dispatcher_io() -> None:
+    """The append-only journal moved to a LEAF, and `_dispatcher_io` re-exports it.
+
+    The move is what breaks an import cycle rather than a tidying: `_dispatcher_io`'s
+    own closure reaches the watched Fabro launcher, which reaches the factory-ledger
+    resolution — so the overflow-selection record, which both writes the journal and
+    resolves a dispatch factory, cannot import the aggregate. `_dispatcher_shell_runner`
+    exists for exactly the same reason, which is why the leaf is asserted to be
+    IMPORTABLE WITHOUT the aggregate in the first place.
+
+    The re-export is asserted as the SAME object, not merely as a present name: a
+    second `JournalFile` class would give two append layers, each with its own
+    stamped-once refusal, and a record written through one would satisfy every
+    assertion made about the other.
+    """
+    leaf_path = (
+        Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
+        / "_dispatcher_journal_file.py"
+    )
+    leaf_public_names = {"JournalFile", "utc_now_iso"}
+
+    assert leaf_path.is_file()
+    leaf = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file"
+    )
+    aggregate = importlib.import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_io")
+
+    assert set(leaf.__all__) == leaf_public_names
+    for name in leaf_public_names:
+        assert getattr(aggregate, name) is getattr(leaf, name)
+    # The stamp constant moved WITH the append that applies it; a copy left
+    # behind would be a second authority on which fields no writer may supply.
+    assert not hasattr(aggregate, "_STAMPED_INVOKER_FIELDS")
+    assert hasattr(leaf, "_STAMPED_INVOKER_FIELDS")
+    # The leaf must not IMPORT the aggregate, which is the half of the cycle this
+    # side controls. Read off the import statements rather than the whole text,
+    # because the leaf's docstring names the aggregate it was split out of — a
+    # substring probe would fail on the explanation instead of on an import.
+    assert "_dispatcher_io" not in _imported_modules(path=leaf_path)
+
+
+def _imported_modules(*, path: Path) -> set[str]:
+    """Every module name one module's own import statements name."""
+    names: set[str] = set()
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        match node:
+            case ast.Import(names=aliases):
+                names.update(alias.name for alias in aliases)
+            case ast.ImportFrom(module=str() as module):
+                names.add(module)
+                names.update(f"{module}.{alias.name}" for alias in node.names)
+            case _:
+                pass
+    return {part for name in names for part in name.split(".")}

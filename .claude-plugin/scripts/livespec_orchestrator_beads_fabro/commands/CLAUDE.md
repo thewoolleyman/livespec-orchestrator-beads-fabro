@@ -160,6 +160,84 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   renders NO worktree exclusion, and that is deliberate: every pack member is
   already in the governed repository's own tracked `.gitignore`, which is the same
   fact that makes the pack absent to begin with.
+- FACTORY OVERFLOW SELECTION — where an UNPINNED dispatch is placed, in THREE
+  cohesive modules, and the dependency direction reads bottom-up:
+  `_dispatcher_overflow_factories` (the committed-only
+  `dispatcher.overflow_factories` array, its three outcomes and the pre-claim
+  refusal) and `_dispatcher_factory_capacity` (ONE candidate's reading: its own
+  server's non-terminal run count and its own `max_concurrent_runs`, or which
+  measurement stopped it) -> `_dispatcher_overflow_selection` (the ranking, and
+  the one journal record per selection). `_dispatcher_factory_ledger._placement`
+  is the one caller; `_factory_default` is the leaf both the overflow grading
+  and `_config.resolve_fabro_factory` read the configured default from.
+  Seven properties an editor must not invert. The comparison is a RATIO and
+  never a count, a free-slot tally or remaining capacity: hp reports a
+  `max_concurrent_runs` of 10 against petri's 2 (measured 2026-10-19), which is
+  the asymmetry the rule exists for, and the ratio is also the only reading
+  under which 5-of-10 and 1-of-2 TIE — at which point the clause takes the
+  EARLIER candidate, which is the default. Selection NEVER refuses, defers or
+  counts on capacity grounds, so the no-free-slot arm is a PLACEMENT on the
+  default whose scheduler then queues the run, and nothing in these modules has
+  a refusal to return. A candidate that could not be MEASURED has no free slot,
+  and its reason rides the record: a saturated candidate reaches the ranking
+  identically, so without the reason the journal cannot say which measurement
+  stopped it. NEITHER figure is ever coerced to a zero — a run count of zero is
+  an idle factory and a ceiling of zero is a stopped scheduler, so a coerced
+  zero is indistinguishable from a measurement, and in the run-count direction
+  it is the one coercion that sends work to a server nobody could reach. A
+  ceiling below 1 is NOT an unreadable read: its effect is identical (no free
+  slot) and its evidence is the opposite, so it is carried as a reported figure
+  and the journal shows `0 of 0` rather than a reason that sends an operator to
+  debug a read that worked. The registry is resolved BEFORE either read and
+  graded here, so an unresolvable one names the registry instead of surfacing as
+  a factory that declares no server — the same `None` value an unconfigured
+  entry carries and a completely different remedy. And the committed array is
+  graded against `_factory_default.configured_factory_name` and never
+  `resolve_fabro_factory`, which reads `LIVESPEC_FABRO_FACTORY` first: an
+  operator who exported the overflow factory's own name would otherwise see the
+  array that names the committed default ADMITTED — the one shape the clause
+  forbids — and would see the candidate list open with the overflow factory,
+  where a utilization tie makes it win.
+  ONE ASYMMETRY BETWEEN THE TWO LEDGER CALLERS IS LOAD-BEARING. Both
+  `_unrecorded_target` (the pre-claim gates and the admission stamp) and
+  `resolve_dispatch_factory_target` RANK; only the second JOURNALS, because it
+  is the one that records the chosen factory. A record per gate would make the
+  clause's "one record" several, each describing a reading no dispatch acted on.
+- `_dispatcher_journal_file.py` — the append-only dispatch journal and the
+  attribution stamp it owns, split out of `_dispatcher_io` for the same reason
+  `_dispatcher_shell_runner` was: that aggregate's import closure reaches the
+  watched Fabro launcher, which reaches the factory-ledger resolution, so a
+  module that writes the journal AND resolves a dispatch factory closes a cycle
+  — and the overflow-selection record is exactly such a writer.
+  `_dispatcher_io` still RE-EXPORTS `JournalFile` and `utc_now_iso`, so every
+  existing caller is untouched; only a module inside the launcher's own import
+  reach needs the leaf directly, which is also why `_acp_factory_run_reader`
+  now takes `ShellCommandRunner` from `_dispatcher_shell_runner` rather than
+  from the aggregate. The stamped-once refusal moved WITH the append that
+  applies it: a copy left behind would be a second authority on which fields no
+  writer may supply.
+- `_fabro_port_workflow.py` and the credential half of `_fabro_port_auth.py` —
+  the two invocations whose bodies left the `FabroPort` class when the facade
+  reached its file LLOC ceiling and the `settings` verb needed room. Both stay
+  inside the `_fabro_port` facade FAMILY, which is what keeps every engine
+  invocation behind the one seam `check-fabro-port-seam` enforces, and both are
+  named in that check's `DISCOVERY_ANCHORS` — a family member holding an engine
+  invocation must be, or the check's SEAM control fails rather than certifying
+  an exemption over a module it does not account for. `fabro auth login` sits
+  beside `resolve_bearer_token` because it WRITES the `~/.fabro/auth.json` that
+  resolution reads, so the write and the read of one file are stated in one
+  place. `FabroPort.settings` is read for ONE figure — the server's own
+  `scheduler.max_concurrent_runs` — and hands back the whole payload, because
+  the nesting differs between builds and
+  `_fabro_port_records.scheduler_max_concurrent_runs_from_payload` is where
+  this family's readings of a payload live. That reader SEARCHES for a
+  `scheduler` block rather than reading a fixed path, and the reason is
+  measured: the ratifying revision named `server.scheduler.max_concurrent_runs`
+  while the 2026-08-22 retention spike recorded the block under
+  `server.server`, so a fixed-path read answers one build and returns `None` for
+  the other — and `None` reads downstream as "no free slot", which retires
+  overflow selection silently while every surface still reports a healthy
+  dispatch.
 - `_dispatcher_minijinja_escape.py` — the shared MiniJinja literal escaper every
   untrusted-prose renderer routes through, so arbitrary item prose cannot alter
   graph semantics when Fabro renders the goal. It lived in `_dispatcher_overlay`

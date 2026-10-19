@@ -1230,6 +1230,40 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   that it no longer raises while the claim is that the pass completes and
   reports the factory.
 
+- `test_factory_overflow_selection_scenario203.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 203 and the factory-overflow-selection
+  clause of `SPECIFICATION/contracts.md`: an unpinned dispatch goes to whichever
+  declared factory's own scheduler is least utilized and has a free slot. Every
+  case starts from a `.livespec.jsonc` on disk and drives the production
+  configuration read, capacity read, selection, ledger stamp and launch argv;
+  only the `fabro` CLI is stood in — at the runner, so the real
+  `FactoryRunReader` and the real `FabroPort` stay in the path and each
+  factory's run board and scheduler ceiling are scripted per SERVER URL — plus
+  the ledger, through the hermetic `FakeBeadsClient`. Four things an editor must
+  not weaken. The chosen factory is asserted at the ARGV and at the LEDGER as
+  well as at the resolved target, because a dropped name does not fail: the
+  dispatch proceeds to the default, which is the ordinary outcome of a healthy
+  ranking, of an unreachable overflow factory and of a build that ranked
+  nothing, with nothing in the record saying which. The PINNED case asserts the
+  capacity argv list is EMPTY rather than checking the answer, since a pinned
+  dispatch resolves to its own factory whether or not the reads were spent — the
+  unpinned cases are the positive control that the same runner IS reached. The
+  no-free-slot cases assert a launch ARGV beside the journal reason, because
+  "neither refused nor deferred" is a negative and a refusal leaves no argv at
+  all. And the equal-utilization row is what makes the comparison a RATIO: at 5
+  of 10 against 1 of 2 the default holds more runs by every absolute measure and
+  only utilization ties them, at which point the clause's earlier-candidate rule
+  keeps the dispatch on the default — an implementation comparing free slots or
+  remaining capacity sends that row to the overflow factory while passing the
+  row above it. The `ps` fixture carries a TERMINAL row beside its live ones,
+  since `max_concurrent_runs` bounds non-terminal runs and a reader counting
+  every row would report a long-lived factory as permanently saturated (hp
+  listed 1626 rows on 2026-10-12, nearly all terminal). The registry cases are
+  asserted at the capacity argv's SERVER, because a registry-backed entry
+  commits no address and a resolution that skipped the registry would read a
+  factory with no server and report the candidate unmeasured — which looks
+  exactly like a saturated one.
+
 - `test_run_wall_budget_scenario175.py` — binds `SPECIFICATION/scenarios.md`
   Scenario 175 and the `contracts.md` paragraphs it exercises (the Dispatcher
   progress watchdog's "The whole-run wall budget", and the whole-run wall budget
