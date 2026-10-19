@@ -1,29 +1,28 @@
-"""The operator-facing surfaces of the ACP projection: facts, posture, valve.
+"""The operator-facing surfaces of the ACP projection: its facts and its valve.
 
-Binds the three consumer clauses of `SPECIFICATION/contracts.md` section
-"Factory-configurable ACP fallback priority":
+Binds the two surviving consumer clauses of `SPECIFICATION/contracts.md` —
+cited at FILE level, because a heading-level citation rots the moment the
+heading is reworded:
 
 - the two attention rows, `hygiene:model-fallback-projection:<repo>:<run>:<node>`
   at `high` urgency with a server-qualified `shell` inspection handoff, and
   the aggregate `hygiene:model-fallback:<repo>:<node>` whose summary comes
   from "the newest unresolved observation";
-- the posture value's own attended / unattended asymmetry, asserted in BOTH
-  directions over one journal, since an implementation that stopped both or
-  stopped neither would pass every other assertion here;
 - the clearance valve, "attributed, reason-required, append-only ... naming
   that exact fact id", which "retires the fact only and MUST NOT mint,
   retire, or reinterpret a hold".
 
-THE LOOP-LEVEL HALF OF THAT POSTURE IS GONE, retired with the v127 rule that
-an unresolved projection fact stops unattended picking, and what replaces it
-is `tests/integration/test_unattended_drain_past_projection_facts.py` — which
-asserts the opposite, that an unattended drain over such a journal picks.
+THE LOOP POSTURE IS GONE, retired with the v127 rule that an unresolved
+projection fact stops unattended picking. What replaces its cases is
+`tests/livespec_orchestrator_beads_fabro/commands/
+test_dispatcher_loop_unattended_picking.py` and
+`tests/integration/test_unattended_drain_past_projection_facts.py`, which
+assert the opposite — that an unattended pass over such a journal picks.
 
 THE CONTROL THAT MATTERS MOST IS THAT CLEARANCE TOUCHES NO HOLD. The journal
-in that test
-carries a live typed availability hold as well as the projection fact, so
-a valve that retired by stage-name overlap would be caught rather than
-merely unasserted.
+in that test carries a live typed availability hold as well as the projection
+fact, so a valve that retired by stage-name overlap would be caught rather
+than merely unasserted.
 """
 
 from __future__ import annotations
@@ -46,11 +45,6 @@ from livespec_orchestrator_beads_fabro.commands._acp_projection_failure import (
     projection_failure_fact_id,
     projection_failure_record,
     unresolved_projection_failures,
-)
-from livespec_orchestrator_beads_fabro.commands._acp_projection_posture import (
-    PROJECTION_ATTENDED_STAGE,
-    PROJECTION_STOP_STAGE,
-    acp_projection_posture,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_PRECONDITION_ERROR,
@@ -228,28 +222,6 @@ def test_an_unreadable_config_degrades_the_handoff_binary_not_the_row(
     _ = _journal(tmp_path=tmp_path, records=(_failure_line(),))
     rows = model_fallback_items(project_root=tmp_path, repo=_REPO_NAME)
     assert rows[0].handoff.command.startswith("fabro events ")
-
-
-def test_the_unattended_posture_stops_picking_while_the_attended_one_proceeds(
-    tmp_path: Path,
-) -> None:
-    """The asymmetry, asserted in both directions over ONE journal."""
-    path = _journal(tmp_path=tmp_path, records=(_failure_line(),))
-    unattended = acp_projection_posture(journal_path=path, attended=False)
-    attended = acp_projection_posture(journal_path=path, attended=True)
-    assert unattended.stop_picking is True
-    assert attended.stop_picking is False
-    assert "Unattended picking is stopped" in str(unattended.warning)
-    assert "may proceed" in str(attended.warning)
-    assert unattended.journal_record()["stage"] == PROJECTION_STOP_STAGE
-    assert attended.journal_record()["stage"] == PROJECTION_ATTENDED_STAGE
-    assert attended.journal_record()["fact_ids"] == [_FACT_ID]
-
-
-def test_a_clean_journal_leaves_the_posture_silent_and_picking(tmp_path: Path) -> None:
-    """No fact, no warning, no stop -- the ordinary pass is untouched."""
-    posture = acp_projection_posture(journal_path=tmp_path / "absent.jsonl", attended=False)
-    assert (posture.stop_picking, posture.warning) == (False, None)
 
 
 def _clear_argv(*, path: Path, **overrides: str) -> list[str]:

@@ -345,6 +345,21 @@ Tests for the thin-transport command modules under
   measurement behind the change, and a build that had stopped reading bodies
   satisfies the negative alone.
 
+- `test_dispatcher_loop_unattended_picking.py` — the v127 retirement of the
+  rule that an unresolved projection-failure fact stopped unattended picking
+  (`bd-ib-qm6r1`). It is one of the few modules here whose subject is an
+  ABSENCE, so it asserts that absence three ways, each catching a different
+  half-done retirement: the module file is gone, the module is unimportable
+  (which a stale bytecode cache or a re-export shim would otherwise hide), and
+  the loop command's own SOURCE names neither the posture nor its stop-picking
+  rule — the one instrument that catches a gate re-expressed inline under a
+  different spelling. Its behavioural case is the exact INVERSE of the deleted
+  `test_the_unattended_drain_stops_before_reaching_the_dispatch_wave`: the same
+  journal record, and the pass must now reach the wave. Without that case the
+   three absences are equally consistent with a build that moved the same gate
+   somewhere this module cannot see; the drain's end-to-end half is
+   `tests/integration/test_unattended_drain_past_projection_facts.py`.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr
