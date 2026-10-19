@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.219.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.219.1...v0.219.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* **golden-master:** select the seeded work-item with --status all ([43cd785](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/43cd785943a4aaa736eaf5bea417889a433a533f))
+
 ## [0.219.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.219.0...v0.219.1) (2026-10-19)
 
 
