@@ -7386,3 +7386,48 @@ Scenario: A long pass does not stop the next firing
   And the new pass is governed by wip_cap as any unattended drain
 ```
 
+## Scenario 203 — An unpinned dispatch goes to the least-utilized declared factory that has a free scheduler slot
+
+```gherkin
+Feature: Unpinned dispatches overflow to the least-utilized declared factory
+  As a maintainer whose default factory is saturated while a second declared factory sits idle
+  I want an unpinned dispatch to go to whichever declared factory's own scheduler is least utilized and has a free slot
+  So that every seat's ordinary dispatches use the second factory without any seat choosing it by hand
+
+Scenario: The less-utilized overflow factory receives the dispatch
+  Given dispatcher.default_factory names factory "A" and dispatcher.overflow_factories is ["B"]
+  And factory "A"'s server reports 6 non-terminal runs and a max_concurrent_runs of 10
+  And factory "B"'s server reports 0 non-terminal runs and a max_concurrent_runs of 2
+  And the item carries no recorded factory and no explicit factory is selected
+  When the Dispatcher dispatches the item
+  Then the run is submitted to factory "B"
+  And the item's dispatch-factory record names factory "B"
+  And one overflow-selection journal record lists "A" with 6 of 10 and "B" with 0 of 2, chosen "B", reason least-utilized-free-slot
+
+Scenario: The less-utilized default factory keeps the dispatch
+  Given the same configuration but factory "A"'s server reports 4 of 10 and factory "B"'s server reports 1 of 2
+  When the Dispatcher dispatches the item
+  Then the run is submitted to factory "A"
+  And the overflow-selection journal record names chosen "A", reason least-utilized-free-slot
+
+Scenario: Equally utilized candidates go to the earlier candidate
+  Given the same configuration but factory "A"'s server reports 5 of 10 and factory "B"'s server reports 1 of 2
+  When the Dispatcher dispatches the item
+  Then the run is submitted to factory "A"
+  And the overflow-selection journal record names chosen "A", reason least-utilized-free-slot
+
+Scenario: With no free slot anywhere the dispatch goes to the default factory and is not refused
+  Given the same configuration but factory "A"'s server reports 10 of 10
+  And factory "B"'s server reports 2 of 2, or its read fails
+  When the Dispatcher dispatches the item
+  Then the run is submitted to factory "A" and queues in "A"'s scheduler
+  And the overflow-selection journal record names chosen "A", reason no-candidate-free-default
+  And when "B"'s read failed, the journal record names the reason "B"'s read failed in place of its counts
+  And the dispatch is neither refused nor deferred
+
+Scenario: A pinned dispatch reads no capacity and journals no selection
+  Given the dispatch is invoked with --factory "A", or LIVESPEC_FABRO_FACTORY names "A", or the item's recorded factory is "A"
+  When the Dispatcher dispatches the item
+  Then the run is submitted to factory "A" without reading either server's run count or max_concurrent_runs
+  And no overflow-selection journal record is written
+```
