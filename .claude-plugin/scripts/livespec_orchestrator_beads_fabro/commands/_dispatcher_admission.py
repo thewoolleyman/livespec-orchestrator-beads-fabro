@@ -33,9 +33,6 @@ from pathlib import Path
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
-from livespec_orchestrator_beads_fabro.commands._acp_factory_run_reader import (
-    FactoryRunReader,
-)
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     resolve_acp_preflight,
@@ -308,7 +305,6 @@ def _eligible_legs(
         journal_path=journal_path,
         now_iso=now_iso,
         headroom=session_headroom_policy(repo=repo, now_iso=now_iso, journal_path=journal_path),
-        factory_runs=FactoryRunReader(repo=repo),
     )
     rework_admittable, refused = filter_eligible_candidates(
         repo=repo,
