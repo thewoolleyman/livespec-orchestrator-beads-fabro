@@ -375,6 +375,39 @@ def test_removing_a_file_inside_clone_git_is_allowed(
     )
 
 
+def test_moving_an_entry_within_the_clone_is_allowed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sandbox = _Sandbox(base=tmp_path)
+
+    assert (
+        _verdict(
+            sandbox=sandbox,
+            command=f"mv {sandbox.clone / 'build'} {sandbox.clone / 'src'}",
+            monkeypatch=monkeypatch,
+            capsys=capsys,
+        )
+        is None
+    )
+
+
+def test_an_unreadable_clone_entry_listing_is_an_empty_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    guard = _load_guard()
+
+    class _UnreadablePath:
+        def __init__(self, _: str) -> None:
+            pass
+
+        def iterdir(self) -> list[Path]:
+            raise OSError
+
+    monkeypatch.setattr(guard, "Path", _UnreadablePath)
+
+    assert guard._nonhidden_top_level_entries(repository_clone="/unreadable") == ()  # noqa: SLF001
+
+
 # ---------------------------------------------------------------------------
 # Scenario: a protected path mentioned only as data is not refused
 # ---------------------------------------------------------------------------

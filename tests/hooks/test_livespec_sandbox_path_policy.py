@@ -234,6 +234,15 @@ def test_a_command_the_shell_lexer_cannot_split_acts_on_nothing() -> None:
     policy = _load_policy()
 
     assert policy.removal_targets(command='echo "unbalanced', working_directory=_CLONE) == ()
+    assert (
+        policy.repository_emptying_path(
+            command='rm -rf "unbalanced',
+            working_directory=_CLONE,
+            clone=_CLONE,
+            top_level_entries=(f"{_CLONE}/src",),
+        )
+        is None
+    )
 
 
 def test_an_empty_command_acts_on_nothing() -> None:

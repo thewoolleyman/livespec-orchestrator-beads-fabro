@@ -74,6 +74,7 @@ import posixpath
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 
+from livespec_sandbox_repository_policy import repository_emptying_path as _repository_emptying_path
 from livespec_shell_shape import (
     leading_assignments,
     leading_command_index,
@@ -90,6 +91,7 @@ __all__: list[str] = [
     "refusal_message",
     "refused_path",
     "removal_targets",
+    "repository_emptying_path",
     "stand_in_targets",
 ]
 
@@ -237,6 +239,23 @@ def removal_targets(*, command: str, working_directory: str) -> tuple[Target, ..
             directory, targets = _walked(segment=segment, directory=directory, assigned=assigned)
             found.extend(targets)
     return tuple(found)
+
+
+def repository_emptying_path(
+    *,
+    command: str,
+    working_directory: str,
+    clone: str,
+    top_level_entries: Sequence[str],
+) -> str | None:
+    return _repository_emptying_path(
+        command=command,
+        working_directory=working_directory,
+        clone=clone,
+        top_level_entries=top_level_entries,
+        walk_segment=_walked,
+        executed=_executed,
+    )
 
 
 def refused_path(

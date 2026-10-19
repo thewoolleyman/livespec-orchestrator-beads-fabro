@@ -103,9 +103,17 @@ def _decision(*, raw: str, environ: dict[str, str]) -> str | None:
     if protected:
         repository_directory = str(Path(repository).resolve() / ".git")
         protected = (*protected, repository_directory)
-    matched = policy.refused_path(
-        targets=targets, resolved=resolved, directories=directories, protected=protected
+    repository_clone = _real_path(path=repository)
+    matched = policy.repository_emptying_path(
+        command=command,
+        working_directory=working or repository,
+        clone=repository_clone,
+        top_level_entries=_nonhidden_top_level_entries(repository_clone=repository_clone),
     )
+    if matched is None:
+        matched = policy.refused_path(
+            targets=targets, resolved=resolved, directories=directories, protected=protected
+        )
     if matched is None:
         return None
     # WHICH protected path dies and HOW the command reached it are two
@@ -153,6 +161,18 @@ def _entry_targets(*, root: str) -> dict[str, str]:
     except OSError:
         return {}
     return {str(child): _real_path(path=str(child)) for child in children}
+
+
+def _nonhidden_top_level_entries(*, repository_clone: str) -> tuple[str, ...]:
+    """Snapshot the visible clone entries before a submitted command can run."""
+    try:
+        return tuple(
+            str(child)
+            for child in sorted(Path(repository_clone).iterdir())
+            if not child.name.startswith(".")
+        )
+    except OSError:
+        return ()
 
 
 def _deny_payload(*, reason: str) -> str:
