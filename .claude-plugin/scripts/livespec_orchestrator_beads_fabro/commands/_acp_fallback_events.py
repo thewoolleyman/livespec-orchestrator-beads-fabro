@@ -100,9 +100,9 @@ def _event_records(*, payload: object) -> tuple[Mapping[str, Any], ...] | None:
 
     `fabro events --json` prints a bare array; a server payload wraps the
     same array under `events`. Both are accepted because the alternative
-    is a projection that reports every run unreadable the day the port
-    switches transports -- a false projection-failure fact that would stop
-    the unattended drain repository-wide.
+    is a reader that reports every run unreadable the day the port
+    switches transports -- which would leave every per-attempt cost
+    undetermined repository-wide while every surface still read healthy.
     """
     if isinstance(payload, dict):
         payload = cast("dict[str, Any]", payload).get("events")

@@ -401,6 +401,25 @@ Tests for the thin-transport command modules under
   row per RECORD would pass that weaker fixture, and "the newest supplies the
   summary" would hold by construction rather than by reading.
 
+- `test_retired_projection_journal_tolerance.py` — the clause that outlives the
+  v127 retirement (`bd-ib-qm6r1`): "Existing versioned hold observations,
+  retirement records, and fallback audit records remain readable. Removing
+  dependence on new engine failover events MUST NOT discard existing holds or
+  reinterpret unknown record versions." It drives ONE journal rather than one per
+  reader, because a real journal holds every writer's records interleaved — this
+  repository's held 153 `acp-projection-failure` records beside its live holds
+  and warnings when the retirement was measured — and a per-reader fixture
+  carrying only that reader's own stages never puts a retired record in front of
+  it at all. Every reader is asserted to return its LIVE SET rather than merely
+  to avoid raising, which is the failure mode that matters: "still parses" is
+  satisfied by a reader that swallows the file and reports nothing, and a hold
+  silently discarded is a candidate silently re-dispatched into an outage. The
+  retired records' PRESENCE in the raw read is asserted too, since they are
+  history and the retirement must not rewrite them; and the unknown-version arm
+  asserts the record comes back UNINTERPRETED with its entitlements unconfirmed,
+  because scoping a skip from a field nobody may read is the reinterpretation the
+  clause forbids.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr

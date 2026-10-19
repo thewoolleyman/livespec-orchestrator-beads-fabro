@@ -1,20 +1,28 @@
-"""What the ACP projection readers do with input they cannot read.
+"""What the ACP event and warning readers do with input they cannot read.
 
-The happy paths are bound by `test_acp_event_projection.py`. This module
-binds the DEFENSIVE half, and it exists as its own file because every
-case here shares one property that is easy to get wrong in the same way:
-each malformed input has a plausible WRONG answer that looks exactly
-like a correct empty result.
+The happy paths are bound by `test_acp_fallback_warning_primitives.py`.
+This module binds the DEFENSIVE half, and it exists as its own file
+because every case here shares one property that is easy to get wrong in
+the same way: each malformed input has a plausible WRONG answer that
+looks exactly like a correct empty result.
 
 The three rules these cases enforce, all from `SPECIFICATION/contracts.md`
-section "Factory-configurable ACP fallback priority":
+-- cited at FILE level, because a heading-level citation rots the moment
+the heading is reworded:
 
 - An unreadable RECORD is preserved and surfaced as unobservable, never
   dropped and never read on v1's field meanings.
-- An unreadable PAYLOAD is a read failure, and "Read failure is not
-  absence" -- it must refuse rather than report an empty stream.
+- An unreadable PAYLOAD is a read failure rather than an empty stream,
+  so the per-attempt cost it would have priced stays undetermined
+  instead of being priced from events nobody read.
 - A retirement is the destructive direction, so an unreadable instant
   keeps the warning rather than authorising a clearance.
+
+ITS PROJECTION-FACT CASES ARE RETIRED with the `agent.acp.failover`
+projection v127 removed (`bd-ib-qm6r1`). The journal tolerance they
+asserted is bound over a richer fixture by
+`test_retired_projection_journal_tolerance.py`, which reads a journal
+holding every one of that projection's own stages.
 """
 
 from __future__ import annotations
@@ -47,13 +55,6 @@ from livespec_orchestrator_beads_fabro.commands._acp_fallback_warning_records im
     parse_model_fallback_warning,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_journal_records import journal_records
-from livespec_orchestrator_beads_fabro.commands._acp_projection_failure import (
-    PROJECTION_FAILURE_STAGE,
-    AcpProjectionFailureTarget,
-    projection_failure_clearance_record,
-    projection_failure_record,
-    unresolved_projection_failures,
-)
 
 _OCCURRED = "2026-09-12T12:00:00Z"
 
@@ -443,65 +444,3 @@ def test_the_journal_reader_tolerates_absence_unreadability_and_junk_lines(
     # raising through whichever ledger happened to ask for it first.
     monkeypatch.setattr(Path, "read_text", _refuse)
     assert journal_records(journal_path=path) == ()
-
-
-def test_a_projection_failure_line_missing_a_field_is_not_read_as_a_fact(
-    tmp_path: Path,
-) -> None:
-    """A line nobody can read must not stop the drain on a fact it cannot describe."""
-    complete = projection_failure_record(
-        target=AcpProjectionFailureTarget(
-            repo="repo",
-            run_id="01RUN",
-            node="implement",
-            factory_name="hp",
-            factory_server_url="https://hp:32276",
-        ),
-        reason="fetch-failed",
-        exit_code=True,
-    )
-    missing = {**complete, "factory_name": ""}
-    unknown_reason = {**complete, "reason": "vibes"}
-    no_fact_id = {key: value for key, value in complete.items() if key != "fact_id"}
-    unrelated = {"stage": "outcome", "fact_id": "hygiene:model-fallback-projection:r:1:n"}
-    path = _write(
-        tmp_path=tmp_path, records=(missing, unknown_reason, no_fact_id, unrelated, complete)
-    )
-    unresolved = unresolved_projection_failures(journal_path=path)
-    assert len(unresolved) == 1
-    # A boolean exit code is refused rather than read as exit 1.
-    assert unresolved[0].exit_code is None
-    assert "exit n/a" in unresolved[0].summary
-    assert "attempts" not in unresolved[0].summary
-
-
-def test_a_clearance_naming_a_fact_id_retires_that_fact_and_nothing_else(
-    tmp_path: Path,
-) -> None:
-    """Clearance is scoped to one id, and it carries no hold target at all."""
-    target = AcpProjectionFailureTarget(
-        repo="repo",
-        run_id="01RUN",
-        node="implement",
-        factory_name="hp",
-        factory_server_url="https://hp:32276",
-    )
-    other = AcpProjectionFailureTarget(
-        repo="repo",
-        run_id="01OTHER",
-        node="implement",
-        factory_name="hp",
-        factory_server_url="https://hp:32276",
-    )
-    first = projection_failure_record(target=target, reason="timed-out", exit_code=124)
-    second = projection_failure_record(target=other, reason="timed-out", exit_code=124)
-    clearance = projection_failure_clearance_record(
-        fact_id=str(first["fact_id"]), reason="the factory was decommissioned"
-    )
-    assert set(clearance) == {"stage", "fact_id", "reason"}
-    path = _write(tmp_path=tmp_path, records=(first, second, clearance))
-    remaining = unresolved_projection_failures(journal_path=path)
-    assert [entry.run_id for entry in remaining] == ["01OTHER"]
-    assert [record["stage"] for record in journal_records(journal_path=path)].count(
-        PROJECTION_FAILURE_STAGE
-    ) == 2

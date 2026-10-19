@@ -280,11 +280,13 @@ def build_attention(
         # the reconciler's own dry run, so the lane and the remedy it prints
         # can never disagree about what an orphan is.
         + orphan_run_items(project_root=project_root, repo=repo_name, items=materialized)
-        # The two ACP fallback rows. They are composed TOGETHER because the
-        # absence of one changes what the other means: a repository whose
-        # event projection is broken shows no model-fallback warnings, and
-        # that emptiness reads as "nothing fell back" unless the
-        # projection-failure row is standing beside it saying nobody looked.
+        # The ACP fallback row. It was composed beside a projection-failure
+        # row that v127 retired, because the absence of one changed what the
+        # other meant: a repository whose event projection was broken showed
+        # no model-fallback warnings, and that emptiness read as "nothing
+        # fell back" rather than "nobody looked". The warning is now sourced
+        # from the Dispatcher's own selection records, which it writes itself
+        # and cannot fail to read, so an empty lane has one meaning again.
         + model_fallback_items(project_root=project_root, repo=repo_name)
         # Detection recency is a REPOSITORY property computed from the
         # completed coverage records on the committed anchor. Neither fact
