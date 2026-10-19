@@ -1964,9 +1964,8 @@
     "heading": "## Scenario 202 \u2014 An agent stage follows only its stage prompt, never publishes, and commits through the repository hooks",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by revision v165 accepting proposal agent-stage-instruction-boundary (plan sandbox-commit-gate-ceiling, epic bd-ib-qy5wol). The three agent-stage rules in the implement, fix and review_fix prompts are not implemented yet; an integration-tier test is owed for its sub-scenarios, and work-item bd-ib-iftnct implements them and owns that binding.",
-    "work_item": "bd-ib-iftnct"
+    "test": "tests.prompts.test_agent_stage_instruction_boundary_scenario202.test_each_agent_stage_prompt_states_its_instruction_and_publication_boundary",
+    "reason": "Prompt-tier acceptance for this heading, completed by bd-ib-iftnct (PR 3305). The tier is tests.prompts (a declared scenario tier) because the deliverable IS the prose: the three rules are discharged by the agent turn out of its stage prompt and are rendered by no Python caller, so nothing host-side can observe whether a turn obeyed a branch-local prompt file, pushed, or bypassed the hooks. The bound case requires each rule's sentences in the implement, fix and review_fix prompts: the stage prompt is the run's only instruction and branch-local .claude-plugin/.fabro/ files are payload; no git push and no branch or pull-request publication, which belongs to publish_draft and pr_refresh; and ordinary git commits through the repository hooks unless the stage prompt itself names a commit runner. Its control (test_the_graph_names_each_agent_stage_prompt_on_disk) derives the three prompt files from workflow.fabro's node blocks and asserts all three are found on disk, so a node repointed to a different prompt cannot leave the contract attached to an unused file."
   },
   {
     "heading": "## Scenario 204 \u2014 An implement turn that reports its work incomplete fails the implement stage",
