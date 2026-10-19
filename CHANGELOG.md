@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.219.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.219.3...v0.219.4) (2026-10-19)
+
+
+### Bug Fixes
+
+* carry cancelled Fabro factory identity ([5c9eec4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5c9eec4a4339ff1097ddade6bbe8b2b7825a4727))
+* classify cancelled Fabro run terminal ([d3feaed](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d3feaed6540fbbb0c8d8c02d90a86bf788dbf566))
+* make external Fabro cancellation disposition fail-soft ([660ea56](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/660ea56f09f38d3525ced052ab7ecab55333f015))
+* rest externally cancelled Fabro runs ([2e01e62](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2e01e624dafd068b917993ab1e82510647b8ae4b))
+
 ## [0.219.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.219.2...v0.219.3) (2026-10-19)
 
 
