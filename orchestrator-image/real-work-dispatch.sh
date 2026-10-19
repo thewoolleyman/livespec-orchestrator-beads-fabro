@@ -97,7 +97,6 @@ if [ "$TIER2_USE_HOST_NETWORK" = "1" ] && [ -z "$FABRO_PORT_WAS_SET" ]; then
 fi
 POLL_ATTEMPTS="${POLL_ATTEMPTS:-80}"
 POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-30}"
-MODE="${MODE:-autonomous}"
 JOURNAL_PATH="${JOURNAL_PATH:-/tmp/livespec-realwork-journal.jsonl}"
 LOG_PATH="${LOG_PATH:-/tmp/livespec-realwork-dispatch.log}"
 
@@ -124,7 +123,6 @@ Options:
   --target-repo NAME   Required. The dispatch-target repo name (tenant DB == name).
   --target-org ORG     GitHub org of the target. Default: thewoolleyman.
   --item ID            Required for --run. A ready work-item id in the target ledger.
-  --mode MODE          Dispatcher mode: shadow|autonomous. Default: autonomous.
   --image NAME         Docker image tag. Default: livespec-orchestrator:dev.
   --container NAME     Container name. Default: livespec-orch-realwork.
   --host-port PORT     Host loopback port for Fabro UI. Default: 32283.
@@ -190,7 +188,6 @@ while [ "$#" -gt 0 ]; do
     --target-repo) TARGET_REPO="${2:-}"; shift 2;;
     --target-org) TARGET_ORG="${2:-}"; shift 2;;
     --item) ITEM_ID="${2:-}"; shift 2;;
-    --mode) MODE="${2:-}"; shift 2;;
     --image) IMAGE="${2:-}"; shift 2;;
     --container) CONTAINER="${2:-}"; shift 2;;
     --host-port) HOST_PUBLISH_PORT="${2:-}"; shift 2;;
@@ -273,10 +270,6 @@ preflight() {
   if [ "$RUN_DISPATCH" -eq 1 ] && [ -z "$ITEM_ID" ]; then
     fail "--item is required with --run"
   fi
-  case "$MODE" in
-    shadow|autonomous) ;;
-    *) fail "unknown --mode: $MODE (expected shadow|autonomous)";;
-  esac
 }
 
 wait_for_container() {
@@ -519,7 +512,7 @@ provision_codex_auth() {
 }
 
 run_dispatch() {
-  log "running one real-work dispatch (mode=$MODE) against $TARGET_ORG/$TARGET_REPO item $ITEM_ID"
+  log "running one real-work dispatch against $TARGET_ORG/$TARGET_REPO item $ITEM_ID"
   docker exec "$CONTAINER" mkdir -p "$(dirname "$JOURNAL_PATH")"
   set +e
   # The Dispatcher script is invoked by its ABSOLUTE path under the FRESH
@@ -536,13 +529,12 @@ run_dispatch() {
       loop \
       --repo "$2" \
       --budget 1 \
-      --mode "$3" \
-      --item "$4" \
-      --journal "$5" \
-      --poll-attempts "$6" \
-      --poll-interval-seconds "$7" \
+      --item "$3" \
+      --journal "$4" \
+      --poll-attempts "$5" \
+      --poll-interval-seconds "$6" \
       --json' \
-      sh "$DISPATCHER_CLONE" "$TARGET_CLONE" "$MODE" "$ITEM_ID" "$JOURNAL_PATH" "$POLL_ATTEMPTS" "$POLL_INTERVAL_SECONDS" \
+      sh "$DISPATCHER_CLONE" "$TARGET_CLONE" "$ITEM_ID" "$JOURNAL_PATH" "$POLL_ATTEMPTS" "$POLL_INTERVAL_SECONDS" \
       >"$LOG_PATH" 2>&1
   local code=$?
   set -e

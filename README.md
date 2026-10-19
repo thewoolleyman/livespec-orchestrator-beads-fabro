@@ -139,7 +139,7 @@ Accepted action ids are `impl:<work-item-id>`, `approve:<work-item-id>`,
 and `set-acceptance:<work-item-id>:ai-only|human-only|ai-then-human`.
 
 Impl actions dispatch through the existing Dispatcher/Fabro loop with
-`--mode shadow --budget 1 --parallel 1 --item <work-item-id> --json`.
+`loop --budget 1 --parallel 1 --item <work-item-id> --json`.
 Valve and policy actions update the selected Beads item through the store
 surface and return a journaled result.
 

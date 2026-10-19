@@ -665,7 +665,6 @@ run_dispatch() {
         loop \
         --repo "$2" \
         --budget 1 \
-        --mode shadow \
         --item "$3" \
         --janitor "[\"true\"]" \
         --journal "$4" \
