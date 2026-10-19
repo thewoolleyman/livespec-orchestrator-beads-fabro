@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dead_implementer import (
     dead_implementer_condition_from_text,
@@ -41,6 +41,9 @@ from livespec_orchestrator_beads_fabro.commands._fabro_escalation import (
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroFailureDetail,
     FabroInspectResult,
+)
+from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
+    fabro_inspect_record,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_terminal_evidence import terminal_evidence
 
@@ -87,10 +90,14 @@ def fabro_run_terminal_outcome(
     )
     if blocked is not None:
         return blocked
-    if exit_code == 0 or (
-        inspect is not None
-        and inspect.command.exit_code == 0
-        and inspect.status_kind == "succeeded"
+    cancelled = _engine_cancelled(inspect=inspect)
+    if not cancelled and (
+        exit_code == 0
+        or (
+            inspect is not None
+            and inspect.command.exit_code == 0
+            and inspect.status_kind == "succeeded"
+        )
     ):
         return None
     failure = None if inspect is None else inspect.failure
@@ -122,7 +129,7 @@ def fabro_run_terminal_outcome(
         return terminated
     return outcome_type(
         work_item_id=plan.work_item_id,
-        status="failed",
+        status="cancelled" if cancelled else "failed",
         stage="fabro-run",
         pr_number=None,
         merge_sha=None,
@@ -142,6 +149,20 @@ def fabro_run_terminal_outcome(
         # "no truncation" for a truncation carried on the other.
         dead_implementer_condition=dead_implementer_condition_from_text(text=f"{stderr}\n{detail}"),
     )
+
+
+def _engine_cancelled(*, inspect: FabroInspectResult | None) -> bool:
+    """Whether the engine, rather than the Dispatcher watchdog, cancelled the run."""
+    if inspect is None:
+        return False
+    record = fabro_inspect_record(payload=inspect.payload)
+    if record is None:
+        return False
+    status: object = record.get("status")
+    if not isinstance(status, dict):
+        return False
+    reason: object = cast("dict[str, object]", status).get("reason")
+    return reason == "cancelled"
 
 
 def _needs_human_terminal_outcome(
