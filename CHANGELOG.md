@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.224.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.224.0...v0.224.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **dispatcher:** route an explicit --factory into the admission claim stamp ([919c896](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/919c896f64973e31845630e6f5f44c1d563603cd))
+* **dispatcher:** stamp the admission claim with the routed factory ([159ee03](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/159ee0371086c77c1a27549485044d42eed60de1))
+
 ## [0.224.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.223.2...v0.224.0) (2026-10-19)
 
 
