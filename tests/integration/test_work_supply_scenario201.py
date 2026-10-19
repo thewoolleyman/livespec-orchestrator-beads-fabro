@@ -34,6 +34,7 @@ assertion and is proved on the dispatching host, not from this suite.
 from __future__ import annotations
 
 import os
+import pwd
 import subprocess
 from pathlib import Path
 
@@ -57,6 +58,14 @@ _MINIMUM_INTERVAL = "10min"
 _REPO_ENV = "LIVESPEC_WORK_SUPPLY_REPO"
 _BUDGET_ENV = "LIVESPEC_WORK_SUPPLY_BUDGET"
 _WRAPPER_ENV = "LIVESPEC_WORK_SUPPLY_ENV_WRAPPER"
+_USER_ENV = "LIVESPEC_WORK_SUPPLY_USER"
+_HOME_ENV = "LIVESPEC_WORK_SUPPLY_HOME"
+_REGISTRY_ENV = "LIVESPEC_WORK_SUPPLY_PLUGIN_REGISTRY"
+
+# Where the Claude Code registry sits under a home. Spelled once, because the
+# fixture that exercises the launcher's DEFAULT has to compose the same path
+# the launcher does or it proves nothing about that default.
+_REGISTRY_UNDER_HOME = (".claude", "plugins", "installed_plugins.json")
 
 # Every setting with which systemd will accept a `[Timer]`. The committed timer
 # template must declare NONE of them, so that an instance whose per-instance
@@ -325,6 +334,170 @@ def test_a_firing_with_no_tenant_or_budget_in_its_environment_refuses(tmp_path: 
 
 
 # ---------------------------------------------------------------------------
+# Assertions 1 and 3, on a real host — the firing is root's and the pass is the
+# operator's, so the build resolved at fire time is the OPERATOR's registered
+# install rather than an account's that has none.
+#
+# These are not a fourth assertion; they are the preconditions the first and
+# third need in order to hold anywhere but a fixture. A firing declares no
+# `User=` (it must start a system-scope transient unit), so systemd gives it no
+# `$HOME` — and every one of the arms above would still pass while every real
+# firing composed `/.claude/plugins/installed_plugins.json` and refused.
+# ---------------------------------------------------------------------------
+
+
+def test_a_firing_locates_the_registry_under_the_operator_home_with_no_ambient_home(
+    tmp_path: Path,
+) -> None:
+    """The one arm that proves the DEFAULT, rather than naming a registry path.
+
+    `_fire` strips `$HOME`, exactly as systemd does for a unit with no `User=`,
+    and names no registry — so the only way this firing can resolve a build is
+    the launcher composing it from the home the instance environment file
+    supplies.
+    """
+    fixture = _fixture(tmp_path=tmp_path)
+    assert Path(fixture["registry"]).parent.parent.parent == Path(fixture["home"])
+
+    completed = _fire(fixture=fixture)
+
+    assert completed.returncode == 0, completed.stderr
+    argv = _recorded_argv(fixture=fixture)
+    assert str(Path(fixture["build_a"]) / "scripts" / "bin" / "dispatcher.py") in argv
+    # The firing says which home it resolved under, so a journal reader can
+    # tell a pass aimed at the wrong account from one that never ran.
+    assert fixture["home"] in completed.stdout
+
+
+def test_a_firing_hands_the_pass_the_operator_identity_and_home(tmp_path: Path) -> None:
+    """The firing runs as root; the pass must not.
+
+    Root's home holds neither the operator's plugin registry nor their
+    `~/.fabro/bin/fabro`, so a pass left running as the firing's own identity
+    cannot reach either. Both flags are asserted: `--uid` alone would leave the
+    home systemd derives implicit, and the one thing it must agree with is the
+    registry the launcher itself just read.
+    """
+    fixture = _fixture(tmp_path=tmp_path)
+
+    completed = _fire(fixture=fixture)
+
+    assert completed.returncode == 0, completed.stderr
+    argv = _recorded_argv(fixture=fixture)
+    assert argv[argv.index("--uid") + 1] == fixture["user"]
+    assert argv[argv.index("--setenv") + 1] == f"HOME={fixture['home']}"
+    # Both precede the `--`: past it the words are the pass's own argv, where
+    # systemd-run would read neither.
+    assert argv.index("--uid") < argv.index("--")
+    assert argv.index("--setenv") < argv.index("--")
+
+
+def test_the_service_declares_no_user_so_the_firing_can_start_a_transient_unit() -> None:
+    """The omission is a decision, and the unit says which decision it is.
+
+    A non-root caller of a system-scope `systemd-run --unit` needs polkit
+    authorization a timer cannot obtain, so the firing stays root and the
+    launcher drops the pass instead. A future reader who "fixes" the missing
+    `User=` breaks detachment; the prose is what stops that.
+    """
+    service = _SERVICE.read_text(encoding="utf-8")
+
+    assert "User" not in _settings(text=service)
+    assert "polkit" in service
+    # The prose names the mechanism that replaces it, so the omission reads as
+    # a decision rather than as something nobody got to.
+    assert "--uid" in service
+
+
+def test_a_named_registry_wins_over_the_operator_home_default(tmp_path: Path) -> None:
+    """The documented escape hatch for a host that keeps the registry elsewhere."""
+    fixture = _fixture(tmp_path=tmp_path)
+    elsewhere = tmp_path / "elsewhere.json"
+    elsewhere.write_bytes(Path(fixture["registry"]).read_bytes())
+    Path(fixture["registry"]).unlink()
+
+    completed = _fire(fixture=fixture, overrides={_REGISTRY_ENV: str(elsewhere)})
+
+    assert completed.returncode == 0, completed.stderr
+    argv = _recorded_argv(fixture=fixture)
+    assert str(Path(fixture["build_a"]) / "scripts" / "bin" / "dispatcher.py") in argv
+
+
+def test_a_firing_that_cannot_resolve_an_operator_home_refuses_naming_both_sources(
+    tmp_path: Path,
+) -> None:
+    """Refuse, rather than compose a path under an unset home and call it absent.
+
+    `/.claude/plugins/installed_plugins.json` cannot exist, so the degraded
+    form refuses too — but it refuses with "no registered install for this
+    tenant", which is a confident wrong answer about the TENANT and sends an
+    operator to the registry rather than to the unit.
+    """
+    fixture = _fixture(tmp_path=tmp_path)
+
+    completed = _fire(fixture=fixture, overrides={_HOME_ENV: ""})
+
+    assert completed.returncode == 78
+    assert _HOME_ENV in completed.stderr
+    assert "HOME" in completed.stderr
+    assert "no registered" not in completed.stderr.lower()
+    assert not Path(fixture["record"]).exists()
+
+
+def test_a_firing_with_no_operator_identity_in_its_environment_refuses(tmp_path: Path) -> None:
+    """An absent identity must not silently leave the pass running as root."""
+    fixture = _fixture(tmp_path=tmp_path)
+
+    completed = _fire(fixture=fixture, overrides={_USER_ENV: ""})
+
+    assert completed.returncode == 78
+    assert _USER_ENV in completed.stderr
+    assert not Path(fixture["record"]).exists()
+
+
+def test_the_installer_writes_the_resolved_identity_and_home_into_the_instance_env(
+    tmp_path: Path,
+) -> None:
+    """Resolved once, where an operator is present — not inferred per firing."""
+    completed = _install(tmp_path=tmp_path, tenant="alpha", interval="30min")
+
+    assert completed.returncode == 0, completed.stderr
+    instance = _instance_env(tmp_path=tmp_path, tenant="alpha")
+    assert instance[_USER_ENV]
+    home = Path(instance[_HOME_ENV])
+    assert home.is_dir()
+    assert str(home) == pwd.getpwnam(instance[_USER_ENV]).pw_dir
+
+
+def test_the_installer_refuses_an_identity_it_cannot_resolve_a_home_for(tmp_path: Path) -> None:
+    """The third refusal: an identity with no passwd entry on this host.
+
+    Written into an env file it would make every firing of that instance refuse
+    as an unregistered tenant, on the interval, for ever — the same silent
+    shape the wrapper refusal exists to prevent.
+    """
+    completed = _run(
+        argv=[
+            str(_INSTALL),
+            "--repo",
+            str(_tenant_dir(tmp_path=tmp_path, tenant="alpha")),
+            "--interval",
+            "30min",
+            "--user",
+            "no-such-operator-account",
+        ],
+        tmp_path=tmp_path,
+        env_wrapper=str(_stub_wrapper(tmp_path=tmp_path)),
+    )
+
+    assert completed.returncode == 78
+    assert "alpha" in completed.stderr
+    assert "no-such-operator-account" in completed.stderr
+    assert not (tmp_path / "units" / "work-supply@.service").exists()
+    assert not (tmp_path / "instance-env" / "alpha.env").exists()
+
+
+# ---------------------------------------------------------------------------
 # Assertion 4 — a pass still in progress does not stop the next firing.
 # ---------------------------------------------------------------------------
 
@@ -375,9 +548,17 @@ def test_a_pass_in_progress_does_not_stop_the_next_firing(tmp_path: Path) -> Non
 
 
 def _fixture(*, tmp_path: Path) -> dict[str, str]:
-    """A tenant checkout, two plugin builds, a registry naming the first, a runner."""
+    """A tenant checkout, two plugin builds, a registry naming the first, a runner.
+
+    The registry is placed at the path the launcher's DEFAULT composes from the
+    operator home — `<home>/.claude/plugins/installed_plugins.json` — rather
+    than somewhere arbitrary, so the home-derived default is exercised by every
+    firing here and not only by the one test that names it.
+    """
     repo = tmp_path / "tenant"
     repo.mkdir()
+    home = tmp_path / "operator-home"
+    (home / Path(*_REGISTRY_UNDER_HOME).parent).mkdir(parents=True)
     wrapper = tmp_path / "with-livespec-env.sh"
     _ = wrapper.write_text('#!/bin/sh\nexec "$@"\n', encoding="utf-8")
     wrapper.chmod(0o755)
@@ -393,7 +574,9 @@ def _fixture(*, tmp_path: Path) -> dict[str, str]:
         "wrapper": str(wrapper),
         "runner": str(runner),
         "record": str(record),
-        "registry": str(tmp_path / "installed_plugins.json"),
+        "home": str(home),
+        "user": "work-supply-operator",
+        "registry": str(home.joinpath(*_REGISTRY_UNDER_HOME)),
         "build_a": str(_build(root=tmp_path, name="build-a")),
         "build_b": str(_build(root=tmp_path, name="build-b")),
     }
@@ -424,14 +607,29 @@ def _write_registry(*, fixture: dict[str, str], install_path: str | None) -> Non
 def _fire(
     *, fixture: dict[str, str], overrides: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
+    """One firing, with `$HOME` REMOVED from its environment.
+
+    A firing has no `$HOME` on a real host — systemd sets one only for a unit
+    declaring `User=`, and the service deliberately declares none — so a
+    fixture that let the test runner's own `$HOME` through would exercise an
+    environment no firing ever has, and could pass while every real firing
+    composed `/.claude/plugins/installed_plugins.json` and refused.
+
+    The registry is NOT named here either: it is left to the launcher's
+    default, which is the path under the operator home the instance
+    environment file supplies. So every arm below exercises that default, and
+    none of them can pass on a path a test handed the launcher.
+    """
     env = {
         **_child_env(),
         _REPO_ENV: fixture["repo"],
         _BUDGET_ENV: "3",
         _WRAPPER_ENV: fixture["wrapper"],
-        "LIVESPEC_WORK_SUPPLY_PLUGIN_REGISTRY": fixture["registry"],
+        _USER_ENV: fixture["user"],
+        _HOME_ENV: fixture["home"],
         "LIVESPEC_WORK_SUPPLY_RUNNER": fixture["runner"],
     }
+    _ = env.pop("HOME", None)
     env.update(overrides or {})
     return subprocess.run(
         [str(_LAUNCHER), "--instance", "tenant"],
@@ -499,6 +697,24 @@ def _instance_env(*, tmp_path: Path, tenant: str) -> dict[str, str]:
     return _settings(text=path.read_text(encoding="utf-8"))
 
 
+def _tenant_dir(*, tmp_path: Path, tenant: str) -> Path:
+    repo = tmp_path / tenant
+    repo.mkdir(exist_ok=True)
+    return repo
+
+
+def _stub_wrapper(*, tmp_path: Path) -> Path:
+    """A credential wrapper that is executable and does nothing but exec.
+
+    The installer's wrapper refusal measures the EXECUTABLE BIT, so what stands
+    in for the real wrapper only has to carry it.
+    """
+    resolved = tmp_path / "with-livespec-env.sh"
+    _ = resolved.write_text('#!/bin/sh\nexec "$@"\n', encoding="utf-8")
+    resolved.chmod(0o755)
+    return resolved
+
+
 def _install(
     *,
     tmp_path: Path,
@@ -506,16 +722,15 @@ def _install(
     interval: str,
     env_wrapper: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    repo = tmp_path / tenant
-    repo.mkdir(exist_ok=True)
-    wrapper = env_wrapper
-    if wrapper is None:
-        resolved = tmp_path / "with-livespec-env.sh"
-        _ = resolved.write_text('#!/bin/sh\nexec "$@"\n', encoding="utf-8")
-        resolved.chmod(0o755)
-        wrapper = str(resolved)
+    wrapper = env_wrapper if env_wrapper is not None else str(_stub_wrapper(tmp_path=tmp_path))
     return _run(
-        argv=[str(_INSTALL), "--repo", str(repo), "--interval", interval],
+        argv=[
+            str(_INSTALL),
+            "--repo",
+            str(_tenant_dir(tmp_path=tmp_path, tenant=tenant)),
+            "--interval",
+            interval,
+        ],
         tmp_path=tmp_path,
         env_wrapper=wrapper,
     )

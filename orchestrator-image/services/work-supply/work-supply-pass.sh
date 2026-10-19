@@ -32,6 +32,25 @@
 #    invalid here — ledger writers are multi-host; see
 #    `.ai/ledger-writers-are-multi-host.md`).
 #
+# 3. DROP TO THE OPERATOR. Detaching the pass is what FORCES this script to own
+#    identity too, which is why the two are settled in one place. A system-scope
+#    `systemd-run --unit` from a non-root caller needs polkit authorization no
+#    timer can obtain, so the firing runs as root; but a pass running as root
+#    resolves root's `$HOME`, and both things it reaches for there belong to the
+#    operator — the Claude Code plugin registry, and `~/.fabro/bin/fabro`. The
+#    pass is therefore started with the operator identity and home the instance
+#    environment file names, and this script never infers either.
+#
+# NOTHING HERE READS AN AMBIENT `$HOME` AND HOPES. systemd sets `$HOME` only for
+# a unit declaring `User=` (systemd.exec(5)), and the service deliberately
+# declares none, so under the timer there is no `$HOME` at all. A default
+# composed from an unset one is `/.claude/plugins/installed_plugins.json`: it
+# cannot exist, so every firing of every instance refuses — and refuses with
+# "no registered install for this tenant", which reads as an unregistered tenant
+# rather than as an unresolvable home. `$HOME` is consulted only as the fallback
+# for a hand-run launcher, where it IS the operator's; when neither source
+# resolves, this script refuses NAMING BOTH.
+#
 # The credential wrapper is invoked by the DETACHED pass and not by this
 # script. `bd` reads the tenant password from a bare `BEADS_DOLT_PASSWORD` that
 # only the wrapper injects, and a transient unit does not inherit this process's
@@ -50,13 +69,18 @@
 # per-instance EnvironmentFile `install.sh` wrote):
 #   work-supply-pass.sh --instance <name>
 #
-# Environment (the first three are the per-instance settings; the last two are
-# for this repository's tests and for a non-standard host):
+# Environment (the first five are the per-instance settings `install.sh`
+# writes; the last two are for this repository's tests and for a non-standard
+# host):
 #   LIVESPEC_WORK_SUPPLY_REPO             tenant checkout to drain
 #   LIVESPEC_WORK_SUPPLY_BUDGET           per-pass dispatch ceiling
 #   LIVESPEC_WORK_SUPPLY_ENV_WRAPPER      credential wrapper the pass runs under
+#   LIVESPEC_WORK_SUPPLY_USER             operator identity the pass runs as
+#   LIVESPEC_WORK_SUPPLY_HOME             that operator's home; the registry and
+#                                         the pass's own $HOME come from it
+#                                         (falls back to $HOME when hand-run)
 #   LIVESPEC_WORK_SUPPLY_PLUGIN_REGISTRY  registry path (default: the Claude
-#                                         Code registry under $HOME)
+#                                         Code registry under that home)
 #   LIVESPEC_WORK_SUPPLY_RUNNER           program that starts the transient unit
 #                                         (default: systemd-run)
 
@@ -144,16 +168,26 @@ main() {
     return "${EX_USAGE}"
   fi
 
-  local repo budget wrapper registry runner
+  local repo budget wrapper user home registry runner
   repo="${LIVESPEC_WORK_SUPPLY_REPO:-}"
   budget="${LIVESPEC_WORK_SUPPLY_BUDGET:-}"
   wrapper="${LIVESPEC_WORK_SUPPLY_ENV_WRAPPER:-}"
-  registry="${LIVESPEC_WORK_SUPPLY_PLUGIN_REGISTRY:-${HOME:-}/.claude/plugins/installed_plugins.json}"
+  user="${LIVESPEC_WORK_SUPPLY_USER:-}"
+  # The instance file's home first, this process's own only as the hand-run
+  # fallback: under the timer there is no `$HOME` at all (see the header), and
+  # on a host where root happens to have one, root's is the WRONG home.
+  home="${LIVESPEC_WORK_SUPPLY_HOME:-${HOME:-}}"
   runner="${LIVESPEC_WORK_SUPPLY_RUNNER:-systemd-run}"
 
   require_value LIVESPEC_WORK_SUPPLY_REPO "${repo}" || return "${EX_CONFIG}"
   require_value LIVESPEC_WORK_SUPPLY_BUDGET "${budget}" || return "${EX_CONFIG}"
   require_value LIVESPEC_WORK_SUPPLY_ENV_WRAPPER "${wrapper}" || return "${EX_CONFIG}"
+  require_value LIVESPEC_WORK_SUPPLY_USER "${user}" || return "${EX_CONFIG}"
+  if [[ -z "${home}" ]]; then
+    refuse "neither LIVESPEC_WORK_SUPPLY_HOME nor HOME is set, so the operator home is unresolvable: the plugin registry cannot be located and the pass would resolve fabro under the wrong account"
+    return "${EX_CONFIG}"
+  fi
+  registry="${LIVESPEC_WORK_SUPPLY_PLUGIN_REGISTRY:-${home}/.claude/plugins/installed_plugins.json}"
   if [[ ! "${budget}" =~ ^[1-9][0-9]*$ ]]; then
     refuse "LIVESPEC_WORK_SUPPLY_BUDGET is ${budget}, which is not a positive integer"
     return "${EX_CONFIG}"
@@ -177,16 +211,23 @@ main() {
   # than colliding with it.
   local unit="work-supply-pass-${instance}-${stamp}-$$"
 
-  printf 'work-supply: tenant %s, build %s, budget %s, unit %s\n' \
-    "${repo}" "${install_path}" "${budget}" "${unit}"
+  printf 'work-supply: tenant %s, build %s, budget %s, user %s, home %s, unit %s\n' \
+    "${repo}" "${install_path}" "${budget}" "${user}" "${home}" "${unit}"
 
   # NO `--item`: the pass drains the ranked queue, which is what makes it an
   # ordinary unattended drain under `wip_cap`, every admission condition and
   # the fail-closed unattended cost gate. NO `--wait`: see the header.
+  #
+  # `--uid` and `--setenv HOME=` are what make the pass the OPERATOR's even
+  # though this firing is root's. Both are passed: `--uid` alone leaves the
+  # home systemd derives for the transient unit implicit, and the one thing it
+  # must agree with is the registry THIS process just read.
   "${runner}" \
     --collect \
     --unit "${unit}" \
     --description "livespec work-supply drain pass for ${repo}" \
+    --uid "${user}" \
+    --setenv "HOME=${home}" \
     -- "${wrapper}" -- /usr/bin/python3 "${dispatcher}" loop \
     --repo "${repo}" \
     --budget "${budget}" \
