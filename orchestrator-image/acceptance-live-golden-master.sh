@@ -401,12 +401,15 @@ create_and_seed_repo() {
     bd create "Implement greet per the SPECIFICATION" \
       -d "Implement the program described in this repo's SPECIFICATION/: expose a Python function greet(name: str) -> str (in src/greeting/greet.py) that returns exactly \"Hello, <name>!\". For the input Ada it must return \"Hello, Ada!\". Add a test under tests/ and make \`just check\` pass. Read this repo's root CLAUDE.md for local constraints (no Red-Green-Replay ritual here; commit normally). Follow contracts.md / scenarios.md exactly." \
       >/dev/null 2>&1
-    # Promote the seeded item to the livespec `ready` status. `bd create` mints
-    # it as bd-native `open`, which the Dispatcher's intake normalization maps to
-    # `backlog` (the intake lane) — landing it OUT of the ready set the `--item`
+    # Promote the seeded item to the livespec `ready` status. A new item lands
+    # in the intake lane — read back as `backlog` through the host's bd guard,
+    # bd-native `open` without it — which is OUT of the ready set the `--item`
     # dispatch targets. Setting it `ready` (a registered custom status) survives
-    # normalization and makes it dispatchable.
-    _seed_id="$(bd list --status open --json 2>/dev/null | jq -r '.[0].id')"
+    # normalization and makes it dispatchable. Select it with `--status all`:
+    # the ledger holds exactly this one item, and a `--status open` filter
+    # matches nothing once intake reads `backlog`, so `bd update null` failed
+    # silently under `set -e`.
+    _seed_id="$(bd list --status all --json 2>/dev/null | jq -r '.[0].id')"
     bd update "$_seed_id" --status ready >/dev/null 2>&1
   )
   # Confirm exactly one ready item in the embedded ledger (redacted count only).
