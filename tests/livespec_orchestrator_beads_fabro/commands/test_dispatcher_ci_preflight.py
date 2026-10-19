@@ -589,6 +589,37 @@ def test_a_transient_empty_run_listing_during_a_wait_is_repolled(tmp_path: Path)
     assert pauses == [60.0, 60.0]
 
 
+def test_a_persistent_transient_empty_run_listing_refuses_with_its_own_cause(
+    tmp_path: Path,
+) -> None:
+    """An empty listing after a run was observed is never the no-runs-yet state."""
+    runner = _Runner(
+        results=_results(),
+        streams={
+            _run_list_argv(): _stream(
+                results=[
+                    _result(stdout=_run_list_payload(status="in_progress")),
+                    _result(stdout="[]"),
+                ]
+            )
+        },
+    )
+
+    outcome = _polled(
+        repo=tmp_path,
+        runner=runner,
+        readings=[0.0, 60.0, 1800.0],
+        pauses=[],
+        progress=io.StringIO(),
+    )
+
+    assert outcome.refusal is not None
+    assert outcome.record["reason"] == "master-ci-unprovable"
+    assert outcome.record["status"] == "failed"
+    assert "transient empty run listing" in outcome.refusal.detail
+    assert "no runs yet" not in outcome.refusal.detail
+
+
 def test_a_pending_run_that_concludes_red_refuses_as_red(tmp_path: Path) -> None:
     """Waiting changes WHEN the verdict is read, never what a red verdict means."""
     runner = _Runner(
