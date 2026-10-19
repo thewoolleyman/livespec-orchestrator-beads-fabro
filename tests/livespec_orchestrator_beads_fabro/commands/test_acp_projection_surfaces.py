@@ -7,19 +7,20 @@ Binds the three consumer clauses of `SPECIFICATION/contracts.md` section
   at `high` urgency with a server-qualified `shell` inspection handoff, and
   the aggregate `hygiene:model-fallback:<repo>:<node>` whose summary comes
   from "the newest unresolved observation";
-- the loop posture -- "an unattended loop MUST stop further picking for that
-  repository", while "a human-attended `--item` dispatch MAY proceed only
-  after the high-urgency warning is surfaced before claim and does not clear
-  the fact";
+- the posture value's own attended / unattended asymmetry, asserted in BOTH
+  directions over one journal, since an implementation that stopped both or
+  stopped neither would pass every other assertion here;
 - the clearance valve, "attributed, reason-required, append-only ... naming
   that exact fact id", which "retires the fact only and MUST NOT mint,
   retire, or reinterpret a hold".
 
-THE CONTROL THAT MATTERS MOST IS THE ATTENDED / UNATTENDED ASYMMETRY, and
-it is asserted in BOTH directions over one journal: an implementation that
-stopped both, or stopped neither, would pass every other assertion here.
+THE LOOP-LEVEL HALF OF THAT POSTURE IS GONE, retired with the v127 rule that
+an unresolved projection fact stops unattended picking, and what replaces it
+is `tests/integration/test_unattended_drain_past_projection_facts.py` — which
+asserts the opposite, that an unattended drain over such a journal picks.
 
-THE SECOND IS THAT CLEARANCE TOUCHES NO HOLD. The journal in that test
+THE CONTROL THAT MATTERS MOST IS THAT CLEARANCE TOUCHES NO HOLD. The journal
+in that test
 carries a live typed availability hold as well as the projection fact, so
 a valve that retired by stage-name overlap would be caught rather than
 merely unasserted.
@@ -27,17 +28,13 @@ merely unasserted.
 
 from __future__ import annotations
 
-import argparse
 import json
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _acp_projection_clear,
-    _dispatcher_loop_command,
-    _dispatcher_pre_dispatch_wall,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_failure_classifier import (
     AcpAvailabilityFailure,
@@ -253,105 +250,6 @@ def test_a_clean_journal_leaves_the_posture_silent_and_picking(tmp_path: Path) -
     """No fact, no warning, no stop -- the ordinary pass is untouched."""
     posture = acp_projection_posture(journal_path=tmp_path / "absent.jsonl", attended=False)
     assert (posture.stop_picking, posture.warning) == (False, None)
-
-
-@dataclass(kw_only=True)
-class _LoopStub:
-    """The loop-command seams upstream of the posture gate, stubbed out."""
-
-    items: list[Any] = field(default_factory=list)
-    journal: Any = None
-
-
-def _loop_args(*, repo: Path, journal: Path, items: list[str] | None) -> argparse.Namespace:
-    return argparse.Namespace(
-        repo=str(repo),
-        journal=str(journal),
-        items=items,
-        budget=1,
-        as_json=False,
-        dry_run=False,
-        skip_ledger_check=True,
-        workflow_name=None,
-    )
-
-
-def _stub_loop(*, monkeypatch: pytest.MonkeyPatch, journal_path: Path, waves: list[int]) -> None:
-    """Stub every loop seam AROUND the posture gate, leaving the gate itself live."""
-    module = _dispatcher_loop_command
-
-    @dataclass(kw_only=True)
-    class _Journal:
-        path: Path
-        records: list[dict[str, object]] = field(default_factory=list)
-
-        def append(self, *, record: dict[str, object]) -> None:
-            self.records.append(record)
-
-    monkeypatch.setattr(module, "dispatch_preamble", lambda **_kwargs: (None, None))
-    monkeypatch.setattr(module, "arm_otel_egress", lambda **_kwargs: None)
-    monkeypatch.setattr(module, "prepare", lambda **_kwargs: ([], _Journal(path=journal_path)))
-    monkeypatch.setattr(module, "journal_path", lambda **_kwargs: journal_path)
-    monkeypatch.setattr(module, "requested_items_preflight_error", lambda **_kwargs: None)
-    monkeypatch.setattr(module, "candidates", lambda **_kwargs: [])
-    # The criteria wall lives in the SHARED pre-dispatch wall both dispatch
-    # paths run, not in the drain's own module; the drain imports the wall as
-    # one name. Stub it where it is defined.
-    monkeypatch.setattr(
-        _dispatcher_pre_dispatch_wall, "pre_dispatch_criteria_refusal", lambda **_kwargs: None
-    )
-    monkeypatch.setattr(module, "dispatch_loop_wave", lambda **_kwargs: waves.append(1) or [])
-
-
-def test_the_unattended_drain_stops_before_reaching_the_dispatch_wave(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """The gate sits BEFORE claim: no wave runs and nothing is refused."""
-    path = _journal(tmp_path=tmp_path, records=(_failure_line(),))
-    waves: list[int] = []
-    _stub_loop(monkeypatch=monkeypatch, journal_path=path, waves=waves)
-    code = _dispatcher_loop_command.run_loop_command(
-        args=_loop_args(repo=tmp_path, journal=path, items=None)
-    )
-    # A clean zero, not a refusal: the repository is not broken and no item is
-    # at fault.
-    assert code == 0
-    assert waves == []
-    assert "Unattended picking is stopped" in capsys.readouterr().err
-
-
-def test_an_attended_item_dispatch_surfaces_the_warning_and_does_not_clear_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Surfacing is not clearing: the fact stands into the next pass."""
-    path = _journal(tmp_path=tmp_path, records=(_failure_line(),))
-    waves: list[int] = []
-    _stub_loop(monkeypatch=monkeypatch, journal_path=path, waves=waves)
-    code = _dispatcher_loop_command.run_loop_command(
-        args=_loop_args(repo=tmp_path, journal=path, items=["bd-ib-xtgwpz"])
-    )
-    assert code == 0
-    assert "may proceed" in capsys.readouterr().err
-    # It PROCEEDED past the gate, and the fact is still unresolved.
-    assert waves == [1]
-    assert [entry.fact_id for entry in unresolved_projection_failures(journal_path=path)] == [
-        _FACT_ID
-    ]
-
-
-def test_a_clean_journal_leaves_the_drain_silent_and_dispatching(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """The ordinary pass is untouched: no warning text and the wave still runs."""
-    path = tmp_path / "tmp" / "fabro-dispatch-journal.jsonl"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    waves: list[int] = []
-    _stub_loop(monkeypatch=monkeypatch, journal_path=path, waves=waves)
-    code = _dispatcher_loop_command.run_loop_command(
-        args=_loop_args(repo=tmp_path, journal=path, items=None)
-    )
-    assert (code, waves) == (0, [1])
-    assert capsys.readouterr().err == ""
 
 
 def _clear_argv(*, path: Path, **overrides: str) -> list[str]:

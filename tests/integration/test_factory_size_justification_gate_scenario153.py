@@ -19,7 +19,6 @@ import json
 from dataclasses import dataclass, replace
 from importlib import import_module
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -1079,11 +1078,6 @@ def _exercise_loop_entry(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(loop, "dispatch_preamble", lambda **_kwargs: (None, None))
     monkeypatch.setattr(loop, "arm_otel_egress", lambda **_kwargs: None)
     monkeypatch.setattr(loop, "prepare", lambda **_kwargs: ([loop_item], loop_journal))
-    monkeypatch.setattr(
-        loop,
-        "acp_projection_posture",
-        lambda **_kwargs: SimpleNamespace(warning=None, stop_picking=False),
-    )
     monkeypatch.setattr(
         loop,
         "candidates",
