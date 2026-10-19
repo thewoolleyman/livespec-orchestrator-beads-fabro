@@ -164,6 +164,16 @@ class _ProductionResumeRunner:
         return CommandResult(exit_code=1, stdout="", stderr="unexpected command")
 
 
+def test_the_production_resume_runner_reports_an_unexpected_command(tmp_path: Path) -> None:
+    """The command-path fixture exposes an unmodeled command as a failed result."""
+    runner = _ProductionResumeRunner(factory_payload=_republishing_factory_record())
+
+    result = runner.run(argv=["unexpected"], cwd=tmp_path, timeout_seconds=1)
+
+    assert result.exit_code == 1
+    assert result.stderr == "unexpected command"
+
+
 def _item(*, status: str = "ready") -> WorkItem:
     return WorkItem(
         id=_ITEM_ID,
@@ -200,17 +210,6 @@ def _anchor() -> ResumeAnchor:
         run_id=_EARLIER_RUN,
         head=_HEAD,
         resumed_at=RESUMED_AT_PR,
-        source=SOURCE_FACTORY_RUN,
-    )
-
-
-def _republication_anchor() -> ResumeAnchor:
-    """The moved PR head the earlier run itself published before fresh capture."""
-    return ResumeAnchor(
-        record=None,
-        run_id=_EARLIER_RUN,
-        head=_REPUBLISHED_HEAD,
-        resumed_at="proof_capture",
         source=SOURCE_FACTORY_RUN,
     )
 
