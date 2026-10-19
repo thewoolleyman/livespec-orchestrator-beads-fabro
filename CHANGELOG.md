@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.219.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.219.2...v0.219.3) (2026-10-19)
+
+
+### Bug Fixes
+
+* **dispatcher:** read a Fabro start time that carries its own UTC offset (bd-ib-fjpgxu) ([1b38dcf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1b38dcf899ff229d745440573ddba97b66098f36))
+
 ## [0.219.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.219.1...v0.219.2) (2026-10-19)
 
 
