@@ -1,5 +1,12 @@
 """`dispatcher.py idle-slot-audit` — the read-only rendering of the audit.
 
+The clause fixes two things about this surface, and both are about what a
+reader is allowed to conclude from an absence.
+
+AN UNREADABLE BOARD IS PRINTED AS UNKNOWN, never as zero. A zero live count
+and a zero queued count are exactly the reading that makes the finding line
+fire, so a board nobody could read must not render as an empty one.
+
 THE FINDING LINE IS THE LAST LINE, or there is no finding line. A reader
 scanning the tail for it must not find a stale one, so it is emitted from the
 one place the audit computes it and nowhere else.
@@ -43,6 +50,7 @@ __all__: list[str] = [
 
 CONFIGURATION_REFUSAL_EXIT = 2
 NOT_CONFIGURED_LINE = "idle-slot audit: dispatcher.idle_slot_audit is not configured"
+_UNKNOWN = "unknown"
 
 
 def add_idle_slot_audit_arguments(*, parser: argparse.ArgumentParser) -> None:
@@ -114,6 +122,8 @@ def _finding_line(*, finding: IdleSlotFinding) -> str:
 
 def _board_line(*, result: IdleSlotAuditResult) -> str:
     board = result.board
+    if not board.observable:
+        return f"board: UNOBSERVABLE — live {_UNKNOWN}, queued {_UNKNOWN}"
     return f"board: live {board.live_count}, queued {board.queued_count}"
 
 

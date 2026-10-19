@@ -81,6 +81,10 @@ def _board(*, live: int = 0, queued: int = 0, live_ids: frozenset[str] = frozens
     )
 
 
+def _classes(result: object) -> dict[str, str]:
+    return {child.id: child.classification for entry in result.entries for child in entry.children}
+
+
 def _no_holds(*, repo: Path, items: list[WorkItem]) -> dict[str, str]:
     _ = (repo, items)
     return {}
@@ -313,3 +317,33 @@ def test_no_dispatchable_and_no_stale_edge_child_composes_no_finding(
     )
 
     assert result.finding is None
+
+
+def test_a_runnable_row_or_an_unobservable_board_composes_no_finding(
+    tmp_path: Path,
+) -> None:
+    """Something already waits, or nobody could look — neither is idle capacity."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+    _write_config(tmp_path, priority=[{"repo": "tenant-a", "items": ["a-1"]}])
+    readings = {tmp_path / "tenant-a": _reading(items=(_item(id_="a-1"),))}
+    unobservable = importlib.import_module(_BOARD_NAME).UNOBSERVABLE_BOARD
+
+    queued = module.idle_slot_audit(
+        project_root=tmp_path,
+        tenant_reader=_tenant_reader(readings=readings),
+        board_reader=_constant_board(board=_board(live=2, queued=1)),
+        hold_reader=_no_holds,
+    )
+    unreadable = module.idle_slot_audit(
+        project_root=tmp_path,
+        tenant_reader=_tenant_reader(readings=readings),
+        board_reader=_constant_board(board=unobservable),
+        hold_reader=_no_holds,
+    )
+
+    assert _classes(queued)["a-1"] == "DISPATCHABLE-NOW"
+    assert queued.finding is None
+    assert _classes(unreadable)["a-1"] == "DISPATCHABLE-NOW"
+    assert unreadable.finding is None
+    assert (unreadable.board.live_count, unreadable.board.queued_count) == (None, None)
