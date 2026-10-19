@@ -766,18 +766,24 @@
       // A value this build does not recognise is REFUSED before the launch
       // rather than falling back to the inline transport -- guessing the
       // inline one on a Petri-era server is precisely the exposure above.
-      // The 0.378-nightly upgrade CANDIDATE instance on hp:32278 (plan
-      // `fabro-currency` research note 006) is deliberately NOT declared here
-      // yet, and the reason is this table's own first rule rather than
-      // reluctance. Every declared entry is surveyed by each `reconcile-runs`
-      // pass, and a Petri-era server cannot answer the pinned 0.254 client, so
-      // an entry without a `bin` pin would add one `ps-failed` error row to
-      // every pass until that pin lands. The pin is an absolute host path this
-      // repository cannot establish from a sandbox, so the entry belongs with
-      // the cutover that measures it (`bd-ib-sxcnj7`), alongside the Ansible
-      // per-instance binary override the same item owns. A canary against the
-      // candidate therefore declares its entry host-side, where the client
-      // path is known, which is also where that canary's proof is captured.
+      // The `petri` entry is the current Fabro server's Petri-era instance on
+      // the factory host the maintainer named its home (2026-10-18), declared
+      // under a name that is not a machine name. The maintainer directed it
+      // into this table on 2026-10-19 so ordinary dispatches can use it, not
+      // only canaries (plan `petri-factory-on-gmktec`, epic bd-ib-fyozyd). It
+      // carries the four keys a Petri-era server needs: `bin`, the Petri
+      // client, because the pinned 0.254 client cannot answer it and every
+      // `reconcile-runs` pass surveys each entry; `secret_channel`
+      // `native_secrets`; `environment` `livespec-ci`; and `docker_host` for
+      // the sandbox sweep. The `bin` path is the operator host's, which is
+      // where every dispatch and reconcile pass of this repository runs. The
+      // server authenticates through the host's `~/.fabro/auth.json` login
+      // for this url, or a `FABRO_DEV_TOKEN__petri` override. Choose it per
+      // dispatch with `--factory petri` or `LIVESPEC_FABRO_FACTORY=petri`.
+      // `default_factory` stays `hp` until the cutover (bd-ib-iud52v) moves
+      // it. The `server` and `docker_host` values here are literal only until
+      // the registry-backed form lands (bd-ib-fubkcv, then bd-ib-3now6p),
+      // exactly as `hp`'s are.
       //
       // Each entry may ALSO carry an optional `docker_host` key: the Docker
       // daemon that runs THAT factory's sandbox containers, spelled as the
@@ -803,6 +809,13 @@
         "hp": {
           "server": "https://hp-xubuntu.perch-rudd.ts.net:32276",
           "docker_host": "ssh://cwoolley@hp-xubuntu.perch-rudd.ts.net"
+        },
+        "petri": {
+          "server": "https://gmktec-xubuntu.perch-rudd.ts.net:32276",
+          "docker_host": "ssh://cwoolley@gmktec-xubuntu.perch-rudd.ts.net",
+          "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro",
+          "secret_channel": "native_secrets",
+          "environment": "livespec-ci"
         }
       }
     }
