@@ -7,7 +7,7 @@ the needs-human pair, the calibration span -- while this owns the one question
 those steps do not answer: given a terminal that is not green, what happens to
 the slice.
 
-THE THREE ARE PEERS AND ARE MUTUALLY EXCLUSIVE BY PREDICATE, which is why they
+THESE ARE PEERS AND ARE MUTUALLY EXCLUSIVE BY PREDICATE, which is why they
 belong together and why their order among themselves cannot change which one
 fires:
 
@@ -16,6 +16,9 @@ fires:
 - a STALL-WATCHDOG cancellation releases the item to `ready` on its first
   cancel and parks it at `blocked / needs-human` on a repeat, and fires on the
   `stalled-no-progress` status;
+- a WHOLE-RUN WALL BUDGET cancellation parks the item at `blocked /
+  needs-human` with no release arm at all, and fires on the
+  `run-wall-budget-exceeded` status;
 - a PROVIDER-LIMIT release returns the item to `ready` for the ordinary
   admission valve, and fires on the `provider-limit-release` status.
 
@@ -24,7 +27,10 @@ declaration of the complete route set rather than a priority order. Keeping
 them in one place is what lets a reader see that no non-green terminal is left
 with no disposition at all -- the property `_dispatcher_stall_disposition`'s
 docstring records as the whole reason the stall arm had to exist once the
-bounce stopped claiming cancellations.
+bounce stopped claiming cancellations. A budget cancel reaching this router with
+no arm of its own would rest `active` with `fabro` still assigned and no run
+behind it: invisible to admission, invisible to `next`, and indistinguishable at
+a glance from work that is genuinely in flight.
 
 DO NOT ADD A GUARD HERE THAT A STATUS ALREADY ENFORCES. The provider-limit
 clause forbids a release from consuming rework-cap budget or being surfaced as
@@ -49,6 +55,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFil
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_disposition import (
     dispose_provider_limit_release,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_disposition import (
+    dispose_run_wall_budget_cancel,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition import (
     dispose_stall_cancel,
@@ -92,6 +101,7 @@ def dispose_terminal_routing(
     """
     bounce_non_convergence_to_backlog(repo=repo, item=item, outcome=outcome, journal=journal)
     dispose_stall_cancel(repo=repo, item=item, outcome=outcome, journal=journal)
+    dispose_run_wall_budget_cancel(repo=repo, item=item, outcome=outcome, journal=journal)
     _dispose_external_fabro_cancel(repo=repo, item=item, outcome=outcome, journal=journal)
     dispose_provider_limit_release(
         repo=repo, item=item, outcome=outcome, journal=journal, now_iso=now_iso
