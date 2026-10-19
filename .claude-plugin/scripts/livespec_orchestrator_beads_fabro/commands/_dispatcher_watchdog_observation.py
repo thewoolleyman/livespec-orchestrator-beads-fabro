@@ -74,6 +74,7 @@ __all__: list[str] = [
     "BOUND_POLL_REASON_RUN_NOT_HELD",
     "BOUND_POLL_REASON_UNOBSERVABLE",
     "BoundPollOutcome",
+    "ObservedRun",
     "classify_bound_poll",
     "journaled_bound_poll",
     "observed_run",
@@ -107,6 +108,28 @@ _RUN_NOT_HELD_MARKER = "no run found"
 
 
 @dataclass(frozen=True, kw_only=True)
+class ObservedRun:
+    """One poll's observation: the run, and the record the read returned.
+
+    `record` is the PER-RUN read's own payload, or None on the listing route
+    and on any read that yielded none. It is carried rather than discarded so a
+    caller needing a FIELD of the run's record reads it from the SAME reading
+    that answered where the run is -- the whole-run wall budget's `running`
+    instant is the one such field today, and a second `fabro inspect` for it
+    would be both a second round trip per dispatch and a second answer nothing
+    announces the divergence between.
+
+    It is the RAW payload rather than any interpretation of it, because what a
+    field MEANS is the reader's concern: this module answers "could the watchdog
+    see its run?", and a budget instant, a park instant and a cost figure are
+    three different questions about one reading.
+    """
+
+    run: FabroRunSummary | None
+    record: object | None
+
+
+@dataclass(frozen=True, kw_only=True)
 class BoundPollOutcome:
     """One bound-run poll's result plus the reading its reason was taken from.
 
@@ -132,7 +155,7 @@ def observed_run(
     journal: JournalWriter,
     attribution: RunAttribution,
     bound_run_id: str | None,
-) -> FabroRunSummary | None:
+) -> ObservedRun:
     """Take this poll's one observation of the run, by whichever route applies.
 
     `bound_run_id` alone decides the route, and it is the only thing that may:
@@ -145,20 +168,30 @@ def observed_run(
     can take the result without leaving the record.
     """
     if bound_run_id is not None:
-        return journaled_bound_poll(
-            work_item_id=work_item_id,
+        inspect = port.inspect(
             run_id=bound_run_id,
-            inspect=port.inspect(
-                run_id=bound_run_id,
-                timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS,
-            ),
-            journal=journal,
+            timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS,
         )
-    return journaled_discovery(
-        work_item_id=work_item_id,
-        ps=port.ps(timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS),
-        journal=journal,
-        attribution=attribution,
+        return ObservedRun(
+            run=journaled_bound_poll(
+                work_item_id=work_item_id,
+                run_id=bound_run_id,
+                inspect=inspect,
+                journal=journal,
+            ),
+            record=inspect.payload,
+        )
+    # The LISTING route carries no per-run record: a `ps` row answers what the
+    # factory holds, and the fields a caller reads off a run's own record are
+    # not on it. None is that absence rather than a reading that found nothing.
+    return ObservedRun(
+        run=journaled_discovery(
+            work_item_id=work_item_id,
+            ps=port.ps(timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS),
+            journal=journal,
+            attribution=attribution,
+        ),
+        record=None,
     )
 
 

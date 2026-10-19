@@ -22,7 +22,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import _dispatcher_io_fabro_launcher
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_io_fabro_launcher,
+    _dispatcher_stale_item_reap,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import WatchedFabroLauncher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan, build_plan
@@ -172,7 +175,7 @@ def test_host_stall_watchdog_window_resolves_from_the_repository_stall_timeout_k
 
     assert (window.seconds, window.layer) == (3000.0, REPOSITORY_LAYER)
 
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", lambda **_: [])
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "read_work_items", lambda **_: [])
     runner = _ScriptedFabroRunner(events_jsons=[_FROZEN_EVENTS])
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=lambda _seconds: None, clock=_advancing_clock())
@@ -213,7 +216,7 @@ def test_no_configured_value_leaves_the_host_stall_window_at_7200_seconds(
 
     assert (window.seconds, window.layer) == (7200.0, WORKFLOW_DEFAULT_LAYER)
 
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", lambda **_: [])
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "read_work_items", lambda **_: [])
     runner = _ScriptedFabroRunner(events_jsons=[_FROZEN_EVENTS])
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=lambda _seconds: None, clock=_advancing_clock())
@@ -239,7 +242,7 @@ def test_the_cancel_row_names_the_layer_that_supplied_the_stall_window(
     an override from the built-in default cannot tell whether raising the key
     would have saved the run.
     """
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", lambda **_: [])
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "read_work_items", lambda **_: [])
     stall_window = _stall_window_module()
     configured = tmp_path / "configured"
     defaulted = tmp_path / "defaulted"

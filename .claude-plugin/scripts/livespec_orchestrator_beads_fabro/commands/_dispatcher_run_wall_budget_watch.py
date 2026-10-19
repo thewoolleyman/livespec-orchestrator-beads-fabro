@@ -42,24 +42,25 @@ THE LEDGER IS AN INJECTED SEAM, and an UNRESOLVABLE one is a failed measurement
 rather than a licence to proceed. A cancel taken with no ledger to write to
 would destroy a live run with nothing durable naming its tree -- the
 discarded-work path the export-then-terminate precondition exists to close.
+The export itself, and which measurement failed when it could not be taken,
+live in `_dispatcher_run_wall_budget_preserve`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Final
 
-from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     JournalWriter,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_export import (
     LedgerComments,
-    export_run_reference,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_preserve import (
+    preserved_pointer,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_records import (
     run_wall_budget_exceeded_record,
@@ -68,7 +69,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_reco
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_clock import (
     RunWallStart,
     budget_exceeded,
-    recorded_running_epoch,
     run_wall_start_from,
     slot_holding_seconds,
 )
@@ -83,7 +83,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_run_probe i
     watchdog_run_reading,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
-from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsConnectionError,
     ConnectionPrefixMissingError,
@@ -91,11 +90,10 @@ from livespec_orchestrator_beads_fabro.errors import (
 )
 
 __all__: list[str] = [
+    "RunWallBudgetWatch",
     "RunWallVerdict",
     "RunWallVerdictValue",
     "cancel_run_past_budget",
-    "observe_run_wall_start",
-    "run_wall_ledger",
 ]
 
 _INSPECT_TIMEOUT_SECONDS = 60.0
@@ -126,63 +124,12 @@ class RunWallVerdictValue:
     value: str
 
 
-@dataclass(frozen=True, kw_only=True)
-class _Preservation:
-    """Where this run's record is preserved, and what the export measured.
-
-    `failed_measurement` is meaningful on BOTH arms -- the export's own account
-    of what it did -- and is read only where `pointer` is None. Two fields
-    rather than one union so the held record never has to re-derive a reason
-    from an absence.
-    """
-
-    pointer: str | None
-    failed_measurement: str
-
-
 class RunWallVerdict:
     """What one poll decided about its run's whole-run wall budget."""
 
     WITHIN: Final = RunWallVerdictValue(value="within-budget")
     CANCELLED: Final = RunWallVerdictValue(value="run-wall-budget-exceeded")
     HELD: Final = RunWallVerdictValue(value="run-wall-budget-held")
-
-
-def run_wall_ledger(*, repo: Path) -> LedgerComments | None:
-    """The narrow comment surface a budget export writes through, or None.
-
-    None is the measurement failure the cancel holds on, and it is returned
-    rather than raised for the reason the launcher's own work-item read is
-    fail-soft: the watch loop runs beside a live `fabro run`, so an exception
-    here would abandon a healthy run over a configuration read.
-    """
-    resolved = attempt(
-        action=lambda: make_beads_client(config=store_config(repo=repo)),
-        exceptions=_LEDGER_RESOLUTION_ERRORS,
-    )
-    if isinstance(resolved, AttemptFailure):
-        return None
-    return resolved
-
-
-def observe_run_wall_start(
-    *,
-    port: FabroPort,
-    run_id: str,
-    observed_at_epoch: float,
-) -> RunWallStart:
-    """Fix this run's slot-holding clock, ONCE, on the poll that saw it running.
-
-    One extra `fabro inspect` per DISPATCH rather than per poll: the caller
-    keeps the answer for the life of the run, because a clock re-derived each
-    poll could move when one reading failed and another succeeded, and a budget
-    that moved would cancel at a different elapsed figure than its record names.
-    """
-    inspected = port.inspect(run_id=run_id, timeout_seconds=_INSPECT_TIMEOUT_SECONDS)
-    return run_wall_start_from(
-        recorded_epoch=recorded_running_epoch(payload=inspected.payload),
-        observed_at_epoch=observed_at_epoch,
-    )
 
 
 def cancel_run_past_budget(  # noqa: PLR0913 — kw-only per-poll decision; the dispatch, the two seams, the run and the clock reading are independent inputs.
@@ -210,7 +157,7 @@ def cancel_run_past_budget(  # noqa: PLR0913 — kw-only per-poll decision; the 
         or not budget_exceeded(elapsed_seconds=elapsed, budget=plan.run_wall_budget)
     ):
         return RunWallVerdict.WITHIN
-    preserved = _preserved_pointer(plan=plan, runner=runner, run_id=run_id, ledger=ledger)
+    preserved = preserved_pointer(plan=plan, runner=runner, run_id=run_id, ledger=ledger)
     if preserved.pointer is None:
         journal.append(
             record=run_wall_budget_held_record(
@@ -233,49 +180,6 @@ def cancel_run_past_budget(  # noqa: PLR0913 — kw-only per-poll decision; the 
         pointer=preserved.pointer,
     )
     return RunWallVerdict.CANCELLED
-
-
-def _preserved_pointer(
-    *,
-    plan: DispatchPlan,
-    runner: CommandRunner,
-    run_id: str,
-    ledger: LedgerComments | None,
-) -> _Preservation:
-    """Where this run's record is durably preserved, or which measurement failed.
-
-    An absent pointer covers every way the precondition can fail -- no ledger,
-    no declared factory server to export from, a write that did not land, a
-    read-back that did not confirm it -- because they all mean the same thing
-    to the CANCEL: nothing durable names this run's tree yet, so the slot is
-    held one more poll rather than released.
-
-    They do NOT mean the same thing to the HELD RECORD, which is why the
-    failing measurement travels back beside the absence rather than being
-    reduced to it. The remedies differ, and an operator reading a run of held
-    rows acts on which reading stopped the cancel.
-    """
-    if ledger is None:
-        return _Preservation(pointer=None, failed_measurement=_NO_LEDGER_MEASUREMENT)
-    if plan.fabro_factory_server is None:
-        return _Preservation(pointer=None, failed_measurement=_NO_FACTORY_SERVER_MEASUREMENT)
-    exported = export_run_reference(
-        work_item_id=plan.work_item_id,
-        # The item is `active` for the life of the dispatch this watch belongs
-        # to, so the pointer lands on the ITEM rather than on the journal. A
-        # status read here would be a second ledger round trip answering a
-        # question the dispatch already settled by claiming the item.
-        work_item_status="active",
-        run_id=run_id,
-        factory_server_url=plan.fabro_factory_server,
-        repo=plan.repo,
-        fabro_bin=plan.fabro_bin,
-        runner=runner,
-        ledger=ledger,
-    )
-    if not exported.exported or exported.comment_id is None:
-        return _Preservation(pointer=None, failed_measurement=exported.detail)
-    return _Preservation(pointer=exported.comment_id, failed_measurement=exported.detail)
 
 
 def _cancel(  # noqa: PLR0913 — kw-only cancel; the dispatch, the two seams, the run and the two measured figures are independent inputs.
@@ -317,3 +221,69 @@ def _cancel(  # noqa: PLR0913 — kw-only cancel; the dispatch, the two seams, t
             "rm_exit_code": rm.command.exit_code,
         }
     )
+
+
+@dataclass(kw_only=True)
+class RunWallBudgetWatch:
+    """One run's budget clock and the ledger its export writes through.
+
+    MUTABLE, and the one field that moves is the whole reason this exists: the
+    clock is fixed ONCE, on the first poll that observed the run `running`, and
+    kept for the life of the run. A clock re-derived per poll could move when
+    one reading failed and another succeeded, and a budget that moved would
+    cancel at a different elapsed figure than its own record names.
+
+    `ledger` is resolved once, before any poll, because it is a property of the
+    dispatching host rather than of the run — a per-poll resolution would put a
+    configuration read on every poll of every dispatch. None is a host with no
+    ledger, which HOLDS a budget cancel rather than taking one.
+
+    It lives here rather than in the watch loop so the loop holds no budget
+    state of its own: a loop that tracked the clock itself would be the second
+    place the fix-it-once rule above could be broken.
+    """
+
+    ledger: LedgerComments | None
+    start: RunWallStart | None = None
+
+    def verdict(  # noqa: PLR0913 — kw-only per-poll decision; the dispatch, the three seams, the run and the two clock readings are independent inputs.
+        self,
+        *,
+        dispatch_id: str | None,
+        plan: DispatchPlan,
+        port: FabroPort,
+        runner: CommandRunner,
+        journal: JournalWriter,
+        run_id: str,
+        recorded_epoch: float | None,
+        now_epoch: float,
+    ) -> RunWallVerdictValue:
+        """This poll's budget decision, fixing the clock on the first running poll.
+
+        ONE wall-clock reading serves both the fixing and the measurement, which
+        the caller takes and passes in: the instant the clock is fixed at and
+        the instant the elapsed figure is measured to are the same poll, so two
+        readings would report a span this poll did not observe.
+
+        `recorded_epoch` arrives from the poll's OWN observation rather than
+        being read here, which is what keeps the budget off the per-poll probe
+        budget entirely: the per-run read the watchdog already takes carries the
+        run's record, so the instant costs no round trip — and a second
+        `fabro inspect` for it would be a second answer about one run with
+        nothing announcing a divergence.
+        """
+        if self.start is None:
+            self.start = run_wall_start_from(
+                recorded_epoch=recorded_epoch, observed_at_epoch=now_epoch
+            )
+        return cancel_run_past_budget(
+            dispatch_id=dispatch_id,
+            plan=plan,
+            port=port,
+            runner=runner,
+            journal=journal,
+            run_id=run_id,
+            start=self.start,
+            now_epoch=now_epoch,
+            ledger=self.ledger,
+        )

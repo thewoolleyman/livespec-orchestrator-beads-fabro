@@ -24,6 +24,9 @@ from livespec_orchestrator_beads_fabro.commands import (
 )
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop as loop_module
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop_overlay as overlay_module
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_watch_poll as poll_module,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     CommandRunner,
@@ -38,6 +41,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_declarat
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_fabro_launcher import (
     WatchedFabroLauncher,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget import (
+    DEFAULT_RUN_WALL_BUDGET,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
     COMMITTED_RUN_CONFIG_IMAGE,
@@ -56,6 +62,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import 
     DEFAULT_STALL_WINDOW,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import LivenessSample
+from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_observation import (
+    ObservedRun,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroRunSummary
 
 _REVIEW_VAULT_KEY = "LIVESPEC_DISPATCH_REVIEW_GITHUB_TOKEN"
@@ -194,6 +203,12 @@ def test_factory_authentication_precedes_vault_materialization(
     plan = SimpleNamespace(
         review_fix_visit_cap=4,
         branch="feat/review-fix",
+        # The whole-run wall budget this dispatch resolved. A REAL budget rather
+        # than an omission for the reason the resolved contract below is real:
+        # the watch loop grades every running poll against it, so a double that
+        # carries none fails on its own shape rather than on the ORDER this case
+        # is about.
+        run_wall_budget=DEFAULT_RUN_WALL_BUDGET,
         # A REAL resolved contract rather than a bare `object()`. The overlay leg
         # now reads one more answer off it — whether the gitignored
         # worktree-discipline pack is a premise of this sandbox — and a double that
@@ -359,19 +374,23 @@ def test_launch_guard_releases_only_after_the_worker_reports_running(
         )
     )
 
-    def discover(**_: object) -> FabroRunSummary:
+    def discover(**_: object) -> ObservedRun:
         run = next(discovered)
         events.append(run.status_kind)
-        return run
+        # The poll's observation, which carries the run AND the record the
+        # read returned; this double names no record, which is what the
+        # listing route reports and what a per-run read carrying no running
+        # instant reports.
+        return ObservedRun(run=run, record=None)
 
     launcher = WatchedFabroLauncher(
         sleep=lambda _seconds: None,
         clock=lambda: 0.0,
         on_worker_running=lambda: events.append("released"),
     )
-    monkeypatch.setattr(launcher_module, "observed_run", discover)
+    monkeypatch.setattr(poll_module, "observed_run", discover)
     monkeypatch.setattr(
-        launcher_module,
+        poll_module,
         "stamped_attribution",
         lambda **kwargs: kwargs["attribution"],
     )
@@ -385,6 +404,11 @@ def test_launch_guard_releases_only_after_the_worker_reports_running(
             repo=Path("/workspace/repo"),
             work_item_id="bd-ib-review",
             stall_window=DEFAULT_STALL_WINDOW,
+            # The whole-run wall budget every running poll is graded against.
+            # A REAL budget rather than an omission: the loop grades it before
+            # the stall arm, so a double carrying none fails on its own shape
+            # rather than on the release boundary this case is about.
+            run_wall_budget=DEFAULT_RUN_WALL_BUDGET,
         ),
         runner=cast("CommandRunner", object()),
         journal=cast("JournalWriter", object()),

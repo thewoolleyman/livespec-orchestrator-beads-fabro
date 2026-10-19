@@ -17,6 +17,8 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_io,
     _dispatcher_io_fabro_launcher,
+    _dispatcher_stale_item_reap,
+    _dispatcher_watch_poll,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
@@ -29,6 +31,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_c
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_plan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import StallWindow
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import LivenessSample
+from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_observation import (
+    ObservedRun,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroRunSummary
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import REPOSITORY_LAYER
 from livespec_orchestrator_beads_fabro.errors import BeadsCommandError, BeadsConnectionError
@@ -232,9 +237,7 @@ def test_watched_launcher_reaps_queued_run_after_item_closes(
     journal = _Journal(records=[])
     _write_livespec_config(repo=tmp_path)
     monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _thread)
-    monkeypatch.setattr(
-        _dispatcher_io_fabro_launcher, "read_work_items", _done_items, raising=False
-    )
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "read_work_items", _done_items, raising=False)
     plan = build_plan(
         repo=tmp_path,
         work_item_id="bd-ib-queued",
@@ -346,7 +349,7 @@ def test_watched_launcher_stamps_the_discovered_run_onto_its_work_item(
         )
     )
     monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _thread)
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "_work_item_status", lambda **_: "done")
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "_work_item_status", lambda **_: "done")
     plan = build_plan(
         repo=tmp_path,
         work_item_id="bd-ib-queued",
@@ -415,13 +418,18 @@ def test_watched_launcher_does_not_stall_cancel_queued_active_run(
         _ = (plan, port, run_id, heartbeat_path, dispatch_id, observed_at)
         return samples.pop(0)
 
-    def _runnable_run(**_: object) -> FabroRunSummary:
-        return FabroRunSummary(
-            run_id="01QUEUED",
-            status_kind="runnable",
-            goal=None,
-            work_item_id="bd-ib-queued",
-            total_usd_micros=None,
+    def _runnable_run(**_: object) -> ObservedRun:
+        return ObservedRun(
+            run=FabroRunSummary(
+                run_id="01QUEUED",
+                status_kind="runnable",
+                goal=None,
+                work_item_id="bd-ib-queued",
+                total_usd_micros=None,
+            ),
+            # The listing route carries no per-run record, and a `runnable` run
+            # has no running instant to carry either.
+            record=None,
         )
 
     def _thread(*, target: Callable[[], None], name: str) -> _QueuedThread:
@@ -434,14 +442,14 @@ def test_watched_launcher_does_not_stall_cancel_queued_active_run(
 
     launcher = WatchedFabroLauncher(sleep=lambda _seconds: None, clock=lambda: 0.0)
     monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _thread)
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "_work_item_status", lambda **_: "active")
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "_work_item_status", lambda **_: "active")
     # The per-poll sample assembly now lives in `_dispatcher_io_liveness_probe`
     # and the launcher calls it as a module-level function, so the scripted
     # sample sequence is injected there rather than over a launcher method.
     monkeypatch.setattr(_dispatcher_io_fabro_launcher, "liveness_sample", _next_sample)
     # The per-poll run observation lives in `_dispatcher_watchdog_observation`
     # for the same reason, and is injected the same way.
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "observed_run", _runnable_run)
+    monkeypatch.setattr(_dispatcher_watch_poll, "observed_run", _runnable_run)
 
     result = launcher.launch(plan=plan, runner=runner, journal=journal)
 
@@ -461,7 +469,7 @@ def test_watched_launcher_skips_item_status_lookup_without_store_config(
     journal = _Journal(records=[])
     reader = Mock(return_value=[])
     monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _thread)
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", reader)
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "read_work_items", reader)
     plan = build_plan(
         repo=tmp_path,
         work_item_id="bd-ib-queued",
@@ -597,7 +605,7 @@ def test_watched_launcher_continues_when_item_status_lookup_fails(
     journal = _Journal(records=[])
     _write_livespec_config(repo=tmp_path)
     monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _thread)
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", _unreachable_store)
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "read_work_items", _unreachable_store)
     plan = build_plan(
         repo=tmp_path,
         work_item_id="bd-ib-queued",
@@ -651,7 +659,7 @@ def test_watched_launcher_continues_when_item_is_absent_from_configured_store(
     )
     _write_livespec_config(repo=tmp_path)
     monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _thread)
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", reader)
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "read_work_items", reader)
     plan = build_plan(
         repo=tmp_path,
         work_item_id="bd-ib-queued",
@@ -692,7 +700,7 @@ def test_watched_launcher_absorbs_errors_during_iteration(
         raise error
 
     _write_livespec_config(repo=tmp_path)
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", _unreachable_store)
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "read_work_items", _unreachable_store)
 
     def _thread(*, target: Callable[[], None], name: str) -> _QueuedThread:
         return _QueuedThread(target=target, name=name, runner=runner)
@@ -765,7 +773,7 @@ def test_watched_launcher_recovers_on_next_ledger_poll(
     journal = _Journal(records=[])
     _write_livespec_config(repo=tmp_path)
     monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _thread)
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", _recovering_store)
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "read_work_items", _recovering_store)
     plan = build_plan(
         repo=tmp_path,
         work_item_id="bd-ib-queued",
@@ -885,7 +893,7 @@ def test_watched_launcher_polls_its_bound_run_by_id_without_listing_the_factory(
     runner = _BoundRunner(calls=[])
     journal = _Journal(records=[])
     monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _thread)
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "_work_item_status", lambda **_: "active")
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "_work_item_status", lambda **_: "active")
     plan = build_plan(
         repo=tmp_path,
         work_item_id="bd-ib-bound",

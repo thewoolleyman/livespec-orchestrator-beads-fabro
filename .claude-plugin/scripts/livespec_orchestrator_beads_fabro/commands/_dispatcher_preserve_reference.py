@@ -27,7 +27,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
     JournalWriter,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
     FABRO_DIFF_ARTIFACT_GLOB,
@@ -39,6 +38,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_b
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
     PROVIDER_LIMIT_RELEASE_STAGE,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (

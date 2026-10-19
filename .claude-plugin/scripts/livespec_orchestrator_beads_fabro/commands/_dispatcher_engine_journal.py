@@ -17,6 +17,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_output_reten
     retained_output_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_records import (
+    RUN_WALL_BUDGET_EXCEEDED_STAGE,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -37,6 +40,7 @@ __all__: list[str] = [
     "journal_run_output_markers",
     "journal_stage",
     "run_stage",
+    "run_wall_budget_outcome",
     "stalled_outcome",
     "tail",
 ]
@@ -166,6 +170,46 @@ def stalled_outcome(
             f"`watchdog-stall-cancel` journal row carries the window this run "
             f"was graded against and the layer that supplied it; the DEFERRED 29f "
             f"OTEL metrics-heartbeat primary will refine this coarse signal."
+        ),
+        fabro_run_id=run_id,
+    )
+
+
+def run_wall_budget_outcome(
+    *,
+    outcome_type: type[DispatchOutcome],
+    plan: DispatchPlan,
+    run_id: str,
+) -> DispatchOutcome:
+    """The terminal a run cancelled on its whole-run wall budget reports.
+
+    Its OWN status rather than the stall status, because the two carry opposite
+    dispositions: a first stall cancel releases the item to `ready` for the
+    ordinary admission valve, while a budget cancel rests it at `blocked` /
+    `needs-human` and nothing automatic leaves that state.
+
+    The detail names the resolved budget, the LAYER that supplied it and the key
+    an operator would raise, because the terminal is what a dispatch RESULT
+    reports while the `run-wall-budget-exceeded` journal row carrying the
+    measured elapsed seconds is a per-clone file — so a reader holding only the
+    result still knows which number was applied and where it came from.
+    """
+    budget = plan.run_wall_budget
+    return outcome_type(
+        work_item_id=plan.work_item_id,
+        status=RUN_WALL_BUDGET_EXCEEDED_STAGE,
+        stage="fabro-run",
+        pr_number=None,
+        merge_sha=None,
+        detail=(
+            f"run {run_id} held a factory slot past its whole-run wall budget of "
+            f"{int(budget.seconds)} seconds (supplied by the {budget.layer} layer); "
+            f"its record was exported and read back and the run was then cancelled "
+            f"to release the slot. Raise dispatcher.run_wall_budget_seconds, or pass "
+            f"--run-wall-budget-seconds, if this item's runs legitimately need "
+            f"longer. The {RUN_WALL_BUDGET_EXCEEDED_STAGE} journal row carries the "
+            f"elapsed slot-holding seconds measured and the preserve-by-reference "
+            f"pointer the tree was exported to."
         ),
         fabro_run_id=run_id,
     )

@@ -54,11 +54,18 @@ class FabroRunResult:
     fail-safe, a flaky probe is NOT a stall).
     `abandoned_run_id` is set when the launcher reaped a queued/running run
     whose work-item is already no longer dispatchable.
+    `budget_exceeded_run_id` is set ONLY when the run held a factory slot past
+    its resolved whole-run wall budget, its record was exported and read back,
+    and the run was then `fabro rm -f`-ed. It is kept APART from
+    `stalled_run_id` because the two cancels carry opposite dispositions — a
+    first stall cancel releases the item to `ready` while a budget cancel rests
+    it for a person — so one field for both would route half of them wrongly.
     """
 
     command: CommandResult
     run_id: str | None = None
     stalled_run_id: str | None = None
+    budget_exceeded_run_id: str | None = None
     abandoned_run_id: str | None = None
     abandoned_item_status: str | None = None
 

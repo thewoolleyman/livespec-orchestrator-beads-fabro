@@ -11,6 +11,9 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_io_fabro_launcher as launcher_module,
 )
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_secret_vault as vault_module
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_watch_poll as poll_module,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_fabro_launcher import (
     WatchedFabroLauncher,
@@ -22,6 +25,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_vault import FabroVaultSink
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import LivenessSample
+from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_observation import (
+    ObservedRun,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroRunSummary
 
 _SECRET = VaultSecret(
@@ -159,8 +165,11 @@ def test_default_launcher_observes_repeated_running_without_a_release_callback(
         )
     )
 
-    def discover(**_: object) -> FabroRunSummary:
-        return next(discoveries)
+    def discover(**_: object) -> ObservedRun:
+        # The poll's observation, which carries the run AND the record the read
+        # returned; this double names no record, which is what the listing route
+        # reports and what a per-run read carrying no running instant reports.
+        return ObservedRun(run=next(discoveries), record=None)
 
     def thread(*, target: Callable[[], None], name: str) -> _LaunchThread:
         return _LaunchThread(
@@ -170,9 +179,9 @@ def test_default_launcher_observes_repeated_running_without_a_release_callback(
         )
 
     monkeypatch.setattr(launcher_module.threading, "Thread", thread)
-    monkeypatch.setattr(launcher_module, "observed_run", discover)
+    monkeypatch.setattr(poll_module, "observed_run", discover)
     monkeypatch.setattr(
-        launcher_module,
+        poll_module,
         "stamped_attribution",
         lambda **kwargs: kwargs["attribution"],
     )
