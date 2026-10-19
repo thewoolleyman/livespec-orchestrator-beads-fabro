@@ -476,12 +476,17 @@ start_container() {
   # The GitHub App env is forwarded so the entrypoint's gh-auth + the
   # dispatcher's provider mint installation tokens (the App's installation
   # must cover the livespec-e2e org; no fleet-PAT path remains).
+  # PYTHONDONTWRITEBYTECODE: the host checkout is bind-mounted and the
+  # container runs as root, so a Python import inside it would leave
+  # root-owned __pycache__ in the host tree, which the runner user cannot
+  # delete at the next checkout.
   docker run -d --name "$CONTAINER" \
     --privileged \
     --cgroupns=host \
     "${network_args[@]}" \
     -v "$VARLIB_VOL:/var/lib/docker" \
     -v "$REPO_ROOT:$WORKSPACE_REPO" \
+    -e PYTHONDONTWRITEBYTECODE=1 \
     -v "$CLONE_DIR:$TARGET_MOUNT" \
     "${publish_args[@]}" \
     -e FABRO_PORT="$FABRO_PORT" \
