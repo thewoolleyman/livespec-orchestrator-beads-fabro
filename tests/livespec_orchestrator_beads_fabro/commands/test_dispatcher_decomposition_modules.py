@@ -409,12 +409,17 @@ def test_run_checks_cluster_importable_from_new_module_and_private_names_removed
         Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
         / "_dispatcher_run_checks.py"
     )
+    # `run_ledger_normalize` moved OUT of this module by cohesion once the
+    # overflow-selection refusal needed room under the file's LLOC ceiling: the
+    # preflight and a mutating operator command share nothing but the repository
+    # root. The negative below is what proves the move left no re-export shim,
+    # which `AGENTS.md` section "Refactoring for size" bans.
+    normalize_path = module_path.with_name("_dispatcher_ledger_normalize.py")
     run_checks_public_names = {
         "dispatch_preamble",
         "requested_items_preflight_error",
         "run_janitor_check",
         "run_ledger_check",
-        "run_ledger_normalize",
         "run_spec_check",
     }
     old_private_names = {
@@ -427,18 +432,33 @@ def test_run_checks_cluster_importable_from_new_module_and_private_names_removed
         "_run_ledger_check",
         "_run_spec_check",
     }
+    # The two emitters that moved WITH `run_ledger_normalize`, because they were
+    # used by it alone. Asserted against the SOURCE module rather than against
+    # `dispatcher`, which never carried them: the preflight keeping a copy is
+    # what a half-finished move looks like, and both copies would pass.
+    moved_private_names = {"_emit_normalize_summary", "_emit_normalize_text"}
 
     assert module_path.is_file()
+    assert normalize_path.is_file()
     run_checks = importlib.import_module(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks"
     )
+    normalize = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_normalize"
+    )
     assert set(run_checks.__all__) == run_checks_public_names
+    assert set(normalize.__all__) == {"run_ledger_normalize"}
     for name in run_checks_public_names:
         assert hasattr(run_checks, name)
+    assert not hasattr(run_checks, "run_ledger_normalize")
     assert dispatcher.dispatch_preamble is run_checks.dispatch_preamble
     assert dispatcher.requested_items_preflight_error is run_checks.requested_items_preflight_error
+    assert dispatcher.run_ledger_normalize is normalize.run_ledger_normalize
     for name in old_private_names:
         assert not hasattr(dispatcher, name)
+    for name in moved_private_names:
+        assert not hasattr(run_checks, name)
+        assert hasattr(normalize, name)
 
 
 def test_run_commands_cluster_importable_from_new_module_and_private_names_removed() -> None:

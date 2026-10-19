@@ -347,6 +347,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import 
     ledger_blocked_after_normalization,
     load_items,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_normalize import (
+    run_ledger_normalize,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch_one
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_command import (
     run_loop_command,
@@ -388,7 +391,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import (
     requested_items_preflight_error,
     run_janitor_check,
     run_ledger_check,
-    run_ledger_normalize,
     run_spec_check,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands import (

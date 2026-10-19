@@ -70,6 +70,9 @@ from livespec_orchestrator_beads_fabro.commands._fabro_bin import (
     configured_fabro_bin,
     default_fabro_bin,
 )
+from livespec_orchestrator_beads_fabro.commands._factory_default import (
+    configured_factory_name,
+)
 from livespec_orchestrator_beads_fabro.commands._factory_environment import (
     NO_FACTORY_ENVIRONMENT,
     FactoryEnvironment,
@@ -306,7 +309,7 @@ def resolve_fabro_factory(*, cwd: Path, factory: str | None = None) -> FactoryTa
     if env_value is not None and env_value != "":
         return _factory_target_for(name=env_value, block=block)
     return _factory_target_for(
-        name=_resolve_configured_factory_name(block=block),
+        name=configured_factory_name(block=block),
         block=block,
     )
 
@@ -456,16 +459,6 @@ def _resolve_bd_path(*, block: dict[str, Any]) -> str:
     if env_value is not None and env_value != "":
         return env_value
     return _str_or(value=block.get("bd_path"), default=_DEFAULT_BD_PATH)
-
-
-def _resolve_configured_factory_name(*, block: dict[str, Any]) -> str:
-    factories_raw = block.get("factories")
-    default_name = _str_or(value=block.get("default_factory"), default="default")
-    if isinstance(factories_raw, dict):
-        factories = cast("dict[str, Any]", factories_raw)
-        if default_name in factories:
-            return default_name
-    return "default"
 
 
 def _factory_target_for(*, name: str, block: dict[str, Any]) -> FactoryTarget:
