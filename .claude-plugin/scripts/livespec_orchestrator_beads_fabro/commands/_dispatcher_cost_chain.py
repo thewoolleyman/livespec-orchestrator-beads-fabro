@@ -50,10 +50,6 @@ from livespec_orchestrator_beads_fabro.commands._acp_fallback_events import scan
 from livespec_orchestrator_beads_fabro.commands._acp_model_entry import AcpModelEntry
 from livespec_orchestrator_beads_fabro.commands._acp_node_chains import AcpNodeChain
 from livespec_orchestrator_beads_fabro.commands._acp_node_repository import repository_acp_chains
-from livespec_orchestrator_beads_fabro.commands._acp_projection_run import (
-    ACP_EVENTS_TIMEOUT_SECONDS,
-    resolve_projection_factory,
-)
 from livespec_orchestrator_beads_fabro.commands._config import (
     FactoryTarget,
     dispatcher_block,
@@ -78,6 +74,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
     factory_fabro_bin,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_item_run_target import (
+    ACP_EVENTS_TIMEOUT_SECONDS,
+    resolve_item_run_factory,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
@@ -115,10 +115,10 @@ def chain_costs(
 
     `factory_of` is the per-item factory resolution, injected so a test can
     drive the composition without a committed `.livespec.jsonc`; it defaults to
-    the same `resolve_projection_factory` the hold projection uses, so a cost
-    read and a hold read of one run always agree about which host to ask.
+    the shared `resolve_item_run_factory`, which reads the item's own recorded
+    dispatch stamp, so every read of one run agrees about which host to ask.
     """
-    resolver = resolve_projection_factory if factory_of is None else factory_of
+    resolver = resolve_item_run_factory if factory_of is None else factory_of
     costs: dict[str, ChainCost] = {}
     for outcome in outcomes:
         if outcome.status != "green" or outcome.fabro_run_id is None:

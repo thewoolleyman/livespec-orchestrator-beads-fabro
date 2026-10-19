@@ -53,9 +53,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
-from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_acp_projection import (
-    replay_acp_projection,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_one_run import (
     reconcile_one_run,
 )
@@ -267,13 +264,13 @@ def _reconcile_one_factory(
         grace_seconds=inputs.blocked_run_grace_seconds,
         now_epoch=inputs.now_epoch,
     )
-    # "Replay projection during reconciliation." The replay rides the survey
-    # the reconciler already performed rather than a second one: it reuses this
-    # factory's port, so the events read is server-qualified against the same
-    # target, and it is skipped on a dry run because a dry run is a projection
-    # of what WOULD happen and must write nothing.
-    if not dry_run:
-        _ = replay_acp_projection(inputs=inputs, factory=factory)
+    # NO EVENT-PROJECTION REPLAY RIDES THIS SURVEY. The replay that stood here
+    # re-read each unresolved projection-failure fact's run through
+    # `fabro events`; v127 retired both the fact and the projection, so there
+    # is nothing left to replay and nothing a replay could learn. What v127
+    # does require replaying idempotently -- selection-to-execution observation
+    # keyed by factory, run, node attempt and selection identity -- is the
+    # provider-limit release leg, which `reconcile_one_run` below performs.
     for orphan in classify_orphans(inventory=inventory, grace=grace):
         if inputs.only_work_item_id is not None and orphan.work_item_id != inputs.only_work_item_id:
             continue

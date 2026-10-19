@@ -331,3 +331,44 @@ def test_the_projection_read_returns_nothing_rather_than_refusing(tmp_path: Path
     repo = _repo_with(dispatcher=_BROKEN_AGENT_CATALOG, tmp_path=tmp_path)
 
     assert preflight.resolve_acp_primary_generations(repo=repo) == {}
+
+
+def test_a_repository_declaring_no_enabled_chain_reads_no_primary_generations(
+    tmp_path: Path,
+) -> None:
+    """The v107 path: the read short-circuits before any graph is touched.
+
+    This arm is what makes the generations read a total no-op on a repository
+    with no fallback metadata. It is distinct from the catalog refusal above:
+    the catalogs resolve perfectly here, and it is the CHAINS that carry
+    nothing to report a generation for.
+    """
+    preflight = _module(name="_dispatcher_acp_preflight")
+    repo = _repo_with(dispatcher={}, tmp_path=tmp_path)
+
+    assert preflight.resolve_acp_primary_generations(repo=repo) == {}
+
+
+def test_an_unresolvable_chain_source_also_reads_no_primary_generations(
+    tmp_path: Path,
+) -> None:
+    """The third of the read's three empty arms, and the only one with a chain.
+
+    A declared, ENABLED chain gets as far as resolving its sources — the
+    workflow graph and the per-node layers — and this fixture makes that
+    resolution refuse by naming a workflow variant whose directory does not
+    exist. The arm matters because it is the only one reached with fallback
+    metadata present, which is exactly the repository whose evidence an
+    operator would go looking for.
+    """
+    preflight = _module(name="_dispatcher_acp_preflight")
+    repo = _repo_with(
+        dispatcher={
+            **_with_fallback(fallback=dict(_OPUS_ENTRY)),
+            "workflows": {"absent": ".fabro/workflows/absent"},
+            "default_workflow": "absent",
+        },
+        tmp_path=tmp_path,
+    )
+
+    assert preflight.resolve_acp_primary_generations(repo=repo) == {}

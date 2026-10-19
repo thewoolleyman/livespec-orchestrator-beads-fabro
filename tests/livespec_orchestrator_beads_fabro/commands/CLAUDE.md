@@ -360,6 +360,29 @@ Tests for the thin-transport command modules under
    somewhere this module cannot see; the drain's end-to-end half is
    `tests/integration/test_unattended_drain_past_projection_facts.py`.
 
+- `test_dispatch_pass_fallback_history_sources.py`,
+  `test_acp_fallback_warning_primitives.py` and
+  `test_dispatcher_item_run_target.py` — the v127 removal of the
+  `agent.acp.failover` event projection from the dispatch pass (`bd-ib-qm6r1`).
+  The first asserts the removal as an IMPORT-GRAPH property over a STATED scope
+  (every `.py` under the package's `commands/` tree), because a call site
+  removed while a sibling still imports the module leaves the projection one
+  line from returning and a per-file assertion cannot see that; its positive
+  control is the other half of the same clause, the two authoritative record
+  stages asserted present and still written, since "removed" is satisfied just
+  as well by a build that removed those too. The second keeps the warning and
+  hold PRIMITIVES covered through the interval in which they have no production
+  caller at all — the clause requires existing records to stay readable and the
+  lifecycle to be re-sourced from selection records by the work-item that
+  follows — and each of its cases is paired with the near-miss it must refuse,
+  because every one has a plausible wrong answer that looks correct: a
+  domain-scoped failure carrying a candidate key, a transition BACK to the
+  primary read as a fallback, an unknown `schema_version` read on v1's field
+  meanings, and a retirement line whose `warning_ids` is not a list read as
+  retiring everything. The third covers the two names that outlived the
+  projection, in both directions, since a resolution answering `None` for
+  everything satisfies its unresolvable case exactly as well as a correct one.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr
