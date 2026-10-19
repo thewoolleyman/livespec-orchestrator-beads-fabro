@@ -51,6 +51,7 @@ import importlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -866,3 +867,39 @@ def test_a_retained_run_republishing_after_its_latest_proof_resumes_at_fresh_cap
     assert gather.anchor.resumed_at == "proof_capture"
     assert gather.anchor.source == SOURCE_FACTORY_RUN
     assert resume_refusals(observation=gather.observation) == ()
+
+
+def test_factory_inspection_uses_the_earlier_dispatchs_persisted_target(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A resume reads the retained run from the factory that owns that run.
+
+    The command preamble may have resolved the default factory, but the earlier
+    dispatch persisted a different target.  A successful inventory from the
+    default says nothing about the retained run, so both `ps` and `inspect`
+    must use the target resolved from the earlier dispatch before admission.
+    """
+    gather_module = importlib.import_module(_GATHER_MODULE)
+
+    def _earlier_factory(
+        *, args: argparse.Namespace, repo: Path, work_item_id: str
+    ) -> argparse.Namespace:
+        assert repo.name
+        assert work_item_id == _ITEM_ID
+        resolved = argparse.Namespace(**vars(args))
+        resolved.fabro_factory_target = SimpleNamespace(
+            server="https://retained.example.test", dev_token=None
+        )
+        return resolved
+
+    monkeypatch.setattr(
+        gather_module, "args_with_earlier_dispatch_factory_target", _earlier_factory
+    )
+    runner = _runner()
+
+    gather = _gather(repo=repo, item=_item(), runner=runner)
+
+    assert gather.anchor is not None
+    factory_argv = [argv for argv in runner.argvs if argv[1] in {"ps", "inspect"}]
+    assert factory_argv
+    assert all(argv[-2:] == ["--server", "https://retained.example.test"] for argv in factory_argv)

@@ -76,6 +76,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
     effective_criteria,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
+    args_with_earlier_dispatch_factory_target,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
     read_pull_request_records,
 )
@@ -173,7 +176,7 @@ def gather_resume(
     )
     provisional = resume_anchor(records=records or (), executing_node=None)
     factory = read_factory(
-        args=args,
+        args=args_with_earlier_dispatch_factory_target(args=args, repo=repo, work_item_id=item.id),
         repo=repo,
         item=item,
         journal_path=journal_path,

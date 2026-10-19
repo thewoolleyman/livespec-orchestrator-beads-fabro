@@ -41,6 +41,7 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "args_with_dispatch_factory_target",
+    "args_with_earlier_dispatch_factory_target",
     "dispatch_factory_targets",
     "resolve_dispatch_factory_target",
     "unrecorded_dispatch_factory_target",
@@ -353,6 +354,27 @@ def args_with_dispatch_factory_target(
     effective = factory_effective_fabro_bin(args=args, factory=target)
     if effective is not None:
         cloned.fabro_bin = effective
+    return cloned
+
+
+def args_with_earlier_dispatch_factory_target(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    work_item_id: str,
+) -> argparse.Namespace:
+    """Clone ``args`` for an earlier dispatch's persisted factory, without a write.
+
+    Resume observation runs before admission and must inspect the earlier run on
+    the factory that dispatched it.  It therefore ignores an invocation's
+    explicit factory preference and resolves the item's recorded pin without
+    persisting anything.  A missing historical pin degrades to the normal
+    configured default for records created before factory pinning existed.
+    """
+    cloned = argparse.Namespace(**vars(args))
+    target = unrecorded_dispatch_factory_target(repo=repo, work_item_id=work_item_id)
+    cloned.fabro_factory_target = target
+    cloned.fabro_bin = factory_effective_fabro_bin(args=args, factory=target) or cloned.fabro_bin
     return cloned
 
 

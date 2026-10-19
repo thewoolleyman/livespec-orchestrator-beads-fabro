@@ -63,11 +63,9 @@ def _republished_to_capture(*, payload: object | None, current_head: str) -> boo
     if not checkpoints or not _ends_at_capture(checkpoint=checkpoints[-1], head=current_head):
         return False
     visits = _successful_visits(record=record)
-    return any(
-        published > captured
-        for published in visits[_PUBLISH_DRAFT]
-        for captured in visits[_PROOF_CAPTURE]
-    )
+    captures = visits[_PROOF_CAPTURE]
+    publications = visits[_PUBLISH_DRAFT]
+    return bool(captures and publications and max(publications) > max(captures))
 
 
 def _ends_at_capture(*, checkpoint: dict[str, Any], head: str) -> bool:
