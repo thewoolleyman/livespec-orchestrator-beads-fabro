@@ -1004,9 +1004,12 @@ cannot.** The paragraph above is about pointing a QUERY at the right host; this
 one is about pointing a DISPATCH, and it has a different mechanism and a worse
 failure mode. `dispatcher.py dispatch` takes `--factory <name>`, and the
 environment variable `LIVESPEC_FABRO_FACTORY=<name>` does the same job through
-any entry point; `_explicit_factory` in
-`commands/_dispatcher_factory_ledger.py` reads both, and either wins over the
-item's recorded factory and over `dispatcher.default_factory`. **`drive.py` has
+any entry point. `_pinned_factory` in
+`commands/_dispatcher_factory_ledger.py` applies the ratified order — the flag,
+read by `explicit_dispatch_factory`, then the variable, then the item's recorded
+factory — so either routing input wins over that recorded pin and over
+`dispatcher.default_factory`, at the ADMISSION claim stamp as well as at the
+dispatch resolution. **`drive.py` has
 NO `--factory` flag**, so through `drive --action impl:<id>` the environment
 variable is the only route.
 

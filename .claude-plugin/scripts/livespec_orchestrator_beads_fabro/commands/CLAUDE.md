@@ -224,10 +224,16 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   dispatched elsewhere before — measured 2026-10-19, an item carrying fifteen hp
   journal rows was dispatched with the variable naming `petri` and had its claim
   stamped `hp`, after which reconcile held that claim against hp for a run living
-  on gmktec. `_explicit_factory` therefore reads the `--factory` FLAG alone: the
-  variable is one layer below it in `_pinned_factory`, and reading it in both
-  places is what gave a namespace-carrying caller its own copy of the order and
-  let the two copies drift apart.
+  on gmktec. `explicit_dispatch_factory` therefore reads the `--factory` FLAG
+  alone: the variable is one layer below it in `_pinned_factory`, and reading it
+  in both places is what gave a namespace-carrying caller its own copy of the
+  order and let the two copies drift apart.
+  THAT FLAG READER IS PUBLIC BECAUSE ADMISSION NEEDS IT AND HOLDS NO NAMESPACE.
+  The valve writes the pending claim stamp, and the flag is the one precedence
+  layer the variable cannot stand in for, so each of the three dispatch paths
+  reads it and hands `admit_and_select` the NAME through `explicit_factory`. A
+  valve reaching for `args.factory` itself would be the second reader this
+  entry's first half exists to retire.
 - `_dispatcher_journal_file.py` — the append-only dispatch journal and the
   attribution stamp it owns, split out of `_dispatcher_io` for the same reason
   `_dispatcher_shell_runner` was: that aggregate's import closure reaches the

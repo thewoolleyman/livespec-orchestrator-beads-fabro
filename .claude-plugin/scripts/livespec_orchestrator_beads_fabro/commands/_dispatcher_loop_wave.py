@@ -36,6 +36,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_reprobe i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
     args_with_dispatch_factory_target,
+    explicit_dispatch_factory,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
@@ -142,6 +143,11 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
         journal=journal,
         enforce_cap=True,
         rework=rework,
+        # This invocation's `--factory`, which the valve cannot read for itself:
+        # it is the top layer of the factory precedence the pending claim stamp
+        # resolves under, and the one layer `LIVESPEC_FABRO_FACTORY` cannot
+        # stand in for.
+        explicit_factory=explicit_dispatch_factory(args=args),
     )
     # Rework first in the launch order too, so the audit record and the wave's
     # observable sequence report the same precedence the valve applied.

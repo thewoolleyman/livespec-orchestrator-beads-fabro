@@ -16,6 +16,7 @@ the pin, because there is then nothing for the pin to win.
 
 from __future__ import annotations
 
+import argparse
 import importlib
 from dataclasses import replace
 from pathlib import Path
@@ -30,6 +31,7 @@ from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatching_host import (
     DISPATCHING_HOST_ENV_VAR,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.store import (
@@ -50,6 +52,18 @@ _ENV_FACTORY_VAR = "LIVESPEC_FABRO_FACTORY"
 _PINNED = "hp"
 _ROUTED = "petri"
 _ROUTED_SERVER = "https://gmktec-xubuntu.perch-rudd.ts.net:32276"
+
+# The outcome the stubbed launch hands back, by IDENTITY: an admitted target is
+# what reaches the launch at all, so the object coming out is what says the
+# valve admitted rather than held or refused.
+_LAUNCHED = DispatchOutcome(
+    work_item_id=_ITEM_ID,
+    status="succeeded",
+    stage="done",
+    pr_number=None,
+    merge_sha=None,
+    detail="stubbed launch",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -158,6 +172,56 @@ def test_an_environment_routed_dispatch_stamps_the_routed_factory_over_the_pin(
     admitted = _admit(repo=repo, monkeypatch=monkeypatch)
 
     assert [item.id for item in admitted.admitted] == [_ITEM_ID]
+    stamp = _stamp_now(repo=repo)
+    assert stamp is not None
+    assert stamp.factory_name == _ROUTED
+    assert stamp.factory_server == _ROUTED_SERVER
+
+
+def test_a_flag_routed_dispatch_stamps_the_flag_factory_over_the_pin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--factory` reaches the admission stamp, through the one path that carries it.
+
+    Driven through `admit_and_dispatch_target` — `dispatch --item`'s own
+    admit-and-launch step — rather than by handing the valve a name directly,
+    because the name is not the claim: a valve that resolves a name it is GIVEN
+    says nothing about whether the flag an operator typed ever arrives there,
+    and that is the half the environment case cannot cover. Everything past the
+    valve is stubbed, since the subject is the stamp the valve writes and not
+    the run it then launches.
+
+    The environment variable is deliberately UNSET, so the flag is the only
+    thing that can carry the routed name: with it set, a build honouring the
+    variable alone would pass while `--factory` still never reached the stamp.
+    """
+    repo = _repo(tmp_path=tmp_path)
+    _seed_pinned(repo=repo)
+    monkeypatch.delenv(_ENV_FACTORY_VAR, raising=False)
+    launch_module = importlib.import_module(f"{_PACKAGE}._dispatcher_run_launch")
+    routing_module = importlib.import_module(f"{_PACKAGE}._dispatcher_recovery_routing")
+    eligibility_module = importlib.import_module(f"{_PACKAGE}._dispatcher_admission_eligibility")
+    admission_module = importlib.import_module(f"{_PACKAGE}._dispatcher_admission")
+    monkeypatch.setattr(eligibility_module, "read_dispatch_labels", lambda **_: ())
+    monkeypatch.setattr(admission_module, "update_work_item_status", lambda **_: None)
+    monkeypatch.setattr(launch_module, "post_admission_publish_branch_reclaim", lambda **_: None)
+    monkeypatch.setattr(launch_module, "recovery_launch_args", lambda **_: argparse.Namespace())
+    monkeypatch.setattr(launch_module, "dispatch_one", lambda **_: _LAUNCHED)
+
+    outcome = launch_module.admit_and_dispatch_target(
+        args=argparse.Namespace(factory=_ROUTED, journal=None),
+        repo=repo,
+        items=[],
+        target=_item(),
+        journal=JournalFile(path=repo / "journal.jsonl"),
+        janitor=None,
+        marked=False,
+        routing=routing_module.RecoveryRouting(routes=()),
+    )
+
+    # The valve ADMITTED the target rather than holding or refusing it, which is
+    # what makes the stamp below this dispatch's own and not a leftover.
+    assert outcome is _LAUNCHED
     stamp = _stamp_now(repo=repo)
     assert stamp is not None
     assert stamp.factory_name == _ROUTED

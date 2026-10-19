@@ -42,6 +42,7 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig
 __all__: list[str] = [
     "args_with_dispatch_factory_target",
     "dispatch_factory_targets",
+    "explicit_dispatch_factory",
     "resolve_dispatch_factory_target",
     "unrecorded_dispatch_factory_target",
 ]
@@ -95,7 +96,7 @@ def dispatch_factory_targets(
     selection — still reads no server's capacity at all.
     """
     config = _pin_store(repo=repo)
-    explicit = _explicit_factory(args=args)
+    explicit = explicit_dispatch_factory(args=args)
     pinned = [
         _unrecorded_pin(repo=repo, config=config, work_item_id=work_item_id, explicit=explicit)
         for work_item_id in work_item_ids
@@ -170,7 +171,7 @@ def _pinned_factory(*, repo: Path, explicit: str | None, recorded: str | None) -
     The precedence itself, and it is the RATIFIED one in one place: the explicit
     `--factory` name, then `LIVESPEC_FABRO_FACTORY`, then the item's usable
     recorded pin. The environment layer sits HERE rather than inside
-    `_explicit_factory`, which is what makes the order identical for a caller
+    `explicit_dispatch_factory`, which is what makes the order identical for a caller
     that holds an `argparse.Namespace` and one that does not — admission holds
     none, and when its order differed the disagreement was a claim stamped with
     a factory the dispatch never reaches.
@@ -308,7 +309,7 @@ def resolve_dispatch_factory_target(
     exist, so a fault is a bug rather than an item with no pin.
     """
     config = store_config(repo=repo)
-    explicit = _explicit_factory(args=args)
+    explicit = explicit_dispatch_factory(args=args)
     recorded = dispatch_factory_for(path=config, work_item_id=work_item_id)
     pinned = _pinned_factory(repo=repo, explicit=explicit, recorded=recorded)
     placement = _placement(
@@ -365,7 +366,7 @@ def args_with_dispatch_factory_target(
     return cloned
 
 
-def _explicit_factory(*, args: argparse.Namespace) -> str | None:
+def explicit_dispatch_factory(*, args: argparse.Namespace) -> str | None:
     """The name an invocation NAMES on its command line: the `--factory` flag.
 
     The FLAG alone. `LIVESPEC_FABRO_FACTORY` is the layer immediately below it
@@ -373,6 +374,12 @@ def _explicit_factory(*, args: argparse.Namespace) -> str | None:
     namespace-carrying caller its own copy of the precedence — and a copy is
     what let the two orders drift apart. The attribute is read with a default
     because not every caller of the resolution holds a dispatch namespace.
+
+    PUBLIC because the ADMISSION path needs it and holds no namespace of its
+    own: the valve stamps the pending claim and the flag is the one layer the
+    environment cannot stand in for, so the dispatch paths read the flag here
+    and hand the valve the NAME. A second reader spelling `args.factory` for
+    itself is how the stamp came to answer differently from the dispatch.
     """
     factory = getattr(args, "factory", None)
     return factory if isinstance(factory, str) and factory != "" else None
