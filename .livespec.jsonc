@@ -227,6 +227,39 @@
       "auto_approve_ready": true,
       "wip_cap": 10,
       "acceptance_mode": "ai-only",
+      // THE SHARED APPEND-ONLY RECORDS a refresh may merge entry by entry
+      // instead of spending a repair round on, per contracts.md section
+      // "Declared record files merge without a repair round" (v162). Every
+      // revise and every scenario-binding change in this repository appends to
+      // these four, so concurrent sibling merges collide in them constantly
+      // while nothing semantic is in conflict -- measured 2026-10-18, two runs
+      // of roughly eighty minutes each lost to exactly that (bd-ib-sufca7,
+      // bd-ib-jgedjo).
+      //
+      // Declare a path here ONLY when an entry one side added is independent of
+      // an entry the other added. The merge keeps the default branch's entries
+      // and appends the run's with no human in the loop, so a file whose
+      // entries interact would be rewritten silently.
+      "record_files": [
+        {
+          "path": "tests/heading-coverage.json",
+          "format": "json-array",
+          "key": ["spec_root", "spec_file", "heading"]
+        },
+        {
+          "path": "tests/heading-coverage-debt.json",
+          "format": "json-array",
+          "key": ["spec_root", "spec_file", "heading"]
+        },
+        {
+          "path": "tests/integration/CLAUDE.md",
+          "format": "markdown-insertions"
+        },
+        {
+          "path": "tests/prompts/CLAUDE.md",
+          "format": "markdown-insertions"
+        }
+      ],
       // The REGISTRY-BACKED name of the hp-xubuntu :32276 instance running the
       // pinned 0.254 engine — the same instance the entry called `hp` addressed
       // before this table named factories instead of machines, so this rename
