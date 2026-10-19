@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.216.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.216.1...v0.216.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* **dispatcher:** never confirm a candidate unheld on evidence nobody could read ([05189f9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/05189f91ea4323880d07afc5aa2c9ced4c4cffcb))
+* **dispatcher:** retire a hold by a later matching success read from the factory ([bca828d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bca828d29edc9a2aac7290a8aa0166f1a4d75f72))
+* **dispatcher:** retry an unavailable availability source on a bounded cadence ([66a90b8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/66a90b8a32cfa3d9bb644c1d88f40426edec19a9))
+* **dispatcher:** wait on an unavailable evidence source under its own condition ([ce6b8d5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ce6b8d57efc69f4eecdf094422aea31f26001100))
+
 ## [0.216.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.216.0...v0.216.1) (2026-10-18)
 
 
