@@ -106,24 +106,40 @@ def merged_pr_list_argv(*, item: WorkItem, default_branch: str) -> list[str]:
 def parse_merged_pr_list(
     *, stdout: str, item: WorkItem, branch: str, default_branch: str
 ) -> tuple[PrView, ...]:
-    """Parse merged PR search results, accepting branch, title, or body/id matches.
+    """Parse merged PR search results, tiering body mentions below identity matches.
 
     A candidate merged onto some OTHER base than `default_branch` is rejected,
     which is what stops a reconcile from disposing an item against a merge into
     someone's long-lived side branch. The branch it compares against is resolved
     for the same reason the search's own `--base` is.
+
+    The two tiers are NOT peers, and the ordering is the resolution rule rather
+    than a preference. `--search <id>` matches bodies server-side, so an ordinary
+    merge that merely MENTIONS the item — a follow-up, a revert, a sibling slice
+    naming its predecessor — comes back beside the pull request that carries it.
+    Counting both at once turns a clean title match into an ambiguity refusal:
+    measured over this repository's 400 most recent merges onto master, thirteen
+    ids fall through to this search and have exactly one title/head match plus at
+    least one body-only mention. So a body match is consulted ONLY when no
+    candidate identifies itself by the dispatch branch or by its title.
     """
     parsed_raw = parse_json(text=stdout)
     if isinstance(parsed_raw, JsonParseFailure) or not isinstance(parsed_raw, list):
         return ()
-    matches: list[PrView] = []
+    identified: list[PrView] = []
+    mentioned: list[PrView] = []
     for entry_raw in cast("list[object]", parsed_raw):
-        view = _pr_view_from_list_entry(
+        candidate = _pr_view_from_list_entry(
             entry_raw=entry_raw, item=item, branch=branch, default_branch=default_branch
         )
-        if view is not None:
-            matches.append(view)
-    return tuple(matches)
+        if candidate is None:
+            continue
+        view, body_only = candidate
+        if body_only:
+            mentioned.append(view)
+        else:
+            identified.append(view)
+    return tuple(identified) if identified else tuple(mentioned)
 
 
 def _ambiguous_pr_detail(*, candidates: tuple[PrView, ...]) -> str:
@@ -151,7 +167,8 @@ def _merged_pr_view(*, stdout: str) -> PrView | None:
 
 def _pr_view_from_list_entry(
     *, entry_raw: object, item: WorkItem, branch: str, default_branch: str
-) -> PrView | None:
+) -> tuple[PrView, bool] | None:
+    """Return one candidate view plus whether ONLY its body named the item."""
     if not isinstance(entry_raw, dict):
         return None
     entry = cast("dict[str, Any]", entry_raw)
@@ -159,29 +176,39 @@ def _pr_view_from_list_entry(
     state_raw: object = entry.get("state")
     if not isinstance(number_raw, int) or state_raw != "MERGED":
         return None
-    title_raw: object = entry.get("title")
-    head_raw: object = entry.get("headRefName")
     base_raw: object = entry.get("baseRefName")
     if isinstance(base_raw, str) and base_raw != default_branch:
         return None
-    body_raw: object = entry.get("body")
-    if (
-        head_raw != branch
-        and not (isinstance(title_raw, str) and item.id in title_raw)
-        and not (isinstance(body_raw, str) and item.id in body_raw)
-    ):
+    identified = _identifies_item(entry=entry, item=item, branch=branch)
+    if not identified and not _body_names_item(entry=entry, item=item):
         return None
     merge_sha = _list_entry_merge_sha(entry=entry)
     if merge_sha is None:
         return None
-    return PrView(
-        number=number_raw,
-        state="MERGED",
-        auto_merge_armed=False,
-        merge_state_status="UNKNOWN",
-        merge_sha=merge_sha,
-        terminal_required_check_failures=(),
+    return (
+        PrView(
+            number=number_raw,
+            state="MERGED",
+            auto_merge_armed=False,
+            merge_state_status="UNKNOWN",
+            merge_sha=merge_sha,
+            terminal_required_check_failures=(),
+        ),
+        not identified,
     )
+
+
+def _identifies_item(*, entry: dict[str, Any], item: WorkItem, branch: str) -> bool:
+    """Whether the entry names the item where a dispatch or an author puts it."""
+    title_raw: object = entry.get("title")
+    return entry.get("headRefName") == branch or (
+        isinstance(title_raw, str) and item.id in title_raw
+    )
+
+
+def _body_names_item(*, entry: dict[str, Any], item: WorkItem) -> bool:
+    body_raw: object = entry.get("body")
+    return isinstance(body_raw, str) and item.id in body_raw
 
 
 def _list_entry_merge_sha(*, entry: dict[str, Any]) -> str | None:

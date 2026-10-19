@@ -764,6 +764,60 @@ def test_parse_merged_pr_list_accepts_branch_or_title_and_rejects_unusable_shape
     assert [(match.number, match.merge_sha) for match in matches] == [(4, "ddd"), (5, "eee")]
 
 
+def test_parse_merged_pr_list_tiers_body_mentions_below_branch_and_title_matches(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A body mention is a FALLBACK tier, never a peer of the two identity signals.
+
+    `--search <id>` matches bodies server-side, so an ordinary merge that merely
+    MENTIONS the item — a follow-up, a revert, a sibling slice naming its
+    predecessor — comes back beside the pull request that carries it. Counting
+    both at once turns a clean title match into an ambiguity refusal, which is
+    the opposite of what this valve is for.
+    """
+    _assert_reconcile_command_registered(capsys=capsys)
+    module = _reconcile_module()
+    item = _item(id="bd-ib-target")
+
+    mixed = module.parse_merged_pr_list(
+        stdout=json.dumps(
+            [
+                {
+                    **_list_pr(number=6, title="fix bd-ib-target", sha="fff", head="feat/carrier"),
+                    "body": "Carries the slice.",
+                },
+                {
+                    **_list_pr(number=7, title="unrelated", sha="ggg", head="feat/follow-up"),
+                    "body": "Follows up on bd-ib-target.",
+                },
+            ]
+        ),
+        item=item,
+        branch="feat/bd-ib-target",
+        default_branch="trunk",
+    )
+
+    assert [(match.number, match.merge_sha) for match in mixed] == [(6, "fff")]
+
+    # The fallback still fires when NO candidate identifies itself: that is the
+    # hand-carried merge this valve was unable to find at all.
+    body_only = module.parse_merged_pr_list(
+        stdout=json.dumps(
+            [
+                {
+                    **_list_pr(number=8, title="unrelated", sha="hhh", head="feat/hand-carried"),
+                    "body": "Hand-carried bd-ib-target at maintainer direction.",
+                }
+            ]
+        ),
+        item=item,
+        branch="feat/bd-ib-target",
+        default_branch="trunk",
+    )
+
+    assert [(match.number, match.merge_sha) for match in body_only] == [(8, "hhh")]
+
+
 def test_reconcile_merged_declares_the_regrade_option(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
