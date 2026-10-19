@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.221.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.220.1...v0.221.0) (2026-10-19)
+
+
+### Features
+
+* **work-supply:** clock-fired drain supply, one timer instance per tenant ([fefc2a3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fefc2a30344dd4ab3f68066e086fda1d136d2d71))
+
+
+### Bug Fixes
+
+* **work-supply:** run each pass as the operator, not as the root firing ([ad45339](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ad45339ebe39c9a37edecfa260d3d4c0ad43e056))
+
 ## [0.220.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.220.0...v0.220.1) (2026-10-19)
 
 
