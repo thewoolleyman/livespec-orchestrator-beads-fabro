@@ -38,6 +38,7 @@ ratified.
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -70,6 +71,11 @@ HOLD_STAGE = "acp-availability-observed"
 HOLD_EVIDENCE_KINDS: tuple[str, ...] = ("acp-failover-event", "candidate-attempt")
 
 HOLD_INTERVAL = timedelta(minutes=15)
+
+# An instant that already names its own UTC offset, as every Fabro listing
+# `start_time` does (`...+00:00`). Appending a second offset to one of these is
+# what made every factory row unreadable (bd-ib-fjpgxu).
+_EXPLICIT_OFFSET = re.compile(r"[+-]\d{2}:\d{2}$")
 
 _ID_LENGTH = 24
 _ID_PREFIX = "acpobs-"
@@ -254,8 +260,17 @@ def hold_expired(*, hold: AcpAvailabilityHold, now_iso: str) -> bool:
 
 
 def parse_hold_instant(*, text: str) -> datetime | None:
-    """One journal instant as a datetime, or `None` when it is unreadable."""
-    parsed = parse_iso_datetime(text=text.removesuffix("Z") + "+00:00")
+    """One journal or factory instant as a datetime, or `None` when it is unreadable.
+
+    Three spellings reach here: a journal's `Z`-suffixed instant, a Fabro listing's
+    instant that already carries `+00:00`, and a bare one. Only the bare one is
+    given an offset; an explicit offset is kept as written rather than doubled.
+    """
+    if text.endswith("Z"):
+        text = text.removesuffix("Z") + "+00:00"
+    elif _EXPLICIT_OFFSET.search(text) is None:
+        text = text + "+00:00"
+    parsed = parse_iso_datetime(text=text)
     if isinstance(parsed, IsoDatetimeParseFailure):
         return None
     return parsed
