@@ -199,10 +199,24 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   forbids — and would see the candidate list open with the overflow factory,
   where a utilization tie makes it win.
   ONE ASYMMETRY BETWEEN THE TWO LEDGER CALLERS IS LOAD-BEARING. Both
-  `_unrecorded_target` (the pre-claim gates and the admission stamp) and
+  `_unrecorded_pin` (the pre-claim gates and the admission stamp) and
   `resolve_dispatch_factory_target` RANK; only the second JOURNALS, because it
   is the one that records the chosen factory. A record per gate would make the
   clause's "one record" several, each describing a reading no dispatch acted on.
+  THE RANKING IS TAKEN ONCE PER INVOCATION, through `_ranking`, and `_placement`
+  takes it rather than performing it. Every unpinned item of one wave resolves
+  to the same ranked choice, so a ranking reached inside the gate's per-item
+  loop spends four engine round trips per ITEM — and is several independent live
+  readings, which can disagree, while the `dispatcher.minimum_release` floor is
+  graded only against the targets that one gate call returns.
+  AND THE PIN PRECEDENCE CARRIES ITS OWN ENVIRONMENT LAYER, in `_pinned_factory`
+  rather than in `resolve_fabro_factory`. An unpinned placement hands that
+  function the RANKED name, which suppresses its `LIVESPEC_FABRO_FACTORY`
+  layer, so a dispatch pinned only by the variable ranked anyway — spending the
+  reads the clause forbids a pinned dispatch, and stamping the claim with a
+  factory the dispatch never reaches, since the resolution does honour the
+  variable. That variable is the only routing mechanism `drive.py` has, and it
+  is used precisely when the recorded factory identity is the point.
 - `_dispatcher_journal_file.py` — the append-only dispatch journal and the
   attribution stamp it owns, split out of `_dispatcher_io` for the same reason
   `_dispatcher_shell_runner` was: that aggregate's import closure reaches the
