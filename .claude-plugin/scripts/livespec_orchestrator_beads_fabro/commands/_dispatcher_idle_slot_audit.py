@@ -6,10 +6,12 @@ five hours while four priority-set items were dispatchable, because three
 successive driver sessions repeated a handoff's "nothing can use the slots"
 instead of measuring the queue. This is that measurement, shipped.
 
-THERE IS NO SLOT CEILING AND NO FREE-SLOT COUNT anywhere in this module, and
-there will not be one: host concurrency belongs to the Fabro scheduler, so
-this surface reads the board's own counts and derives no available capacity
-from them.
+WHAT THE FINDING ASSERTS, AND WHAT IT DOES NOT. It names the factory, its
+live-row count attributed to the Fabro server, and every child classified
+`DISPATCHABLE-NOW` or `STALE-EDGE`, in configuration order. There is no slot
+ceiling and no free-slot count anywhere in this module: host concurrency
+belongs to the Fabro scheduler, so this surface reads the board's own counts
+and derives no available capacity from them.
 
 WHY THIS WRITES NOTHING. The audit reads tenants, reads one board, and
 returns. No ledger, no dispatch journal, no factory, no credential probe, no
@@ -34,12 +36,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_board impo
     read_idle_slot_board,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_classify import (
+    CLASS_DISPATCHABLE_NOW,
+    CLASS_STALE_EDGE,
     READY_STATUS,
     ClassifiedChild,
     classify_child,
     open_blockers,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_config import (
+    IdleSlotAuditConfig,
     PriorityEntry,
     resolve_idle_slot_audit,
 )
@@ -58,11 +63,13 @@ __all__: list[str] = [
     "EntryAudit",
     "HoldReader",
     "IdleSlotAuditResult",
+    "IdleSlotFinding",
     "idle_slot_audit",
 ]
 
 BoardLister = Callable[..., BoardReading]
 HoldReader = Callable[..., "dict[str, str]"]
+_FINDING_CLASSES = (CLASS_DISPATCHABLE_NOW, CLASS_STALE_EDGE)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -76,6 +83,17 @@ class EntryAudit:
     unreadable: bool
     children: tuple[ClassifiedChild, ...]
     missing_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class IdleSlotFinding:
+    """The finding the audit's last line reports, when it reports one."""
+
+    factory: str
+    live_count: int
+    child_ids: tuple[str, ...]
+    dispatchable_ids: tuple[str, ...]
+    stale_edge_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -94,6 +112,7 @@ class IdleSlotAuditResult:
     factory: str | None
     board: BoardReading
     entries: tuple[EntryAudit, ...]
+    finding: IdleSlotFinding | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -141,6 +160,7 @@ def idle_slot_audit(
         factory=resolved.factory,
         board=board,
         entries=entries,
+        finding=_finding(config=resolved, board=board, entries=entries),
     )
 
 
@@ -151,6 +171,7 @@ def _unconfigured(*, finding: str | None) -> IdleSlotAuditResult:
         factory=None,
         board=UNOBSERVABLE_BOARD,
         entries=(),
+        finding=None,
     )
 
 
@@ -200,4 +221,44 @@ def _classified(
             hold_reasons=holds,
         )
         for item in resolved.children
+    )
+
+
+def _finding(
+    *,
+    config: IdleSlotAuditConfig,
+    board: BoardReading,
+    entries: tuple[EntryAudit, ...],
+) -> IdleSlotFinding | None:
+    """The finding, or `None` when there is no child for it to name.
+
+    The `live_count` narrowing rides the same condition as the emptiness test:
+    the count is absent exactly when the board was unreadable, and a finding
+    naming an unknown live count would assert something nobody measured.
+    """
+    live_count = board.live_count
+    child_ids = _ids_classified(entries=entries, classifications=_FINDING_CLASSES)
+    if live_count is None or not child_ids:
+        return None
+    return IdleSlotFinding(
+        factory=config.factory,
+        live_count=live_count,
+        child_ids=child_ids,
+        dispatchable_ids=_ids_classified(
+            entries=entries, classifications=(CLASS_DISPATCHABLE_NOW,)
+        ),
+        stale_edge_ids=_ids_classified(entries=entries, classifications=(CLASS_STALE_EDGE,)),
+    )
+
+
+def _ids_classified(
+    *,
+    entries: tuple[EntryAudit, ...],
+    classifications: tuple[str, ...],
+) -> tuple[str, ...]:
+    return tuple(
+        child.id
+        for entry in entries
+        for child in entry.children
+        if child.classification in classifications
     )

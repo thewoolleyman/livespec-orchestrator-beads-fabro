@@ -44,6 +44,9 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import
 from livespec_orchestrator_beads_fabro.commands._needs_attention_idle_factory import (
     idle_factory_items,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_idle_slot import (
+    idle_slot_items,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_merge_hold import (
     merge_hold_items,
 )
@@ -224,6 +227,14 @@ def build_attention(
         # other lane here — nothing is stranded, held, or aging past a
         # bound — so without this row it is visible only by being noticed.
         + idle_factory_items(project_root=project_root, repo=repo_name, items=materialized)
+        # The CROSS-TENANT half of that pair, and the one the row above
+        # structurally cannot report: it is scoped to this repository's own
+        # ready set, so a priority epic in another tenant is invisible to it,
+        # and so is a stale edge — an item held only by blockers that landed
+        # and were never closed. Composes nothing unless this repository
+        # commits a `dispatcher.idle_slot_audit` object, so an unconfigured
+        # repository reads no tenant and no board.
+        + idle_slot_items(project_root=project_root, repo=repo_name)
         # The other half of that pair, and the one the idle-factory fact cannot
         # report: an item resting in `ready` that NO dispatch will ever take,
         # because the shared eligibility decision refuses it. Such a row is

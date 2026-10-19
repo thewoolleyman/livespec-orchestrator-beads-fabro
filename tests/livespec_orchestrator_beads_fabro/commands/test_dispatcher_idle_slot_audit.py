@@ -261,3 +261,55 @@ def test_the_hold_reader_runs_once_per_entry_and_only_for_a_ready_child(
     assert result.entries[0].children[0].classification == "HELD"
     assert result.entries[0].children[0].reason == "held for a reason"
     assert result.entries[0].children[1].classification == "DISPATCHABLE-NOW"
+
+
+def test_the_finding_names_the_factory_its_live_count_and_the_children_in_order(
+    tmp_path: Path,
+) -> None:
+    """Configuration order, not id order: the entries are the ordering authority."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+    _write_config(
+        tmp_path,
+        priority=[
+            {"repo": "tenant-b", "items": ["b-1"]},
+            {"repo": "tenant-a", "items": ["a-1"]},
+        ],
+    )
+    readings = {
+        tmp_path / "tenant-b": _reading(items=(_item(id_="b-1"),)),
+        tmp_path / "tenant-a": _reading(items=(_item(id_="a-1"),)),
+    }
+
+    result = module.idle_slot_audit(
+        project_root=tmp_path,
+        tenant_reader=_tenant_reader(readings=readings),
+        board_reader=_constant_board(board=_board(live=3)),
+        hold_reader=_no_holds,
+    )
+
+    assert result.finding is not None
+    assert result.finding.factory == "hp"
+    assert result.finding.live_count == 3
+    assert result.finding.child_ids == ("b-1", "a-1")
+    assert result.finding.dispatchable_ids == ("b-1", "a-1")
+    assert result.finding.stale_edge_ids == ()
+
+
+def test_no_dispatchable_and_no_stale_edge_child_composes_no_finding(
+    tmp_path: Path,
+) -> None:
+    """Nothing to start is not idleness — it is an empty priority queue."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+    _write_config(tmp_path, priority=[{"repo": "tenant-a", "items": ["a-1"]}])
+    readings = {tmp_path / "tenant-a": _reading(items=(_item(id_="a-1", status="backlog"),))}
+
+    result = module.idle_slot_audit(
+        project_root=tmp_path,
+        tenant_reader=_tenant_reader(readings=readings),
+        board_reader=_constant_board(board=_board()),
+        hold_reader=_no_holds,
+    )
+
+    assert result.finding is None
