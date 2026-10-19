@@ -89,6 +89,10 @@ def _entry(
     )
 
 
+def _unobservable() -> object:
+    return importlib.import_module(_BOARD_NAME).UNOBSERVABLE_BOARD
+
+
 def _observable(*, live: int = 1, queued: int = 0) -> object:
     return importlib.import_module(_BOARD_NAME).BoardReading(
         observable=True, live_count=live, queued_count=queued, live_item_ids=frozenset()
@@ -267,3 +271,14 @@ def test_the_arguments_are_the_read_only_repo_and_json_pair() -> None:
 
     parsed = parser.parse_args(["--repo", "/repo", "--json"])
     assert (parsed.repo, parsed.as_json) == ("/repo", True)
+
+
+def test_an_unobservable_board_prints_unknown_counts_and_no_finding_line() -> None:
+    """A zero would read as an empty queue, which is what fires the finding."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+
+    text = module.render_idle_slot_audit(result=_result(board=_unobservable()))
+
+    assert "board: UNOBSERVABLE — live unknown, queued unknown" in text
+    assert "FINDING" not in text

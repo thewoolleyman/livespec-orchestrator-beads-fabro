@@ -6,12 +6,15 @@ five hours while four priority-set items were dispatchable, because three
 successive driver sessions repeated a handoff's "nothing can use the slots"
 instead of measuring the queue. This is that measurement, shipped.
 
-WHAT THE FINDING ASSERTS, AND WHAT IT DOES NOT. It names the factory, its
-live-row count attributed to the Fabro server, and every child classified
-`DISPATCHABLE-NOW` or `STALE-EDGE`, in configuration order. There is no slot
-ceiling and no free-slot count anywhere in this module: host concurrency
-belongs to the Fabro scheduler, so this surface reads the board's own counts
-and derives no available capacity from them.
+WHAT THE FINDING ASSERTS, AND WHAT IT DOES NOT. It fires on an OBSERVABLE
+board whose QUEUED count is zero with at least one child classified
+`DISPATCHABLE-NOW` or `STALE-EDGE`. There is no slot ceiling and no free-slot
+count anywhere in this module: host concurrency belongs to the Fabro
+scheduler, so an empty queue is evidence that nothing WAITS, never that a slot
+is FREE, and the line asserts only the former. A run rests briefly at
+`runnable` after every start even when the scheduler has room, so the finding
+may clear for one scheduler tick after a dispatch — that is the designed
+behaviour of keying on the queue.
 
 WHY THIS WRITES NOTHING. The audit reads tenants, reads one board, and
 returns. No ledger, no dispatch journal, no factory, no credential probe, no
@@ -230,15 +233,18 @@ def _finding(
     board: BoardReading,
     entries: tuple[EntryAudit, ...],
 ) -> IdleSlotFinding | None:
-    """The finding, or `None` when there is no child for it to name.
+    """The finding, or `None` when any of its three conditions fails.
 
-    The `live_count` narrowing rides the same condition as the emptiness test:
-    the count is absent exactly when the board was unreadable, and a finding
-    naming an unknown live count would assert something nobody measured.
+    An unobservable board composes nothing — its counts are unknown rather
+    than zero, so there is no empty queue to assert. A board with a runnable
+    row composes nothing either: something already waits. The `live_count`
+    narrowing rides the same condition because an observable board always
+    carries both counts, so a separate test for it would assert a state
+    `BoardReading` cannot hold.
     """
     live_count = board.live_count
     child_ids = _ids_classified(entries=entries, classifications=_FINDING_CLASSES)
-    if live_count is None or not child_ids:
+    if not board.observable or board.queued_count != 0 or live_count is None or not child_ids:
         return None
     return IdleSlotFinding(
         factory=config.factory,

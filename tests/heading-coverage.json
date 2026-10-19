@@ -1853,9 +1853,7 @@
     "heading": "## Scenario 187 \u2014 A priority-epic idle-slot audit surfaces dispatchable priority work while the factory queue is empty, and a blocker with a live run is not a stale edge",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by revision v149 accepting proposal idle-slot-audit (plan factory-idle-with-ready-work, epic bd-ib-opbzv3). The priority-epic idle-slot audit and its hygiene:idle-slot attention fact are not implemented yet; an integration-tier test is owed for the four sub-scenarios, and work-item bd-ib-irh4js implements them and owns that binding.",
-    "work_item": "bd-ib-irh4js"
+    "test": "tests.integration.test_idle_slot_audit_scenario187"
   },
   {
     "heading": "## Pre-push gate refinements",
