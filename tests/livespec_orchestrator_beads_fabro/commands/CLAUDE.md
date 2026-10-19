@@ -383,6 +383,24 @@ Tests for the thin-transport command modules under
   projection, in both directions, since a resolution answering `None` for
   everything satisfies its unresolvable case exactly as well as a correct one.
 
+- `test_needs_attention_model_fallback_warning_only.py` and
+  `test_needs_attention_model_fallback_rows.py` — the v127 retirement of the
+  `hygiene:model-fallback-projection` fact and its clearance valve
+  (`bd-ib-qm6r1`), and the aggregation of the row that survives. The first
+  drives a journal carrying BOTH kinds of record, which is what makes it able to
+  fail: a fixture holding only the warning is satisfied by a lane that composed
+  nothing from the retired record because no such record was there. Its absence
+  assertions sit beside the surviving row asserted IN FULL, since "composes only
+  the warning fact" is satisfied just as well by a lane that composes nothing;
+  and its control reads the two SIBLING clearance valves off the help text an
+  operator reads, because a build that had removed the whole clearance family
+  would satisfy every absence in the module. The second is what
+  `test_acp_projection_surfaces.py` became once it lost its other two subjects:
+  it owns the AGGREGATION, over three observations across two nodes with two
+  sharing a node, which one observation per node cannot show — a lane emitting a
+  row per RECORD would pass that weaker fixture, and "the newest supplies the
+  summary" would hold by construction rather than by reading.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr
