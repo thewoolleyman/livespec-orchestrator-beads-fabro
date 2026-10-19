@@ -7344,3 +7344,45 @@ Feature: Concurrent additions to shared record files do not cost a run a repair 
     When the repository-declared gate rejects the refreshed head
     Then the stage restores the pre-refresh head and routes to fix with a refresh-repair brief naming each failed gate target
 ```
+
+## Scenario 201 — A clock-fired work supply drains a tenant on its interval without an interactive session, resolves the plugin build at each firing, and does not wait on a long pass
+
+```gherkin
+Feature: Factory work supply does not depend on an interactive session
+  As a maintainer whose factory sat idle for hours with ready work because no session ran a drain
+  I want a timer to start an unattended drain pass for each tenant on an interval
+  So that ready work reaches the factory whether or not any session is running
+
+Scenario: A firing starts one unattended drain pass for its tenant
+  Given the work-supply timer is installed for tenant repository "T" with an operator-chosen interval
+  And no interactive session is running a drain
+  And "T"'s first-ranked admission-eligible ready item has a free counted-claim slot under wip_cap
+  When the timer fires with a budget of at least one
+  Then the service runs loop --repo T with that budget and no --item argument
+  And that first-ranked item is dispatched under the same ranked queue, wip_cap and unattended cost gate as any unattended drain
+  And when instead wip_cap or the budget leaves no room, the item is journaled with the exclusion reason the admission conditions assign it, and is not dispatched
+
+Scenario: The installer refuses an instance whose wrapper is not executable
+  Given an operator installing a work-supply instance for tenant "T" whose named credential wrapper is not an executable file on the host
+  When the installer runs
+  Then it refuses that instance, naming the instance and the wrapper path
+
+Scenario: The installer refuses an interval below the documented minimum
+  Given an operator installing a work-supply instance for tenant "T" with a firing interval shorter than the installer's documented minimum
+  When the installer runs
+  Then it refuses that instance, naming the instance, the interval given and the minimum
+
+Scenario: Each firing executes the tenant's registered plugin build
+  Given the work-supply timer is installed for tenant "T"
+  And the registered plugin install for "T" moves to a newly released build
+  When the timer next fires
+  Then the pass executes the newly registered build without the unit being reinstalled
+  And when instead no registered install exists for "T" the firing refuses, naming "T", and executes no build
+
+Scenario: A long pass does not stop the next firing
+  Given a work-supply pass for tenant "T" whose dispatched run is still in progress
+  When the next interval elapses
+  Then the timer starts a new pass
+  And the new pass is governed by wip_cap as any unattended drain
+```
+
