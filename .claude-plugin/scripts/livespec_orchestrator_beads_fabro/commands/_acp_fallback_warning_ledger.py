@@ -54,6 +54,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_fallback_warning_records im
     MODEL_FALLBACK_SUPERSEDED_STAGE,
     ModelFallbackWarning,
     parse_model_fallback_warning,
+    warning_id,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_hold_records import parse_hold_instant
 from livespec_orchestrator_beads_fabro.commands._acp_journal_records import journal_records
@@ -68,6 +69,7 @@ __all__: list[str] = [
     "primary_replacement_records",
     "primary_success_clearance_records",
     "read_model_fallback_warnings",
+    "selection_warning_records",
 ]
 
 _RETIREMENT_STAGES = frozenset({MODEL_FALLBACK_CLEARED_STAGE, MODEL_FALLBACK_SUPERSEDED_STAGE})
@@ -261,6 +263,110 @@ def primary_replacement_records(
         if warning.node in primary_generations
         and primary_generations[warning.node] != warning.primary_generation
     )
+
+
+def selection_warning_records(
+    *,
+    records: tuple[Mapping[str, object], ...],
+    work_item_id: str,
+    run_id: str,
+    outcomes: Mapping[str, Mapping[str, object]],
+) -> tuple[dict[str, object], ...] | None:
+    """Build warnings from this dispatch's non-primary selections and outcomes.
+
+    An outcome map is the evidence that a rendered node actually executed.  An
+    empty map is unavailable evidence, not proof that every selected node was
+    skipped, so callers receive ``None`` and retain both existing warnings and
+    their retry obligation.
+    """
+    if not outcomes:
+        return None
+    selection = _latest_selection(records=records, work_item_id=work_item_id)
+    if selection is None:
+        return ()
+    occurred_at = _text(selection.get("at"))
+    choices = selection.get("selections")
+    if occurred_at is None or not isinstance(choices, Mapping):
+        return ()
+    warnings: list[dict[str, object]] = []
+    for node, raw in choices.items():
+        if not isinstance(node, str) or node not in outcomes or not isinstance(raw, Mapping):
+            continue
+        warning = _selection_warning(
+            node=node,
+            choice=raw,
+            occurred_at=occurred_at,
+            work_item_id=work_item_id,
+            run_id=run_id,
+        )
+        if warning is not None:
+            warnings.append(warning)
+    return tuple(warnings)
+
+
+def _latest_selection(
+    *, records: tuple[Mapping[str, object], ...], work_item_id: str
+) -> Mapping[str, object] | None:
+    """Return the latest selection row for the dispatch item, if it was journaled."""
+    selected: Mapping[str, object] | None = None
+    for record in records:
+        if (
+            record.get("stage") == "acp-node-selection"
+            and record.get("work_item_id") == work_item_id
+        ):
+            selected = record
+    return selected
+
+
+def _selection_warning(
+    *,
+    node: str,
+    choice: Mapping[object, object],
+    occurred_at: str,
+    work_item_id: str,
+    run_id: str,
+) -> dict[str, object] | None:
+    """Translate one executed non-primary selection into the legacy warning shape."""
+    index = choice.get("selected_index")
+    if isinstance(index, bool) or not isinstance(index, int) or index <= 0:
+        return None
+    selection_identity = _text(choice.get("selection_identity"))
+    candidate_key = _text(choice.get("selected_candidate_key"))
+    availability_key = _text(choice.get("selected_availability_key"))
+    primary_generation = _text(choice.get("primary_generation_digest"))
+    full_chain = _text(choice.get("full_chain_digest"))
+    if None in (
+        selection_identity,
+        candidate_key,
+        availability_key,
+        primary_generation,
+        full_chain,
+    ):
+        return None
+    event_id = f"selection:{run_id}:{selection_identity}"
+    return {
+        "stage": MODEL_FALLBACK_STAGE,
+        "schema_version": 1,
+        "warning_id": warning_id(event_id=event_id, node=node),
+        "node": node,
+        "occurred_at": occurred_at,
+        "candidate_display_name": candidate_key,
+        "candidate_key": candidate_key,
+        "candidate_index": index,
+        "availability_key": availability_key,
+        "hold_key": availability_key,
+        "cause": "dispatcher-selection",
+        "scope": "node",
+        "primary_generation": primary_generation,
+        "full_chain": full_chain,
+        "event_id": event_id,
+        "work_item_id": work_item_id,
+    }
+
+
+def _text(value: object) -> str | None:
+    """Read one non-empty text value without treating whitespace as an identity."""
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def _starts_after(*, warning: ModelFallbackWarning, started_at: str) -> bool:
