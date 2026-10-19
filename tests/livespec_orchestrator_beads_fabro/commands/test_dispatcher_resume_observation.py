@@ -51,11 +51,13 @@ import importlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import DispatchLock
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
     SOURCE_FACTORY_RUN,
     SOURCE_LATEST_RECORD,
@@ -63,6 +65,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import (
     resume_refusals,
 )
+from livespec_orchestrator_beads_fabro.store import append_work_item, record_dispatch_factory
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _CANCEL_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_resume_cancel_anchor"
@@ -825,3 +828,120 @@ def test_a_rework_stage_cancel_refuses_naming_the_stage_and_a_plain_dispatch(
         assert stage in refusals[0]
         assert "dispatch it plainly instead" in refusals[0]
         assert getattr(gather.observation, "unanchoring_cancel_stage", None) == stage
+
+
+def test_a_retained_run_republishing_after_its_latest_proof_resumes_at_fresh_capture(
+    repo: Path,
+) -> None:
+    """A moved head from the same retained run is re-captured instead of rebuilt.
+
+    The record's first capture is the latest proof on the pull request.  The
+    retained factory record then shows the next `publish_draft` visit succeeding,
+    its terminal checkpoint at the new pull-request head, and termination while
+    entering the second capture.  This is the one moved-head shape that may
+    resume: the new head is re-captured before review and replay can run again.
+    """
+    assert _GATHER_PATH.is_file()
+    payload = [
+        {
+            "status": "failed",
+            "stages": {
+                "proof_capture@1": {"state": "succeeded"},
+                "publish_draft@2": {"state": "succeeded"},
+                "proof_capture@2": {"state": "failed"},
+            },
+            "checkpoint": {
+                "current_node": "proof_capture",
+                "git_commit_sha": _MOVED_HEAD,
+            },
+        }
+    ]
+    runner = _runner(
+        listing=_ok(stdout=_pr_listing(head=_MOVED_HEAD)),
+        inspect=_ok(stdout=json.dumps(payload)),
+    )
+    runner.answers["merge-base"] = _ok(stdout="")
+
+    gather = _gather(repo=repo, item=_item(), runner=runner)
+
+    assert gather.anchor is not None
+    assert gather.anchor.head == _MOVED_HEAD
+    assert gather.anchor.resumed_at == "proof_capture"
+    assert gather.anchor.source == SOURCE_FACTORY_RUN
+    assert resume_refusals(observation=gather.observation) == ()
+
+
+def test_factory_inspection_uses_the_earlier_dispatchs_persisted_target(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A resume reads the retained run from the factory that owns that run.
+
+    The command preamble may have resolved the default factory, but the earlier
+    dispatch persisted a different target.  A successful inventory from the
+    default says nothing about the retained run, so both `ps` and `inspect`
+    must use the target resolved from the earlier dispatch before admission.
+    """
+    gather_module = importlib.import_module(_GATHER_MODULE)
+
+    def _earlier_factory(
+        *, args: argparse.Namespace, repo: Path, work_item_id: str
+    ) -> argparse.Namespace:
+        assert repo.name
+        assert work_item_id == _ITEM_ID
+        resolved = argparse.Namespace(**vars(args))
+        resolved.fabro_factory_target = SimpleNamespace(
+            server="https://retained.example.test", dev_token=None
+        )
+        return resolved
+
+    monkeypatch.setattr(
+        gather_module, "args_with_earlier_dispatch_factory_target", _earlier_factory
+    )
+    runner = _runner()
+
+    gather = _gather(repo=repo, item=_item(), runner=runner)
+
+    assert gather.anchor is not None
+    factory_argv = [argv for argv in runner.argvs if argv[1] in {"ps", "inspect"}]
+    assert factory_argv
+    assert all(argv[-2:] == ["--server", "https://retained.example.test"] for argv in factory_argv)
+
+
+def test_factory_inspection_resolves_an_actual_persisted_earlier_dispatch_pin(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real persisted pin selects the retained run's factory before inspection.
+
+    This deliberately leaves the earlier-dispatch resolver unmocked.  The
+    invocation asks for the default factory, but the fake ledger contains the
+    retained run's ``vps`` pin, so both factory reads prove the production
+    ledger-to-target resolution path rather than a manufactured Namespace.
+    """
+    _ = (repo / ".livespec.jsonc").write_text(
+        """
+        {
+          "livespec-orchestrator-beads-fabro": {
+            "connection": {"prefix": "bd-ib"},
+            "dispatcher": {
+              "default_factory": "default",
+              "factories": {
+                "default": {"server": "https://default.example.test"},
+                "vps": {"server": "https://retained.example.test"}
+              }
+            }
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    append_work_item(path=store_config(repo=repo), item=_item())
+    record_dispatch_factory(path=store_config(repo=repo), work_item_id=_ITEM_ID, factory="vps")
+    monkeypatch.delenv("LIVESPEC_FABRO_FACTORY", raising=False)
+
+    runner = _runner()
+    gather = _gather(repo=repo, item=_item(), runner=runner)
+
+    assert gather.anchor is not None
+    factory_argv = [argv for argv in runner.argvs if argv[1] in {"ps", "inspect"}]
+    assert factory_argv
+    assert all(argv[-2:] == ["--server", "https://retained.example.test"] for argv in factory_argv)

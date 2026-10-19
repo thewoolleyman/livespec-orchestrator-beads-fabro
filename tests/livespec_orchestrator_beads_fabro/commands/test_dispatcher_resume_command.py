@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -56,7 +57,11 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_pre_dispatch_wall as wall
 from livespec_orchestrator_beads_fabro.commands import dispatcher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import Admission
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    CommandResult,
+    DispatchOutcome,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     VERDICT_VERIFIED,
     ProofRecord,
@@ -78,12 +83,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import (
     ResumeObservation,
 )
+from livespec_orchestrator_beads_fabro.store import append_work_item, record_dispatch_factory
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_resume_command"
 
 _ITEM_ID = "bd-ib-fngpwg"
 _HEAD = "0" * 39 + "a"
+_REPUBLISHED_HEAD = "1" * 39 + "b"
 _PULL_REQUEST = 2639
 _EARLIER_RUN = "01M49TZ44210GSEC8VTFR8VHKP"
 _CANCELLED_RUN = "01M4Q4XBZ5398FJAWQ131QER60"
@@ -107,6 +114,73 @@ class _Log:
 
     events: list[str] = field(default_factory=list)
     dispatched_args: list[argparse.Namespace] = field(default_factory=list)
+
+
+@dataclass(kw_only=True)
+class _ProductionResumeRunner:
+    """The forge, factory and ancestry readings a real resume command takes."""
+
+    factory_payload: object
+    retained: bool = True
+    argvs: list[list[str]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        _ = (cwd, timeout_seconds, env, stdin)
+        self.argvs.append(argv)
+        program = Path(argv[0]).name
+        if program == "gh" and argv[2] == "list":
+            return _result(
+                stdout=json.dumps(
+                    [{"number": _PULL_REQUEST, "state": "OPEN", "headRefOid": _REPUBLISHED_HEAD}]
+                )
+            )
+        if program == "gh" and argv[2] == "view":
+            return _result(
+                stdout=json.dumps(
+                    {
+                        "comments": [
+                            {"body": _proof_body(), "url": "https://forge.example/comment/1"}
+                        ]
+                    }
+                )
+            )
+        if program == "fabro" and argv[1] == "ps":
+            return _result(
+                stdout=json.dumps(
+                    [
+                        {
+                            "run_id": _EARLIER_RUN,
+                            "status": "failed",
+                            "goal": f"Work-item: {_ITEM_ID}",
+                        }
+                    ]
+                    if self.retained
+                    else []
+                )
+            )
+        if program == "fabro" and argv[1] == "inspect":
+            return _result(stdout=json.dumps(self.factory_payload))
+        if program == "git" and argv[1] == "merge-base":
+            return _result(stdout="")
+        return CommandResult(exit_code=1, stdout="", stderr="unexpected command")
+
+
+def test_the_production_resume_runner_reports_an_unexpected_command(tmp_path: Path) -> None:
+    """The command-path fixture exposes an unmodeled command as a failed result."""
+    runner = _ProductionResumeRunner(factory_payload=_republishing_factory_record())
+
+    result = runner.run(argv=["unexpected"], cwd=tmp_path, timeout_seconds=1)
+
+    assert result.exit_code == 1
+    assert result.stderr == "unexpected command"
 
 
 def _item(*, status: str = "ready") -> WorkItem:
@@ -149,14 +223,14 @@ def _anchor() -> ResumeAnchor:
     )
 
 
-def _observation(*, status: str = "ready") -> ResumeObservation:
+def _observation(*, status: str = "ready", head: str = _HEAD) -> ResumeObservation:
     return ResumeObservation(
         work_item_id=_ITEM_ID,
         status=status,
-        anchor_head=_HEAD,
+        anchor_head=head,
         pull_request=_PULL_REQUEST,
         pull_request_state="OPEN",
-        pull_request_head=_HEAD,
+        pull_request_head=head,
         liveness_observed=True,
     )
 
@@ -171,6 +245,71 @@ def _args(*, repo: Path) -> argparse.Namespace:
         workflow=None,
         workflow_name=None,
         as_json=False,
+    )
+
+
+def _result(*, stdout: str) -> CommandResult:
+    return CommandResult(exit_code=0, stdout=stdout, stderr="")
+
+
+def _proof_body() -> str:
+    """The earlier run's latest proof, deliberately behind its own republish."""
+    return (
+        f"Proof of Done — verified — run {_EARLIER_RUN} — 2026-10-07T01:50:00Z\n\n"
+        "## Assertion 1 — It resumes.\n\n"
+        f"Publish-branch head: {_HEAD}\n"
+    )
+
+
+def _republishing_factory_record(*, head: str = _REPUBLISHED_HEAD) -> object:
+    return [
+        {
+            "status": "failed",
+            "stages": {
+                "proof_capture@1": {"state": "succeeded"},
+                "publish_draft@2": {"state": "succeeded"},
+                "proof_capture@2": {"state": "failed"},
+            },
+            "checkpoint": {"current_node": "proof_capture", "git_commit_sha": head},
+        }
+    ]
+
+
+def _production_resume_fixture(*, repo: Path) -> None:
+    """Provision the persisted earlier-dispatch pin and journal the gather reads."""
+    _ = (repo / ".livespec.jsonc").write_text(
+        """
+        {
+          "livespec-orchestrator-beads-fabro": {
+            "connection": {"prefix": "bd-ib"},
+            "dispatcher": {
+              "default_factory": "default",
+              "factories": {
+                "default": {"server": "https://default.example.test"},
+                "retained": {"server": "https://retained.example.test"}
+              }
+            }
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    append_work_item(path=store_config(repo=repo), item=_item())
+    record_dispatch_factory(path=store_config(repo=repo), work_item_id=_ITEM_ID, factory="retained")
+    _ = (repo / "journal.jsonl").write_text(
+        "".join(
+            f"{json.dumps(record)}\n"
+            for record in (
+                {
+                    "stage": "dispatch-id",
+                    "work_item_id": _ITEM_ID,
+                    "dispatch_id": "earlier-dispatch",
+                    "workflow_name": _WORKFLOW,
+                },
+                {"stage": "run-stamp", "work_item_id": _ITEM_ID, "run_id": _EARLIER_RUN},
+            )
+        ),
+        encoding="utf-8",
     )
 
 
@@ -246,6 +385,45 @@ def _stub_resume(
         return 0
 
     monkeypatch.setattr(module, "dispatch_tail_exit", _tail)
+
+
+def _stub_production_resume_command(
+    *,
+    module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    repo: Path,
+    journal: _RecordingJournal,
+    log: _Log,
+    runner: _ProductionResumeRunner,
+) -> argparse.Namespace:
+    """Leave gather real while replacing the command's unrelated outward seams."""
+    monkeypatch.setattr(module, "dispatch_preamble", lambda **_kwargs: (None, None))
+    monkeypatch.setattr(module, "arm_otel_egress", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "prepare", lambda **_kwargs: ([_item()], journal))
+    monkeypatch.setattr(module, "ShellCommandRunner", lambda: runner)
+    monkeypatch.setattr(module, "pre_dispatch_wall_exit", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        module,
+        "admit_and_select",
+        lambda **_kwargs: Admission(admitted=[_item()], deferred=[], refused=[]),
+    )
+
+    def _dispatch(**kwargs: Any) -> DispatchOutcome:
+        log.dispatched_args.append(kwargs["args"])
+        return DispatchOutcome(
+            work_item_id=_ITEM_ID,
+            status="green",
+            stage="done",
+            pr_number=_PULL_REQUEST,
+            merge_sha="deadbeef",
+            detail="resumed at proof_capture",
+        )
+
+    monkeypatch.setattr(module, "dispatch_one", _dispatch)
+    monkeypatch.setattr(module, "dispatch_tail_exit", lambda **_kwargs: 0)
+    args = _args(repo=repo)
+    args.fabro_bin = "fabro"
+    return args
 
 
 def test_the_resume_command_module_exists_on_disk() -> None:
@@ -325,6 +503,103 @@ def test_a_clean_resume_journals_its_record_before_the_claim(
     assert recorded["head"] == _HEAD
     assert recorded["resumed_at"] == RESUMED_AT_PR
     assert recorded["resumed_at_source"] == SOURCE_FACTORY_RUN
+
+
+def test_a_republication_anchor_dispatches_fresh_capture_and_persists_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario 142: the command resumes its own moved head at fresh capture.
+
+    Drive the command rather than `gather_resume`: selection alone cannot show
+    that an admitted run enters at `proof_capture`, nor that the command writes
+    the resume journal record that names the factory decision.
+    """
+    assert _module_path().is_file()
+    module = importlib.import_module(_MODULE)
+    _production_resume_fixture(repo=tmp_path)
+    journal = _RecordingJournal()
+    log = _Log()
+    runner = _ProductionResumeRunner(factory_payload=_republishing_factory_record())
+    args = _stub_production_resume_command(
+        module=module,
+        monkeypatch=monkeypatch,
+        repo=tmp_path,
+        journal=journal,
+        log=log,
+        runner=runner,
+    )
+
+    assert module.run_resume_command(args=args) == 0
+
+    dispatched = log.dispatched_args[0]
+    assert dispatched.resume_entry_node == "proof_capture"
+    assert dispatched.resume_head == _REPUBLISHED_HEAD
+    factory_argv = [
+        argv for argv in runner.argvs if argv[:2] in (["fabro", "ps"], ["fabro", "inspect"])
+    ]
+    assert factory_argv
+    assert all(argv[-2:] == ["--server", "https://retained.example.test"] for argv in factory_argv)
+    assert len(journal.records) == 1
+    recorded = journal.records[0]
+    assert recorded["stage"] == RESUME_STAGE
+    assert recorded["work_item_id"] == _ITEM_ID
+    assert recorded["earlier_run_ids"][0] == _EARLIER_RUN
+    assert recorded["pull_request"] == _PULL_REQUEST
+    assert recorded["head"] == _REPUBLISHED_HEAD
+    assert recorded["resumed_at"] == "proof_capture"
+    assert recorded["resumed_at_source"] == SOURCE_FACTORY_RUN
+
+
+def test_a_non_republishing_retained_run_refuses_the_production_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Scenario 143: no qualifying factory record leaves the moved-head refusal intact."""
+    assert _module_path().is_file()
+    module = importlib.import_module(_MODULE)
+    _production_resume_fixture(repo=tmp_path)
+    journal = _RecordingJournal()
+    runner = _ProductionResumeRunner(factory_payload=_republishing_factory_record(head=_HEAD))
+    args = _stub_production_resume_command(
+        module=module,
+        monkeypatch=monkeypatch,
+        repo=tmp_path,
+        journal=journal,
+        log=_Log(),
+        runner=runner,
+    )
+
+    assert module.run_resume_command(args=args) == _EXIT_PRECONDITION_ERROR
+    assert journal.records == []
+    error = capsys.readouterr().err
+    assert _HEAD in error
+    assert _REPUBLISHED_HEAD in error
+    assert "dispatch it plainly instead" in error
+
+
+def test_a_factory_that_no_longer_holds_the_run_refuses_the_production_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Scenario 143: a moved head cannot borrow a run a retained factory lacks."""
+    assert _module_path().is_file()
+    module = importlib.import_module(_MODULE)
+    _production_resume_fixture(repo=tmp_path)
+    journal = _RecordingJournal()
+    runner = _ProductionResumeRunner(factory_payload=_republishing_factory_record(), retained=False)
+    args = _stub_production_resume_command(
+        module=module,
+        monkeypatch=monkeypatch,
+        repo=tmp_path,
+        journal=journal,
+        log=_Log(),
+        runner=runner,
+    )
+
+    assert module.run_resume_command(args=args) == _EXIT_PRECONDITION_ERROR
+    assert journal.records == []
+    error = capsys.readouterr().err
+    assert _HEAD in error
+    assert _REPUBLISHED_HEAD in error
+    assert "dispatch it plainly instead" in error
 
 
 def test_the_resume_never_runs_the_stale_publish_branch_reclaim(

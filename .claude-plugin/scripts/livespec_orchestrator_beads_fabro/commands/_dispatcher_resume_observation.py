@@ -76,6 +76,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
     effective_criteria,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
+    args_with_earlier_dispatch_factory_target,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
     read_pull_request_records,
 )
@@ -83,9 +86,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition i
     publish_branch_for,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import ProofRecord
-from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
-    NON_TERMINAL_STATUS_KINDS,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
     read_journal_records,
 )
@@ -99,22 +99,21 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_cancel_anchor
     cancel_anchor,
     unanchoring_cancel_stage,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_factory_reading import (
+    FactoryReading,
+    read_factory,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_forge import (
     branch_pull_request,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import (
     resumes_anchored_on,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import (
-    LiveRun,
-    ResumeObservation,
-    live_runs_from_pairs,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_run_record import (
-    executing_node_from_payload,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import ResumeObservation
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_republication_anchor import (
+    republication_anchor,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_probe import dispatch_ids_for
-from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.commands._run_attribution import journaled_run_ids
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -126,28 +125,8 @@ __all__: list[str] = [
     "unproved_assertions",
 ]
 
-_PS_TIMEOUT_SECONDS = 60.0
-_INSPECT_TIMEOUT_SECONDS = 60.0
 _DISPATCH_ID_STAGE = "dispatch-id"
 _WHITESPACE = re.compile(r"\s+")
-
-
-@dataclass(frozen=True, kw_only=True)
-class FactoryReading:
-    """What one factory answered about the earlier run of one item.
-
-    `observed` false means the factory could not be asked. It is deliberately not
-    the same value as an answering factory holding nothing alive, which carries
-    the same empty `live_runs`: one authorizes a resume, the other refuses it.
-
-    `executing_node` is `None` both when the factory no longer holds the run and
-    when it holds it but names no stage, because the clause gives those one
-    treatment — the verdict of the latest record decides instead.
-    """
-
-    observed: bool
-    live_runs: tuple[LiveRun, ...]
-    executing_node: str | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -196,18 +175,29 @@ def gather_resume(
         else None
     )
     provisional = resume_anchor(records=records or (), executing_node=None)
-    factory = _factory_reading(
-        args=args,
+    factory = read_factory(
+        args=args_with_earlier_dispatch_factory_target(args=args, repo=repo, work_item_id=item.id),
         repo=repo,
         item=item,
         journal_path=journal_path,
         earlier_run_id=_earlier_run_id(cancel=cancel, provisional=provisional),
         runner=runner,
     )
+    republished = republication_anchor(
+        provisional=provisional,
+        current_head=None if pull_request is None else pull_request.head,
+        payload=factory.record,
+        repo=repo,
+        runner=runner,
+    )
     anchor = (
-        resume_anchor(records=records or (), executing_node=factory.executing_node)
-        if cancel is None
-        else resume_anchor_from_cancel(cancel=cancel, executing_node=factory.executing_node)
+        republished
+        if cancel is None and republished is not None
+        else (
+            resume_anchor(records=records or (), executing_node=factory.executing_node)
+            if cancel is None
+            else resume_anchor_from_cancel(cancel=cancel, executing_node=factory.executing_node)
+        )
     )
     return ResumeGather(
         observation=ResumeObservation(
@@ -325,70 +315,6 @@ def _earlier_run_ids(
     named.extend(journaled_run_ids(records=records, work_item_id=item.id))
     named.extend(dispatch_ids_for(records=records, work_item_id=item.id))
     return tuple(dict.fromkeys(named))
-
-
-def _factory_reading(
-    *,
-    args: argparse.Namespace,
-    repo: Path,
-    item: WorkItem,
-    journal_path: Path,
-    earlier_run_id: str | None,
-    runner: CommandRunner,
-) -> FactoryReading:
-    """Ask the resolved factory which runs of this item live, and where the earlier one was.
-
-    The factory target is read off `args` the way every other post-selection seam
-    reads it — `dispatch_preamble` pins it before this is reached — and an absent
-    one degrades to the client's own default rather than raising.
-    """
-    port = FabroPort(
-        fabro_bin=args.fabro_bin,
-        target=_factory_target(args=args),
-        runner=runner,
-        cwd=repo,
-    )
-    ps = port.ps(timeout_seconds=_PS_TIMEOUT_SECONDS)
-    if ps.command.exit_code != 0:
-        return FactoryReading(observed=False, live_runs=(), executing_node=None)
-    journaled = frozenset(
-        journaled_run_ids(
-            records=read_journal_records(journal_path=journal_path), work_item_id=item.id
-        )
-    )
-    attributed = [run for run in ps.runs if run.run_id in journaled or run.work_item_id == item.id]
-    live = live_runs_from_pairs(
-        pairs=[
-            (run.run_id, run.status_kind or "unknown")
-            for run in attributed
-            if run.status_kind in NON_TERMINAL_STATUS_KINDS
-        ]
-    )
-    held = earlier_run_id is not None and any(run.run_id == earlier_run_id for run in ps.runs)
-    if not held:
-        # An authoritative not-found observes the run as not live and sends the
-        # stage question to the verdict fallback. Asking `inspect` anyway would
-        # spend a round trip to learn what `ps` already answered, and a failing
-        # `inspect` there would read as an outage rather than as the answer it is.
-        return FactoryReading(observed=True, live_runs=live, executing_node=None)
-    inspected = port.inspect(
-        run_id=earlier_run_id if earlier_run_id is not None else "",
-        timeout_seconds=_INSPECT_TIMEOUT_SECONDS,
-    )
-    return FactoryReading(
-        observed=True,
-        live_runs=live,
-        executing_node=executing_node_from_payload(payload=inspected.payload),
-    )
-
-
-def _factory_target(*, args: argparse.Namespace) -> FabroTarget:
-    """The resolved factory, or the client's own default when none was pinned."""
-    target = getattr(args, "fabro_factory_target", None)
-    return FabroTarget(
-        server_url=getattr(target, "server", None),
-        dev_token=getattr(target, "dev_token", None),
-    )
 
 
 def _lock_age_seconds(*, repo: Path, work_item_id: str) -> float | None:
