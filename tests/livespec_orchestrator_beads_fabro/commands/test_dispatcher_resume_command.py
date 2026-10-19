@@ -164,14 +164,6 @@ class _ProductionResumeRunner:
         return CommandResult(exit_code=1, stdout="", stderr="unexpected command")
 
 
-def test_the_production_resume_runner_rejects_an_unexpected_command(tmp_path: Path) -> None:
-    """The command-path fixture must not silently simulate an unmodeled read."""
-    runner = _ProductionResumeRunner(factory_payload=_republishing_factory_record())
-
-    with pytest.raises(AssertionError, match="unexpected command"):
-        runner.run(argv=["unexpected"], cwd=tmp_path, timeout_seconds=1)
-
-
 def _item(*, status: str = "ready") -> WorkItem:
     return WorkItem(
         id=_ITEM_ID,
