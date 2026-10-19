@@ -1,10 +1,17 @@
 """Exactly one class per priority child, by the first rule that matches.
 
 The twelve classes and their order are the idle-slot clause's own ladder in
-`SPECIFICATION/contracts.md`. The vocabulary is declared here in full; the two
-arms that discriminate a stale edge from a live blocker, and a held child from
-a dispatchable one, arrive with the board attribution and the shared admission
-verdict they each read.
+`SPECIFICATION/contracts.md`.
+
+BLOCKED BEATS STALE-EDGE WHEN THE BLOCKER HAS A LIVE RUN. The journaled script
+this surface replaces treated any `active` or `acceptance` blocker as
+landed-but-unclosed, so `bd-ib-pe2dxk` read STALE EDGE while its only open
+blocker `bd-ib-myvlbl` had an implement run in flight that later succeeded in
+117 minutes. `active` means in flight, not landed. A blocker that is `active`
+WITH an attributed live row is therefore a real blocker; only an `acceptance`
+blocker, or an `active` one with NO attributed live row, is a stale edge. And
+STALE-EDGE requires EVERY open blocker to be such an edge: one real blocker
+beside a stale one still blocks.
 
 ONE CONSERVATIVE EDGE, STATED. `HOST-ONLY` is decided by `is_host_only_item`
 over the item's own materialized fields with NO raw labels, exactly as the
@@ -90,6 +97,7 @@ IDLE_SLOT_CLASSES: tuple[str, ...] = (
 BLOCKER_STATUS_ABSENT = "absent-from-tenant"
 
 _ACCEPTANCE_STATUS = "acceptance"
+_ACTIVE_STATUS = "active"
 
 # The clause's status ladder, flattened to the lookup it already is: the six
 # non-`ready` arms are disjoint status sets, so a table says exactly what a
@@ -184,16 +192,30 @@ def _class_of(
     if mapped is not None:
         return mapped, None
     if item.status == READY_STATUS:
-        return _ready_class(item=item, blockers=blockers)
+        return _ready_class(item=item, blockers=blockers, board=board)
     return CLASS_UNCLASSIFIED_STATUS, item.status
 
 
-def _ready_class(*, item: WorkItem, blockers: Sequence[BlockerView]) -> tuple[str, str | None]:
+def _ready_class(
+    *,
+    item: WorkItem,
+    blockers: Sequence[BlockerView],
+    board: BoardReading,
+) -> tuple[str, str | None]:
     if is_host_only_item(item=item):
         return CLASS_HOST_ONLY, None
     if blockers:
+        if all(_is_stale_edge(blocker=blocker, board=board) for blocker in blockers):
+            return CLASS_STALE_EDGE, None
         return CLASS_BLOCKED, None
     return CLASS_DISPATCHABLE_NOW, None
+
+
+def _is_stale_edge(*, blocker: BlockerView, board: BoardReading) -> bool:
+    """Whether ONE open blocker is a landed-but-unclosed edge rather than live."""
+    if blocker.status == _ACCEPTANCE_STATUS:
+        return True
+    return blocker.status == _ACTIVE_STATUS and blocker.id not in board.live_item_ids
 
 
 def _blocker_ids(*, item: WorkItem) -> tuple[str, ...]:
