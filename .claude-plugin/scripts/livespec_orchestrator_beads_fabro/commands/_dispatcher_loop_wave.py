@@ -21,6 +21,9 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._acp_factory_run_reader import (
+    FactoryRunReader,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     resolve_acp_preflight,
 )
@@ -91,7 +94,10 @@ def dispatch_loop_wave(  # noqa: PLR0913 — kw-only wave inputs; `rework` is th
         journal=journal,
         budget=args.budget,
         preflight=resolve_acp_preflight(
-            repo=repo, journal_path=journal.path, now_iso=utc_now_iso()
+            repo=repo,
+            journal_path=journal.path,
+            now_iso=utc_now_iso(),
+            factory_runs=FactoryRunReader(repo=repo),
         ),
     )
     return _admit_and_dispatch_loop_wave(

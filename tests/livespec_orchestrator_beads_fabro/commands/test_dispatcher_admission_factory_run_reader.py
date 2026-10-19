@@ -59,3 +59,42 @@ def test_admission_passes_its_production_factory_reader_to_preflight(
     assert constructed == [tmp_path]
     assert len(resolved) == 1
     assert isinstance(resolved[0]["factory_runs"], _FactoryRunReader)
+
+
+def test_loop_wave_passes_its_production_factory_reader_to_preflight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The wait's pre-admission verdict shares the factory-native evidence source."""
+    wave = importlib.import_module(f"{_PACKAGE}._dispatcher_loop_wave")
+    verdicts = importlib.import_module(f"{_PACKAGE}._acp_preflight_verdict")
+    rework_module = importlib.import_module(f"{_PACKAGE}._dispatcher_rework_admission")
+    constructed: list[Path] = []
+    resolved: list[dict[str, object]] = []
+
+    class _FactoryRunReader:
+        def __init__(self, *, repo: Path) -> None:
+            constructed.append(repo)
+
+    def _resolve(**kwargs: object) -> object:
+        resolved.append(kwargs)
+        return verdicts.AcpPreflightVerdict(fallback_enabled=False)
+
+    monkeypatch.setattr(wave, "FactoryRunReader", _FactoryRunReader, raising=False)
+    monkeypatch.setattr(wave, "resolve_acp_preflight", _resolve)
+    monkeypatch.setattr(wave, "await_usable_credential", lambda **_: None)
+    monkeypatch.setattr(wave, "_admit_and_dispatch_loop_wave", lambda **_: [])
+
+    outcomes = wave.dispatch_loop_wave(
+        args=SimpleNamespace(budget=1),
+        repo=tmp_path,
+        items=[],
+        selected_candidates=[],
+        journal=SimpleNamespace(path=None),
+        janitor=None,
+        rework=rework_module.ReworkPass(),
+    )
+
+    assert outcomes == []
+    assert constructed == [tmp_path]
+    assert len(resolved) == 1
+    assert isinstance(resolved[0]["factory_runs"], _FactoryRunReader)
