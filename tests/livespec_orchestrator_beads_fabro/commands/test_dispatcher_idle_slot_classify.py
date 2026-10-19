@@ -187,3 +187,67 @@ def test_open_blockers_drops_closed_ones_and_reports_an_absent_one_unresolved() 
         ("bd-bare", "ready"),
         ("bd-gone", module.BLOCKER_STATUS_ABSENT),
     ]
+
+
+def _board_with(*, live_ids: frozenset[str]) -> object:
+    return importlib.import_module(_BOARD_NAME).BoardReading(
+        observable=True, live_count=len(live_ids), queued_count=0, live_item_ids=live_ids
+    )
+
+
+def test_an_active_blocker_with_a_live_row_blocks_and_without_one_is_a_stale_edge() -> None:
+    """`active` means in flight, not landed — the measured pe2dxk correction."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+    item = _item(id_="bd-dependent", depends_on=(_local(blocker_id="bd-blocker"),))
+    blockers = module.open_blockers(item=item, statuses={"bd-blocker": "active"})
+
+    with_run = _classify(
+        item=item,
+        blockers=blockers,
+        board=_board_with(live_ids=frozenset({"bd-blocker"})),
+        hold_reasons={},
+    )
+    without_run = _classify(
+        item=item, blockers=blockers, board=_board_with(live_ids=frozenset()), hold_reasons={}
+    )
+
+    assert with_run.classification == module.CLASS_BLOCKED
+    assert without_run.classification == module.CLASS_STALE_EDGE
+
+
+def test_an_acceptance_blocker_is_a_stale_edge_whatever_the_board_says() -> None:
+    """An `acceptance` blocker has landed and was never closed, run or no run."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+    item = _item(id_="bd-dependent", depends_on=(_local(blocker_id="bd-landed"),))
+
+    classified = _classify(
+        item=item,
+        blockers=module.open_blockers(item=item, statuses={"bd-landed": "acceptance"}),
+        board=_board_with(live_ids=frozenset({"bd-landed"})),
+        hold_reasons={},
+    )
+
+    assert classified.classification == module.CLASS_STALE_EDGE
+
+
+def test_one_real_blocker_beside_a_stale_edge_still_blocks() -> None:
+    """STALE-EDGE requires EVERY open blocker to be a landed-but-unclosed edge."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+    item = _item(
+        id_="bd-dependent",
+        depends_on=(_local(blocker_id="bd-landed"), _local(blocker_id="bd-open")),
+    )
+
+    classified = _classify(
+        item=item,
+        blockers=module.open_blockers(
+            item=item, statuses={"bd-landed": "acceptance", "bd-open": "ready"}
+        ),
+        board=_board_with(live_ids=frozenset()),
+        hold_reasons={},
+    )
+
+    assert classified.classification == module.CLASS_BLOCKED
