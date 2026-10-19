@@ -23,6 +23,7 @@ __all__: list[str] = [
     "fabro_run_summaries_from_payload",
     "fabro_run_summaries_from_stdout",
     "fabro_status_kind_from_payload",
+    "scheduler_max_concurrent_runs_from_payload",
 ]
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -33,6 +34,10 @@ _WORK_ITEM_RE = re.compile(r"^Work-item:\s*(\S+)", re.MULTILINE)
 # that cannot succeed on retry is deterministic by definition.
 _PERMANENT_CATEGORY = "deterministic"
 _TRANSIENT_SIGNATURE_SEGMENT = "|transient_infra|"
+# The two keys the scheduler ceiling is spelled with. The BLOCK is searched for
+# rather than reached by path, and the reason is recorded on the reader below.
+_SCHEDULER_KEY = "scheduler"
+_MAX_CONCURRENT_RUNS_KEY = "max_concurrent_runs"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -189,6 +194,46 @@ def fabro_failure_detail_from_payload(*, payload: object | None) -> FabroFailure
         if detail is not None:
             return detail
     return None
+
+
+def scheduler_max_concurrent_runs_from_payload(*, payload: object | None) -> int | None:
+    """The scheduler ceiling one `fabro settings --json` payload reports.
+
+    SEARCHED FOR, not read off a fixed path, because two nestings of the same
+    figure have been measured. The ratifying revision named
+    `server.scheduler.max_concurrent_runs`; the 2026-08-22 retention spike
+    recorded the server block one level deeper, listing `scheduler` as a member
+    of `server.server`. A fixed-path read answers one build and returns `None`
+    for the other, and `None` is read as "this candidate has no free slot" — so
+    the wrong spelling would retire overflow selection silently while every
+    surface still reported a healthy dispatch.
+
+    `None` means the figure was NOT ANSWERED, and it is deliberately distinct
+    from a reported `0`: a ceiling of zero is a server that runs nothing, which
+    the overflow clause already calls no free slot, whereas an unanswered read
+    is the fail-closed arm its own sentence names. `bool` is excluded because it
+    is an `int` subclass in Python, so a `True` would otherwise read as a server
+    admitting exactly one run.
+    """
+    for block in _scheduler_blocks(value=payload):
+        ceiling: object = block.get(_MAX_CONCURRENT_RUNS_KEY)
+        if isinstance(ceiling, int) and not isinstance(ceiling, bool):
+            return ceiling
+    return None
+
+
+def _scheduler_blocks(*, value: object) -> list[dict[str, Any]]:
+    """Every mapping keyed `scheduler` at any depth, outermost first."""
+    found: list[dict[str, Any]] = []
+    if not isinstance(value, dict):
+        return found
+    mapping = cast("dict[str, Any]", value)
+    scheduler: object = mapping.get(_SCHEDULER_KEY)
+    if isinstance(scheduler, dict):
+        found.append(cast("dict[str, Any]", scheduler))
+    for nested in mapping.values():
+        found.extend(_scheduler_blocks(value=nested))
+    return found
 
 
 def _runs(*, payload: object | None) -> list[object]:

@@ -117,6 +117,37 @@ def test_factory_reader_uses_the_port_for_server_qualified_reads_and_rejects_unr
     ]
 
 
+def test_factory_reader_reads_the_scheduler_ceiling_from_its_declared_factory(
+    tmp_path: Path,
+) -> None:
+    """The ceiling overflow selection compares a run count against, or `None`.
+
+    `None` is asserted for BOTH ways the read can answer nothing — a non-zero
+    exit and a payload naming no ceiling — because the two reach the caller
+    identically and the clause turns either into "this candidate has no free
+    slot". A reader that returned a number for one of them would report a
+    saturated factory as having room.
+    """
+    module = _module()
+    runner = _Runner(
+        results=[
+            _result(stdout=json.dumps({"server": {"scheduler": {"max_concurrent_runs": 10}}})),
+            _result(exit_code=124),
+            _result(stdout=json.dumps({"server": {"listen": "127.0.0.1:32276"}})),
+        ]
+    )
+    reader = module.FactoryRunReader(repo=_repo(tmp_path=tmp_path), runner=runner)
+
+    assert reader.scheduler_max_concurrent_runs(factory="hp") == 10
+    assert reader.scheduler_max_concurrent_runs(factory="hp") is None
+    assert reader.scheduler_max_concurrent_runs(factory="hp") is None
+    assert [call["argv"] for call in runner.calls] == [
+        ["/factory/fabro", "settings", "--json", "--server", _SERVER],
+        ["/factory/fabro", "settings", "--json", "--server", _SERVER],
+        ["/factory/fabro", "settings", "--json", "--server", _SERVER],
+    ]
+
+
 def test_factory_reader_refuses_a_factory_without_a_declared_server(tmp_path: Path) -> None:
     """A missing target cannot fall through to Fabro's local default server."""
     module = _module()
@@ -125,4 +156,5 @@ def test_factory_reader_refuses_a_factory_without_a_declared_server(tmp_path: Pa
 
     assert reader.list_runs(factory="hp") is None
     assert reader.inspect_payload(factory="hp", run_id="01MFACTORY") is None
+    assert reader.scheduler_max_concurrent_runs(factory="hp") is None
     assert runner.calls == []

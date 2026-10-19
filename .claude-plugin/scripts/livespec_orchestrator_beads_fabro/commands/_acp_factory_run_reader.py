@@ -18,6 +18,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, Fa
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     FabroRunSummary,
     fabro_inspect_record,
+    scheduler_max_concurrent_runs_from_payload,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroRunner
 
@@ -49,6 +50,23 @@ class FactoryRunReader:
         if result.command.exit_code != 0 or not _ps_payload(payload=result.payload):
             return None
         return result.runs
+
+    def scheduler_max_concurrent_runs(self, *, factory: str) -> int | None:
+        """One declared factory's own scheduler ceiling, or ``None`` if unreadable.
+
+        ``None`` is the UNANSWERED reading and never a ceiling of nothing — the
+        same line ``list_runs`` draws beside it. Overflow selection turns an
+        unanswered ceiling into "this candidate has no free slot", which is the
+        fail-closed direction its clause names; a zero would be a ceiling the
+        server genuinely reported.
+        """
+        port = self._port(factory=factory)
+        if port is None:
+            return None
+        result = port.settings(timeout_seconds=_READ_TIMEOUT_SECONDS)
+        if result.command.exit_code != 0:
+            return None
+        return scheduler_max_concurrent_runs_from_payload(payload=result.payload)
 
     def inspect_payload(self, *, factory: str, run_id: str) -> object | None:
         """Return one declared factory's inspect payload, or ``None`` if unreadable."""

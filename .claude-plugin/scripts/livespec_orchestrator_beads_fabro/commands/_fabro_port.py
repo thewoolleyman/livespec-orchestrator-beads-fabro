@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from livespec_orchestrator_beads_fabro.commands import _fabro_client as client
 from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import DispatchCorrelation
+from livespec_orchestrator_beads_fabro.commands._fabro_port_auth import fabro_auth_login
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
     FabroHttpPort,
     FabroHttpTransport,
@@ -41,6 +41,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_types import (
     FabroTarget,
     FabroVersionResult,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port_workflow import fabro_preflight
 
 __all__: list[str] = [
     "FabroCommand",
@@ -121,21 +122,13 @@ class FabroPort:
         )
 
     def auth_login(self, *, timeout_seconds: float) -> FabroCommandResult | None:
-        if self.target.server_url is None or self.target.dev_token is None:
-            return None
-        command = self._run(
-            argv=[
-                self.fabro_bin,
-                "auth",
-                "login",
-                "--dev-token",
-                self.target.dev_token,
-                "--server",
-                self.target.server_url,
-            ],
+        return fabro_auth_login(
+            fabro_bin=self.fabro_bin,
+            runner=self.runner,
+            cwd=self.cwd,
+            target=self.target,
             timeout_seconds=timeout_seconds,
         )
-        return FabroCommandResult(command=command)
 
     def secret_set(self, *, secret_name: str, stdin: int, timeout_seconds: float) -> FabroCommand:
         """Store one named secret while its value travels only on stdin."""
@@ -200,6 +193,22 @@ class FabroPort:
             runs=fabro_run_summaries_from_payload(payload=payload),
         )
 
+    def settings(self, *, timeout_seconds: float) -> FabroJsonResult:
+        """`fabro settings --json` — the EFFECTIVE settings of this port's server.
+
+        Read for one figure the facade carried no other route to: the server's
+        own `scheduler.max_concurrent_runs`, which overflow selection compares a
+        candidate's non-terminal run count against. The whole payload is handed
+        back rather than that one number, because the shape differs between
+        builds and `_fabro_port_records` is where this family's readings of a
+        payload live.
+        """
+        command = self._run(
+            argv=[self.fabro_bin, "settings", "--json", *self._server_suffix()],
+            timeout_seconds=timeout_seconds,
+        )
+        return FabroJsonResult(command=command, payload=fabro_json_payload(command=command))
+
     def preflight(
         self,
         *,
@@ -208,22 +217,16 @@ class FabroPort:
         inputs: tuple[str, ...],
         timeout_seconds: float,
     ) -> FabroJsonResult:
-        command = self._run(
-            argv=[
-                self.fabro_bin,
-                "preflight",
-                str(workflow_toml),
-                "--goal-file",
-                str(goal_file),
-                *client.fabro_input_args(inputs=inputs),
-                "--no-upgrade-check",
-                "--json",
-                *self._server_suffix(),
-            ],
+        return fabro_preflight(
+            fabro_bin=self.fabro_bin,
+            runner=self.runner,
+            cwd=self.cwd,
+            server_url=self.target.server_url,
+            workflow_toml=workflow_toml,
+            goal_file=goal_file,
+            inputs=inputs,
             timeout_seconds=timeout_seconds,
-            env=self._server_env(),
         )
-        return FabroJsonResult(command=command, payload=fabro_json_payload(command=command))
 
     def rm(self, *, run_id: str, timeout_seconds: float) -> FabroCommandResult:
         command = self._run(
