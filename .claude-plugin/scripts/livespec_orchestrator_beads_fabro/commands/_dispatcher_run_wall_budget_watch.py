@@ -22,7 +22,8 @@ and two of the three must NOT fall through to the stall arm:
   to the stall decision as it always did.
 * `CANCELLED` -- the pointer is durable and the run is gone. The dispatch ends
   on its own outcome.
-* `HELD` -- the budget IS exceeded and the export could not be read back. The
+* `HELD` -- the budget IS exceeded and the export could not be read back. One
+  `run-wall-budget-held` record is journaled naming the failed measurement, the
   run keeps its slot for one more poll and the export is re-attempted then --
   and the clause requires that "while the run's budget export is held pending
   its read-back it is not cancelled as stalled-no-progress", so this verdict
@@ -62,6 +63,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_expor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_records import (
     run_wall_budget_exceeded_record,
+    run_wall_budget_held_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_clock import (
     RunWallStart,
@@ -97,6 +99,18 @@ __all__: list[str] = [
 ]
 
 _INSPECT_TIMEOUT_SECONDS = 60.0
+
+# The two measurements that fail BEFORE any export is attempted, each named in
+# its own words because the remedies differ: one is a configuration fault on
+# the dispatching host and the other is a factory that declares no server to
+# export the run's record from. The export's own `detail` names every later
+# failure, so these are the only two this module words itself.
+_NO_LEDGER_MEASUREMENT = (
+    "this host resolved no ledger to write the preserve-by-reference pointer to"
+)
+_NO_FACTORY_SERVER_MEASUREMENT = (
+    "this dispatch's factory declares no server url to export the run's record from"
+)
 _LEDGER_RESOLUTION_ERRORS = (
     LivespecConfigUnreadableError,
     ConnectionPrefixMissingError,
@@ -110,6 +124,20 @@ class RunWallVerdictValue:
     """Enum-like budget verdict value without subclassing."""
 
     value: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Preservation:
+    """Where this run's record is preserved, and what the export measured.
+
+    `failed_measurement` is meaningful on BOTH arms -- the export's own account
+    of what it did -- and is read only where `pointer` is None. Two fields
+    rather than one union so the held record never has to re-derive a reason
+    from an absence.
+    """
+
+    pointer: str | None
+    failed_measurement: str
 
 
 class RunWallVerdict:
@@ -182,8 +210,17 @@ def cancel_run_past_budget(  # noqa: PLR0913 — kw-only per-poll decision; the 
         or not budget_exceeded(elapsed_seconds=elapsed, budget=plan.run_wall_budget)
     ):
         return RunWallVerdict.WITHIN
-    pointer = _preserved_pointer(plan=plan, runner=runner, run_id=run_id, ledger=ledger)
-    if pointer is None:
+    preserved = _preserved_pointer(plan=plan, runner=runner, run_id=run_id, ledger=ledger)
+    if preserved.pointer is None:
+        journal.append(
+            record=run_wall_budget_held_record(
+                work_item_id=plan.work_item_id,
+                run_id=run_id,
+                elapsed_seconds=elapsed,
+                budget=plan.run_wall_budget,
+                failed_measurement=preserved.failed_measurement,
+            )
+        )
         return RunWallVerdict.HELD
     _cancel(
         dispatch_id=dispatch_id,
@@ -193,7 +230,7 @@ def cancel_run_past_budget(  # noqa: PLR0913 — kw-only per-poll decision; the 
         run_id=run_id,
         elapsed_seconds=elapsed,
         start=start,
-        pointer=pointer,
+        pointer=preserved.pointer,
     )
     return RunWallVerdict.CANCELLED
 
@@ -204,17 +241,24 @@ def _preserved_pointer(
     runner: CommandRunner,
     run_id: str,
     ledger: LedgerComments | None,
-) -> str | None:
-    """The pointer this run's record is durably preserved at, or None.
+) -> _Preservation:
+    """Where this run's record is durably preserved, or which measurement failed.
 
-    None covers every way the precondition can fail -- no ledger, no declared
-    factory server to export from, a write that did not land, a read-back that
-    did not confirm it -- because they all mean the same thing to the cancel:
-    nothing durable names this run's tree yet, so the slot is held one more
-    poll rather than released.
+    An absent pointer covers every way the precondition can fail -- no ledger,
+    no declared factory server to export from, a write that did not land, a
+    read-back that did not confirm it -- because they all mean the same thing
+    to the CANCEL: nothing durable names this run's tree yet, so the slot is
+    held one more poll rather than released.
+
+    They do NOT mean the same thing to the HELD RECORD, which is why the
+    failing measurement travels back beside the absence rather than being
+    reduced to it. The remedies differ, and an operator reading a run of held
+    rows acts on which reading stopped the cancel.
     """
-    if ledger is None or plan.fabro_factory_server is None:
-        return None
+    if ledger is None:
+        return _Preservation(pointer=None, failed_measurement=_NO_LEDGER_MEASUREMENT)
+    if plan.fabro_factory_server is None:
+        return _Preservation(pointer=None, failed_measurement=_NO_FACTORY_SERVER_MEASUREMENT)
     exported = export_run_reference(
         work_item_id=plan.work_item_id,
         # The item is `active` for the life of the dispatch this watch belongs
@@ -230,8 +274,8 @@ def _preserved_pointer(
         ledger=ledger,
     )
     if not exported.exported or exported.comment_id is None:
-        return None
-    return exported.comment_id
+        return _Preservation(pointer=None, failed_measurement=exported.detail)
+    return _Preservation(pointer=exported.comment_id, failed_measurement=exported.detail)
 
 
 def _cancel(  # noqa: PLR0913 — kw-only cancel; the dispatch, the two seams, the run and the two measured figures are independent inputs.
