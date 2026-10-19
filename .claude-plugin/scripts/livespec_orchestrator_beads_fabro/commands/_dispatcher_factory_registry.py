@@ -36,7 +36,53 @@ from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 
 __all__: list[str] = [
     "factory_registry_refusal",
+    "factory_registry_unobservable",
 ]
+
+
+def factory_registry_unobservable(*, factory: FactoryTarget) -> str | None:
+    """Why a registry-backed factory cannot be ADDRESSED, naming it; else None.
+
+    The REFUSAL below is for the dispatch path, which may still decline to place
+    work. This is for the OBSERVING surfaces the same clause names — plan run
+    liveness, the merge-hold liveness guard — which run after the work was
+    placed and may decline nothing: each owes the failure behaviour already
+    ratified for an unreachable factory on that surface, which is to report the
+    factory as unobservable and to name it.
+
+    WHY A SURFACE CANNOT JUST READ `server is None`, which is the reading every
+    one of them already performed. It is the same value an unconfigured
+    repository carries, and THERE it means the ambient local Fabro — so a
+    consumer that opened a port on it surveyed whichever engine the dispatching
+    host runs and answered cleanly about the wrong machine. Asking whether the
+    entry was registry-BACKED is what separates "this factory declares no
+    server" from "this factory's address did not resolve", and only the first of
+    those may be surveyed locally.
+
+    THE DETAIL NAMES THE FACTORY AND, WHERE THE REGISTRY DECIDED IT, THE PATH.
+    A liveness verdict naming neither leaves an operator to read every declared
+    entry; and WHICH registry file was read is a configuration answer of its own,
+    because the `LIVESPEC_FABRO_FACTORY_REGISTRY` override and the host default
+    are different files. The CONFLICT arm names no path, for the reason the
+    refusal below gives: that fault is in the governed repository's own committed
+    configuration, which the registry had no part in deciding, so naming the file
+    would point an operator at something that decided nothing.
+
+    `factory` is REQUIRED where the refusal's is optional, because every caller
+    here resolves a target before it can ask: a surface holding none has no
+    factory it could report, which is a different absence from an unresolved one.
+    """
+    if not factory.registry.declared or factory.server is not None:
+        return None
+    if factory.registry.conflicting_keys:
+        return (
+            f"factory {factory.name} declares its registry together with a"
+            " committed address, so its address is unresolved"
+        )
+    return (
+        f"factory {factory.name} is registry-backed and its address did not"
+        f" resolve from the factory registry at {factory.registry.path}"
+    )
 
 
 def factory_registry_refusal(*, factory: FactoryTarget | None) -> str | None:
