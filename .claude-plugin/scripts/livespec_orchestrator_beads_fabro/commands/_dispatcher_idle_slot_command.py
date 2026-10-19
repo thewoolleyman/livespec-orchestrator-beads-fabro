@@ -1,9 +1,8 @@
 """`dispatcher.py idle-slot-audit` — the read-only rendering of the audit.
 
-The listing is one line per child, carrying its class, its status, its open
-`blocks` blockers with their statuses, and the reason where the class has one;
-a configured id absent from its tenant gets a MISSING line of its own, and an
-unreadable tenant is named rather than dropped.
+THE FINDING LINE IS THE LAST LINE, or there is no finding line. A reader
+scanning the tail for it must not find a stale one, so it is emitted from the
+one place the audit computes it and nowhere else.
 
 The exit status distinguishes the three configuration outcomes: a well-formed
 audit and an absent object both exit 0 — the audit found what it found, and an
@@ -24,6 +23,7 @@ from typing import Any, cast
 from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_audit import (
     EntryAudit,
     IdleSlotAuditResult,
+    IdleSlotFinding,
     idle_slot_audit,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_classify import (
@@ -96,7 +96,20 @@ def render_idle_slot_audit(*, result: IdleSlotAuditResult) -> str:
     lines = [f"idle-slot audit — factory {result.factory}", _board_line(result=result)]
     for entry in result.entries:
         lines.extend(_entry_lines(entry=entry))
+    finding = result.finding
+    if finding is not None:
+        lines.append(_finding_line(finding=finding))
     return "".join(f"{line}\n" for line in lines)
+
+
+def _finding_line(*, finding: IdleSlotFinding) -> str:
+    """The last line, naming the factory, its live count and the child ids."""
+    children = ", ".join(finding.child_ids)
+    return (
+        f"FINDING: factory {finding.factory} shows no runnable run with "
+        f"{finding.live_count} live row(s) attributed to the Fabro server; "
+        f"dispatchable or stale-edge priority children: {children}"
+    )
 
 
 def _board_line(*, result: IdleSlotAuditResult) -> str:

@@ -1,8 +1,8 @@
 """Coverage for the `idle-slot-audit` subcommand's rendering and exit status.
 
-An unreadable tenant is asserted here rather than left implicit: the listing
-must NAME it, because an entry silently dropped from the output reads as a
-tenant with nothing to dispatch.
+The finding assertion keys on the LAST line rather than on containment: a
+reader scanning the tail for the finding must not find a stale one, so where
+it sits is part of the behaviour.
 """
 
 import argparse
@@ -55,6 +55,7 @@ def _result(
     *,
     board: object,
     entries: tuple[object, ...] = (),
+    finding: object | None = None,
     configured: bool = True,
     configuration_finding: str | None = None,
 ) -> object:
@@ -64,6 +65,7 @@ def _result(
         factory="hp" if configured else None,
         board=board,
         entries=entries,
+        finding=finding,
     )
 
 
@@ -125,6 +127,40 @@ def test_the_rendering_shows_each_child_its_blockers_and_the_missing_ids() -> No
     assert "a-2  HELD  status=ready  reason=refused at the wall" in text
     assert "tenant-b  items b-1" in text
     assert "MISSING  b-1  absent from its tenant" in text
+
+
+def test_the_finding_is_the_last_line_and_names_the_factory_and_the_children() -> None:
+    """A reader scanning the tail for the finding must not find a stale one."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+    audit = importlib.import_module(_AUDIT_NAME)
+    finding = audit.IdleSlotFinding(
+        factory="hp",
+        live_count=2,
+        child_ids=("a-1", "a-2"),
+        dispatchable_ids=("a-1",),
+        stale_edge_ids=("a-2",),
+    )
+
+    text = module.render_idle_slot_audit(
+        result=_result(
+            board=_observable(live=2),
+            entries=(
+                _entry(
+                    repo="tenant-a",
+                    epic="a-epic",
+                    children=(_child(id_="a-1", classification="DISPATCHABLE-NOW"),),
+                ),
+            ),
+            finding=finding,
+        )
+    )
+    lines = [line for line in text.splitlines() if line != ""]
+
+    assert lines[-1] == (
+        "FINDING: factory hp shows no runnable run with 2 live row(s) attributed "
+        "to the Fabro server; dispatchable or stale-edge priority children: a-1, a-2"
+    )
 
 
 def test_an_unreadable_tenant_renders_as_unreadable_with_its_root() -> None:
