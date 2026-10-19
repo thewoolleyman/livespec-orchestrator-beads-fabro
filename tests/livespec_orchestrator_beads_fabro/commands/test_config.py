@@ -610,16 +610,35 @@ def test_resolve_fabro_factory_defaults_to_configured_default_entry(
     assert target.dev_token is None
 
 
-def test_committed_config_sets_hp_default_factory(
+def test_committed_config_resolves_its_default_factory_through_the_registry(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """This repo's committed config selects the hp Fabro host by default."""
+    """This repo's committed default is `legacy`, whose address is host state.
+
+    The registry is pointed at a FIXTURE file rather than left to the host
+    default, for two reasons that pull the same way. It makes the test
+    hermetic — a developer's machine, the factory sandbox and CI each carry a
+    different `/etc/livespec/fabro-factories.json`, or none — and it makes the
+    address that resolves one this test WROTE, which is the positive control
+    the assertion needs: the committed entry declares no address at all, so a
+    server equal to the fixture's can only have come through the registry.
+    """
     monkeypatch.delenv("LIVESPEC_FABRO_FACTORY", raising=False)
-    monkeypatch.delenv("FABRO_DEV_TOKEN__hp", raising=False)
+    monkeypatch.delenv("FABRO_DEV_TOKEN__legacy", raising=False)
+    registry = tmp_path / "fabro-factories.json"
+    _ = registry.write_text(
+        json.dumps({"legacy": {"server": "https://legacy.example.test:32276"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LIVESPEC_FABRO_FACTORY_REGISTRY", str(registry))
     repo_root = Path(__file__).parents[3]
+
     target = _config.resolve_fabro_factory(cwd=repo_root)
-    assert target.name == "hp"
-    assert target.server == "https://hp-xubuntu.perch-rudd.ts.net:32276"
+
+    assert target.name == "legacy"
+    assert target.registry.declared is True
+    assert target.server == "https://legacy.example.test:32276"
     assert target.dev_token is None
 
 
