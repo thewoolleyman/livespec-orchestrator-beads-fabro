@@ -109,7 +109,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
     WatchedFabroLauncher,
-    _decode,  # pyright: ignore[reportPrivateUsage]
     utc_now_iso,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_checks import run_janitor_checks
@@ -154,6 +153,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     github_token_supplier,
     post_verdict_runner,
+)
+
+# `_decode` stayed PRIVATE when the production runner moved to its own leaf
+# module to break an import cycle, so it is reached where it is defined rather
+# than through the facade that re-exports the runner beside it.
+from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import (
+    _decode,  # pyright: ignore[reportPrivateUsage]
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones import (
     fetch_fleet_manifest_text,

@@ -27,6 +27,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_b
     PRESERVE_POINTER_MARKER,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget import RunWallBudget
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_preserve import (
+    run_wall_ledger,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_records import (
     RUN_WALL_BUDGET_EXCEEDED_STAGE,
 )
@@ -251,7 +254,7 @@ def test_a_resolvable_target_yields_the_ledger_the_export_writes_through(
     None for every target would hold every budget cancel for ever while
     looking perfectly fail-closed.
     """
-    watch = _watch()
+    _ = _watch()
     _ = (tmp_path / ".livespec.jsonc").write_text(
         "{\n"
         '  "livespec-orchestrator-beads-fabro": {\n'
@@ -260,7 +263,7 @@ def test_a_resolvable_target_yields_the_ledger_the_export_writes_through(
         "}\n",
         encoding="utf-8",
     )
-    ledger = watch.run_wall_ledger(repo=tmp_path)
+    ledger = run_wall_ledger(repo=tmp_path)
     assert ledger is not None
     # The two verbs the export uses, and nothing wider: the resolver's job is
     # to answer WHETHER this host has a comment surface, never to exercise one.
@@ -291,7 +294,7 @@ def test_an_unresolvable_ledger_holds_the_cancel_rather_than_taking_it(tmp_path:
     )
     assert verdict == watch.RunWallVerdict.HELD
     assert "rm" not in runner.calls
-    assert watch.run_wall_ledger(repo=tmp_path) is None
+    assert run_wall_ledger(repo=tmp_path) is None
 
 
 def test_an_unfixed_start_is_within_budget_and_touches_nothing(tmp_path: Path) -> None:
@@ -315,20 +318,51 @@ def test_an_unfixed_start_is_within_budget_and_touches_nothing(tmp_path: Path) -
     assert journal.records == []
 
 
-def test_the_run_start_is_observed_from_the_runs_own_record(tmp_path: Path) -> None:
-    """The start reading is taken through the port, once, when it is fixed."""
+def test_the_budget_watch_fixes_its_clock_without_a_probe_of_its_own(
+    tmp_path: Path,
+) -> None:
+    """The clock is fixed from the poll's own reading, costing no round trip.
+
+    The watchdog's per-run read already carries the run's record, so the
+    budget's `running` instant arrives with it. A second `fabro inspect` for
+    that one field would be both a round trip per dispatch and a second answer
+    about one run with nothing announcing a divergence.
+    """
     watch = _watch()
     runner = _ScriptedRunner()
-    start = watch.observe_run_wall_start(
+    budget = watch.RunWallBudgetWatch(ledger=cast("Any", _FakeLedger()))
+    verdict = budget.verdict(
+        dispatch_id="dispatch-01",
+        plan=_plan(repo=tmp_path),
         port=_port(repo=tmp_path, runner=runner),
+        runner=cast("Any", runner),
+        journal=cast("Any", _RecordingJournal()),
         run_id=_RUN_ID,
-        observed_at_epoch=_START_EPOCH,
+        # The poll read no running instant, so the clock falls back to the poll
+        # that observed the run running -- which is this instant.
+        recorded_epoch=None,
+        now_epoch=_START_EPOCH,
     )
-    # The scripted `inspect` carries no running instant, so the clock falls
-    # back to the poll that observed the run running.
-    assert start.epoch == _START_EPOCH
-    assert start.source != RUN_RECORD_SOURCE
-    assert runner.calls == ["inspect"]
+    assert verdict == watch.RunWallVerdict.WITHIN
+    assert budget.start is not None
+    assert budget.start.epoch == _START_EPOCH
+    assert budget.start.source != RUN_RECORD_SOURCE
+    assert runner.calls == []
+    # A RECORDED instant outranks the poll, and is still read from no probe.
+    recorded = watch.RunWallBudgetWatch(ledger=cast("Any", _FakeLedger()))
+    _ = recorded.verdict(
+        dispatch_id="dispatch-01",
+        plan=_plan(repo=tmp_path),
+        port=_port(repo=tmp_path, runner=runner),
+        runner=cast("Any", runner),
+        journal=cast("Any", _RecordingJournal()),
+        run_id=_RUN_ID,
+        recorded_epoch=_START_EPOCH - 60.0,
+        now_epoch=_START_EPOCH,
+    )
+    assert recorded.start is not None
+    assert recorded.start.source == RUN_RECORD_SOURCE
+    assert runner.calls == []
 
 
 def test_the_three_verdicts_are_distinct_values() -> None:

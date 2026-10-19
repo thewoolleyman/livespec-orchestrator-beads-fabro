@@ -37,7 +37,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import _dispatcher_io_fabro_launcher
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_io_fabro_launcher,
+    _dispatcher_stale_item_reap,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     CommandRunner,
@@ -1317,7 +1320,7 @@ def test_watched_launcher_continues_when_discovered_run_item_is_absent(
         if polls["n"] >= 3:
             end_run_and_await_launcher_return(run_done=runner.run_done, work_item_id=_WORK_ITEM_ID)
 
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", _no_items)
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "read_work_items", _no_items)
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
     result = launcher.launch(
