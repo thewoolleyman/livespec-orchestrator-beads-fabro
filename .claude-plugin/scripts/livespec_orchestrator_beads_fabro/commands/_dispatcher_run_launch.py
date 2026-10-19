@@ -25,6 +25,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
     args_with_dispatch_factory_target,
+    explicit_dispatch_factory,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch_one
@@ -80,6 +81,11 @@ def admit_and_dispatch_target(  # noqa: PLR0913 — kw-only targeted dispatch; `
         journal=journal,
         enforce_cap=False,
         rework=ReworkPass(scope_ids=frozenset({target.id})),
+        # This invocation's `--factory`, which the valve cannot read for itself:
+        # it is the top layer of the factory precedence the pending claim stamp
+        # resolves under, and the one layer `LIVESPEC_FABRO_FACTORY` cannot
+        # stand in for.
+        explicit_factory=explicit_dispatch_factory(args=args),
     )
     launching = [*admission.rework, *admission.admitted]
     # The stale publish-branch reclaim, for the item this path is about to

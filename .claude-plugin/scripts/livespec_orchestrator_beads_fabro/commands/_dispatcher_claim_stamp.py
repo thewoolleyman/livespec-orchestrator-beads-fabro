@@ -105,16 +105,24 @@ def stamp_pending_claim(
     work_item_id: str,
     dispatch_id: str,
     journal: JournalWriter,
+    explicit_factory: str | None = None,
 ) -> None:
     """Replace this item's claim stamp with one naming THIS dispatch and no run.
 
-    The factory is resolved under the dispatch precedence MINUS the explicit
-    `--factory` flag, which admission does not carry: `LIVESPEC_FABRO_FACTORY`,
-    else the item's own recorded pin, else overflow selection or the configured
-    default. The ORDER of those layers is the resolution's own and is not
-    restated here — a second order would stamp the row with a factory the run
-    never runs on, which the reconcile pass then holds the claim against while
-    reporting the stamp faithfully.
+    The factory is resolved under the WHOLE dispatch precedence, so the name
+    this stamp carries is the name the dispatch is routed to. The ORDER of its
+    layers is the resolution's own and is not restated here — a second order
+    would stamp the row with a factory the run never runs on, which the
+    reconcile pass then holds the claim against while reporting the stamp
+    faithfully.
+
+    `explicit_factory` is the TOP layer, the `--factory` flag's name, and it
+    arrives as an argument because admission holds no `argparse.Namespace` to
+    read it out of. It is the one layer the environment variable cannot stand
+    in for: an operator who types the flag has routed THIS dispatch and nothing
+    in the item's own history says so. `None` means this invocation named no
+    factory, which is the ordinary case and is not a default standing in for an
+    unread flag — every dispatch path reads the flag and passes what it found.
 
     What the field must not be is ABSENT: a stamp naming no factory grades
     `claim-unattributable`, whose remedy is "this factory is no longer
@@ -122,7 +130,10 @@ def stamp_pending_claim(
     """
     detail = _attempted(
         action=lambda: _write_pending_stamp(
-            repo=repo, work_item_id=work_item_id, dispatch_id=dispatch_id
+            repo=repo,
+            work_item_id=work_item_id,
+            dispatch_id=dispatch_id,
+            explicit_factory=explicit_factory,
         )
     )
     journal.append(
@@ -171,9 +182,13 @@ def stamp_run_claim(
     )
 
 
-def _write_pending_stamp(*, repo: Path, work_item_id: str, dispatch_id: str) -> None:
+def _write_pending_stamp(
+    *, repo: Path, work_item_id: str, dispatch_id: str, explicit_factory: str | None
+) -> None:
     """The admission-moment write. Reads no prior stamp: it replaces one wholesale."""
-    target = unrecorded_dispatch_factory_target(repo=repo, work_item_id=work_item_id)
+    target = unrecorded_dispatch_factory_target(
+        repo=repo, work_item_id=work_item_id, explicit=explicit_factory
+    )
     record_claim_stamp(
         path=store_config(repo=repo),
         work_item_id=work_item_id,

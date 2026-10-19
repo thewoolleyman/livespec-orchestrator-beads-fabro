@@ -127,7 +127,7 @@ class Admission:
     verdict: AcpPreflightVerdict | None = None
 
 
-def admit_and_select(
+def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the one routing layer the valve cannot read for itself.
     *,
     repo: Path,
     items: list[WorkItem],
@@ -135,6 +135,7 @@ def admit_and_select(
     journal: JournalFile,
     enforce_cap: bool,
     rework: ReworkPass | None = None,
+    explicit_factory: str | None = None,
 ) -> Admission:
     """Run the admission valve over the rank-sorted candidate set.
 
@@ -165,6 +166,15 @@ def admit_and_select(
     preflight verdict" would then hold only by convention. It is RETURNED on the
     result, because the dispatch of each admitted item has to select its per-node
     candidate from this same evaluation.
+
+    `explicit_factory` IS a parameter, and for the opposite reason: it is the
+    `--factory` flag's name, which lives on the invocation's own command line
+    and on no surface this valve can reach. The pending claim stamp written
+    below is resolved under the whole factory precedence, and the flag is its
+    top layer — without it the stamp answers from the item's recorded pin while
+    the dispatch goes where the flag said, so the claim names a factory the run
+    never runs on. Every dispatch path reads the flag through
+    `explicit_dispatch_factory` and hands the name here.
     """
     accounting = claimed_active_accounting(repo=repo, items=items, journal=journal)
     rework_pass = rework if rework is not None else ReworkPass()
@@ -226,7 +236,11 @@ def admit_and_select(
         # run id, which the factory now reports absent and a reconciler would
         # release. `_dispatcher_claim_stamp` carries the full reasoning.
         stamp_pending_claim(
-            repo=repo, work_item_id=item.id, dispatch_id=dispatch_id, journal=journal
+            repo=repo,
+            work_item_id=item.id,
+            dispatch_id=dispatch_id,
+            journal=journal,
+            explicit_factory=explicit_factory,
         )
         update_work_item_status(
             path=config, item_id=journal_item.id, status="active", assignee=assignee

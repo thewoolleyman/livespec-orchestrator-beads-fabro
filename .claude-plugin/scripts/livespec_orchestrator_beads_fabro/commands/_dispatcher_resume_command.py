@@ -82,6 +82,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_tail import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
     args_with_dispatch_factory_target,
+    explicit_dispatch_factory,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
     apply_factory_size_dispatch_entry,
@@ -335,6 +336,10 @@ def _admit_and_dispatch_resume(
         journal=journal,
         enforce_cap=True,
         rework=_NO_REWORK,
+        # This invocation's `--factory`, which the valve cannot read for itself:
+        # a resume resolves its factory as `dispatch --item` does, so it passes
+        # the same top layer of that precedence to the pending claim stamp.
+        explicit_factory=explicit_dispatch_factory(args=args),
     )
     dispatched = [
         dispatch_one(
