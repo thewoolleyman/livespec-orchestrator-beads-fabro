@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.220.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.220.0...v0.220.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **golden-master:** open the seeded work-item with a Definition of Done ([f63495a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f63495a193491e04e22fd9a048d50bc84066d7fb))
+* **golden-master:** route the skeleton's implement node through codex-acp ([0db5604](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0db56042ad98c9e3c752ce2ddf0fac9435e61d13))
+
 ## [0.220.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.219.6...v0.220.0) (2026-10-19)
 
 
