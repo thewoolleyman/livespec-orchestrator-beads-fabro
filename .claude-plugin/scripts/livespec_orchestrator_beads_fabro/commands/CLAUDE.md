@@ -253,6 +253,27 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   from the aggregate. The stamped-once refusal moved WITH the append that
   applies it: a copy left behind would be a second authority on which fields no
   writer may supply.
+- `_dispatcher_item_run_target.py` — the factory ONE item's dispatch went to,
+  resolved from the item's own recorded `dispatch_factory` stamp and falling
+  back to the repository default, plus `ACP_EVENTS_TIMEOUT_SECONDS`, the bound
+  on a single `fabro events` read. Both names lived in the `agent.acp.failover`
+  event projection that v127 retired (`bd-ib-qm6r1`) and neither belonged to
+  it: the per-attempt cost read `_dispatcher_cost_chain` performs asks the same
+  two questions. Three properties an editor must not invert. It answers `None`
+  and never a `FactoryTarget` carrying `server=None`, because that value is
+  what an UNCONFIGURED repository holds and every consumer reads it as the
+  ambient LOCAL engine — so answering with one surveys whichever Fabro the
+  dispatching host runs and reports a clean reading taken on the wrong machine,
+  the trap `AGENTS.md` catalogues. Every arm fails SOFT onto that `None`,
+  because each caller runs after the work it follows has already finished and
+  an unreachable tenant must not raise through a caller with nothing left to
+  do. And the item's stamp wins over the repository default, for the reason
+  `targeted_factories` gives: an item dispatched to one factory must not have
+  its run looked for on another, where the clean answer is a run that does not
+  exist. It is a LEAF of its own rather than a member of the cost chain, so a
+  later retirement of some other consumer cannot take the cost read's bound
+  with it — a removal whose only symptom is an unbounded subprocess against a
+  slow factory.
 - `_fabro_port_workflow.py` and the credential half of `_fabro_port_auth.py` —
   the two invocations whose bodies left the `FabroPort` class when the facade
   reached its file LLOC ceiling and the `settings` verb needed room. Both stay

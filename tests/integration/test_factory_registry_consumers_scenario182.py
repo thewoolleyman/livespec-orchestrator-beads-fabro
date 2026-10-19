@@ -63,11 +63,11 @@ from livespec_orchestrator_beads_fabro.commands._acp_factory_hold_evidence impor
     factory_hold_evidence,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_factory_run_reader import FactoryRunReader
-from livespec_orchestrator_beads_fabro.commands._acp_projection_run import (
-    resolve_projection_factory,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_item_run_target import (
+    resolve_item_run_factory,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_claim_lane import (
     reconcile_claim_lane,
 )
@@ -660,23 +660,22 @@ def test_the_merge_hold_arm_guard_refuses_on_an_unresolvable_registry_backed_fac
     assert control is None or control.error != ARM_REFUSAL_LIVE_RUN
 
 
-def test_the_run_event_projection_treats_an_unresolvable_registry_backed_factory_as_unread(
+def test_the_item_run_resolution_answers_none_for_an_unresolvable_registry_entry(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The projection resolves no factory for an unresolvable registry-backed entry.
+    """No factory resolves for a registry-backed entry the registry cannot resolve.
 
-    `None` here is the projection's own word for an UNREAD stream, and what
-    `project_run_events` does with it — record the projection-failure fact rather
-    than fetch from whatever the client would have defaulted to — is already
-    bound by `test_acp_projection_run.py`. What is unbound, and what this asserts,
-    is that a registry-backed entry the registry cannot resolve reaches that arm
-    at all instead of resolving to a target whose `server` is the ambient local
+    `None` is the resolution's own word for "no factory", and the per-attempt
+    cost read that consumes it declines to derive a cost rather than fetching
+    from whatever the client would have defaulted to. What this asserts is that
+    a registry-backed entry the registry cannot resolve reaches that arm at all,
+    instead of resolving to a target whose `server` is the ambient local
     engine's absent one.
     """
     repo = _unresolvable_repo(tmp_path=tmp_path, monkeypatch=monkeypatch)
 
-    assert resolve_projection_factory(repo=repo, work_item_id=_PETRI_ITEM) is None
+    assert resolve_item_run_factory(repo=repo, work_item_id=_PETRI_ITEM) is None
 
 
 def test_a_registry_whose_bytes_are_not_text_is_unobservable_rather_than_raising(

@@ -581,25 +581,27 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
 - `test_acp_fallback_journey_scenario127.py` — binds `SPECIFICATION/scenarios.md`
   "Scenario 127 — Ordered ACP fallback preserves primary resolution, failure
   honesty, and one node visit". One two-candidate structured chain, declared in a
-  `.livespec.jsonc` on disk, carried from the capability gate through to both
-  ledgers: the configuration read, the catalogs, the chain resolution, the gate,
-  the event scan, the hold and warning ledgers and the journal writes are all
-  production code. Exactly two sockets are stood in, each at a seam the product
+  `.livespec.jsonc` on disk, carried from the capability gate through the event
+  scan: the configuration read, the catalogs, the chain resolution, the gate and
+  the scan are all production code. One socket is stood in, at a seam the product
   publishes for the purpose — the factory's `GET /api/v1/system/info` answer
-  through `FabroHttpTransport`, and the run's own event stream through
-  `CommandRunner` — so the request path, the server qualification and the
-  `fabro events` argv remain the real ones. The agent is `glm-acp-agent`
+  through `FabroHttpTransport` — so the request path and the server qualification
+  remain the real ones. The agent is `glm-acp-agent`
   deliberately: its `protocol` mechanism makes BOTH candidates carry
   `config_options`, so one fixture owes both capability strings and can isolate
   each gate arm by advertising the other. Every assertion is chosen to be DERIVED
   rather than echoed, because a recorded stream can prove nothing a fixture
-  supplies: the hold's `expires_at` comes from occurrence time, the hold keys the
-  candidate that FAILED while the warning keys the one that RESCUED the node (no
-  single echoed field yields both), and the `primary_generation` the events carry
-  is computed from this repository's own resolved chain rather than transcribed,
-  so a configuration change that moved it makes the stream stop matching instead
-  of silently agreeing. `cleared` is asserted ZERO against a run that SUCCEEDED,
-  which is the scenario's own control that run success does not clear the primary.
+  supplies: the `primary_generation` the events carry is computed from this
+  repository's own resolved chain rather than transcribed, so a configuration
+  change that moved it makes the stream stop matching instead of silently
+  agreeing. ITS HOLD-AND-WARNING JOURNEY IS RETIRED, with the v127 removal of the
+  `agent.acp.failover` projection (work-item `bd-ib-qm6r1`): the case that drove
+  one failover into one hold and one warning read an event the engine no longer
+  emits, and the heading's own registry row recorded in advance that this
+  module's journey cases are "retired by that implementing work". The warning and
+  hold primitives it exercised keep their coverage at the unit tier, in
+  `tests/livespec_orchestrator_beads_fabro/commands/
+  test_acp_fallback_warning_primitives.py`.
   The version gate is bound on both halves — the FACTORY half in all four
   advertised states, including an unreachable server that must refuse rather than
   pass, and the RELEASE half read from this repository's own committed
@@ -608,12 +610,11 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   negative controls carry the rest: an absent run reads as unobservable cost, and
   a factory advertising neither capability refuses before any journey is
   reachable. "Unchanged run and sandbox identity" is asserted as what the
-  orchestrator can actually observe — one run id, reached through exactly one
-  events read against the pinned factory, inside one node visit — because this
-  repository holds no per-attempt container surface and an assertion about one
-  would be an assertion against the fixture. The live controlled run on `hp` is a
-  separate operational artefact of the same work-item; this module is what makes
-  its transcript checkable.
+  orchestrator can actually observe — one node visit over the scanned stream —
+  because this repository holds no per-attempt container surface and an assertion
+  about one would be an assertion against the fixture. The live controlled run on
+  `hp` is a separate operational artefact of the same work-item; this module is
+  what makes its transcript checkable.
 
 - `test_unattended_drain_past_projection_facts.py` — binds the first
   Definition-of-Done assertion of work-item `bd-ib-qm6r1`, the v127 retirement
@@ -1214,8 +1215,8 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   registry file and drives the production surface: the reconcile survey and its
   claim lane through `reconcile_runs` over `reconcile_factory_targets`, plan
   liveness through `observe_target_run`, the merge-hold guard through
-  `arm_refusal_for_release`, the projection through
-  `resolve_projection_factory`, the availability evidence through the production
+  `arm_refusal_for_release`, the per-item run target through
+  `resolve_item_run_factory`, the availability evidence through the production
   `FactoryRunReader`, the valve through `needs_human_question_summary`, the
   container sweep through the pass's own daemon lane, and the telemetry
   classification through `factory_run_turn_observation`. Three things an editor

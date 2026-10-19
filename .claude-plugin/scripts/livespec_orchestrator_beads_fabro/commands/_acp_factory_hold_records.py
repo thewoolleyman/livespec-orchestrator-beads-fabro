@@ -63,9 +63,11 @@ __all__: list[str] = [
 AUDIT_REFERENCE_KEY = "audit_reference"
 
 # The evidence kind a TERMINAL-failure-derived hold is minted under. Read off
-# the hold writer's own closed set rather than spelled again, exactly as
-# `_acp_event_projection` reads the failover-event kind beside it, so a rename
-# there cannot leave this call site silently naming a kind that writer refuses.
+# the hold writer's own closed set rather than spelled again, so a rename there
+# cannot leave this call site silently naming a kind that writer refuses. The
+# first member of that set is the retired failover event's kind, which v127
+# left in the closed set because existing records still carry it: the index
+# here is therefore load-bearing and NOT a stand-in for "the only kind".
 FACTORY_EVIDENCE_KIND = HOLD_EVIDENCE_KINDS[1]
 
 # The diagnostic channel this verdict was read off: the engine's own recorded
