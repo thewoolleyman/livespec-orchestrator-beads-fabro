@@ -57,6 +57,7 @@ from typing import Any
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import DispatchLock
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
     SOURCE_FACTORY_RUN,
     SOURCE_LATEST_RECORD,
@@ -64,6 +65,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import (
     resume_refusals,
 )
+from livespec_orchestrator_beads_fabro.store import append_work_item, record_dispatch_factory
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _CANCEL_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_resume_cancel_anchor"
@@ -897,6 +899,46 @@ def test_factory_inspection_uses_the_earlier_dispatchs_persisted_target(
     )
     runner = _runner()
 
+    gather = _gather(repo=repo, item=_item(), runner=runner)
+
+    assert gather.anchor is not None
+    factory_argv = [argv for argv in runner.argvs if argv[1] in {"ps", "inspect"}]
+    assert factory_argv
+    assert all(argv[-2:] == ["--server", "https://retained.example.test"] for argv in factory_argv)
+
+
+def test_factory_inspection_resolves_an_actual_persisted_earlier_dispatch_pin(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real persisted pin selects the retained run's factory before inspection.
+
+    This deliberately leaves the earlier-dispatch resolver unmocked.  The
+    invocation asks for the default factory, but the fake ledger contains the
+    retained run's ``vps`` pin, so both factory reads prove the production
+    ledger-to-target resolution path rather than a manufactured Namespace.
+    """
+    _ = (repo / ".livespec.jsonc").write_text(
+        """
+        {
+          "livespec-orchestrator-beads-fabro": {
+            "connection": {"prefix": "bd-ib"},
+            "dispatcher": {
+              "default_factory": "default",
+              "factories": {
+                "default": {"server": "https://default.example.test"},
+                "vps": {"server": "https://retained.example.test"}
+              }
+            }
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    append_work_item(path=store_config(repo=repo), item=_item())
+    record_dispatch_factory(path=store_config(repo=repo), work_item_id=_ITEM_ID, factory="vps")
+    monkeypatch.delenv("LIVESPEC_FABRO_FACTORY", raising=False)
+
+    runner = _runner()
     gather = _gather(repo=repo, item=_item(), runner=runner)
 
     assert gather.anchor is not None
