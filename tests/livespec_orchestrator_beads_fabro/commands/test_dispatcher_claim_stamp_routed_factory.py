@@ -12,6 +12,15 @@ factory from the one the case routes to. That is the state the defect occurs in:
 an item dispatched fifteen times to one factory and then routed elsewhere. A
 case with no recorded pin passes against a resolution that consults nothing but
 the pin, because there is then nothing for the pin to win.
+
+THE UNROUTED CASE IS THE CONTROL and is not ceremony: a resolution that had
+stopped consulting the recorded pin at all satisfies both routed cases exactly
+as well as a correct one, and would re-route every ordinary re-dispatch of a
+pinned item onto the configured default. It could not fail before the two cases
+above landed, so it rides the suite-green leg; it is what pins the pin's own
+layer underneath them. Measured by mutation on 2026-10-19, dropping
+`_usable_recorded_factory` from `_pinned_factory` reds this case alone of the
+three.
 """
 
 from __future__ import annotations
@@ -222,6 +231,35 @@ def test_a_flag_routed_dispatch_stamps_the_flag_factory_over_the_pin(
     # The valve ADMITTED the target rather than holding or refusing it, which is
     # what makes the stamp below this dispatch's own and not a leftover.
     assert outcome is _LAUNCHED
+    stamp = _stamp_now(repo=repo)
+    assert stamp is not None
+    assert stamp.factory_name == _ROUTED
+    assert stamp.factory_server == _ROUTED_SERVER
+
+
+def test_an_unrouted_dispatch_of_a_pinned_item_stamps_the_recorded_pin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With nothing routing it, the item's own recorded pin is what the stamp names.
+
+    The CONTROL for the two cases above, and the reason the pin keeps its layer
+    rather than losing it: an ordinary re-dispatch of a pinned item carries no
+    flag and no variable, and it must go back to the factory the item has been
+    running on. A resolution that answered the routed cases by ignoring the pin
+    would land every such re-dispatch on `dispatcher.default_factory` instead.
+
+    The pin here is deliberately NOT the configured default, so a resolution
+    that reached the default by falling through fails rather than agreeing by
+    coincidence — which is also why this case cannot share the other two's pin.
+    """
+    repo = _repo(tmp_path=tmp_path)
+    append_work_item(path=store_config(repo=repo), item=_item())
+    record_dispatch_factory(path=store_config(repo=repo), work_item_id=_ITEM_ID, factory=_ROUTED)
+    monkeypatch.delenv(_ENV_FACTORY_VAR, raising=False)
+
+    admitted = _admit(repo=repo, monkeypatch=monkeypatch)
+
+    assert [item.id for item in admitted.admitted] == [_ITEM_ID]
     stamp = _stamp_now(repo=repo)
     assert stamp is not None
     assert stamp.factory_name == _ROUTED
