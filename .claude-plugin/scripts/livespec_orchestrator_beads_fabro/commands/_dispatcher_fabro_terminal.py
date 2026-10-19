@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dead_implementer import (
     dead_implementer_condition_from_text,
@@ -41,6 +41,9 @@ from livespec_orchestrator_beads_fabro.commands._fabro_escalation import (
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroFailureDetail,
     FabroInspectResult,
+)
+from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
+    fabro_inspect_record,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_terminal_evidence import terminal_evidence
 
@@ -122,7 +125,7 @@ def fabro_run_terminal_outcome(
         return terminated
     return outcome_type(
         work_item_id=plan.work_item_id,
-        status="failed",
+        status=_terminal_status(inspect=inspect),
         stage="fabro-run",
         pr_number=None,
         merge_sha=None,
@@ -142,6 +145,24 @@ def fabro_run_terminal_outcome(
         # "no truncation" for a truncation carried on the other.
         dead_implementer_condition=dead_implementer_condition_from_text(text=f"{stderr}\n{detail}"),
     )
+
+
+def _terminal_status(*, inspect: FabroInspectResult | None) -> str:
+    """Return the Dispatcher status for a terminal Fabro inspection.
+
+    Petri reports a lifecycle cancellation as ``status.kind == "failed"``
+    with a separate ``status.reason == "cancelled"``. The reason is the
+    engine verdict the Dispatcher must retain; all other records preserve the
+    established deterministic ``failed`` outcome.
+    """
+    record = fabro_inspect_record(payload=None if inspect is None else inspect.payload)
+    if record is None:
+        return "failed"
+    status = record.get("status")
+    if not isinstance(status, dict):
+        return "failed"
+    reason = cast("dict[str, Any]", status).get("reason")
+    return "cancelled" if reason == "cancelled" else "failed"
 
 
 def _needs_human_terminal_outcome(

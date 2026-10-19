@@ -204,3 +204,42 @@ def test_legacy_needs_human_marker_on_run_stderr_still_blocks_the_item(
     assert outcome.status == "blocked"
     assert outcome.fabro_run_id == _LEGACY_RUN_ID
     assert f"refs/heads/needs-human/{_LEGACY_RUN_ID}" in outcome.detail
+
+
+def test_petri_cancelled_run_is_reported_as_a_cancelled_fabro_terminal(
+    tmp_path: Path,
+) -> None:
+    """An external lifecycle cancel is distinct from a deterministic failure."""
+    run_id = "01M5876JNZ3Q8E3W7G6MKE1FC7"
+    inspect = _inspect(
+        tmp_path=tmp_path,
+        payload=[
+            {
+                "run_id": run_id,
+                "status": {"kind": "failed", "reason": "cancelled"},
+                "conclusion": {
+                    "status": "failed",
+                    "failure": {
+                        "reason": "cancelled",
+                        "detail": {
+                            "message": "Pipeline cancelled",
+                            "category": "deterministic",
+                        },
+                    },
+                },
+            }
+        ],
+    )
+
+    outcome = fabro_run_terminal_outcome(
+        outcome_type=DispatchOutcome,
+        plan=_plan(tmp_path=tmp_path),
+        run_id=run_id,
+        inspect=inspect,
+        exit_code=1,
+        stderr="",
+    )
+
+    assert outcome is not None
+    assert outcome.status == "cancelled"
+    assert outcome.stage == "fabro-run"
