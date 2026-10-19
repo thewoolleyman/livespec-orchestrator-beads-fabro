@@ -69,10 +69,11 @@ def dispatch_factory_targets(
 ) -> tuple[FactoryTarget, ...]:
     """Every distinct factory target this selection would dispatch to, UNRECORDED.
 
-    The same precedence `resolve_dispatch_factory_target` applies — explicit flag
-    or environment, else the item's own recorded pin, else the configured default
-    — with the WRITE deliberately absent. A pre-claim gate must leave the ledger
-    exactly as it found it: the clause requires currency to be evaluated before
+    The same precedence `resolve_dispatch_factory_target` applies — explicit
+    flag, else the environment, else the item's own recorded pin, else the
+    configured default — with the WRITE deliberately absent. A pre-claim gate
+    must leave the ledger exactly as it found it: the clause requires currency
+    to be evaluated before
     any ledger mutation, so recording a factory here would be the mutation the
     refusal is supposed to precede.
 
@@ -124,7 +125,7 @@ def unrecorded_dispatch_factory_target(
     placement no longer reaches.
 
     Both forms route through `_unrecorded_pin`, so the precedence exists once:
-    a second spelling of "explicit, else pin, else environment, else default"
+    a second spelling of "explicit, else environment, else pin, else default"
     is how two callers come to disagree about which factory an item dispatches
     to — and when THIS caller disagrees, the disagreement is a claim stamped
     with a factory the dispatch never reaches.
@@ -166,13 +167,21 @@ def _unrecorded_pin(
 def _pinned_factory(*, repo: Path, explicit: str | None, recorded: str | None) -> str | None:
     """What PINS this dispatch, or `None` when nothing does and the ranking decides.
 
-    The precedence itself: the explicit name, else the item's usable recorded
-    pin, else `LIVESPEC_FABRO_FACTORY`. The environment layer is LAST, and it is
-    the layer a caller holding no namespace depends on — `_explicit_factory` has
-    already answered it for a caller that holds one, so for that caller this
-    layer is unreachable rather than a second precedence. That is also why the
-    variable ranks ABOVE a recorded pin through a namespace and BELOW one
-    without, exactly as each caller's own prose has always described it.
+    The precedence itself, and it is the RATIFIED one in one place: the explicit
+    `--factory` name, then `LIVESPEC_FABRO_FACTORY`, then the item's usable
+    recorded pin. The environment layer sits HERE rather than inside
+    `_explicit_factory`, which is what makes the order identical for a caller
+    that holds an `argparse.Namespace` and one that does not — admission holds
+    none, and when its order differed the disagreement was a claim stamped with
+    a factory the dispatch never reaches.
+
+    THE VARIABLE OUTRANKS THE RECORDED PIN, which is the whole point of its
+    position: a pinned item is pinned by its OWN dispatch history, while the
+    variable is this invocation's routing decision, and the item an operator
+    re-routes is precisely one that has been dispatched elsewhere before.
+    Measured 2026-10-19: an item with fifteen hp journal rows, dispatched with
+    the variable naming `petri`, was stamped `hp`, and the reconcile pass then
+    held that claim against hp for a run living on gmktec.
 
     Returning the NAME rather than a resolved target is what keeps the ranking
     out of the precedence: whether a dispatch is pinned is settled before any
@@ -181,7 +190,7 @@ def _pinned_factory(*, repo: Path, explicit: str | None, recorded: str | None) -
     the environment pin is the one that reached the ranking when the layer below
     was `resolve_fabro_factory`'s rather than this one.
     """
-    return explicit or _usable_recorded_factory(repo=repo, recorded=recorded) or _env_factory()
+    return explicit or _env_factory() or _usable_recorded_factory(repo=repo, recorded=recorded)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -357,16 +366,16 @@ def args_with_dispatch_factory_target(
 
 
 def _explicit_factory(*, args: argparse.Namespace) -> str | None:
-    """The name an invocation NAMES: the `--factory` flag, else the environment.
+    """The name an invocation NAMES on its command line: the `--factory` flag.
 
-    Both layers together, because for a namespace-carrying caller the variable
-    outranks the item's own recorded pin — `--factory` and the variable are two
-    spellings of one routing decision, and `drive.py` has only the second.
+    The FLAG alone. `LIVESPEC_FABRO_FACTORY` is the layer immediately below it
+    and is read by `_pinned_factory`, so reading it here as well would give a
+    namespace-carrying caller its own copy of the precedence — and a copy is
+    what let the two orders drift apart. The attribute is read with a default
+    because not every caller of the resolution holds a dispatch namespace.
     """
     factory = getattr(args, "factory", None)
-    if isinstance(factory, str) and factory != "":
-        return factory
-    return _env_factory()
+    return factory if isinstance(factory, str) and factory != "" else None
 
 
 def _env_factory() -> str | None:
