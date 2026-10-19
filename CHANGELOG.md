@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.223.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.223.0...v0.223.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* name exhausted transient CI listings ([dd5d0d3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dd5d0d39699c91c788459e426a61783b6cda80d5))
+* repoll transient master CI listings ([c6eb9c0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c6eb9c05418dedcf46514d0a2e50ca136830b78f))
+
 ## [0.223.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.222.0...v0.223.0) (2026-10-19)
 
 
