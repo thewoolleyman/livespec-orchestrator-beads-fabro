@@ -37,6 +37,7 @@ orchestrator-image/fabro
 # build scripts copy .claude-plugin/scripts to orchestrator-image/plugin-scripts
 # so the image can carry the mint-app-token CLI); never committed.
 orchestrator-image/plugin-scripts/
+orchestrator-image/plugin-meta/
 # The tracked bd guard is also staged into the image context because the context
 # root is orchestrator-image/, not the repo root; keep the staged copy out of git.
 orchestrator-image/bd-guard/

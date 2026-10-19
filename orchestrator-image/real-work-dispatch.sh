@@ -172,6 +172,7 @@ cleanup() {
   rm -f "$HERE/fabro" || true
   rm -rf "$HERE/bd-guard" || true
   rm -rf "$HERE/plugin-scripts" || true
+  rm -rf "$HERE/plugin-meta" || true
 }
 trap cleanup EXIT
 
@@ -233,6 +234,13 @@ stage_and_build_image() {
   rm -rf "$HERE/plugin-scripts"
   cp -R "$HERE/../.claude-plugin/scripts" "$HERE/plugin-scripts"
   find "$HERE/plugin-scripts" -type d -name __pycache__ -prune -exec rm -rf {} +
+  # The plugin ROOT members the launcher's payload check requires beside
+  # scripts/ (plugin.json, .fabro/workflows); without them every baked
+  # wrapper refuses, including the entrypoint's mint_app_token.py.
+  rm -rf "$HERE/plugin-meta"
+  mkdir -p "$HERE/plugin-meta"
+  cp "$HERE/../.claude-plugin/plugin.json" "$HERE/plugin-meta/plugin.json"
+  cp -R "$HERE/../.claude-plugin/.fabro" "$HERE/plugin-meta/.fabro"
   rm -rf "$HERE/bd-guard"
   cp -R "$HERE/../bd-guard" "$HERE/bd-guard"
   find "$HERE/bd-guard" -type d -name __pycache__ -prune -exec rm -rf {} +
