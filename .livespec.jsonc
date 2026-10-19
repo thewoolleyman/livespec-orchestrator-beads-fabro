@@ -227,6 +227,26 @@
       "auto_approve_ready": true,
       "wip_cap": 10,
       "acceptance_mode": "ai-only",
+      "record_files": [
+        {
+          "path": "tests/heading-coverage.json",
+          "format": "json-array",
+          "key": ["spec_root", "spec_file", "heading"]
+        },
+        {
+          "path": "tests/heading-coverage-debt.json",
+          "format": "json-array",
+          "key": ["spec_root", "spec_file", "heading"]
+        },
+        {
+          "path": "tests/integration/CLAUDE.md",
+          "format": "markdown-insertions"
+        },
+        {
+          "path": "tests/prompts/CLAUDE.md",
+          "format": "markdown-insertions"
+        }
+      ],
       "default_factory": "hp",
       // THE DELIBERATE OPERATOR FLOOR, and the only currency form with any
       // blocking authority at admission: a dispatch refuses before claim when
