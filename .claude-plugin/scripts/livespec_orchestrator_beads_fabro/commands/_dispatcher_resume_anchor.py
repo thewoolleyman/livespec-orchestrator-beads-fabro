@@ -78,7 +78,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_cancel_anchor import (
     CANCEL_ANCHOR_RESUMED_AT,
-    SOURCE_CANCEL_RECORD,
     CancelAnchor,
 )
 
@@ -315,7 +314,7 @@ def resume_anchor(
 
 
 def resume_anchor_from_cancel(*, cancel: CancelAnchor, executing_node: str | None) -> ResumeAnchor:
-    """The anchor one stall-cancel record provides, with the factory's stage preferred.
+    """The anchor one watchdog-cancel record provides, with the factory's stage preferred.
 
     TOTAL rather than optional, because every bound on this anchor was already
     applied by `cancel_anchor`: a caller holding a `CancelAnchor` is holding a row
@@ -328,6 +327,12 @@ def resume_anchor_from_cancel(*, cancel: CancelAnchor, executing_node: str | Non
     is the answer only once the factory has authoritatively lost the run, and the
     retired `pr` entry normalizes here exactly as it does there, through the one
     value both sources flow through.
+
+    The cancel-record source comes from the ANCHOR and not from a constant here,
+    because two cancel stages anchor — `watchdog-stall-cancel` and
+    `run-wall-budget-exceeded` — and each names its own journal row. Reaching for
+    one constant would label every budget-anchored resume with a stage that run's
+    journal does not carry.
     """
     if executing_node is not None:
         return ResumeAnchor(
@@ -342,7 +347,7 @@ def resume_anchor_from_cancel(*, cancel: CancelAnchor, executing_node: str | Non
         run_id=cancel.run_id,
         head=cancel.head,
         resumed_at=CANCEL_ANCHOR_RESUMED_AT,
-        source=SOURCE_CANCEL_RECORD,
+        source=cancel.source,
     )
 
 

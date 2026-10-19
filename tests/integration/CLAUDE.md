@@ -1218,6 +1218,22 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   budget, because 3600 seconds is a deliberate repository override in this
   fixture and only the layer separates that from a target that inherited the
   fleet default.
+  ONE SUB-SCENARIO THE LAUNCHER CANNOT REACH is driven through the production
+  `gather_resume` instead: "A budget cancel between publication and capture can
+  anchor resume" is a claim about what a LATER invocation reads off the row this
+  watchdog wrote. The two halves are joined HERE rather than in two unit
+  modules — the journal that case reads is rendered by the production
+  `run_wall_budget_exceeded_record`, so a respelling of the stage on either side
+  fails the case instead of leaving two self-consistent modules that never meet,
+  and without the join "the budget record anchors" is a claim about a row a test
+  author typed. The entered stage is asserted as `proof_capture` rather than
+  merely "an anchor exists", because the pull request's proof record is ANOTHER
+  run's and its `captured` verdict implies `review`: the stage is the only thing
+  that separates the budget row's reading from the record's. Its control
+  rewrites that same row's `executing_stage` to `janitor` and asserts the anchor
+  falls BACK to the proof record, since "the budget record anchored" is
+  otherwise equally consistent with a reader that anchors on any budget row —
+  including a rework round whose head would not carry the rework.
 
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
