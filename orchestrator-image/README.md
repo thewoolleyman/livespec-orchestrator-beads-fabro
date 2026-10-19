@@ -273,6 +273,43 @@ defect, and do not "fix" it by widening the receiver's allowlist — `config_nam
 is already allowlisted, and was allowlisted throughout the window in which every
 value was empty.
 
+### `thewoolleyman/petri` `factory-integration` — the Petri carrier branch
+
+Fabro pulls Petri straight from `lithoscomputer/petri` `main` as a git dependency, so
+a Petri change the factory needs before upstream merges it cannot ride on the Fabro
+fork alone. It is carried the same way the Fabro fork carries its fixes:
+
+- **The fork.** `thewoolleyman/petri` is a GitHub fork of `lithoscomputer/petri`. Its
+  default branch is **`factory-integration`**: upstream `main` plus every carried Petri
+  patch, and never a subset.
+- **One topic branch per carried patch.** Each patch lives on its own topic branch
+  based on upstream `main`. It merges into `factory-integration` through a pull request
+  on the fork, with a merge commit, so the topic branch's commits survive unchanged and
+  can become the upstream pull request as they are. The fork has no CI on these pull
+  requests, so the local gate result is recorded on the pull request before it merges.
+- **How Fabro consumes it.** The Fabro carrier carries one carrier-only commit (topic
+  branch `petri-fork-integration` on `thewoolleyman/fabro`) that adds a Cargo
+  `[patch."https://github.com/lithoscomputer/petri.git"]` entry for every Petri crate,
+  pointing at `thewoolleyman/petri` `factory-integration`. `Cargo.lock` pins the exact
+  Petri commit. That commit is dropped once upstream Petri carries every row below and
+  Fabro's own lock has moved past it.
+
+**Carried Petri patches (measured 2026-10-19).** `factory-integration` is at `9028641`:
+upstream `main` `50809f9` plus the merge of the topic branch below.
+
+| Topic branch (fork PR) | What it is | Why the factory needs it | Upstream disposition | Owner |
+| --- | --- | --- | --- | --- |
+| `plugin-sandbox-backend` at `91b3c89` (thewoolleyman/petri#1) | `SandboxBackend::Plugin` with embedder-configured `SandboxOptions.plugin`, registered under the plugin's own kind in the router's provider registry; a generic `SandboxOptions.resources` applied to every Docker and plugin container sandbox; `PluginSettings::configured` and `with_launch` (arguments and inherited variables); the Fabro frontend lowering a well-formed third-party provider kind instead of refusing it | the Kubernetes sandbox backend (plan `kubernetes-sandbox-backend`, `bd-ib-n7zj4a`): without it a workflow naming a plugin provider is refused at validation, the engine cannot launch the plugin, and a plugin would receive default resources instead of the workflow's CPU and memory | not yet proposed. It goes to `lithoscomputer/petri` unchanged, with the `fabro-sh/fabro` issue (`bd-ib-jadfxx`), only after the change is live on our factories, processing real work, and carrying every dispatch the proof covers on the Kubernetes backend | plan `kubernetes-sandbox-backend` (`bd-ib-nmuyjc`) |
+
+**Pending Fabro carries for the next bundle.** Both are on `thewoolleyman/fabro`, based
+on upstream `v0.389.0-nightly.0` (`5c90ad2e0`). They join `factory-integration` when
+the 0.389 bundle is cut (plan `fabro-currency` owns the cut and the pin):
+
+| Topic branch | What it is | Upstream disposition |
+| --- | --- | --- |
+| `plugin-sandbox-providers` at `ec1d605cd` | an unbundled provider kind maps to Petri's plugin backend, launched from `[server.sandbox.providers.<kind>]` with `host_address`, `args` and `inherit_env`; the environment's resources reach every container backend; the run worker resolves only `server.sandbox` | the `fabro-sh/fabro` pull request, under the same condition as the Petri row |
+| `petri-fork-integration` at `a1d991661` | the carrier-only Cargo `[patch]` described above | never upstream |
+
 ### Dispatch Traps
 
 If a consumer is refused as `not in the ready set` while its only dependency is
