@@ -36,6 +36,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition im
     consecutive_stall_cancel_rows,
     dispose_stall_cancel,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_routing import (
+    dispose_terminal_routing,
+)
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
@@ -101,7 +104,7 @@ def _item(**overrides: object) -> WorkItem:
     return replace(base, **overrides)
 
 
-def _outcome(*, status: str) -> DispatchOutcome:
+def _outcome(*, status: str, factory_name: str | None = None) -> DispatchOutcome:
     return DispatchOutcome(
         work_item_id=_ITEM_ID,
         status=status,
@@ -110,6 +113,7 @@ def _outcome(*, status: str) -> DispatchOutcome:
         merge_sha=None,
         detail="",
         fabro_run_id="01STALLRUN",
+        fabro_factory_name=factory_name,
     )
 
 
@@ -276,6 +280,30 @@ def test_a_terminal_that_is_not_a_cancellation_is_left_alone(tmp_path: Path) -> 
     )
     assert _stages(journal=journal) == []
     assert read_work_item_comments(path=_config(), work_item_id=_ITEM_ID) == ()
+
+
+def test_an_external_fabro_cancel_blocks_the_item_and_names_its_run_and_factory(
+    tmp_path: Path,
+) -> None:
+    """An operator cancellation rests for a human, unlike the watchdog status."""
+    repo = _repo(tmp_path=tmp_path)
+    journal = _journal(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item())
+
+    dispose_terminal_routing(
+        repo=repo,
+        item=_item(),
+        outcome=_outcome(status="cancelled", factory_name="hp"),
+        journal=journal,
+        now_iso="2026-10-19T03:22:00Z",
+    )
+
+    blocked = materialize_work_items(records=read_work_items(path=_config()))[_ITEM_ID]
+    assert blocked.status == "blocked"
+    assert blocked.blocked_reason == "needs-human"
+    comment = read_work_item_comments(path=_config(), work_item_id=_ITEM_ID)[0].text
+    assert "01STALLRUN" in comment
+    assert "hp" in comment
 
 
 def test_fields_the_cancel_row_does_not_carry_are_stated_as_unread(tmp_path: Path) -> None:
