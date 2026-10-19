@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.219.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.219.5...v0.219.6) (2026-10-19)
+
+
+### Bug Fixes
+
+* **image:** drop the --mode flag the dispatcher retired in July ([b7a7510](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b7a7510d8a1240a63b3d2d13bf1e4faed10a6947))
+
 ## [0.219.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.219.4...v0.219.5) (2026-10-19)
 
 
