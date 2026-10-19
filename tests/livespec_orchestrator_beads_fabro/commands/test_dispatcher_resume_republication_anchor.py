@@ -136,6 +136,37 @@ def test_a_nonancestor_proof_head_keeps_the_moved_head_refusal(tmp_path: Path) -
     assert len(runner.argvs) == 1
 
 
+def test_a_later_capture_invalidates_an_earlier_republication(tmp_path: Path) -> None:
+    """Only a publication after the latest proof-producing capture can anchor.
+
+    A later successful capture produces the pull request's latest proof record.
+    The completed `publish_draft@2` is after capture one but before capture
+    three, so it cannot establish that this run republished after the record a
+    resume would otherwise inherit.
+    """
+    module = importlib.import_module(_MODULE)
+    payload = _payload()
+    assert isinstance(payload, list)
+    record = payload[0]
+    assert isinstance(record, dict)
+    stages = record["stages"]
+    assert isinstance(stages, dict)
+    stages["proof_capture@3"] = {"state": "succeeded"}
+
+    runner = _Runner()
+    assert (
+        module.republication_anchor(
+            provisional=_anchor(),
+            current_head=_NEW_HEAD,
+            payload=payload,
+            repo=tmp_path,
+            runner=runner,
+        )
+        is None
+    )
+    assert runner.argvs == []
+
+
 def test_the_checkpoint_edge_target_also_proves_the_gap_before_capture(tmp_path: Path) -> None:
     """Between visits, the terminal checkpoint names capture as its selected edge target."""
     module = importlib.import_module(_MODULE)
