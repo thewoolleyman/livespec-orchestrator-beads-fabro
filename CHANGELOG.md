@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.224.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.223.2...v0.224.0) (2026-10-19)
+
+
+### Features
+
+* **dispatcher:** overflow an unpinned dispatch to the least-utilized free-slot factory ([35cc323](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/35cc3234e20b61556c4c34f3727cf89b28a08559))
+* **dispatcher:** read a factory's own scheduler ceiling through the facade ([d23fe3a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d23fe3a6e397fc8d369663e89125d51528db33b3))
+* **dispatcher:** refuse a malformed dispatcher.overflow_factories before any claim ([e277ff1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e277ff1c56ee1568aeb587848f471773c5c9f7b6))
+
+
+### Bug Fixes
+
+* **dispatcher:** pin the unpinned path on env and rank once per invocation ([2ded8fb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2ded8fb6af1eadeebf82e8913bae4ac6b961361f))
+
 ## [0.223.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.223.1...v0.223.2) (2026-10-19)
 
 
