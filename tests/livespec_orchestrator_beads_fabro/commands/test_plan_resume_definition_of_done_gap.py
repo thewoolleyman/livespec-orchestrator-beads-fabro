@@ -32,12 +32,15 @@ from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
+from tests.plan_resume_checkout import CHECKOUT_UNDER_TEST, item_status_result
+
 _EPIC_ID = "bd-ib-legacy"
 _MISSING_FINDING = "plan-definition-of-done: missing"
-_RESULT = {
-    "repo": "livespec-orchestrator-beads-fabro",
-    "item_status": {"item_id": _EPIC_ID, "status": "closed"},
-}
+_RESULT = item_status_result(
+    checkout=CHECKOUT_UNDER_TEST,
+    item_id=_EPIC_ID,
+    status="closed",
+)
 _BUDGET = {"deadline": "2099-10-04T00:00:00Z", "max_handoffs": 3}
 _SECTION = (
     "Plan anchor for plan/herdr-release.\n"
@@ -49,6 +52,9 @@ _SECTION = (
 
 
 def _config() -> StoreConfig:
+    # `repo_root` is pinned to the checkout under test so `_RESULT` above
+    # resolves against the SAME root it names, whatever that checkout's
+    # directory is called — see `tests/plan_resume_checkout.py`.
     return StoreConfig(
         tenant="livespec-impl-beads",
         prefix="bd-ib",
@@ -56,6 +62,7 @@ def _config() -> StoreConfig:
         database="livespec-impl-beads",
         bd_path="bd",
         fake=True,
+        repo_root=CHECKOUT_UNDER_TEST,
     )
 
 
