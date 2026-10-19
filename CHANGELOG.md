@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.219.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.218.0...v0.219.0) (2026-10-19)
+
+
+### Features
+
+* **dispatcher:** refuse a registry-backed factory entry that also commits an address ([bd3e04e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bd3e04ea945a8d59d2d354eb3ab07ca1f0774124))
+* **dispatcher:** resolve a registry entry's container-daemon address, and refuse an unusable one ([e677977](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e677977c6dda121b448a7d7fb46e7cee92f7f083))
+* **dispatcher:** resolve a registry-backed factory's address from the host registry ([953fbb3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/953fbb30f6d33c2fb2c0c24aa437bf599726ab5f))
+
 ## [0.218.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.217.1...v0.218.0) (2026-10-19)
 
 
