@@ -25,6 +25,20 @@ simply left the run unnamed would be indistinguishable from one whose row could
 not be found -- and both are possible, because an interrupted dispatch can end
 between the cancel and the disposition.
 
+THE PUBLICATION IS REPORTED IN THREE DISTINGUISHABLE STATES, never as a
+silence. A run that completed a `publish_draft` names its pull request and the
+head it pushed; one whose head could not be read carries the record's own
+statement of that; and one that published nothing says so. A comment that
+simply omitted the lines would read identically in all three -- and the
+recoveries differ, because the resume ladder's remedy for no head is a PLAIN
+dispatch, which reclaims the publish branch and deletes the very head nobody
+could name.
+
+Those two surfaces state the unreadable head with ONE literal,
+`UNREADABLE_PUBLISHED_HEAD`, imported rather than reworded: the clause binds the
+budget record to the stall record's rules for the published head, and two
+wordings would let one cancel class advise an act the other did not.
+
 TWO OF THE FACTS ARE NUMBERS, AND THAT NEEDS ITS OWN READER. `cancel_row_field`
 admits STRING values only, deliberately: every fact the stall comment names is
 an identifier, so a non-string there is a row this build cannot read. The
@@ -42,6 +56,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_comments import (
+    UNREAD_CANCEL_ROW,
     cancel_row_field,
 )
 
@@ -81,6 +96,7 @@ def run_wall_budget_comment(*, item_id: str, row: Mapping[str, object] | None) -
             f"whole-run wall budget seconds: {_measured_field(row=row, key='budget_seconds')}",
             f"budget supplied by layer: {cancel_row_field(row=row, key='budget_layer')}",
             f"preserve-by-reference pointer: {cancel_row_field(row=row, key='preserved_pointer')}",
+            *_publication_lines(row=row),
             "",
             "This run held a factory slot past its whole-run wall budget, so its",
             "record was exported and read back and the run was then cancelled to",
@@ -115,3 +131,27 @@ def _measured_field(*, row: Mapping[str, object] | None, key: str) -> str:
     if isinstance(value, bool) or not isinstance(value, int | float):
         return cancel_row_field(row=row, key=key)
     return f"{value:g}"
+
+
+def _publication_lines(*, row: Mapping[str, object] | None) -> tuple[str, ...]:
+    """What this cancelled run published, in whichever of the three states it is.
+
+    The states are kept apart because they support different recoveries, and
+    the module docstring records what collapsing them costs. An UNREAD row is a
+    fourth state and is reported as such: a dispatch that journalled no cancel
+    row has not established that the run published nothing.
+    """
+    if row is None:
+        return (f"publication: {UNREAD_CANCEL_ROW}",)
+    unreadable: object = row.get("published_head_unreadable")
+    if isinstance(unreadable, str) and unreadable.strip():
+        return (
+            f"published pull request: {_measured_field(row=row, key='pull_request')}",
+            f"published head: {unreadable}",
+        )
+    if row.get("pull_request") is None and row.get("published_head") is None:
+        return ("publication: this run completed no publish_draft",)
+    return (
+        f"published pull request: {_measured_field(row=row, key='pull_request')}",
+        f"published head: {cancel_row_field(row=row, key='published_head')}",
+    )
