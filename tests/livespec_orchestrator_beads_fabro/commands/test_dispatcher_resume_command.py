@@ -84,6 +84,7 @@ _MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_resume_command
 
 _ITEM_ID = "bd-ib-fngpwg"
 _HEAD = "0" * 39 + "a"
+_REPUBLISHED_HEAD = "1" * 39 + "b"
 _PULL_REQUEST = 2639
 _EARLIER_RUN = "01M49TZ44210GSEC8VTFR8VHKP"
 _CANCELLED_RUN = "01M4Q4XBZ5398FJAWQ131QER60"
@@ -149,14 +150,25 @@ def _anchor() -> ResumeAnchor:
     )
 
 
-def _observation(*, status: str = "ready") -> ResumeObservation:
+def _republication_anchor() -> ResumeAnchor:
+    """The moved PR head the earlier run itself published before fresh capture."""
+    return ResumeAnchor(
+        record=None,
+        run_id=_EARLIER_RUN,
+        head=_REPUBLISHED_HEAD,
+        resumed_at="proof_capture",
+        source=SOURCE_FACTORY_RUN,
+    )
+
+
+def _observation(*, status: str = "ready", head: str = _HEAD) -> ResumeObservation:
     return ResumeObservation(
         work_item_id=_ITEM_ID,
         status=status,
-        anchor_head=_HEAD,
+        anchor_head=head,
         pull_request=_PULL_REQUEST,
         pull_request_state="OPEN",
-        pull_request_head=_HEAD,
+        pull_request_head=head,
         liveness_observed=True,
     )
 
@@ -325,6 +337,49 @@ def test_a_clean_resume_journals_its_record_before_the_claim(
     assert recorded["head"] == _HEAD
     assert recorded["resumed_at"] == RESUMED_AT_PR
     assert recorded["resumed_at_source"] == SOURCE_FACTORY_RUN
+
+
+def test_a_republication_anchor_dispatches_fresh_capture_and_persists_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario 142: the command resumes its own moved head at fresh capture.
+
+    Drive the command rather than `gather_resume`: selection alone cannot show
+    that an admitted run enters at `proof_capture`, nor that the command writes
+    the resume journal record that names the factory decision.
+    """
+    assert _module_path().is_file()
+    module = importlib.import_module(_MODULE)
+    journal = _RecordingJournal()
+    log = _Log()
+    _stub_resume(
+        module=module,
+        monkeypatch=monkeypatch,
+        journal=journal,
+        item=_item(),
+        log=log,
+        anchor=_republication_anchor(),
+        observation=_observation(head=_REPUBLISHED_HEAD),
+        refusals=(),
+    )
+
+    assert module.run_resume_command(args=_args(repo=tmp_path)) == 0
+
+    assert log.events == ["wall", "claim", "launch", "tail"]
+    dispatched = log.dispatched_args[0]
+    assert dispatched.resume_entry_node == "proof_capture"
+    assert dispatched.resume_head == _REPUBLISHED_HEAD
+    assert journal.records == [
+        {
+            "stage": RESUME_STAGE,
+            "work_item_id": _ITEM_ID,
+            "earlier_run_ids": [_EARLIER_RUN],
+            "pull_request": _PULL_REQUEST,
+            "head": _REPUBLISHED_HEAD,
+            "resumed_at": "proof_capture",
+            "resumed_at_source": SOURCE_FACTORY_RUN,
+        }
+    ]
 
 
 def test_the_resume_never_runs_the_stale_publish_branch_reclaim(
