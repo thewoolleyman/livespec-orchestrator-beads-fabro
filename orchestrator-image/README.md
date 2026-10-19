@@ -301,9 +301,15 @@ upstream `main` `50809f9` plus the merge of the topic branch below.
 | --- | --- | --- | --- | --- |
 | `plugin-sandbox-backend` at `91b3c89` (thewoolleyman/petri#1) | `SandboxBackend::Plugin` with embedder-configured `SandboxOptions.plugin`, registered under the plugin's own kind in the router's provider registry; a generic `SandboxOptions.resources` applied to every Docker and plugin container sandbox; `PluginSettings::configured` and `with_launch` (arguments and inherited variables); the Fabro frontend lowering a well-formed third-party provider kind instead of refusing it | the Kubernetes sandbox backend (plan `kubernetes-sandbox-backend`, `bd-ib-n7zj4a`): without it a workflow naming a plugin provider is refused at validation, the engine cannot launch the plugin, and a plugin would receive default resources instead of the workflow's CPU and memory | not yet proposed. It goes to `lithoscomputer/petri` unchanged, with the `fabro-sh/fabro` issue (`bd-ib-jadfxx`), only after the change is live on our factories, processing real work, and carrying every dispatch the proof covers on the Kubernetes backend | plan `kubernetes-sandbox-backend` (`bd-ib-nmuyjc`) |
 
-**Pending Fabro carries for the next bundle.** Both are on `thewoolleyman/fabro`, based
-on upstream `v0.389.0-nightly.0` (`5c90ad2e0`). They join `factory-integration` when
-the 0.389 bundle is cut (plan `fabro-currency` owns the cut and the pin):
+**Pending Fabro carries for the next bundle.** The two topic branches below are on
+`thewoolleyman/fabro`, based on upstream `v0.389.0-nightly.0` (`5c90ad2e0`). They join
+`factory-integration` when the 0.389 bundle is cut (plan `fabro-currency` owns the cut and
+the pin). They are NOT the whole 0.389 carried set: the bundle also re-applies all six
+OTLP carries in the bundle table above (`707038a60982`, `b97025de17d1`, `db6a34da763e`,
+`231f9c7de138`, `c9a0c8b31f39`, `adeefec4cd4f`). The Kubernetes port branch `gate-port`
+carried none of them, and plan `fabro-currency` restored them when cutting the 0.389
+carrier. Any port onto a new base carries every row of BOTH tables, never only the rows
+its own plan added:
 
 | Topic branch | What it is | Upstream disposition |
 | --- | --- | --- |
