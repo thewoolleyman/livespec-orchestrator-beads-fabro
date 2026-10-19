@@ -624,6 +624,24 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
     `blocked` / `needs-human` carrying the remedy `resolve-blocked:<id>:ready`;
     it has no release arm, since a budget cancel is not a non-convergence
     observation and must not bounce the slice to `backlog`.
+  THE `exceeded` RECORD ALSO ANCHORS A RESUME, and that reader is
+  `_dispatcher_resume_cancel_anchor` rather than anything in this family — the
+  clause says the record "anchors resume ... exactly as a
+  `watchdog-stall-cancel` record does", so the anchor's stage test is MEMBERSHIP
+  in its `_CANCEL_SOURCES` map and every other bound reads one shape. Two
+  properties an editor must not invert, and both are about failing in the
+  expensive direction. A reader recognising only the stall stage REFUSES
+  NOTHING: the budget row is well-formed, the anchor returns nothing, the resume
+  reports a headless pull request, and the re-dispatch reclaims the publish
+  branch and spends another whole budget rebuilding implement, janitor and
+  publish_draft — the waste the budget exists to stop, re-entered through the
+  recovery path. And the two stages name DIFFERENT sources
+  (`SOURCE_CANCEL_RECORD` / `SOURCE_BUDGET_CANCEL_RECORD`), each the journal
+  stage an operator can grep for, so the source rides the `CancelAnchor` rather
+  than being read from a constant at the call site; one shared value would send
+  an operator reading a budget-anchored resume after a row that run's journal
+  does not carry. A third cancel class means one more row in that map and
+  nothing else.
   The extractions that made room for it are leaves with no budget knowledge of
   their own: `_fabro_record_instant.py` (the nested-record instant reader, moved
   verbatim out of `_dispatcher_reconcile_runs_grace.py`),

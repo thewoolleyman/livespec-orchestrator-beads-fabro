@@ -26,10 +26,21 @@ widens its bound, and asserts the budget cancels anyway.
 Each case reads the verb sequence AND the journal, because neither alone is the
 claim: the verbs say the export preceded the `fabro rm`, and the journal says
 what the watchdog concluded — which record it wrote, and which it did not.
+
+THE RESUME-ANCHORING CASE IS THE ONE SUB-SCENARIO THE LAUNCHER CANNOT REACH, so
+it is driven through the production `gather_resume` instead. "A budget cancel
+between publication and capture can anchor resume" is a claim about what a LATER
+invocation reads off the row this watchdog wrote, and the two halves are joined
+HERE rather than in two unit modules: the journal that case reads is rendered by
+the production `run_wall_budget_exceeded_record`, so a respelling of the stage on
+either side leaves both modules self-consistent and makes the test fail. Without
+that join, "the budget record anchors" is a claim about a row a test author
+typed.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import threading
 from dataclasses import dataclass, field
@@ -46,12 +57,23 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import Dispatch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
     PRESERVE_POINTER_MARKER,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_cancel_anchor import (
+    SOURCE_BUDGET_CANCEL_RECORD,
+    SOURCE_CANCEL_RECORD,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation import (
+    gather_resume,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget import RunWallBudget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_records import (
     RUN_WALL_BUDGET_EXCEEDED_STAGE,
+    run_wall_budget_exceeded_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_record import (
     STALL_CANCEL_STAGE,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_run_reading import (
+    StallPublication,
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     REPOSITORY_LAYER,
@@ -352,3 +374,211 @@ def test_scenario175_the_record_names_the_budget_and_the_layer_that_supplied_it(
     assert row["budget_seconds"] == 3600.0
     assert row["budget_layer"] == REPOSITORY_LAYER
     assert row["budget_start_source"] in {"run-record", "first-running-poll"}
+
+
+_PUBLISHED_HEAD = "b" * 40
+_OTHER_RUN_ID = "01OTHERRUN"
+_DISPATCH_ID = "be09d09660154fd5ae7a1172a976bcbd"
+_PR_NUMBER = 2680
+_ASSERTION = "The dispatched slice is verified green."
+
+
+def _budget_cancel_journal(*, path: Path) -> Path:
+    """The journal a budget-cancelled dispatch leaves, rendered by PRODUCTION code.
+
+    The cancel row comes from `run_wall_budget_exceeded_record` rather than being
+    typed out here, which is what joins the two halves of this sub-scenario: the
+    row the watchdog writes IS the row the resume reads, so a respelling of the
+    stage or of a field name on either side fails this case instead of leaving
+    two self-consistent modules that never meet.
+
+    The `dispatch-id` row is part of the fixture because a dispatch journals one
+    at launch and the anchor is scoped to the item's LATEST journaled dispatch.
+    Without it this journal carries a cancel row for a dispatch nothing records —
+    a shape no Dispatcher writes, and one a correctly scoped reader treats as a
+    cancel the item has since dispatched past.
+    """
+    rows: list[dict[str, object]] = [
+        {
+            "stage": "dispatch-id",
+            "work_item_id": _ITEM_ID,
+            "dispatch_id": _DISPATCH_ID,
+            "workflow_name": "implement-work-item",
+        },
+        run_wall_budget_exceeded_record(
+            work_item_id=_ITEM_ID,
+            dispatch_id=_DISPATCH_ID,
+            run_id=_RUN_ID,
+            factory="hp",
+            # "between its last completed publish_draft and proof_capture": the
+            # cancel site reports `proof_capture` for that gap exactly as it does
+            # for a cancel inside the node itself.
+            executing_stage="proof_capture",
+            publication=StallPublication(pull_request=_PR_NUMBER, published_head=_PUBLISHED_HEAD),
+            elapsed_seconds=3601.0,
+            budget=_BUDGET,
+            start_source="run-record",
+            preserved_pointer="https://github.test/c/9",
+        ),
+    ]
+    _ = path.write_text("".join(f"{json.dumps(row)}\n" for row in rows), encoding="utf-8")
+    return path
+
+
+def _resume_item() -> WorkItem:
+    """The rested item a human released back to `ready` after the budget cancel."""
+    return WorkItem(
+        id=_ITEM_ID,
+        type="task",
+        status="ready",
+        title="A dispatched slice the wall budget is bounding",
+        description=f"## Definition of Done\n\n- {_ASSERTION}\n",
+        origin="freeform",
+        gap_id=None,
+        rank="a0",
+        assignee=None,
+        depends_on=(),
+        captured_at="2026-10-13T00:00:00Z",
+        resolution=None,
+        reason=None,
+        audit=None,
+        superseded_by=None,
+    )
+
+
+@dataclass(kw_only=True)
+class _ResumeForge:
+    """The forge and factory answers one resume reads, keyed on each argv's verb.
+
+    `gh pr list` and `gh pr view` share a subcommand, so the forge key comes from
+    argv[2] and the factory key from argv[1]: one table, and no case can answer a
+    question it did not mean to.
+    """
+
+    answers: dict[str, CommandResult]
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        _ = (cwd, timeout_seconds, env, stdin)
+        key = argv[2] if Path(argv[0]).name == "gh" else argv[1]
+        return self.answers.get(key, CommandResult(exit_code=1, stdout="", stderr=""))
+
+
+def _resume_runner() -> _ResumeForge:
+    """An open pull request at the cancelled head, whose proof record is ANOTHER run's.
+
+    The record naming a different run is the clause's own precondition — "no
+    proof record carries that dispatch's identifier" — and it is what makes this
+    case discriminate rather than merely pass: a reader that ignored the budget
+    row would still find that record and report the stage its `captured` verdict
+    implies, which is `review` and not `proof_capture`.
+
+    The factory answers that it no longer holds the cancelled run, which is what
+    leaves the cancel record deciding the stage.
+    """
+    record = (
+        f"Proof of Done — captured — run {_OTHER_RUN_ID} — 2026-10-13T12:00:00Z\n\n"
+        f"## Assertion 1 — {_ASSERTION}\n\n"
+        f"Publish-branch head: {_PUBLISHED_HEAD}\n\n"
+        "Proof mode: factory_captured.\n"
+    )
+    return _ResumeForge(
+        answers={
+            "list": CommandResult(
+                exit_code=0,
+                stdout=json.dumps(
+                    [{"number": _PR_NUMBER, "state": "OPEN", "headRefOid": _PUBLISHED_HEAD}]
+                ),
+                stderr="",
+            ),
+            "view": CommandResult(
+                exit_code=0,
+                stdout=json.dumps(
+                    {"comments": [{"body": record, "url": "https://github.test/c/1"}]}
+                ),
+                stderr="",
+            ),
+            "ps": CommandResult(exit_code=0, stdout="[]", stderr=""),
+        }
+    )
+
+
+def test_scenario175_a_budget_cancel_between_publication_and_capture_anchors_resume(
+    tmp_path: Path,
+) -> None:
+    """ "A budget cancel between publication and capture can anchor resume".
+
+    "Then the run-wall-budget-exceeded record anchors the published head and the
+    new run enters at proof_capture." Driven through the production
+    `gather_resume` over the journal the production cancel renderer wrote.
+
+    The pre-repair build failed this SILENTLY. The cancel reader recognised only
+    `watchdog-stall-cancel`, so a perfectly well-formed budget row anchored
+    nothing, the resume refused for a headless pull request, and the re-dispatch
+    reclaimed the publish branch and spent another whole budget rebuilding
+    implement, janitor and publish_draft — the waste this work-item exists to
+    prevent, re-entered through the recovery path.
+
+    `proof_capture` is asserted rather than merely "an anchor exists", because
+    the proof record this pull request carries is ANOTHER run's and its
+    `captured` verdict implies `review`: the stage is what separates the budget
+    row's reading from the record's.
+    """
+    (tmp_path / "tmp").mkdir()
+    _seed(repo=tmp_path)
+    gather = gather_resume(
+        args=argparse.Namespace(fabro_bin="fabro", fabro_factory_target=None),
+        repo=tmp_path,
+        item=_resume_item(),
+        journal_path=_budget_cancel_journal(path=tmp_path / "tmp" / "journal.jsonl"),
+        runner=cast("Any", _resume_runner()),
+    )
+    assert gather.anchor is not None
+    assert gather.anchor.head == _PUBLISHED_HEAD
+    assert gather.anchor.run_id == _RUN_ID
+    assert gather.anchor.resumed_at == "proof_capture"
+    # The resume record names the journal stage an operator can grep for, and the
+    # budget row's stage is not the stall row's.
+    assert gather.anchor.source == SOURCE_BUDGET_CANCEL_RECORD
+    assert gather.anchor.source != SOURCE_CANCEL_RECORD
+    assert gather.anchor.record is None
+    assert gather.observation.anchor_head == _PUBLISHED_HEAD
+
+
+def test_scenario175_a_budget_cancel_outside_the_capture_gap_anchors_nothing(
+    tmp_path: Path,
+) -> None:
+    """The control: the clause's stage bound still binds the budget row.
+
+    Without it, "the budget record anchored" is equally consistent with a reader
+    that anchors on ANY budget row — including a `janitor` cancel of a rework
+    round, whose head "would not carry the rework", so the resume would publish a
+    proof record for a tree nobody built.
+    """
+    (tmp_path / "tmp").mkdir()
+    _seed(repo=tmp_path)
+    journal = _budget_cancel_journal(path=tmp_path / "tmp" / "journal.jsonl")
+    rewritten = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
+    for row in rewritten:
+        if row.get("stage") == RUN_WALL_BUDGET_EXCEEDED_STAGE:
+            row["executing_stage"] = "janitor"
+    _ = journal.write_text("".join(f"{json.dumps(row)}\n" for row in rewritten), encoding="utf-8")
+    gather = gather_resume(
+        args=argparse.Namespace(fabro_bin="fabro", fabro_factory_target=None),
+        repo=tmp_path,
+        item=_resume_item(),
+        journal_path=journal,
+        runner=cast("Any", _resume_runner()),
+    )
+    # The anchor falls back to the proof record, whose `captured` verdict enters
+    # at `review` — never the cancel anchor's fixed `proof_capture`.
+    assert gather.anchor is not None
+    assert gather.anchor.resumed_at != "proof_capture"
+    assert gather.anchor.source != SOURCE_BUDGET_CANCEL_RECORD

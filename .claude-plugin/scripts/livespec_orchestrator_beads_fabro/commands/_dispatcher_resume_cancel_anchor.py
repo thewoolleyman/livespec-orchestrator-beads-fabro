@@ -1,12 +1,37 @@
-"""The anchor a resume reads off a stall-cancelled dispatch's own journal row.
+"""The anchor a resume reads off a watchdog-cancelled dispatch's own journal row.
 
 `SPECIFICATION/contracts.md` section "Resume from a published pull request
 (`resume --item`)" admits a SECOND anchor beside the proof record: "When no proof
 record on the pull request carries the identifier of the item's latest journaled
 dispatch, and that dispatch's journal carries a `watchdog-stall-cancel` record
-... naming a published head, that cancel record anchors the resume instead."
+or a `run-wall-budget-exceeded` record ... naming a published head, that cancel
+record anchors the resume instead."
 This module is that reading, and it is PURE — the journal rows are handed to it —
 so every bound below is assertable without a forge, a factory or a journal file.
+
+TWO CANCEL STAGES ANCHOR, AND THEY ANCHOR IDENTICALLY. The whole-run wall budget
+of that same v133 revision cancels a run the stall rule cannot reach — one that
+keeps emitting events while heading for `needs_human` — and its own clause in
+that same file says the `run-wall-budget-exceeded` record "anchors resume ...
+exactly as a `watchdog-stall-cancel` record does". So the stage test below is
+MEMBERSHIP in `_CANCEL_SOURCES` rather than one comparison, and every other
+bound reads one shape whichever stage produced it: the budget record composes
+`watchdog_cancel_fields` precisely so the two cannot drift.
+
+A reader recognising only the stall stage fails in the expensive direction rather
+than refusing visibly. The budget row is perfectly well-formed, so the reader
+simply returns nothing, the resume refuses for a headless pull request, and the
+re-dispatch takes the publish-branch reclaim — which preserves the dead run's
+head to a ref, deletes the branch, and spends another whole budget rebuilding
+implement, janitor and publish_draft. That is the exact waste the budget exists
+to stop.
+
+WHAT DIFFERS IS THE SOURCE THE RESUME RECORD NAMES, which is why the matched
+row's own source rides the anchor rather than being one module constant. The
+resume record must name which party decided the stage, and each source names the
+journal STAGE an operator can grep for; a budget-anchored resume reporting the
+stall stage would send that operator after a row the run's journal does not
+carry — a clean, plausible, wrong answer rather than a failure.
 
 WHY THE SECOND ANCHOR HAD TO EXIST AT ALL. A run cancelled between its last
 completed `publish_draft` and `proof_capture` has published everything a resume
@@ -99,12 +124,16 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_records import (
+    RUN_WALL_BUDGET_EXCEEDED_STAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_record import (
     STALL_CANCEL_STAGE,
 )
 
 __all__: list[str] = [
     "CANCEL_ANCHOR_RESUMED_AT",
+    "SOURCE_BUDGET_CANCEL_RECORD",
     "SOURCE_CANCEL_RECORD",
     "CancelAnchor",
     "cancel_anchor",
@@ -120,10 +149,26 @@ __all__: list[str] = [
 CANCEL_ANCHOR_RESUMED_AT = "proof_capture"
 
 # Which party decided the resumed-at stage, for the `resume` record's own
-# `resumed_at_source` field. It NAMES the measurement rather than ranking it, as
-# `_dispatcher_resume_anchor`'s two source values do, and it names the journal
-# STAGE an operator can grep for rather than a private label.
+# `resumed_at_source` field. Each NAMES the measurement rather than ranking it,
+# as `_dispatcher_resume_anchor`'s two source values do, and each names the
+# journal STAGE an operator can grep for rather than a private label.
+#
+# THE TWO ARE DISTINCT BECAUSE THE ROWS ARE. One shared value would leave the
+# resume record unable to say which cancel class decided its stage, and the two
+# classes carry opposite dispositions and separate journal rows to look up — so
+# an operator reading a budget-anchored resume would grep the stall stage and
+# find nothing in that run's journal.
 SOURCE_CANCEL_RECORD = "watchdog-stall-cancel-record"
+SOURCE_BUDGET_CANCEL_RECORD = "run-wall-budget-exceeded-record"
+
+# The cancel stages that anchor, each mapped to the source the resume record
+# names for it. A MAPPING rather than a set plus a second lookup, so a stage
+# this reader admits cannot be one it has no source for: the two facts are
+# decided in one place, and adding a third cancel class means adding one row.
+_CANCEL_SOURCES = {
+    STALL_CANCEL_STAGE: SOURCE_CANCEL_RECORD,
+    RUN_WALL_BUDGET_EXCEEDED_STAGE: SOURCE_BUDGET_CANCEL_RECORD,
+}
 
 _STAGE_KEY = "stage"
 _WORK_ITEM_KEY = "work_item_id"
@@ -143,15 +188,21 @@ _DISPATCH_ID_STAGE = "dispatch-id"
 class CancelAnchor:
     """What one cancel record says about the run a resume would finish.
 
-    Only the two fields a resume ACTS on: the run the `resume` record links its
-    identifiers to, and the head the sandbox checks out. The pull request the row
-    also names is deliberately absent — the resume reads that from the forge, and
-    carrying a second copy here would invite a comparison against an answer taken
-    at a different moment.
+    Only the three fields a resume ACTS on: the run the `resume` record links its
+    identifiers to, the head the sandbox checks out, and the source that record
+    names for the stage. The pull request the row also names is deliberately
+    absent — the resume reads that from the forge, and carrying a second copy here
+    would invite a comparison against an answer taken at a different moment.
+
+    `source` rides the anchor rather than being read from a constant at the call
+    site, because two stages anchor and each names its own journal row. A caller
+    holding this value cannot label it with the wrong cancel class, which is the
+    one mistake a shared constant makes available and makes invisible.
     """
 
     run_id: str
     head: str
+    source: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -163,10 +214,16 @@ class _LatestCancel:
     travel together because the precedence comparison needs the dispatch's
     identifiers while every other bound reads the row, and resolving them
     separately is how one reading comes to describe a dispatch the other did not.
+
+    `source` is the source for the stage THIS row carries, resolved where the row
+    was matched. Deriving it again from `record["stage"]` downstream would be a
+    second reading of the same field that could disagree with the match — the
+    shape in which a row admitted as one cancel class gets labelled as the other.
     """
 
     record: Mapping[str, object]
     dispatch_id: str | None
+    source: str
 
 
 def cancel_anchor(
@@ -207,7 +264,7 @@ def cancel_anchor(
     head = _text(value=record.get(_PUBLISHED_HEAD_KEY))
     if head is None:
         return None
-    return CancelAnchor(run_id=run_id, head=head)
+    return CancelAnchor(run_id=run_id, head=head, source=latest.source)
 
 
 def unanchoring_cancel_stage(
@@ -284,8 +341,15 @@ def _latest_cancel_record(
     earlier dispatch. Both ids must be readable for that comparison to mean
     anything, so a row or a journal naming none degrades to the positional
     reading rather than refusing.
+
+    BOTH ANCHORING STAGES ARE TRACKED AS ONE NEWEST ROW, not one per stage. A
+    dispatch is cancelled once, so the two classes are alternatives rather than
+    parallel histories, and a reader keeping a newest row per stage would answer
+    with a stall row from a cancellation the item had already moved past
+    whenever a later dispatch ended on its budget instead — the same wrong tree
+    the single-stage reader reached by refusing outright.
     """
-    found: Mapping[str, object] | None = None
+    found: tuple[Mapping[str, object], str] | None = None
     journaled_dispatch_id: str | None = None
     for record in records:
         if record.get(_WORK_ITEM_KEY) != work_item_id:
@@ -294,18 +358,24 @@ def _latest_cancel_record(
         if stage == _DISPATCH_ID_STAGE:
             found = None
             journaled_dispatch_id = _text(value=record.get(_DISPATCH_ID_KEY))
-        elif stage == STALL_CANCEL_STAGE:
-            found = record
+            continue
+        source = _CANCEL_SOURCES.get(stage) if isinstance(stage, str) else None
+        if source is not None:
+            # The row and its source are kept as ONE value, so there is no state
+            # in which a matched row carries no source — an arm nothing could
+            # reach and nothing could cover.
+            found = (record, source)
     if found is None:
         return None
-    row_dispatch_id = _text(value=found.get(_DISPATCH_ID_KEY))
+    record, source = found
+    row_dispatch_id = _text(value=record.get(_DISPATCH_ID_KEY))
     if (
         journaled_dispatch_id is not None
         and row_dispatch_id is not None
         and row_dispatch_id != journaled_dispatch_id
     ):
         return None
-    return _LatestCancel(record=found, dispatch_id=journaled_dispatch_id)
+    return _LatestCancel(record=record, dispatch_id=journaled_dispatch_id, source=source)
 
 
 def _text(*, value: object) -> str | None:

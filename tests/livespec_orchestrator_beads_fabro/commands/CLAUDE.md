@@ -282,6 +282,23 @@ Tests for the thin-transport command modules under
   BEFORE `decide_stall`, and the engine routing a launcher's budget report to its
   own terminal, which `run_dispatch` reaches and `launch` cannot.
 
+- `test_dispatcher_resume_cancel_anchor_budget.py` is the other half of
+  `test_dispatcher_resume_cancel_anchor.py`: the clause admits the cancel anchor
+  for TWO stages, and that module's quote elides the second. Its cases establish
+  that the reader's bounds hold for `run-wall-budget-exceeded` too, which is a
+  different claim and fails for a different reason. Two pairings are
+  load-bearing. Every NEGATIVE case here produces the same observable the
+  pre-repair build produced for every budget row — no anchor — so a reader that
+  still recognised only the stall stage passes all of them and only the positive
+  control discriminates; measured by mutation on 2026-10-19, dropping the budget
+  row from `_CANCEL_SOURCES` reds that control, the latest-row case and the
+  unanchoring-stage case. And the two source values are asserted as DISTINCT
+  beside a stall row that must still carry the STALL source, because a build
+  reporting the budget source for every cancel row satisfies every budget case
+  in the module while mislabelling every stall-anchored resume in the
+  repository — that second mutation reds this module's stall control plus three
+  existing modules.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr
