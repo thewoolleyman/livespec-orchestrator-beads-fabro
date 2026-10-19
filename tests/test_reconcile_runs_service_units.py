@@ -49,11 +49,15 @@ def test_the_committed_exec_start_names_the_env_wrapper_and_the_reconcile_runs_v
     assert "--repo @PRIMARY_REPO@" in exec_start
 
 
-def test_the_host_timer_surveys_only_the_live_hp_factory() -> None:
-    """A retired backend must not remain in the timer's active inventory."""
+def test_the_host_timer_surveys_only_the_live_factories() -> None:
+    """A retired backend must not remain in the timer's active inventory.
+
+    `petri` is the live Petri-era instance declared by maintainer direction
+    on 2026-10-19 (plan `petri-factory-on-gmktec`); the retired `vps` is not.
+    """
     configured = dispatcher_block(cwd=_REPO_ROOT)
 
-    assert declared_factory_names(block=configured) == ("hp",)
+    assert declared_factory_names(block=configured) == ("hp", "petri")
 
 
 def test_the_timer_fires_every_ten_minutes_and_catches_up_after_downtime() -> None:
