@@ -34,7 +34,11 @@ captured `inspect` payload exists anywhere in this repo. The list is therefore
 ordered most-specific-first and treated as a SEARCH rather than as a known
 schema — and the fail-closed default is what makes an unmatched schema safe.
 An unrecognised record leaves today's behaviour (held, reported, never
-terminated) instead of reaping on a misread number.
+terminated) instead of reaping on a misread number. The SEARCH itself now
+lives in `_fabro_record_instant`, shared with the whole-run wall budget's own
+clock, which reads a different key list for a different instant; the key list
+above and the fail-closed consequence of an unmatched record stay here,
+because they are what this consumer decides.
 
 The `dispatcher.blocked_run_grace_seconds` READ lives here rather than beside
 the other dials in `_dispatcher_policy_settings.py`, through that module's own
@@ -57,9 +61,8 @@ from __future__ import annotations
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import timezone
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from returns.io import IOResult
 from returns.result import Failure, Result, Success
@@ -70,7 +73,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import fabro_inspect_record
-from livespec_orchestrator_beads_fabro.effects import IsoDatetimeParseFailure, parse_iso_datetime
+from livespec_orchestrator_beads_fabro.commands._fabro_record_instant import record_instant_epoch
 
 __all__: list[str] = [
     "BLOCKED_HOLD_UNMEASURED",
@@ -106,11 +109,6 @@ PARKED_SINCE_KEYS: tuple[str, ...] = (
     "checkpoint_time",
     "updated_at",
 )
-
-# Sub-objects of the run record searched beside the record itself. Fabro
-# reports a run's state as `status: {kind: ...}`, so a park timestamp that
-# belongs to the state rather than to the run is likelier to live there.
-_NESTED_RECORD_KEYS: tuple[str, ...] = ("status", "checkpoint")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -248,42 +246,11 @@ def _grace_seconds_value(*, value: object) -> Result[int, PolicySettingUnreadabl
 
 
 def _parked_at_epoch(*, record: Mapping[str, Any] | None) -> float | None:
-    candidates = _candidate_records(record=record)
-    for key in PARKED_SINCE_KEYS:
-        for candidate in candidates:
-            epoch = _epoch_value(value=candidate.get(key))
-            if epoch is not None:
-                return epoch
-    return None
+    """The instant this run entered its current state, from its own record.
 
-
-def _candidate_records(*, record: Mapping[str, Any] | None) -> tuple[Mapping[str, Any], ...]:
-    if record is None:
-        return ()
-    nested = [
-        cast("Mapping[str, Any]", record[key])
-        for key in _NESTED_RECORD_KEYS
-        if isinstance(record.get(key), dict)
-    ]
-    return (record, *nested)
-
-
-def _epoch_value(*, value: object) -> float | None:
-    # `bool` is an `int`, and `True` would read as the epoch's first second.
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int | float):
-        return float(value)
-    if isinstance(value, str):
-        return _iso_epoch(text=value)
-    return None
-
-
-def _iso_epoch(*, text: str) -> float | None:
-    normalized = f"{text.removesuffix('Z')}+00:00" if text.endswith("Z") else text
-    parsed = parse_iso_datetime(text=normalized)
-    if isinstance(parsed, IsoDatetimeParseFailure):
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc).timestamp()
-    return parsed.timestamp()
+    The SEARCH mechanics live in `_fabro_record_instant`, shared with the
+    whole-run wall budget's own clock; `PARKED_SINCE_KEYS` above is what this
+    consumer contributes to it, and the module docstring carries why
+    `start_time` is absent from that list.
+    """
+    return record_instant_epoch(record=record, keys=PARKED_SINCE_KEYS)
