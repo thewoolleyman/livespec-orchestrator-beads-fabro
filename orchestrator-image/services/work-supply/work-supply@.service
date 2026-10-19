@@ -15,12 +15,13 @@
 #
 # This is a systemd INSTANCE template: `%i` is the tenant instance name, and
 # `install.sh` writes one `<instance>.env` per tenant into that environment
-# directory, carrying that tenant's checkout path, drain budget and credential
-# wrapper. A firing whose env file is missing therefore reads an EMPTY tenant
-# and the launcher refuses, naming the variable, rather than draining some
-# other repository.
+# directory, carrying that tenant's checkout path, drain budget, credential
+# wrapper, and the OPERATOR IDENTITY AND HOME the pass runs under. A firing
+# whose env file is incomplete therefore reads an EMPTY value and the launcher
+# refuses, naming the variable, rather than draining some other repository or
+# resolving some other account's plugin build.
 #
-# TWO THINGS THIS UNIT DELIBERATELY DOES NOT DO.
+# THREE THINGS THIS UNIT DELIBERATELY DOES NOT DO.
 #
 # It does not name a plugin build. `reconcile-runs` substitutes a plugin root
 # at install time, which pins that unit to one cache build for ever: after a
@@ -36,6 +37,26 @@
 # 300-second credential cache for every other caller on the host (AGENTS.md,
 # §"Beads runtime prerequisites"). The launcher needs no credential: it reads a
 # JSON registry and starts a unit.
+#
+# It does not declare `User=`, and that omission is a DECISION rather than an
+# oversight — identity and detachment are one question here, not two. The
+# launcher's whole job is to hand the pass to a system-scope transient unit,
+# and a non-root caller of `systemd-run --unit` needs polkit authorization it
+# cannot obtain from a timer with no seat and no agent. So the FIRING runs as
+# root and the PASS drops: the launcher passes the operator identity and home
+# the instance environment file names (`--uid`, `--setenv HOME=`) to
+# `systemd-run`, so the drain executes as the operator even though the firing
+# that started it did not.
+#
+# The cost of that decision, paid here: systemd sets `$HOME` only for a unit
+# declaring `User=` (systemd.exec(5)), so this unit's own environment carries
+# NONE. Every `$HOME`-derived path a firing needs is therefore named in the
+# instance environment file rather than inferred — the Claude Code plugin
+# registry the launcher reads to resolve the build, and the `$HOME` the pass
+# itself resolves `fabro` under. A launcher that fell back to an unset `$HOME`
+# would compose `/.claude/plugins/installed_plugins.json`, refuse on every
+# firing of every instance, and read as a tenant with no registered install;
+# it refuses by NAMING the unresolvable variable instead.
 #
 # `Type=oneshot` is correct ONLY because ExecStart is the launcher rather than
 # the drain. systemd never starts a oneshot that is still active, and a drain

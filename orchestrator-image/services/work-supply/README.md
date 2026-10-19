@@ -35,17 +35,21 @@ sudo ./install.sh --repo /data/projects/livespec-orchestrator-beads-fabro --inte
 
 `--interval` defaults to **30min** and is REFUSED below the documented minimum
 of **10min**; `--budget` defaults to `3`; `--instance` defaults to the basename
-of `--repo`. A span is `<positive integer><unit>` with unit one of
+of `--repo`; `--user` defaults to `$SUDO_USER`, falling back to the invoking
+user. A span is `<positive integer><unit>` with unit one of
 `s`/`sec`/`m`/`min`/`h`/`hr`/`hour` — a deliberately narrow subset of systemd's
 time-span grammar, so a span this installer cannot measure is refused rather
 than guessed.
 
-The installer REFUSES (exit 78) in three cases, each naming the instance:
+The installer REFUSES (exit 78) in four cases, each naming the instance:
 
 - the project env wrapper is not an executable file on the host — without it
   every pass runs `bd` with no `BEADS_DOLT_PASSWORD` and fails as `Access
   denied` / `no beads database found`, which reads as an absent tenant rather
   than an absent credential, on the interval, for ever;
+- `--user` has no passwd entry on this host, or its home is not a directory —
+  see "Whose pass it is" below for why an unresolvable identity would make
+  every firing refuse as an unregistered tenant instead;
 - the interval is below the minimum, naming the interval given and the minimum;
 - the interval is outside the grammar above.
 
@@ -72,7 +76,7 @@ the ledger, under §"Per-repo WIP cap".
 | `<unit-dir>/work-supply@.service` | host | the rendered service template |
 | `<unit-dir>/work-supply@.timer` | host | the timer template, carrying **no** interval |
 | `<unit-dir>/work-supply@<instance>.timer.d/interval.conf` | instance | the operator's interval |
-| `<instance-env-dir>/<instance>.env` | instance | tenant checkout, budget, wrapper |
+| `<instance-env-dir>/<instance>.env` | instance | tenant checkout, budget, wrapper, operator identity and home |
 
 The timer template carries no interval on purpose. A systemd timer template
 cannot vary a timer setting per instance, and leaving the setting out makes a
@@ -82,12 +86,37 @@ operator. Had the template carried a default `OnBootSec`, that instance would
 have loaded, fired once after boot, and never fired again — a silent
 single-shot that reads exactly like a working timer.
 
+## Whose pass it is
+
+The service declares no `User=`, so each **firing** runs as root; each **pass**
+runs as the operator. That split is one decision, not two. The launcher's job
+is to hand the pass to a system-scope `systemd-run --unit` transient unit, and
+a non-root caller of that needs polkit authorization a timer — with no seat and
+no agent — cannot obtain. So the firing stays root and the pass drops: the
+launcher passes `--uid` and `--setenv HOME=` from the instance environment
+file, which `install.sh` resolves from `--user` and this host's passwd
+database.
+
+The consequence is why the identity is written down rather than inferred.
+systemd sets `$HOME` only for a unit declaring `User=`, so a firing has none of
+its own — and both things a pass reaches for under a home belong to the
+operator, not to root: the Claude Code plugin registry that names which build
+to execute, and `~/.fabro/bin/fabro`. A launcher that fell back to an unset
+`$HOME` would compose `/.claude/plugins/installed_plugins.json`, refuse on
+every firing of every instance, and report it as a tenant with no registered
+install — a confident wrong answer about the tenant, on an interval, for ever.
+It refuses by NAMING the unresolvable variable instead, and `install.sh`
+refuses earlier still, while an operator is present to read the reason.
+
+`$HOME` is consulted only as the fallback for a hand-run
+`work-supply-pass.sh`, where it is the operator's own.
+
 ## The build each firing executes
 
 The service names **no** plugin build. `work-supply-pass.sh` resolves the
 tenant's registered project-scoped install from the Claude Code plugin registry
-(`~/.claude/plugins/installed_plugins.json`, the entry whose project path is the
-tenant) at the moment it fires, and executes that build's
+(`<operator-home>/.claude/plugins/installed_plugins.json`, the entry whose
+project path is the tenant) at the moment it fires, and executes that build's
 `scripts/bin/dispatcher.py`. So the next firing after a release runs the
 released build with nothing reinstalled.
 
@@ -128,5 +157,7 @@ journalctl -u 'work-supply-pass-<instance>-*' -n 200 --no-pager
 
 The first two show the firings; the second two show the passes those firings
 started. Each firing's own journal line names the tenant, the resolved build,
-the budget and the transient unit it started, so a firing that resolved a stale
-build is distinguishable from one that never ran.
+the budget, the operator identity and home it handed the pass, and the
+transient unit it started — so a firing that resolved a stale build, and one
+that resolved the wrong account's build, are each distinguishable from one that
+never ran.

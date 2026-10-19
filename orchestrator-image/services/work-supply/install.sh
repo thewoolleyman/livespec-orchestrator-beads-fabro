@@ -6,8 +6,8 @@
 # the tenant and its drain budget, and the timer drop-in carrying the firing
 # interval the operator chose for it.
 #
-# TWO REFUSALS, and they are the whole reason this is an installer rather than a
-# `cp`.
+# THREE REFUSALS, and they are the whole reason this is an installer rather
+# than a `cp`.
 #
 # The WRAPPER refusal. `bd` reads the tenant password from a bare
 # `BEADS_DOLT_PASSWORD` that only the project env wrapper injects. An instance
@@ -15,6 +15,19 @@
 # with `Access denied` / `no beads database found`, which reads as a missing
 # tenant rather than as a missing credential, on the interval, for ever.
 # Install time is the one moment an operator is present to read the reason.
+#
+# The IDENTITY refusal. The firing runs as root — a system-scope `systemd-run`
+# from a non-root caller needs polkit authorization no timer can obtain — so
+# the PASS has to be told whose it is, and the instance environment file is
+# where it is told. Two things the pass reaches for live under a home root does
+# not have: the Claude Code plugin registry that names the build to execute,
+# and `~/.fabro/bin/fabro`. Resolving the operator's home is therefore an
+# install-time precondition like the wrapper, and it fails the same silent way
+# when it is wrong — every firing refuses with "no registered install for this
+# tenant", which reads as an unregistered tenant. So an identity with no passwd
+# entry, or whose home is not a directory on this host, is refused HERE, naming
+# the instance and the identity, rather than written into an env file that
+# cannot work.
 #
 # The INTERVAL refusal. Two known concurrency defects live under this timer —
 # `wip_cap` is not exclusive across engines admitting in the same instant
@@ -29,7 +42,7 @@
 #
 # Usage:
 #   sudo ./install.sh --repo <tenant-checkout> [--interval <span>] \
-#        [--budget <count>] [--instance <name>]
+#        [--budget <count>] [--instance <name>] [--user <name>]
 #
 #   --interval  firing interval, default 30min, minimum 10min. A span is
 #               `<positive integer><unit>` with unit one of
@@ -38,6 +51,11 @@
 #               cannot measure is refused rather than guessed.
 #   --budget    per-pass dispatch ceiling handed to `loop --budget`, default 3.
 #   --instance  systemd instance name, default the basename of --repo.
+#   --user      operator identity each pass runs as, and whose home holds the
+#               plugin registry and `fabro`. Defaults to $SUDO_USER, so the
+#               ordinary `sudo ./install.sh` resolves the operator who typed
+#               it rather than root; without sudo it defaults to the invoking
+#               user.
 #
 # Environment overrides (all optional, all for testing or a non-standard host):
 #   LIVESPEC_ENV_WRAPPER  wrapper path to require AND to write into the
@@ -92,14 +110,36 @@ interval_seconds() {
   esac
 }
 
+# That identity's home directory on stdout, as this host's passwd database
+# records it. Non-zero exit when the identity has no entry, or an entry naming
+# no home. Read through `pwd` rather than `getent`, which is absent on some
+# hosts, and never from `$HOME`: under `sudo` that is root's, which is exactly
+# the wrong answer.
+identity_home() {
+  python3 - "$1" <<'PY'
+import pwd
+import sys
+
+try:
+    entry = pwd.getpwnam(sys.argv[1])
+except KeyError:
+    raise SystemExit(1)
+if not entry.pw_dir:
+    raise SystemExit(1)
+sys.stdout.write(entry.pw_dir)
+PY
+}
+
 main() {
   local repo='' interval="${DEFAULT_INTERVAL}" budget="${DEFAULT_BUDGET}" instance=''
+  local run_as_user=''
   while (($#)); do
     case "$1" in
       --repo) shift; repo="${1:-}" ;;
       --interval) shift; interval="${1:-}" ;;
       --budget) shift; budget="${1:-}" ;;
       --instance) shift; instance="${1:-}" ;;
+      --user) shift; run_as_user="${1:-}" ;;
       -h|--help) usage; return 0 ;;
       *) printf 'unknown argument: %s\n' "$1" >&2; usage; return "${EX_USAGE}" ;;
     esac
@@ -148,6 +188,27 @@ main() {
     return "${EX_CONFIG}"
   fi
 
+  # `$SUDO_USER` before `id -un`, because the ordinary invocation IS under
+  # sudo and `id -un` answers root there — the one identity whose home holds
+  # neither the operator's plugin registry nor their `fabro`.
+  : "${run_as_user:=${SUDO_USER:-$(id -un)}}"
+  local run_as_home
+  if ! run_as_home="$(identity_home "${run_as_user}")" || [[ -z "${run_as_home}" ]]; then
+    printf 'ERROR: instance %s: --user %s has no home directory in this host'"'"'s passwd database\n' \
+      "${instance}" "${run_as_user}" >&2
+    printf 'Each pass runs as that identity and resolves the Claude Code plugin registry and\n' >&2
+    printf 'fabro under its home, so an unresolvable identity makes every firing refuse as an\n' >&2
+    printf 'unregistered tenant. Pass --user <name> for the operator who owns them.\n' >&2
+    return "${EX_CONFIG}"
+  fi
+  if [[ ! -d "${run_as_home}" ]]; then
+    printf 'ERROR: instance %s: home %s of --user %s is not a directory on this host\n' \
+      "${instance}" "${run_as_home}" "${run_as_user}" >&2
+    printf 'The plugin registry a firing reads lives under it, so no firing could resolve a\n' >&2
+    printf 'build to execute.\n' >&2
+    return "${EX_CONFIG}"
+  fi
+
   local unit_dir="${UNIT_DIR:-/etc/systemd/system}"
   local instance_env_dir="${INSTANCE_ENV_DIR:-/etc/livespec/work-supply}"
   mkdir -p "${unit_dir}" "${instance_env_dir}" "${unit_dir}/work-supply@${instance}.timer.d"
@@ -165,6 +226,11 @@ main() {
 LIVESPEC_WORK_SUPPLY_REPO=${repo}
 LIVESPEC_WORK_SUPPLY_BUDGET=${budget}
 LIVESPEC_WORK_SUPPLY_ENV_WRAPPER=${env_wrapper}
+# The firing runs as root so it can start a system-scope transient unit; these
+# two are what the PASS runs as. The home is also where the launcher looks for
+# the Claude Code plugin registry, because a root firing has no \$HOME of its own.
+LIVESPEC_WORK_SUPPLY_USER=${run_as_user}
+LIVESPEC_WORK_SUPPLY_HOME=${run_as_home}
 EOF
   chmod 0644 "${env_file}"
 
@@ -181,6 +247,7 @@ EOF
   printf 'installed %s\n' "${env_file}"
   printf 'instance work-supply@%s.timer fires every %s for %s with budget %s\n' \
     "${instance}" "${interval}" "${repo}" "${budget}"
+  printf 'each pass runs as %s with home %s\n' "${run_as_user}" "${run_as_home}"
 
   if [[ "${DRY_RUN:-}" == "1" ]]; then
     printf 'DRY_RUN=1: skipping systemctl daemon-reload / enable --now\n'
