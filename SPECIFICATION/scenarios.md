@@ -7344,3 +7344,54 @@ Feature: Concurrent additions to shared record files do not cost a run a repair 
     When the repository-declared gate rejects the refreshed head
     Then the stage restores the pre-refresh head and routes to fix with a refresh-repair brief naming each failed gate target
 ```
+
+## Scenario 201 — An agent stage follows only its stage prompt, never publishes, and commits through the repository hooks
+
+```gherkin
+Feature: An agent stage does not act on instructions its stage prompt never gave
+  As the maintainer of a repository dispatched to the factory
+  I want implement, fix and review_fix turns to take instruction only from their stage prompt
+  So that a run is not lost to a step that a file on its own branch or its own deliverable described
+
+  Scenario: A prompt file the work item changes does not instruct the run carrying it
+    Given a work item whose branch changes the fix prompt to require a commit mechanism that is not yet released
+    When a fix turn of that work item's run makes its commit
+    Then the turn commits with an ordinary git commit that runs the repository hooks
+    And the turn does not wait for or report the absence of the unreleased mechanism
+
+  Scenario: An agent stage never pushes or publishes
+    Given an implement, fix or review_fix turn whose work is committed
+    When the turn ends
+    Then the turn has pushed no ref to origin and has opened or changed no pull request
+    And publication happens only in publish_draft, pr_refresh or pr
+
+  Scenario: The stage prompts state the three rules
+    Given the implement, fix and review_fix prompts of the released implement-work-item workflow
+    When each prompt is read
+    Then each states that the stage prompt is the turn's only instruction, that the turn never pushes or publishes, and that commits are ordinary git commits through the repository hooks unless the stage prompt names another mechanism
+```
+
+## Scenario 202 — An implement turn that reports its work incomplete fails the implement stage
+
+```gherkin
+Feature: An incomplete implement turn is not recorded as a success
+  As the maintainer of a repository dispatched to the factory
+  I want an implement turn that stops partway to end the implement stage as failed
+  So that the run does not publish and prove an incomplete change as if it were finished
+
+  Scenario: A turn that reports partial progress fails the stage
+    Given an implement turn whose final output's completion field reports the Definition of Done incomplete
+    When the implement stage ends
+    Then the stage outcome is failed with a cause naming partial progress
+    And the run takes the implement stage's failure edge, and the dispatch outcome detail carries that cause
+
+  Scenario: A turn with no completion field is treated as incomplete
+    Given an implement turn whose final output carries no completion field
+    When the implement stage ends
+    Then the stage outcome is failed with a cause naming partial progress
+
+  Scenario: A turn that reports its work complete keeps its routing
+    Given an implement turn whose final output's completion field reports the Definition of Done complete
+    When the implement stage ends
+    Then the stage outcome is succeeded and the run proceeds to implementation_diff as before
+```

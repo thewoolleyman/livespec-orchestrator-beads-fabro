@@ -908,5 +908,19 @@
     "heading": "## Scenario 200 \u2014 A refresh whose conflicts lie only in declared record files merges them without a repair round",
     "work_item": "bd-ib-davaxq",
     "first_seen": "2026-10-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 201 \u2014 An agent stage follows only its stage prompt, never publishes, and commits through the repository hooks",
+    "work_item": "bd-ib-iftnct",
+    "first_seen": "2026-10-19"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 202 \u2014 An implement turn that reports its work incomplete fails the implement stage",
+    "work_item": "bd-ib-ahxcjx",
+    "first_seen": "2026-10-19"
   }
 ]
