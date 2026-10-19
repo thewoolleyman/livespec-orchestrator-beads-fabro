@@ -1189,6 +1189,36 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   and `FactoryTarget.docker_host` already carry the registry's addresses, so no
   consumer learns that an address came from a file.
 
+- `test_run_wall_budget_scenario175.py` — binds `SPECIFICATION/scenarios.md`
+  Scenario 175 and the `contracts.md` paragraphs it exercises (the Dispatcher
+  progress watchdog's "The whole-run wall budget", and the whole-run wall budget
+  key of "ACP node timeouts"): a run whose slot-holding time passes the resolved
+  `dispatcher.run_wall_budget_seconds` has its preserve-by-reference pointer
+  written and read back, is then cancelled, and rests for a human. The journey
+  runs through the PRODUCTION launcher — a real `WatchedFabroLauncher`, a real
+  `FabroPort`, the real per-poll observation seam, the real export-then-terminate
+  precondition and real threading — with only the fabro subprocess stood in, and
+  stood in AT THE ARGV, because every sub-scenario is about which call a poll
+  ISSUES and in which ORDER and no returned verdict can tell a cancel that
+  exported first from one that did not.
+  THE OPEN-COMMAND-NODE CASE IS THE ONE A NARROWER TEST CANNOT REACH, and it is
+  what makes the two bounds independent rather than one deferring the other: the
+  stall watchdog deliberately widens its window to an open command node's own
+  timeout, so the fixture scripts a REAL `janitor` start event with no
+  completion AND a 36000-second `janitor` timeout, which means the production
+  stall decision genuinely would not cancel for hours — and the budget cancels
+  anyway. Three further things an editor must not weaken. The pointer is read
+  back off the tenant's own comment surface and indexed on `text`, never through
+  `bd show --json`, which carries no bodies at all and reports every landed
+  write as lost; a pointer read out of the journal alone is satisfied by a write
+  nobody confirmed. The queue-time case keeps the wall clock advancing a FULL
+  BUDGET PER POLL while the factory reports the run `runnable` throughout, so
+  the absence of a cancel is evidence the clock was never fixed rather than
+  evidence the clock never advanced. And the layer is asserted beside the
+  budget, because 3600 seconds is a deliberate repository override in this
+  fixture and only the layer separates that from a target that inherited the
+  fleet default.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
