@@ -1,7 +1,7 @@
 ---
 topic: clock-fired-work-supply
 author: claude-opus-5-5-plan-bd-ib-opbzv3
-created_at: 2026-10-19T01:49:05Z
+created_at: 2026-10-19T01:52:07Z
 ---
 
 ## Proposal: A clock-fired work supply starts an unattended drain pass per tenant on an interval, so factory work supply does not depend on an interactive session
@@ -39,10 +39,11 @@ Feature: Factory work supply does not depend on an interactive session
 Scenario: A firing starts one unattended drain pass for its tenant
   Given the work-supply timer is installed for tenant repository "T" with an operator-chosen interval
   And no interactive session is running a drain
-  And "T" has an admission-eligible ready item
-  When the timer fires
-  Then the service runs loop --repo T with a budget and no --item argument
-  And the ready item is dispatched under the same ranked queue, wip_cap and unattended cost gate as any unattended drain
+  And "T"'s first-ranked admission-eligible ready item has a free counted-claim slot under wip_cap
+  When the timer fires with a budget of at least one
+  Then the service runs loop --repo T with that budget and no --item argument
+  And that first-ranked item is dispatched under the same ranked queue, wip_cap and unattended cost gate as any unattended drain
+  And when instead wip_cap or the budget leaves no room, the item is journaled with the exclusion reason the admission conditions assign it, and is not dispatched
 
 Scenario: The installer refuses an instance whose wrapper is not executable
   Given an operator installing a work-supply instance for tenant "T" whose named credential wrapper is not an executable file on the host
