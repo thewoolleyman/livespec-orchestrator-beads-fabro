@@ -406,9 +406,25 @@ create_and_seed_repo() {
     # status.custom set must be replicated here. MUST match
     # livespec_orchestrator_beads_fabro/_beads_client.py::_STATUS_CUSTOM.
     bd config set status.custom "backlog,pending-approval,ready:active,active:wip,acceptance:wip" >/dev/null 2>&1
-    bd create "Implement greet per the SPECIFICATION" \
-      -d "Implement the program described in this repo's SPECIFICATION/: expose a Python function greet(name: str) -> str (in src/greeting/greet.py) that returns exactly \"Hello, <name>!\". For the input Ada it must return \"Hello, Ada!\". Add a test under tests/ and make \`just check\` pass. Read this repo's root CLAUDE.md for local constraints (no Red-Green-Replay ritual here; commit normally). Follow contracts.md / scenarios.md exactly." \
-      >/dev/null 2>&1
+    # The dispatcher refuses an implement-kind item whose description does not
+    # OPEN with a `## Definition of Done` section: one gradeable bullet per
+    # assertion, and a `References:` line naming an existing H2 of this repo's
+    # SPECIFICATION/ (here, scenarios.md's Scenario 1). The brief sits under its
+    # own heading so it is not read as more assertions.
+    _seed_desc="$(cat <<'SEED_DESC'
+## Definition of Done
+
+References: Scenario 1 - Greeting one supplied name
+
+- `greet("Ada")` from `src/greeting/greet.py` returns exactly `Hello, Ada!`.
+- For any supplied name, `greet(name)` returns exactly `Hello, <name>!`.
+
+## Brief
+
+Implement the program described in this repo's SPECIFICATION/: expose a Python function greet(name: str) -> str (in src/greeting/greet.py) that returns exactly "Hello, <name>!". For the input Ada it must return "Hello, Ada!". Add a test under tests/ and make `just check` pass. Read this repo's root CLAUDE.md for local constraints (no Red-Green-Replay ritual here; commit normally). Follow contracts.md / scenarios.md exactly.
+SEED_DESC
+)"
+    bd create "Implement greet per the SPECIFICATION" -d "$_seed_desc" >/dev/null 2>&1
     # Promote the seeded item to the livespec `ready` status. A new item lands
     # in the intake lane — read back as `backlog` through the host's bd guard,
     # bd-native `open` without it — which is OUT of the ready set the `--item`
