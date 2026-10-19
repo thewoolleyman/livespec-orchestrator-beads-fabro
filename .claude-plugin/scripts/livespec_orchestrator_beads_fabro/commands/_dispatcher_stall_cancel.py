@@ -13,16 +13,17 @@ of nothing — and it would still SUCCEED, reporting an unobservable run as a ru
 with no publication. Keeping the probe, the destruction and the record in one
 function is what makes that ordering a property of the code rather than a rule a
 caller has to remember.
+
+THE PROBE ITSELF moved to `_dispatcher_watchdog_run_probe` when the whole-run
+wall budget became the second cancel class taking the same reading. The
+ordering rule above still governs THIS function; what is shared is the reading,
+because a second copy of it would be a second place for that rule to be got
+wrong.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
-    FABRO_PROBE_TIMEOUT_SECONDS,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_record import (
     stall_cancel_record,
@@ -30,6 +31,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_record 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_run_reading import (
     executing_stage,
     last_publish_draft_publication,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_run_probe import (
+    watchdog_run_reading,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
 
@@ -43,22 +47,6 @@ __all__: list[str] = [
 # have to be the same one, since the thread is waiting for the very `fabro run`
 # that this `rm` is what ends.
 FABRO_RM_TIMEOUT_SECONDS = 120.0
-
-
-@dataclass(frozen=True, kw_only=True)
-class _RunReading:
-    """One cancelled run's own record, as the two probes returned it.
-
-    `events_json` is the lifecycle stream the stage reading needs as JSON;
-    `record_text` is the same stream plus the inspect record as flat text, which
-    is where the publication marker is matched. Two fields rather than one
-    because the stage reading must PARSE and the marker reading must not: a
-    marker reader handed only the parsed stream would miss a build that carries
-    node stderr on the inspect record alone.
-    """
-
-    events_json: str
-    record_text: str
 
 
 def cancel_stalled_run(
@@ -104,7 +92,7 @@ def cancel_stalled_run(
     up by a probe is a factory slot held by a run that has already been
     judged dead.
     """
-    reading = _run_reading(port=port, run_id=run_id)
+    reading = watchdog_run_reading(port=port, run_id=run_id)
     rm = port.rm(
         run_id=run_id,
         timeout_seconds=FABRO_RM_TIMEOUT_SECONDS,
@@ -127,32 +115,4 @@ def cancel_stalled_run(
             "stall_layer": plan.stall_window.layer,
             "quiet_seconds": quiet_seconds,
         }
-    )
-
-
-def _run_reading(*, port: FabroPort, run_id: str) -> _RunReading:
-    """The run's own record, read once while the run still exists.
-
-    TWO surfaces are read and concatenated because the publication marker
-    travels on the node's stderr and WHICH surface carries that stderr
-    depends on the engine build — the event stream on one, the inspect
-    record on another. Concatenating is correct rather than lazy: the marker
-    reader takes the LAST marker in the text, and both surfaces describe the
-    same run, so a marker found twice is the same marker.
-
-    A failed probe contributes the empty string, which names no stage and no
-    publication. That is the honest reading: the record says nothing,
-    which is what `executing_stage` returning `None` means.
-    """
-    events = port.events(run_id=run_id, timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS)
-    events_json = events.command.stdout if events.command.exit_code == 0 else ""
-    inspect = port.inspect(run_id=run_id, timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS)
-    inspect_text = (
-        f"{inspect.command.stdout}\n{inspect.command.stderr}"
-        if inspect.command.exit_code == 0
-        else ""
-    )
-    return _RunReading(
-        events_json=events_json,
-        record_text=f"{events_json}\n{inspect_text}",
     )
