@@ -56,10 +56,16 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro._store_dispatch_claim import claim_row_for
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_stamp import (
+    stamp_pending_claim,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
     args_with_dispatch_factory_target,
+    dispatch_factory_targets,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import build_plan
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
 from livespec_orchestrator_beads_fabro.commands.dispatcher import dispatch_preamble
@@ -92,7 +98,19 @@ _TENANT = "livespec-orch-beads-fabro"
 _PREFIX = "bd-ib"
 _WORK_ITEM_ID = "bd-ib-pzdwej"
 _RUN_ID = "01M5AEWJ4VYZKYGQGQSTT9QGTD"
+_DISPATCH_ID = "01M5AEWJ4VYZKYGQGQSTT9QGTE"
 _EXIT_PRECONDITION_ERROR = 3
+
+# A wave of UNPINNED items, five of them, which is what makes a ranking taken
+# once per item distinguishable from one taken once per invocation: at four
+# capacity reads per ranking the two differ by sixteen engine round trips.
+_WAVE_ITEM_IDS = (
+    "bd-ib-wave001",
+    "bd-ib-wave002",
+    "bd-ib-wave003",
+    "bd-ib-wave004",
+    "bd-ib-wave005",
+)
 
 _SELECTION_STAGE = "overflow-factory-selection"
 _REASON_LEAST_UTILIZED = "least-utilized-free-slot"
@@ -247,10 +265,10 @@ def _fake() -> FakeBeadsClient:
     return client
 
 
-def _seed_item() -> None:
+def _seed_item(*, work_item_id: str = _WORK_ITEM_ID) -> None:
     _ = _fake().create_issue(
         draft=IssueDraft(
-            issue_id=_WORK_ITEM_ID,
+            issue_id=work_item_id,
             issue_type="feature",
             title="Overflow an unpinned dispatch to the least-utilized factory",
             description="## Definition of Done\n\n- The dispatch lands on the free slot.\n",
@@ -600,6 +618,108 @@ def test_a_pinned_dispatch_reads_no_capacity_and_journals_no_selection(
 
     assert resolved.fabro_factory_target.name == _OVERFLOW_FACTORY
     assert runner.capacity_argvs() == []
+    assert _selection_records(cwd=tmp_path) == []
+
+
+def test_an_environment_pinned_dispatch_is_stamped_without_any_capacity_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`LIVESPEC_FABRO_FACTORY` pins the ADMISSION resolution, which holds no namespace.
+
+    Taken at the pending CLAIM STAMP rather than at the dispatch resolution,
+    because the stamp is where the loss lands. Admission resolves the factory
+    through the namespace-less form of the precedence — it carries no `--factory`
+    flag to read the variable out of — while the dispatch resolution does honour
+    the variable, so a variable invisible to the first stamps the row with a
+    factory the dispatch never reaches. Every assertion about the dispatch itself
+    still passes in that state, which is why the case is written here: this
+    variable is the ONLY routing mechanism `drive.py` has, and it is used
+    precisely when the recorded factory identity is the point.
+
+    The pinned factory is deliberately the one a ranking would REJECT: hp reports
+    6 of 10 against petri's 0 of 2, so a ranking that ran at all answers petri.
+    The stamped name and the empty capacity-argv list therefore fail
+    independently — the first if the answer came from a reading, the second if a
+    reading was spent at all.
+    """
+    _write_config(cwd=tmp_path)
+    _seed_item()
+    _ = _selection_module()
+    monkeypatch.setenv(_FACTORY_SELECTION_ENV_VAR, _DEFAULT_FACTORY)
+    runner = _Runner(
+        boards={
+            _DEFAULT_SERVER: _Board(runs=6, ceiling=_DEFAULT_CEILING),
+            _OVERFLOW_SERVER: _Board(runs=0, ceiling=_OVERFLOW_CEILING),
+        }
+    )
+    _install_runner(monkeypatch=monkeypatch, runner=runner)
+
+    stamp_pending_claim(
+        repo=tmp_path,
+        work_item_id=_WORK_ITEM_ID,
+        dispatch_id=_DISPATCH_ID,
+        journal=JournalFile(path=tmp_path / "journal.jsonl"),
+    )
+
+    stamp = claim_row_for(path=_store(), work_item_id=_WORK_ITEM_ID).stamp
+    assert stamp is not None
+    assert stamp.factory_name == _DEFAULT_FACTORY
+    assert runner.capacity_argvs() == []
+    assert _selection_records(cwd=tmp_path) == []
+
+
+def test_a_wave_of_unpinned_items_is_ranked_once_for_the_whole_invocation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Five unpinned items, ONE ranking: two reads per server, not two per item.
+
+    The pre-claim gate grades the engine of every target the selection would
+    dispatch to, and in a repository that declares overflow every unpinned item
+    of one wave is placed by the same ranking — so the capacity reads are a
+    property of the INVOCATION and not of the item count.
+
+    Asserted as the exact argv sequence rather than as a bound, because a
+    per-item ranking returns the same target tuple and writes the same gate
+    records: the only thing that says it ranked five times is the round trips it
+    spent, four per ranking, each bounded at the run reader's own 60-second
+    timeout — inside the pre-dispatch wall, whose whole purpose is to settle
+    admission before anything further is spent. A per-item ranking is also
+    several independent live readings, which can disagree with each other, and
+    the `dispatcher.minimum_release` floor is graded only against the targets
+    this one call returns.
+
+    The journal is asserted EMPTY for the same reason the clause requires one
+    record per selection: the gate ranks and the dispatch resolution records, so
+    a record written here would make the one record several, each describing a
+    reading no dispatch acted on.
+    """
+    _write_config(cwd=tmp_path)
+    for work_item_id in _WAVE_ITEM_IDS:
+        _seed_item(work_item_id=work_item_id)
+    _ = _selection_module()
+    runner = _Runner(
+        boards={
+            _DEFAULT_SERVER: _Board(runs=6, ceiling=_DEFAULT_CEILING),
+            _OVERFLOW_SERVER: _Board(runs=0, ceiling=_OVERFLOW_CEILING),
+        }
+    )
+    _install_runner(monkeypatch=monkeypatch, runner=runner)
+
+    targets = dispatch_factory_targets(
+        args=_dispatch_args(cwd=tmp_path),
+        repo=tmp_path,
+        work_item_ids=_WAVE_ITEM_IDS,
+    )
+
+    assert [target.name for target in targets] == [_OVERFLOW_FACTORY]
+    assert [_server_of(argv=argv) for argv in runner.capacity_argvs()] == [
+        _DEFAULT_SERVER,
+        _DEFAULT_SERVER,
+        _OVERFLOW_SERVER,
+        _OVERFLOW_SERVER,
+    ]
     assert _selection_records(cwd=tmp_path) == []
 
 
