@@ -4280,8 +4280,9 @@ cap, and post-merge acceptance" and §"Dispatcher loop invocation surface"
 (dependencies, the WIP cap, `admission_policy`, `factory_safety`,
 `rework:pending`), hold the dispatch-scoped ownership lock, run the
 host-side mechanical wall of §"Effective acceptance criteria", resolve
-its factory as `dispatch --item` does (`--factory`, then the item's
-recorded factory, then `dispatcher.default_factory`), declare a dispatch
+its factory as `dispatch --item` does (the selection order of §"Factory
+addresses resolved from a host registry", including `LIVESPEC_FABRO_FACTORY`
+and factory overflow selection), declare a dispatch
 id to the sandbox, and journal exactly as a dispatch does — including the
 §"Fail-closed cost gate (keyed on `--item` presence)" record, under
 the hand-picked posture. It MUST
@@ -5539,6 +5540,15 @@ about this repo's admission is a category error: the two ceilings govern
 different objects and coincide in value only by accident. A surface that
 names host capacity at all MUST attribute it to the Fabro server and MUST
 NOT imply the Orchestrator enforces it.
+
+The ONE exception is factory overflow selection (§"Factory overflow
+selection"). It MAY read a candidate factory server's own
+`max_concurrent_runs` and that server's own non-terminal run count, solely to
+choose which declared factory receives an unpinned dispatch. That read MUST
+NOT refuse, defer, hold or count a dispatch. It MUST NOT be reported as an
+Orchestrator bound, and it MUST NOT feed any admission, gating or
+capacity-reporting surface. The tenant-scope clause below does not govern it.
+Every other prohibition in this section stays binding.
 
 The counted-claim bound (§"Per-repo WIP cap") is TENANT-scoped and MUST be
 computed from this repository's own state ONLY — its ledger rows, its
@@ -6963,12 +6973,14 @@ The registry refusal applies only to resolving a DECLARED, registry-backed
 entry. It does not change the factory selection order: an explicit
 `--factory` is taken first, then `LIVESPEC_FABRO_FACTORY` when it is set and
 non-empty; then the
-item's recorded factory; then `dispatcher.default_factory`. A recorded factory
+item's recorded factory; then factory overflow selection (§"Factory overflow
+selection") when `dispatcher.overflow_factories` is non-empty, and otherwise
+`dispatcher.default_factory`. A recorded factory
 name that `dispatcher.factories` no longer declares keeps its existing
 treatment: when no explicit selection is made it is ignored and the dispatch
-falls back to `dispatcher.default_factory`, so renaming a factory re-routes the
-later unpinned dispatches of every item that recorded the old name onto the
-default factory. A `dispatcher.default_factory` that names no declared entry
+proceeds as an unpinned one, so renaming a factory re-routes the later
+unpinned dispatches of every item that recorded the old name onto the default
+factory, or through factory overflow selection when it is configured. A `dispatcher.default_factory` that names no declared entry
 keeps its existing treatment as well; this clause does not govern it.
 
 A factory name SHOULD name the Fabro server instance it addresses and SHOULD
@@ -6976,6 +6988,55 @@ stay the same for that instance's whole life. Which instance serves a
 repository by default MUST be carried only by `dispatcher.default_factory`, so
 that moving the default from one instance to another changes that one key and
 renames nothing.
+
+### Factory overflow selection
+
+`dispatcher.overflow_factories` is an OPTIONAL committed array of factory
+names. Each entry MUST name an entry of `dispatcher.factories`, MUST NOT
+repeat, and MUST NOT name `dispatcher.default_factory`. An entry that violates
+this MUST be refused before any item is claimed, with a configuration finding
+naming the offending value. The key is committed-only: it is NOT declared
+API-configurable. When it is absent or empty, selection is exactly the order
+of §"Factory addresses resolved from a host registry", and nothing in this
+section applies.
+
+Overflow selection applies ONLY to a dispatch, including a resume, that has no
+explicit `--factory`, no non-empty `LIVESPEC_FABRO_FACTORY`, and no recorded
+factory that `dispatcher.factories` still declares. For such a dispatch the
+candidates are `dispatcher.default_factory` followed by each entry of
+`dispatcher.overflow_factories`, in that order. For each candidate the
+Dispatcher MUST read, from that candidate's own Fabro server at selection
+time, its non-terminal run count and its own `max_concurrent_runs`. A
+candidate has a FREE slot when its count is below its `max_concurrent_runs`.
+A candidate whose read fails, times out, is unparseable, or reports a
+`max_concurrent_runs` below 1 MUST count as having no free slot.
+
+The Dispatcher MUST place the dispatch on the candidate with a free slot whose
+count divided by its `max_concurrent_runs` is smallest; ties go to the earlier
+candidate. When no candidate has a free slot, the dispatch MUST be placed on
+`dispatcher.default_factory`. Selection MUST NOT refuse, defer, hold, delay or
+count a dispatch on capacity grounds: a dispatch whose chosen factory has no
+free slot proceeds to submission on it, where that factory's scheduler queues
+it as §"Host concurrency belongs to the Fabro scheduler" sanctions. Selection
+does not relax any other requirement: the chosen factory, including a default
+factory reached by fallback, is resolved and admitted exactly as an explicitly
+selected one, so a registry-backed default the registry cannot resolve is
+refused under §"Factory addresses resolved from a host registry".
+
+The chosen factory MUST be recorded as the item's dispatch-factory record
+exactly as an explicit choice is, so that a later resume, reconcile or
+acceptance pass of the same dispatch follows it. A registry-backed candidate
+MUST be resolved through the host registry before its server is read. A
+candidate the registry cannot resolve counts as having no free slot for
+selection; this does not relax the registry refusal for a dispatch that names
+that factory explicitly.
+
+The Dispatcher MUST journal each overflow selection as one record. The record
+carries every candidate considered, in order, with the non-terminal run count
+and `max_concurrent_runs` its server reported or the reason its read failed.
+It also carries the chosen factory and the reason for the choice, which is
+`least-utilized-free-slot` or `no-candidate-free-default`. A dispatch to which
+overflow selection did not apply journals no such record.
 
 ## Built-in ACP node defaults
 

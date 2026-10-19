@@ -1954,5 +1954,13 @@
     "test": "TODO",
     "reason": "Ratified by revision v163 accepting proposal clock-fired-work-supply (plan factory-idle-with-ready-work, epic bd-ib-opbzv3). The work-supply service, timer and installer are not implemented yet; an integration-tier test is owed for the five sub-scenarios (the first and last are host-captured), and work-item bd-ib-hlfw5p implements them and owns that binding.",
     "work_item": "bd-ib-hlfw5p"
+  },
+  {
+    "heading": "## Scenario 203 \u2014 An unpinned dispatch goes to the least-utilized declared factory that has a free scheduler slot",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by the revision accepting proposal factory-overflow-selection (plan petri-factory-on-gmktec, epic bd-ib-fyozyd). Overflow selection over dispatcher.overflow_factories is not implemented yet; an integration-tier test is owed for the five sub-scenarios, and work-item bd-ib-pzdwej implements them and owns that binding.",
+    "work_item": "bd-ib-pzdwej"
   }
 ]
