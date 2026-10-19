@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.217.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.217.0...v0.217.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* refuse ambiguous merged PR body matches ([73aeb11](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/73aeb11e524031ec63f7a7ac5abf53511681ac5f))
+* resolve merged PR body matches ([37b83d6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/37b83d6a6af40627f8949da8aa864f32003e6a5a))
+* tier merged PR body mentions below identity matches ([86c191e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/86c191e360e4c76f748a6e8739d63deb16e29f12))
+
 ## [0.217.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.216.2...v0.217.0) (2026-10-19)
 
 
