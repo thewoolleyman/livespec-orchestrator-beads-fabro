@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.223.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.222.0...v0.223.0) (2026-10-19)
+
+
+### Features
+
+* classify a registry-backed factory as remote for run-turn telemetry ([af3ce3a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/af3ce3af8030931a8e4721e77255f7612984ec26))
+* report an unresolvable registry-backed factory as unobservable ([6f8f4b7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6f8f4b75a9ebd978798911a0393da90073ac300d))
+
 ## [0.222.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.221.0...v0.222.0) (2026-10-19)
 
 
