@@ -13,6 +13,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit impo
     hook_over_limit_from_text,
     journal_hook_over_limit,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_failure_diagnostics import (
+    janitor_failure_diagnosis,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_output_retention import (
     retained_output_record,
 )
@@ -52,6 +55,7 @@ class StageJournalOptions:
     # EMPTY TUPLE means it scrubs and removed nothing, which is a reading its
     # row must carry rather than omit. A single tuple cannot say both.
     removed_env_vars: tuple[str, ...] | None = None
+    janitor_failure_diagnostics: bool = False
 
 
 # The row field naming what a stage's child environment LOST against the
@@ -212,6 +216,11 @@ def journal_stage(
                 result=result,
             )
         )
+    if journal_options.janitor_failure_diagnostics and result.exit_code != 0:
+        diagnosis = janitor_failure_diagnosis(stdout=result.stdout, stderr=result.stderr)
+        record["detail"] = diagnosis.detail
+        if diagnosis.failed_targets:
+            record["failed_targets"] = list(diagnosis.failed_targets)
     journal.append(record=record)
 
 
