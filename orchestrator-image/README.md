@@ -301,20 +301,37 @@ upstream `main` `50809f9` plus the merge of the topic branch below.
 | --- | --- | --- | --- | --- |
 | `plugin-sandbox-backend` at `91b3c89` (thewoolleyman/petri#1) | `SandboxBackend::Plugin` with embedder-configured `SandboxOptions.plugin`, registered under the plugin's own kind in the router's provider registry; a generic `SandboxOptions.resources` applied to every Docker and plugin container sandbox; `PluginSettings::configured` and `with_launch` (arguments and inherited variables); the Fabro frontend lowering a well-formed third-party provider kind instead of refusing it | the Kubernetes sandbox backend (plan `kubernetes-sandbox-backend`, `bd-ib-n7zj4a`): without it a workflow naming a plugin provider is refused at validation, the engine cannot launch the plugin, and a plugin would receive default resources instead of the workflow's CPU and memory | not yet proposed. It goes to `lithoscomputer/petri` unchanged, with the `fabro-sh/fabro` issue (`bd-ib-jadfxx`), only after the change is live on our factories, processing real work, and carrying every dispatch the proof covers on the Kubernetes backend | plan `kubernetes-sandbox-backend` (`bd-ib-nmuyjc`) |
 
-**Pending Fabro carries for the next bundle.** The two topic branches below are on
-`thewoolleyman/fabro`, based on upstream `v0.389.0-nightly.0` (`5c90ad2e0`). They join
-`factory-integration` when the 0.389 bundle is cut (plan `fabro-currency` owns the cut and
-the pin). They are NOT the whole 0.389 carried set: the bundle also re-applies all six
-OTLP carries in the bundle table above (`707038a60982`, `b97025de17d1`, `db6a34da763e`,
-`231f9c7de138`, `c9a0c8b31f39`, `adeefec4cd4f`). The Kubernetes port branch `gate-port`
-carried none of them, and plan `fabro-currency` restored them when cutting the 0.389
-carrier. Any port onto a new base carries every row of BOTH tables, never only the rows
-its own plan added:
+**The Kubernetes port's Fabro carries, cut into the 0.389 carrier (2026-10-19).** Plan
+`fabro-currency` cut `carrier-0389` at `bf5a2dc351644fe0d61cf8d2f25193c23553bd06` on
+`thewoolleyman/fabro`. It is upstream `v0.389.0-nightly.0` (`5c90ad2e0`) plus the two
+topic branches below plus all six OTLP carries in the bundle table above
+(`707038a60982`, `b97025de17d1`, `db6a34da763e`, `231f9c7de138`, `c9a0c8b31f39`,
+`adeefec4cd4f`). `factory-integration` is `5b5abec3`, with the same tree. The build is
+`fabro 0.389.0-nightly.0 (bf5a2dc 2026-10-19)`, sha256
+`b70c2ec605985344d1fbc83d371b57673a2c391b0b5e8dd3413d3a3fa5ffb853`, at
+`~/.local/state/fabro-web-prod/v0389-bf5a2dc35/fabro` on vps. Plan
+`petri-factory-on-gmktec` rolls it to gmktec. The Kubernetes port branch `gate-port`
+(`80f54be79`) carried none of the six OTLP carries, and `fabro-currency` restored them at
+the cut. Any port onto a new base carries every row of BOTH tables, never only the rows
+its own plan added.
 
 | Topic branch | What it is | Upstream disposition |
 | --- | --- | --- |
-| `plugin-sandbox-providers` at `ec1d605cd` | an unbundled provider kind maps to Petri's plugin backend, launched from `[server.sandbox.providers.<kind>]` with `host_address`, `args` and `inherit_env`; the environment's resources reach every container backend; the run worker resolves only `server.sandbox` | the `fabro-sh/fabro` pull request, under the same condition as the Petri row |
+| `plugin-sandbox-providers` at `ec1d605cd` | an unbundled provider kind maps to Petri's plugin backend, launched from `[server.sandbox.providers.<kind>]` with `host_address`, `args` and `inherit_env`; the environment's resources reach every container backend, which also gives Docker sandboxes the environment's cpu, memory and disk as container limits; the run worker resolves only `server.sandbox` | the `fabro-sh/fabro` pull request, under the same condition as the Petri row |
 | `petri-fork-integration` at `a1d991661` | the carrier-only Cargo `[patch]` described above | never upstream |
+
+**Gating a carrier on vps.** Run fmt, clippy AND nextest on the fork's pinned
+`nightly-2026-04-14`, and build `fabro-cli` in the same nextest invocation as
+`fabro-server`. The three server graph-render tests (`get_graph_returns_svg`,
+`render_graph_from_manifest_returns_svg`,
+`render_graph_from_manifest_accepts_fabro_dotted_attributes`) fail on the default stable
+toolchain and pass on the pin, on both `80f54be79` and `bf5a2dc35`, so a failure there
+names the toolchain, not the tree. Two Docker scenario tests
+(`scenario::petri::a_bundle_naming_a_catalog_environment_runs_on_docker_with_its_image`,
+`scenario::petri::the_server_attaches_to_the_container_petri_created`) fail identically on
+unmodified `v0.389.0-nightly.0` on vps (gate run `20261019T052542Z-2633639`). Under load,
+`fabro-petri`'s `a_large_output_round_trips_through_the_blob_table` takes 22 to 26 s on
+both the port and unmodified 0.389, past the crate's 20 s limit, and passes when given time.
 
 ### Dispatch Traps
 
