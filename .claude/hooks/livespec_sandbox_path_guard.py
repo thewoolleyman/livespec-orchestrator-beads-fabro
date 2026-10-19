@@ -106,6 +106,7 @@ def _decision(*, raw: str, environ: dict[str, str]) -> str | None:
         directories=directories,
         protected=protected,
         repository_clone=_real_path(path=repository),
+        repository_entries=_top_level_non_hidden_entries(repository=repository),
     )
     if matched is None:
         return None
@@ -154,6 +155,13 @@ def _entry_targets(*, root: str) -> dict[str, str]:
     except OSError:
         return {}
     return {str(child): _real_path(path=str(child)) for child in children}
+
+
+def _top_level_non_hidden_entries(*, repository: str) -> tuple[str, ...]:
+    """The clone entries a command must not remove or move out all at once."""
+    return tuple(
+        str(child) for child in Path(repository).iterdir() if not child.name.startswith(".")
+    )
 
 
 def _deny_payload(*, reason: str) -> str:

@@ -247,6 +247,7 @@ def refused_path(
     directories: Collection[str],
     protected: Sequence[str],
     repository_clone: str = "",
+    repository_entries: Collection[str] = (),
 ) -> str | None:
     """The protected path `targets` would destroy, or `None` if they would not.
 
@@ -262,20 +263,21 @@ def refused_path(
     the fail-closed direction: an unreadable destination stays a replacement.
     """
     refusable = _refusable_targets(protected=protected)
-    repository_git = _repository_git(repository_clone=repository_clone)
     for target in targets:
         victim = _destroyed(
             target=target, resolved=resolved, directories=directories, refusable=refusable
         )
         if victim is not None:
             return victim
-        if repository_git and _destroyed(
-            target=target,
-            resolved=resolved,
-            directories=directories,
-            refusable=((repository_git, repository_git),),
-        ):
-            return repository_git
+    repository_refusal = _repository_refusal(
+        targets=targets,
+        resolved=resolved,
+        directories=directories,
+        repository_clone=repository_clone,
+        repository_entries=repository_entries,
+    )
+    if repository_refusal is not None:
+        return repository_refusal
     return None
 
 
@@ -571,6 +573,54 @@ def _repository_git(*, repository_clone: str) -> str:
     if clone in _UNREADABLE:
         return ""
     return posixpath.join(clone, _GIT_DIRECTORY)
+
+
+def _repository_refusal(
+    *,
+    targets: Sequence[Target],
+    resolved: Mapping[str, str],
+    directories: Collection[str],
+    repository_clone: str,
+    repository_entries: Collection[str],
+) -> str | None:
+    """The repository path an otherwise in-tree command would make unusable."""
+    clone = posixpath.normpath(repository_clone)
+    git_directory = _repository_git(repository_clone=repository_clone)
+    if not git_directory:
+        return None
+    git_target = ((git_directory, git_directory),)
+    git_victim = next(
+        (
+            git_directory
+            for target in targets
+            if _destroyed(
+                target=target,
+                resolved=resolved,
+                directories=directories,
+                refusable=git_target,
+            )
+        ),
+        None,
+    )
+    for target in targets:
+        if not _GLOB_CHARACTERS & set(target.path) and target.path == git_directory:
+            return git_directory
+    entries = tuple(posixpath.normpath(entry) for entry in repository_entries)
+    if entries and all(
+        any(
+            _destroyed(
+                target=target,
+                resolved=resolved,
+                directories=directories,
+                refusable=((entry, entry),),
+            )
+            is not None
+            for target in targets
+        )
+        for entry in entries
+    ):
+        return clone
+    return git_victim
 
 
 def _ancestors(*, path: str) -> tuple[str, ...]:
