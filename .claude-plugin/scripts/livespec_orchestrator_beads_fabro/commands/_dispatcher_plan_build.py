@@ -52,6 +52,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     DEFAULT_MERGE_ON_REVIEW_CAP,
     DEFAULT_REVIEW_FIX_CAP,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget import (
+    DEFAULT_RUN_WALL_BUDGET,
+    RunWallBudget,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
     COMMITTED_RUN_CONFIG_IMAGE,
     SandboxImageSource,
@@ -216,6 +220,14 @@ class DispatchPlan:
     # dispatch record, so a watchdog re-reading the file could bound a node
     # against one reading while the node ran under another.
     node_timeouts: NodeTimeouts = DEFAULT_NODE_TIMEOUTS
+    # The WHOLE-RUN WALL BUDGET this dispatch resolved, beside the two bounds
+    # above. It rides the plan for the reason they do, and for one more: the
+    # pre-dispatch admission REFUSED a budget smaller than any node timeout
+    # rendered into the graph, so the figure the watchdog cancels against has
+    # to be the figure that refusal graded -- a watchdog re-reading the file
+    # could bound a run by a budget the admission never saw, and both readings
+    # produce a well-formed number.
+    run_wall_budget: RunWallBudget = DEFAULT_RUN_WALL_BUDGET
     # WHERE this invocation retains a FAILED post-merge janitor command's
     # complete captured output, and under which identity. It rides the plan
     # because the venue is per-INVOCATION state resolved up front -- the
@@ -261,6 +273,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
     fabro_timeout_seconds: float = DEFAULT_FABRO_TIMEOUT_SECONDS,
     stall_window: StallWindow = DEFAULT_STALL_WINDOW,
     node_timeouts: NodeTimeouts = DEFAULT_NODE_TIMEOUTS,
+    run_wall_budget: RunWallBudget = DEFAULT_RUN_WALL_BUDGET,
     acp_nodes: AcpNodeResolution | None = None,
 ) -> DispatchPlan:
     """Resolve the per-item dispatch plan (publish branch, argv config, contract)."""
@@ -300,6 +313,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
         fabro_timeout_seconds=fabro_timeout_seconds,
         stall_window=stall_window,
         node_timeouts=node_timeouts,
+        run_wall_budget=run_wall_budget,
         acp_nodes=acp_nodes,
         integration=integration,
         integration_inputs=contract_run_inputs(

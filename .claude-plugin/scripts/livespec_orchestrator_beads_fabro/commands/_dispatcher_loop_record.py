@@ -149,6 +149,10 @@ def record_dispatch(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict` is 
         janitor=janitor,
         raw_labels=raw_labels,
         timeouts=payload.timeouts,
+        # The budget the materialization already resolved and the admission
+        # already graded, projected rather than re-read for the same
+        # resolve-once reason the timeouts beside it are.
+        run_wall_budget=payload.run_wall_budget,
         # The default-branch probe rides a plain shell runner: it reads the
         # target's own git/forge state and predates the per-dispatch GitHub App
         # token, whose remint decorator exists for the engine's long merge poll.
