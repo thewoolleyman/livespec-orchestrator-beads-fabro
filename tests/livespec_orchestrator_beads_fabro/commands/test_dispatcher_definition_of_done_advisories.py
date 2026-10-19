@@ -53,6 +53,44 @@ _GOVERNED_ASSERTION = (
 # assertion would fail on it.
 _UNGOVERNED_ASSERTION = "The emitted overlay file carries one environment table."
 
+# The two-scenario fixture behind the BODY case below. `902` states the
+# assertion in its own Gherkin body and says nothing of it in its heading; `901`
+# is a DECOY whose heading shares three distinctive terms — one short of the
+# bound — and whose body shares none.
+#
+# The decoy is what makes the case able to fail for the right reason. A build
+# that scored every scenario against the WHOLE FILE rather than against its own
+# body would reach the bound on the decoy too, and the decoy is earlier in
+# document order, so it would be reported instead of the scenario that actually
+# states the behaviour.
+_DECOY_SCENARIO_HEADING = "## Scenario 901 — The dispatcher renders the primary table"
+_BODY_SCENARIO_HEADING = "## Scenario 902 — A held node resolves"
+_BODY_GOVERNED_ASSERTION = (
+    "The dispatcher skips a domain-held primary candidate and renders candidate one"
+    " as the node's only adapter."
+)
+_BODY_SCENARIOS = (
+    "# Scenarios\n"
+    "\n"
+    f"{_DECOY_SCENARIO_HEADING}\n"
+    "\n"
+    "```gherkin\n"
+    "Feature: An unrelated feature\n"
+    "  Scenario: Nothing of interest\n"
+    "    Given a table\n"
+    "```\n"
+    "\n"
+    f"{_BODY_SCENARIO_HEADING}\n"
+    "\n"
+    "```gherkin\n"
+    "Feature: Ordered selection\n"
+    "  Scenario: A domain-held candidate is skipped\n"
+    "    Given candidate zero is covered by an unexpired domain hold\n"
+    "    When the dispatcher dispatches the item\n"
+    "    Then candidate one's adapter is the only adapter rendered for that node\n"
+    "```\n"
+)
+
 
 def _item(**overrides: object) -> WorkItem:
     base = WorkItem(
@@ -269,6 +307,53 @@ def test_a_generic_reference_where_a_scenario_states_the_behaviour_names_that_sc
     assert len(findings) == 1
     assert item.id in findings[0]
     assert _SCENARIO_HEADING[len("## ") :] in findings[0]
+
+
+def test_a_scenario_whose_body_states_the_assertion_is_named_though_its_heading_does_not(
+    tmp_path: Path,
+) -> None:
+    """Each scenario is scored on its heading TOGETHER with its own body text.
+
+    A `## Scenario NN — ...` title is one sentence of summary while the
+    behaviour is stated in the Gherkin beneath it, so a heading-only score
+    misses the scenario that governs the assertion and reports nothing — which
+    reads exactly like an assertion no scenario states, and costs a factory run
+    when the gate then finds the governing scenario itself.
+
+    The decoy heading is asserted ABSENT from the finding as well as the
+    governing heading present, because the body each scenario is scored on ends
+    at the next `## ` heading: a build reading the whole file as every
+    scenario's body reaches the bound on the decoy first.
+    """
+    item = _item(
+        description=_description(
+            assertions=(_BODY_GOVERNED_ASSERTION,),
+            references=_GENERIC_HEADING,
+        )
+    )
+    repo = _repo(tmp_path=tmp_path, scenarios=_BODY_SCENARIOS)
+
+    findings = _findings(item=item, cwd=repo)
+
+    assert len(findings) == 1
+    assert _BODY_SCENARIO_HEADING[len("## ") :] in findings[0]
+    assert _DECOY_SCENARIO_HEADING[len("## ") :] not in findings[0]
+
+
+def test_both_scenarios_of_the_body_fixture_are_in_the_candidate_set(tmp_path: Path) -> None:
+    """The positive control for the case above: the decoy WAS a candidate.
+
+    Without it, a build that simply dropped the decoy from the heading set would
+    satisfy the absence assertion there while proving nothing about the body
+    boundary the case exists to bind.
+    """
+    module = importlib.import_module(_MODULE)
+    repo = _repo(tmp_path=tmp_path, scenarios=_BODY_SCENARIOS)
+
+    assert module.scenario_headings(repo=repo) == (
+        _DECOY_SCENARIO_HEADING[len("## ") :],
+        _BODY_SCENARIO_HEADING[len("## ") :],
+    )
 
 
 def test_a_reference_line_naming_a_scenario_reports_no_scenario_reference_finding(

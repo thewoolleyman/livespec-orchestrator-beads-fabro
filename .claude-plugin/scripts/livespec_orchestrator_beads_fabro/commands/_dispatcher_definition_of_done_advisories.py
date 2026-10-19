@@ -27,8 +27,8 @@ also why the finding text says which form matched rather than asserting the
 assertion is wrong.
 
 WHY THE SCENARIO RULE REPORTS A CANDIDATE RATHER THAN A VERDICT. "A scenario
-heading states this assertion's behaviour" is a semantic question. What a host
-surface can observe is a heading whose own distinctive vocabulary overlaps the
+states this assertion's behaviour" is a semantic question. What a host surface
+can observe is a scenario whose own distinctive vocabulary overlaps the
 assertion's, which is evidence worth showing and not proof. The rule therefore
 fires only when the reference line names NO scenario heading at all — the one
 case where the gate's own finding is reachable — and it NAMES the candidate so
@@ -36,6 +36,20 @@ the filer can accept or reject it in one read. An unreadable `scenarios.md`
 withholds the rule entirely, for the reason the mechanical wall records for its
 own reference check: an empty heading set is the absence of evidence, not
 evidence that no scenario governs the assertion.
+
+WHY THE SCORE READS EACH SCENARIO'S BODY AND NOT ONLY ITS HEADING. A
+`## Scenario NN — ...` title is one sentence of summary; the behaviour is stated
+in the Gherkin beneath it, down to the sub-scenario titles and the Then steps.
+Scoring headings alone therefore missed exactly the scenarios this tree states
+behaviour in — measured 2026-10-17 on two items that passed this wall and were
+then refused at `dod_gate` check 6 on scenario coverage, Scenario 60 governing
+four of one item's five assertions and Scenario 127 all five of the other's,
+every match sitting in the body while the heading's vocabulary stayed under the
+bound. A false candidate costs the filer one read; a miss costs a factory run,
+so the recall is worth the precision. The body each scenario is scored on ends
+at the next `## ` heading, which is what keeps a match attributable: a score
+taken over the whole file reaches the bound on every scenario at once and names
+whichever comes first in document order.
 
 WHY THE CARRIER RULE READS THE SECTION ONLY. The clause permits a child of a
 plan to repeat the carrier relation "as prose before the Definition of Done
@@ -47,6 +61,7 @@ and the permitted-versus-forbidden distinction costs this module no branch.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
@@ -106,10 +121,10 @@ _UNDISTINCTIVE = frozenset(
         "would",
     }
 )
-# How many distinctive terms an assertion and a scenario heading must SHARE
-# before the heading is worth naming as a candidate. Four is deliberately well
-# above incidental overlap: a shared subject noun and a shared verb reach two,
-# and the rule's whole value is that the filer can accept the candidate without
+# How many distinctive terms an assertion and a scenario must SHARE before that
+# scenario is worth naming as a candidate. Four is deliberately well above
+# incidental overlap: a shared subject noun and a shared verb reach two, and the
+# rule's whole value is that the filer can accept the candidate without
 # re-reading the scenario file.
 _MIN_SHARED_TERMS = 4
 
@@ -136,6 +151,22 @@ _CARRIER_RELATION_FORMS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 
+@dataclass(frozen=True, kw_only=True)
+class _ScenarioSection:
+    """One scenario of the governed spec tree, as the candidate rule scores it.
+
+    `terms` is the distinctive vocabulary of the scenario's HEADING together
+    with that of its BODY — the lines under the heading up to the next `## `
+    heading. The union is computed ONCE, when the file is read, rather than per
+    assertion: the hygiene lane grades every item in the tenant and each item
+    carries several assertions, so a per-assertion tokenization of every
+    scenario body would re-scan the whole file for each of them.
+    """
+
+    heading: str
+    terms: frozenset[str]
+
+
 def scenario_headings(*, repo: Path) -> tuple[str, ...]:
     """The scenario H2 titles of the governed spec tree, in document order.
 
@@ -144,19 +175,44 @@ def scenario_headings(*, repo: Path) -> tuple[str, ...]:
     which withholds the candidate rule either way rather than concluding that no
     scenario governs the assertion.
     """
+    return tuple(section.heading for section in _scenario_sections(repo=repo))
+
+
+def _scenario_sections(*, repo: Path) -> tuple[_ScenarioSection, ...]:
+    """Every scenario of the governed spec tree with its own body, in document order.
+
+    A NON-scenario H2 closes the scenario before it and opens no section of its
+    own, so the prose under `## Runtime notes` is scored against no scenario at
+    all rather than being carried onto whichever scenario preceded it.
+    """
     path = repo.joinpath(*_SCENARIOS_RELPATH)
     read = attempt(action=lambda: path.read_text(encoding="utf-8"), exceptions=(OSError,))
     if isinstance(read, AttemptFailure):
         return ()
-    titles: list[str] = []
+    sections: list[_ScenarioSection] = []
+    heading: str | None = None
+    body: list[str] = []
     for raw in read.splitlines():
         match = _H2.match(raw)
         if match is None:
+            if heading is not None:
+                body.append(raw)
             continue
+        if heading is not None:
+            sections.append(_section(heading=heading, body=body))
         title = match.group(1)
-        if title.startswith(SCENARIO_HEADING_PREFIX):
-            titles.append(title)
-    return tuple(titles)
+        heading = title if title.startswith(SCENARIO_HEADING_PREFIX) else None
+        body = []
+    if heading is not None:
+        sections.append(_section(heading=heading, body=body))
+    return tuple(sections)
+
+
+def _section(*, heading: str, body: list[str]) -> _ScenarioSection:
+    return _ScenarioSection(
+        heading=heading,
+        terms=_distinctive_terms(text=heading) | _distinctive_terms(text="\n".join(body)),
+    )
 
 
 def advisory_definition_of_done_findings(*, item: WorkItem, cwd: Path) -> tuple[str, ...]:
@@ -216,12 +272,12 @@ def _scenario_reference_findings(
     """
     if _names_a_scenario(references=section.references):
         return []
-    headings = scenario_headings(repo=cwd)
-    if not headings:
+    sections = _scenario_sections(repo=cwd)
+    if not sections:
         return []
     findings: list[str] = []
     for assertion in section.assertions:
-        candidate = _governing_scenario(assertion=assertion.text, headings=headings)
+        candidate = _governing_scenario(assertion=assertion.text, sections=sections)
         if candidate is not None:
             findings.append(
                 _scenario_reference_finding(
@@ -247,20 +303,22 @@ def _bare_heading(*, text: str) -> str:
     return stripped
 
 
-def _governing_scenario(*, assertion: str, headings: tuple[str, ...]) -> str | None:
-    """The scenario heading sharing the most distinctive vocabulary, past the bound.
+def _governing_scenario(*, assertion: str, sections: tuple[_ScenarioSection, ...]) -> str | None:
+    """The scenario sharing the most distinctive vocabulary, past the bound.
 
-    Document order breaks a tie, because the first match is the one a reader
-    encounters when they go and check, and a tie-break by text would reorder the
-    candidate for reasons the filer cannot see.
+    Each scenario is scored on its HEADING's distinctive terms together with
+    those of its own BODY, and the heading of the best-scoring one is returned
+    as the candidate. Document order breaks a tie, because the first match is
+    the one a reader encounters when they go and check, and a tie-break by text
+    would reorder the candidate for reasons the filer cannot see.
     """
     terms = _distinctive_terms(text=assertion)
     best: str | None = None
     best_shared = 0
-    for heading in headings:
-        shared = len(terms & _distinctive_terms(text=heading))
+    for section in sections:
+        shared = len(terms & section.terms)
         if shared > best_shared:
-            best = heading
+            best = section.heading
             best_shared = shared
     if best_shared < _MIN_SHARED_TERMS:
         return None
