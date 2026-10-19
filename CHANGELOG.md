@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.217.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.216.2...v0.217.0) (2026-10-19)
+
+
+### Features
+
+* **dispatcher:** carry the cluster gate's state word on the janitor-post-merge row ([5ab300a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5ab300a0218c7a11c1f13ba3294294efb49bc196))
+* **dispatcher:** carry the submitted tree hash on the cluster janitor row ([02d54b8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/02d54b8e9fe381fe07028ce323aacb3ab7ecb279))
+* **dispatcher:** copy the gate verdict line's Job identity onto the janitor row ([a8fadf2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a8fadf21b0bf6b84d223ab1053c519b28edbb22c))
+* **dispatcher:** name the resolved check-suite venue on the janitor-post-merge row ([788905a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/788905acad9be8ba7bae681c0ef67d2690b45fa1))
+* **dispatcher:** name the rule that chose the suite on the janitor-post-merge row ([b126995](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b126995026fbed593ec6084a678999c8fe21d634))
+* **dispatcher:** stamp the check suite's start on the janitor-post-merge row ([b29f2f1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b29f2f1e783644d8e36c256b3c39abf448477e19))
+
+
+### Bug Fixes
+
+* **dispatcher:** answer an absence for a submitted tree that cannot be read ([46e5d02](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/46e5d0282deeaa385111ce0ba4c1ef7030dc6e33))
+
 ## [0.216.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.216.1...v0.216.2) (2026-10-19)
 
 
