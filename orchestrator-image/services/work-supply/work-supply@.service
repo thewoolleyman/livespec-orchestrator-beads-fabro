@@ -1,0 +1,62 @@
+# livespec `work-supply` — host timer unit TEMPLATE, one instance per tenant.
+#
+# The factory's drain is an ENGINE somebody has to run. Measured 2026-10-13 on
+# hp: the fleet Fabro server (cap 10) received no new run between about 18:27Z
+# and 22:56Z while 0 runs were in flight, the Claude credential probe reported
+# `usable`, and dispatch-ready work existed — because no session happened to be
+# running `dispatcher.py loop`. Dispatch resumed only when some session started
+# an engine again. Supply of work to the factory is therefore a clock question,
+# exactly as run inventory is (see the `reconcile-runs` sibling), and not a
+# question of who is logged in.
+#
+# The launcher path and the per-instance environment directory below are
+# placeholder tokens that `install.sh` in this directory substitutes. Do NOT
+# install this file verbatim.
+#
+# This is a systemd INSTANCE template: `%i` is the tenant instance name, and
+# `install.sh` writes one `<instance>.env` per tenant into that environment
+# directory, carrying that tenant's checkout path, drain budget and credential
+# wrapper. A firing whose env file is missing therefore reads an EMPTY tenant
+# and the launcher refuses, naming the variable, rather than draining some
+# other repository.
+#
+# TWO THINGS THIS UNIT DELIBERATELY DOES NOT DO.
+#
+# It does not name a plugin build. `reconcile-runs` substitutes a plugin root
+# at install time, which pins that unit to one cache build for ever: after a
+# release the timer keeps executing the build the operator has already
+# replaced, with no warning of its own — the stale-build trap AGENTS.md records
+# against long-lived sessions, arriving through a unit file instead. The
+# launcher resolves the tenant's REGISTERED install at each firing, and refuses
+# rather than guessing when the tenant has none.
+#
+# It does not go through the credential wrapper. The wrapper is invoked once,
+# by the detached pass itself. A wrapped launcher would make the pass's own
+# wrapper call a NESTED one, and a nested call is what poisons the wrapper's
+# 300-second credential cache for every other caller on the host (AGENTS.md,
+# §"Beads runtime prerequisites"). The launcher needs no credential: it reads a
+# JSON registry and starts a unit.
+#
+# `Type=oneshot` is correct ONLY because ExecStart is the launcher rather than
+# the drain. systemd never starts a oneshot that is still active, and a drain
+# pass blocks until its wave's post-verdict stages finish — hours, for one
+# wave. An ExecStart that ran the drain would therefore make the timer skip
+# every firing for the length of the pass, which is the opposite of the
+# guarantee this unit exists to provide.
+
+[Unit]
+Description=livespec work supply — one unattended drain pass for tenant %i
+Documentation=https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=@INSTANCE_ENV_DIR@/%i.env
+ExecStart=@LAUNCHER@ --instance %i
+# The launcher reads one JSON file and starts one transient unit; it never
+# waits on the pass. A minute is generous and bounds a wedged registry read.
+TimeoutStartSec=60
+# A failed firing is not an incident: the next tick asks the same question
+# again, and a restart storm against an unreadable registry would be noise.
+Restart=no
