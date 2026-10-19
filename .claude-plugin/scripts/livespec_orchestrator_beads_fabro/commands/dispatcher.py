@@ -23,6 +23,7 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
   dispatcher.py claude-cred-status [--json]
   dispatcher.py spec-check [--project-root <path>] [--spec-root <path>] [--json]
   dispatcher.py janitor-check [--repo <path>] [--json]
+  dispatcher.py idle-slot-audit [--repo <path>] [--json]
   dispatcher.py reconcile-runs [--repo <path>] [--factory <name>]
                                 [--fabro-bin <path>] [--journal <path>]
                                 [--invoker <id>] [--dry-run] [--json]
@@ -62,6 +63,15 @@ tree at `--spec-root` (default `<project-root>/SPECIFICATION`).
 `janitor-check` runs the three re-homed stale-cleanup checks
 (no-stale-merged-branch / no-stale-merged-pr-branch / no-stale-worktree;
 see `_dispatcher_janitor_checks.py`) against the repo's git/gh state.
+`idle-slot-audit` is the read-only cross-tenant measurement of the priority
+queue against one factory's board. It reads the committed-only
+`dispatcher.idle_slot_audit` object, lists every non-closed child of each
+named priority epic through BOTH child-linkage arms, gives each child exactly
+one class, and ends with a finding line when the board is observable, its
+queued count is zero, and at least one child is `DISPATCHABLE-NOW` or
+`STALE-EDGE`. It writes to no ledger, journal or factory, reads no comment
+prose, derives no available capacity, and exits 2 only on a malformed
+configuration object.
 `reconcile-runs` is the single authority over every configured factory's
 non-terminal run inventory. It surveys each declared factory through that
 factory's own resolved target, considers every non-terminal status kind —
@@ -328,6 +338,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_cli impo
     add_post_host_record_arguments,
     run_post_host_record_cli,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_command import (
+    add_idle_slot_audit_arguments,
+    run_idle_slot_audit_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
     emit_outcomes,
     ledger_blocked_after_normalization,
@@ -430,6 +444,7 @@ __all__: list[str] = [
     "run_codex_cred_status",
     "run_file_canary_command",
     "run_id",
+    "run_idle_slot_audit_command",
     "run_janitor_check",
     "run_ledger_check",
     "run_ledger_normalize",
@@ -450,6 +465,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "codex-cred-status": run_codex_cred_status,
     "dispatch": run_dispatch_command,
     "file-canary": run_file_canary_command,
+    "idle-slot-audit": run_idle_slot_audit_command,
     "janitor-check": run_janitor_check,
     "ledger-check": run_ledger_check,
     "ledger-normalize": run_ledger_normalize,
@@ -489,6 +505,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     add_spec_check_arguments(parser=subparsers.add_parser("spec-check"))
     add_janitor_check_arguments(parser=subparsers.add_parser("janitor-check"))
+    add_idle_slot_audit_arguments(parser=subparsers.add_parser("idle-slot-audit"))
     add_reconcile_runs_arguments(parser=subparsers.add_parser("reconcile-runs"))
     add_reconcile_merged_arguments(parser=subparsers.add_parser("reconcile-merged"))
     add_post_host_record_arguments(parser=subparsers.add_parser("post-host-record"))
