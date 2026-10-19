@@ -241,6 +241,25 @@ def test_a_mixed_removal_that_also_names_a_protected_path_is_refused(
     assert str(sandbox.root) in reason
 
 
+def test_removing_the_clone_repository_directory_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The clone keeps its Git metadata for the engine's next checkpoint."""
+    sandbox = _Sandbox(base=tmp_path)
+    repository_directory = sandbox.clone / ".git"
+    repository_directory.mkdir()
+
+    reason = _verdict(
+        sandbox=sandbox,
+        command=f"rm -rf {repository_directory}",
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert reason is not None
+    assert str(repository_directory) in reason
+
+
 # ---------------------------------------------------------------------------
 # Scenario: a protected path mentioned only as data is not refused
 # ---------------------------------------------------------------------------

@@ -100,6 +100,9 @@ def _decision(*, raw: str, environ: dict[str, str]) -> str | None:
         repository_clone=_real_path(path=repository),
         sandbox_entry_targets=_entry_targets(root=root),
     )
+    if protected:
+        repository_directory = str(Path(repository).resolve() / ".git")
+        protected = (*protected, repository_directory)
     matched = policy.refused_path(
         targets=targets, resolved=resolved, directories=directories, protected=protected
     )
