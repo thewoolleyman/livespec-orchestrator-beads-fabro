@@ -315,6 +315,48 @@ After every acceptance assertion has completed its own loop:
 2. In your final reply, summarize what you changed, list the commits
    (`git log --oneline origin/{{ inputs.default_branch }}..HEAD`), and report any deviation
    or hook output verbatim.
+3. End that reply with the completion field of the next section. It is what
+   decides this stage's outcome, so a reply without it is an incomplete turn.
+
+## Report whether the Definition of Done is complete
+
+This stage's outcome is decided from a structured completion field in this
+turn's final output, NOT from the turn merely ending. End your final reply
+with a single JSON object on the LAST line, stating whether the work item's
+Definition of Done is complete on the committed branch:
+
+- Complete — every assertion of the Definition of Done is satisfied by the
+  commits on this branch, and the repository's check suite is green against
+  them:
+
+      {"preferred_next_label": "definition_of_done_complete"}
+
+- Incomplete — anything less than that:
+
+      {"outcome": "failed", "preferred_next_label": "definition_of_done_incomplete", "failure_reason": "LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS: <what is committed, and what the Definition of Done still needs>"}
+
+On the complete field the implement stage succeeds and the run proceeds to
+`implementation_diff` exactly as before. On the incomplete field the implement
+stage ends FAILED with a cause naming partial progress, the run takes the same
+failure edge as any other implement failure, and the Dispatcher carries that
+cause into the dispatch outcome detail and rests the work-item at
+`blocked / needs-human` with your tree preserved by reference.
+
+Report partial progress whenever the work IS partial — an assertion still
+unsatisfied, a check you did not run, a Red commit with no Green beside it,
+or a turn that ran out of room. That is the CORRECT ending for a partial
+turn and it is not a penalty: it is the only ending that lets the work be
+resumed, instead of being published and proved as though it were finished.
+
+The two endings earlier in this prompt are both incomplete endings. The
+needs-human protocol and the Definition-of-Done amendment each already carry
+`"outcome": "failed"` with their own reason: keep that reason and add
+`"preferred_next_label": "definition_of_done_incomplete"` beside it.
+
+A final output carrying NO completion field is treated as INCOMPLETE. The
+`implement_partial_progress` stage then fails the run with the same
+partial-progress cause, so omitting the field buys no silent success — say
+which of the two it is.
 
 ## Ending the turn — leave nothing running in the background
 

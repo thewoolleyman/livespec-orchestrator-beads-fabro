@@ -1359,6 +1359,49 @@ digraph ImplementWorkItem {
         script="echo 'LIVESPEC_DEAD_IMPLEMENTER: unchanged tree after implementer; no janitor/review/disposition rounds will run against dispatch base' >&2; exit 1"
     ]
 
+    // Partial-progress gate for an implement turn that reported NOTHING
+    // (contracts.md "An implement turn that ends incomplete does not succeed",
+    // ratified v165; Scenario 204). The implement prompt requires the turn's
+    // final output to carry a completion field, and the two fields it may carry
+    // are routed by the two conditional edges out of `implement`: an incomplete
+    // field rides the `outcome=failed` edge the structured needs-human ending
+    // already uses, and a complete field rides `preferred_label=
+    // definition_of_done_complete` to `implementation_diff`. This node is the
+    // THIRD case — the unconditional fallthrough — which the clause requires be
+    // treated as incomplete: a final output carrying no completion field at all,
+    // one carrying a value neither edge recognizes, or one reporting the work
+    // incomplete without the failed outcome beside it.
+    //
+    // IT CANNOT READ THE FIELD, AND IT DOES NOT TRY. The field lives in the
+    // turn's final output, which only the engine reads; the routing above is
+    // what consumes it. This node is reached only when NO route matched, so the
+    // absence IS its whole input and failing closed is the only honest answer.
+    // Routing on `preferred_label` rather than on a `context_updates` key is
+    // deliberate: `preferred_label` is the one structured agent-output key this
+    // graph already routes on, on this engine (`review`, `disposition`,
+    // `proof_capture`), so the complete path cannot silently stop matching and
+    // send every finished turn down this edge.
+    //
+    // THE CAUSE RECORD NAMES `implement`, NOT THIS NODE. It is written through
+    // the per-clone `$GIT_DIR/livespec-stage-cause` convention that the
+    // publication stages use, and the `needs_human` terminal renders it as
+    // "stage implement failed: <cause>" — which is the stage whose turn left the
+    // partial progress and the one a human has to act on. This node's own name
+    // still reaches the Dispatcher through the terminal checkpoint's outcome map,
+    // so neither surface loses which guard fired.
+    //
+    // ABSENT FROM `_node_timeouts._WORST_CASE_VISITS` for the reason the three
+    // terminal sentinels are: every path through it ends the run at
+    // `needs_human`, so it is mutually exclusive with the whole tail of the main
+    // path and billing it beside that tail would budget a worst case no run can
+    // reach. It resolves its timeout from configuration like every other node.
+    implement_partial_progress [
+        label="Implement partial progress: no completion field; stop before janitor"
+        shape=parallelogram
+        timeout="1800s"
+        script="cause='LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS: the implement turn final output carried no completion field reporting the Definition of Done complete on the committed branch, so the work is treated as partial progress; no janitor, review, disposition or publication round runs against it'; cause_path=$(git rev-parse --git-path livespec-stage-cause); printf 'stage: %s\\ncause: %s\\n' implement \"$cause\" > \"$cause_path\"; printf '%s\\n' \"$cause\" >&2; exit 1"
+    ]
+
     // Needs-human TERMINAL node (plan ledger-is-the-only-gate, epic
     // bd-ib-n77djm; contracts.md "A factory run never awaits a human",
     // ratified v093, Scenario 103). It REPLACES the former `escalate`
@@ -1642,13 +1685,46 @@ digraph ImplementWorkItem {
     dod_gate -> needs_human [label="Blocked", condition="outcome=failed"]
     dod_gate -> implement
 
-    // A failed implement (structured needs-human ending, see
-    // prompts/implement.md) routes to the needs_human terminal —
-    // conditional edges take priority over the unconditional fallback;
-    // everything else proceeds to the diff breaker before any downstream
-    // spend.
-    implement -> needs_human [label="Blocked", condition="outcome=failed"]
-    implement -> implementation_diff
+    // Implement completion routing (contracts.md "An implement turn that ends
+    // incomplete does not succeed", ratified v165; Scenario 204). The turn's
+    // final output carries a completion field stating whether the Definition of
+    // Done is complete on the committed branch (@prompts/implement.md), and
+    // these three edges are what the stage's outcome is decided FROM — never
+    // from the turn merely ending.
+    //
+    //   - incomplete  -> the `outcome=failed` edge, the SAME failure edge a
+    //                    structured needs-human ending and a Definition-of-Done
+    //                    amendment already take, so the Dispatcher carries the
+    //                    partial-progress cause into the dispatch outcome detail
+    //                    and rests the item at `blocked / needs-human` with no
+    //                    new mapping of its own. `weight=100` keeps that
+    //                    deterministic now that a second condition sits beside
+    //                    it.
+    //   - complete    -> `implementation_diff`, the routing this edge has always
+    //                    had, now named by its condition instead of inherited
+    //                    from the fallthrough.
+    //   - no field    -> `implement_partial_progress`, the unconditional
+    //                    fallthrough, because the clause requires a final output
+    //                    with no completion field be TREATED AS INCOMPLETE.
+    //
+    // THE FALLTHROUGH IS THE INCOMPLETE ARM, AND THAT POLARITY IS THE WHOLE
+    // POINT. Before v165 the fallthrough was the SUCCESS arm, so a turn that
+    // reported "Partial progress only" in prose and emitted nothing structured
+    // was recorded succeeded and ran on through janitor, publish_draft and
+    // proof_capture — measured on bd-ib-davaxq run 01M58QNY3ZNM2YCVVB9G2383M0,
+    // where proof_capture then found the feature absent and the fix turn had to
+    // build the whole thing in one turn and died at its ceiling. Fail-closed
+    // here costs a conforming turn nothing and is the only polarity under which
+    // silence cannot publish.
+    implement -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
+    implement -> implementation_diff [label="Definition of Done complete", condition="preferred_label=definition_of_done_complete"]
+    implement -> implement_partial_progress [label="no completion field"]
+
+    // The partial-progress gate is a fail-closed dead end that routes to the
+    // needs-human terminal rather than terminating on its own, so the turn's
+    // tree is preserved by reference and the item rests at `blocked /
+    // needs-human` with the partial-progress cause as its recorded question.
+    implement_partial_progress -> needs_human
 
     // Changed-tree routing: exit 0 means `git diff --quiet` found a
     // diff, so the existing janitor -> review path remains intact.

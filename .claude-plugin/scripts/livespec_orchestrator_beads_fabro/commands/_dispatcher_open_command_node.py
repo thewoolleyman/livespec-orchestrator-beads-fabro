@@ -66,8 +66,14 @@ __all__: list[str] = [
 # no more instantaneous than the janitor's. They cost nothing when they are
 # not running, and `tests/.../test_dispatcher_open_command_node.py` asserts
 # this tuple against the committed graph so the set cannot drift away from it.
+#
+# `implement_partial_progress` is here on the same footing even though it is not
+# a terminal: it is the command node an implement turn that reported no
+# completion field routes through on its way to `needs_human` (v165), so a run
+# inside it is as flat to both liveness layers as a sentinel is.
 COMMAND_NODES: tuple[str, ...] = (
     "dead_implementer",
+    "implement_partial_progress",
     "implementation_diff",
     "janitor",
     "needs_human",

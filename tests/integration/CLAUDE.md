@@ -454,6 +454,41 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   is deliberately not the bare failed-outcome shape, which the generic
   needs-human protocol already carries.
 
+- `test_implement_completion_field_scenario204.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 204 — An implement turn that reports
+  its work incomplete fails the implement stage" and the
+  `SPECIFICATION/contracts.md` paragraph it realizes, "An implement turn that
+  ends incomplete does not succeed" (ratified v165): the implement stage's
+  outcome is decided from a structured completion field in the turn's final
+  output, and a final output carrying no such field is treated as INCOMPLETE.
+  The POLARITY is the whole subject. Before v165 the `implement ->
+  implementation_diff` edge was the unconditional fallthrough, so a turn
+  replying "Partial progress only" and emitting nothing structured was recorded
+  succeeded and ran on through janitor, publish_draft and proof_capture against
+  a feature that was not there — measured on `bd-ib-davaxq` run
+  01M58QNY3ZNM2YCVVB9G2383M0, whose fix round then had to build the whole
+  feature in one turn and died at its ceiling. The complete route is now named
+  by its own condition and the fallthrough is the partial-progress gate. The
+  four cases split by the LAYER each claim lives in, because no single layer can
+  establish the rule. The completion field is PROSE — only the engine reads a
+  turn's final output, so nothing host-side can observe a turn obeying its
+  prompt — and it is bound to the graph's own condition value rather than to a
+  string retyped in the module, so a rename on either side reds instead of
+  leaving the two halves describing different labels. The ROUTING is read off
+  the committed edge lines as the WHOLE answer for the node, since the parse
+  drops edge attributes and an added fourth route must red rather than slip
+  past. The no-field arm's CAUSE is shell, so the gate's and the terminal's
+  committed script bytes are taken through the canonical parser and EXECUTED in
+  a throwaway clone: the gate WRITES a `$GIT_DIR/livespec-stage-cause` record
+  that the terminal READS and renders as "stage implement failed: …", and
+  neither half can establish that carry alone — its control is the same terminal
+  tail in a clone where the gate never ran. And the dispatch outcome DETAIL is
+  production Python, driven through `fabro_run_terminal_outcome` against an
+  inspect payload in the terminated shape the CLI really returns, with the same
+  payload carrying NO failed predecessor as the control, without which naming
+  the implement stage is equally consistent with a renderer that names a stage
+  on every needs-human ending.
+
 - `test_proof_chain_end_to_end_scenario132.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 132 — A factory-captured proof is
   captured on a draft pull request, reviewed, replayed and published" as ONE

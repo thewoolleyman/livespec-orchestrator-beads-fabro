@@ -90,6 +90,14 @@ _PR_ROUTE_ADDED = {"pr_route"}
 # reaches `pr_refresh` through it and its retry route closes a cycle back into
 # the replay.
 _PROOF_GRADE_ADDED = {"proof_grade", "proof_grade_route"}
+
+# The implement completion gate (v165; work-item bd-ib-ahxcjx), kept as its own
+# constant for the reason the three sets above give: the subject of this module
+# is the PORT, so an addition merged into the port's own set would make a future
+# port regression read as part of this route. It moves exactly one node — its
+# own — because it hangs off `implement`'s new unconditional fallthrough and
+# every path through it ends the run at `needs_human`.
+_IMPLEMENT_COMPLETION_ADDED = {"implement_partial_progress"}
 _REFRESH_REPAIR_LOOP = _REFRESH_REPAIR_ADDED | {
     "fix",
     "janitor",
@@ -632,9 +640,12 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
     # route and the v156 per-assertion grade are the ONLY nodes added, and nothing
     # was dropped: a node the ported graph lost would be an executable path
     # missing from a figure still presented as an allowance.
-    assert (
-        set(ported.node_visits) - set(pre_port.node_visits)
-        == _PUBLICATION_STAGES_ADDED | _REFRESH_REPAIR_ADDED | _PR_ROUTE_ADDED | _PROOF_GRADE_ADDED
+    assert set(ported.node_visits) - set(pre_port.node_visits) == (
+        _PUBLICATION_STAGES_ADDED
+        | _REFRESH_REPAIR_ADDED
+        | _PR_ROUTE_ADDED
+        | _PROOF_GRADE_ADDED
+        | _IMPLEMENT_COMPLETION_ADDED
     )
     assert set(pre_port.node_visits) - set(ported.node_visits) == set()
 
@@ -654,6 +665,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _REFRESH_REPAIR_LOOP
         | _PR_ROUTE_ADDED
         | _PROOF_GRADE_ADDED
+        | _IMPLEMENT_COMPLETION_ADDED
     )
     assert moved <= reachable, sorted(moved - reachable)
     # And the direction is the honest one: the graph grew, so the allowance grew.

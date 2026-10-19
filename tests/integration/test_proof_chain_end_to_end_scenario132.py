@@ -146,6 +146,13 @@ _PR_REFRESH_HEAD = "pr_refresh_head"
 # In this journey the record the replay published states every assertion as
 # reproduced, so the grade exits zero and the run proceeds to the refresh.
 _PROOF_GRADE = "proof_grade"
+# The implement stage's completion field (v165; bd-ib-ahxcjx). Its outcome is
+# decided from a structured field in the turn's final output, so the stage names
+# the complete route by condition and the unconditional fallthrough is the
+# partial-progress gate — a turn reporting nothing is treated as INCOMPLETE. This
+# journey's implement turn finishes its work, so it reports the complete label and
+# the route into `implementation_diff` is unchanged.
+_IMPLEMENT = "implement"
 # The five positions the Definition of Done names, in the order it names them.
 # Asserted as a SUBSEQUENCE of the route actually walked rather than as the route
 # itself, so the claim stays about these nodes while the exact route (which the
@@ -164,6 +171,7 @@ _FAILED = "failed"
 _LABEL_FIX = "fix"
 _LABEL_APPROVE = "approve"
 _LABEL_ALL_REJECTED = "all_rejected"
+_LABEL_DEFINITION_OF_DONE_COMPLETE = "definition_of_done_complete"
 
 # The closed context vocabulary the committed graph's conditions read. It is
 # exactly `outcome` and `preferred_label` since plan `fabro-currency` P4: the
@@ -601,6 +609,8 @@ def _sandbox(*, forge: _Forge, branch: str) -> Callable[..., tuple[str, str | No
             return _SUCCEEDED, _LABEL_FIX
         if node == _PROOF_VERIFY:
             return _SUCCEEDED, _LABEL_APPROVE
+        if node == _IMPLEMENT:
+            return _SUCCEEDED, _LABEL_DEFINITION_OF_DONE_COMPLETE
         return _SUCCEEDED, None
 
     return _act
@@ -878,7 +888,7 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
     assert run.visited == [
         _START,
         "dod_gate",
-        "implement",
+        _IMPLEMENT,
         "implementation_diff",
         "janitor",
         _PUBLISH_DRAFT,
@@ -1083,6 +1093,7 @@ def test_every_condition_the_committed_graph_declares_is_evaluable_by_the_drive(
         ),
         _State(outcome=_SUCCEEDED, preferred_label=_LABEL_APPROVE, visit=1),
         _State(outcome=_SUCCEEDED, preferred_label=_LABEL_ALL_REJECTED, visit=1),
+        _State(outcome=_SUCCEEDED, preferred_label=_LABEL_DEFINITION_OF_DONE_COMPLETE, visit=1),
     ]
 
     answers = [

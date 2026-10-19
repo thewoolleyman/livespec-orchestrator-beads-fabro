@@ -342,12 +342,17 @@ def test_an_implement_amendment_rests_the_item_at_blocked_needs_human_and_publis
     graph = parse_workflow_graph(text=_dot())
 
     # LEG 1 — the committed graph. A failed implement outcome is routed by
-    # CONDITION to the terminal, while the ordinary route is the unconditional
-    # fallthrough that conditional edges outrank. Both targets are pinned in
-    # one answer, so an added third route changes it rather than slipping past.
+    # CONDITION to the terminal, and so is the ordinary route since v165 named
+    # it by the completion field it carries; the unconditional fallthrough that
+    # conditional edges outrank is the partial-progress gate, because a final
+    # output with no completion field is treated as incomplete
+    # (`tests.integration.test_implement_completion_field_scenario204`). All
+    # three targets are pinned in one answer, so an added fourth route changes
+    # it rather than slipping past.
     assert _edge_conditions(source="implement") == {
         "needs_human": "outcome=failed",
-        "implementation_diff": "",
+        "implementation_diff": "preferred_label=definition_of_done_complete",
+        "implement_partial_progress": "",
     }
     # Nothing is downstream of the terminal, so nothing it reaches can publish.
     assert _reachable(graph=graph, start="needs_human") == frozenset()

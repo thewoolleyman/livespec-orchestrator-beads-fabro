@@ -153,12 +153,20 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 
 # The bound the freshness requirement has to sit under, and the figure the
 # RETIRED `"15m"` resolved. The bound is deliberately looser than the measured
-# 842580 seconds this budget yields: the requirement also sums the resolved node
+# 845475 seconds this budget yields: the requirement also sums the resolved node
 # timeouts, so pinning it exactly would make every unrelated timeout edit fail
 # this case. The control below pins the 15m figure exactly, because that one is
 # the thing being moved away from and a drifting comparand would hide the move.
+#
+# BOTH FIGURES MOVE WHENEVER THE GRAPH GAINS A TIMED NODE, and that is the cost
+# of pinning the control exactly rather than a defect in it. v165 added
+# `implement_partial_progress` (work-item bd-ib-ahxcjx), one visit at the
+# resolved default timeout, which raised the measured figure from 842580 and the
+# 15m control from 1310580. Re-measure both through
+# `resolve_credential_lifetime_requirement`; do NOT loosen the control into an
+# inequality, which is what would hide the next move of the budget itself.
 _FRESHNESS_BOUND_SECONDS = 880_000
-_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_310_580
+_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_315_275
 
 
 def _checkpoint() -> dict[str, Any]:
