@@ -227,7 +227,15 @@
       "auto_approve_ready": true,
       "wip_cap": 10,
       "acceptance_mode": "ai-only",
-      "default_factory": "hp",
+      // The REGISTRY-BACKED name of the hp-xubuntu :32276 instance running the
+      // pinned 0.254 engine — the same instance the entry called `hp` addressed
+      // before this table named factories instead of machines, so this rename
+      // changes no routing. A recorded item pin naming `hp` falls back to this
+      // default (the ratified recorded-pin fallback), so pins filed before the
+      // rename keep reaching the same server. The cutover that moves the
+      // default to `petri` is its own change and carries nothing else
+      // (bd-ib-iud52v).
+      "default_factory": "legacy",
       // THE DELIBERATE OPERATOR FLOOR, and the only currency form with any
       // blocking authority at admission: a dispatch refuses before claim when
       // the EXECUTING plugin release is below this value. Ambient staleness
@@ -723,14 +731,41 @@
       // pass surveys every entry. Intentionally stopped or retired factories
       // must stay absent so the host timer never contacts them.
       //
+      // EVERY ENTRY HERE IS REGISTRY-BACKED, and that is the whole shape of
+      // this table: an entry carries `"registry": true` and NO address, so it
+      // names a FACTORY and never a machine. The two addresses — the Fabro
+      // server url and the sandbox Docker daemon — are resolved per host from
+      // the factory registry the fleet's provisioning renders at
+      // /etc/livespec/fabro-factories.json (override:
+      // LIVESPEC_FABRO_FACTORY_REGISTRY). Moving a factory to another machine
+      // is therefore a provisioning change and touches no tracked file in any
+      // governed repository; under the old literal form it was a commit, a
+      // release and a plugin refresh in every one of them, for a fact the
+      // inventory already held.
+      //
+      // The names are the registry's, not ours to choose: an entry whose name
+      // that file does not declare resolves to no address, which is REFUSED
+      // before the item is claimed rather than quietly sent to whichever Fabro
+      // the dispatching host runs. `legacy` is the hp-xubuntu :32276 instance
+      // on the pinned 0.254 engine and `petri` is the gmktec-xubuntu :32276
+      // Petri-era server (livespec-dev-tooling-txadim renders both).
+      //
+      // `"registry": true` is the one ratified spelling and it is tested for
+      // that value, not for the key's presence: any other value leaves the
+      // entry non-registry-backed, where a committed `server` decides as it
+      // did before — still the supported form for an adopter outside this
+      // fleet. An entry carrying `registry` TOGETHER with `server` or
+      // `docker_host` has two answers and no rule for choosing, so it is
+      // refused before the claim, naming the keys.
+      //
       // Each entry may also carry an optional `bin` key: the absolute path to
       // the engine CLIENT binary that factory's server speaks to. It wins over
       // the global `fabro_bin` resolution described below (including over an
       // explicit `--fabro-bin`), because it states a COMPATIBILITY constraint
       // rather than a preference -- a Petri-era client cannot talk to a 0.254
       // server, nor the reverse -- and it is what makes an upgrade candidate
-      // runnable BESIDE production on one host. Omit it, as `hp` does, and
-      // that factory resolves the global binary exactly as before the key
+      // runnable BESIDE production on one host. Omit it, as `legacy` does,
+      // and that factory resolves the global binary exactly as before the key
       // existed. A `bin` naming no file, or a file with no execute bit, is
       // refused before the item is claimed.
       //
@@ -743,8 +778,8 @@
       // environment was selected). A run intent naming none sends `default`,
       // so a dispatch to such a server landed in `buildpack-deps:noble` with
       // no `mise` on PATH and died in a prepare step -- a failure that names
-      // nothing about the placement. Omit it, as `hp` does, and NO flag is
-      // emitted at all: the pinned 0.254 engine has no such flag and keeps
+      // nothing about the placement. Omit it, as `legacy` does, and NO flag
+      // is emitted at all: the pinned 0.254 engine has no such flag and keeps
       // selecting from the workflow, so an unconditional one would kill every
       // dispatch to that engine at argument parsing. A declared `environment`
       // that is not a non-empty string is refused before the item is claimed,
@@ -778,28 +813,31 @@
       // under a name that is not a machine name. The maintainer directed it
       // into this table on 2026-10-19 so ordinary dispatches can use it, not
       // only canaries (plan `petri-factory-on-gmktec`, epic bd-ib-fyozyd). It
-      // carries the four keys a Petri-era server needs: `bin`, the Petri
-      // client, because the pinned 0.254 client cannot answer it and every
-      // `reconcile-runs` pass surveys each entry; `secret_channel`
-      // `native_secrets`; `environment` `livespec-ci`; and `docker_host` for
-      // the sandbox sweep. The `bin` path is the operator host's, which is
-      // where every dispatch and reconcile pass of this repository runs. The
-      // server authenticates through the host's `~/.fabro/auth.json` login
-      // for this url, or a `FABRO_DEV_TOKEN__petri` override. Choose it per
-      // dispatch with `--factory petri` or `LIVESPEC_FABRO_FACTORY=petri`.
-      // `default_factory` stays `hp` until the cutover (bd-ib-iud52v) moves
-      // it. The `server` and `docker_host` values here are literal only until
-      // the registry-backed form lands (bd-ib-fubkcv, then bd-ib-3now6p),
-      // exactly as `hp`'s are.
+      // carries the three non-address keys a Petri-era server needs: `bin`,
+      // the Petri client, because the pinned 0.254 client cannot answer it
+      // and every `reconcile-runs` pass surveys each entry; `secret_channel`
+      // `native_secrets`; and `environment` `livespec-ci`. Its two addresses
+      // — the server url and the sandbox-sweep `docker_host` — come from the
+      // factory registry, as `legacy`'s do (bd-ib-fubkcv, then bd-ib-3now6p
+      // switched this table over). The `bin` path is the operator host's,
+      // which is where every dispatch and reconcile pass of this repository
+      // runs. The server authenticates through the host's
+      // `~/.fabro/auth.json` login for its registry-resolved url, or a
+      // `FABRO_DEV_TOKEN__petri` override. Choose it per dispatch with
+      // `--factory petri` or `LIVESPEC_FABRO_FACTORY=petri`.
+      // `default_factory` stays `legacy` until the cutover (bd-ib-iud52v)
+      // moves it, and that cutover carries no other change.
       //
-      // Each entry may ALSO carry an optional `docker_host` key: the Docker
-      // daemon that runs THAT factory's sandbox containers, spelled as the
-      // Docker CLI spells one and passed to it as `--host`. The
+      // Each entry ALSO resolves a `docker_host`: the Docker daemon that runs
+      // THAT factory's sandbox containers, spelled as the Docker CLI spells
+      // one and passed to it as `--host`. For every entry here it comes from
+      // the factory registry beside the server url; only a non-registry-backed
+      // entry commits one, and an entry may never do both. The
       // sandbox-container sweep of each `reconcile-runs` pass addresses it,
-      // and an entry declaring none is reported as UNOBSERVED rather than
+      // and a factory resolving none is reported as UNOBSERVED rather than
       // swept through whichever daemon the reconciling host runs. That is not
       // a conservative default, it is the only honest reading: the `server`
-      // url beside this key is no evidence of a daemon's whereabouts -- a
+      // url beside it is no evidence of a daemon's whereabouts -- a
       // loopback url is as likely to be a forwarded tunnel as a local engine
       // -- so inferring one fails in the expensive direction, removing a
       // container on the RECONCILING host on the strength of a run status
@@ -813,13 +851,11 @@
       // reach the named daemon; while they do not, the pass says so on every
       // sweep record instead of reporting a clean factory.
       "factories": {
-        "hp": {
-          "server": "https://hp-xubuntu.perch-rudd.ts.net:32276",
-          "docker_host": "ssh://cwoolley@hp-xubuntu.perch-rudd.ts.net"
+        "legacy": {
+          "registry": true
         },
         "petri": {
-          "server": "https://gmktec-xubuntu.perch-rudd.ts.net:32276",
-          "docker_host": "ssh://cwoolley@gmktec-xubuntu.perch-rudd.ts.net",
+          "registry": true,
           "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro",
           "secret_channel": "native_secrets",
           "environment": "livespec-ci"
@@ -832,11 +868,14 @@
       // concurrency value by design. The set is the fleet capacity
       // coordinator's ruling of 2026-10-19 (the maintainer's R226 priorities on
       // livespec-dev-tooling-dfixhe): gmktec/petri, the Kubernetes sandbox
-      // backend and Fabro currency, audited against hp, which holds most of
-      // the factory slots. petri is to be added as a second audited factory
-      // once its scheduler fix lands.
+      // backend and Fabro currency, audited against `legacy` — the hp-xubuntu
+      // instance, which holds most of the factory slots. `petri` is to be
+      // added as a second audited factory once its scheduler fix lands. The
+      // name must be one `dispatcher.factories` above declares: it is
+      // validated there rather than at the board read, so that a name naming
+      // no entry is a configuration refusal and not a factory outage.
       "idle_slot_audit": {
-        "factory": "hp",
+        "factory": "legacy",
         "priority": [
           { "repo": ".", "epic": "bd-ib-fyozyd" },
           { "repo": ".", "epic": "bd-ib-nmuyjc" },
