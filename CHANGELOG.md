@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.223.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.223.1...v0.223.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* **proof:** create capture scratch directory ([d8beb3a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d8beb3a62f2b24a7c828901625c3ff74a26188e4))
+
 ## [0.223.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.223.0...v0.223.1) (2026-10-19)
 
 
