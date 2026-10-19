@@ -28,6 +28,27 @@
     // refuses (master-ci-unprovable). That is the case the committed waiver
     // exists for; the dispatcher journals the owner on every waived proceed.
     "dispatcher": {
+      // The golden-master is the factory gate for the codex-acp adapter (the
+      // --codex-acp-version auto-bump path), so the implement node MUST run
+      // through codex-acp; without this every node falls back to the built-in
+      // Anthropic candidates and a green run proves nothing about the adapter.
+      // This fixture names its own routing, per the repo rule that no test reads
+      // the committed factory routing.
+      "acp_nodes": {
+        "implement": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }
+      },
+      "model_catalog": {
+        "openai/gpt-5.6-terra": {
+          "display_name": "GPT-5.6 Terra",
+          "pricing": {
+            "model": "gpt-5.6-terra",
+            "input_usd_per_million": 2.0,
+            "output_usd_per_million": 12.0,
+            "cache_write_usd_per_million": 2.5,
+            "cache_read_usd_per_million": 0.2
+          }
+        }
+      },
       "step_waivers": [
         {
           "step": "master-ci",
