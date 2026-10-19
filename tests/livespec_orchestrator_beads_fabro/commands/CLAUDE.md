@@ -299,6 +299,29 @@ Tests for the thin-transport command modules under
   repository — that second mutation reds this module's stall control plus three
   existing modules.
 
+- `test_dispatcher_definition_of_done_advisory_scenario_bodies.py` and
+  `test_dispatcher_definition_of_done_advisories.py` split the filing-time
+  scenario advisory's BODY score by what each one can observe, and neither is
+  redundant. The first drives the fixture a MEASURED miss was taken from — the
+  five assertions `bd-ib-yw7otf` was filed with, against Scenario 127's own text
+  — and carries the altitude claim, that such a candidate reaches a filer under
+  the display's ADVISORY leader rather than the mechanical one. The second
+  carries the BOUNDARY, that the body each scenario is scored on ends at the next
+  `## ` heading, which needs a SECOND scenario in the fixture and so cannot be
+  observed over the real one at all: its decoy heading sits one term short of the
+  bound, so a build scoring every scenario against the whole file reaches the
+  bound on the decoy and, being earlier in document order, reports it instead.
+  Its paired control asserts the decoy WAS in the candidate set, without which a
+  build that merely dropped the decoy would satisfy the absence assertion.
+  The Scenario 127 fixture is SLICED OUT OF `SPECIFICATION/scenarios.md` at run
+  time rather than pasted, because the assertions it drives were filed and
+  delivered against that scenario's own text and a pasted copy would keep passing
+  after the scenario had been rewritten — green, and no longer about anything.
+  Keep the BODY-STRIPPED control beside the body-matching case: with the body
+  removed the same heading reaches the bound on nothing, which is the whole
+  measurement behind the change, and a build that had stopped reading bodies
+  satisfies the negative alone.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr
