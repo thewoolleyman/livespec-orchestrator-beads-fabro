@@ -77,6 +77,10 @@ class _Sandbox:
         self.root = base / "workspace"
         self.clone = base / "repos" / "thewoolleyman" / _REPOSITORY_NAME
         self.clone.mkdir(parents=True)
+        (self.clone / ".git").mkdir()
+        (self.clone / "src").mkdir()
+        (self.clone / "build").mkdir()
+        (self.clone / "README.md").write_text("sandbox fixture\n", encoding="utf-8")
         (self.clone / "tests").mkdir()
         (self.clone / "tests" / "conftest.py").write_text("", encoding="utf-8")
         self.root.mkdir()
@@ -247,8 +251,6 @@ def test_removing_the_clone_repository_directory_is_refused(
     """The clone keeps its Git metadata for the engine's next checkpoint."""
     sandbox = _Sandbox(base=tmp_path)
     repository_directory = sandbox.clone / ".git"
-    repository_directory.mkdir()
-
     reason = _verdict(
         sandbox=sandbox,
         command=f"rm -rf {repository_directory}",
@@ -258,6 +260,119 @@ def test_removing_the_clone_repository_directory_is_refused(
 
     assert reason is not None
     assert str(repository_directory) in reason
+
+
+def test_emptying_the_clone_top_level_is_refused_and_names_the_clone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Scenario 197: `./*` reaches every non-hidden entry, not `.git`."""
+    sandbox = _Sandbox(base=tmp_path)
+
+    reason = _verdict(
+        sandbox=sandbox,
+        command=f"cd {sandbox.clone} && rm -rf ./*",
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert reason is not None
+    assert str(sandbox.clone) in reason
+    assert str(sandbox.clone / ".git") not in reason
+
+
+def test_removals_and_moves_that_together_empty_the_clone_are_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Scenario 197 counts every executed segment against the submitted tree."""
+    sandbox = _Sandbox(base=tmp_path)
+
+    reason = _verdict(
+        sandbox=sandbox,
+        command=(
+            f"rm -rf {sandbox.clone / 'build'} && "
+            f"mv {sandbox.clone / 'src'} {sandbox.scratch} && "
+            f"rm {sandbox.clone / 'README.md'} && "
+            f"rm -rf {sandbox.clone / 'tests'}"
+        ),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert reason is not None
+    assert str(sandbox.clone) in reason
+
+
+def test_an_allowed_removal_does_not_exempt_clone_git_removal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sandbox = _Sandbox(base=tmp_path)
+    repository_directory = sandbox.clone / ".git"
+
+    reason = _verdict(
+        sandbox=sandbox,
+        command=f"rm -rf {sandbox.clone / 'build'} {repository_directory}",
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert reason is not None
+    assert str(repository_directory) in reason
+
+
+def test_moving_the_clone_git_directory_away_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sandbox = _Sandbox(base=tmp_path)
+    repository_directory = sandbox.clone / ".git"
+
+    reason = _verdict(
+        sandbox=sandbox,
+        command=f"mv {repository_directory} {sandbox.scratch / 'git-backup'}",
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert reason is not None
+    assert str(repository_directory) in reason
+
+
+def test_ordinary_in_tree_removals_are_allowed_while_an_entry_remains(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sandbox = _Sandbox(base=tmp_path)
+
+    for command, removed in (
+        (f"rm -rf {sandbox.clone / 'build'}", sandbox.clone / "build"),
+        (f"rm {sandbox.clone / 'README.md'}", sandbox.clone / "README.md"),
+    ):
+        assert (
+            _verdict(sandbox=sandbox, command=command, monkeypatch=monkeypatch, capsys=capsys)
+            is None
+        )
+        if removed.is_dir():
+            removed.rmdir()
+        else:
+            removed.unlink()
+
+    assert (sandbox.clone / "src").is_dir()
+
+
+def test_removing_a_file_inside_clone_git_is_allowed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sandbox = _Sandbox(base=tmp_path)
+    lock = sandbox.clone / ".git" / "index.lock"
+    lock.write_text("", encoding="utf-8")
+
+    assert (
+        _verdict(
+            sandbox=sandbox,
+            command=f"rm -f {lock}",
+            monkeypatch=monkeypatch,
+            capsys=capsys,
+        )
+        is None
+    )
 
 
 # ---------------------------------------------------------------------------

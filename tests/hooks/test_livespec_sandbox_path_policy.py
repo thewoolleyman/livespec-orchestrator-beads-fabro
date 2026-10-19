@@ -716,16 +716,19 @@ def test_a_glob_under_a_scratch_directory_is_not_refused() -> None:
     assert _refused(policy=policy, command="rm -rf /tmp/*") is None
 
 
-def test_a_glob_that_empties_the_repository_tree_is_not_refused() -> None:
-    """`rm -rf *` from the repository root is in-tree, and v142 allows it.
-
-    Recorded as a case rather than left implicit because it is the boundary of
-    this guard: emptying the tree, or removing the clone's `.git`, is tracked
-    separately as bd-ib-quzpge and is deliberately NOT refused here.
-    """
+def test_a_glob_that_empties_the_repository_tree_names_the_clone() -> None:
+    """Scenario 197 supersedes v142's allowance for an empty working tree."""
     policy = _load_policy()
 
-    assert _refused(policy=policy, command="rm -rf *") is None
+    assert (
+        policy.repository_emptying_path(
+            command="rm -rf *",
+            working_directory=_CLONE,
+            clone=_CLONE,
+            top_level_entries=(f"{_CLONE}/src", f"{_CLONE}/build", f"{_CLONE}/README.md"),
+        )
+        == _CLONE
+    )
 
 
 def test_removing_the_working_directory_itself_as_a_dot_is_refused() -> None:
