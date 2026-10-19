@@ -81,6 +81,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_facto
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_inputs import (
     ReconcileInputs,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_turn_telemetry_export import (
+    RUN_TURN_UNOBSERVABLE_REMOTE_FACTORY,
+    factory_run_turn_observation,
+    run_turn_telemetry_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_container_port import DOCKER_BIN
 from livespec_orchestrator_beads_fabro.commands._drive_merge_hold_arm_guard import (
     ARM_REFUSAL_LIVE_RUN,
@@ -843,3 +848,42 @@ def test_a_registry_entry_with_no_docker_host_is_reported_unobserved_and_opens_n
     assert [row["factory_names"] for row in _rows(journal=journal, stage=_SWEEP_STAGE)] == [
         [_FACTORY]
     ]
+
+
+def test_a_registry_backed_factory_is_classified_as_remote_for_run_turn_telemetry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scenario 182's telemetry case: registry-backed means remote, like a server.
+
+    The resolution is a DECLARATION question here and deliberately not a
+    filesystem one: "every surface whose behaviour depends on whether a factory
+    is remote MUST treat a registry-backed entry as naming a server", and a
+    registry-backed entry names another machine whether or not this host can
+    currently resolve which one. Reading it as local is the fail-open: the guard
+    would assert that THIS host's `run_turn` sink should carry the factory's
+    spans, and then report a genuinely healthy remote pipeline as an absence.
+
+    A committed-`server` sibling is assessed in the same case, because the clause
+    says "exactly as it classifies an entry carrying a server value" — a case
+    asserting only the registry-backed answer could pass against a build that had
+    simply started calling every factory remote.
+    """
+    repo = _registry_repo(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        registry={_FACTORY: {"server": _REGISTRY_SERVER}},
+        factories={_LEGACY: {"server": _LEGACY_SERVER}, "ambient": {}},
+    )
+    block = run_turn_telemetry_block(repo=repo)
+
+    assert factory_run_turn_observation(block=block, factory=_FACTORY) == (
+        RUN_TURN_UNOBSERVABLE_REMOTE_FACTORY
+    )
+    assert factory_run_turn_observation(block=block, factory=_LEGACY) == (
+        RUN_TURN_UNOBSERVABLE_REMOTE_FACTORY
+    )
+    # The implicit single-factory target runs the sandbox on THIS machine, so it
+    # stays observable: the registry key widens the remote reading, it does not
+    # make every factory remote.
+    assert factory_run_turn_observation(block=block, factory="ambient") is None
