@@ -53,9 +53,25 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_dispo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition import (
     dispose_stall_cancel,
 )
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
+from livespec_orchestrator_beads_fabro.errors import (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
+    WorkItemNotFoundError,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = ["dispose_terminal_routing"]
+
+_LEDGER_WRITE_ERRORS = (
+    WorkItemNotFoundError,
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
+)
 
 
 def dispose_terminal_routing(
@@ -76,27 +92,51 @@ def dispose_terminal_routing(
     """
     bounce_non_convergence_to_backlog(repo=repo, item=item, outcome=outcome, journal=journal)
     dispose_stall_cancel(repo=repo, item=item, outcome=outcome, journal=journal)
-    _dispose_external_fabro_cancel(repo=repo, item=item, outcome=outcome)
+    _dispose_external_fabro_cancel(repo=repo, item=item, outcome=outcome, journal=journal)
     dispose_provider_limit_release(
         repo=repo, item=item, outcome=outcome, journal=journal, now_iso=now_iso
     )
 
 
-def _dispose_external_fabro_cancel(*, repo: Path, item: WorkItem, outcome: DispatchOutcome) -> None:
+def _dispose_external_fabro_cancel(
+    *, repo: Path, item: WorkItem, outcome: DispatchOutcome, journal: JournalFile
+) -> None:
     """Rest an operator-cancelled run; the watchdog uses its distinct status."""
     if outcome.status != "cancelled" or outcome.stage != "fabro-run":
         return
     run_id = outcome.fabro_run_id or "an unread run"
     factory = outcome.fabro_factory_name or "an unread factory"
-    append_work_item_comment(
-        path=store_config(repo=repo),
-        work_item_id=item.id,
-        body=f"Fabro run {run_id} on factory {factory} was cancelled outside the Dispatcher.",
+    commented = attempt(
+        action=lambda: append_work_item_comment(
+            path=store_config(repo=repo),
+            work_item_id=item.id,
+            body=f"Fabro run {run_id} on factory {factory} was cancelled outside the Dispatcher.",
+        ),
+        exceptions=_LEDGER_WRITE_ERRORS,
     )
-    update_work_item_blocked_state(
-        path=store_config(repo=repo),
-        item_id=item.id,
-        status="blocked",
-        blocked_reason="needs-human",
-        admission_policy="manual",
+    if isinstance(commented, AttemptFailure):
+        journal.append(
+            record={
+                "stage": "external-fabro-cancel-comment-error",
+                "work_item_id": item.id,
+                "reason": type(commented.error).__name__,
+            }
+        )
+    rested = attempt(
+        action=lambda: update_work_item_blocked_state(
+            path=store_config(repo=repo),
+            item_id=item.id,
+            status="blocked",
+            blocked_reason="needs-human",
+            admission_policy="manual",
+        ),
+        exceptions=_LEDGER_WRITE_ERRORS,
     )
+    if isinstance(rested, AttemptFailure):
+        journal.append(
+            record={
+                "stage": "external-fabro-cancel-blocked-error",
+                "work_item_id": item.id,
+                "reason": type(rested.error).__name__,
+            }
+        )
