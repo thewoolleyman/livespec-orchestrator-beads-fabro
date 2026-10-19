@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.219.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.219.4...v0.219.5) (2026-10-19)
+
+
+### Bug Fixes
+
+* **image:** bake the plugin root members the launcher's payload check requires ([b394d78](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b394d785f4456e755d0a72a920c46cddbf38b6be))
+
 ## [0.219.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.219.3...v0.219.4) (2026-10-19)
 
 
