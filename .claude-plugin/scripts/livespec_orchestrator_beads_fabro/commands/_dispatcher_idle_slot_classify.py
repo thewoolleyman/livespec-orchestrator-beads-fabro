@@ -13,6 +13,11 @@ blocker, or an `active` one with NO attributed live row, is a stale edge. And
 STALE-EDGE requires EVERY open blocker to be such an edge: one real blocker
 beside a stale one still blocks.
 
+A READY CHILD IS HELD ONLY BY STATUS OR BY THE SHARED VERDICT. Nothing here
+reads comment prose, so a hold recorded only in a comment leaves the child
+DISPATCHABLE-NOW — which is the ratified answer, not a gap: the remedy is to
+record the hold as a status.
+
 ONE CONSERVATIVE EDGE, STATED. `HOST-ONLY` is decided by `is_host_only_item`
 over the item's own materialized fields with NO raw labels, exactly as the
 idle-factory fact decides it. An item whose workflow-scope override lives in a
@@ -182,17 +187,13 @@ def _class_of(
     board: BoardReading,
     hold_reasons: Mapping[str, str],
 ) -> tuple[str, str | None]:
-    # The HELD arm reads this map, and it arrives with the shared admission
-    # verdict that fills it; until then a ready child with no open blocker is
-    # DISPATCHABLE-NOW.
-    _ = hold_reasons
     if item.id in board.live_item_ids:
         return CLASS_RUNNING, None
     mapped = _CLASS_BY_STATUS.get(item.status)
     if mapped is not None:
         return mapped, None
     if item.status == READY_STATUS:
-        return _ready_class(item=item, blockers=blockers, board=board)
+        return _ready_class(item=item, blockers=blockers, board=board, hold_reasons=hold_reasons)
     return CLASS_UNCLASSIFIED_STATUS, item.status
 
 
@@ -201,6 +202,7 @@ def _ready_class(
     item: WorkItem,
     blockers: Sequence[BlockerView],
     board: BoardReading,
+    hold_reasons: Mapping[str, str],
 ) -> tuple[str, str | None]:
     if is_host_only_item(item=item):
         return CLASS_HOST_ONLY, None
@@ -208,6 +210,9 @@ def _ready_class(
         if all(_is_stale_edge(blocker=blocker, board=board) for blocker in blockers):
             return CLASS_STALE_EDGE, None
         return CLASS_BLOCKED, None
+    reason = hold_reasons.get(item.id)
+    if reason is not None:
+        return CLASS_HELD, reason
     return CLASS_DISPATCHABLE_NOW, None
 
 

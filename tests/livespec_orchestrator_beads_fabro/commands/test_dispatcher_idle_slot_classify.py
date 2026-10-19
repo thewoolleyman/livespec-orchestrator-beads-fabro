@@ -251,3 +251,19 @@ def test_one_real_blocker_beside_a_stale_edge_still_blocks() -> None:
     )
 
     assert classified.classification == module.CLASS_BLOCKED
+
+
+def test_a_ready_child_the_verdict_does_not_admit_is_held_with_its_reason() -> None:
+    """The reason rides beside the class, so the row says WHY nothing moves."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+
+    classified = _classify(
+        item=_item(id_="bd-held"),
+        blockers=(),
+        board=_empty_board(),
+        hold_reasons={"bd-held": "refused at the readiness stage"},
+    )
+
+    assert classified.classification == module.CLASS_HELD
+    assert classified.reason == "refused at the readiness stage"
