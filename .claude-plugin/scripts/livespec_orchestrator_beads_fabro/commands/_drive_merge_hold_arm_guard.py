@@ -55,11 +55,15 @@ from subprocess import run
 from typing import Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._config import (
+    FactoryTarget,
     resolve_fabro_bin,
     resolve_fabro_factory,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import factory_fabro_bin
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_registry import (
+    factory_registry_unobservable,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
     read_pull_request_records,
 )
@@ -155,16 +159,20 @@ def arm_refusal_for_release(
     integration contract states.
     """
     command_runner = _ValveCommandRunner(runner=runner, cwd=repo)
-    liveness = _item_run_liveness(repo=repo, work_item_id=work_item_id, runner=command_runner)
+    factory = resolve_fabro_factory(cwd=repo, factory=None)
+    liveness = _item_run_liveness(
+        repo=repo, factory=factory, work_item_id=work_item_id, runner=command_runner
+    )
     if not liveness.observed:
         return ArmRefusal(
             error=ARM_REFUSAL_LIVE_RUN,
             message=(
-                f"set-merge-hold:off refused: `fabro ps` did not answer for the configured "
-                f"factory, so whether a run of {work_item_id} is still live could not be "
-                f"established. Arming pull request #{pr_number} on an unmeasured liveness "
-                "answer would let the forge merge a head a live run is about to rewrite, so "
-                "the hold stands and the pull request is left unarmed."
+                f"set-merge-hold:off refused: the configured factory did not answer with a "
+                f"run inventory ({_unmeasured_liveness(factory=factory)}), so whether a run "
+                f"of {work_item_id} is still live could not be established. Arming pull "
+                f"request #{pr_number} on an unmeasured liveness answer would let the forge "
+                "merge a head a live run is about to rewrite, so the hold stands and the "
+                "pull request is left unarmed."
             ),
         )
     if liveness.live_run_ids:
@@ -264,18 +272,45 @@ def _unproved(*, pr_number: int, detail: str) -> ArmRefusal:
     )
 
 
+def _unmeasured_liveness(*, factory: FactoryTarget) -> str:
+    """Which measurement left the liveness answer unmeasured, as the refusal says it.
+
+    The clause requires the refusal to name "the measurement that failed", and
+    this arm now has two: the engine was asked and did not answer, or it could
+    not be ASKED because a registry-backed factory's address did not resolve. A
+    refusal reporting the first for both would claim a `fabro ps` that never ran
+    — which sends an operator to check an engine's health over a registry entry
+    the provisioning has not rendered.
+    """
+    unobservable = factory_registry_unobservable(factory=factory)
+    if unobservable is not None:
+        return unobservable
+    return f"`fabro ps` did not answer for factory {factory.name}"
+
+
 def _item_run_liveness(
-    *, repo: Path, work_item_id: str, runner: _ValveCommandRunner
+    *, repo: Path, factory: FactoryTarget, work_item_id: str, runner: _ValveCommandRunner
 ) -> ItemRunLiveness:
     """Ask the configured factory which runs of this item are still non-terminal.
 
     The SAME reading the publish-branch reclaim takes, through the same
     attribution helper, so "still alive" means one thing across the two surfaces
-    that act on it. The factory is resolved from the repository's own
-    configuration rather than from a dispatch's argv, because a valve is invoked
-    by a person and carries no dispatch.
+    that act on it. The factory is RESOLVED BY THE CALLER and handed down rather
+    than resolved here, because the refusal beside it names which measurement
+    failed and a second resolution of the same name cannot be proven to agree
+    with the first — the resolve-once rule this module already applies to
+    `pr_head`.
+
+    A REGISTRY-BACKED factory whose address did not resolve is reported
+    unobserved before a port exists. The port would carry a `server` of None,
+    which is a bare Fabro target: that asks whichever engine this host runs, and
+    on a host holding none of this item's runs it exits ZERO with an empty
+    listing — so the guard would read "no run of this item is live", arm the pull
+    request, and let the forge merge a head a live run on another machine is
+    about to rewrite.
     """
-    factory = resolve_fabro_factory(cwd=repo, factory=None)
+    if factory_registry_unobservable(factory=factory) is not None:
+        return ItemRunLiveness(live_run_ids=(), observed=False)
     ps = FabroPort(
         fabro_bin=factory_fabro_bin(factory=factory, fallback=resolve_fabro_bin(cwd=repo)),
         target=FabroTarget(server_url=factory.server, dev_token=factory.dev_token),

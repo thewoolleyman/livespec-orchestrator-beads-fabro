@@ -1182,12 +1182,53 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   assertion reds, and without it the mode-bit staging passed while establishing
   `no-entry` twice and `unreadable` never. The rule binds any CAPTURE or REPLAY
   demonstrating that arm as much as it binds this module. The consumer surfaces the
-  clause also names — the reconcile survey, the liveness reads, the
-  availability-evidence reads, the needs-human valve enrichment and the run-turn
-  telemetry classification — are a sibling work-item's and owe their own cases
-  there; what this module establishes for them is that `FactoryTarget.server`
+  clause also names belong to `test_factory_registry_consumers_scenario182.py`
+  beside it; what this module establishes for them is that `FactoryTarget.server`
   and `FactoryTarget.docker_host` already carry the registry's addresses, so no
   consumer learns that an address came from a file.
+
+- `test_factory_registry_consumers_scenario182.py` — the CONSUMER half of
+  Scenario 182 and of the same clause: "Every surface that turns a declared
+  factory into an address MUST use this one resolution, and every surface whose
+  behaviour depends on whether a factory is remote MUST treat a registry-backed
+  entry as naming a server", together with the failure behaviour each of those
+  surfaces owes an unresolvable one. Every case writes a `.livespec.jsonc` and a
+  registry file and drives the production surface: the reconcile survey and its
+  claim lane through `reconcile_runs` over `reconcile_factory_targets`, plan
+  liveness through `observe_target_run`, the merge-hold guard through
+  `arm_refusal_for_release`, the projection through
+  `resolve_projection_factory`, the availability evidence through the production
+  `FactoryRunReader`, the valve through `needs_human_question_summary`, the
+  container sweep through the pass's own daemon lane, and the telemetry
+  classification through `factory_run_turn_observation`. Three things an editor
+  must not weaken. THE SURFACES NEED CASES OF THEIR OWN EVEN THOUGH THE
+  RESOLUTION IS SHARED, because an unresolvable registry answers with
+  `FactoryTarget.server` of `None` — the same value an unconfigured repository
+  carries, which every one of these surfaces already reads as the ambient LOCAL
+  Fabro — so a consumer that opened a port on it surveys whichever engine the
+  dispatching host runs, answers cleanly, and reports a factory as holding no
+  runs from a reading taken on the wrong machine. Measured on the pre-fix build:
+  the plan gauge asked the local engine about a run living elsewhere, and the
+  merge-hold guard read the empty listing it got back as "no run of this item is
+  live" and fell through to arm the pull request. EVERY LIVENESS CASE THEREFORE
+  ASSERTS THAT NO PROCESS WAS LAUNCHED for that factory, which is the only place
+  the right unobservable verdict is distinguishable from the wrong one — both
+  return the same value, and only one of them has already contacted a machine
+  the factory never named; the merge-hold case carries the mirror control, the
+  same guard over a sibling that DOES declare an address, because a guard that
+  had simply stopped asking anything would satisfy the refusal and the
+  nothing-launched assertion together while refusing every release this fleet
+  makes. And THE UNDECODABLE-REGISTRY CASE BELONGS HERE rather than beside the
+  resolution's own refusal rows: `Path.read_text(encoding="utf-8")` raises
+  `UnicodeDecodeError`, which is a `ValueError` and not an `OSError`, so such a
+  file escaped the reading entirely and reached every consumer as a traceback —
+  including the needs-human valve lane, whose absorbed set is `OSError` and the
+  beads family, so one byte of host state cost the whole valve list instead of
+  one item's enrichment. It is written as RAW BYTES, the only way to express a
+  file that never reaches the JSON reader, and driven through the survey rather
+  than through the reading, because the reading returning a detail proves only
+  that it no longer raises while the claim is that the pass completes and
+  reports the factory.
 
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
