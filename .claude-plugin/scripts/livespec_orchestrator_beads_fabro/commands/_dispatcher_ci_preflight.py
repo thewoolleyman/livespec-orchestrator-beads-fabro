@@ -66,6 +66,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_refusal
     unprovable_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_wait import (
+    TRANSIENT_EMPTY_RUN_LISTING,
     MasterCiWait,
     PendingReading,
     await_master_ci_verdict,
@@ -91,7 +92,6 @@ _PENDING_STATUSES: frozenset[str] = frozenset(
 _RED_CONCLUSIONS: frozenset[str] = frozenset(
     {"failure", "cancelled", "timed_out", "action_required", "stale", "startup_failure"},
 )
-_TRANSIENT_EMPTY_RUN_LISTING = "transient empty run listing"
 # Resolved once, at import, so the production effects are the signature's own
 # default and no caller has to know the seam exists.
 _DEFAULT_WAIT = MasterCiWait()
@@ -163,7 +163,7 @@ def _read_latest(
         )
     if not runs:
         if observed_runs:
-            return PendingReading(run_id=UNKNOWN_RUN, status=_TRANSIENT_EMPTY_RUN_LISTING)
+            return PendingReading(run_id=UNKNOWN_RUN, status=TRANSIENT_EMPTY_RUN_LISTING)
         return _unprovable(
             pipeline=pipeline,
             branch=branch,
