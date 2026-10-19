@@ -42,6 +42,7 @@ __all__: list[str] = [
     "derive_fabro_timeout_seconds",
     "node_timeouts_from_block",
     "node_timeouts_journal_record",
+    "positive_int_seconds",
 ]
 
 _NODE_TIMEOUTS_KEY = "node_timeouts"
@@ -221,7 +222,7 @@ def node_timeouts_from_block(*, block: dict[str, Any]) -> NodeTimeouts | str:
     table = cast("dict[str, Any]", table_raw) if isinstance(table_raw, dict) else {}
     configured: dict[str, int] = {}
     for node in sorted(table):
-        seconds = _positive_int(value=table[node])
+        seconds = positive_int_seconds(value=table[node])
         if seconds is None:
             return (
                 f"dispatcher.{_NODE_TIMEOUTS_KEY}.{node} must be a positive "
@@ -280,7 +281,7 @@ def _with_stall(*, block: dict[str, Any], configured: dict[str, int]) -> NodeTim
             stall_seconds=DEFAULT_STALL_TIMEOUT_SECONDS,
             stall_layer=WORKFLOW_DEFAULT_LAYER,
         )
-    stall_seconds = _positive_int(value=stall_raw)
+    stall_seconds = positive_int_seconds(value=stall_raw)
     if stall_seconds is None:
         return (
             f"dispatcher.{_STALL_TIMEOUT_KEY} must be a positive integer of "
@@ -293,12 +294,18 @@ def _with_stall(*, block: dict[str, Any], configured: dict[str, int]) -> NodeTim
     )
 
 
-def _positive_int(*, value: object) -> int | None:
-    """The value as a positive int, or None when it is neither.
+def positive_int_seconds(*, value: object) -> int | None:
+    """The value as a positive int of seconds, or None when it is neither.
 
     `bool` is excluded explicitly: it is an `int` subclass in Python, so
     `true` in a config file would otherwise resolve to a one-second timeout
     -- a value that both passes validation and destroys every dispatch.
+
+    PUBLIC because all three keys of the same contracts section are "a
+    positive integer of seconds": the per-node timeouts and the stall window
+    here, and `dispatcher.run_wall_budget_seconds` in
+    `_dispatcher_run_wall_budget`. A second coercion over there would be a
+    second place for the `bool` trap above to be forgotten.
     """
     if isinstance(value, bool) or not isinstance(value, int):
         return None
