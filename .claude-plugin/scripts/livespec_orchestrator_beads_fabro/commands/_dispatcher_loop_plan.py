@@ -45,6 +45,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     DEFAULT_MERGE_ON_REVIEW_CAP,
     DEFAULT_REVIEW_FIX_CAP,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget import (
+    DEFAULT_RUN_WALL_BUDGET,
+    RunWallBudget,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
     sandbox_image_source,
 )
@@ -105,6 +109,7 @@ def dispatch_plan_for_item(  # noqa: PLR0913 — kw-only plan resolver; each fie
     janitor: tuple[str, ...] | None,
     raw_labels: tuple[str, ...],
     timeouts: NodeTimeouts,
+    run_wall_budget: RunWallBudget = DEFAULT_RUN_WALL_BUDGET,
     runner: CommandRunner,
     committed_workflow: Path,
     acp_nodes: AcpNodeResolution | None = None,
@@ -182,6 +187,12 @@ def dispatch_plan_for_item(  # noqa: PLR0913 — kw-only plan resolver; each fie
         # the file, so the bound the watchdog applies is the value the
         # rendered graph gave the node.
         node_timeouts=timeouts,
+        # And the WHOLE-RUN WALL BUDGET from the same read, which the
+        # pre-dispatch admission already graded against those node timeouts.
+        # Projected off the materialized payload rather than re-resolved, so
+        # the figure the watchdog cancels against is the figure the refusal
+        # passed and the dispatch record names.
+        run_wall_budget=run_wall_budget,
         # Already resolved and journaled by the caller, so the run renders the
         # adapters the dispatch record names rather than a re-derivation.
         acp_nodes=acp_nodes,

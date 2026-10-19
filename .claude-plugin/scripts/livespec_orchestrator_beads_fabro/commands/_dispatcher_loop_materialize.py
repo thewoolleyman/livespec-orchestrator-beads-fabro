@@ -215,6 +215,11 @@ def materialize_dispatch(
         # ever sets it, and every other command reaches this code with a
         # Namespace that never carried the argument.
         entry_node=getattr(args, "resume_entry_node", None),
+        # The per-dispatch wall-budget layer, read defensively for the reason
+        # `resume_entry_node` above is: only a DISPATCHING subcommand declares
+        # the flag, and the reconcile valves build a Namespace that never
+        # carried it.
+        run_wall_budget_argument=getattr(args, "run_wall_budget_seconds", None),
     )
     if isinstance(payload, str):
         return MaterializationRefusal(stage=_WORKFLOW_PAYLOAD_STAGE, detail=payload)

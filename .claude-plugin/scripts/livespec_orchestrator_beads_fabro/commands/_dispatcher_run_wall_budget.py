@@ -43,6 +43,7 @@ is a value that both passes a naive validation and cancels every run.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -59,6 +60,7 @@ __all__: list[str] = [
     "RUN_WALL_BUDGET_ARGUMENT",
     "RUN_WALL_BUDGET_KEY",
     "RunWallBudget",
+    "node_timeout_conflict",
     "run_wall_budget_from_block",
     "run_wall_budget_journal_record",
 ]
@@ -143,6 +145,46 @@ def run_wall_budget_journal_record(*, budget: RunWallBudget) -> dict[str, object
     timeout beside it.
     """
     return {"run_wall_budget": {"seconds": budget.seconds, "layer": budget.layer}}
+
+
+def node_timeout_conflict(*, budget: RunWallBudget, nodes: Mapping[str, int]) -> str | None:
+    """Refuse a budget smaller than a node timeout the same dispatch resolved.
+
+    `nodes` is what each node's `timeout` attribute ACTUALLY received in the
+    rendered graph, keyed by node name, so the conflict is measured against the
+    values the run will execute under rather than against a re-derivation of
+    them. A node the graph declares with no timeout attribute is absent from
+    that mapping and cannot conflict, which is correct: it carries no bound for
+    the budget to undercut.
+
+    EQUALITY PASSES. A budget equal to the longest node is not smaller than it,
+    and the clause refuses only a budget that IS smaller -- the same strictness
+    the budget's own exceeded test applies one layer up.
+
+    THE LONGEST OFFENDING NODE IS THE ONE NAMED, because it is the binding
+    constraint: a refusal naming any shorter offender sends an operator to
+    raise the budget to a figure the longest node would still exceed. A tie
+    resolves to the alphabetically-first node, because the population is walked
+    in sorted order rather than in whatever order the mapping yields -- a
+    refusal that named a different node on two identical dispatches would read
+    as two different faults.
+
+    The budget renders as an integer because every resolved budget IS one: both
+    resolution arms build from `positive_int_seconds`, so the float on
+    `RunWallBudget` is a comparison convenience and never a fractional value.
+    """
+    offending = [
+        (node, seconds) for node, seconds in sorted(nodes.items()) if seconds > budget.seconds
+    ]
+    if not offending:
+        return None
+    node, seconds = max(offending, key=lambda pair: pair[1])
+    return (
+        f"{RUN_WALL_BUDGET_KEY} is {int(budget.seconds)} seconds (layer: {budget.layer}), "
+        f"which is smaller than dispatcher.node_timeouts.{node} at {seconds} seconds; "
+        f"such a budget would cancel that node's legitimate turn, so the dispatch is "
+        f"refused before any run exists"
+    )
 
 
 def _configured_budget(*, block: dict[str, Any]) -> RunWallBudget | str:

@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from livespec_orchestrator_beads_fabro.commands._config import resolve_node_timeouts
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_adapters import (
     render_acp_commands,
 )
@@ -41,8 +41,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_render import 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import workflow_graph_path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import graph_entered_at
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget import (
+    DEFAULT_RUN_WALL_BUDGET,
+    RunWallBudget,
+    node_timeout_conflict,
+    run_wall_budget_from_block,
+    run_wall_budget_journal_record,
+)
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     NodeTimeouts,
+    node_timeouts_from_block,
     node_timeouts_journal_record,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -70,6 +78,15 @@ class WorkflowPayload:
     timeout attribute actually received, and `node_commands` what each ACP
     node's `acp.command` attribute received, so the dispatch record reports
     the rendered values rather than a re-derivation of them.
+
+    `run_wall_budget` is the whole-run wall budget resolved from the SAME read
+    of the dispatch target's configuration the timeouts came from. It rides the
+    payload rather than being resolved again at plan build for the reason the
+    timeouts do: the refusal that compares the two was graded against ONE
+    reading, so a second read could plan a dispatch under a budget the
+    admission never saw. It defaults to the fully-defaulted budget so a caller
+    that materializes a payload directly carries the documented default rather
+    than None.
     """
 
     payload_dir: Path
@@ -77,6 +94,7 @@ class WorkflowPayload:
     timeouts: NodeTimeouts
     node_seconds: Mapping[str, int]
     node_commands: Mapping[str, str]
+    run_wall_budget: RunWallBudget = DEFAULT_RUN_WALL_BUDGET
 
 
 def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_node are two independent rendering inputs.
@@ -88,32 +106,57 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
     work_item_id: str,
     adapters: Mapping[str, str],
     entry_node: str | None = None,
+    run_wall_budget_argument: str | None = None,
 ) -> WorkflowPayload | str:
-    """Resolve node timeouts, materialize the payload, and journal the result.
+    """Resolve node timeouts and the wall budget, materialize, and journal.
 
     Returns the payload, or an actionable refusal message the caller reports
     as a failed dispatch. Every refusal happens BEFORE any Fabro run exists,
     which is the whole point of validating here: a non-positive or
     non-integer timeout is a config typo, and the honest place to discover
     one is the dispatch that would have run without a timeout.
+
+    BOTH POLICIES COME FROM ONE READ of the dispatch target's configuration,
+    which is why the block is read here rather than through two `resolve_*`
+    seams. The wall budget is refused when it is smaller than a node timeout
+    resolved for the same dispatch, so the two numbers have to come from one
+    reading or the refusal could grade a budget against timeouts the run never
+    received -- and both readings produce a well-formed answer, so nothing
+    would announce the divergence.
+
+    THE CONFLICT IS GRADED AFTER THE RENDER and before the journal append,
+    because `payload.node_seconds` is what each node's timeout attribute
+    ACTUALLY received. Grading it earlier would compare the budget against the
+    configured table alone, which names no value for a node that takes the
+    default -- so the refusal would have to name a key rather than the node the
+    budget would have cancelled.
     """
-    timeouts = resolve_node_timeouts(cwd=repo)
+    block = dispatcher_block(cwd=repo)
+    timeouts = node_timeouts_from_block(block=block)
     if isinstance(timeouts, str):
         return timeouts
+    budget = run_wall_budget_from_block(block=block, argument=run_wall_budget_argument)
+    if isinstance(budget, str):
+        return budget
     payload = materialize_workflow_payload(
         committed=committed,
         payload_dir=payload_dir,
         timeouts=timeouts,
         adapters=adapters,
         entry_node=entry_node,
+        run_wall_budget=budget,
     )
     if isinstance(payload, str):
         return payload
+    conflict = node_timeout_conflict(budget=budget, nodes=payload.node_seconds)
+    if conflict is not None:
+        return conflict
     journal.append(
         record={
             "stage": _NODE_TIMEOUTS_STAGE,
             "work_item_id": work_item_id,
             **node_timeouts_journal_record(timeouts=timeouts, nodes=payload.node_seconds),
+            **run_wall_budget_journal_record(budget=budget),
         }
     )
     return payload
@@ -126,6 +169,7 @@ def materialize_workflow_payload(
     timeouts: NodeTimeouts,
     adapters: Mapping[str, str],
     entry_node: str | None = None,
+    run_wall_budget: RunWallBudget = DEFAULT_RUN_WALL_BUDGET,
 ) -> WorkflowPayload | str:
     """Copy the committed workflow payload and render its graph literally.
 
@@ -165,6 +209,10 @@ def materialize_workflow_payload(
         timeouts=timeouts,
         node_seconds=rendered.node_seconds,
         node_commands=rendered.node_commands,
+        # Carried THROUGH rather than written into the graph: the workflow
+        # graph declares no budget, because the Dispatcher's own host-side
+        # watchdog enforces it and the engine knows nothing about it.
+        run_wall_budget=run_wall_budget,
     )
 
 
