@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.222.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.221.0...v0.222.0) (2026-10-19)
+
+
+### Features
+
+* **dispatcher:** apply the wall budget in the watch loop, unmeasured means no cancel ([7708d46](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7708d465a297f389480ff8ed8bd2cb4409b7deec))
+* **dispatcher:** decline a budget cancel as a non-convergence observation ([2db39c6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2db39c611c36321884a82aef0ac93e3965b0354b))
+* **dispatcher:** export and read back a run's pointer before a budget cancel ([00aff2a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/00aff2a97b0f22739c3f367bb303b1b20e1be4f3))
+* **dispatcher:** journal one run-wall-budget-exceeded record per budget cancel ([71f3fe4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/71f3fe466364d587d1a2d4a7e4614fe814bc7da9))
+* **dispatcher:** journal run-wall-budget-held when an export cannot be read back ([4667952](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4667952aadd000bd4a5d82aba067522abe16a0b8))
+* **dispatcher:** name a budget-cancelled run's publication on both surfaces ([a1a868f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a1a868f6812eaa6e2341fcb13198cacef836c001))
+* **dispatcher:** refuse a wall budget smaller than a resolved node timeout ([ac83086](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ac830868fb1450ffb328e0a7fb14e1d761dd0c94))
+* **dispatcher:** resolve the whole-run wall budget through its three layers ([ed034b1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ed034b17ea9cc91b7caf110f2cdd290278380f4a))
+* **dispatcher:** rest a budget-cancelled item at blocked with needs-human ([3c91a49](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3c91a4939083a7be7d544d9ac73e417b16bc2fef))
+* **dispatcher:** start the wall-budget clock when the run first reports running ([2700e91](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2700e911ab9d62b2c79ef18a0d7540c5f11e30bd))
+
+
+### Bug Fixes
+
+* **dispatcher:** anchor a resume on a run-wall-budget-exceeded record ([1980413](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1980413e43b459a2b4d08d38cca00aab1621a7c5))
+
 ## [0.221.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.220.1...v0.221.0) (2026-10-19)
 
 
