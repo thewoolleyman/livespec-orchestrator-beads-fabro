@@ -219,16 +219,35 @@ def _registry_table(*, path: str) -> dict[str, Any] | str:
     """The registry's top-level object, or WHY it could not be read.
 
     A reason rather than an exception or a None, because every caller of this is
-    building a refusal an operator has to act on and the four faults have four
-    different remedies — provision the file, make it readable, fix the JSON, make
-    the top level an object. `OSError` is named by TYPE rather than by its
-    message so the reason stays stable across platforms while still saying which
-    kind of unreadable it was.
+    building a refusal an operator has to act on and the five faults have five
+    different remedies — provision the file, make it readable, re-render it as
+    text, fix the JSON, make the top level an object. `OSError` is named by TYPE
+    rather than by its message so the reason stays stable across platforms while
+    still saying which kind of unreadable it was.
+
+    THE DECODE FAULT IS CAUGHT SEPARATELY AND IT IS NOT A STYLISTIC CHOICE.
+    `UnicodeDecodeError` is a `ValueError`, not an `OSError`, so a registry whose
+    bytes are not valid UTF-8 escaped this reading entirely and reached every
+    consumer of the shared resolution as an exception: the per-factory survey,
+    the plan liveness read, the merge-hold guard and the telemetry
+    classification each died with a traceback, and the needs-human valve lane —
+    whose absorbed-error set is `OSError` and the beads family — lost the whole
+    valve list rather than one item's enrichment. The clause requires an
+    unresolvable registry to be REPORTED on each of those surfaces, so no fault
+    of this file may leave here as anything but a reason.
+
+    It is reported apart from the JSON fault, which it would otherwise be
+    collected by: the file DOES exist and IS readable, and its remedy is to
+    re-render it rather than to correct its syntax. The exception's own message
+    names the offending byte and its position, which is the one detail that
+    makes an undecodable file findable, so it is carried through.
     """
     try:
         text = Path(path).read_text(encoding="utf-8")
     except OSError as error:
         return f"it is absent or unreadable ({type(error).__name__})"
+    except UnicodeDecodeError as error:
+        return f"its bytes are not valid UTF-8 text ({error})"
     try:
         parsed = cast("object", json.loads(text))
     except ValueError as error:
