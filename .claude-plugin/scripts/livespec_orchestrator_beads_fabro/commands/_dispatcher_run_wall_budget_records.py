@@ -47,13 +47,21 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_run_reading im
 
 __all__: list[str] = [
     "RUN_WALL_BUDGET_EXCEEDED_STAGE",
+    "RUN_WALL_BUDGET_HELD_STAGE",
     "run_wall_budget_exceeded_record",
+    "run_wall_budget_held_record",
 ]
 
 # The journal stage a budget cancel appends. One literal, shared by this
 # producer and every reader — the resume anchor, the budget disposition, and an
 # operator's `grep`.
 RUN_WALL_BUDGET_EXCEEDED_STAGE = "run-wall-budget-exceeded"
+
+# The journal stage a held cancel appends. Its own stage rather than a field on
+# the row above, for the reason the stall disposition's held stage is: a reader
+# asking "was this run cancelled on its budget" must not match the row that
+# says it deliberately was not.
+RUN_WALL_BUDGET_HELD_STAGE = "run-wall-budget-held"
 
 
 def run_wall_budget_exceeded_record(  # noqa: PLR0913 — kw-only record renderer; the run's identity, its publication and the budget decision are independent inputs.
@@ -106,4 +114,42 @@ def run_wall_budget_exceeded_record(  # noqa: PLR0913 — kw-only record rendere
         "budget_layer": budget.layer,
         "budget_start_source": start_source,
         "preserved_pointer": preserved_pointer,
+    }
+
+
+def run_wall_budget_held_record(
+    *,
+    work_item_id: str,
+    run_id: str,
+    elapsed_seconds: float,
+    budget: RunWallBudget,
+    failed_measurement: str,
+) -> dict[str, object]:
+    """Render the one record a HELD budget cancel writes.
+
+    It names the run and not the whole identifying half, because the run has
+    NOT been cancelled: its stage, its pull request and its published head are
+    read from its own record at cancel time, and a held poll has not reached
+    that reading. Rendering them would put a reading nobody took onto the one
+    row that exists to say a measurement failed.
+
+    `failed_measurement` is the export's own account of WHICH measurement
+    stopped the cancel, carried verbatim rather than reduced to a code, because
+    the remedies differ: a ledger this host cannot resolve is a configuration
+    fault, a write that was refused is a tenant fault, and a write that did not
+    read back may already have landed.
+
+    The two measured figures ride it for the reason they ride the cancel
+    record: the budget alone cannot be checked -- it says what the threshold
+    was and never that anything reached it -- so an operator reading a run of
+    held rows can see the elapsed figure climbing against a fixed bound.
+    """
+    return {
+        "stage": RUN_WALL_BUDGET_HELD_STAGE,
+        "work_item_id": work_item_id,
+        "run_id": run_id,
+        "elapsed_seconds": elapsed_seconds,
+        "budget_seconds": budget.seconds,
+        "budget_layer": budget.layer,
+        "failed_measurement": failed_measurement,
     }
