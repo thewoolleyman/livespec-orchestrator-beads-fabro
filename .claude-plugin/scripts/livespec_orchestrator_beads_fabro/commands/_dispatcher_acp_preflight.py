@@ -224,22 +224,21 @@ def resolve_acp_preflight(
 def resolve_acp_primary_generations(*, repo: Path) -> Mapping[str, str]:
     """Each fallback-enabled node's CURRENT primary-generation fingerprint.
 
-    The event projection needs this for two different questions, and
-    answering both from one resolution is what keeps them consistent: the
-    KEYS are the nodes a projection-failure fact may be reported for, and
-    the VALUES are what the model-fallback supersede pass compares each
-    live warning's recorded generation against.
+    The KEYS are this repository's fallback-enabled nodes and the VALUES
+    are what the model-fallback supersede pass compares each live
+    warning's recorded generation against. One resolution answers both,
+    which is what keeps a node's identity and its generation consistent.
 
     It is deliberately the same lazy, fail-soft shape as
     `resolve_acp_preflight` above. A repository declaring no fallback
     metadata short-circuits to the empty mapping before any workflow
-    variant, graph or journal is touched -- so projection is a total
+    variant, graph or journal is touched -- so the read is a total
     no-op on the v107 path -- and a configuration that will not resolve
     also yields the empty mapping rather than a refusal. That direction is
     chosen: the refusal belongs to admission, which runs before claim,
     while this runs AFTER a run has already finished, where refusing would
     strand the very evidence an operator needs. An empty mapping retires
-    no warning and reports no fact, which is the conservative answer.
+    no warning, which is the conservative answer.
     """
     block = workflow_scoped_dispatcher_block(repo=repo)
     catalogs = resolve_acp_catalogs(block=block)

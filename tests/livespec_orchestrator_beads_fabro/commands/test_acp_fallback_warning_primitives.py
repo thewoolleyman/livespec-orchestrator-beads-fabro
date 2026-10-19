@@ -45,9 +45,6 @@ from livespec_orchestrator_beads_fabro.commands._acp_fallback_warning_records im
     model_fallback_warning_record,
     warning_id,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_projection_failure import (
-    projection_success_record,
-)
 
 _OCCURRED = "2026-09-12T12:00:00Z"
 _LATER = "2026-09-12T12:05:00Z"
@@ -224,26 +221,3 @@ def test_a_well_formed_retirement_clears_its_named_warning_and_a_malformed_one_d
 
     assert cleared.warnings == ()
     assert [entry.warning_id for entry in standing.warnings] == [warning["warning_id"]]
-
-
-def test_the_retired_projections_success_record_names_its_own_fact_id() -> None:
-    """Covered while the record type survives; it goes with the fact that owns it.
-
-    The projection that wrote this record is gone, and the fact the record
-    resolved is retired in the next cycle of the same work-item. It is asserted
-    here so the interval between the two leaves nothing unexercised.
-    """
-    record = projection_success_record(
-        repo="livespec-orchestrator-beads-fabro",
-        run_id="01M4Q8FDDHKZ3VE8WSHCTD1AKB",
-        node=_NODE,
-        projected=1,
-        unobservable=0,
-    )
-
-    assert record["stage"] == "acp-projection-succeeded"
-    assert record["fact_id"] == (
-        "hygiene:model-fallback-projection:livespec-orchestrator-beads-fabro:"
-        f"01M4Q8FDDHKZ3VE8WSHCTD1AKB:{_NODE}"
-    )
-    assert record["projected_observations"] == 1
