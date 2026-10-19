@@ -442,6 +442,11 @@ create_and_seed_repo() {
     # Push master and SET it as the default branch (the PR stage targets master
     # and ranges origin/master..HEAD). Token only on this argv; nothing echoed.
     git push -q "https://x-access-token:${LIVESPEC_E2E_GITHUB_TOKEN}@github.com/${ORG}/${THROWAWAY_REPO}.git" HEAD:master 2>/dev/null
+    # A push to an explicit URL never creates the `origin` remote-tracking ref,
+    # and the dispatcher refuses a source HEAD that no `origin/*` ref contains
+    # (source-head-not-origin-reachable). The push above succeeded under
+    # `set -e`, so origin/master IS this HEAD; record it.
+    git update-ref refs/remotes/origin/master HEAD
   )
   GH_TOKEN="$LIVESPEC_E2E_GITHUB_TOKEN" gh api -X PATCH "/repos/${ORG}/${THROWAWAY_REPO}" -f default_branch=master >/dev/null 2>&1 || true
   printf 'seeded + pushed: %s/%s (default branch master)\n' "$ORG" "$THROWAWAY_REPO"
