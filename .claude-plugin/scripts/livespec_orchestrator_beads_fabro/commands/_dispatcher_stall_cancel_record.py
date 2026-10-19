@@ -1,4 +1,4 @@
-"""The one journal record a `stalled-no-progress` watchdog cancel writes.
+"""The journal records a watchdog cancel writes, and the half they share.
 
 `SPECIFICATION/contracts.md` section "Dispatcher progress watchdog" -> "The
 cancel record" enumerates what it MUST name: the work-item, the dispatch id,
@@ -54,6 +54,7 @@ __all__: list[str] = [
     "STALL_CANCEL_STAGE",
     "UNREADABLE_PUBLISHED_HEAD",
     "stall_cancel_record",
+    "watchdog_cancel_fields",
 ]
 
 # The journal stage. One literal, shared by this producer and every reader —
@@ -82,19 +83,54 @@ def stall_cancel_record(
     executing_stage: str | None,
     publication: StallPublication | None,
 ) -> dict[str, object]:
-    """Render the cancel record's identifying half.
+    """Render the `stalled-no-progress` cancel record's identifying half.
 
     The caller merges the stall-window figures it measured onto this — the
     resolved window, the layer that supplied it, the quiet duration confirmed
     and the `fabro rm` exit code — because those are facts about the DECISION
     while these are facts about the RUN, and only the caller holds both.
+    """
+    return {
+        "stage": STALL_CANCEL_STAGE,
+        **watchdog_cancel_fields(
+            work_item_id=work_item_id,
+            dispatch_id=dispatch_id,
+            run_id=run_id,
+            factory=factory,
+            executing_stage=executing_stage,
+            publication=publication,
+        ),
+    }
+
+
+def watchdog_cancel_fields(
+    *,
+    work_item_id: str,
+    dispatch_id: str | None,
+    run_id: str,
+    factory: str,
+    executing_stage: str | None,
+    publication: StallPublication | None,
+) -> dict[str, object]:
+    """The identifying half BOTH watchdog cancel records carry, without a stage.
+
+    PUBLIC and stage-free because the whole-run wall budget's own record "MUST
+    carry every field the cancel record above requires, under the same rules
+    for the stage and for the pull request and published head". That is a
+    requirement about ONE field set, so it is rendered by ONE function:
+    a second renderer would drift, and the drift would be invisible — both
+    records would stay well-formed while a reader joining them reported one
+    cancel class as carrying less than the other.
+
+    The STAGE is the caller's, not a parameter with a default, because the two
+    records are opposite dispositions and a defaulted stage is how a budget
+    cancel comes to be journaled as a stall.
 
     `dispatch_id` is optional because the launcher is wired with one only when
     the dispatch minted one; a null there is an honest "this launch carried no
     dispatch id", which is distinguishable from an id nobody wrote down.
     """
     return {
-        "stage": STALL_CANCEL_STAGE,
         "work_item_id": work_item_id,
         "dispatch_id": dispatch_id,
         "run_id": run_id,
