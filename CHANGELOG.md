@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.219.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.219.0...v0.219.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **config:** route implement and fix back to Codex Terra; gpt-6-sol is refused on the ChatGPT account ([78d6784](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/78d678426348d30d76fd4e4d69b2d99234063d5a))
+* **config:** run implement and fix on Claude Opus 5 with a Codex Terra fallback ([51087b2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/51087b22141809dc5d5b05174fd62176dbfbb333))
+
 ## [0.219.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.218.0...v0.219.0) (2026-10-19)
 
 
