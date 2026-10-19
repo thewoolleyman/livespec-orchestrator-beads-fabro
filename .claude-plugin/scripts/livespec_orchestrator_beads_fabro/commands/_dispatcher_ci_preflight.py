@@ -62,15 +62,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_refusal
     PIPELINE_REMEDY,
     MasterCiOutcome,
     pass_outcome,
-    pending_outcome,
     red_outcome,
     unprovable_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_wait import (
     MasterCiWait,
     PendingReading,
-    pending_progress_line,
-    poll_pause,
+    await_master_ci_verdict,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_default_branch import (
     resolve_default_branch,
@@ -79,7 +77,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     CommandRunner,
 )
-from livespec_orchestrator_beads_fabro.io import write_stderr
 
 __all__: list[str] = [
     "master_ci_preflight",
@@ -94,6 +91,7 @@ _PENDING_STATUSES: frozenset[str] = frozenset(
 _RED_CONCLUSIONS: frozenset[str] = frozenset(
     {"failure", "cancelled", "timed_out", "action_required", "stale", "startup_failure"},
 )
+_TRANSIENT_EMPTY_RUN_LISTING = "transient empty run listing"
 # Resolved once, at import, so the production effects are the signature's own
 # default and no caller has to know the seam exists.
 _DEFAULT_WAIT = MasterCiWait()
@@ -132,49 +130,23 @@ def master_ci_preflight(
             cause="the target's default branch could not be resolved",
             remedy=BRANCH_REMEDY,
         )
-    return _await_verdict(repo=repo, runner=runner, pipeline=pipeline, branch=branch, wait=wait)
+    return await_master_ci_verdict(
+        repo=repo,
+        runner=runner,
+        pipeline=pipeline,
+        branch=branch,
+        wait=wait,
+        read_latest=_read_latest,
+    )
 
 
-def _await_verdict(
+def _read_latest(
     *,
     repo: Path,
     runner: CommandRunner,
     pipeline: MasterCiPipeline,
     branch: str,
-    wait: MasterCiWait,
-) -> MasterCiOutcome:
-    """Poll the LATEST run for a verdict until one arrives or the bound is spent.
-
-    Each round re-takes the WHOLE lookup rather than re-checking the run it
-    first read, because the ratified rule is that a newer run REPLACES the one
-    being waited on -- this repository's default branch moves under a wait, and
-    a loop keyed on one run id would spend the whole bound on a run nobody
-    cares about any more. Only the bound expiring turns a pending reading into
-    an outcome, and that outcome is the deferral.
-    """
-    start = wait.now()
-    while True:
-        reading = _read_latest(repo=repo, runner=runner, pipeline=pipeline, branch=branch)
-        if isinstance(reading, MasterCiOutcome):
-            return reading
-        write_stderr(
-            text=pending_progress_line(reading=reading, branch=branch), stream=wait.progress
-        )
-        waited = wait.now() - start
-        pause = poll_pause(waited=waited, bound=wait.bound_seconds)
-        if pause is None:
-            return pending_outcome(
-                pipeline=pipeline,
-                branch=branch,
-                run_id=reading.run_id,
-                status=reading.status,
-                waited=waited,
-            )
-        wait.sleep(pause)
-
-
-def _read_latest(
-    *, repo: Path, runner: CommandRunner, pipeline: MasterCiPipeline, branch: str
+    observed_runs: bool,
 ) -> MasterCiOutcome | PendingReading:
     result = list_runs(repo=repo, runner=runner, workflow=pipeline.workflow, branch=branch)
     if result.exit_code != 0:
@@ -190,6 +162,8 @@ def _read_latest(
             remedy=PIPELINE_REMEDY,
         )
     if not runs:
+        if observed_runs:
+            return PendingReading(run_id=UNKNOWN_RUN, status=_TRANSIENT_EMPTY_RUN_LISTING)
         return _unprovable(
             pipeline=pipeline,
             branch=branch,
