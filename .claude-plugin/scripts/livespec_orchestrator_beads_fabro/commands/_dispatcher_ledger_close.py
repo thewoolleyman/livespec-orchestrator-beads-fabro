@@ -329,6 +329,10 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     "fabro_failure_cause",
     "fabro_failure_category",
     "fabro_failure_signature",
+    # A cancellation alone carries this factory identity. It is an operator
+    # ledger-comment input, not a universal DispatchOutcome column, so retain
+    # the established payload shape unless an external lifecycle cancel set it.
+    "fabro_factory_name",
     "missing_integration_point",
     # The three-way needs-human verdict, which only a Fabro needs-human
     # terminal carries. Dropping it when unset keeps every other outcome's

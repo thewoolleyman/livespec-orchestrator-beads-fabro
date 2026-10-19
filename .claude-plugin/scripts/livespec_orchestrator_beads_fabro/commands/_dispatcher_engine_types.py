@@ -67,11 +67,13 @@ class FabroRunResult:
 class DispatchOutcome:
     """Terminal report for one dispatched work-item.
 
-    `status` is one of `green` / `failed` / `blocked` (blocked = the run's
-    `needs_human` terminal fired and the item rests at blocked / needs-human
-    in the ledger; surfaced to a human, never treated as a failure, never
-    auto-resolved). A `run-unobservable` result reports exhausted visibility
-    retries while the bound run may still be alive; its active claim is retained.
+    `status` is one of `green` / `failed` / `blocked` / `cancelled` (blocked =
+    the run's `needs_human` terminal fired and the item rests at blocked /
+    needs-human in the ledger; surfaced to a human, never treated as a failure,
+    never auto-resolved). `cancelled` is a Fabro lifecycle cancellation the
+    Dispatcher did not initiate; its disposition likewise rests the item for a
+    human. A `run-unobservable` result reports exhausted visibility retries
+    while the bound run may still be alive; its active claim is retained.
 
     `step` / `missing_integration_point` / `remedy` are the STRUCTURED half
     of a degraded post-merge outcome: the stable step identifier from the
@@ -156,6 +158,10 @@ class DispatchOutcome:
     missing_integration_point: str | None = None
     remedy: str | None = None
     fabro_run_id: str | None = None
+    # The resolved factory that owned a lifecycle cancellation. It follows the
+    # terminal to the ledger comment because the post-run route has no plan to
+    # re-read, and a bare run id is not actionable on a multi-factory host.
+    fabro_factory_name: str | None = None
     fabro_failure_cause: str | None = None
     fabro_failure_category: str | None = None
     fabro_failure_signature: str | None = None

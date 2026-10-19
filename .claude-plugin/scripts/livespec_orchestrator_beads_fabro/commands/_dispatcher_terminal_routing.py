@@ -1,4 +1,4 @@
-"""Where a NON-GREEN terminal leaves its work-item: the three peer routes.
+"""Where a NON-GREEN terminal leaves its work-item: the four peer routes.
 
 Split out of `_dispatcher_loop_selection` by cohesion. That module owns the
 POST-RUN SEQUENCE -- the acceptance valve, the provider-exhaustion record, the
@@ -18,6 +18,9 @@ fires:
   `stalled-no-progress` status;
 - a PROVIDER-LIMIT release returns the item to `ready` for the ordinary
   admission valve, and fires on the `provider-limit-release` status.
+- an EXTERNAL FABRO cancellation rests the item at `blocked / needs-human`,
+  and fires on the `cancelled` status after naming the run and its factory in
+  a ledger comment.
 
 Each one is a no-op for every status but its own, so the sequence below is a
 declaration of the complete route set rather than a priority order. Keeping
@@ -41,6 +44,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     bounce_non_convergence_to_backlog,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_external_cancel_disposition import (
+    dispose_external_fabro_cancel,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_disposition import (
     dispose_provider_limit_release,
@@ -71,6 +77,7 @@ def dispose_terminal_routing(
     """
     bounce_non_convergence_to_backlog(repo=repo, item=item, outcome=outcome, journal=journal)
     dispose_stall_cancel(repo=repo, item=item, outcome=outcome, journal=journal)
+    dispose_external_fabro_cancel(repo=repo, item=item, outcome=outcome, journal=journal)
     dispose_provider_limit_release(
         repo=repo, item=item, outcome=outcome, journal=journal, now_iso=now_iso
     )

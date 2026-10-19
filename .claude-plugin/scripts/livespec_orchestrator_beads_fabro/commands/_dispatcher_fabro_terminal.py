@@ -123,14 +123,16 @@ def fabro_run_terminal_outcome(
     )
     if terminated is not None:
         return terminated
+    terminal_status = _terminal_status(inspect=inspect)
     return outcome_type(
         work_item_id=plan.work_item_id,
-        status=_terminal_status(inspect=inspect),
+        status=terminal_status,
         stage="fabro-run",
         pr_number=None,
         merge_sha=None,
         detail=detail,
         fabro_run_id=run_id,
+        fabro_factory_name=(plan.fabro_factory_name if terminal_status == "cancelled" else None),
         fabro_failure_cause=None if failure is None else failure.cause,
         fabro_failure_category=None if failure is None else failure.category,
         fabro_failure_signature=None if failure is None else failure.signature,
