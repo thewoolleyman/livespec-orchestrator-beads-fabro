@@ -555,6 +555,40 @@ def test_a_pending_run_that_concludes_green_lets_the_dispatch_proceed(tmp_path: 
     assert pauses == [60.0]
 
 
+def test_a_transient_empty_run_listing_during_a_wait_is_repolled(tmp_path: Path) -> None:
+    """A later empty listing is not the first-read no-runs-yet state.
+
+    The third answer is green, so returning the empty second answer as a
+    refusal would fail this assertion. The two pauses prove the preflight
+    repolls after the empty answer instead of treating it as a terminal read.
+    """
+    pauses: list[float] = []
+    runner = _Runner(
+        results=_results(),
+        streams={
+            _run_list_argv(): _stream(
+                results=[
+                    _result(stdout=_run_list_payload(status="in_progress")),
+                    _result(stdout="[]"),
+                    _result(stdout=_run_list_payload()),
+                ]
+            )
+        },
+    )
+
+    outcome = _polled(
+        repo=tmp_path,
+        runner=runner,
+        readings=[0.0, 30.0, 60.0],
+        pauses=pauses,
+        progress=io.StringIO(),
+    )
+
+    assert outcome.refusal is None
+    assert outcome.record["reason"] == "master-ci-green"
+    assert pauses == [60.0, 60.0]
+
+
 def test_a_pending_run_that_concludes_red_refuses_as_red(tmp_path: Path) -> None:
     """Waiting changes WHEN the verdict is read, never what a red verdict means."""
     runner = _Runner(

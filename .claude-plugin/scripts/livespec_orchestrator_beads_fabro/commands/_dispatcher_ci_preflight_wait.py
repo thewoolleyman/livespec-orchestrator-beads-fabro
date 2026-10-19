@@ -33,13 +33,25 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TextIO
+from pathlib import Path
+from typing import Protocol, TextIO
+
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_pipeline_view import (
+    MasterCiPipeline,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_refusals import (
+    MasterCiOutcome,
+    pending_outcome,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.io import write_stderr
 
 __all__: list[str] = [
     "POLL_INTERVAL_SECONDS",
     "WAIT_BOUND_SECONDS",
     "MasterCiWait",
     "PendingReading",
+    "await_master_ci_verdict",
     "master_ci_wait",
     "pending_progress_line",
     "poll_pause",
@@ -76,6 +88,67 @@ class MasterCiWait:
     sleep: Callable[[float], None] = time.sleep
     progress: TextIO | None = None
     bound_seconds: float = WAIT_BOUND_SECONDS
+
+
+class LatestRunReader(Protocol):
+    """The preflight classifier called once per bounded-wait poll."""
+
+    def __call__(
+        self,
+        *,
+        repo: Path,
+        runner: CommandRunner,
+        pipeline: MasterCiPipeline,
+        branch: str,
+        observed_runs: bool,
+    ) -> MasterCiOutcome | PendingReading:
+        """Classify the latest run, preserving whether an earlier poll found one."""
+        ...
+
+
+def await_master_ci_verdict(
+    *,
+    repo: Path,
+    runner: CommandRunner,
+    pipeline: MasterCiPipeline,
+    branch: str,
+    wait: MasterCiWait,
+    read_latest: LatestRunReader,
+) -> MasterCiOutcome:
+    """Poll the latest run until it reaches a verdict or the bounded wait expires.
+
+    Each round re-takes the whole lookup rather than re-checking the run it
+    first read: a newer default-branch run replaces the one being waited on.
+    The classifier owns what every reading means; this loop owns the bounded
+    effects shared by pending and transient readings.
+    """
+    start = wait.now()
+    observed_runs = False
+    while True:
+        reading = read_latest(
+            repo=repo,
+            runner=runner,
+            pipeline=pipeline,
+            branch=branch,
+            observed_runs=observed_runs,
+        )
+        if isinstance(reading, MasterCiOutcome):
+            return reading
+        observed_runs = True
+        write_stderr(
+            text=pending_progress_line(reading=reading, branch=branch), stream=wait.progress
+        )
+        waited = wait.now() - start
+        pause = poll_pause(waited=waited, bound=wait.bound_seconds)
+        if pause is None:
+            return pending_outcome(
+                pipeline=pipeline,
+                branch=branch,
+                run_id=reading.run_id,
+                status=reading.status,
+                waited=waited,
+            )
+        wait.sleep(pause)
 
 
 def master_ci_wait(*, waived: bool) -> MasterCiWait:
