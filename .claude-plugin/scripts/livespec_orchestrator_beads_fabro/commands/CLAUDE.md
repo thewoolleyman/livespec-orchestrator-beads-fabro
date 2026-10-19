@@ -217,6 +217,17 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   factory the dispatch never reaches, since the resolution does honour the
   variable. That variable is the only routing mechanism `drive.py` has, and it
   is used precisely when the recorded factory identity is the point.
+  THE LAYER SITS ABOVE THE RECORDED PIN, not below it, which is the ratified
+  order of the selection clause and one place where it is spelled. A pin is the
+  item's OWN dispatch history and the variable is this invocation's routing
+  decision, so an item an operator re-routes is exactly one that has been
+  dispatched elsewhere before — measured 2026-10-19, an item carrying fifteen hp
+  journal rows was dispatched with the variable naming `petri` and had its claim
+  stamped `hp`, after which reconcile held that claim against hp for a run living
+  on gmktec. `_explicit_factory` therefore reads the `--factory` FLAG alone: the
+  variable is one layer below it in `_pinned_factory`, and reading it in both
+  places is what gave a namespace-carrying caller its own copy of the order and
+  let the two copies drift apart.
 - `_dispatcher_journal_file.py` — the append-only dispatch journal and the
   attribution stamp it owns, split out of `_dispatcher_io` for the same reason
   `_dispatcher_shell_runner` was: that aggregate's import closure reaches the

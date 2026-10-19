@@ -109,15 +109,16 @@ def stamp_pending_claim(
     """Replace this item's claim stamp with one naming THIS dispatch and no run.
 
     The factory is resolved under the dispatch precedence MINUS the explicit
-    `--factory` flag, which admission does not carry: the item's own recorded
-    pin, else `LIVESPEC_FABRO_FACTORY`, else the configured default. A targeted
-    dispatch naming a different factory on the command line therefore stamps
-    the pin's factory here and the run stamp corrects it seconds later — which
-    cannot change any grading, because every DECLARED factory grades a run-less
-    stamp `attribution-pending` and holds it. What the field must not be is
-    ABSENT: a stamp naming no factory grades `claim-unattributable`, whose
-    remedy is "this factory is no longer declared" rather than the move valve
-    this state actually needs.
+    `--factory` flag, which admission does not carry: `LIVESPEC_FABRO_FACTORY`,
+    else the item's own recorded pin, else overflow selection or the configured
+    default. The ORDER of those layers is the resolution's own and is not
+    restated here — a second order would stamp the row with a factory the run
+    never runs on, which the reconcile pass then holds the claim against while
+    reporting the stamp faithfully.
+
+    What the field must not be is ABSENT: a stamp naming no factory grades
+    `claim-unattributable`, whose remedy is "this factory is no longer
+    declared" rather than the move valve this state actually needs.
     """
     detail = _attempted(
         action=lambda: _write_pending_stamp(
