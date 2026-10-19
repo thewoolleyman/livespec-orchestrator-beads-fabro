@@ -96,6 +96,7 @@ __all__: list[str] = [
 _ROOT = "/"
 _UNREADABLE = ("", _ROOT, ".")
 _CHANGE_DIRECTORY = "cd"
+_GIT_DIRECTORY = ".git"
 # The characters that make a word a shell PATTERN rather than a path.
 _GLOB_CHARACTERS = frozenset("*?[")
 
@@ -245,6 +246,7 @@ def refused_path(
     resolved: Mapping[str, str],
     directories: Collection[str],
     protected: Sequence[str],
+    repository_clone: str = "",
 ) -> str | None:
     """The protected path `targets` would destroy, or `None` if they would not.
 
@@ -260,12 +262,20 @@ def refused_path(
     the fail-closed direction: an unreadable destination stays a replacement.
     """
     refusable = _refusable_targets(protected=protected)
+    repository_git = _repository_git(repository_clone=repository_clone)
     for target in targets:
         victim = _destroyed(
             target=target, resolved=resolved, directories=directories, refusable=refusable
         )
         if victim is not None:
             return victim
+        if repository_git and _destroyed(
+            target=target,
+            resolved=resolved,
+            directories=directories,
+            refusable=((repository_git, repository_git),),
+        ):
+            return repository_git
     return None
 
 
@@ -553,6 +563,14 @@ def _refusable_targets(*, protected: Sequence[str]) -> tuple[tuple[str, str], ..
     exact = tuple((path, path) for path in protected)
     above = tuple((ancestor, path) for path in protected for ancestor in _ancestors(path=path))
     return exact + above
+
+
+def _repository_git(*, repository_clone: str) -> str:
+    """The repository directory whose loss makes a checkpoint impossible."""
+    clone = posixpath.normpath(repository_clone)
+    if clone in _UNREADABLE:
+        return ""
+    return posixpath.join(clone, _GIT_DIRECTORY)
 
 
 def _ancestors(*, path: str) -> tuple[str, ...]:

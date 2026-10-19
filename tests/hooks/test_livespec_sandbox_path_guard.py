@@ -184,6 +184,26 @@ def test_removing_the_working_directory_link_or_the_clone_is_refused(
     assert protected in _refusal_reason(captured=capsys.readouterr().out)
 
 
+def test_removing_the_clones_git_directory_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The clone remains a repository for the engine's next checkpoint."""
+    layout = _Layout(base=tmp_path)
+    git_directory = layout.clone / ".git"
+    git_directory.mkdir()
+    guard = _load_guard()
+
+    _run_guard(
+        guard=guard,
+        payload=_payload(command=f"rm -rf {git_directory}", cwd=str(layout.clone)),
+        monkeypatch=monkeypatch,
+        sandbox_root=str(layout.root),
+        project_dir=str(layout.clone),
+    )
+
+    assert str(git_directory) in _refusal_reason(captured=capsys.readouterr().out)
+
+
 def test_the_repository_is_taken_from_the_payload_when_no_project_dir_is_set(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

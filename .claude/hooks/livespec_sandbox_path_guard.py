@@ -101,7 +101,11 @@ def _decision(*, raw: str, environ: dict[str, str]) -> str | None:
         sandbox_entry_targets=_entry_targets(root=root),
     )
     matched = policy.refused_path(
-        targets=targets, resolved=resolved, directories=directories, protected=protected
+        targets=targets,
+        resolved=resolved,
+        directories=directories,
+        protected=protected,
+        repository_clone=_real_path(path=repository),
     )
     if matched is None:
         return None
