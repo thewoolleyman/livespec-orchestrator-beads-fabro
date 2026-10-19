@@ -22,6 +22,19 @@
   "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },
   "livespec-orchestrator-beads-fabro": {
     "format": "beads",
-    "connection": { "fake": false, "prefix": "e2egreet" }
+    "connection": { "fake": false, "prefix": "e2egreet" },
+    // The throwaway repo is created minutes before its one dispatch and has no
+    // CI pipeline, so the master-CI preflight cannot prove `master` green and
+    // refuses (master-ci-unprovable). That is the case the committed waiver
+    // exists for; the dispatcher journals the owner on every waived proceed.
+    "dispatcher": {
+      "step_waivers": [
+        {
+          "step": "master-ci",
+          "owner": "livespec-orchestrator-beads-fabro orchestrator-image/acceptance-live-golden-master.sh",
+          "reason": "W7 golden-master throwaway repo: created for one dispatch and deleted at teardown, with no CI pipeline whose master run could be proven green."
+        }
+      ]
+    }
   }
 }
