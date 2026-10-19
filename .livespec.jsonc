@@ -484,8 +484,13 @@
       // inspected and none is held — which is the escape hatch for a factory
       // whose parked runs must be left strictly alone.
       "blocked_run_grace_seconds": 1800,
-      // The structured "acp_nodes" entries below put implement and fix on Codex
-      // (codex-acp / gpt-5.6-terra, effort high) with a Claude Opus 5 fallback.
+      // The structured "acp_nodes" entries below put implement and fix on Claude
+      // Opus 5 (effort high) with a Codex Terra fallback. Maintainer direction
+      // 2026-10-19 ~04:0xZ, relayed by the coordinator: "Okay, go ahead and
+      // switch the implement back to Opus. It's obviously failing." fix moves
+      // with it: Terra fix went 0 for 3 that night (bd-ib-sufca7, bd-ib-davaxq,
+      // bd-ib-quzpge). Before that, implement and fix ran codex-acp /
+      // gpt-5.6-terra from 2026-10-18 (PR #3265).
       // PR #3276 moved them to gpt-6-sol on 2026-10-19 and was REVERTED the
       // same day: the Codex adapter runs on a ChatGPT account, which answered
       // HTTP 400 "The 'gpt-6-sol' model is not supported when using Codex with
@@ -649,8 +654,8 @@
       },
       "acp_nodes": {
         "dod_gate": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "implement": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
-        "fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
+        "implement": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
+        "fix": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
         "review_fix": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
         "proof_capture": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
         "proof_verify": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
