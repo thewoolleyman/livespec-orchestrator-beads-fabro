@@ -121,6 +121,7 @@ class _ProductionResumeRunner:
     """The forge, factory and ancestry readings a real resume command takes."""
 
     factory_payload: object
+    retained: bool = True
     argvs: list[list[str]] = field(default_factory=list)
 
     def run(
@@ -154,7 +155,15 @@ class _ProductionResumeRunner:
         if program == "fabro" and argv[1] == "ps":
             return _result(
                 stdout=json.dumps(
-                    [{"run_id": _EARLIER_RUN, "status": "failed", "goal": f"Work-item: {_ITEM_ID}"}]
+                    [
+                        {
+                            "run_id": _EARLIER_RUN,
+                            "status": "failed",
+                            "goal": f"Work-item: {_ITEM_ID}",
+                        }
+                    ]
+                    if self.retained
+                    else []
                 )
             )
         if program == "fabro" and argv[1] == "inspect":
@@ -550,6 +559,32 @@ def test_a_non_republishing_retained_run_refuses_the_production_resume(
     _production_resume_fixture(repo=tmp_path)
     journal = _RecordingJournal()
     runner = _ProductionResumeRunner(factory_payload=_republishing_factory_record(head=_HEAD))
+    args = _stub_production_resume_command(
+        module=module,
+        monkeypatch=monkeypatch,
+        repo=tmp_path,
+        journal=journal,
+        log=_Log(),
+        runner=runner,
+    )
+
+    assert module.run_resume_command(args=args) == _EXIT_PRECONDITION_ERROR
+    assert journal.records == []
+    error = capsys.readouterr().err
+    assert _HEAD in error
+    assert _REPUBLISHED_HEAD in error
+    assert "dispatch it plainly instead" in error
+
+
+def test_a_factory_that_no_longer_holds_the_run_refuses_the_production_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Scenario 143: a moved head cannot borrow a run a retained factory lacks."""
+    assert _module_path().is_file()
+    module = importlib.import_module(_MODULE)
+    _production_resume_fixture(repo=tmp_path)
+    journal = _RecordingJournal()
+    runner = _ProductionResumeRunner(factory_payload=_republishing_factory_record(), retained=False)
     args = _stub_production_resume_command(
         module=module,
         monkeypatch=monkeypatch,
