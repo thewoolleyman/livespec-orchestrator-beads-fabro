@@ -2,7 +2,7 @@
 
 The journal invoker attribution contract in `SPECIFICATION/contracts.md`
 requires EVERY journal write to route through the append layer
-(`_dispatcher_io.JournalFile`),
+(`_dispatcher_journal_file.JournalFile`, re-exported from `_dispatcher_io`),
 because the stamped-once `invoker` / `invoker_source` guarantee governs only
 what that layer actually writes. A writer that opens the journal path itself
 produces a record with no attribution and no timestamp, and — this is the part
@@ -33,8 +33,13 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _PACKAGE_ROOT = _REPO_ROOT / ".claude-plugin" / "scripts" / "livespec_orchestrator_beads_fabro"
 # The one module that IS the append layer, and therefore the one module allowed
-# to open the journal path for append.
-_APPEND_LAYER = _PACKAGE_ROOT / "commands" / "_dispatcher_io.py"
+# to open the journal path for append. It moved out of `_dispatcher_io` into its
+# own leaf when the overflow-selection record became a writer that also resolves
+# a dispatch factory — the aggregate's import closure reaches the factory-ledger
+# resolution, so such a writer could not import it. Re-pointing rather than
+# widening keeps the exclusion exactly one module wide: `_dispatcher_io` is now
+# SCANNED, which is strictly stricter than before.
+_APPEND_LAYER = _PACKAGE_ROOT / "commands" / "_dispatcher_journal_file.py"
 _JOURNAL_TOKEN = "journal"
 _APPEND_MODES = ("a", "ab", "a+", "at")
 

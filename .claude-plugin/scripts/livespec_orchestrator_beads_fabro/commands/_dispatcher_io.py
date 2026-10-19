@@ -46,12 +46,9 @@ proves no code does.
 
 from __future__ import annotations
 
-import json
 import os
-import threading
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -61,12 +58,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     CommandRunner,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
-    InvokerIdentity,
-    default_invoker_identity,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_fabro_launcher import (
     WatchedFabroLauncher,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file import (
+    JournalFile,
+    utc_now_iso,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import (
     ShellCommandRunner,
@@ -88,13 +85,6 @@ __all__: list[str] = [
 # uses) reads its token from; the run-config overlay projects the SAME name
 # into the sandbox env table. A NAME, never a secret value.
 GITHUB_TOKEN_ENV_VAR = "GH_TOKEN"  # noqa: S105 - env-var NAME, not a secret value
-
-# The two envelope fields the append layer stamps, and which therefore no
-# caller may supply. Named once so the stamp and the refusal cannot drift.
-_STAMPED_INVOKER_FIELDS: tuple[str, ...] = (
-    "invoker",
-    "invoker_source",
-)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -140,45 +130,3 @@ class GithubTokenEnvRunner:
             env=merged_env,
             stdin=stdin,
         )
-
-
-@dataclass(frozen=True, kw_only=True)
-class JournalFile:
-    """Append-only JSONL journal; thread-safe across parallel dispatches."""
-
-    path: Path
-    identity: InvokerIdentity = field(default_factory=default_invoker_identity)
-    _lock: threading.Lock = field(default_factory=threading.Lock)
-
-    def append(self, *, record: dict[str, object]) -> None:
-        """Stamp `at` + the resolved invoker onto `record` and append it.
-
-        A caller that supplies `invoker` or `invoker_source` itself is a BUG,
-        not an expected error: the stamped-once guarantee is exactly what makes
-        the attribution unforgeable, so the append refuses rather than letting
-        one writer assert an identity of its own choosing.
-        """
-        forged = [name for name in _STAMPED_INVOKER_FIELDS if name in record]
-        if forged:
-            msg = (
-                "journal record supplied stamped invoker field(s) "
-                f"{', '.join(forged)}; the append layer stamps them once and "
-                "no writer may supply them"
-            )
-            raise ValueError(msg)
-        stamped: dict[str, object] = {
-            "at": utc_now_iso(),
-            "invoker": self.identity.invoker,
-            "invoker_source": self.identity.invoker_source,
-            **record,
-        }
-        line = json.dumps(stamped, sort_keys=True) + "\n"
-        with self._lock:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as handle:
-                _ = handle.write(line)
-
-
-def utc_now_iso() -> str:
-    """Current UTC time in ISO-8601 with seconds precision."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

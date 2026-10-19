@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._config import (
@@ -16,7 +17,13 @@ from livespec_orchestrator_beads_fabro.commands._config import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
     factory_effective_fabro_bin,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overflow_selection import (
+    OverflowSelection,
+    journal_overflow_selection,
+    overflow_selection,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import journal_path, store_config
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -122,7 +129,44 @@ def _unrecorded_target(
     """The precedence itself: explicit name, else the item's usable pin, else default."""
     recorded = _recorded_pin(config=config, work_item_id=work_item_id)
     factory = explicit or _usable_recorded_factory(repo=repo, recorded=recorded)
-    return resolve_fabro_factory(cwd=repo, factory=factory)
+    return _placement(repo=repo, pinned=factory).target
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Placement:
+    """Where this dispatch goes, and the selection that chose it when one did.
+
+    `selection` is non-None exactly when overflow selection APPLIED — the
+    dispatch carried no pin and the repository declares a usable
+    `dispatcher.overflow_factories` — which is also exactly when the clause
+    requires a journal record. Carrying the two together is what keeps the
+    record from being written for a pinned dispatch, which the clause forbids,
+    and from being skipped for an unpinned one.
+    """
+
+    target: FactoryTarget
+    selection: OverflowSelection | None
+
+
+def _placement(*, repo: Path, pinned: str | None) -> _Placement:
+    """Resolve a possibly-absent pinned name, ranking the candidates when absent.
+
+    A PINNED dispatch returns before `overflow_selection` is reached, which is
+    what satisfies the clause's "without reading either server's run count or
+    `max_concurrent_runs`": the reads are not performed and discarded, they are
+    not performed. An unpinned dispatch in a repository that configures no
+    overflow array returns the same way, because the selection answers `None`
+    before reading anything.
+    """
+    if pinned is not None:
+        return _Placement(target=resolve_fabro_factory(cwd=repo, factory=pinned), selection=None)
+    selection = overflow_selection(repo=repo)
+    if selection is None:
+        return _Placement(target=resolve_fabro_factory(cwd=repo), selection=None)
+    return _Placement(
+        target=resolve_fabro_factory(cwd=repo, factory=selection.chosen),
+        selection=selection,
+    )
 
 
 def _pin_store(*, repo: Path) -> StoreConfig | None:
@@ -166,14 +210,41 @@ def resolve_dispatch_factory_target(
     repo: Path,
     work_item_id: str,
 ) -> FactoryTarget:
-    """Resolve and persist the Fabro factory target for one dispatch."""
+    """Resolve and persist the Fabro factory target for one dispatch.
+
+    This is the ONE path that journals an overflow selection, because it is the
+    one that RECORDS the chosen factory. The pre-claim gates rank through
+    `_unrecorded_target`, which writes nothing: a record per gate would make the
+    clause's "one record" several, each describing a reading no dispatch acted
+    on.
+    """
     config = store_config(repo=repo)
     explicit = _explicit_factory(args=args)
     recorded = dispatch_factory_for(path=config, work_item_id=work_item_id)
     factory = explicit or _usable_recorded_factory(repo=repo, recorded=recorded)
-    target = resolve_fabro_factory(cwd=repo, factory=factory)
-    record_dispatch_factory(path=config, work_item_id=work_item_id, factory=target.name)
-    return target
+    placement = _placement(repo=repo, pinned=factory)
+    if placement.selection is not None:
+        journal_overflow_selection(
+            journal=_journal_for(args=args, repo=repo),
+            work_item_id=work_item_id,
+            selection=placement.selection,
+        )
+    record_dispatch_factory(path=config, work_item_id=work_item_id, factory=placement.target.name)
+    return placement.target
+
+
+def _journal_for(*, args: argparse.Namespace, repo: Path) -> JournalFile:
+    """This dispatch's journal, read DEFENSIVELY off the invocation's arguments.
+
+    `journal_path` reads `args.journal` directly, and not every caller of this
+    resolution holds a dispatch namespace — a resume surface building its own
+    arguments carries no `--journal` — so the attribute is read with a default
+    rather than assumed. A record is still written in that case, to the
+    repository's own default journal, because the clause requires one per
+    selection and an unreadable override is not a reason to drop it.
+    """
+    namespace = argparse.Namespace(journal=getattr(args, "journal", None))
+    return JournalFile(path=journal_path(args=namespace, repo=repo))
 
 
 def args_with_dispatch_factory_target(

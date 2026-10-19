@@ -1954,8 +1954,8 @@
     "heading": "## Scenario 203 \u2014 An unpinned dispatch goes to the least-utilized declared factory that has a free scheduler slot",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by the revision accepting proposal factory-overflow-selection (plan petri-factory-on-gmktec, epic bd-ib-fyozyd). Overflow selection over dispatcher.overflow_factories is not implemented yet; an integration-tier test is owed for the five sub-scenarios, and work-item bd-ib-pzdwej implements them and owns that binding.",
+    "test": "tests.integration.test_factory_overflow_selection_scenario203.test_the_less_utilized_overflow_factory_receives_the_dispatch",
+    "reason": "Implemented by work-item bd-ib-pzdwej, which the ratification row named as the owner of this binding. tests/integration/test_factory_overflow_selection_scenario203.py drives the production configuration read, capacity read, selection, ledger stamp and launch argv over a .livespec.jsonc on disk, standing in only the fabro CLI (a recording runner, so each factory's run board and scheduler ceiling are scripted and every argv is observable) and the ledger (the hermetic FakeBeadsClient). The bound node id is the less-utilized-overflow case, because that is the one observation every other sub-scenario varies: the two default-keeps-it cases, the three no-free-slot cases, the one-record case, the three pinned cases, the two registry cases and the pre-claim refusal are sibling tests in the same module.",
     "work_item": "bd-ib-pzdwej"
   },
   {

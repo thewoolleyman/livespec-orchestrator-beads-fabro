@@ -891,13 +891,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 203 \u2014 An unpinned dispatch goes to the least-utilized declared factory that has a free scheduler slot",
-    "work_item": "bd-ib-pzdwej",
-    "first_seen": "2026-10-19"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 204 \u2014 An implement turn that reports its work incomplete fails the implement stage",
     "work_item": "bd-ib-ahxcjx",
     "first_seen": "2026-10-19"

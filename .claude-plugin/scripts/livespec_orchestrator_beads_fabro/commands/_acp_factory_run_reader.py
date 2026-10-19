@@ -13,7 +13,14 @@ from livespec_orchestrator_beads_fabro.commands._config import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
     factory_fabro_bin,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+
+# The LEAF, not the `_dispatcher_io` aggregate that re-exports it. Overflow
+# selection reads a candidate factory through this reader, and the ledger
+# resolution it serves is inside `_dispatcher_io`'s own import closure — so the
+# aggregate would close the cycle `_dispatcher_shell_runner` exists to break.
+from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import (
+    ShellCommandRunner,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     FabroRunSummary,
