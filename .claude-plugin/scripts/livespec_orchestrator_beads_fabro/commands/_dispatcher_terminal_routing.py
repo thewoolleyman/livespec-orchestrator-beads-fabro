@@ -37,11 +37,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
+    update_work_item_blocked_state,
+)
+from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     bounce_non_convergence_to_backlog,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_disposition import (
     dispose_provider_limit_release,
 )
@@ -71,6 +76,27 @@ def dispose_terminal_routing(
     """
     bounce_non_convergence_to_backlog(repo=repo, item=item, outcome=outcome, journal=journal)
     dispose_stall_cancel(repo=repo, item=item, outcome=outcome, journal=journal)
+    _dispose_external_fabro_cancel(repo=repo, item=item, outcome=outcome)
     dispose_provider_limit_release(
         repo=repo, item=item, outcome=outcome, journal=journal, now_iso=now_iso
+    )
+
+
+def _dispose_external_fabro_cancel(*, repo: Path, item: WorkItem, outcome: DispatchOutcome) -> None:
+    """Rest an operator-cancelled run; the watchdog uses its distinct status."""
+    if outcome.status != "cancelled" or outcome.stage != "fabro-run":
+        return
+    run_id = outcome.fabro_run_id or "an unread run"
+    factory = outcome.fabro_factory_name or "an unread factory"
+    append_work_item_comment(
+        path=store_config(repo=repo),
+        work_item_id=item.id,
+        body=f"Fabro run {run_id} on factory {factory} was cancelled outside the Dispatcher.",
+    )
+    update_work_item_blocked_state(
+        path=store_config(repo=repo),
+        item_id=item.id,
+        status="blocked",
+        blocked_reason="needs-human",
+        admission_policy="manual",
     )
