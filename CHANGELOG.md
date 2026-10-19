@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.220.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.219.6...v0.220.0) (2026-10-19)
+
+
+### Features
+
+* **dispatcher:** add the read-only idle-slot-audit subcommand over priority epics ([cdc72be](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cdc72be5ff6b59343d1aa939cf2d3c3d1996367c))
+* **dispatcher:** classify a priority-epic child against the idle-slot class vocabulary ([4611e95](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4611e953deaa21daca247a9978a95da75feaaa25))
+* **dispatcher:** hold a ready priority child on the shared admission verdict ([c93c7fa](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c93c7fae0505199b31ea05cf68c96e754340c5e8))
+* **needs-attention:** surface an empty factory queue beside dispatchable priority work ([3031967](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3031967a0cb80e006df7abff4ad3acd601b4b973))
+
+
+### Bug Fixes
+
+* bound agent stages to their prompts ([b31f25d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b31f25dd4d64199c58b27298a4bdbdb2246763dd))
+* **dispatcher:** a blocker with a live run blocks, and one without is a stale edge ([d705695](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d70569544c95cb63373322005205fe66949ee32d))
+* **dispatcher:** a queued run or an unreadable board composes no idle-slot finding ([b7d3ed4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b7d3ed4ed961f50dfeadcba6d483c0789bfc0ac0))
+* **golden-master:** record origin/master after seeding the throwaway repo ([a7ee81a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a7ee81a296bb68aa5e905db450a8c5c9ab4e68a3))
+* **golden-master:** waive the master-CI preflight for the throwaway repo ([bc0f6a5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bc0f6a59182254c41d8a1d87723c9c381cfe232c))
+* **image:** keep the root container from writing bytecode into the mounted checkout ([e34c64e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e34c64e030872b240eed282a4e4819c1e3986f45))
+
 ## [0.219.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.219.5...v0.219.6) (2026-10-19)
 
 
