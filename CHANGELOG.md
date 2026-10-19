@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.218.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.217.1...v0.218.0) (2026-10-19)
+
+
+### Features
+
+* add factory run reader coverage ([9b431de](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9b431de8f4559d2d55fc8eea87f6a68d0808272a))
+* cover admission factory reader wiring ([a940830](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a9408304080007d615bac25be069a778cbde1bfc))
+* cover loop factory reader wiring ([491199f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/491199f0ec92a77d2d11a9f12600cb715020d3f5))
+
 ## [0.217.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.217.0...v0.217.1) (2026-10-19)
 
 
