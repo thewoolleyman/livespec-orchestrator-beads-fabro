@@ -485,11 +485,19 @@
       // whose parked runs must be left strictly alone.
       "blocked_run_grace_seconds": 1800,
       // The structured "acp_nodes" entries below put implement and fix on Codex
-      // (codex-acp / gpt-5.6-terra, effort high) with a Claude Opus 5 fallback;
-      // dod_gate, review_fix, proof_capture, proof_verify and review on Claude
-      // Opus 5, and pr and disposition on Claude Sonnet 4.6, each with a Codex
-      // Terra fallback, so a Claude session-headroom exhaustion no longer leaves
-      // a node without a candidate. Maintainer direction 2026-10-18 (plan
+      // (codex-acp / gpt-6-sol, effort high) with a Claude Opus 5 fallback.
+      // They ran gpt-5.6-terra from 2026-10-18 (PR #3265) until the R205
+      // quality rule fired on 2026-10-19 (R219: two candidate-attributable
+      // implement failures in the first five Codex runs, bd-ib-rz5m3z and
+      // bd-ib-davaxq); Sol is the maintainer-authorized smarter fallback ruled
+      // 2026-10-18 for exactly that case. The other nodes keep a Terra fallback;
+      // dod_gate, review_fix and review on Claude Opus 5, and proof_capture,
+      // proof_verify, pr and disposition on Claude Sonnet 5.5 at medium effort,
+      // each with a Codex Terra fallback, so a Claude session-headroom
+      // exhaustion no longer leaves a node without a candidate. The Sonnet 5.5
+      // step is maintainer-approved 2026-10-19 (relayed by the coordinator,
+      // R207 step 2) ahead of the fifth measured Codex implement run, because
+      // the Anthropic seven-day budget was projected to run out that night. Maintainer direction 2026-10-18 (plan
       // fabro-currency, maintainer item 40; R209 relayed by the coordinator):
       // implement and fix run Terra, quality-conservative, with the Codex burn
       // watched per run; GPT-6 Luna was the first choice and is the burn
@@ -572,6 +580,20 @@
       // followed by each model id below. The existing four-rate schema holds
       // base rates, not long-context or service-tier multipliers.
       "model_catalog": {
+        // Claude Sonnet 5.5 is not in the shipped snapshot. Prices are the
+        // Anthropic first-party API rates (claude-api reference, cached
+        // 2026-10-06): 2.00 input and 10.00 output USD per 1M tokens, cache
+        // reads 0.20, and cache writes at the 1.25x-input five-minute rate.
+        "anthropic/claude-sonnet-5-5": {
+          "display_name": "Claude Sonnet 5.5",
+          "pricing": {
+            "model": "claude-sonnet-5-5",
+            "input_usd_per_million": 2.0,
+            "output_usd_per_million": 10.0,
+            "cache_write_usd_per_million": 2.5,
+            "cache_read_usd_per_million": 0.2
+          }
+        },
         "openai/gpt-6.1-sol": {
           "display_name": "GPT-6.1 Sol",
           "pricing": {
@@ -625,14 +647,14 @@
       },
       "acp_nodes": {
         "dod_gate": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "implement": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
-        "fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
+        "implement": { "agent": "codex-acp", "model": "gpt-6-sol", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
+        "fix": { "agent": "codex-acp", "model": "gpt-6-sol", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
         "review_fix": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "proof_capture": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "proof_verify": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
+        "proof_capture": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
+        "proof_verify": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
         "review": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "pr": { "agent": "claude-acp", "model": "claude-sonnet-4-6", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "disposition": { "agent": "claude-acp", "model": "claude-sonnet-4-6", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] }
+        "pr": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
+        "disposition": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] }
       },
       // `review_fix` is a DIFFERENT node from `fix` and was absent here, so it
       // fell to the 1800 s default. Measured 2026-10-09/10 on run
