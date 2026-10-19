@@ -35,7 +35,9 @@ is the one surface that could quietly make the tree disagree with both.
 - Do NOT edit, add or delete any file in the repository.
 - Do NOT commit, and do NOT push.
 - Write every capture artifact to a scratch directory OUTSIDE the clone —
-  use `"${TMPDIR:-/tmp}/proof-capture"` and create it if needed.
+  use `"${TMPDIR:-/tmp}/proof-capture"`. Before the first reproduction step,
+  run `mkdir -p "${TMPDIR:-/tmp}/proof-capture"`; the idempotent precondition
+  lets the replay start on either a clean sandbox or the capture's prior leavings.
 - Before you post, confirm `git status --porcelain` is EMPTY. If it is
   not, something you ran wrote into the tree: clean it up (`git checkout
   -- .` plus removing the untracked files you created) and re-confirm.
