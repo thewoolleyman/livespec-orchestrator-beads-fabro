@@ -204,6 +204,29 @@ def test_removing_the_clones_git_directory_is_refused(
     assert str(git_directory) in _refusal_reason(captured=capsys.readouterr().out)
 
 
+def test_emptying_the_clones_non_hidden_top_level_entries_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The command cannot leave the clone with no working-tree entries."""
+    layout = _Layout(base=tmp_path)
+    (layout.clone / "README.md").touch()
+    (layout.clone / "src").mkdir()
+    guard = _load_guard()
+
+    _run_guard(
+        guard=guard,
+        payload=_payload(
+            command="cd " + str(layout.clone) + " && rm -rf ./*", cwd=str(layout.clone)
+        ),
+        monkeypatch=monkeypatch,
+        sandbox_root=str(layout.root),
+        project_dir=str(layout.clone),
+    )
+
+    reason = _refusal_reason(captured=capsys.readouterr().out)
+    assert f"replace {layout.clone}, which" in reason
+
+
 def test_the_repository_is_taken_from_the_payload_when_no_project_dir_is_set(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
