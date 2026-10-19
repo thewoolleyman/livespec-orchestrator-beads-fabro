@@ -1,29 +1,33 @@
-"""The two model-fallback attention lanes, read from the dispatch journal.
+"""The model-fallback attention lane, read from the dispatch journal.
 
-`SPECIFICATION/contracts.md` section "Factory-configurable ACP fallback
-priority" names both facts and they are deliberately DIFFERENT KINDS OF
-CLAIM, which is why one module composing both is the honest shape:
+`SPECIFICATION/contracts.md` names exactly ONE fact for this lane:
+"one aggregate attention fact per repository/node with id
+`hygiene:model-fallback:<repo>:<node>`", saying a non-primary candidate
+actually ran. It "never refuses or disposes work", so it rides at
+`medium` urgency and hands over a read-only inspection.
 
-- `hygiene:model-fallback-projection:<repo>:<run>:<node>` says a run's
-  event stream was never read, at `high` urgency. It is a statement about
-  an UNREAD surface, and it GATES NOTHING: v127 deleted the rule that an
-  unresolved one stops unattended picking, so an operator reads this row
-  and no drain waits on it.
-- `hygiene:model-fallback:<repo>:<node>` says a non-primary candidate
-  actually ran. It "never refuses or disposes work", so it rides at
-  `medium` urgency and hands over a read-only inspection.
+THERE WAS A SECOND FACT HERE AND ITS ABSENCE IS DELIBERATE. v127 deleted
+`hygiene:model-fallback-projection:<repo>:<run>:<node>` together with the
+`agent.acp.failover` projection that minted it. The two were composed in
+one module because each was a check on the other: a repository whose
+projection was broken showed NO fallback warnings, and without the
+projection fact beside them that emptiness read as "nothing fell back"
+rather than "nobody looked". That reasoning retires WITH the projection,
+because the warning is now sourced from the Dispatcher's own selection
+records -- a surface the Dispatcher writes itself and cannot fail to read
+-- so an empty lane has only one meaning again.
 
-Emitting one without the other would be the silent-absence failure this
-whole clause exists to close: a repository whose projection is broken
-shows NO fallback warnings, and without the projection fact beside them
-that emptiness reads as "nothing fell back" rather than "nobody looked".
+A JOURNAL STILL CARRYING THOSE RETIRED RECORDS COMPOSES NOTHING FROM
+THEM, which is a property of the fold rather than a filter: the lane
+reads the warning stages and no other, so an `acp-projection-failure`
+line is passed over exactly as any unknown stage is.
 
-BOTH ARE PURE READS OF THE COMMITTED JOURNAL. Nothing here fetches
-events, reaches a factory, or writes a line -- the projection itself is
-performed by the dispatch and the reconciler, and this lane only
-reports what those already recorded. Two invocations over an unchanged
-journal therefore render byte-identical rows, which is what the
-machine-envelope contract asks of every fact.
+THIS IS A PURE READ OF THE COMMITTED JOURNAL. Nothing here fetches
+events, reaches a factory, or writes a line -- the dispatch records the
+selection it rendered, and this lane only reports what it already
+recorded. Two invocations over an unchanged journal therefore render
+byte-identical rows, which is what the machine-envelope contract asks of
+every fact.
 """
 
 from __future__ import annotations
@@ -40,25 +44,17 @@ from livespec_orchestrator_beads_fabro.commands._acp_fallback_warning_ledger imp
 from livespec_orchestrator_beads_fabro.commands._acp_fallback_warning_records import (
     ModelFallbackWarning,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_projection_failure import (
-    unresolved_projection_failures,
-)
-from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_bin
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
     ConformanceContext,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import (
-    fabro_events_command,
     model_fallback_journal_command,
 )
-from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
-from livespec_orchestrator_beads_fabro.errors import LivespecConfigUnreadableError
 
 __all__: list[str] = [
     "MODEL_FALLBACK_FACT_PREFIX",
     "dispatch_journal_path_for",
     "model_fallback_items",
-    "model_fallback_projection_items",
     "model_fallback_warning_items",
 ]
 
@@ -68,49 +64,24 @@ _JOURNAL_SUBPATH = ("tmp", "fabro-dispatch-journal.jsonl")
 _JOURNAL_SOURCE_PATH = "tmp/fabro-dispatch-journal.jsonl"
 
 # The warning is informational by contract -- it "never refuses or
-# disposes work" -- so it sits below the projection fact's `high`. A
-# `high` warning would compete for attention with the row about an unread
-# surface, and an operator who learns to dismiss one dismisses both.
+# disposes work" -- so it rides below the `high` band the facts that DO
+# gate something occupy. An operator who learns to dismiss a `high` row
+# dismisses every `high` row.
 _WARNING_URGENCY = "medium"
 
 
 def dispatch_journal_path_for(*, project_root: Path) -> Path:
-    """The dispatch journal both lanes read, resolved the way every seam does."""
+    """The dispatch journal this lane reads, resolved the way every seam does."""
     return project_root.joinpath(*_JOURNAL_SUBPATH)
 
 
 def model_fallback_items(*, project_root: Path, repo: str) -> list[AttentionItem]:
     """Every model-fallback row this repository's journal currently supports."""
-    journal = dispatch_journal_path_for(project_root=project_root)
-    return model_fallback_projection_items(
-        project_root=project_root, repo=repo, journal_path=journal
-    ) + model_fallback_warning_items(project_root=project_root, repo=repo, journal_path=journal)
-
-
-def model_fallback_projection_items(
-    *, project_root: Path, repo: str, journal_path: Path
-) -> list[AttentionItem]:
-    """One high-urgency row per run and node whose events were never read."""
-    context = ConformanceContext(project_root=project_root, repo=repo)
-    fabro_bin = _fabro_bin(project_root=project_root)
-    return [
-        context.candidate(
-            id=failure.fact_id,
-            kind="hygiene",
-            urgency="high",
-            summary=failure.summary,
-            source_ref=SourceRef(repo=repo, path=_JOURNAL_SOURCE_PATH),
-            handoff=Handoff(
-                kind="shell",
-                command=fabro_events_command(
-                    fabro_bin=fabro_bin,
-                    run_id=failure.run_id,
-                    server_url=failure.factory_server_url,
-                ),
-            ),
-        )
-        for failure in unresolved_projection_failures(journal_path=journal_path)
-    ]
+    return model_fallback_warning_items(
+        project_root=project_root,
+        repo=repo,
+        journal_path=dispatch_journal_path_for(project_root=project_root),
+    )
 
 
 def model_fallback_warning_items(
@@ -159,19 +130,3 @@ def _warning_summary(*, warning: ModelFallbackWarning, ledger: ModelFallbackWarn
         f"{repeats}. The warning stands until the same primary generation "
         f"{warning.primary_generation} starts later and succeeds."
     )
-
-
-def _fabro_bin(*, project_root: Path) -> str:
-    """The engine binary the inspection handoff names, degrading to a bare name.
-
-    An unreadable `.livespec.jsonc` must not cost the operator the fact:
-    the row's value is the run and server it names, and a bare `fabro`
-    still resolves on any host that has one on `PATH`.
-    """
-    resolved = attempt(
-        action=lambda: resolve_fabro_bin(cwd=project_root),
-        exceptions=(OSError, LivespecConfigUnreadableError),
-    )
-    if isinstance(resolved, AttemptFailure):
-        return "fabro"
-    return resolved

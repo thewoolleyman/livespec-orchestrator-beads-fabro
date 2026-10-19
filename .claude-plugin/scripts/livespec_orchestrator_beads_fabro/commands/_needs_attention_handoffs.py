@@ -21,7 +21,6 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 __all__: list[str] = [
     "dispatcher_loop_command",
     "drive_command",
-    "fabro_events_command",
     "host_only_command",
     "model_fallback_journal_command",
     "plans",
@@ -168,25 +167,6 @@ def reconcile_runs_command(*, project_root: Path, factory: str) -> str:
         f"python3 {_quote(path=_wrapper_path(name='dispatcher.py'))} "
         f"reconcile-runs --repo {_quote(path=project_root)} "
         f"--factory {shlex.quote(factory)} --json"
-    )
-
-
-def fabro_events_command(*, fabro_bin: str, run_id: str, server_url: str) -> str:
-    """The SERVER-QUALIFIED events read, spelled exactly as the port spells it.
-
-    `SPECIFICATION/contracts.md` section "Factory-configurable ACP
-    fallback priority" requires the projection-failure fact to carry "a
-    `shell` handoff containing the same executable server-qualified
-    inspection command reconciliation uses", so the argv below mirrors
-    `FabroPort.events` term for term -- including `--server` AFTER the
-    subcommand, which the pinned 0.254.0 CLI requires and a top-level
-    `--server` hard-errors on. A handoff an operator pastes and watches
-    fail is worse than none: it reads as the factory being broken when
-    the command was.
-    """
-    return (
-        f"{shlex.quote(fabro_bin)} events {shlex.quote(run_id)} "
-        f"--json --server {shlex.quote(server_url)}"
     )
 
 
