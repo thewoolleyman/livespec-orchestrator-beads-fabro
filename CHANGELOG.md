@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.225.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.224.1...v0.225.0) (2026-10-19)
+
+
+### Features
+
+* **advisory:** score a scenario's own body, not only its heading ([a61fa69](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a61fa69c8a0d89d14bc00b9bf72923cbf97b9175))
+
 ## [0.224.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.224.0...v0.224.1) (2026-10-19)
 
 
