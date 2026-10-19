@@ -485,8 +485,8 @@ def test_a_lone_hung_pane_wait_is_ended_by_cancellation_not_by_its_own_timeout(
 def test_registration_lock_is_inside_the_original_deadline(*, tmp_path: Path) -> None:
     wait_store_root = tmp_path / "session-waits"
     wait_store_root.mkdir()
-    returned = threading.Event()
     result_outcomes: list[str] = []
+    clock = _InjectedClock()
 
     def invoke_wait() -> None:
         result = run_wait(
@@ -499,20 +499,22 @@ def test_registration_lock_is_inside_the_original_deadline(*, tmp_path: Path) ->
             ),
             launcher=cast("ProbeLauncher", object()),
             wait_store_root=wait_store_root,
+            monotonic=clock.read,
+            sleeper=clock.sleep,
         )
         result_outcomes.append(result.command_outcome)
-        returned.set()
 
     lock_path = wait_store_root / ".inventory.lock"
     with lock_path.open("a", encoding="utf-8") as lock_file:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
         worker = threading.Thread(target=invoke_wait)
         worker.start()
-        returned_by_bound = returned.wait(timeout=0.2)
+        # The worker advances its injected budget while this lock remains held,
+        # then exits at that exact deadline. Joining it is the condition this
+        # case needs; a host-time wait would only guess when that occurs.
+        worker.join()
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-    worker.join(timeout=1.0)
 
-    assert returned_by_bound is True
     assert result_outcomes == ["deadline"]
     assert worker.is_alive() is False
 
