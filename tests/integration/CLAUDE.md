@@ -615,6 +615,24 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   separate operational artefact of the same work-item; this module is what makes
   its transcript checkable.
 
+- `test_unattended_drain_past_projection_facts.py` — binds the first
+  Definition-of-Done assertion of work-item `bd-ib-qm6r1`, the v127 retirement
+  of the rule that an unresolved projection-failure fact stopped unattended
+  picking. The WHOLE invocation is driven — the real
+  `dispatcher.main(argv=["loop", "--dry-run", ...])` with no `--item`, over the
+  real store/client seam and a real on-disk journal — because the defect was a
+  gate that returned before selection: `[]` at exit 0, which is byte-identical
+  to what an empty ready set produces, so no assertion about the selection
+  function could have seen it. The journal records are TRANSCRIBED rather than
+  built through the retired writer's own record builder, since binding the case
+  to that module would bind it to the thing being deleted. Its control is the
+  same invocation over a clean journal, which must yield the IDENTICAL pick:
+  without it, "the drain picked the ready item" is equally consistent with a
+  build that ignores the journal for some unrelated reason. The case also
+  asserts the three facts are STILL in the journal afterwards, because the
+  retirement removes the gate and a pass that quietly resolved them would be a
+  second, unratified retirement.
+
 - `test_filing_definition_of_done_scenario140.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 140 — Filing displays
   Definition-of-Done findings and withholds ready only on a mechanical one" and
