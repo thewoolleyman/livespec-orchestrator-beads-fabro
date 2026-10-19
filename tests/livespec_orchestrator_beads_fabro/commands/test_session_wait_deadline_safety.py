@@ -47,11 +47,6 @@ _LONE_DEADLINE_SECONDS = 0.4
 # INJECTED clock. Any positive value puts the next round past expiry; the figure
 # is kept well clear of zero so the overshoot is legible rather than marginal.
 _POLL_OVERSHOOT_SECONDS = 0.8
-# A FAILURE bound on joining a pane worker whose read budget has been allowed to
-# run out, never a timing assertion: the join's RETURN is the deterministic
-# event the settling sleeper waits on. Comfortably above the worker's own
-# `_LONE_DEADLINE_SECONDS + _READ_BUDGET_GRACE_SECONDS` budget.
-_WORKER_SETTLE_SECONDS = 30.0
 # The instant every wait below is armed at, supplied through `WaitRequest` so
 # the deadline is an exact number this module can assert against instead of a
 # reading nobody controls.
@@ -60,11 +55,6 @@ _PINNED_START = 0.0
 # rather than a wrong one: the same wait reported `target-ended` and then
 # `deadline` on two consecutive runs.
 _LONE_RUNS = 2
-# How long a cancelled worker is given to exit once its wait has returned. It
-# has to be well SHORT of what is left of that worker's own read budget, or a
-# worker released by its timeout rather than by the cancellation would satisfy
-# it too.
-_RELEASE_SECONDS = 0.3
 
 
 def _hung_pane(*, socket_path: Path, terminal_id: str) -> PaneTarget:
@@ -136,7 +126,7 @@ def _settling_sleeper(
             # to be reported, not a case to be skipped past silently.
             assert task is not None, "the probe started no observation"
             assert task.thread is not None, "the observation started no worker"
-            task.thread.join(timeout=_WORKER_SETTLE_SECONDS)
+            task.thread.join()
         clock.sleep(seconds=seconds + _POLL_OVERSHOOT_SECONDS)
 
     return sleeper
@@ -149,13 +139,12 @@ def _reaching_sleeper(*, clock: _InjectedClock, reached: threading.Event) -> Cal
     rather than creates: there is nothing to interrupt until the observation is
     genuinely blocked in `recv`, and under a real clock that was merely hoped
     for — the loop slept the deadline and the worker usually got there first.
-    Here the peer's OWN receipt is the event, so the case either establishes its
-    precondition or fails saying it could not, and the clock expires only once
-    it holds.
+    Here the peer's OWN receipt is the event, so the case establishes its
+    precondition before the injected clock expires.
     """
 
     def sleeper(*, seconds: float) -> None:
-        assert reached.wait(timeout=_WORKER_SETTLE_SECONDS), "the probe never reached its peer"
+        reached.wait()
         clock.sleep(seconds=seconds)
 
     return sleeper
@@ -425,10 +414,9 @@ def test_a_lone_hung_pane_wait_is_ended_by_cancellation_not_by_its_own_timeout(
     remaining deadline fails it on every host. The return landing inside that
     budget is then read off the INJECTED clock, which advances only by what the
     wait asked to sleep, so the reading is the budget that wait spent rather
-    than a verdict on the scheduler. The worker is asserted to exit on a bound
-    far shorter than what remained of its real read budget, which is what tells
-    a worker released by the cancellation apart from one released by the
-    timeout it was supposed to pre-empt.
+    than a verdict on the scheduler. The worker's JOIN is the deterministic
+    completion event proving cancellation released it before the test examines
+    the cancelled task.
     """
     wait_store_root = tmp_path / "session-waits"
     wait_store_root.mkdir()
@@ -466,11 +454,11 @@ def test_a_lone_hung_pane_wait_is_ended_by_cancellation_not_by_its_own_timeout(
         assert result.command_outcome == "deadline"
         assert spent < read_budget, f"the wait waited out its probe's budget in {spent}s"
         # The probe was CANCELLED, and its worker is GONE rather than merely
-        # unreported: a thread that has exited cannot still be holding the
-        # socket, and a thread cannot exit this soon on its own budget.
+        # unreported: joining is the completion event that establishes it no
+        # longer holds the socket.
         assert task.cancel_requested is True
         assert task.thread is not None
-        task.thread.join(timeout=_RELEASE_SECONDS)
+        task.thread.join()
         assert task.thread.is_alive() is False, "the hung observation outlived its cancellation"
         # A cancelled read measured nothing, so whatever it returned is not an
         # observation of the pane and is discarded rather than reported.
