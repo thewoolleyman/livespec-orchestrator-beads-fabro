@@ -420,9 +420,12 @@ The body then carries, **per assertion in Definition of Done order**:
    Step 2.
 5. The proof — an inline image reference (or authenticated link, per Step
    4) for each screenshot, and a fenced code block for each text capture.
-   A text capture shows the command AND its output; when the command fed a
-   program to an interpreter, the program's source is part of what is
-   published, never replaced by the output it produced.
+   For each text capture, run the exact command that the numbered step names
+   and show that command AND its output. NEVER use a capture from another
+   command as the proof for that step, even when it observes the same
+   behaviour: replay runs the numbered command and must reproduce this block.
+   When the command fed a program to an interpreter, the program's source is
+   part of what is published, never replaced by the output it produced.
 
 When this item has any `host_captured` assertions, the record MUST also
 carry a heading stating that those assertions are **pending the host leg**,
