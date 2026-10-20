@@ -30,6 +30,7 @@ __all__: list[str] = [
     "merged_pr_list_argv",
     "parse_merged_pr_list",
     "resolve_merged_pr",
+    "resolve_merged_pr_for_work_item_id",
 ]
 
 _GH_TIMEOUT_SECONDS = 120.0
@@ -39,6 +40,24 @@ def resolve_merged_pr(
     *, plan: DispatchPlan, item: WorkItem, runner: CommandRunner, journal: JournalFile
 ) -> PrView | str | None:
     """Resolve the merged PR for `item`: a view, a refusal string, or `None`."""
+    return resolve_merged_pr_for_work_item_id(
+        plan=plan,
+        work_item_id=item.id,
+        runner=runner,
+        journal=journal,
+    )
+
+
+def resolve_merged_pr_for_work_item_id(
+    *, plan: DispatchPlan, work_item_id: str, runner: CommandRunner, journal: JournalFile
+) -> PrView | str | None:
+    """Resolve a merged PR from the dispatch identity when its branch has gone.
+
+    Dispatch confirmation has the work-item id that names its publication but
+    deliberately does not re-read the ledger item. Keeping this resolver on
+    that identity lets it reuse reconciliation's forge query without coupling a
+    terminal dispatch to a second mutable ledger read.
+    """
     viewed = run_stage(
         runner=runner,
         journal=journal,
@@ -59,7 +78,7 @@ def resolve_merged_pr(
         plan=plan,
         stage="reconcile-pr-list-merged",
         command=(
-            merged_pr_list_argv(item=item, default_branch=default_branch),
+            merged_pr_list_argv(item=work_item_id, default_branch=default_branch),
             plan.repo,
             _GH_TIMEOUT_SECONDS,
             None,
@@ -67,7 +86,7 @@ def resolve_merged_pr(
     )
     candidates = parse_merged_pr_list(
         stdout=searched.stdout,
-        item=item,
+        item=work_item_id,
         branch=plan.branch,
         default_branch=default_branch,
     )
@@ -78,7 +97,7 @@ def resolve_merged_pr(
     return None
 
 
-def merged_pr_list_argv(*, item: WorkItem, default_branch: str) -> list[str]:
+def merged_pr_list_argv(*, item: WorkItem | str, default_branch: str) -> list[str]:
     """Build the GitHub search argv used when branch lookup is unavailable.
 
     `default_branch` is the RESOLVED default branch of the governed repository,
@@ -93,7 +112,7 @@ def merged_pr_list_argv(*, item: WorkItem, default_branch: str) -> list[str]:
         "--state",
         "merged",
         "--search",
-        item.id,
+        _work_item_id(item=item),
         "--json",
         "number,title,body,headRefName,baseRefName,state,mergeCommit",
         "--base",
@@ -104,7 +123,7 @@ def merged_pr_list_argv(*, item: WorkItem, default_branch: str) -> list[str]:
 
 
 def parse_merged_pr_list(
-    *, stdout: str, item: WorkItem, branch: str, default_branch: str
+    *, stdout: str, item: WorkItem | str, branch: str, default_branch: str
 ) -> tuple[PrView, ...]:
     """Parse merged PR search results, tiering body mentions below identity matches.
 
@@ -166,7 +185,7 @@ def _merged_pr_view(*, stdout: str) -> PrView | None:
 
 
 def _pr_view_from_list_entry(
-    *, entry_raw: object, item: WorkItem, branch: str, default_branch: str
+    *, entry_raw: object, item: WorkItem | str, branch: str, default_branch: str
 ) -> tuple[PrView, bool] | None:
     """Return one candidate view plus whether ONLY its body named the item."""
     if not isinstance(entry_raw, dict):
@@ -198,17 +217,22 @@ def _pr_view_from_list_entry(
     )
 
 
-def _identifies_item(*, entry: dict[str, Any], item: WorkItem, branch: str) -> bool:
+def _identifies_item(*, entry: dict[str, Any], item: WorkItem | str, branch: str) -> bool:
     """Whether the entry names the item where a dispatch or an author puts it."""
     title_raw: object = entry.get("title")
     return entry.get("headRefName") == branch or (
-        isinstance(title_raw, str) and item.id in title_raw
+        isinstance(title_raw, str) and _work_item_id(item=item) in title_raw
     )
 
 
-def _body_names_item(*, entry: dict[str, Any], item: WorkItem) -> bool:
+def _body_names_item(*, entry: dict[str, Any], item: WorkItem | str) -> bool:
     body_raw: object = entry.get("body")
-    return isinstance(body_raw, str) and item.id in body_raw
+    return isinstance(body_raw, str) and _work_item_id(item=item) in body_raw
+
+
+def _work_item_id(*, item: WorkItem | str) -> str:
+    """Project either ledger-backed or dispatch-carried identity to its id."""
+    return item if isinstance(item, str) else item.id
 
 
 def _list_entry_merge_sha(*, entry: dict[str, Any]) -> str | None:

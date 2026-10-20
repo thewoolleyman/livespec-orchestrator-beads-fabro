@@ -15,11 +15,14 @@ from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_completion,
     _dispatcher_dispatch_lock,
+    _dispatcher_reconcile_merged,
+    _dispatcher_reconcile_merged_pr,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria import (
     CriterionCheck,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import janitor_checkout_path
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.store import (
@@ -215,6 +218,36 @@ def test_reconcile_merged_resolves_merged_pr_by_title_search(
         "reconcile-pr-view-branch",
         "reconcile-pr-list-merged",
     ]
+
+
+def test_merged_pr_resolver_accepts_a_dispatch_work_item_id_after_branch_deletion(
+    tmp_path: Path,
+) -> None:
+    """The dispatch seam can reuse reconcile's search without materializing a ledger item."""
+    resolve = getattr(_dispatcher_reconcile_merged_pr, "resolve_merged_pr_for_work_item_id", None)
+
+    assert callable(resolve)
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(status="active")
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            CommandResult(exit_code=1, stdout="", stderr="branch deleted"),
+            _ok(stdout=json.dumps([_list_pr(number=19, title=f"fix {item.id}", sha="merged19")])),
+        ]
+    )
+    resolved = resolve(
+        plan=_dispatcher_reconcile_merged.reconcile_plan(
+            repo=repo, item=item, janitor=None, runner=runner
+        ),
+        work_item_id=item.id,
+        runner=runner,
+        journal=JournalFile(path=tmp_path / "journal.jsonl"),
+    )
+
+    assert resolved is not None
+    assert not isinstance(resolved, str)
+    assert (resolved.number, resolved.merge_sha) == (19, "merged19")
 
 
 def test_reconcile_merged_resolves_a_hand_carried_pr_by_body_search(
