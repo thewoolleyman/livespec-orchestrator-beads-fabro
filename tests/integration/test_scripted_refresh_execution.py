@@ -1099,6 +1099,49 @@ def test_a_conflict_outside_the_declared_records_merges_nothing_and_takes_repair
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
 
 
+def test_a_later_unmergeable_conflict_is_named_in_the_refresh_repair_brief(
+    tmp_path: Path,
+) -> None:
+    """A resolved record conflict cannot hide the later conflict that stopped rebase.
+
+    The first replayed commit conflicts only in a declared record and is therefore
+    resolved by the merger. The second then conflicts in an undeclared file. The
+    repair brief is the fix turn's work order, so it must name the conflict still
+    present when resolution stopped rather than the record path the helper already
+    completed.
+    """
+    box = _build(root=tmp_path)
+    _ = _commit(
+        cwd=box.clone,
+        path=_RECORD_JSON,
+        text='[{"id": "seed"}, {"id": "run"}]\n',
+        subject="feat: add the run record",
+    )
+    published = _commit(
+        cwd=box.clone,
+        path=_SHARED_FILE,
+        text="this run's undeclared edit\n",
+        subject="feat: edit the shared file",
+    )
+    _ = _git("push", "--quiet", "--force", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=box.clone)
+    _ = (box.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(published, encoding="utf-8")
+    _ = _advance_default(
+        box=box,
+        path=_RECORD_JSON,
+        text='[{"id": "seed"}, {"id": "default"}]\n',
+    )
+    _ = _advance_default(box=box, path=_SHARED_FILE, text="default's undeclared edit\n")
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+    assert f"conflicted-paths: {_SHARED_FILE}" in result.stderr
+    assert f"conflicted-paths: {_RECORD_JSON}" not in result.stderr
+    assert box.local_head() == published
+    assert box.remote_head(ref=_BRANCH) == published
+
+
 def test_a_declared_record_whose_key_both_sides_changed_differently_takes_repair(
     tmp_path: Path,
 ) -> None:
