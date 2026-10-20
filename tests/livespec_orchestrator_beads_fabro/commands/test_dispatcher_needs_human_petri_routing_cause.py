@@ -83,6 +83,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     NEEDS_HUMAN_MARKER,
     DispatchPlan,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_outcome import (
+    PROVIDER_LIMIT_RELEASE_STATUS,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroInspectResult
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     fabro_failure_detail_from_payload,
@@ -340,6 +343,8 @@ def test_a_petri_stage_output_supplies_a_provider_limit_when_events_timed_out(
         events_payload=None,
     )
 
+    assert outcome.status == PROVIDER_LIMIT_RELEASE_STATUS
+    assert outcome.provider_limit_release is not None
     assert outcome.fabro_failure_cause == _WEEKLY_LIMIT_MESSAGE
     assert outcome.provider_usage_limit is True
     assert outcome.provider_usage_limit_provider == "anthropic"
