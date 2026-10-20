@@ -16,6 +16,7 @@ authority chain.
 from __future__ import annotations
 
 import json
+import runpy
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -885,3 +886,46 @@ def test_impl_executor_records_the_matching_attempts_three_durable_receipts(
         outcome="green pull request 2904",
     )
     assert _recorded_receipts(config=config) == write.receipts
+
+
+def test_the_tracked_receipt_transition_reproducer_reports_receipts_and_invariants(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The proof capture command is a tracked, standalone behavioural reproduction.
+
+    It prints the committed authority readback for both an executed attempt and
+    a later undispatched one.  Keeping this command in the tree means a proof
+    record can point a fresh replay at a real file instead of an ephemeral
+    capture directory.
+    """
+    script = (
+        Path(__file__).resolve().parents[3]
+        / ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands"
+        / "receipt_transition_reproduction.py"
+    )
+    assert script.is_file()
+    reproducer = runpy.run_path(str(script))
+    main = reproducer["main"]
+    assert callable(main)
+    main()
+
+    executed, undispatched = (json.loads(line) for line in capsys.readouterr().out.splitlines())
+    assert executed == {
+        "authority_invariants": {
+            "consumed_handoffs": _CONSUMED_HANDOFFS,
+            "epoch_advanced": True,
+            "item_attributable_attempts": _ITEM_ATTEMPTS,
+            "original_deadline": _DEADLINE,
+        },
+        "executed_status": RECEIPTS_RECORDED,
+        "receipts": {
+            "claim": f"dispatch {_DISPATCH_ID}",
+            "execution": f"fabro run {_RUN_ID}",
+            "outcome": "green pull request 2904",
+        },
+    }
+    assert undispatched == {
+        "historical_records_not_inherited": True,
+        "undispatched_receipts": {"claim": None, "execution": None, "outcome": None},
+        "undispatched_status": RECORDED_NOT_EXECUTED,
+    }
