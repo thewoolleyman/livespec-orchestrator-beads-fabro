@@ -597,8 +597,9 @@ that signal SHOULD be recorded — but the escalation stands regardless.
 - **Priority edits** — changing a work-item's priority or rank.
 - **Plan-child disposition** — closing a plan child, or moving one to a
   different parent. This admits ONLY a child whose autonomy tier is not
-  spec-change. A child whose autonomy tier IS spec-change is a
-  design-human-gated slice routed through `/livespec:propose-change`
+  spec-change. A child whose autonomy tier IS spec-change, and which is still held for
+  its linked proposal's ratification, is a design-human-gated slice routed
+  through `/livespec:propose-change`
   (`contracts.md` §"Dispatcher policy settings", `spec.md`
   §"Terminology"); its disposition — closure or re-parenting alike —
   MUST stay escalated and MUST NOT be taken by the session. That refusal
@@ -609,19 +610,20 @@ that signal SHOULD be recorded — but the escalation stands regardless.
   read off `spec_commitment_hint`. Those two are near-opposites: a
   non-null `spec_commitment_hint` marks an impl FOLLOW-UP to an
   ALREADY-RATIFIED change (`contracts.md` §"Work-item beads-issue
-  mapping"), which is ordinary dispatchable work whose disposition this
-  bullet admits; a spec-change slice precedes ratification and therefore
-  carries NO such hint. An implementation that gates disposition on the
+  mapping"), which is ordinary dispatchable work whose disposition this bullet admits
+  when the spec-stated judgement reports its asked-for behaviour `stated`;
+  a spec-change slice is decided by that judgement and is held until its
+  OWN linked proposal ratifies, whether or not it also carries a hint from
+  an earlier ratified change. An implementation that gates disposition on the
   hint being non-null gates the wrong set in both directions, and does
   not satisfy this clause.
 
-  The autonomy tier has NO ratified ledger representation today:
-  `contracts.md` §"Work-item beads-issue mapping" maps no tier field or
-  label, so the tier is assigned at intake and not stored. Until a
-  queryable representation is chosen and ratified — tracked as work-item
-  `bd-ib-yykjko`, which owns that decision — an implementation MUST
-  fail CLOSED: where it cannot determine a child's autonomy tier from a
-  ratified datum, it MUST refuse the disposition and surface it, and it
+  The autonomy tier is DECIDED by the spec-stated judgement and recorded
+  on the item at classification (`contracts.md` §"Grooming and slice-size
+  calibration", touchpoint 1), in the persisted shape livespec-runtime's
+  `livespec_runtime.spec_stated` declares. An implementation MUST fail
+  CLOSED: where it cannot determine a child's autonomy tier from that recorded
+  classification, it MUST refuse the disposition and surface it, and it
   MUST NOT substitute `spec_commitment_hint` for the missing datum.
   Refusing an admissible disposition costs an escalation; admitting an
   inadmissible one silently disposes of a spec-change slice.

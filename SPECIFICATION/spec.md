@@ -156,8 +156,16 @@ the Dispatcher, owns them (drift acceptance conditionally so, per its bullet):
   architecture", the drift-doctrine paragraph, as amended to admit the
   consensus tier).
 - **Spec-change slices** — a slice whose autonomy tier is spec-change is
-  human-gated: it routes through `/livespec:propose-change` /
-  `/livespec:revise` and is never factory-dispatched or auto-admitted.
+  human-gated: its spec change always routes through
+  `/livespec:propose-change` / `/livespec:revise`, and the item is never
+  factory-dispatched or auto-admitted while it is held for that change's
+  ratification. Once the linked proposal's revision record carries
+  decision `accept` or `modify` and the spec-stated judgement returns
+  `stated` for its asked-for behaviour, the item is an implementation
+  follow-up to an already ratified change and routes as ordinary
+  dispatchable work (`contracts.md` §"Grooming and slice-size
+  calibration", touchpoint 1). This release on ratification is the
+  maintainer's 2026-10-20 refinement of the 2026-07-10 declaration below.
 - **Regroom / backlog bounce** — grooming stays human; a non-convergence
   bounce lands in `backlog` and escalates, and is never auto-groomed.
 
@@ -214,8 +222,8 @@ API and, through it, the Control-Plane console; the orchestrator owns the
 setting state, and the console only commands and observes.
 
 The settings compose the existing gate, valve, and consent model — they never
-bypass or re-implement it. Every safety floor holds under every setting: a
-design-human-gated (spec-change-tier) item is never auto-approved; every
+bypass or re-implement it. Every safety floor holds under every setting: a design-human-gated (spec-change-tier) item is never auto-approved while
+it is held for its linked proposal's ratification; every
 truly-unresolvable decision (see §"Terminology") still escalates and is
 surfaced to a human, never guessed (a drift acceptance still escalates and is
 still never guessed; under an explicit per-repo opt-in its acceptance MAY be
