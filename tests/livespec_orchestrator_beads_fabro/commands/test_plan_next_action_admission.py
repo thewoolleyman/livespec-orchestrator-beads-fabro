@@ -269,6 +269,26 @@ def test_an_unresolvable_repository_is_refused_naming_the_identity(tmp_path: Pat
     assert _epic_state(config=config, epic_id=_HANDOFF_EPIC) == handoff_before
 
 
+def test_an_absolute_repository_identity_is_refused_with_the_canonical_bare_name(
+    tmp_path: Path,
+) -> None:
+    """A new pointer must name its repository with the canonical bare identity."""
+    config = _project(tmp_path=tmp_path)
+    _seed_epic(config=config, epic_id=_PATH_EPIC, target_id=_PATH_TARGET)
+
+    refusal = set_next_action(
+        config=config,
+        epic_id=_PATH_EPIC,
+        action=_action(target_id=_PATH_TARGET, repo=str(config.repo_root)),
+        session=_SESSION,
+        now=_NOW,
+    )
+
+    assert isinstance(refusal, NextActionRefusal), refusal
+    assert "canonical bare repository identity" in refusal.detail
+    assert _PROJECT_NAME in refusal.detail
+
+
 def test_the_forge_path_form_of_this_project_is_refused_naming_the_bare_identity(
     tmp_path: Path,
 ) -> None:
