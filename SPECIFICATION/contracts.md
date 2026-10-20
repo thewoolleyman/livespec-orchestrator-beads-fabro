@@ -5965,7 +5965,7 @@ item to `ready` — from `backlog` or `pending-approval`, whether through
 intake, the approve valve, or groom — the Dispatcher MUST run the same
 Definition-of-Done judgement the `dod_gate` node applies (its prompt,
 against the item's effective criteria, the referenced specification
-headings and the resolved sandbox capabilities). When that judgement
+headings and the resolved sandbox capabilities). When that judgement runs a Claude model on the host, it MUST authenticate with the Claude subscription credential the Dispatcher selects for a dispatch it would launch at that moment, which is the account-selection process's selected account when one is published and its credential is present, and otherwise the unnumbered credential. It MUST NOT authenticate solely with the unnumbered credential the environment carries while a selected account's credential is present. When it falls back to the unnumbered credential, it MUST say so on stderr, naming the reason. The same rule governs the pre-dispatch judgement of the paragraph that follows. When that judgement
 would end a run through the structured needs-human ending, the item
 MUST NOT be routed to `ready`: it rests where a mechanical finding
 would hold it, and the verdict, with each remedy, MUST be appended to
@@ -7023,6 +7023,29 @@ MUST record, for each launch, which source supplied the sandbox image:
 `catalog_environment` with the environment id, or
 `dispatcher.fabro_sandbox_image`. Scenario 169 in `scenarios.md` exercises
 this subsection.
+
+### Sandbox image enumeration
+
+The Dispatcher MUST provide a read-only subcommand, `dispatcher.py sandbox-images --factory <name> [--repo <path>]... [--json]`, that enumerates the sandbox image sources of every dispatch to the named factory that does not pass an explicit `--workflow` path, across the repository and executing-build sets defined below, using the command process's own environment at invocation time. A dispatch that passes an explicit `--workflow` path, and another process's environment overrides, are outside this enumeration. The command MUST NOT create, modify or delete any file, including any lease file, and MUST NOT write a ledger record or a dispatch-journal row. It MUST NOT create a Fabro run, and it MUST NOT pull, build or tag an image.
+
+**Repositories.** Without `--repo`, the command MUST enumerate every repository whose root is the `projectPath` of an install record of this plugin in the host's Claude Code install registry (`~/.claude/plugins/installed_plugins.json`). When one or more `--repo` arguments are given, it MUST enumerate exactly those repositories instead. A repository whose committed `dispatcher.factories` declares no entry of the named factory MUST be reported with source `factory_undeclared` and no image, and that report alone MUST NOT make the command exit non-zero.
+
+**Executing builds.** The executing-build set is host-wide. It MUST consist of: the build named by each enumerated repository's registered install record; every plugin-cache build that holds an `.in_use` lease whose recorded process is alive; and the payload of every running Dispatcher process. A lease whose recorded process has exited MUST NOT contribute its build to the executing-build set; such a build MUST still be enumerated when it is reached through a registered install record, another live lease or a running Dispatcher process. A build reached by more than one route MUST be enumerated once.
+
+**Entries.** For each enumerated repository, the command MUST report entries in the order a dispatch within this scope resolves its sandbox image. It MUST decide each one by calling the same resolution functions a dispatch calls, never a parallel copy:
+
+1. When the factory's entry declares a catalog environment, one entry with source `catalog_environment`, that environment id, and no image of its own.
+2. Otherwise, when the dispatch's configured-image resolver returns an image, one entry with that image and source `dispatcher.fabro_sandbox_image`. That resolver applies a non-empty `LIVESPEC_FABRO_SANDBOX_IMAGE` value before the repository's `dispatcher.fabro_sandbox_image` setting.
+3. Otherwise, one entry per workflow such a dispatch can select:
+   - for each named variant the repository declares under `dispatcher.workflows`, that variant's `workflow.toml` `docker` pin, with source `named_variant`, the variant name and the path of that file;
+   - for the reserved `implement-work-item` workflow, when the repository commits its own `.fabro/workflows/implement-work-item/workflow.toml`, that file's `docker` pin, source `committed_run_config` and the path of that file;
+   - for the reserved workflow otherwise, one entry per executing build, each with the `docker` pin of that build's bundled implement-work-item `workflow.toml`, source `bundled_run_config`, the build's identity and the path of that file.
+
+Each entry MUST name its repository. With `--json`, the command MUST print one JSON array holding every entry as an object.
+
+**Unreadable sources.** When a repository's `.livespec.jsonc`, a named variant's or committed workflow file, or a bundled workflow file that an entry depends on cannot be read or parsed, that entry MUST be reported with source `unreadable`, naming the path that failed and its repository. The command MUST still report every other entry, and it MUST then exit non-zero.
+
+Scenario 212 in `scenarios.md` exercises this subsection.
 
 ### Factory addresses resolved from a host registry
 
