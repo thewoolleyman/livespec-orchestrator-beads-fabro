@@ -81,13 +81,17 @@ could not be proven to agree with the first.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro.commands._acp_availability_confirmation import (
+    AcpAvailabilityConfirmation,
+    confirmations_for_successes,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_availability_wait import (
     AvailabilityWait,
     availability_wait,
@@ -154,6 +158,26 @@ class JournalWriter(Protocol):
         ...
 
 
+@dataclass(frozen=True, kw_only=True)
+class _HostWideLedger:
+    """The hold ledger plus confirmation evidence from the SAME factory read.
+
+    The two travel together rather than being derived by two reads, which is
+    the one-read discipline `resolve_acp_preflight` already keeps for the holds
+    themselves: a success observed by one read and an expired record observed
+    by another cannot be proven to describe one moment, and the disagreement
+    would be invisible because each read produces a well-formed value.
+
+    `confirmations` defaults to empty because a repository whose Dispatcher
+    supplies no factory reader has no authoritative source a confirmation could
+    come from. That leaves every expired observation outstanding, which is the
+    conservative direction rather than clearing one on absent evidence.
+    """
+
+    ledger: AcpHoldLedger
+    confirmations: tuple[AcpAvailabilityConfirmation, ...] = ()
+
+
 def resolve_acp_preflight(
     *,
     repo: Path,
@@ -209,9 +233,10 @@ def resolve_acp_preflight(
     # ONE ledger read for one evaluation: the verdict's unobservable set and the
     # filter's live records must come from the same walk, or a record retiring
     # between two reads would be surfaced by one half and acted on by the other.
-    ledger = _host_wide_ledger(
+    host_wide = _host_wide_ledger(
         repo=repo, journal_path=journal_path, now_iso=now_iso, factory_runs=factory_runs
     )
+    ledger = host_wide.ledger
     return build_acp_preflight_verdict(
         chains=chains,
         graph_text=graph_text,
@@ -224,6 +249,7 @@ def resolve_acp_preflight(
             probe=probe,
             headroom=headroom,
             unconfirmed_keys=ledger.unconfirmed_keys,
+            confirmations=host_wide.confirmations,
         ),
     )
 
@@ -419,7 +445,7 @@ def _host_wide_ledger(
     journal_path: Path | None,
     now_iso: str,
     factory_runs: FactoryRunReader | None,
-) -> AcpHoldLedger:
+) -> _HostWideLedger:
     """The repository's own records UNIONED with every declared factory's.
 
     The journal half is read first and kept whole, which is what makes this
@@ -437,13 +463,31 @@ def _host_wide_ledger(
     because a surfaced condition no filter can act on is how an unobserved
     candidate came to be treated as confirmed unheld: the entry said the source
     was unavailable and the selection went ahead regardless.
+
+    THE SAME READ ALSO CARRIES THE CONFIRMATION EVIDENCE, which is what makes a
+    post-expiry confirmation reach REAL candidate selection rather than only
+    the pure filter. The successes that retire a live hold are the same
+    successes that satisfy an expired observation -- one read of the factory
+    answers both -- so deriving them here is the only placement under which the
+    filter's expired records and the confirmations clearing them describe one
+    moment.
+
+    The expired half is read off the JOURNAL fold rather than the union, and
+    the two are the same records: `_acp_factory_hold_evidence` bounds its hold
+    arm by `HOLD_INTERVAL`, because a failure older than that can only
+    re-derive a record that has already expired, so the factory half
+    contributes no expired record for the union to carry.
     """
     ledger = read_acp_hold_ledger(journal_path=journal_path, now_iso=now_iso)
     if factory_runs is None:
-        return ledger
-    return _unioned(
-        ledger=ledger,
-        evidence=factory_hold_evidence(repo=repo, reader=factory_runs, now_iso=now_iso),
+        return _HostWideLedger(ledger=ledger)
+    evidence = factory_hold_evidence(repo=repo, reader=factory_runs, now_iso=now_iso)
+    return _HostWideLedger(
+        ledger=_unioned(ledger=ledger, evidence=evidence),
+        confirmations=confirmations_for_successes(
+            expired_holds=ledger.expired_holds,
+            successes=evidence.successes,
+        ),
     )
 
 
