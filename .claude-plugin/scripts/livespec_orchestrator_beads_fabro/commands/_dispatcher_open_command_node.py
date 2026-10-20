@@ -80,7 +80,6 @@ COMMAND_NODES: tuple[str, ...] = (
     "proof_grade",
     "proof_grade_route",
     "publish_draft",
-    "recapture_route",
     "refresh_repair",
     "verify_pr",
 )

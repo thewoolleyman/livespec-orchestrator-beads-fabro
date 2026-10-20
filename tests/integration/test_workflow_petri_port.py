@@ -97,19 +97,6 @@ _PROOF_GRADE_ADDED = {"proof_grade", "proof_grade_route"}
 # closes no cycle, and is reached once per attempt of the turn it guards — which
 # is why it appears here and not in the moved-node allowance below.
 _IMPLEMENT_COMPLETION_ADDED = {"implement_completion"}
-
-# The recapture route (v175, Scenario 137; work-item bd-ib-j56cur), kept as its
-# own constant for the reason every set above gives. It closes a NEW cycle --
-# `review -> recapture_route -> proof_capture -> review` -- so the nodes it moves
-# are that cycle's members plus the replay and grade below them, which every
-# returned review visit re-earns.
-_RECAPTURE_ADDED = {"recapture_route"}
-_RECAPTURE_LOOP = _RECAPTURE_ADDED | {
-    "proof_capture",
-    "review",
-    "proof_verify",
-    "proof_grade",
-}
 _REFRESH_REPAIR_LOOP = _REFRESH_REPAIR_ADDED | {
     "fix",
     "janitor",
@@ -622,13 +609,6 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
     node whose visit or attempt count moved is either a publication stage or a
     member of the refresh loop. An unrelated node's budget moving still fails,
     which is the regression this case exists to catch.
-
-    THE SAME THING HAPPENED AGAIN AT v175 (the recapture route, work-item
-    bd-ib-j56cur): `review -> recapture_route -> proof_capture -> review` is a
-    THIRD cycle through the proof loop, so the allowance grows again and the
-    attribution set gains `_RECAPTURE_ADDED` / `_RECAPTURE_LOOP`. Keeping each
-    addition in its own constant is what lets a future port regression stay
-    distinguishable from these routes.
     """
     toml = (_PAYLOAD / "workflow.toml").read_text(encoding="utf-8")
     timeouts = resolve_node_timeouts(cwd=_REPO_ROOT)
@@ -656,17 +636,16 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
     pre_port = budget(text=_ROLLBACK.read_text(encoding="utf-8"))
 
     # The two new stages, the v134 refresh-repair classifier, the v145 refresh
-    # route, the v156 per-assertion grade, the v165 completion gate and the v175
-    # recapture route are the ONLY nodes added, and nothing was dropped: a node
-    # the ported graph lost would be an executable path missing from a figure
-    # still presented as an allowance.
+    # route, the v156 per-assertion grade and the v165 completion gate are the
+    # ONLY nodes added, and nothing was dropped: a node the ported graph lost
+    # would be an executable path missing from a figure still presented as an
+    # allowance.
     assert set(ported.node_visits) - set(pre_port.node_visits) == (
         _PUBLICATION_STAGES_ADDED
         | _REFRESH_REPAIR_ADDED
         | _PR_ROUTE_ADDED
         | _PROOF_GRADE_ADDED
         | _IMPLEMENT_COMPLETION_ADDED
-        | _RECAPTURE_ADDED
     )
     assert set(pre_port.node_visits) - set(ported.node_visits) == set()
 
@@ -687,7 +666,6 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _PR_ROUTE_ADDED
         | _PROOF_GRADE_ADDED
         | _IMPLEMENT_COMPLETION_ADDED
-        | _RECAPTURE_LOOP
     )
     assert moved <= reachable, sorted(moved - reachable)
     # And the direction is the honest one: the graph grew, so the allowance grew.
