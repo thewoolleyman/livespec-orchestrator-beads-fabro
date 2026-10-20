@@ -1,5 +1,8 @@
 # Scoping: the child cut, the carrier map, and the proposal outlines (2026-10-20 UTC)
 
+> **Superseded in part.** This is the pre-review draft. The independent review is note 004 and the
+> corrected cut, carrier map and holds are in note 005, which governs where the two differ.
+
 Written by the `spec-implementation-lockstep` session on its first resume. It records the
 facts measured this session, the decisions taken under the standing rules, the children the
 plan files, the carrier map the scoping event records, and the explicit deferrals. The
