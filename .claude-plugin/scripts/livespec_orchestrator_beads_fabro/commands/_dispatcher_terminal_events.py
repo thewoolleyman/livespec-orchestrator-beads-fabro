@@ -55,6 +55,7 @@ exhausted credential.
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from typing import cast
 
@@ -114,6 +115,12 @@ _FAILURE_KEY = "failure"
 _SUBJECT_KEY = "subject"
 _SUBJECT_NODE_KEY = "node"
 _SUBJECT_NODE_NAME_KEYS: tuple[str, ...] = ("name",)
+
+# ACP appends this transport classification after the provider's sentence in
+# the stage output measured on the Petri engine. It is useful to ACP consumers,
+# but it is not part of the provider's own sentence that the dispatcher journals
+# or shows to an operator.
+_ACP_ERROR_KIND_RATE_LIMIT_SUFFIX = re.compile(r"(?:,\s*|\s+)errorKind\s+rate_limit\s*$")
 
 
 def terminal_event_output(*, payload: object | None) -> str:
@@ -259,6 +266,7 @@ def _stage_output_failure(*, payload: object | None, stage: str) -> FabroFailure
     if not isinstance(output, str):
         return None
     message = output.partition("Internal error: ")[2] or output
+    message = _ACP_ERROR_KIND_RATE_LIMIT_SUFFIX.sub("", message)
     return _failure_detail(block={"message": message})
 
 

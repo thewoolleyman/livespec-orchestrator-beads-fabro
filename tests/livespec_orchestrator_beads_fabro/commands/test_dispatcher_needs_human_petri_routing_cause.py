@@ -83,6 +83,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     NEEDS_HUMAN_MARKER,
     DispatchPlan,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
+    record_provider_exhaustion_if_observed,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_outcome import (
     PROVIDER_LIMIT_RELEASE_STATUS,
 )
@@ -107,6 +110,10 @@ _INNERMOST_CAUSE = "script exited with status 1"
 # one `message` inside `outcome.status.failure`, with no chain beside it.
 _FAILURE_MESSAGE = "the agent process exited before the protocol completed"
 _WEEKLY_LIMIT_MESSAGE = "You've hit your weekly limit · resets Oct 23, 3pm (UTC)"
+_MEASURED_WEEKLY_LIMIT_OUTPUT = (
+    "ACP error: code -32603, Internal error: " f"{_WEEKLY_LIMIT_MESSAGE}, errorKind rate_limit"
+)
+_NOW = "2026-10-20T04:40:00Z"
 
 # The terminal's own failed step, which can never be the cause: it is a
 # dead-end script that exits 1 by design on every run that reaches it.
@@ -235,6 +242,16 @@ def _plan(*, tmp_path: Path) -> DispatchPlan:
     )
 
 
+class _RecordingJournal:
+    """The post-run journal seam, retaining the hold this outcome writes."""
+
+    def __init__(self) -> None:
+        self.records: list[dict[str, object]] = []
+
+    def append(self, *, record: dict[str, object]) -> None:
+        self.records.append(record)
+
+
 def _outcome(
     *,
     tmp_path: Path,
@@ -335,7 +352,7 @@ def test_a_petri_stage_output_supplies_a_provider_limit_when_events_timed_out(
     assert isinstance(stages, dict)
     stage = stages[_ROUTING_STAGE]
     assert isinstance(stage, dict)
-    stage["output"] = f"ACP error: code -32603, Internal error: {_WEEKLY_LIMIT_MESSAGE}"
+    stage["output"] = _MEASURED_WEEKLY_LIMIT_OUTPUT
 
     outcome = _outcome(
         tmp_path=tmp_path,
@@ -349,6 +366,18 @@ def test_a_petri_stage_output_supplies_a_provider_limit_when_events_timed_out(
     assert outcome.provider_usage_limit is True
     assert outcome.provider_usage_limit_provider == "anthropic"
     assert f"innermost cause: {_WEEKLY_LIMIT_MESSAGE}" in outcome.detail
+    assert "errorKind rate_limit" not in outcome.fabro_failure_cause
+
+    journal = _RecordingJournal()
+    record_provider_exhaustion_if_observed(
+        outcome=outcome,
+        journal=journal,
+        journal_path=None,
+        now_iso=_NOW,
+    )
+
+    assert journal.records[0]["provider"] == "anthropic"
+    assert journal.records[0]["governing_condition"] == "provider_usage_limit"
 
 
 def test_stage_output_provider_limit_survives_a_legacy_plan_without_acp_nodes(
@@ -367,7 +396,7 @@ def test_stage_output_provider_limit_survives_a_legacy_plan_without_acp_nodes(
     assert isinstance(stages, dict)
     stage = stages[_ROUTING_STAGE]
     assert isinstance(stage, dict)
-    stage["output"] = f"ACP error: code -32603, Internal error: {_WEEKLY_LIMIT_MESSAGE}"
+    stage["output"] = _MEASURED_WEEKLY_LIMIT_OUTPUT
     legacy_plan = cast(
         DispatchPlan,
         SimpleNamespace(
@@ -401,6 +430,33 @@ def test_stage_output_provider_limit_survives_a_legacy_plan_without_acp_nodes(
     assert outcome.fabro_failure_cause == _WEEKLY_LIMIT_MESSAGE
     assert outcome.provider_usage_limit is True
     assert outcome.provider_usage_limit_provider == "anthropic"
+
+
+def test_a_petri_stage_output_names_the_needs_human_cause_when_events_timed_out(
+    tmp_path: Path,
+) -> None:
+    """An ordinary stage failure is named instead of reporting an absent cause."""
+    inspect_payload = _petri_inspect()
+    record = inspect_payload[0]
+    assert isinstance(record, dict)
+    stages = record["stages"]
+    assert isinstance(stages, dict)
+    stage = stages[_ROUTING_STAGE]
+    assert isinstance(stage, dict)
+    stage["output"] = f"ACP error: code -32603, Internal error: {_FAILURE_MESSAGE}"
+
+    outcome = _outcome(
+        tmp_path=tmp_path,
+        inspect_payload=inspect_payload,
+        events_payload=None,
+    )
+
+    assert outcome.status == "blocked"
+    assert outcome.needs_human_kind == "stage-failure"
+    assert outcome.fabro_failure_cause == _FAILURE_MESSAGE
+    cause_body = needs_human_cause_body(outcome=outcome)
+    assert f"innermost cause: {_FAILURE_MESSAGE}" in cause_body
+    assert "innermost cause: ABSENT" not in cause_body
 
 
 def test_a_succeeded_step_on_the_routing_node_is_not_read_as_its_failure(
