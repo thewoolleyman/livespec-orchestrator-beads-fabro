@@ -522,6 +522,105 @@ def test_findings_are_surfaced_in_the_human_form_too(
 
 
 # ---------------------------------------------------------------
+# An entry that identifies no live heading is a finding and never a gap
+# ---------------------------------------------------------------
+
+
+def test_an_entry_stating_no_heading_is_a_finding_and_produces_no_gap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The row identifies nothing, so there is no heading it could be a gap for.
+
+    The live heading beside it is the control: it still becomes a gap, which is
+    what tells "the unidentifiable row produced no gap" apart from "the scan
+    produced no gaps".
+    """
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Absent heading\n"},
+    )
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[{"test": "TODO", "reason": "an integration-tier test is owed"}],
+    )
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
+    assert "unidentifiable-entry" in captured.err
+
+
+def test_an_entry_naming_a_heading_the_live_tree_does_not_contain_is_a_finding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A heading that was renamed or deleted leaves a row pointing at nothing.
+
+    The row names an EXISTING test, so a build that only checked the test
+    would read it as proven coverage and say nothing — the row then sits in
+    the registry for ever, claiming a heading no longer there.
+    """
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Absent heading\n"},
+    )
+    _write_existing_test_node(project_root=tmp_path)
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Ghost heading",
+                "test": _EXISTING_TEST_NODE,
+            }
+        ],
+    )
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
+    assert "unidentifiable-entry" in captured.err
+    assert "## Ghost heading" in captured.err
+
+
+def test_both_unidentifiable_shapes_surface_one_finding_each(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """One finding per row, and every live heading with no entry still a gap."""
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Absent heading\n\n## Todo heading\n"},
+    )
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[
+            {"test": "TODO", "reason": "an integration-tier test is owed"},
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Ghost heading",
+                "test": "TODO",
+                "reason": "an integration-tier test is owed",
+            },
+        ],
+    )
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == sorted([_GAP_ABSENT, _GAP_TODO])
+    assert captured.err.count("unidentifiable-entry") == 2
+
+
+# ---------------------------------------------------------------
 # --since-version validation
 # ---------------------------------------------------------------
 

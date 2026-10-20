@@ -172,16 +172,19 @@ def scan_heading_gaps(
         history = read_specification_history(spec_root=spec_root, version=since_version)
         if not is_successful(history):
             return IOFailure(unsafe_perform_io(history.failure()))
+    headings = live_headings(spec_root=spec_root, project_root=project_root)
     grading = grade_coverage_entries(
         entries=read_coverage_entries(project_root=project_root),
         project_root=project_root,
+        live_keys=frozenset(_key(heading=heading) for heading in headings),
     )
-    gaps = tuple(
-        heading
-        for heading in live_headings(spec_root=spec_root, project_root=project_root)
-        if (heading.spec_root, heading.spec_file, heading.heading) not in grading.covered
-    )
+    gaps = tuple(heading for heading in headings if _key(heading=heading) not in grading.covered)
     return IOSuccess(HeadingGapScan(gaps=gaps, findings=grading.findings))
+
+
+def _key(*, heading: SpecHeading) -> tuple[str, str, str]:
+    """One heading's fully qualified match key, in the registry's own vocabulary."""
+    return (heading.spec_root, heading.spec_file, heading.heading)
 
 
 def _spec_root_label(*, spec_root: Path, project_root: Path) -> str:
