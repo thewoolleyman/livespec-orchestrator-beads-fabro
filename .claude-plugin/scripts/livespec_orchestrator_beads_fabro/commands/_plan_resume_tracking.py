@@ -7,23 +7,23 @@ here: it is the one arm that DERIVES AND PERSISTS a replacement pointer, which
 `_plan_resume_advance` owns, and its caller checks it first so that this module
 is reached only once staleness has been ruled out.
 
-IT ALSO OWNS THE ONE READ ALL THREE FINDINGS REST ON, and that read takes the
-SHARED plan-owned redirect of `_plan_result_plan_owned`, so an obligation naming
-THE PLAN EPIC ITSELF resolves against the plan's own tenant whatever repository
-the recorded pointer names. That module carries the measurement and the reason
-the redirect is shared rather than local: the resume reads the obligation from
-the authority CHAIN first and returns on that verdict, so a redirect living in
-this module alone is unreachable for every chain-tracked plan — which is every
-plan the progress gate can lock.
+IT ALSO OWNS THE ONE READ ALL THREE FINDINGS REST ON, and that read goes through
+`_plan_result_plan_owned.read_plan_owned_result` rather than reaching
+`read_result` directly, so an obligation naming THE PLAN EPIC ITSELF resolves
+against the plan's own tenant whatever repository the recorded pointer names.
+That module carries the measurement and the reason the reader is shared rather
+than local: one plan-level obligation is read three times on the way through a
+single resume — the authority CHAIN first, this pointer second, and the
+sanctioned write's own prior-obligation reading third — and settling it at any
+subset of them leaves the plan stopped, so the redirect belongs to the READER
+every one of them calls rather than to any of the call sites.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from livespec_orchestrator_beads_fabro._store_ready_dwell import utc_now_iso
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._plan_continuation import instant_expired
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     LEGACY_TRACKING,
@@ -35,9 +35,8 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_observation import 
     ResultObservation,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_plan_owned import (
-    plan_owned_reference,
+    read_plan_owned_result,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_result_reader import read_result
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig
@@ -95,13 +94,8 @@ def result_observation(
     """Read an explicitly tracked pointer; legacy pointers retain their old path."""
     if action.required_result is LEGACY_TRACKING or action.required_result is None:
         return None
-    project_root = config.repo_root if config.repo_root is not None else Path.cwd()
-    return read_result(
-        project_root=project_root,
-        reference=plan_owned_reference(
-            config=config, epic_id=epic_id, required_result=action.required_result
-        ),
-        runner=ShellCommandRunner(),
+    return read_plan_owned_result(
+        config=config, epic_id=epic_id, required_result=action.required_result
     )
 
 

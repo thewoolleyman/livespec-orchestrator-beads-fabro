@@ -34,14 +34,27 @@ the wrong-population trap this repository's verification discipline catalogues.
 The plan locked in production (`bd-ib-fyozyd`) carries a chain, so the fixture
 carries one too, with the obligation recorded as the chain's own authority.
 
-WHY THE OBLIGATION IS THE ARCHIVE LEG'S STATUS AND NOT THE PROOF LEG'S MARKER.
-A committed chain transition writes a `plan-progress-event` comment on the epic
-whose payload embeds the obligation verbatim — marker included — so an
-`item_comment` obligation naming the epic is satisfied by the very event that
-recorded it, whichever tenant answers. That makes the marker shape unable to
-tell a right tenant from a wrong one. The archive leg's `item_status` on the
-epic is immune: a status is a field of the record rather than text in a comment,
-so `active` and `closed` are readings of the plan's own tenant and nothing else.
+WHY THE TENANT DISCRIMINATION RIDES ON THE ARCHIVE LEG'S STATUS AND NOT ON THE
+PROOF LEG'S MARKER. A committed chain transition writes a `plan-progress-event`
+comment on the epic whose payload embeds the obligation verbatim — marker
+included — so an `item_comment` obligation naming the epic is satisfied by the
+very event that recorded it, whichever tenant answers. That makes the marker
+shape unable to tell a right tenant from a wrong one. The archive leg's
+`item_status` on the epic is immune: a status is a field of the record rather
+than text in a comment, so `active` and `closed` are readings of the plan's own
+tenant and nothing else.
+
+WHY A THIRD CASE IS OWED ON A LEG THAT DOES DERIVE A SUCCESSOR. That same
+archive leg is the ONE leg `_plan_resume_advance._plan_level_action` derives no
+next step for, so its satisfied reading reports a terminal state and never
+attempts a replacement pointer — and the sanctioned WRITE that persists one
+reads the prior obligation a THIRD time, in `_plan_tracked_write`, where an
+unobservable reading refuses the replacement outright. A plan is therefore still
+stopped if that read is not redirected too: not locked behind a diagnosable
+pointer, but answering with no further step at all, which under an unattended
+resume is silence. So the third case is the measured plan's own leg — a `proof`
+leg, whose successor the advance does derive — and it asserts the derived step
+and the pointer that step's obligation landed in.
 """
 
 from __future__ import annotations
@@ -97,6 +110,7 @@ _CARRIER_ITEM = "bd-ib-carrier-child"
 # read aimed at it is UNOBSERVABLE — the state the locked plan was measured in.
 _STRANGER_REPO = "stranger-repo"
 _PROOF_MARKER = "Plan Proof of Done"
+_REVIEW_MARKER = "plan-completeness-review-evidence"
 
 
 @pytest.fixture(autouse=True)
@@ -328,3 +342,71 @@ def test_an_obligation_naming_the_plan_epic_elsewhere_is_read_from_the_plans_ten
     assert met.observation is not None
     assert met.observation.status == "satisfied"
     assert met.observation.repo == _OWN
+
+
+def test_the_replacement_pointer_lands_when_the_prior_obligation_names_the_epic_elsewhere(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A satisfied plan leg must reach its NEXT leg, which takes a THIRD read.
+
+    The case above establishes that both READING surfaces resolve the epic
+    against the plan's own tenant, and stops there: its obligation is the archive
+    leg's, and the archive leg is the one leg `_plan_level_action` derives no
+    successor for, so the advance reports a terminal state and never attempts a
+    replacement pointer. The sanctioned WRITE that persists one reads the prior
+    obligation a third time, inside `_plan_tracked_write._prior_observation`, and
+    that read decides whether the write is admitted at all: an unobservable prior
+    obligation cannot be replaced by design, so the derived pointer is refused
+    and the resume answers with no further step — a plan that silently stops
+    under an unattended resume, where the locked state it replaces at least
+    named a diagnosis.
+
+    So this case is the measured plan's own leg. Its obligation is the proof
+    leg's, which `_plan_level_action` DOES derive a successor for, and the
+    assertions are the two halves no earlier case can reach: the derived review
+    step is what the resume answers, and the recorded pointer now carries that
+    step's own obligation under the plan's own repository.
+
+    THE SATISFIED READING IS NOT THIS CASE'S DISCRIMINATOR, and saying so is
+    what keeps it honest. A committed chain transition writes a
+    `plan-progress-event` comment on the epic whose payload embeds the obligation
+    verbatim — marker included — so ANY `item_comment` obligation naming the epic
+    is satisfied by the event that recorded it, in whichever tenant answers; the
+    epic's real proof record is seeded beside it so the fixture is a plan whose
+    proof leg genuinely landed rather than one resting on that echo, but the echo
+    is the earlier comment and is what the reading cites. What discriminates here
+    is therefore the OTHER answer: the stranger repository resolves a clone and
+    no tenant, so every read aimed at it is `unobservable`, which is exactly the
+    reading that refuses the replacement write. The case above is the one that
+    separates the plan's own tenant from any other, and it carries that claim for
+    both.
+    """
+    repo = _governed_project(tmp_path=tmp_path)
+    monkeypatch.chdir(repo)
+    _seed_epic(
+        repo=repo,
+        epic_id="bd-ib-proofleg",
+        kind="proof",
+        ref="capture:bd-ib-proofleg",
+        required_result={
+            "repo": _STRANGER_REPO,
+            "item_comment": {"item_id": "bd-ib-proofleg", "marker": _PROOF_MARKER},
+        },
+    )
+    _fake(repo=repo).add_comment(
+        issue_id="bd-ib-proofleg",
+        body=f"{_PROOF_MARKER} — captured — the plan's proof leg landed.",
+    )
+
+    directive = resume_directive(
+        config=_config(repo=repo), epic_id="bd-ib-proofleg", unattended=True
+    )
+
+    assert directive.observation is not None
+    assert directive.observation.status == "satisfied"
+    assert directive.observation.repo == _OWN
+    assert directive.next_action == "review:bd-ib-proofleg"
+    assert _pointer(repo=repo, epic_id="bd-ib-proofleg")["required_result"] == {
+        "repo": _OWN,
+        "item_comment": {"item_id": "bd-ib-proofleg", "marker": _REVIEW_MARKER},
+    }

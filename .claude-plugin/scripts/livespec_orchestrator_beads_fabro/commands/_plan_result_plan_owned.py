@@ -13,18 +13,41 @@ and whose derived proof leg inherited that repository.
 `_plan_resume_advance` stops NEW pointers acquiring that field; this is what
 unlocks the plans whose records already carry it.
 
-WHY THE REDIRECT IS ONE FUNCTION TWO READERS SHARE. A resume reads the
-obligation TWICE, from two stores, and settling it in either place alone leaves
-the locked plan exactly as locked. `evaluate_resume_progress` reads the
-CHAIN-held authority and `decide_plan_resume` returns on its verdict before the
-pointer is ever consulted, so a redirect applied only at the pointer read is
-unreachable for every chain-tracked plan — which is every plan the progress gate
-can lock. Measured 2026-10-20 against the pointer-only build: a chain-tracked
-epic whose obligation named a sibling still reported
-`plan-progress-tracking: unobservable` and still answered with the diagnosis
-action, while its own-repository twin advanced. One shared function is what
-makes the two readers unable to disagree about which repository an obligation
-belongs to.
+WHY THIS MODULE OWNS THE READ ITSELF AND NOT MERELY THE REDIRECT. One plan-level
+obligation is read THREE times from two stores on the way through a single
+resume, and settling it at any subset of them leaves the locked plan stopped —
+differently each time, which is what makes the count worth stating rather than
+leaving to be rediscovered:
+
+1. `evaluate_resume_progress` reads the CHAIN-held authority, and
+   `decide_plan_resume` returns on its verdict before the pointer is ever
+   consulted. So a redirect applied only at the pointer read is unreachable for
+   every chain-tracked plan — which is every plan the progress gate can lock.
+   Measured 2026-10-20 against the pointer-only build: a chain-tracked epic
+   whose obligation named a sibling still reported
+   `plan-progress-tracking: unobservable` and still answered with the diagnosis
+   action, while its own-repository twin advanced.
+2. `result_observation` reads the recorded POINTER, which is what decides that
+   the satisfied step is stale and an advance is owed.
+3. `_plan_tracked_write._prior_observation` reads the chain-held authority
+   AGAIN, on behalf of the sanctioned write that persists the derived pointer.
+   This reading does not report, it DECIDES: an unobservable prior obligation
+   cannot be replaced, so the derived step is refused and the resume answers
+   with no further step at all. Measured 2026-10-20 against the two-reader
+   build on the item's own shape: a chain-tracked epic with a satisfied `proof`
+   leg advanced to a derived review step and then had it refused — `the
+   obligation stranger-repo item_comment <epic> marker 'Plan Proof of Done' is
+   unobservable, so it cannot be replaced by repo item_comment <epic> marker
+   'plan-completeness-review-evidence'` — leaving the plan SILENTLY stopped
+   rather than diagnosably locked, which under an unattended resume is the
+   worse of the two.
+
+So `read_plan_owned_result` is the entry point all three take, and it performs
+the whole read rather than handing back a corrected reference. The count is the
+reason: each read was added for its own purpose, none of them announced that it
+owed this redirect, and a fourth will not either — while a reader that reaches
+`read_result` directly has to remember a three-step composition whose middle
+step is the only one that fails silently.
 
 WHY THE DISCRIMINATOR IS THE TARGET AND NOT THE POINTER'S KIND. The condition
 that makes the redirect correct is that the obligation's own target IS the plan
@@ -35,9 +58,11 @@ target is a CHILD, so it fails the target test already, and an id equal to the
 epic's resolves in exactly one tenant — the plan's own — whichever leg recorded
 it.
 
-WHY THE REWRITE PERSISTS NOTHING. It is a READ-TIME redirect on a path whose
-whole job is to observe; the recorded pointer is replaced by the ordinary
-advance once this obligation is satisfied. Writing here would be an unsanctioned
+WHY THE REWRITE PERSISTS NOTHING. It is a READ-TIME redirect on every one of
+those three paths, each of which is observing rather than recording: the
+recorded pointer is replaced by the ordinary advance once this obligation is
+satisfied, and the sanctioned write's own reading is of the PRIOR obligation,
+which it grades rather than rewrites. Writing here would be an unsanctioned
 ledger write, and `_plan_progress_resume`'s every arm is read-only by contract.
 
 WHY THE RECORDED IDENTITY IS NOT COMPARED BEFORE SUBSTITUTING. An obligation
@@ -48,8 +73,11 @@ correct.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._plan_result_reader import read_result
 from livespec_orchestrator_beads_fabro.commands._plan_result_reference import REPO_FIELD
 from livespec_orchestrator_beads_fabro.commands._plan_result_repository import (
     project_repository_identity,
@@ -60,10 +88,14 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_targets import (
 )
 
 if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
+        ResultObservation,
+    )
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "plan_owned_reference",
+    "read_plan_owned_result",
 ]
 
 # The two target kinds a plan-level leg's own obligation is ever written as: a
@@ -71,6 +103,40 @@ __all__: list[str] = [
 # status for the archive leg.
 _ITEM_TARGET_KINDS: tuple[str, ...] = (ITEM_COMMENT_KIND, ITEM_STATUS_KIND)
 _ITEM_ID_FIELD = "item_id"
+
+
+def read_plan_owned_result(
+    *,
+    config: StoreConfig,
+    epic_id: str,
+    required_result: object,
+    now: str | None = None,
+) -> ResultObservation:
+    """Observe one plan-level obligation, from this project, through the redirect.
+
+    THE WHOLE READ AND NOT MERELY THE REDIRECT, because the redirect alone is a
+    rule each caller has to remember to apply and three of them already had to.
+    A caller reaching `read_result` directly composes the same three steps —
+    resolve this project's root, redirect a plan-owned reference, read — and the
+    only one of the three that announces its own absence is the root: a caller
+    that forgets the redirect gets a well-formed `unobservable` reading of
+    another repository's tenant, which every surface downstream reports as an
+    obligation that cannot be measured.
+
+    So this is the entry point every plan-level reader takes, and `read_result`
+    is reached through it. The `now` default is the reader's own and is passed
+    through rather than resolved here, so a caller pinning an instant and a
+    caller taking the clock still read one obligation one way.
+    """
+    project_root = config.repo_root if config.repo_root is not None else Path.cwd()
+    return read_result(
+        project_root=project_root,
+        reference=plan_owned_reference(
+            config=config, epic_id=epic_id, required_result=required_result
+        ),
+        runner=ShellCommandRunner(),
+        now=now,
+    )
 
 
 def plan_owned_reference(*, config: StoreConfig, epic_id: str, required_result: object) -> object:

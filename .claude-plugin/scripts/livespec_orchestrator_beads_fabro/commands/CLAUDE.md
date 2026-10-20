@@ -1876,23 +1876,42 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   that is both expired and missing its Definition of Done must report the
   expiry, and settling the dispatch question first answers with the gap pointer
   and never reads the obligation.
-- `_plan_result_plan_owned.py` — the repository an obligation naming THE PLAN
-  EPIC ITSELF is read against, shared by BOTH of a resume's obligation reads
-  (`bd-ib-woacnk`). A plan-level leg targets the epic, the epic lives in the
-  plan's own tenant whatever the record says, and an unobservable obligation
-  withholds dispatch while being unreplaceable by design — so one stale `repo`
-  field locks a plan for its whole budget. Three properties an editor must not
-  invert. It is ONE function two readers share, because the resume reads the
-  obligation twice: `evaluate_resume_progress` reads the CHAIN-held authority
-  and `decide_plan_resume` returns on that verdict BEFORE the pointer is
-  consulted, so a redirect living at the pointer read alone is unreachable for
-  every chain-tracked plan — which is every plan the progress gate can lock,
-  including the measured one. The discriminator is the obligation's own TARGET
-  and never the pointer's kind: the chain records no kind, and a kind test buys
-  nothing either way, since an `impl` leg's target is a CHILD and an id equal to
-  the epic's resolves in exactly one tenant. And the rewrite persists NOTHING —
-  it is read-time, on a path whose every arm is read-only by contract, and the
-  ordinary advance is what replaces a recorded pointer.
+- `_plan_result_plan_owned.py` — the ONE entry point every plan-level obligation
+  is read through (`read_plan_owned_result`), and the repository an obligation
+  naming THE PLAN EPIC ITSELF is read against (`bd-ib-woacnk`). A plan-level leg
+  targets the epic, the epic lives in the plan's own tenant whatever the record
+  says, and an unobservable
+  obligation withholds dispatch while being unreplaceable by design — so one
+  stale `repo` field locks a plan for its whole budget. Three properties an
+  editor must not invert. It owns THE WHOLE READ and not merely the redirect,
+  because one plan-level obligation is read THREE times on the way through a
+  single resume and the redirect alone is a rule each call site has to remember —
+  each read was added for its own reason, and settling any subset of them leaves
+  the plan stopped a different
+  way: `evaluate_resume_progress` reads the CHAIN-held authority and
+  `decide_plan_resume` returns on that verdict BEFORE the pointer is consulted,
+  so a redirect living at the pointer read alone is unreachable for every
+  chain-tracked plan — which is every plan the progress gate can lock, including
+  the measured one; `result_observation` reads the recorded POINTER, which is
+  what decides the satisfied step is stale; and
+  `_plan_tracked_write._prior_observation` reads the chain-held authority AGAIN
+  for the sanctioned write that persists the derived pointer, where the reading
+  DECIDES rather than reports — an unobservable prior obligation cannot be
+  replaced, so the derived step is refused and the resume answers with no
+  further step at all, which under an unattended resume is a plan silently
+  stopping rather than one diagnosably locked. Of the three steps a caller
+  composing them itself would repeat — resolve this project's root, redirect,
+  read — only the root announces its own absence, so a forgotten redirect
+  returns a well-formed `unobservable` reading of another repository's tenant;
+  reaching `read_result` directly from a plan-level caller is that defect
+  returning. The discriminator is the
+  obligation's own TARGET and never the pointer's kind: the chain records no
+  kind, and a kind test buys nothing either way, since an `impl` leg's target is
+  a CHILD and an id equal to the epic's resolves in exactly one tenant. And the
+  rewrite persists NOTHING — it is read-time on all three paths, each of them
+  observing rather than recording (the write's own reading is of the PRIOR
+  obligation, which it grades), and the ordinary advance is what replaces a
+  recorded pointer.
 - `_drive_cli.py` — the `drive` CLI's operator transport, split out of `drive.py`
   on the same seam `_session_wait_cli` sits on for `session_wait` once routing
   the diagnosis executor pushed that file past its size ceiling. `drive.py` keeps
