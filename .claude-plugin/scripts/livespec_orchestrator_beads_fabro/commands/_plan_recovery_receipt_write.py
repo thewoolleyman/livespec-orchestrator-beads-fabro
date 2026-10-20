@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._acp_journal_records import journal_records
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain import (
     COMMITTED,
@@ -64,6 +65,7 @@ __all__: list[str] = [
     "RecoveryReceiptRequest",
     "RecoveryReceiptWrite",
     "receipt_operation_id",
+    "record_impl_recovery_receipts",
     "record_recovery_receipts",
 ]
 
@@ -162,6 +164,54 @@ def record_recovery_receipts(
             idempotent=False,
         )
     return _commit(request=request, head=head, recorded=recorded, receipts=receipts)
+
+
+def record_impl_recovery_receipts(
+    *,
+    config: StoreConfig,
+    work_item_id: str,
+    journal_path: Path | None,
+    author: str,
+    now: str,
+) -> tuple[RecoveryReceiptWrite | ReceiptRefusal, ...]:
+    """Receipt every CURRENT recovery attempt that authorized this impl action.
+
+    The drive executor names a work item, not a plan epic or an attempt.  The
+    chain is therefore surveyed at execution time to find the only attempts
+    whose recorded operation authorizes that item.  Each candidate carries its
+    own attempt id back into `record_recovery_receipts`, which re-reads and
+    rejects a superseded attempt instead of attaching the evidence to a newer
+    one.  There is no local coordination: the Beads conditional close remains
+    the multi-host serialization boundary.
+    """
+    operation = f"impl:{work_item_id}"
+    return tuple(
+        record_recovery_receipts(
+            request=RecoveryReceiptRequest(
+                config=config,
+                epic_id=epic_id,
+                attempt_id=attempt_id,
+                journal_path=journal_path,
+                author=author,
+                now=now,
+            )
+        )
+        for epic_id, attempt_id in _matching_impl_attempts(config=config, operation=operation)
+    )
+
+
+def _matching_impl_attempts(*, config: StoreConfig, operation: str) -> tuple[tuple[str, str], ...]:
+    """The current plan attempts that authorize exactly one impl operation."""
+    client = make_beads_client(config=config)
+    return tuple(
+        (epic_id, attempt.attempt_id)
+        for issue in client.list_issues()
+        for epic_id in (str(issue["id"]),)
+        for head in (read_chain_head(config=config, epic_id=epic_id),)
+        if isinstance(head, ChainHead)
+        for attempt in (recorded_attempt(authority_record=head.authority.last_recovery_attempt),)
+        if attempt is not None and attempt.next_operation == operation
+    )
 
 
 def _observed_receipts(
