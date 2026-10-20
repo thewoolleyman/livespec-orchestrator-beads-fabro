@@ -2225,11 +2225,11 @@ Scenario: A ratification without a completed gap capture surfaces the backstop f
   Then a gap-capture-staleness fact appears whose handoff names capture-impl-gaps and the stale range
   And no detector is invoked by the composition
 
-Scenario: Merges past the threshold surface the drift fact
-  Given default-branch merges since the last completed drift coverage point at or past the effective threshold
+Scenario: Merges past the threshold surface the drift fact while the run has not caught up
+  Given default-branch merges after the recorded drift frontier at or past the effective threshold
   When needs-attention composes the snapshot
-  Then a drift-staleness fact appears whose handoff names capture-spec-drift
-  And the consent-gated dialogue remains the only way the detector runs
+  Then a drift-staleness fact appears naming the merges after the frontier
+  And the fact invokes no detector; the reconcile pass is what runs the drift pass
 ```
 
 ## Scenario 83 — Capacity truth is composed from the accounting, never re-derived
@@ -7791,4 +7791,48 @@ Feature: New behaviour gets new spec before it is built
     Given a ready item whose References line names a heading that does not govern its assertions
     When the pre-admission judgement runs
     Then the item is held with the governing heading the spec-stated judgement returned as the remedy
+```
+
+## Scenario 207 — The drift run processes each merge behind a contiguous frontier and files proposals it never accepts
+
+```gherkin
+Feature: Implementation that outruns the specification is caught at every merge
+  As the maintainer keeping the specification honest against the implementation
+  I want every default-branch merge judged against the ratified spec and its unstated behaviour proposed
+  So that the feedback loop turns without a session and without a human accepting anything by machine
+
+  Scenario: A merge adding unstated behaviour files one proposal and advances the frontier
+    Given a recorded drift frontier and one later default-branch merge whose diff adds a behaviour the spec-stated judgement reports unstated
+    When the reconcile pass runs
+    Then one proposed change with a drift origin is filed naming the generalization target
+    And a completed drift coverage record names that merge as the frontier
+
+  Scenario: A failed merge stops the frontier under a later success
+    Given two merges after the frontier where the pass over the first fails and the pass over the second succeeds
+    When the reconcile pass runs
+    Then the frontier does not advance past the first merge
+    And an attempt record names the failed merge
+    And the drift-staleness fact still names both merges
+
+  Scenario: A retried pass files no duplicate
+    Given a merge whose finding was already filed under its finding identity
+    When the reconcile pass processes the merge again
+    Then no second proposed change is filed for that finding
+
+  Scenario: Findings beyond the queue cap are held, not filed
+    Given dispatcher.drift_proposal_queue_cap open drift-origin proposals
+    When a merge adds another unstated behaviour
+    Then the finding is held on the detection-coverage anchor with its identity
+    And the frontier does not advance past that merge
+    And needs-attention lists the held finding with a handoff naming revise
+
+  Scenario: A merge no janitor saw is processed
+    Given a spec pull request merged by hand after the frontier
+    When the next reconcile pass runs
+    Then that merge is processed exactly as a dispatched merge
+
+  Scenario: The pass never accepts a proposal
+    Given a drift-origin proposed change filed by the pass
+    When the pass completes
+    Then the proposal rests under proposed_changes for revise and the pass takes no decision on it
 ```
