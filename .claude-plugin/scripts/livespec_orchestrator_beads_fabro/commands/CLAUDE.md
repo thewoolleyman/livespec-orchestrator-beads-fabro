@@ -1793,7 +1793,14 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   with an unknown cause were both ACCEPTED). These writers NEVER create a chain
   genesis — research note 007 — so an epic without one takes the legacy path and
   every reader reports `plan-progress-tracking: missing` naming
-  `migrate-plan-records`. And the DIAGNOSIS reads the obligation from the chain
+  `migrate-plan-records`. A chain that READS CLEANLY while tracking no
+  obligation reports that same code with a DIFFERENT remedy, and the two must
+  never collapse (`bd-ib-paevjd`, live instance `bd-ib-lrik25`): the migration
+  creates only a genesis token, so naming it for an epic that already has one
+  names a remedy whose re-run creates nothing and can never clear the finding —
+  only an executable-kind pointer write carrying `required_result` and `budget`
+  creates the obligation. So that arm names the OPEN TOKEN too, since "the chain
+  is present" has to be checkable. And the DIAGNOSIS reads the obligation from the chain
   rather than parsing the pointer, which is the repair rather than a guard in
   front of the old dereferences: the handler it replaces cast an optional parse
   to a `NextAction` and reached through a `ResultReferenceRefusal` for an

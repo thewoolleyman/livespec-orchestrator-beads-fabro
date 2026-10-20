@@ -81,6 +81,7 @@ def test_a_missing_chain_reports_missing_tracking_and_still_permits_dispatch(
     assert progress.authorized_action is None
     assert progress.findings[0].startswith(TRACKING_MISSING)
     assert "migrate-plan-records" in progress.findings[0]
+    assert "next_action write carrying required_result and budget" not in progress.findings[0]
 
 
 @pytest.mark.parametrize(
@@ -114,15 +115,18 @@ def test_an_unreadable_chain_is_unobservable_rather_than_missing(
     assert TRACKING_MISSING not in progress.findings[0]
 
 
-def test_a_chain_that_exists_but_tracks_no_obligation_reports_missing_tracking(
+def test_a_chain_that_exists_but_tracks_no_obligation_names_the_pointer_write(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The state the sanctioned migration leaves behind, before any obligation.
 
     The chain is healthy and its authority is empty, which is NOT a legacy
     pointer and NOT a broken chain — there is simply nothing tracked yet. It
-    reports missing tracking and permits dispatch for the same reason the
-    legacy arm does: an obligation that does not exist cannot have expired.
+    permits dispatch for the same reason the legacy arm does, an obligation
+    that does not exist cannot have expired; but its REMEDY is the executable
+    pointer write rather than the migration, which has already run here and
+    whose second run creates nothing. The open token is named because that is
+    the checkable form of "the chain is present".
     """
     progress = _progress(
         finding=ChainHead(
@@ -137,6 +141,9 @@ def test_a_chain_that_exists_but_tracks_no_obligation_reports_missing_tracking(
     assert progress.dispatch is True
     assert progress.authorized_action is None
     assert progress.findings[0].startswith(TRACKING_MISSING)
+    assert _TOKEN_GENESIS in progress.findings[0]
+    assert "next_action write carrying required_result and budget" in progress.findings[0]
+    assert "migrate-plan-records" not in progress.findings[0]
 
 
 def _attempt(**overrides: object) -> dict[str, Any]:
