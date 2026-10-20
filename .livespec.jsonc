@@ -492,7 +492,16 @@
       // inspected and none is held — which is the escape hatch for a factory
       // whose parked runs must be left strictly alone.
       "blocked_run_grace_seconds": 1800,
-      // CURRENT ROUTING (2026-10-19, coordinator R261, maintainer direction:
+      // CURRENT ROUTING (2026-10-20, coordinator R267, maintainer direction to
+      // use all available tokens holistically): implement and fix stay
+      // codex-acp gpt-5.6-terra high with their Claude Opus fallback; every
+      // other node returns to its pre-R261 Claude tier (dod_gate, review,
+      // review_fix on claude-opus-5 high; proof_capture, proof_verify, pr,
+      // disposition on claude-sonnet-5-5 medium), each with its R261 Codex model
+      // as fallback (Terra high, Luna medium, Luna low by tier). Each run then
+      // draws on both the Anthropic and the Codex pools.
+      //
+      // PREVIOUS ROUTING (2026-10-19, coordinator R261, maintainer direction:
       // "switch factory nodes to codex corresponding models and use those
       // available tokens"): every node is Codex-primary, tier for tier, with its
       // previous Claude model as the fallback. Opus-high nodes (dod_gate,
@@ -682,15 +691,15 @@
         }
       },
       "acp_nodes": {
-        "dod_gate": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
+        "dod_gate": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
         "implement": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
         "fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
-        "review_fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
-        "proof_capture": { "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "medium", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" }] },
-        "proof_verify": { "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "medium", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" }] },
-        "review": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
-        "pr": { "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" }] },
-        "disposition": { "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" }] }
+        "review_fix": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
+        "proof_capture": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "medium" }] },
+        "proof_verify": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "medium" }] },
+        "review": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
+        "pr": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low" }] },
+        "disposition": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low" }] }
       },
       // `review_fix` is a DIFFERENT node from `fix` and was absent here, so it
       // fell to the 1800 s default. Measured 2026-10-09/10 on run
