@@ -2792,6 +2792,42 @@ def test_engine_fails_when_no_pr_found(tmp_path: Path) -> None:
     assert (outcome.status, outcome.stage) == ("failed", "pr-view")
 
 
+def test_engine_recovers_a_merged_pr_after_its_head_branch_is_deleted(tmp_path: Path) -> None:
+    """A successful merge still reaches the default-tip janitor after branch cleanup."""
+    runner = _FakeRunner(
+        queue=[
+            _ok(),
+            *[_err(stderr="branch deleted")] * 3,
+            _ok(
+                stdout=json.dumps(
+                    [
+                        {
+                            "number": 71,
+                            "title": "fix x-1",
+                            "body": "",
+                            "headRefName": "feat/x-1",
+                            "baseRefName": "master",
+                            "state": "MERGED",
+                            "mergeCommit": {"oid": "merged71"},
+                        }
+                    ]
+                )
+            ),
+            _pr_association(),
+            *_post_merge_green_tail(),
+        ]
+    )
+
+    outcome, journal, naps = _dispatch(runner=runner, repo=tmp_path)
+
+    assert (outcome.status, outcome.stage) == ("green", "done")
+    assert (outcome.pr_number, outcome.merge_sha) == (71, "merged71")
+    assert naps == []
+    assert [record["stage"] for record in journal.records].count("pr-view") == 3
+    assert "reconcile-pr-list-merged" in [record["stage"] for record in journal.records]
+    assert "janitor-post-merge" in [record["stage"] for record in journal.records]
+
+
 def test_engine_arms_auto_merge_as_fallback(tmp_path: Path) -> None:
     runner = _FakeRunner(
         queue=[
