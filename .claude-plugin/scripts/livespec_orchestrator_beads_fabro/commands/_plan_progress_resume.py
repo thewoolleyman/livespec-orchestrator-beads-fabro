@@ -84,6 +84,15 @@ TRACKING_UNOBSERVABLE = "plan-progress-tracking: unobservable"
 
 _ATTEMPT_FIELD = "attempt"
 _SANCTIONED_MIGRATION = "migrate-plan-records"
+# The write that creates an obligation where a chain already stands. Named as
+# the remedy for a PRESENT chain tracking nothing, because `migrate-plan-records`
+# — the remedy for an ABSENT one — creates only the genesis token, and a second
+# run of it on a migrated epic reports that the chain already stands and creates
+# nothing at all. Pointing a reader at it there names a remedy that cannot clear
+# the finding it is named for.
+_SANCTIONED_POINTER_WRITE = (
+    "an executable-kind next_action write carrying required_result and budget"
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -125,7 +134,7 @@ def evaluate_resume_progress(
         return _chain_finding_progress(epic_id=epic_id, finding=head)
     obligation = obligation_of(authority=head.authority)
     if obligation is None:
-        return _missing_progress()
+        return _untracked_chain_progress(head=head)
     observation = read_result(
         project_root=_project_root(config=config),
         reference=obligation.required_result,
@@ -179,6 +188,11 @@ def _chain_finding_progress(*, epic_id: str, finding: ChainFinding) -> ResumePro
 def _missing_progress() -> ResumeProgress:
     """A legacy pointer stays READABLE and names the sanctioned migration.
 
+    The ABSENT-chain case alone. A chain that reads cleanly while tracking
+    nothing is reported by `_untracked_chain_progress` instead, because the two
+    have different remedies and this one's — the migration that creates a
+    genesis token — can do nothing for an epic that already has one.
+
     `dispatch` stays TRUE deliberately. "Legacy three-key pointers MUST remain
     readable, report `plan-progress-tracking: missing`, and acquire the new
     shape on their next sanctioned write; legacy reads alone MUST NOT invent
@@ -193,6 +207,38 @@ def _missing_progress() -> ResumeProgress:
     return ResumeProgress(
         findings=(report,),
         reason="plan progress tracking is missing",
+    )
+
+
+def _untracked_chain_progress(*, head: ChainHead) -> ResumeProgress:
+    """A chain that READS CLEANLY and tracks nothing names the write that would.
+
+    This is the state `create_genesis_token` and the sanctioned migration both
+    leave behind: the walk reached an open token, and no transition has yet
+    committed a required result or a budget. It is NOT the legacy case, and
+    reporting it as one — which this arm did until `bd-ib-paevjd`, with
+    `bd-ib-lrik25` as the live instance — tells an operator that the epic
+    "carries no authority chain" while its chain is standing, and names a
+    migration that has already run.
+
+    The open token is NAMED rather than merely not denied, because "the chain
+    is present" has to be checkable: a finding that only dropped the false
+    sentence would leave a reader unable to tell a present-but-empty chain from
+    one this reader never looked at.
+
+    `dispatch` stays TRUE for exactly the reason the legacy arm's does: an
+    obligation that does not exist cannot have expired, so there is nothing to
+    withhold. Withholding here would strand every freshly migrated plan behind
+    a finding rather than reporting one.
+    """
+    report = (
+        f"{TRACKING_MISSING}; this plan epic's authority chain is present at epoch"
+        f" {head.epoch} with open token {head.current_token_id}, and that authority"
+        f" tracks no required result or budget; remedy={_SANCTIONED_POINTER_WRITE}"
+    )
+    return ResumeProgress(
+        findings=(report,),
+        reason="plan progress tracking is missing: the authority chain tracks no obligation",
     )
 
 
