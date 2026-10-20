@@ -26,6 +26,10 @@ from livespec_orchestrator_beads_fabro.commands.detect_impl_gaps import main
 _GAP_ABSENT = "gap-yazf6mdi"  # spec.md "## Absent heading"
 _GAP_TODO = "gap-cklnfbug"  # spec.md "## Todo heading"
 _GAP_DANGLING = "gap-z7ijrvk5"  # spec.md "## Dangling heading"
+_GAP_SHARED_IN_CONTRACTS = "gap-furwz3zz"  # contracts.md "## Shared heading"
+_GAP_SHARED_IN_SCENARIOS = "gap-ycahxxq5"  # scenarios.md "## Shared heading"
+
+_EXISTING_TEST_NODE = "tests.integration.test_present.test_present_case"
 
 _THREE_UNCOVERED_HEADINGS = (
     "# Title\n\n## Absent heading\n\nProse.\n\n## Todo heading\n\nProse.\n\n"
@@ -45,6 +49,18 @@ def _write_coverage(*, project_root: Path, entries: list[dict[str, str]]) -> Non
     coverage = project_root / "tests" / "heading-coverage.json"
     coverage.parent.mkdir(parents=True, exist_ok=True)
     coverage.write_text(json.dumps(entries))
+
+
+def _write_existing_test_node(*, project_root: Path) -> None:
+    """Materialize the test `_EXISTING_TEST_NODE` names, so the node resolves.
+
+    A real module with a real function, because "names an existing test" is a
+    claim about the tree: an entry pointing at nothing must not read as
+    covering, and only a resolvable counterpart can tell the two apart.
+    """
+    module = project_root / "tests" / "integration" / "test_present.py"
+    module.parent.mkdir(parents=True, exist_ok=True)
+    module.write_text("def test_present_case() -> None:\n    pass\n")
 
 
 def _uncovered_fixture(*, project_root: Path) -> None:
@@ -254,6 +270,114 @@ def test_project_root_alone_defaults_the_spec_target(
     )
     _write_coverage(project_root=project, entries=[])
     rc = main(argv=["--project-root", str(project), "--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
+
+
+# ---------------------------------------------------------------
+# A heading an existing test exercises is not a gap
+# ---------------------------------------------------------------
+
+
+def test_a_heading_whose_entry_names_an_existing_test_produces_no_gap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The covered heading drops out while its uncovered sibling stays.
+
+    Both headings live in ONE fixture because each is the other's control: a
+    build that emitted a gap for every heading satisfies the sibling's
+    presence, and one that emitted none satisfies the covered heading's
+    absence.
+    """
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Covered heading\n\nProse.\n\n## Absent heading\n"},
+    )
+    _write_existing_test_node(project_root=tmp_path)
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Covered heading",
+                "test": _EXISTING_TEST_NODE,
+            }
+        ],
+    )
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
+
+
+def test_coverage_entries_match_on_spec_root_spec_file_and_heading_together(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """One entry covers ONE file's heading, never every file's same-named one.
+
+    Two spec files carry the identical H2 heading text and only `scenarios.md`
+    is covered, so a match on heading alone — or on file-and-heading without
+    the root — reports no gap at all and the contracts.md heading goes
+    permanently unnoticed.
+    """
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={
+            "contracts.md": "# Contracts\n\n## Shared heading\n",
+            "scenarios.md": "# Scenarios\n\n## Shared heading\n",
+        },
+    )
+    _write_existing_test_node(project_root=tmp_path)
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "heading": "## Shared heading",
+                "test": _EXISTING_TEST_NODE,
+            }
+        ],
+    )
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_SHARED_IN_CONTRACTS]
+    assert _GAP_SHARED_IN_SCENARIOS not in json.loads(captured.out)["gap_ids"]
+
+
+def test_an_entry_naming_another_spec_root_covers_nothing_here(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The root is part of the key, so a sibling tree's entry is not this one's."""
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Absent heading\n"},
+    )
+    _write_existing_test_node(project_root=tmp_path)
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION/templates/other",
+                "spec_file": "spec.md",
+                "heading": "## Absent heading",
+                "test": _EXISTING_TEST_NODE,
+            }
+        ],
+    )
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
     assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
