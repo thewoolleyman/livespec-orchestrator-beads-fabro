@@ -159,6 +159,32 @@ def test_recovered_engine_failure_is_surfaced_as_the_runs_cause(tmp_path: Path) 
     assert _ENGINE_FAILURE in surfaced.detail
 
 
+def test_the_journal_records_the_conclusion_and_the_recovered_failure_separately(
+    tmp_path: Path,
+) -> None:
+    journal = _RecordingJournal()
+    _ = _module().worker_exit_engine_failure_outcome(
+        plan=_plan(tmp_path=tmp_path),
+        runner=_ExportRunner(log_text=_RUN_LOG),
+        journal=journal,
+        run_id=_RUN_ID,
+        inspect=_inspect(),
+        terminal=_terminal(),
+    )
+    rows = [
+        record
+        for record in journal.records
+        if record.get("stage") == "fabro-worker-exit-engine-failure"
+    ]
+    assert len(rows) == 1
+    assert rows[0].get("work_item_id") == "bd-ib-pwb564"
+    assert rows[0].get("run_id") == _RUN_ID
+    # Separate fields, so the row says that the generic conclusion every other
+    # surface keeps reporting and the recovered verdict describe ONE run.
+    assert rows[0].get("conclusion_cause") == _WORKER_EXIT
+    assert rows[0].get("engine_failure") == _ENGINE_FAILURE
+
+
 def test_an_exported_log_with_no_engine_failure_line_keeps_the_worker_exit_cause(
     tmp_path: Path,
 ) -> None:

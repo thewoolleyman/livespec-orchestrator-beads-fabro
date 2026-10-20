@@ -160,6 +160,12 @@ def worker_exit_engine_failure_outcome(
             "work_item_id": plan.work_item_id,
             "stage": WORKER_EXIT_ENGINE_FAILURE_STAGE,
             "run_id": run_id,
+            # The engine's own conclusion, kept whatever the recovery found,
+            # because it is the account every surface outside this dispatch
+            # still reports. The recovered verdict is a SEPARATE field rather
+            # than a replacement, so the row can be read against `fabro ps -a`
+            # and seen to describe one run.
+            "conclusion_cause": conclusion,
             "engine_failure": None if recovered is None else recovered.engine_failure,
         }
     )
