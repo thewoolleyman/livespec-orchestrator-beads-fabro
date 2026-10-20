@@ -187,6 +187,40 @@ def test_a_worktree_named_after_its_branch_resolves_its_repository_by_primary_pa
     ) == ResultRepository(name="livespec-orchestrator-beads-fabro", clone=checkout)
 
 
+def test_legacy_self_repository_identities_resolve_to_the_invoking_checkout(
+    tmp_path: Path,
+) -> None:
+    """Stored absolute and owner-qualified self identities remain observable."""
+    primary = tmp_path / "livespec-orchestrator-beads-fabro"
+    primary.mkdir()
+    checkout = _checkout_with_primary_path(
+        tmp_path=tmp_path,
+        checkout_name="factory-sandbox",
+        primary=primary,
+    )
+    _ = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(checkout),
+            "config",
+            "remote.origin.url",
+            "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git",
+        ],
+        check=True,
+    )
+
+    for name in (
+        str(checkout),
+        str(primary),
+        "thewoolleyman/livespec-orchestrator-beads-fabro",
+    ):
+        assert resolve_result_repository(project_root=checkout, name=name) == ResultRepository(
+            name=name,
+            clone=checkout,
+        )
+
+
 def test_a_name_matching_neither_the_checkout_nor_the_primary_path_does_not_resolve(
     tmp_path: Path,
 ) -> None:
