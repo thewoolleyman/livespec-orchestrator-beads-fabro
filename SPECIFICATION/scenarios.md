@@ -6517,6 +6517,18 @@ Feature: Factory addresses come from a host registry, not from committed configu
       | file maps "petri" to an object with a valid server and a docker_host of "   " |
       | file maps "petri" to an object with a valid server and a docker_host that is a number |
 
+  Scenario Outline: An explicit selection naming an undeclared factory refuses before any ledger write and never falls back
+    Given dispatcher.factories declares no factory named "hp"
+    When an item is dispatched with <selection>
+    Then the dispatch is refused naming "hp" and every factory name dispatcher.factories declares
+    And the item's status, metadata and comments are unchanged
+    And no Fabro run is created on any server
+
+    Examples:
+      | selection                          |
+      | --factory hp                       |
+      | LIVESPEC_FABRO_FACTORY set to "hp" |
+
   Scenario: Only the selected entry is validated
     Given the factory registry maps "petri" to a server address and maps "legacy" to null
     When an item is dispatched to "petri"
