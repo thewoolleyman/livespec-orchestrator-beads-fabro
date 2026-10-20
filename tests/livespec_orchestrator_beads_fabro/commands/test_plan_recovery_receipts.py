@@ -469,6 +469,50 @@ def test_a_later_attempt_refuses_to_inherit_an_earlier_attempts_executor_records
     assert _recorded_receipts(config=config) == ReceiptSet()
 
 
+def test_a_retried_executor_invocation_uses_its_latest_attempt_boundary(
+    tmp_path: Path,
+) -> None:
+    """One attempt's later executor invocation supersedes only its own receipts.
+
+    The journal is append-only, so a retry of the SAME authorized attempt has a
+    second executor-owned boundary.  The receipt writer must take the later
+    dispatch, run, and terminal outcome together; retaining the first segment
+    would describe a command the executor subsequently retried.  The authority
+    observations alongside the receipts make the transition's non-budgetary
+    nature replayable too.
+    """
+    config = _seed(tmp_path=tmp_path)
+    journal = _journal(
+        tmp_path=tmp_path,
+        records=(
+            _dispatch_record(dispatch_id="dispatch-first"),
+            _run_record(run_id="01M4FIRST"),
+            _outcome_record(pr_number=2904),
+            attempt_boundary_record(
+                work_item_id=_TARGET_ID,
+                attempt_ids=(_ATTEMPT_ID,),
+            ),
+            _dispatch_record(dispatch_id="dispatch-latest"),
+            _run_record(run_id="01M4LATEST"),
+            _outcome_record(pr_number=2905),
+        ),
+    )
+
+    write = _write(record_recovery_receipts(request=_request(config=config, journal_path=journal)))
+
+    assert write.status == RECEIPTS_RECORDED
+    assert write.receipts == ReceiptSet(
+        claim="dispatch dispatch-latest",
+        execution="fabro run 01M4LATEST",
+        outcome="green pull request 2905",
+    )
+    authority = _head(config=config).authority
+    assert authority.original_deadline == _DEADLINE
+    assert authority.consumed_handoffs == _CONSUMED_HANDOFFS
+    assert isinstance(authority.last_recovery_attempt, dict)
+    assert authority.last_recovery_attempt["item_attributable_attempts"] == _ITEM_ATTEMPTS
+
+
 def test_recording_a_receipt_leaves_the_deadline_the_count_and_the_attempt_tally_alone(
     tmp_path: Path,
 ) -> None:
