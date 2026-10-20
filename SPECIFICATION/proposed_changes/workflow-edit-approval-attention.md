@@ -23,11 +23,11 @@ Work-item bd-ib-qr4c7h records the maintainer's ruling of 2026-09-10 on livespec
 
 In SPECIFICATION/contracts.md, section "Orchestrator-owned attention facts", add a new paragraph after the "**Ready-work aging (`hygiene:ready-aging:<repo>`).**" paragraph:
 
-> **Workflow-edit approval (`hygiene:workflow-edit-approval:<work-item-id>`).** For every work-item of this repository that is not `closed` and carries the `approval:workflow-edit` label, the snapshot MUST carry one attention item naming the work-item id, its lifecycle status and its title, with a handoff that opens the item for the maintainer's review (the `discuss-work-item` operation). The label is the maintainer's notification mechanism for the advisory workflow-edit control, so the fact MUST NOT be suppressed by any other fact about the same item, and it clears only when the item closes or the label is removed. A store read that fails MUST surface as a visible failure rather than as an absence of these items. Scenario 229 in `scenarios.md` exercises this paragraph.
+> **Workflow-edit approval (`hygiene:workflow-edit-approval:<work-item-id>`).** For every work-item of this repository that is not `closed` and carries the `approval:workflow-edit` label, the snapshot MUST carry one attention item naming the work-item id, its lifecycle status and its title, with a handoff that opens the item for the maintainer's review (the `discuss-work-item` operation). The label is the maintainer's notification mechanism for the advisory workflow-edit control, so the fact MUST NOT be suppressed by any other fact about the same item, and it clears only when the item closes or the label is removed. A store read that fails MUST surface as a visible failure rather than as an absence of these items. Scenario 232 in `scenarios.md` exercises this paragraph.
 
 In SPECIFICATION/scenarios.md, add at the end of the file (tests/heading-coverage.json MUST gain an entry in the same revise):
 
-## Scenario 229 — needs-attention surfaces an item labelled approval:workflow-edit
+## Scenario 232 — needs-attention surfaces an item labelled approval:workflow-edit
 
 ```gherkin
 Feature: The workflow-edit approval label is the maintainer's notice
