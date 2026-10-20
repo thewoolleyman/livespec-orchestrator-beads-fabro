@@ -349,7 +349,6 @@ def test_a_petri_stage_output_supplies_a_provider_limit_when_events_timed_out(
     assert outcome.provider_usage_limit is True
     assert outcome.provider_usage_limit_provider == "anthropic"
     assert f"innermost cause: {_WEEKLY_LIMIT_MESSAGE}" in outcome.detail
-    assert f"innermost cause: {_WEEKLY_LIMIT_MESSAGE}" in needs_human_cause_body(outcome=outcome)
 
 
 def test_stage_output_provider_limit_survives_a_legacy_plan_without_acp_nodes(

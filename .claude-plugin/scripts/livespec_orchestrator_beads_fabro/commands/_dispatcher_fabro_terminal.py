@@ -13,6 +13,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_failure import (
     fabro_failure_outcome_detail,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_failure_cause import (
+    terminal_failure_cause,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_reattach import (
     inspect_run,
     unobservable_run_outcome,
@@ -68,6 +71,7 @@ def fabro_run_terminal_outcome(
     stderr: str,
 ) -> DispatchOutcome | None:
     """Return a non-green run observation, or None for ordinary PR reconciliation."""
+    failure = terminal_failure_cause(inspect=inspect)
     # FIRST, because the clause releases a provider-limit failure "through any
     # terminal, the workflow's `needs_human` terminal included" -- so it has to
     # outrank BOTH mappings below that would otherwise rest the item at
@@ -79,6 +83,7 @@ def fabro_run_terminal_outcome(
         run_id=run_id,
         inspect=inspect,
         stderr=stderr,
+        failure=failure,
     )
     if released is not None:
         return released
@@ -100,7 +105,6 @@ def fabro_run_terminal_outcome(
         )
     ):
         return None
-    failure = None if inspect is None else inspect.failure
     detail = fabro_failure_outcome_detail(failure=failure, fallback=tail(text=stderr))
     # BOTH channels the sentinel-driven mappings below read, assembled before
     # the unobservable branch so that branch can stand aside for a terminal
