@@ -13,6 +13,19 @@ handoff the clause forbids, so a test reading only the return value would pass
 against exactly the defect. The count filters out `plan-progress-event`
 comments, because the chain writes one of those per transition and a filter that
 counted them could not tell a duplicated handoff from a recorded epoch.
+
+THE EXHAUSTING RETRY IS THE CASE THAT DISCRIMINATES THE ORDER OF THE SEQUENCE,
+and it is why the plain retry above is not sufficient on its own. That one is
+answered identically whether the recovery runs before the obligation decision
+or after it, because a budget with units left refuses nothing — so it passes
+against a build in which the recovery is unreachable for the one retry that
+needs it most. The retry of the handoff that consumed the FINAL unit is the
+shape where the two orders disagree: the decision ladder reads the observed
+head, whose consumed count already equals `max_handoffs`, and refuses the write
+as expired before the operation identity is ever consulted. Its control — a
+DIFFERENT operation identity at that same exhausted budget — is what keeps the
+fix from being "stop grading expiry": one refusal must survive, and only the
+pair says which.
 """
 
 from __future__ import annotations
@@ -31,14 +44,20 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 from livespec_orchestrator_beads_fabro.commands import _plan_tracked_write
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain import (
+    RECOVERED_FROM_PROGRESS_EVENT,
     ChainHead,
+    CommittedTransition,
     read_chain_head,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import (
     ChainFinding,
     chain_fork_finding,
+    receipt_without_event_finding,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_epoch_payload import AuthorityState
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_payload import (
+    AuthorityState,
+    TransitionPayload,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
     PLAN_PROGRESS_PREFIX,
     chain_cache_metadata,
@@ -373,6 +392,173 @@ def test_a_retried_operation_recovers_its_event_and_appends_no_second_handoff(
     assert retried.epoch == first.epoch
     assert retried.consumed_handoffs == first.consumed_handoffs
     assert len(_handoff_comments(config=config)) == 1
+
+
+def _exhaust(*, config: StoreConfig, operation_id: str) -> TrackedWrite:
+    """Establish a one-unit obligation and spend its final unit on a handoff.
+
+    The establishing write is a DIRECT pointer write, which consumes nothing, so
+    the handoff that follows is the one that takes the obligation to its ceiling
+    — which is the state the retry below has to be answered from.
+    """
+    action = _action(max_handoffs=1)
+    assert _write(commit_tracked_write(request=_request(config=config, action=action))).tracked
+    return _write(
+        commit_tracked_write(
+            request=_request(
+                config=config,
+                is_handoff=True,
+                operation_id=operation_id,
+                action=action,
+            )
+        )
+    )
+
+
+def test_a_retry_of_the_handoff_that_exhausted_the_budget_recovers_it(
+    tmp_path: Path,
+) -> None:
+    """ "retried calls with the same operation identity MUST recover the original
+    event rather than duplicate handoffs or extend a deadline."
+
+    The retried handoff is the one that consumed the FINAL `max_handoffs` unit,
+    so the head it is submitted against already reads as expired. The clause
+    gives no exemption for that state: the write it is retrying SUCCEEDED, so
+    the answer owed is the original event, not a refusal that would send the
+    caller to register a causal recovery for an obligation it had just met.
+    """
+    config = _seed(tmp_path=tmp_path)
+    first = _exhaust(config=config, operation_id="op-final")
+    assert first.idempotent is False
+    assert first.consumed_handoffs == 1
+    assert len(_handoff_comments(config=config)) == 1
+
+    retried = _write(
+        commit_tracked_write(
+            request=_request(
+                config=config,
+                is_handoff=True,
+                operation_id="op-final",
+                action=_action(max_handoffs=1),
+            )
+        )
+    )
+
+    assert retried.idempotent is True
+    assert retried.epoch == first.epoch
+    assert retried.consumed_handoffs == first.consumed_handoffs
+    assert retried.action.budget == first.action.budget
+    assert len(_handoff_comments(config=config)) == 1
+
+
+def test_a_different_operation_at_the_exhausted_budget_is_still_refused_as_expired(
+    tmp_path: Path,
+) -> None:
+    """The control: expiry still refuses every write that is not that retry.
+
+    Without this, "recover the retry" is satisfiable by not grading expiry at
+    all — which would hand a fresh deadline to every continuation that asked.
+    The pointer is read back because a refusal that had already rewritten it
+    would leave a perfectly well-formed pointer behind.
+    """
+    config = _seed(tmp_path=tmp_path)
+    _ = _exhaust(config=config, operation_id="op-final")
+    pointer_before = plan_record_metadata(record=_fake(config=config).show_issue(issue_id=_EPIC_ID))
+
+    refusal = _refusal(
+        commit_tracked_write(
+            request=_request(
+                config=config,
+                is_handoff=True,
+                operation_id="op-successor",
+                action=_action(max_handoffs=1),
+            )
+        )
+    )
+
+    assert "is expired at its handoffs limit" in refusal.detail
+    assert "causal recovery attempt" in refusal.detail
+    assert len(_handoff_comments(config=config)) == 1
+    after = plan_record_metadata(record=_fake(config=config).show_issue(issue_id=_EPIC_ID))
+    assert after[NEXT_ACTION_METADATA_KEY] == pointer_before[NEXT_ACTION_METADATA_KEY]
+
+
+def test_an_unreadable_recovery_scan_refuses_rather_than_deciding_afresh(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A receipt naming an operation whose event cannot be read is FAIL-CLOSED.
+
+    The ring is proof the transition happened, so a scan that cannot produce its
+    event must not fall through to the obligation decision: deciding afresh
+    would commit a second transition for an operation already accounted for,
+    which is the duplicated handoff the clause forbids.
+    """
+    config = _seed(tmp_path=tmp_path)
+    finding = receipt_without_event_finding(epic_id=_EPIC_ID, operation_id="op-ringed")
+    monkeypatch.setattr(
+        _plan_tracked_write,
+        "recover_committed_operation",
+        lambda *, config, epic_id, operation_id, observed_head: finding,  # noqa: ARG005 -- stub matches the seam.
+    )
+
+    refusal = _refusal(
+        commit_tracked_write(
+            request=_request(config=config, is_handoff=True, operation_id="op-ringed")
+        )
+    )
+
+    assert finding.code in refusal.detail
+    assert finding.detail in refusal.detail
+    assert _handoff_comments(config=config) == []
+
+
+def test_a_twin_committing_after_the_scan_is_still_projected_as_recovered(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The chain keeps its OWN retry guard, and this write respects its answer.
+
+    A twin of this call can commit in the window between the pre-decision scan
+    and the chain's own, so `commit_transition` can still hand back a recovery
+    that the scan did not see. Projecting it as a fresh commit would append the
+    handoff that twin already appended.
+    """
+    config = _seed(tmp_path=tmp_path)
+    recovered = CommittedTransition(
+        payload=TransitionPayload(
+            operation_id="op-twin",
+            prior_epoch=0,
+            new_epoch=1,
+            prior_token_id=_TOKEN_A,
+            next_token_id=_TOKEN_B,
+            event_kind="handoff",
+            authority=AuthorityState(
+                required_result=_RESULT,
+                original_deadline=_DEADLINE,
+                max_handoffs=5,
+                consumed_handoffs=1,
+            ),
+        ),
+        source=RECOVERED_FROM_PROGRESS_EVENT,
+    )
+    monkeypatch.setattr(
+        _plan_tracked_write,
+        "commit_transition",
+        lambda *, config, epic_id, request: recovered,  # noqa: ARG005 -- stub matches the seam.
+    )
+
+    write = _write(
+        commit_tracked_write(
+            request=_request(config=config, is_handoff=True, operation_id="op-twin")
+        )
+    )
+
+    assert write.idempotent is True
+    assert write.epoch == 1
+    assert write.consumed_handoffs == 1
+    assert write.tracked is True
+    assert _handoff_comments(config=config) == []
 
 
 def test_the_derived_operation_identity_is_stable_per_logical_operation() -> None:
