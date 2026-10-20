@@ -277,6 +277,20 @@ def test_the_capture_prompt_forbids_suite_output_as_the_proof_of_a_behaviour() -
     assert "supporting evidence beside a real exercise" in prompt
 
 
+def test_the_capture_prompt_pairs_each_proof_with_its_published_step() -> None:
+    """A proof block is output from its numbered step, not another observation.
+
+    A replay executes the command the record names.  Letting capture attach
+    output from a different command left the published record internally
+    inconsistent: the declaration was true, but replay could never reproduce
+    the block it was asked to check.
+    """
+    prompt = _prompt(name="proof-capture.md")
+
+    assert "run the exact command that the numbered step names" in prompt
+    assert "NEVER use a capture from another command" in prompt
+
+
 def test_the_capture_prompt_ends_needs_human_on_a_surface_it_cannot_reach() -> None:
     """An unreachable surface ENDS the run; it never gets a stand-in.
 
