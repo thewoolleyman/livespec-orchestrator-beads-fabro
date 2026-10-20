@@ -41,9 +41,10 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import (
@@ -489,6 +490,72 @@ def test_an_unresolvable_registry_refuses_before_any_ledger_write_naming_the_fac
     assert fault in refusal
     assert result == (None, _EXIT_PRECONDITION_ERROR)
     assert _item_state() == before
+
+
+@pytest.mark.parametrize("selection", ["flag", "environment"])
+def test_an_explicit_undeclared_factory_refuses_before_claim_or_fabro_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    selection: str,
+) -> None:
+    """An explicit unknown factory names itself and every declared alternative.
+
+    The flag and environment are the two explicit selection entry points.  They
+    share one outcome because the selection precedence is one policy, but each
+    row must reach it: a guard reading only ``args.factory`` would leave the
+    environment route silently aimed at the local Fabro server.
+
+    The preamble is the whole pre-claim boundary.  Its non-None exit is the
+    observable short-circuit proving no admission or launcher can run; the
+    item snapshot is the durable half of that guarantee.
+    """
+    _write_config(
+        cwd=tmp_path,
+        factories={
+            _FACTORY: {"server": _REGISTRY_SERVER},
+            "legacy": {"server": _OTHER_SERVER},
+        },
+        default_factory=_FACTORY,
+    )
+    _seed_item()
+    before = _item_state()
+    factory = "hp" if selection == "flag" else None
+    if selection == "environment":
+        monkeypatch.setenv(_FACTORY_SELECTION_ENV_VAR, "hp")
+
+    result = dispatch_preamble(
+        args=argparse.Namespace(factory=factory, fabro_bin=None, janitor=None, journal=None),
+        repo=tmp_path,
+    )
+
+    refusal = capsys.readouterr().err
+    assert result == (None, _EXIT_PRECONDITION_ERROR)
+    assert "hp" in refusal
+    assert _FACTORY in refusal
+    assert "legacy" in refusal
+    assert _item_state() == before
+
+
+def test_a_declared_explicit_factory_selection_is_not_refused(tmp_path: Path) -> None:
+    """An explicit name remains valid when the declared table contains it."""
+    _write_config(
+        cwd=tmp_path,
+        factories={_FACTORY: {"server": _REGISTRY_SERVER}},
+        default_factory=_FACTORY,
+    )
+    ledger = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger"
+    )
+
+    assert "explicit_factory_selection_refusal" in vars(ledger)
+    refusal = cast(
+        "Callable[..., str | None]",
+        vars(ledger)["explicit_factory_selection_refusal"],
+    )(args=argparse.Namespace(factory=_FACTORY), repo=tmp_path)
+
+    assert refusal is None
 
 
 def test_a_valid_selected_entry_resolves_beside_a_malformed_sibling(
