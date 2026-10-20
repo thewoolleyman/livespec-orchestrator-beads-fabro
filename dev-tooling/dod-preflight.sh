@@ -130,7 +130,14 @@ while read -r agent model effort; do
     verdict=$(cat "$judgement_input.last")
   fi
   printf '%s\n' "$verdict"
-  last=$(printf '%s\n' "$verdict" | awk 'NF { line = $0 } END { print line }')
+  # The verdict line is the last non-empty line that is not a Markdown code
+  # fence, trimmed. Measured 2026-10-20 (coordinator R339): a candidate wrapped
+  # its failed JSON in a fenced block, so the last line was the closing fence and
+  # a real finding was reported as "not run" (exit 2) instead of failed.
+  last=$(printf '%s\n' "$verdict" | awk '
+    { sub(/\r$/, ""); sub(/^[ \t]+/, ""); sub(/[ \t]+$/, "") }
+    NF && !/^(```|~~~)/ { line = $0 }
+    END { print line }')
   case "$last" in
     PASS) ;;
     *'"outcome"'*'"failed"'*) status=1 ;;
