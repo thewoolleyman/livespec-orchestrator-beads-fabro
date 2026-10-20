@@ -336,6 +336,36 @@ def test_a_satisfied_obligation_is_neither_expired_nor_unobservable(
     assert "plan-progress-tracking: unobservable" not in text
 
 
+def test_a_present_chain_with_no_obligation_names_the_pointer_write_as_the_remedy(
+    tmp_path: Path,
+) -> None:
+    """The state a genesis and the sanctioned migration both leave behind.
+
+    The chain is PRESENT — the walk reached an open token at epoch 1 — and no
+    transition has committed a required result or a budget yet. Reporting that
+    as a plan epic that "carries no authority chain" names
+    `migrate-plan-records` as the remedy, which is the write that has ALREADY
+    run here and whose re-run creates nothing, so the finding could never be
+    cleared by the remedy it named. Only an executable-kind pointer write
+    carrying both tracking fields creates the obligation.
+
+    The OPEN TOKEN is asserted because it is the checkable form of "the chain
+    is present": a finding that merely dropped the false sentence would read as
+    an absence of evidence either way.
+    """
+    config = _seed(tmp_path=tmp_path, authority=AuthorityState())
+    head = read_chain_head(config=config, epic_id=_EPIC_ID)
+    assert isinstance(head, ChainHead), head
+
+    directive = resume_directive(config=config, epic_id=_EPIC_ID, unattended=True)
+
+    text = _findings_text(findings=directive.findings)
+    assert "plan-progress-tracking: missing" in text
+    assert head.current_token_id in text
+    assert "executable-kind next_action write carrying required_result and budget" in text
+    assert "migrate-plan-records" not in text
+
+
 def test_the_progress_check_precedes_the_unattended_dispatch_decision(
     tmp_path: Path,
 ) -> None:
