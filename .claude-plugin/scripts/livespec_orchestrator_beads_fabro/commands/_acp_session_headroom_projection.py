@@ -57,6 +57,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     UNAVAILABLE_RESULT,
     SessionHeadroomProjection,
     SessionHeadroomReading,
+    headroom_skips_candidate,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_drain import (
     SessionHeadroomBaseline,
@@ -67,10 +68,13 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_drain impo
 __all__: list[str] = [
     "FLOOR_DISABLED_REASON",
     "FLOOR_SKIPPED_READING_REASON",
+    "FLOOR_SKIP_KIND",
     "NO_BASELINE_REASON",
+    "PROJECTION_SKIP_KIND",
     "UNOBSERVABLE_READING_REASON",
     "UNREADABLE_OBSERVATION_REASON",
     "UTILIZATION_NOT_HIGHER_REASON",
+    "headroom_skip_kind",
     "projection_skips_candidate",
     "reading_with_projection",
     "session_headroom_projection",
@@ -104,6 +108,17 @@ _INSTANT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 _FLOOR_DISABLED_PERCENT = 0
 _HORIZON_DISABLED_MINUTES = 0
+FLOOR_SKIP_KIND = "floor"
+PROJECTION_SKIP_KIND = "projection"
+
+
+def headroom_skip_kind(*, reading: SessionHeadroomReading, floor_percent: int) -> str | None:
+    """Name the governing headroom shortfall, or `None` when neither applies."""
+    if headroom_skips_candidate(reading=reading, floor_percent=floor_percent):
+        return FLOOR_SKIP_KIND
+    if projection_skips_candidate(reading=reading):
+        return PROJECTION_SKIP_KIND
+    return None
 
 
 def session_headroom_projection(
