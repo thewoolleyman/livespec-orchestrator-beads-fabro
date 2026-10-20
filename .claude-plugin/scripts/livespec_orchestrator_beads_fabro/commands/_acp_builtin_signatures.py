@@ -55,6 +55,7 @@ __all__: list[str] = [
 _TERMINAL_SOURCE = "process.terminal_diagnostic"
 _MESSAGE_SOURCE = "protocol.message"
 _MACHINE_CODE_SOURCE = "protocol.machine_code"
+_TURN_FINAL_OUTPUT_SOURCE = "turn.final_output"
 _CANDIDATE_SCOPE = "candidate"
 _DOMAIN_SCOPE = "availability-domain"
 
@@ -167,6 +168,17 @@ _CODEX_USAGE_LIMIT_EXCEEDED = _quota_message(literals=("usage limit exceeded",))
 _CODEX_USAGE_LIMIT_CAMEL_TOKEN = _quota_machine_code(machine_code="usageLimitExceeded")
 _CODEX_USAGE_LIMIT_SNAKE_TOKEN = _quota_machine_code(machine_code="usage_limit_exceeded")
 
+# MEASURED 2026-10-20 on the gmktec review turn of bd-ib-davaxq: the
+# codex-acp adapter delivered this refusal directly after its prose, while the
+# engine recorded the turn as successful. This is candidate-scoped because the
+# refusal names one selected model, not the account's whole allowance.
+_CODEX_PROVIDER_CAPACITY = AcpAvailabilitySignature(
+    source=_TURN_FINAL_OUTPUT_SOURCE,
+    cause="provider_capacity",
+    scope=_CANDIDATE_SCOPE,
+    final_text="Selected model is at capacity. Please try a different model.",
+)
+
 _BUILTIN_SIGNATURES: dict[str, tuple[AcpAvailabilitySignature, ...]] = {
     ANTHROPIC_DOMAIN: (
         _ANTHROPIC_SESSION_LIMIT,
@@ -181,6 +193,7 @@ _BUILTIN_SIGNATURES: dict[str, tuple[AcpAvailabilitySignature, ...]] = {
         _CODEX_USAGE_LIMIT_EXCEEDED,
         _CODEX_USAGE_LIMIT_CAMEL_TOKEN,
         _CODEX_USAGE_LIMIT_SNAKE_TOKEN,
+        _CODEX_PROVIDER_CAPACITY,
     ),
 }
 

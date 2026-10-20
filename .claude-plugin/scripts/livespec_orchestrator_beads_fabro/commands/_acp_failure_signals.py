@@ -169,10 +169,10 @@ _GUARD_MARKERS: tuple[tuple[str, tuple[tuple[str, ...], ...]], ...] = (
 class AcpFailureSignal:
     """One candidate attempt's terminal report, as the classifier reads it.
 
-    THREE READABLE FIELDS AND NOTHING ELSE, which is the contract's
-    "never an arbitrary exec-output tail, agent response, prompt,
-    tool/test/review output, or run log" made structural: a caller
-    holding a run log has nowhere to put it.
+    FOUR READABLE FIELDS AND NOTHING ELSE. The first three are failure
+    channels; `turn_final_output` is the separately-recorded final response
+    of an agent turn, and only a `turn.final_output` signature may read it.
+    A caller holding a run log or arbitrary exec tail has nowhere to put it.
 
     `original_identity` is the failure's own name, carried so a
     non-eligible verdict can terminate WITH it rather than replacing it
@@ -187,8 +187,10 @@ class AcpFailureSignal:
     machine_code: str | None = None
     protocol_message: str | None = None
     terminal_diagnostic: str | None = None
+    turn_final_output: str | None = None
     exit_code: int | None = None
     turn_started: bool = False
+    turn_succeeded: bool = False
     declared_class: str | None = None
 
     @property
@@ -196,7 +198,12 @@ class AcpFailureSignal:
         """Whether the provider said anything at all on any readable field."""
         return any(
             text is not None and text.strip() != ""
-            for text in (self.machine_code, self.protocol_message, self.terminal_diagnostic)
+            for text in (
+                self.machine_code,
+                self.protocol_message,
+                self.terminal_diagnostic,
+                self.turn_final_output,
+            )
         )
 
 

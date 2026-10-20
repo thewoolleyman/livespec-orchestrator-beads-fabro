@@ -91,6 +91,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
+from livespec_orchestrator_beads_fabro.commands._acp_builtin_signatures import (
+    builtin_availability_signatures,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_factory_hold_records import (
     PROVIDER_LIMIT_CAUSE,
     FactoryHoldObservation,
@@ -99,6 +102,8 @@ from livespec_orchestrator_beads_fabro.commands._acp_factory_hold_records import
 from livespec_orchestrator_beads_fabro.commands._acp_factory_success_records import (
     FactorySuccessObservation,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_failure_matching import signature_matches
+from livespec_orchestrator_beads_fabro.commands._acp_failure_signals import AcpFailureSignal
 from livespec_orchestrator_beads_fabro.commands._acp_hold_records import (
     HOLD_INTERVAL,
     AcpAvailabilityHold,
@@ -417,6 +422,30 @@ def _successes(
         for stage, outcome in outcomes.items()
         if outcome.get("status") == _SUCCEEDED_STATUS
         and (executed := executed_candidate_identity(labels=row.labels, node=stage)) is not None
+        and not _reclassified_turn_failure(
+            outcome=outcome, availability_key=executed.availability_key
+        )
+    )
+
+
+def _reclassified_turn_failure(*, outcome: Mapping[str, object], availability_key: str) -> bool:
+    """Whether a successful engine status is a Codex capacity refusal in disguise."""
+    if availability_key != "codex":
+        return False
+    output = outcome.get("output")
+    if not isinstance(output, str):
+        output = outcome.get("response")
+    if not isinstance(output, str):
+        return False
+    signal = AcpFailureSignal(
+        original_identity="succeeded-turn-final-output",
+        turn_final_output=output,
+        turn_succeeded=True,
+    )
+    return any(
+        signature.source == "turn.final_output"
+        and signature_matches(signature=signature, signal=signal)
+        for signature in builtin_availability_signatures(availability_key=availability_key)
     )
 
 

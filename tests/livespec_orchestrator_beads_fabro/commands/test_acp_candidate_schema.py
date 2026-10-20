@@ -59,6 +59,12 @@ _MESSAGE_SIGNATURE: dict[str, Any] = {
     "scope": "availability-domain",
     "hold_key": "chatgpt-account",
 }
+_FINAL_OUTPUT_SIGNATURE: dict[str, Any] = {
+    "source": "turn.final_output",
+    "final_text": "Selected model is at capacity. Please try a different model.",
+    "cause": "provider_capacity",
+    "scope": "candidate",
+}
 
 
 def _module(*, name: str) -> Any:
@@ -196,7 +202,7 @@ def test_each_signature_source_requires_its_own_discriminator() -> None:
     """A machine code and a literal conjunction are mutually exclusive."""
     signatures = _signatures()
     parsed = signatures.parse_availability_signatures(
-        value=[_MACHINE_SIGNATURE, _MESSAGE_SIGNATURE], key="k"
+        value=[_MACHINE_SIGNATURE, _MESSAGE_SIGNATURE, _FINAL_OUTPUT_SIGNATURE], key="k"
     )
     assert not isinstance(parsed, str), parsed
     assert parsed[0].machine_code == "model.unsupported"
@@ -204,6 +210,10 @@ def test_each_signature_source_requires_its_own_discriminator() -> None:
     assert parsed[1].all_literals == ("usage limit", "requested model")
     assert parsed[1].hold_key == "chatgpt-account"
     assert parsed[1].exit_code == 1
+    assert parsed[2].final_text == _FINAL_OUTPUT_SIGNATURE["final_text"]
+    assert parsed[2].all_literals == ()
+    assert parsed[2].machine_code is None
+    assert parsed[2].exit_code is None
 
 
 def test_a_mismatched_discriminator_refuses_rather_than_being_ignored() -> None:
@@ -216,10 +226,38 @@ def test_a_mismatched_discriminator_refuses_rather_than_being_ignored() -> None:
         ({**_MESSAGE_SIGNATURE, "all_literals": []}, "all_literals"),
         ({**_MESSAGE_SIGNATURE, "all_literals": [" "]}, "all_literals"),
         ({**_MESSAGE_SIGNATURE, "all_literals": "usage limit"}, "all_literals"),
+        ({**_FINAL_OUTPUT_SIGNATURE, "all_literals": ["x"]}, "all_literals"),
+        ({**_FINAL_OUTPUT_SIGNATURE, "machine_code": "c"}, "machine_code"),
+        ({**_FINAL_OUTPUT_SIGNATURE, "exit_code": 1}, "exit_code"),
+        ({**_FINAL_OUTPUT_SIGNATURE, "scope": "availability-domain"}, "scope"),
+        ({**_FINAL_OUTPUT_SIGNATURE, "final_text": " "}, "final_text"),
+        ({**_MESSAGE_SIGNATURE, "final_text": "unexpected"}, "final_text"),
     ):
         refusal = signatures.parse_availability_signatures(value=[entry], key="k")
         assert isinstance(refusal, str), entry
         assert needle in refusal
+
+
+def test_a_final_output_signature_requires_a_succeeded_turn_and_matches_its_end() -> None:
+    """The final-output form reads one succeeded turn rather than protocol failure data."""
+    signatures = _signatures()
+    parsed = signatures.parse_availability_signatures(value=[_FINAL_OUTPUT_SIGNATURE], key="k")
+    assert not isinstance(parsed, str), parsed
+    matching = _module(name="_acp_failure_matching")
+    signals = _module(name="_acp_failure_signals")
+    signal = signals.AcpFailureSignal(
+        original_identity="review|succeeded|unmatched",
+        turn_final_output=_FINAL_OUTPUT_SIGNATURE["final_text"],
+        turn_succeeded=True,
+    )
+    assert matching.signature_discriminates(signature=parsed[0])
+    assert matching.signature_matches(signature=parsed[0], signal=signal)
+    no_text = signatures.AcpAvailabilitySignature(
+        source="turn.final_output",
+        cause="provider_capacity",
+        scope="candidate",
+    )
+    assert not matching.signature_matches(signature=no_text, signal=signal)
 
 
 def test_the_signature_enumerations_and_optional_fields_are_closed() -> None:

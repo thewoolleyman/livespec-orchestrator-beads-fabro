@@ -144,6 +144,17 @@ def test_every_non_terminal_petri_stage_succeeding_is_an_agent_request() -> None
     assert causal_stage_failure(evidence=evidence).kind == AGENT_REQUEST
 
 
+def test_the_terminal_failure_is_not_a_succeeded_turn_predecessor() -> None:
+    """The terminal's designed failure cannot become a turn available for release."""
+    payload = _petri_payload(stages=_STAGES_WITHOUT_A_FAILURE)
+    checkpoint = cast("dict[str, Any]", cast("dict[str, Any]", payload[0])["checkpoint"])
+    checkpoint["completed_nodes"] = ["review", "needs_human"]
+    evidence = terminal_evidence(payload=payload)
+    assert evidence is not None
+    assert evidence.succeeded_predecessor is None
+    assert evidence.succeeded_output is None
+
+
 def test_a_checkpoint_carrying_node_outcomes_is_still_graded_from_them() -> None:
     """The stage map is a FALLBACK, never a merge — the outcome map still wins.
 

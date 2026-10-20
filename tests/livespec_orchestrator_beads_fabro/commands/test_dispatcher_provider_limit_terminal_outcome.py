@@ -45,12 +45,18 @@ an entitlement that was never measured.
 
 from __future__ import annotations
 
+import importlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidateIdentity
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import (
+    AcpCandidate,
+    AcpCandidateIdentity,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import RenderedCandidate
+from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import AcpAdapter
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import AcpNodeResolution
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
@@ -89,6 +95,12 @@ _DECLARED_QUOTA = {
     "scope": "availability-domain",
     "all_literals": ["hit your session limit"],
 }
+_TURN_CAPACITY = "Selected model is at capacity. Please try a different model."
+_REVIEW_IDENTITY = AcpCandidateIdentity(
+    display_name="Codex ACP review fallback",
+    candidate_key="gpt-5.6-terra",
+    availability_key="codex",
+)
 
 
 def _payload(*, cause: str) -> list[dict[str, Any]]:
@@ -113,6 +125,36 @@ def _payload(*, cause: str) -> list[dict[str, Any]]:
                         "category": "transient_infra",
                     },
                 },
+            },
+        }
+    ]
+
+
+def _succeeded_turn_payload(*, later_test_failure: bool) -> list[dict[str, Any]]:
+    """A needs-human terminal reached from a success-booked Codex review turn."""
+    outcomes: dict[str, dict[str, object]] = {
+        # Petri retains a succeeded ACP turn's text under `response`, not
+        # `output`.  The terminal has no failure payload that repeats it.
+        "review": {"status": "succeeded", "response": "Review begins." + _TURN_CAPACITY},
+        "needs_human": {"status": "failed"},
+    }
+    completed = ["review"]
+    if later_test_failure:
+        outcomes["janitor"] = {"status": "failed"}
+        completed.append("janitor")
+    return [
+        {
+            "run_id": _RUN,
+            "status": {"kind": "failed", "reason": "workflow_error"},
+            "checkpoint": {
+                "current_node": "needs_human",
+                "next_node_id": None,
+                "completed_nodes": completed,
+                "node_outcomes": outcomes,
+            },
+            "conclusion": {
+                "status": "failed",
+                "failure": {"reason": "workflow_error", "detail": {"message": _MARKER}},
             },
         }
     ]
@@ -416,3 +458,85 @@ def test_a_green_run_is_not_examined_for_a_release_at_all(tmp_path: Path) -> Non
         )
         is None
     )
+
+
+def test_a_success_booked_codex_capacity_turn_releases_from_needs_human(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """The review's final output, rather than terminal failure data, selects release."""
+    signatures = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._acp_builtin_signatures"
+    )
+    rendered = RenderedCandidate(
+        candidate=AcpCandidate(
+            adapter=AcpAdapter(command="codex-acp", args=(), env={}),
+            identity=_REVIEW_IDENTITY,
+            signatures=signatures.builtin_availability_signatures(availability_key="codex"),
+        ),
+        builtin=True,
+    )
+    outcome_module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_outcome"
+    )
+    monkeypatch.setattr(outcome_module, "_rendered_for", lambda **_: rendered)
+    plan = replace(
+        _plan(tmp_path=tmp_path),
+        acp_nodes=AcpNodeResolution(
+            nodes={}, inputs={}, run_inputs=(), candidates={"review": _REVIEW_IDENTITY}
+        ),
+    )
+    inspect = FabroPort(
+        fabro_bin="fabro",
+        target=FabroTarget(),
+        runner=_Runner(stdout=json.dumps(_succeeded_turn_payload(later_test_failure=False))),
+        cwd=tmp_path,
+    ).inspect(run_id=_RUN, timeout_seconds=1)
+
+    outcome = fabro_run_terminal_outcome(
+        outcome_type=DispatchOutcome,
+        plan=plan,
+        run_id=_RUN,
+        inspect=inspect,
+        exit_code=1,
+        stderr="",
+    )
+
+    assert outcome is not None
+    assert outcome.stage == "provider-limit-release"
+    assert outcome.provider_limit_release is not None
+    assert outcome.provider_limit_release.source == "turn.final_output"
+
+
+def test_a_later_command_failure_keeps_its_route_after_a_capacity_turn(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """A later failed janitor is the terminal cause, so the review cannot release it."""
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_outcome._rendered_for",
+        lambda **_: None,
+    )
+    plan = replace(
+        _plan(tmp_path=tmp_path),
+        acp_nodes=AcpNodeResolution(
+            nodes={}, inputs={}, run_inputs=(), candidates={"review": _REVIEW_IDENTITY}
+        ),
+    )
+    inspect = FabroPort(
+        fabro_bin="fabro",
+        target=FabroTarget(),
+        runner=_Runner(stdout=json.dumps(_succeeded_turn_payload(later_test_failure=True))),
+        cwd=tmp_path,
+    ).inspect(run_id=_RUN, timeout_seconds=1)
+
+    outcome = fabro_run_terminal_outcome(
+        outcome_type=DispatchOutcome,
+        plan=plan,
+        run_id=_RUN,
+        inspect=inspect,
+        exit_code=1,
+        stderr="",
+    )
+
+    assert outcome is not None
+    assert outcome.stage == "fabro-run"
+    assert outcome.provider_limit_release is None

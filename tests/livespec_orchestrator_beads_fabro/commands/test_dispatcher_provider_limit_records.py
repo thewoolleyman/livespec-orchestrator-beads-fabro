@@ -54,7 +54,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_records import (
 )
 from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import AcpAdapter
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_classify import (
+    ProviderLimitAttempt,
     classified_release,
+    provider_limit_signal,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import FabroFailureDetail
 
@@ -114,13 +116,16 @@ def _release(*, usage_limit: bool, rendered: Any) -> Any:
     describe what that decision reached, so a hand-built release value could
     drift from every release the Dispatcher can actually produce.
     """
+    failure = FabroFailureDetail(
+        cause=_SESSION_LIMIT,
+        category="transient_infra",
+        signature="implement|transient_infra|acp turn failed",
+        provider_usage_limit=usage_limit,
+        provider_usage_limit_provider="anthropic" if usage_limit else None,
+    )
     return classified_release(
-        failure=FabroFailureDetail(
-            cause=_SESSION_LIMIT,
-            category="transient_infra",
-            signature="implement|transient_infra|acp turn failed",
-            provider_usage_limit=usage_limit,
-            provider_usage_limit_provider="anthropic" if usage_limit else None,
+        attempt=ProviderLimitAttempt(
+            signal=provider_limit_signal(failure=failure), failure=failure
         ),
         rendered=rendered,
         node_attempt="implement",
