@@ -1309,6 +1309,19 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   falls BACK to the proof record, since "the budget record anchored" is
   otherwise equally consistent with a reader that anchors on any budget row —
   including a rework round whose head would not carry the rework.
+- `test_record_file_refresh_merge_scenario200.py` — the DECLARATION half of
+  `SPECIFICATION/scenarios.md` "Scenario 200" and of `contracts.md` section
+  "Declared record files merge without a repair round" (v162): the committed
+  `dispatcher.record_files` table, graded through this repository's own JSONC
+  loader because the refresh stage runs in a governed clone with no copy of this
+  package and opens that file itself. It is asserted as a WHOLE list rather than
+  by containment, since an extra entry widens what a refresh rewrites with no
+  human in the loop while a missing one leaves the collision this arm was built
+  for costing a whole factory run, and only an equality check sees both
+  directions. The five STAGE sub-scenarios live in
+  `test_scripted_refresh_execution.py`, beside that module's harness for the
+  shipped `pr_refresh` bytes — the merge arm is a property of the stage script,
+  and restating that harness here would grade a paraphrase of it.
 
 - `test_implement_completion_field_scenario204.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 204 and the v165 clause "An implement
