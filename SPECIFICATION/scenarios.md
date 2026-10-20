@@ -18,10 +18,11 @@ Feature: Gap-tied fix cycle
 Scenario: A new MUST clause is detected, filed, implemented, and closed in place
   Given a consumer project has a fresh `livespec` revision (vNNN+1)
   And that revision introduced a new MUST clause not yet honored in the impl
+  And the H2 heading that clause sits under has no exercising test in the heading-coverage map
   When the user invokes `/livespec-orchestrator-beads-fabro:capture-impl-gaps`
-  Then the skill loads the rule set via the Spec Reader
-  And enumerates every MUST/SHOULD rule from spec text alone (no read of the impl)
-  And surfaces every rule not yet tracked by a work-item, one at a time
+  Then the skill loads the spec tree's H2 headings via the Spec Reader and the heading-coverage map
+  And enumerates every H2 heading whose heading-coverage entry names no exercising test (no read of the impl)
+  And surfaces every such heading not yet tracked by a work-item, one at a time
   When the user consents to file a gap
   Then the skill creates a beads issue via the 2-step append carrying the `origin:gap-tied` label
   And the `gap-id:<stable-id>` label
@@ -302,6 +303,15 @@ Scenario: A closed-but-unproven gap-tied item surfaces a finding
 Scenario: A fully-proven closed gap-tied item emits no finding
   Given a gap-tied work-item is closed, carries the `resolution:completed` label, and its `gap-id` resolves through the `clauses[]` map to an acceptance scenario whose `tests/heading-coverage.json` entry binds to a real integration-tier test node id (not `TODO`)
   When the `closed_item_integrity` check runs
+  Then it emits NO finding for that item
+
+Scenario: A closed item carrying a heading-derived gap-id resolves through its heading's own coverage entry
+  Given a gap-tied work-item is closed with the `resolution:completed` label and a heading-derived `gap-id` naming an H2 heading of `contracts.md`
+  And that heading's `tests/heading-coverage.json` entry is still bound to the `TODO` sentinel
+  When the `closed_item_integrity` check runs
+  Then it emits a `closed-item-integrity` finding naming that item without consulting the `clauses[]` map
+  When that heading's entry is bound to a real integration-tier test node id
+  And the check runs again
   Then it emits NO finding for that item
 ```
 
@@ -7493,4 +7503,68 @@ Feature: An incomplete implement turn is not recorded as a success
     Given an implement turn whose final output's completion field reports the Definition of Done complete
     When the implement stage ends
     Then the stage outcome is succeeded and the run proceeds to implementation_diff as before
+```
+
+## Scenario 205 — Gap detection enumerates headings without an exercising test
+
+```gherkin
+Feature: The gap signal is heading coverage, not clause tracking
+  As a maintainer keeping the spec and its tests in lockstep
+  I want gap detection to name the spec headings no test exercises
+  So that every candidate it surfaces is a real, bounded piece of work
+
+  Scenario: An uncovered heading is a gap and a covered one is not
+    Given a governed spec tree whose heading-coverage map marks one H2 heading TODO and names an existing test for another
+    When detect-impl-gaps runs with --json
+    Then it emits exactly one gap, whose gap-id derives from the uncovered heading's spec file and heading path
+    And the covered heading produces no gap
+    And no MUST or SHOULD clause is enumerated
+
+  Scenario: A heading with no coverage entry at all is a gap with a stable id
+    Given a governed spec tree with one H2 heading that has no entry in the heading-coverage map
+    When detect-impl-gaps runs with --json twice
+    Then each run emits exactly one gap for that heading
+    And both runs emit the same gap-id
+
+  Scenario: An entry naming a test that does not exist is an uncovered heading and a finding
+    Given a heading-coverage entry whose test names a test node that does not exist
+    When detect-impl-gaps runs with --json
+    Then it emits one gap for that heading
+    And surfaces a finding naming the dangling entry, never a clean absence
+
+  Scenario: An incomplete entry is an uncovered heading and a finding, unlike an absent one
+    Given one H2 heading whose identifying coverage entry has no test value
+    And another H2 heading with no coverage entry at all
+    When detect-impl-gaps runs with --json
+    Then it emits one gap for each of the two headings
+    And surfaces a finding naming the incomplete entry and its missing field
+    And surfaces no finding for the heading with no entry
+
+  Scenario: An entry that identifies no heading is a finding and never a gap
+    Given a coverage entry with test TODO and no heading value
+    And a coverage entry naming a heading the live spec tree does not contain
+    When detect-impl-gaps runs with --json
+    Then it surfaces one finding for each of the two entries
+    And neither entry produces a gap or a gap-id
+    And every live H2 heading without an identifying entry is still emitted as a gap
+
+  Scenario: Coverage entries match on spec root, spec file and heading together
+    Given contracts.md and scenarios.md each carry an H2 heading with the same text
+    And the coverage map names an existing test for that heading under scenarios.md only
+    When detect-impl-gaps runs with --json
+    Then it emits one gap, for the contracts.md heading
+    And the scenarios.md heading produces no gap
+
+  Scenario: A filed gap names the heading and the coverage entry to fill
+    Given the uncovered heading above
+    When the user consents to file it through capture-impl-gaps
+    Then the filed item carries the origin:gap-tied label and the heading-derived gap-id label
+    And its title names the heading verbatim and its description names the coverage entry to fill
+
+  Scenario: Clause-derived gap ids are migrated to heading-derived ones
+    Given a live gap-tied item filed under the clause enumeration
+    When the change landing this clause runs its migration
+    Then the item carries the heading-derived gap-id of the heading its clause sits under
+    And livespec core's gap-tracking-one-to-one and no-stale-gap-tied invariants pass
+    And a closed item keeps its historical clause-derived label
 ```

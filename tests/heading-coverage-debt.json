@@ -887,5 +887,12 @@
     "heading": "## Scenario 200 \u2014 A refresh whose conflicts lie only in declared record files merges them without a repair round",
     "work_item": "bd-ib-davaxq",
     "first_seen": "2026-10-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 205 \u2014 Gap detection enumerates headings without an exercising test",
+    "work_item": "bd-ib-4dlokv",
+    "first_seen": "2026-10-20"
   }
 ]
