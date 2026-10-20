@@ -125,7 +125,15 @@ while read -r agent model effort; do
     verdict=$(CLAUDE_CODE_OAUTH_TOKEN="${!claude_credential_env}" \
       claude -p --model "$model" --effort "$effort" --allowedTools "Read,Grep,Glob" < "$judgement_input") || exit 2
   else
+    # Session hooks are disabled because this is a one-shot judgement, not a
+    # supervised session, and a Stop hook that blocks makes the model keep going
+    # past its verdict, so `-o` captures whatever it said last. Measured
+    # 2026-10-20 on livespec-dev-tooling-r6kagr: the candidate printed PASS, then
+    # livespec-driver-codex's supervisor completion gate blocked the stop on that
+    # repository's legacy non-JSON tmp/overseer markers, and the last message was
+    # a question, so the leg reported "no verdict" (coordinator R342 follow-up).
     codex exec -m "$model" -c "model_reasoning_effort=$effort" -s read-only --skip-git-repo-check \
+      --disable hooks \
       -o "$judgement_input.last" < "$judgement_input" > /dev/null 2>&1 || exit 2
     verdict=$(cat "$judgement_input.last")
   fi
