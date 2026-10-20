@@ -299,13 +299,17 @@ def run_dispatch(
         plan=plan,
         runner=runner,
         journal=journal,
-        merged=await_merge(
-            outcome_type=DispatchOutcome,
-            plan=plan,
-            runner=runner,
-            journal=journal,
-            sleep=sleep,
-            poll=poll,
+        merged=(
+            view
+            if view.state == "MERGED"
+            else await_merge(
+                outcome_type=DispatchOutcome,
+                plan=plan,
+                runner=runner,
+                journal=journal,
+                sleep=sleep,
+                poll=poll,
+            )
         ),
         pr_number=view.number,
         run_id=run_id,

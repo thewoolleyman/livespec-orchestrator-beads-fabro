@@ -15,8 +15,8 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import run_stage
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
@@ -49,7 +49,12 @@ def resolve_merged_pr(
 
 
 def resolve_merged_pr_for_work_item_id(
-    *, plan: DispatchPlan, work_item_id: str, runner: CommandRunner, journal: JournalFile
+    *,
+    plan: DispatchPlan,
+    work_item_id: str,
+    runner: CommandRunner,
+    journal: JournalFile,
+    include_branch_view: bool = True,
 ) -> PrView | str | None:
     """Resolve a merged PR from the dispatch identity when its branch has gone.
 
@@ -58,15 +63,16 @@ def resolve_merged_pr_for_work_item_id(
     that identity lets it reuse reconciliation's forge query without coupling a
     terminal dispatch to a second mutable ledger read.
     """
-    viewed = run_stage(
-        runner=runner,
-        journal=journal,
-        plan=plan,
-        stage="reconcile-pr-view-branch",
-        command=(_pr_view_branch_argv(plan=plan), plan.repo, _GH_TIMEOUT_SECONDS, None),
-    )
-    if viewed.exit_code == 0:
-        return _merged_pr_view(stdout=viewed.stdout)
+    if include_branch_view:
+        viewed = run_stage(
+            runner=runner,
+            journal=journal,
+            plan=plan,
+            stage="reconcile-pr-view-branch",
+            command=(_pr_view_branch_argv(plan=plan), plan.repo, _GH_TIMEOUT_SECONDS, None),
+        )
+        if viewed.exit_code == 0:
+            return _merged_pr_view(stdout=viewed.stdout)
     # The base branch is read off the plan's ONE resolved contract. Pinning the
     # search to a branch name this fleet happens to use searched an adopter's
     # forge for merges onto a branch they do not have -- a clean, plausible,
@@ -212,6 +218,7 @@ def _pr_view_from_list_entry(
             merge_state_status="UNKNOWN",
             merge_sha=merge_sha,
             terminal_required_check_failures=(),
+            resolved_from_merged_search=True,
         ),
         not identified,
     )

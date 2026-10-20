@@ -123,12 +123,16 @@ def outcome_after_await(  # noqa: PLR0913 — kw-only disposition; each field is
             plan=plan,
             runner=runner,
             journal=journal,
-            merged=pr_view_for_merge_sha(
-                repo=plan.repo,
-                work_item_id=plan.work_item_id,
-                merged=merged,
-                runner=runner,
-                journal=journal,
+            merged=(
+                merged
+                if merged.resolved_from_merged_search
+                else pr_view_for_merge_sha(
+                    repo=plan.repo,
+                    work_item_id=plan.work_item_id,
+                    merged=merged,
+                    runner=runner,
+                    journal=journal,
+                )
             ),
         )
     if merged is None:

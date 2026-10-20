@@ -55,6 +55,7 @@ class PrView:
     base: str | None = None
     head_ref_name: str | None = None
     head_repository: str | None = None
+    resolved_from_merged_search: bool = False
 
     def matches_publication(self, *, branch: str, head: str, repository: str) -> bool:
         """Whether this is a live or merged publication of the checkpoint head."""

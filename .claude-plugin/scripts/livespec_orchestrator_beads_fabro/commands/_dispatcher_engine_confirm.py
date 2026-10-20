@@ -11,6 +11,7 @@ in `_dispatcher_pr_view` as a public interface.
 
 from __future__ import annotations
 
+from time import sleep
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import journal_stage
@@ -36,6 +37,8 @@ if TYPE_CHECKING:
 
 __all__: list[str] = ["confirm_pr"]
 
+_PR_VIEW_ATTEMPTS = 3
+
 
 def confirm_pr(
     *,
@@ -58,12 +61,7 @@ def confirm_pr(
     consulted at all: the ratified valve refuses a hold on a merged item as a no-op
     naming the merge, so there is nothing here to hold and nothing to arm.
     """
-    view = view_pr(
-        plan=plan,
-        runner=runner,
-        journal=journal,
-        include_publication=expected_publication is not None,
-    )
+    view = _confirmed_view(plan=plan, runner=runner, journal=journal, expected=expected_publication)
     if view is None or not _matches_expected_publication(
         view=view,
         expected=expected_publication,
@@ -100,6 +98,39 @@ def confirm_pr(
         and _matches_expected_publication(view=confirmed, expected=expected_publication)
         else None
     )
+
+
+def _confirmed_view(
+    *, plan: DispatchPlan, runner: CommandRunner, journal: JournalWriter, expected: PrView | None
+) -> PrView | None:
+    """Retry the branch race, then use the merged search once the branch is gone."""
+    for attempt in range(_PR_VIEW_ATTEMPTS):
+        view = view_pr(
+            plan=plan,
+            runner=runner,
+            journal=journal,
+            include_publication=expected is not None,
+        )
+        if view is not None:
+            return view
+        if attempt + 1 < _PR_VIEW_ATTEMPTS:
+            sleep(0.1 * (attempt + 1))
+    if expected is not None:
+        return None
+    # Importing the reconcile resolver lazily preserves the engine's import
+    # direction: its journal implementation itself imports engine result types.
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_merged_pr import (
+        resolve_merged_pr_for_work_item_id,
+    )
+
+    resolved = resolve_merged_pr_for_work_item_id(
+        plan=plan,
+        work_item_id=plan.work_item_id,
+        runner=runner,
+        journal=journal,
+        include_branch_view=False,
+    )
+    return resolved if isinstance(resolved, PrView) else None
 
 
 def _arm_fallback(
