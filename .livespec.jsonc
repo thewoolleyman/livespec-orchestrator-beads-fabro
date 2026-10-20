@@ -230,12 +230,12 @@
       // The REGISTRY-BACKED name of the hp-xubuntu :32276 instance running the
       // pinned 0.254 engine — the same instance the entry called `hp` addressed
       // before this table named factories instead of machines, so this rename
-      // changes no routing. A recorded item pin naming `hp` falls back to this
-      // default (the ratified recorded-pin fallback), so pins filed before the
-      // rename keep reaching the same server. The cutover that moves the
-      // default to `petri` is its own change and carries nothing else
-      // (bd-ib-iud52v).
-      "default_factory": "legacy",
+      // changed no routing. The cutover (bd-ib-iud52v) then moved the default
+      // to `petri`, the gmktec-xubuntu :32276 Petri-era instance, and carried
+      // nothing else. An item already dispatched keeps its own recorded pin,
+      // so in-flight `legacy` work stays on hp; a recorded pin naming the
+      // retired `hp` name now falls back to `petri`.
+      "default_factory": "petri",
       // THE DELIBERATE OPERATOR FLOOR, and the only currency form with any
       // blocking authority at admission: a dispatch refuses before claim when
       // the EXECUTING plugin release is below this value. Ambient staleness
@@ -871,8 +871,8 @@
       // `~/.fabro/auth.json` login for its registry-resolved url, or a
       // `FABRO_DEV_TOKEN__petri` override. Choose it per dispatch with
       // `--factory petri` or `LIVESPEC_FABRO_FACTORY=petri`.
-      // `default_factory` stays `legacy` until the cutover (bd-ib-iud52v)
-      // moves it, and that cutover carries no other change.
+      // `default_factory` names it since the cutover (bd-ib-iud52v), which
+      // carried no other change.
       //
       // Each entry ALSO resolves a `docker_host`: the Docker daemon that runs
       // THAT factory's sandbox containers, spelled as the Docker CLI spells

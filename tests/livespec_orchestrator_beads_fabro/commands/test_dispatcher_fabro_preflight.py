@@ -201,15 +201,26 @@ def test_preflight_absolute_non_executable_is_error(tmp_path: Path) -> None:
 # --- _fabro_preflight_error: bare-name arm ----------------------------------
 
 
-def test_preflight_bare_name_not_on_path_is_error() -> None:
-    """A bare name absent from PATH refuses (the original bare-`fabro` failure mode)."""
+def test_preflight_bare_name_not_on_path_is_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A bare name absent from PATH refuses (the original bare-`fabro` failure mode).
+
+    The repository is an origin-backed fixture under `tmp_path`, never the real
+    checkout: on a branch that has never been pushed, the real checkout trips the
+    source-checkout preflight first, which runs a real `git push --dry-run` against
+    the forge (bd-ib-cf3wgy). Asserting on the binary's name in stderr proves the
+    refusal came from the bare-name arm this test is named for.
+    """
+    repo = _init_origin_backed_repo(tmp_path=tmp_path)
     args = argparse.Namespace(
         fabro_bin="definitely-not-a-real-binary-xyz", janitor=None, journal=None
     )
-    assert dispatch_preamble(args=args, repo=Path.cwd()) == (
+    assert dispatch_preamble(args=args, repo=repo) == (
         None,
         _EXIT_PRECONDITION_ERROR,
     )
+    assert "definitely-not-a-real-binary-xyz" in capsys.readouterr().err
 
 
 def test_preflight_bare_name_on_path_is_ok(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

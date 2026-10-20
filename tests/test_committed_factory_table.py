@@ -70,7 +70,7 @@ def test_every_committed_entry_is_registry_backed_and_names_no_machine() -> None
 
 
 def test_the_committed_default_factory_names_a_registry_backed_entry() -> None:
-    """`legacy` is the default, and it is an entry the table actually declares.
+    """`petri` is the default since the cutover (bd-ib-iud52v), and it is an entry the table declares.
 
     The second half is what makes the first worth asserting: a default naming
     no declared entry refuses every dispatch from this repository, and nothing
@@ -78,5 +78,5 @@ def test_the_committed_default_factory_names_a_registry_backed_entry() -> None:
     """
     default: object = dispatcher_block(cwd=_REPO_ROOT)["default_factory"]
 
-    assert default == "legacy"
+    assert default == "petri"
     assert default in _committed_factories()
