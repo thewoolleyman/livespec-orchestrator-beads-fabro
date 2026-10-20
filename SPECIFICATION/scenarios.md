@@ -7836,3 +7836,52 @@ Feature: Implementation that outruns the specification is caught at every merge
     When the pass completes
     Then the proposal rests under proposed_changes for revise and the pass takes no decision on it
 ```
+
+## Scenario 211 — An unmet plan obligation is superseded only by a typed event whose cause verifies, and keeps its original budget
+
+```gherkin
+Feature: A wrong obligation can be retired without letting a rename evade expiry
+  As the maintainer whose plan pointer was overwritten by a derivation
+  I want an evidenced supersession that the ledger can verify
+  So that a mis-derived or disposed obligation is replaced while the original budget still binds
+
+  Scenario: A mis-derived obligation is superseded with its deriving operation as evidence
+    Given an unmet plan obligation written by the plan-resume actor in a recorded epoch transition
+    And it names an impl step whose target work-item already carried a factory-safety label when that transition was recorded
+    When set_next_action carries a supersession with cause misderived naming that operation identity and a replacement result
+    Then a plan-progress-event of kind supersession is recorded before the pointer changes
+    And the replacement result carries the superseded obligation's original deadline and consumed handoff count
+
+  Scenario: A rename without a verified cause is refused
+    Given an unmet plan obligation written by an accepted handoff
+    When set_next_action carries a supersession with cause misderived
+    Then the write is refused because no derivation wrote that obligation
+    And the pointer and the obligation are unchanged
+
+  Scenario: A correctly derived obligation is not misderived
+    Given an unmet plan obligation written by the plan-resume actor naming an impl step whose target carries no factory-safety label
+    When set_next_action carries a supersession with cause misderived
+    Then the write is refused and the obligation is unchanged
+
+  Scenario: A label applied after the derivation does not make it misderived
+    Given an unmet plan obligation written by the plan-resume actor naming an impl step whose target was factory-eligible when it was derived
+    And a factory-safety label was applied to that target after the deriving transition
+    When set_next_action carries a supersession with cause misderived
+    Then the write is refused and the obligation is unchanged
+
+  Scenario: A supersession to an already satisfied result is refused
+    Given an unmet plan obligation that qualifies for supersession
+    When the supersession names a replacement result that is already satisfied
+    Then the write is refused and the original obligation and its budget stand
+
+  Scenario: A disposed target is superseded with its ledger record as evidence
+    Given an unmet plan obligation whose target work-item is closed as superseded
+    When append_handoff carries a supersession with cause disposed naming that record
+    Then the supersession is recorded and consumes no handoff unit of its own
+    And the handoff itself consumes its one unit against the inherited count
+
+  Scenario: A retried supersession records nothing new
+    Given a recorded supersession under an operation identity
+    When the same operation identity is retried
+    Then the recorded event is returned and no second event is written
+```
