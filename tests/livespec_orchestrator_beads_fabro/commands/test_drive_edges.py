@@ -12,6 +12,7 @@ from livespec_orchestrator_beads_fabro.commands import _drive_impl_dispatch as i
 from livespec_orchestrator_beads_fabro.commands import _drive_reject_valve as reject_valve
 from livespec_orchestrator_beads_fabro.commands import _drive_valves as drive_valves
 from livespec_orchestrator_beads_fabro.commands import drive
+from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import InvokerIdentity
 from livespec_orchestrator_beads_fabro.commands.drive import CommandRun
 from livespec_orchestrator_beads_fabro.types import AuditRecord, StoreConfig, WorkItem
 
@@ -329,6 +330,106 @@ def test_run_action_ignores_non_dict_dispatch_entries(tmp_path: Path) -> None:
     result = drive.run_action(repo=repo, action_id="impl:bd-ib-123", runner=runner)
 
     assert result["status"] == "failed"
+
+
+def test_impl_dispatch_records_recovery_receipts_from_its_durable_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The executor, not the caller, hands its journal to the receipt writer."""
+    assert hasattr(impl_dispatch, "record_impl_recovery_receipts")
+    repo = tmp_path / "repo"
+    journal = repo / "tmp" / "fabro-dispatch-journal.jsonl"
+    journal.parent.mkdir(parents=True)
+    _ = journal.write_text("", encoding="utf-8")
+    config = _store_config()
+    calls: list[tuple[StoreConfig, str, Path | None, str, str]] = []
+
+    def fake_resolve_store_config(*, cwd: Path, work_items_arg: str | None) -> StoreConfig:
+        assert cwd == repo
+        assert work_items_arg is None
+        return config
+
+    def fake_record(
+        *,
+        config: StoreConfig,
+        work_item_id: str,
+        journal_path: Path | None,
+        author: str,
+        now: str,
+    ) -> tuple[object, ...]:
+        calls.append((config, work_item_id, journal_path, author, now))
+        return ()
+
+    monkeypatch.setattr(impl_dispatch, "resolve_store_config", fake_resolve_store_config)
+    monkeypatch.setattr(impl_dispatch, "record_impl_recovery_receipts", fake_record)
+    monkeypatch.setattr(impl_dispatch, "utc_now_iso", lambda: "2026-10-20T11:00:00Z")
+    runner = _Runner(results=[_run(stdout=json.dumps([{"status": "green"}]))])
+
+    _ = drive.run_action(repo=repo, action_id="impl:bd-ib-123", runner=runner)
+
+    assert calls == [
+        (config, "bd-ib-123", journal, "unattributed drive executor", "2026-10-20T11:00:00Z")
+    ]
+
+
+def test_impl_dispatch_marks_the_authorized_attempt_before_the_dispatcher_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The durable executor journal, not a caller, binds evidence to the attempt."""
+    repo = tmp_path / "repo"
+    (repo / ".beads").mkdir(parents=True)
+    _ = (repo / ".beads" / "config.yaml").write_text("tenant: test\n", encoding="utf-8")
+    config = _store_config()
+
+    monkeypatch.setattr(
+        impl_dispatch,
+        "resolve_store_config",
+        lambda **_: config,
+    )
+    monkeypatch.setattr(
+        impl_dispatch,
+        "record_impl_recovery_receipts",
+        lambda **_: (),
+    )
+    monkeypatch.setattr(
+        impl_dispatch,
+        "impl_recovery_attempt_ids",
+        lambda **_: ("attempt-0001",),
+        raising=False,
+    )
+    runner = _Runner(results=[_run(stdout=json.dumps([{"status": "green"}]))])
+
+    _ = drive.run_action(
+        repo=repo,
+        action_id="impl:bd-ib-123",
+        runner=runner,
+        identity=InvokerIdentity(invoker="relay:petri", invoker_source="flag"),
+    )
+
+    journal = repo / "tmp" / "fabro-dispatch-journal.jsonl"
+    records = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
+    assert records[0]["stage"] == "causal-recovery-attempt"
+    assert records[0]["work_item_id"] == "bd-ib-123"
+    assert records[0]["attempt_ids"] == ["attempt-0001"]
+    assert records[0]["invoker"] == "relay:petri"
+
+
+def test_impl_dispatch_does_not_write_a_boundary_without_a_matching_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only an attempt that authorized this command may receive its receipts."""
+    repo = tmp_path / "repo"
+    (repo / ".beads").mkdir(parents=True)
+    _ = (repo / ".beads" / "config.yaml").write_text("tenant: test\n", encoding="utf-8")
+    config = _store_config()
+    monkeypatch.setattr(impl_dispatch, "resolve_store_config", lambda **_: config)
+    monkeypatch.setattr(impl_dispatch, "impl_recovery_attempt_ids", lambda **_: ())
+    monkeypatch.setattr(impl_dispatch, "record_impl_recovery_receipts", lambda **_: ())
+    runner = _Runner(results=[_run(stdout=json.dumps([{"status": "green"}]))])
+
+    _ = drive.run_action(repo=repo, action_id="impl:bd-ib-123", runner=runner)
+
+    assert not (repo / "tmp" / "fabro-dispatch-journal.jsonl").exists()
 
 
 def test_main_missing_repo_returns_precondition(
