@@ -109,6 +109,7 @@ def main(*, argv: list[str] | None = None) -> int:
         _write_json(scan=result)
     else:
         _write_human(scan=result)
+    _write_findings(scan=result)
     return 0
 
 
@@ -135,6 +136,19 @@ def _write_json(*, scan: HeadingGapScan) -> None:
     """
     payload = {"gap_ids": sorted(gap.gap_id for gap in scan.gaps)}
     _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def _write_findings(*, scan: HeadingGapScan) -> None:
+    """Surface every defective registry row on stderr.
+
+    STDERR in both output modes, and that is the whole reason this is its own
+    emitter: the machine envelope is the ratified one-key object doctor reads,
+    so a finding folded into it would be a wire-format change for a consumer
+    that only wants gap-ids — while dropping it would report a dangling entry
+    as the clean absence the contract forbids.
+    """
+    for finding in scan.findings:
+        _ = write_stderr(text=finding.render() + "\n")
 
 
 def _write_human(*, scan: HeadingGapScan) -> None:
