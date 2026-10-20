@@ -90,6 +90,7 @@ _CONFIG_ERRORS: tuple[type[Exception], ...] = (
     ConnectionPrefixMissingError,
     BeadsCredentialMissingError,
 )
+_OWNER_REPOSITORY_PARTS = 2
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -109,9 +110,12 @@ def resolve_result_repository(*, project_root: Path, name: str) -> ResultReposit
     name must be a key in the project's configured `cross_repo_targets` block AND
     resolve to a directory that exists on this host.
     """
-    if name in (project_root.name, resolve_primary_repository(repository=project_root).name):
+    primary = resolve_primary_repository(repository=project_root)
+    if name in (project_root.name, primary.name):
         return ResultRepository(name=name, clone=project_root)
-    if name == _origin_repository_name(project_root=project_root):
+    if _is_self_repository_path(name=name, project_root=project_root, primary=primary):
+        return ResultRepository(name=name, clone=project_root)
+    if name in _origin_repository_identities(project_root=project_root):
         return ResultRepository(name=name, clone=project_root)
     target = load_manifest(project_root=project_root).targets.get(name)
     if target is None:
@@ -138,7 +142,16 @@ def result_store_config(*, repository: ResultRepository) -> StoreConfig | None:
     return resolved
 
 
-def _origin_repository_name(*, project_root: Path) -> str | None:
+def _is_self_repository_path(*, name: str, project_root: Path, primary: Path) -> bool:
+    """Whether an absolute legacy identity names this checkout or its primary."""
+    candidate = Path(name)
+    return candidate.is_absolute() and candidate.resolve() in (
+        project_root.resolve(),
+        primary.resolve(),
+    )
+
+
+def _origin_repository_identities(*, project_root: Path) -> tuple[str, ...]:
     """The repository name this checkout's origin remote URL carries, when it has one.
 
     Taken from the URL's last path segment with any `.git` suffix removed, which
@@ -155,8 +168,16 @@ def _origin_repository_name(*, project_root: Path) -> str | None:
         timeout_seconds=5.0,
     )
     if result.exit_code != 0:
-        return None
-    return result.stdout.strip().rstrip("/").rsplit("/", 1)[-1].removesuffix(".git") or None
+        return ()
+    url = result.stdout.strip().rstrip("/").removesuffix(".git")
+    bare = url.rsplit("/", 1)[-1]
+    if not bare:
+        return ()
+    path = url.partition("://")[2].partition("/")[2]
+    if not path and ":" in url and not url.startswith("/"):
+        path = url.rsplit(":", 1)[-1]
+    owner_and_repository = path if len(path.split("/")) == _OWNER_REPOSITORY_PARTS else ""
+    return tuple(identity for identity in (bare, owner_and_repository) if identity)
 
 
 def _clone(*, project_root: Path, name: str, local_clone: Path | None) -> Path:
