@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.227.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.227.0...v0.227.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* prescribe parser-safe dod references ([4358bd2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4358bd22208fad6fd301b8b1677b103abafdceab))
+
 ## [0.227.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.226.1...v0.227.0) (2026-10-20)
 
 
