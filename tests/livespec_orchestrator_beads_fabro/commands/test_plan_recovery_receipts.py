@@ -56,6 +56,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_recovery_receipts import (
     ExecutionRecords,
     ReceiptRefusal,
     ReceiptSet,
+    attempt_boundary_record,
     dispatched_subject,
     execution_records,
     recorded_attempt,
@@ -445,6 +446,11 @@ def test_a_later_attempt_refuses_to_inherit_an_earlier_attempts_executor_records
                 "work_item_id": _TARGET_ID,
                 "attempt_id": later_attempt_id,
             },
+            {
+                "stage": "causal-recovery-attempt",
+                "work_item_id": _TARGET_ID,
+                "attempt_id": "attempt-0003",
+            },
         ),
     )
 
@@ -744,6 +750,59 @@ def test_no_readable_record_for_this_item_yields_no_receipt_at_all(
     would credit another item's dispatch, run or terminal to this attempt.
     """
     assert execution_records(records=records, work_item_id=_TARGET_ID) == ExecutionRecords()
+
+
+def test_an_attempt_boundary_is_nonempty_and_can_authorize_several_attempts() -> None:
+    """One executor invocation can name each current epic attempt it authorized."""
+    assert attempt_boundary_record(
+        work_item_id=_TARGET_ID,
+        attempt_ids=(_ATTEMPT_ID, "attempt-0002", _ATTEMPT_ID),
+    ) == {
+        "stage": "causal-recovery-attempt",
+        "work_item_id": _TARGET_ID,
+        "attempt_ids": [_ATTEMPT_ID, "attempt-0002"],
+    }
+    with pytest.raises(ValueError, match="^$"):
+        _ = attempt_boundary_record(work_item_id=_TARGET_ID, attempt_ids=())
+
+
+def test_plural_attempt_boundary_scopes_executor_records_to_each_authorized_attempt() -> None:
+    """The current executor spelling binds shared work to the named attempt ids."""
+    records = (
+        attempt_boundary_record(
+            work_item_id=_TARGET_ID,
+            attempt_ids=(_ATTEMPT_ID, "attempt-0002"),
+        ),
+        _dispatch_record(),
+        _run_record(),
+        _outcome_record(),
+    )
+
+    assert (
+        execution_records(
+            records=records,
+            work_item_id=_TARGET_ID,
+            attempt_id="attempt-0002",
+        ).dispatch_id
+        == _DISPATCH_ID
+    )
+
+
+def test_impl_recovery_attempt_ids_deduplicate_matching_epics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The journal marker is one record even when multiple epics share an attempt id."""
+    monkeypatch.setattr(
+        _plan_recovery_receipt_write,
+        "_matching_impl_attempts",
+        lambda **_: ((_EPIC_ID, _ATTEMPT_ID), ("bd-ib-other", _ATTEMPT_ID)),
+    )
+
+    assert _plan_recovery_receipt_write.impl_recovery_attempt_ids(
+        config=_seed(tmp_path=tmp_path),
+        work_item_id=_TARGET_ID,
+    ) == (_ATTEMPT_ID,)
 
 
 def test_impl_executor_records_the_matching_attempts_three_durable_receipts(
