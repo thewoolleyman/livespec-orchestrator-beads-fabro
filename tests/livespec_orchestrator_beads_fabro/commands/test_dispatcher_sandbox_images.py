@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+from livespec_orchestrator_beads_fabro.commands import dispatcher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_images import (
     BuildRoot,
     sandbox_images,
@@ -90,3 +92,11 @@ def test_inventory_reports_the_same_three_source_arms_a_dispatch_uses(tmp_path: 
             "path": str(bundle / ".fabro/workflows/implement-work-item/workflow.toml"),
         },
     ]
+
+
+def test_dispatcher_exposes_the_read_only_sandbox_images_command() -> None:
+    """The inventory is an orchestrator-private dispatcher subcommand."""
+    with pytest.raises(SystemExit) as rejected:
+        _ = dispatcher.main(argv=["sandbox-images", "--factory", "factory", "--json"])
+
+    assert rejected.value.code == 0
