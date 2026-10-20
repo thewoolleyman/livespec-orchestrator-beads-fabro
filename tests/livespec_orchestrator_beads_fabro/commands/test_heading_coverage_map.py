@@ -138,3 +138,13 @@ def test_a_row_identifies_a_heading_only_when_all_three_fields_are_stated() -> N
 def test_the_todo_sentinel_is_recognized_and_a_real_node_id_is_not() -> None:
     assert _entry(test=TODO_SENTINEL).names_the_todo_sentinel
     assert not _entry(test="tests.integration.test_x.test_y").names_the_todo_sentinel
+
+
+def test_a_row_that_identifies_a_heading_is_described_by_it() -> None:
+    assert _entry().describe() == "entry 0 (SPECIFICATION/spec.md '## A heading')"
+
+
+def test_a_row_that_identifies_no_heading_is_described_by_its_stated_fields() -> None:
+    """Which field it failed to state is the only actionable thing about it."""
+    described = _entry(heading="").describe()
+    assert described == ("entry 0 (spec_root='SPECIFICATION' spec_file='spec.md' heading='')")

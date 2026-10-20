@@ -72,6 +72,21 @@ class CoverageEntry:
     def names_the_todo_sentinel(self) -> bool:
         return self.test == TODO_SENTINEL
 
+    def describe(self) -> str:
+        """How a surfaced finding names this row to an operator.
+
+        A row that identifies a heading is named by it; one that identifies
+        none has no heading to be named by, so its stated fields are shown
+        verbatim — which is the only way an operator can tell WHICH of them
+        the row failed to state.
+        """
+        if self.identifies_a_heading:
+            return f"entry {self.position} ({self.spec_root}/{self.spec_file} {self.heading!r})"
+        return (
+            f"entry {self.position} (spec_root={self.spec_root!r} "
+            f"spec_file={self.spec_file!r} heading={self.heading!r})"
+        )
+
 
 def read_coverage_entries(*, project_root: Path) -> tuple[CoverageEntry, ...]:
     """Every row of the project's coverage registry, in file order.

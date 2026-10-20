@@ -384,6 +384,144 @@ def test_an_entry_naming_another_spec_root_covers_nothing_here(
 
 
 # ---------------------------------------------------------------
+# A defective entry is an uncovered heading AND a surfaced finding
+# ---------------------------------------------------------------
+
+
+def test_a_dangling_entry_is_surfaced_as_a_finding_naming_it_and_its_defect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A test that was renamed away leaves an entry nobody can read as evidence.
+
+    The gap alone would be a CLEAN ABSENCE — indistinguishable from a heading
+    that was never entered — so the entry and its defect are named too.
+    """
+    monkeypatch.chdir(tmp_path)
+    _uncovered_fixture(project_root=tmp_path)
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert _GAP_DANGLING in json.loads(captured.out)["gap_ids"]
+    assert "dangling-test" in captured.err
+    assert "SPECIFICATION/spec.md" in captured.err
+    assert "## Dangling heading" in captured.err
+    assert "tests.integration.test_vanished.test_vanished_case" in captured.err
+
+
+def test_an_entry_that_states_no_test_value_is_a_gap_and_a_finding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An incomplete entry identifies its heading and claims nothing for it."""
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Absent heading\n"},
+    )
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Absent heading",
+            }
+        ],
+    )
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
+    assert "incomplete-entry" in captured.err
+    assert "## Absent heading" in captured.err
+
+
+def test_the_todo_sentinel_is_a_gap_and_carries_no_finding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`TODO` is the sanctioned debt row, not a defect — this is the discriminator.
+
+    Without it, a build that surfaced a finding for every uncovered heading
+    satisfies both cases above while burying the two real defects under this
+    repository's 128 `TODO` rows.
+    """
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Todo heading\n"},
+    )
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Todo heading",
+                "test": "TODO",
+                "reason": "an integration-tier test is owed for this heading",
+            }
+        ],
+    )
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_TODO]
+    assert captured.err == ""
+
+
+def test_a_heading_with_no_entry_at_all_carries_no_finding_of_its_own(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An absent entry is the ordinary state of an un-entered heading."""
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Absent heading\n"},
+    )
+    _write_coverage(project_root=tmp_path, entries=[])
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
+    assert captured.err == ""
+
+
+def test_findings_never_enter_the_machine_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Findings ride stderr so doctor's stdout read stays the one-key object."""
+    monkeypatch.chdir(tmp_path)
+    _uncovered_fixture(project_root=tmp_path)
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert list(json.loads(captured.out)) == ["gap_ids"]
+    assert "dangling-test" not in captured.out
+
+
+def test_findings_are_surfaced_in_the_human_form_too(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _uncovered_fixture(project_root=tmp_path)
+    rc = main(argv=[])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "dangling-test" in captured.err
+
+
+# ---------------------------------------------------------------
 # --since-version validation
 # ---------------------------------------------------------------
 

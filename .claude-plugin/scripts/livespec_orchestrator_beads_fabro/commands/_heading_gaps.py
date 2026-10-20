@@ -46,12 +46,12 @@ from returns.io import IOFailure, IOResult, IOSuccess
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
-from livespec_orchestrator_beads_fabro.commands._heading_coverage_map import (
-    CoverageEntry,
-    read_coverage_entries,
+from livespec_orchestrator_beads_fabro.commands._heading_coverage_grading import (
+    CoverageFinding,
+    grade_coverage_entries,
 )
-from livespec_orchestrator_beads_fabro.commands._heading_coverage_test_nodes import (
-    names_an_existing_test,
+from livespec_orchestrator_beads_fabro.commands._heading_coverage_map import (
+    read_coverage_entries,
 )
 from livespec_orchestrator_beads_fabro.errors import SpecVersionNotFoundError
 from livespec_orchestrator_beads_fabro.spec_reader import (
@@ -107,9 +107,14 @@ class SpecHeading:
 
 @dataclass(frozen=True, kw_only=True)
 class HeadingGapScan:
-    """One scan's result: the headings this run reports as gaps."""
+    """One scan's result: the headings reported as gaps, and the rows that owe.
+
+    The two travel together because a caller must render BOTH: a gap alone is
+    a clean absence, and the finding is what names the registry row behind it.
+    """
 
     gaps: tuple[SpecHeading, ...]
+    findings: tuple[CoverageFinding, ...]
 
 
 def derive_heading_gap_id(*, spec_file: str, heading: str) -> str:
@@ -167,33 +172,16 @@ def scan_heading_gaps(
         history = read_specification_history(spec_root=spec_root, version=since_version)
         if not is_successful(history):
             return IOFailure(unsafe_perform_io(history.failure()))
-    entries = read_coverage_entries(project_root=project_root)
-    covered = _covered_keys(entries=entries, project_root=project_root)
+    grading = grade_coverage_entries(
+        entries=read_coverage_entries(project_root=project_root),
+        project_root=project_root,
+    )
     gaps = tuple(
         heading
         for heading in live_headings(spec_root=spec_root, project_root=project_root)
-        if (heading.spec_root, heading.spec_file, heading.heading) not in covered
+        if (heading.spec_root, heading.spec_file, heading.heading) not in grading.covered
     )
-    return IOSuccess(HeadingGapScan(gaps=gaps))
-
-
-def _covered_keys(
-    *, entries: tuple[CoverageEntry, ...], project_root: Path
-) -> frozenset[tuple[str, str, str]]:
-    """Every triple a registry row proves is exercised by an existing test.
-
-    A heading is covered when AT LEAST ONE identifying row names an existing
-    test, which is what keeps "exactly one gap per heading" true in the face
-    of duplicate rows: a `TODO` row beside a real one must not re-open a
-    heading some test does exercise.
-    """
-    return frozenset(
-        entry.key
-        for entry in entries
-        if entry.identifies_a_heading
-        and not entry.names_the_todo_sentinel
-        and names_an_existing_test(project_root=project_root, test_node=entry.test)
-    )
+    return IOSuccess(HeadingGapScan(gaps=gaps, findings=grading.findings))
 
 
 def _spec_root_label(*, spec_root: Path, project_root: Path) -> str:
