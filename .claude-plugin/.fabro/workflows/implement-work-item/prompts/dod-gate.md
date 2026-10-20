@@ -73,9 +73,10 @@ question of fact — the spec tree above all.
    its **first heading**, one whose title is `Definition of Done` (prose may
    precede the heading). Its body must be one or more `- ` bullets, each
    carrying exactly one gradeable assertion, plus exactly one reference line
-   of the form `References: <heading>[, <heading>...]`. A bullet that is a
-   wrapped fragment rather than an assertion, or a section whose bullets are
-   all headers and no claims, is a finding.
+   of the form `References: ## <heading>[, ## <heading>...]`. Each heading,
+   including each heading after a comma, carries its own `## ` marker. A bullet
+   that is a wrapped fragment rather than an assertion, or a section whose
+   bullets are all headers and no claims, is a finding.
 2. **Every reference resolves.** Each `<heading>` on the reference line must
    be the verbatim text of an existing **H2 heading** of a file in the
    governed spec tree under `SPECIFICATION/` — a `## Scenario NN — <title>`
