@@ -1696,6 +1696,15 @@ references passes with its guidance orphaned.
   staging an `AGENTS.md` edit, surveying `spec/*` branches, or touching
   `.github/workflows/` — each trap ships a change without its content or
   reports landed work as unlanded.
+- Read `.ai/gitops-deployment.md` BEFORE any deployment, Ansible, GitOps,
+  host-provisioning, `kubectl`, or ssh-to-a-fleet-host action. It carries
+  this repository's layer map — which committed artifact deploys each of the
+  four in-repository installers, and which three nothing applies at all, so
+  a hand install is recognized as a gap in the automation to fix rather than
+  a procedure to repeat. No live fleet host is changed by hand; the
+  fleet-canonical rules the map sits under are the six in livespec's
+  `gitops-deployment-discipline.md` topic, which that file cites by path
+  (it lives in livespec, so it is not resolvable from this repository).
 
 ## Decision authority — when to ask, proceed, or self-resolve
 
