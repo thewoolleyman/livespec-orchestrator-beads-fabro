@@ -202,6 +202,13 @@ def _declared_refresh_script() -> str:
     return graph.nodes["pr_refresh"]["script"]
 
 
+def _declared_publish_draft_script() -> str:
+    """The shipped ``publish_draft`` node's script through the canonical parser."""
+    graph = parse_dot_graph(text=_IMPLEMENT_GRAPH.read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+    return graph.nodes["publish_draft"]["script"]
+
+
 def _raw_refresh_script() -> str:
     """The `pr_refresh` `script` value as the FILE carries it, its escapes UNDECODED.
 
@@ -557,6 +564,26 @@ def _run(
         text=True,
         check=False,
         env=_env(box=box, extra=extra_env),
+    )
+
+
+def _run_publish_draft(
+    *,
+    box: _Refresh,
+    check_suite: str = _PASSING_GATE,
+) -> subprocess.CompletedProcess[str]:
+    """Run the shipped ``publish_draft`` bytes against this control's real origin."""
+    return subprocess.run(
+        [
+            "bash",
+            "-c",
+            _bind_engine_tokens(script=_declared_publish_draft_script(), check_suite=check_suite),
+        ],
+        cwd=box.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_env(box=box),
     )
 
 
@@ -1002,6 +1029,35 @@ def test_a_declared_json_record_conflict_merges_and_republishes_without_repair(
     assert box.remote_head(ref=_BRANCH) == box.local_head()
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) == ""
     assert box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
+
+
+def test_publish_draft_merges_a_declared_json_record_conflict_without_repair(
+    tmp_path: Path,
+) -> None:
+    """Scenario 200 also drives the shipped ``publish_draft`` refresh arm."""
+    box = _build(root=tmp_path)
+    _ = _published_record_conflict(
+        box=box,
+        path=_RECORD_JSON,
+        run_text='[{"id": "seed"}, {"id": "run"}]\n',
+        default_text='[{"id": "seed"}, {"id": "default"}]\n',
+    )
+
+    result = _run_publish_draft(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_RECORD_FILE_REFRESH_RESOLVED: publish_draft" in result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" not in result.stderr
+    assert json.loads((box.clone / _RECORD_JSON).read_text(encoding="utf-8")) == [
+        {"id": "seed"},
+        {"id": "default"},
+        {"id": "run"},
+    ]
+    assert (
+        f"LIVESPEC_RECORD_FILE_MERGED: path={_RECORD_JSON} format=json-array "
+        "default-count=2 run-count=1"
+    ) in result.stderr
+    assert box.remote_head(ref=_BRANCH) == box.local_head()
 
 
 def test_a_declared_json_record_merge_is_recorded_with_its_format_and_per_side_counts(
