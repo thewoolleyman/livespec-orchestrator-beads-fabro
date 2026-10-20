@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.226.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.225.4...v0.226.0) (2026-10-20)
+
+
+### Features
+
+* define Definition-of-Done judgement core ([e4aa9bd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e4aa9bde911ed2c710851d04abd9a555db76432b))
+* hold an item the Definition-of-Done judgement would rest out of ready ([29cc850](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/29cc85026c51c148fa57293912940ed0cd07dc57))
+* judge the Definition of Done again in the pre-dispatch wall before claim ([5275620](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5275620d90adc2dc5d4bcf5057ce0733c086d689))
+* record each Definition-of-Done verdict on the item so it can be reused ([22e1574](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/22e157457ad49c050992a82987b796db33603c66))
+* reuse a recorded Definition-of-Done verdict while the item is unchanged ([2f20412](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2f20412876f0266977e1cd22671e4eff8d92140b))
+* take the Definition-of-Done judgement on the host through the node prompt ([b103a14](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b103a141769e2648e4c8af02baed77a37409de6b))
+
+
+### Bug Fixes
+
+* keep a command the kernel refuses to launch as routable data ([88d5641](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/88d56413a9f76d4b4c855af65d248de23ac51178))
+* scope the Definition-of-Done judgement to implement-kind dispatches ([b27d267](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b27d267e222958de2ab2e89bf47537fb18311940))
+
 ## [0.225.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.225.3...v0.225.4) (2026-10-20)
 
 
