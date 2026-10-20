@@ -1876,6 +1876,23 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   that is both expired and missing its Definition of Done must report the
   expiry, and settling the dispatch question first answers with the gap pointer
   and never reads the obligation.
+- `_plan_result_plan_owned.py` — the repository an obligation naming THE PLAN
+  EPIC ITSELF is read against, shared by BOTH of a resume's obligation reads
+  (`bd-ib-woacnk`). A plan-level leg targets the epic, the epic lives in the
+  plan's own tenant whatever the record says, and an unobservable obligation
+  withholds dispatch while being unreplaceable by design — so one stale `repo`
+  field locks a plan for its whole budget. Three properties an editor must not
+  invert. It is ONE function two readers share, because the resume reads the
+  obligation twice: `evaluate_resume_progress` reads the CHAIN-held authority
+  and `decide_plan_resume` returns on that verdict BEFORE the pointer is
+  consulted, so a redirect living at the pointer read alone is unreachable for
+  every chain-tracked plan — which is every plan the progress gate can lock,
+  including the measured one. The discriminator is the obligation's own TARGET
+  and never the pointer's kind: the chain records no kind, and a kind test buys
+  nothing either way, since an `impl` leg's target is a CHILD and an id equal to
+  the epic's resolves in exactly one tenant. And the rewrite persists NOTHING —
+  it is read-time, on a path whose every arm is read-only by contract, and the
+  ordinary advance is what replaces a recorded pointer.
 - `_drive_cli.py` — the `drive` CLI's operator transport, split out of `drive.py`
   on the same seam `_session_wait_cli` sits on for `session_wait` once routing
   the diagnosis executor pushed that file past its size ceiling. `drive.py` keeps

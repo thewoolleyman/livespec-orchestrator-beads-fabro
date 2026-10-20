@@ -10,18 +10,38 @@ filed in a sibling tenant under the cross-tenant execution mirror — and the
 derived proof, review and archive steps all target the PLAN EPIC, which lives in
 the plan's own tenant whatever the previous carrier's repository was. Carrying
 the satisfied obligation's repository forward therefore stamps a repository the
-epic does not live in, and the next resume reads `bd comments <epic> --json`
-against the wrong tenant: `plan-progress-tracking: unobservable`, dispatch
-withheld, and the plan locked behind a pointer no sanctioned write can replace
-because replacing an unobservable obligation is refused by design.
+epic does not live in, and the next resume reads the epic against the wrong
+tenant: `plan-progress-tracking: unobservable`, dispatch withheld, and the plan
+locked behind a pointer no sanctioned write can replace because replacing an
+unobservable obligation is refused by design.
 
 WHY THE SECOND CASE IS NOT A RESTATEMENT OF THE FIRST. Fixing the WRITE leaves
 every plan whose pointer was already poisoned exactly as locked as before, so
 the READ has to recognise an obligation that names the plan epic itself and
 resolve it against the plan's own tenant. The control that distinguishes "reads
 it from the right tenant" from merely "reports something observable" is the
-POSITIVE one: the marker comment exists only on the plan's own epic record, so a
-satisfied reading is only reachable from the plan's own tenant.
+POSITIVE one: the epic's own closed status is a record only the plan's own
+tenant holds, so a satisfied reading is reachable from no other tenant.
+
+EVERY EPIC HERE IS CHAIN-TRACKED, and that is load-bearing rather than
+incidental. `resume_directive` settles the DURABLE-PROGRESS question first, off
+the epic's authority chain, and returns before it ever reaches the pointer — so
+on a chainless epic the progress gate reports `missing` with dispatch PERMITTED
+and the read under test is never the read that decides anything. Measured
+2026-10-20 on the chainless fixture this module shipped with: the second case
+passed against a build whose redirect the locked plan could not reach, which is
+the wrong-population trap this repository's verification discipline catalogues.
+The plan locked in production (`bd-ib-fyozyd`) carries a chain, so the fixture
+carries one too, with the obligation recorded as the chain's own authority.
+
+WHY THE OBLIGATION IS THE ARCHIVE LEG'S STATUS AND NOT THE PROOF LEG'S MARKER.
+A committed chain transition writes a `plan-progress-event` comment on the epic
+whose payload embeds the obligation verbatim — marker included — so an
+`item_comment` obligation naming the epic is satisfied by the very event that
+recorded it, whichever tenant answers. That makes the marker shape unable to
+tell a right tenant from a wrong one. The archive leg's `item_status` on the
+epic is immune: a status is a field of the record rather than text in a comment,
+so `active` and `closed` are readings of the plan's own tenant and nothing else.
 """
 
 from __future__ import annotations
@@ -37,16 +57,31 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain import (
+    ChainHead,
+    CommittedTransition,
+    TransitionRequest,
+    commit_transition,
+    read_chain_head,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_payload import AuthorityState
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
+    chain_cache_metadata,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_tokens import create_token
 from livespec_orchestrator_beads_fabro.commands.plan import resume_directive
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _NOW = "2026-10-20T12:00:00Z"
 _DESCRIPTION = "## Definition of Done\n\n- The plan reaches its archive.\n"
-_BUDGET = {
-    "deadline": "2099-10-10T12:00:00Z",
-    "max_handoffs": 4,
+_DEADLINE = "2099-10-10T12:00:00Z"
+_MAX_HANDOFFS = 4
+_CONSUMED_HANDOFFS = 1
+_BUDGET: dict[str, object] = {
+    "deadline": _DEADLINE,
+    "max_handoffs": _MAX_HANDOFFS,
     "epoch": "epoch-1",
-    "handoff_count": 1,
+    "handoff_count": _CONSUMED_HANDOFFS,
 }
 # The plan's own repository, which is the invoking checkout's directory name: a
 # tmp-path fixture is no git clone, so neither an origin remote nor a recorded
@@ -119,9 +154,18 @@ def _seed_epic(
     epic_id: str,
     kind: str,
     ref: str,
-    required_result: object,
+    required_result: dict[str, object],
 ) -> None:
-    _ = _fake(repo=repo).create_issue(
+    """A plan epic whose AUTHORITY CHAIN records `required_result`, plus its pointer.
+
+    The obligation is committed as the chain's authority and only then projected
+    onto the pointer, because `resume_directive` reads the chain first and
+    returns on it: an epic whose obligation lived in the pointer alone would be
+    graded `plan-progress-tracking: missing` and would never exercise the read
+    that locks a real plan.
+    """
+    fake = _fake(repo=repo)
+    _ = fake.create_issue(
         draft=IssueDraft(
             issue_id=epic_id,
             issue_type="epic",
@@ -141,6 +185,36 @@ def _seed_epic(
             },
         )
     )
+    genesis = create_token(client=fake)
+    fake.update_issue(
+        issue_id=epic_id,
+        metadata=chain_cache_metadata(
+            existing_metadata=dict(fake.show_issue(issue_id=epic_id)["metadata"]),
+            latest_closed=None,
+            current=genesis,
+        ),
+    )
+    config = _config(repo=repo)
+    head = read_chain_head(config=config, epic_id=epic_id)
+    assert isinstance(head, ChainHead), head
+    committed = commit_transition(
+        config=config,
+        epic_id=epic_id,
+        request=TransitionRequest(
+            operation_id=f"op-seed-{epic_id}",
+            observed_head=head,
+            authority=AuthorityState(
+                required_result=required_result,
+                original_deadline=_DEADLINE,
+                max_handoffs=_MAX_HANDOFFS,
+                consumed_handoffs=_CONSUMED_HANDOFFS,
+            ),
+            event_kind="handoff",
+            author="plan-session",
+            now=_NOW,
+        ),
+    )
+    assert isinstance(committed, CommittedTransition), committed
 
 
 def _pointer(*, repo: Path, epic_id: str) -> dict[str, object]:
@@ -157,6 +231,12 @@ def test_a_derived_plan_step_names_the_plans_own_repository_not_the_carriers(
     result is a comment on the plan epic, which lives in the plan's own tenant —
     so the pointer must name the plan's own repository rather than the one the
     satisfied carrier happened to live in.
+
+    It is also the NEGATIVE control for the read half below: this obligation's
+    own target is the carrier CHILD rather than the epic, so it is read against
+    the carrier exactly as recorded. A redirect that fired on anything less
+    specific than "the target is the plan epic" would report `repo` as the
+    plan's own here and read the carrier's result from the wrong tenant.
     """
     repo = _governed_project(tmp_path=tmp_path)
     monkeypatch.chdir(repo)
@@ -199,17 +279,19 @@ def test_an_obligation_naming_the_plan_epic_elsewhere_is_read_from_the_plans_ten
 ) -> None:
     """A pointer already poisoned must still be observable, or the plan stays locked.
 
-    Both epics carry a recorded proof obligation on THEMSELVES under a sibling
+    Both epics carry a recorded archive obligation on THEMSELVES under a sibling
     whose clone resolves and whose tenant does not, which is the state the
     measured plan was found in: the read fails, `resume_directive` reports
-    `plan-progress-tracking: unobservable`, and no sanctioned write can replace
-    an unobservable obligation. A plan epic lives in the plan's own tenant
-    whatever its pointer says, so the read resolves there.
+    `plan-progress-tracking: unobservable`, withholds dispatch in favour of a
+    diagnosis, and no sanctioned write can replace an unobservable obligation. A
+    plan epic lives in the plan's own tenant whatever its pointer says, so the
+    read resolves there.
 
     The POSITIVE control is what separates "observable" from "read from the right
-    tenant": the marker comment exists only on the plan's own epic record, so the
-    satisfied reading — and the review leg it advances to — is reachable from no
-    other tenant.
+    tenant": the second epic is CLOSED, and its closed status is a record only
+    the plan's own tenant holds, so the satisfied reading is reachable from no
+    other tenant. Its unmet sibling reports `unsatisfied` rather than
+    `unobservable`, which is the same discrimination from the other side.
     """
     repo = _governed_project(tmp_path=tmp_path)
     monkeypatch.chdir(repo)
@@ -217,42 +299,32 @@ def test_an_obligation_naming_the_plan_epic_elsewhere_is_read_from_the_plans_ten
         _seed_epic(
             repo=repo,
             epic_id=epic_id,
-            kind="proof",
-            ref=f"capture:{epic_id}",
+            kind="archive",
+            ref=epic_id,
             required_result={
                 "repo": _STRANGER_REPO,
-                "item_comment": {"item_id": epic_id, "marker": _PROOF_MARKER},
+                "item_status": {"item_id": epic_id, "status": "closed"},
             },
         )
-    _fake(repo=repo).seed_comment(
-        issue_id="bd-ib-proved",
-        text=f"{_PROOF_MARKER} — captured — run 31f05f67 — {_NOW}",
-        author="plan-session",
-        created_at=_NOW,
-    )
+    _fake(repo=repo).close_issue(issue_id="bd-ib-proved", reason="the plan archived")
 
     unmet = resume_directive(config=_config(repo=repo), epic_id="bd-ib-pointed", unattended=True)
     met = resume_directive(config=_config(repo=repo), epic_id="bd-ib-proved", unattended=True)
 
+    assert unmet.findings == ()
     assert unmet.observation is not None
     assert unmet.observation.status == "unsatisfied"
     assert unmet.observation.repo == _OWN
-    assert unmet.next_action == "proof:capture:bd-ib-pointed"
+    assert unmet.next_action == "archive:bd-ib-pointed"
     # The READ redirects; it does not repair. The recorded pointer still names
-    # the stranger, and the advance below is what replaces it with the plan's own
-    # repository — so neither half of this fix stands in for the other.
+    # the stranger, and the advance in the sibling case above is what replaces a
+    # pointer with the plan's own repository — so neither half of this fix
+    # stands in for the other.
     assert _pointer(repo=repo, epic_id="bd-ib-pointed")["required_result"] == {
         "repo": _STRANGER_REPO,
-        "item_comment": {"item_id": "bd-ib-pointed", "marker": _PROOF_MARKER},
+        "item_status": {"item_id": "bd-ib-pointed", "status": "closed"},
     }
 
     assert met.observation is not None
     assert met.observation.status == "satisfied"
-    assert met.next_action == "review:bd-ib-proved"
-    assert _pointer(repo=repo, epic_id="bd-ib-proved")["required_result"] == {
-        "repo": _OWN,
-        "item_comment": {
-            "item_id": "bd-ib-proved",
-            "marker": "plan-completeness-review-evidence",
-        },
-    }
+    assert met.observation.repo == _OWN
