@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.225.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.225.3...v0.225.4) (2026-10-20)
+
+
+### Bug Fixes
+
+* **plan:** distinguish a chain with no obligation from a missing chain ([e4ea6ac](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e4ea6ac1bfdf243713effd3fbfb5d74e1a289f8f))
+
 ## [0.225.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.225.2...v0.225.3) (2026-10-20)
 
 
