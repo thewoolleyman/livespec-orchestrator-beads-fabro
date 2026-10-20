@@ -200,10 +200,13 @@ def test_scenario_163_duplicate_and_replacement_consumers_yield_one_command_effe
     assert fence_state(payload=payload, consumer="overseerd@vps", generation=2) == FENCE_CURRENT
     assert fence_state(payload=payload, consumer="overseerd@hp", generation=1) == FENCE_SUPERSEDED
     assert payload["original_deadline"] == _DEADLINE
-    # Four: each repeat pass re-acknowledges its receipt and re-reconciles its
-    # next action, and both converge on the first observation rather than
-    # appending. The count is the evidence that they were SEEN, not dropped.
-    assert payload["duplicate_count"] == 4
+    # Six: each repeat pass re-acknowledges its receipt, re-claims the attempt
+    # and re-reconciles its next action, and all three converge on the first
+    # observation rather than appending. The count is the evidence that they
+    # were SEEN, not dropped — including the replacement's own claim, whose
+    # generation bump moved the lease fields while leaving the first consumer's
+    # claim observation standing.
+    assert payload["duplicate_count"] == 6
 
 
 def test_scenario_163_the_same_action_is_selected_whether_the_local_gate_failed(

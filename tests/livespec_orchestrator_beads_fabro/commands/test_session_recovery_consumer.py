@@ -188,13 +188,21 @@ def test_one_pass_records_every_transition_and_executes_the_reconciled_action(
     assert outcome.result_epoch == _EPOCH
     assert command.calls == [f"{_ATTEMPT_ID}:reconcile-merged:{_ITEM}"]
 
-    assert observed_transitions(payload=_payload(store=store)) == (
+    payload = _payload(store=store)
+    assert observed_transitions(payload=payload) == (
         TRANSITION_NOTIFICATION,
         TRANSITION_RECEIPT,
+        TRANSITION_CLAIMED,
         TRANSITION_STARTED,
         TRANSITION_EXECUTED,
         TRANSITION_RECONCILED,
     )
+    # The claim's own observation, carrying the pair the fence is: a name alone
+    # cannot tell a current holder from the copy of itself that lapsed.
+    assert _sole_detail(payload=payload, transition=TRANSITION_CLAIMED) == {
+        "consumer": "overseerd@hp",
+        "generation": 1,
+    }
 
 
 def test_a_valid_hold_defers_mutation_and_preserves_the_obligation_it_found(
@@ -222,20 +230,60 @@ def test_a_valid_hold_defers_mutation_and_preserves_the_obligation_it_found(
     assert observed_transitions(payload=payload) == (
         TRANSITION_NOTIFICATION,
         TRANSITION_RECEIPT,
+        TRANSITION_CLAIMED,
         TRANSITION_DEFERRED,
     )
     assert outcome.original_deadline == _DEADLINE
     assert outcome.result_epoch == _EPOCH
     assert payload["original_deadline"] == _DEADLINE
     assert payload["required_result_identity"] == "pull_request_state #2700 state MERGED"
-    assert _deferral_detail(payload=payload)["release_condition"] == "the storage move completes"
+    assert (
+        _sole_detail(payload=payload, transition=TRANSITION_DEFERRED)["release_condition"]
+        == "the storage move completes"
+    )
 
 
-def _deferral_detail(*, payload: dict[str, object]) -> dict[str, object]:
-    """The detail of the ONE deferral observation this record carries."""
+def test_the_first_claim_observation_outlives_a_replacements_generation_bump(
+    *, tmp_path: Path
+) -> None:
+    """The lease FIELDS move on a takeover; the claim OBSERVATION does not.
+
+    This is the whole reason the claim is a transition rather than a reading of
+    `holder` and `generation`: those three fields are overwritten by every
+    renewal and every takeover, so after a generation bump nothing on the record
+    says that the displaced consumer ever held the attempt.
+    """
+    store = _notified_store(tmp_path=tmp_path)
+    _ = consume_recovery_obligation(
+        request=_request(store=store, observed_at=140.0),
+        evidence=_evidence(),
+        safety=_safety(hold=_HOLD),
+        command=_Command(),
+        reader=_Reader(),
+    )
+
+    replacement = consume_recovery_obligation(
+        request=_request(store=store, consumer="overseerd@vps", observed_at=400.0),
+        evidence=_evidence(),
+        safety=_safety(hold=_HOLD),
+        command=_Command(),
+        reader=_Reader(),
+    )
+
+    assert replacement.generation == 2
+    payload = _payload(store=store)
+    assert (payload["holder"], payload["generation"]) == ("overseerd@vps", 2)
+    assert _sole_detail(payload=payload, transition=TRANSITION_CLAIMED) == {
+        "consumer": "overseerd@hp",
+        "generation": 1,
+    }
+
+
+def _sole_detail(*, payload: dict[str, object], transition: str) -> dict[str, object]:
+    """The detail of the ONE observation of one kind this record carries."""
     entries = payload["transitions"]
     assert isinstance(entries, list)
-    details = [_detail(entry=one) for one in entries if _kind(entry=one) == TRANSITION_DEFERRED]
+    details = [_detail(entry=one) for one in entries if _kind(entry=one) == transition]
     assert len(details) == 1
     return details[0]
 
@@ -266,7 +314,7 @@ def test_an_active_commit_hook_defers_without_inventing_a_release_condition(
     )
 
     assert outcome.barrier == BARRIER_COMMIT_HOOK
-    detail = _deferral_detail(payload=_payload(store=store))
+    detail = _sole_detail(payload=_payload(store=store), transition=TRANSITION_DEFERRED)
     assert detail == {"barrier": BARRIER_COMMIT_HOOK}
 
 
