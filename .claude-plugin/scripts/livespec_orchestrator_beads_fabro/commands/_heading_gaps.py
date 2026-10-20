@@ -131,18 +131,32 @@ def derive_heading_gap_id(*, spec_file: str, heading: str) -> str:
     )
 
 
-def live_headings(*, spec_root: Path, project_root: Path) -> tuple[SpecHeading, ...]:
+def live_headings(
+    *,
+    spec_root: Path,
+    project_root: Path,
+    restrict_to: frozenset[str] | None = None,
+) -> tuple[SpecHeading, ...]:
     """Every H2 heading of the governed NLSpec files, in file-then-document order.
 
-    Deterministic by construction: the files are walked sorted and each file's
-    headings keep their document order, so two runs over an unchanged tree
-    enumerate the identical sequence.
+    `restrict_to`, when given, is the set of spec-root-relative files the scan
+    is scoped to. `None` is NOT the empty set and the difference is
+    load-bearing: `None` means no scoping was asked for and every governed
+    file is walked, while an EMPTY set means the scope was computed and
+    nothing is in it — which is the right answer for a tree identical to its
+    snapshot, and a full scan would be a silently wrong one.
+
+    Deterministic by construction either way: the files are walked sorted and
+    each file's headings keep their document order, so two runs over an
+    unchanged tree enumerate the identical sequence.
     """
     snapshot = read_current_specification(spec_root=spec_root)
     spec_root_label = _spec_root_label(spec_root=spec_root, project_root=project_root)
     headings: list[SpecHeading] = []
     for spec_file in sorted(snapshot.files):
         if spec_file not in _NLSPEC_FILES:
+            continue
+        if restrict_to is not None and spec_file not in restrict_to:
             continue
         headings.extend(
             SpecHeading(
@@ -164,22 +178,58 @@ def scan_heading_gaps(
 ) -> IOResult[HeadingGapScan, SpecVersionNotFoundError]:
     """Scan the governed spec tree for headings to report as gaps.
 
-    An absent `since_version` history directory is an EXPECTED failure and
-    rides the failure track, because the caller turns it into a distinct exit
-    code rather than a crash.
+    `since_version` restricts the scan to the files that DIFFER between that
+    historical version and the live spec. An absent history directory is an
+    EXPECTED failure and rides the failure track, because the caller turns it
+    into a distinct exit code rather than a crash.
+
+    ⛔ THIS IS NOT "HEADINGS ADDED SINCE `<vN>`", and the contract's caller
+    caution says so: a file that changed for ANY reason resurfaces every
+    uncovered live heading it carries, including headings that predate `<vN>`
+    and were untouched by the edit. Only LIVE headings are considered, so one
+    the diff REMOVED is not a gap — it is spec content that no longer exists.
+
+    The GRADING stays unscoped on purpose. A registry row is defective whether
+    or not its file is in this run's scope, and scoping the rows would make a
+    dangling row's finding depend on which version a caller happened to pass.
     """
+    restrict_to: frozenset[str] | None = None
     if since_version is not None:
         history = read_specification_history(spec_root=spec_root, version=since_version)
         if not is_successful(history):
             return IOFailure(unsafe_perform_io(history.failure()))
-    headings = live_headings(spec_root=spec_root, project_root=project_root)
+        restrict_to = _files_differing_from(
+            snapshot_files=unsafe_perform_io(history.unwrap()).files,
+            spec_root=spec_root,
+        )
+    headings = live_headings(
+        spec_root=spec_root, project_root=project_root, restrict_to=restrict_to
+    )
     grading = grade_coverage_entries(
         entries=read_coverage_entries(project_root=project_root),
         project_root=project_root,
-        live_keys=frozenset(_key(heading=heading) for heading in headings),
+        live_keys=frozenset(
+            _key(heading=heading)
+            for heading in live_headings(spec_root=spec_root, project_root=project_root)
+        ),
     )
     gaps = tuple(heading for heading in headings if _key(heading=heading) not in grading.covered)
     return IOSuccess(HeadingGapScan(gaps=gaps, findings=grading.findings))
+
+
+def _files_differing_from(*, snapshot_files: dict[str, str], spec_root: Path) -> frozenset[str]:
+    """Every file whose content differs between one snapshot and the live tree.
+
+    A file present on only one side differs, which is what puts a newly added
+    file in scope and keeps a deleted one out of it — the live walk carries no
+    headings for a file that is gone.
+    """
+    live_files = read_current_specification(spec_root=spec_root).files
+    return frozenset(
+        path
+        for path in set(snapshot_files) | set(live_files)
+        if snapshot_files.get(path, "") != live_files.get(path, "")
+    )
 
 
 def _key(*, heading: SpecHeading) -> tuple[str, str, str]:
