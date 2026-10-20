@@ -18,10 +18,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from livespec_orchestrator_beads_fabro._store_ready_dwell import utc_now_iso
+from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     FALLBACK_SOURCE,
     INVOKER_FLAG,
     InvokerIdentity,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_recovery_receipt_write import (
+    record_impl_recovery_receipts,
 )
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
@@ -31,6 +36,9 @@ __all__: list[str] = [
     "build_dispatcher_argv",
     "run_impl_dispatch",
 ]
+
+_JOURNAL_RELATIVE_PATH = Path("tmp") / "fabro-dispatch-journal.jsonl"
+_BEADS_CONFIG_RELATIVE_PATH = Path(".beads") / "config.yaml"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -69,6 +77,11 @@ def run_impl_dispatch(  # noqa: PLR0913 — kw-only transport; `workflow_name` i
         identity=identity,
     )
     result = resolved_runner(argv=argv, cwd=repo)
+    _record_recovery_receipts(
+        repo=repo,
+        work_item_ref=work_item_ref,
+        identity=identity,
+    )
     parsed = _parse_json_object_or_array(text=result.stdout)
     status = _dispatch_status(returncode=result.returncode, parsed=parsed)
     return {
@@ -84,6 +97,38 @@ def run_impl_dispatch(  # noqa: PLR0913 — kw-only transport; `workflow_name` i
         },
         "summary": _dispatch_summary(status=status, work_item_ref=work_item_ref),
     }
+
+
+def _record_recovery_receipts(
+    *, repo: Path, work_item_ref: str, identity: InvokerIdentity | None
+) -> None:
+    """Attach only executor-observed receipts after the Dispatcher returns.
+
+    The journal is the durable source of dispatch, run, and terminal-outcome
+    evidence.  A configured repository without that file still reaches the
+    writer with `None`, which preserves its recorded-but-not-executed answer for
+    an authorized attempt whose command never dispatched.  Fixture repositories
+    without the Beads pointer are not stores and must not be treated as one.
+    """
+    journal_path = repo / _JOURNAL_RELATIVE_PATH
+    if not journal_path.is_file() and not (repo / _BEADS_CONFIG_RELATIVE_PATH).is_file():
+        return
+    _ = record_impl_recovery_receipts(
+        config=resolve_store_config(cwd=repo, work_items_arg=None),
+        work_item_id=work_item_ref,
+        journal_path=journal_path if journal_path.is_file() else None,
+        author=_receipt_author(identity=identity),
+        now=utc_now_iso(),
+    )
+
+
+def _receipt_author(*, identity: InvokerIdentity | None) -> str:
+    """The executor identity carried on its authority transition."""
+    return (
+        identity.invoker
+        if identity is not None and identity.invoker_source != FALLBACK_SOURCE
+        else "unattributed drive executor"
+    )
 
 
 def build_dispatcher_argv(
