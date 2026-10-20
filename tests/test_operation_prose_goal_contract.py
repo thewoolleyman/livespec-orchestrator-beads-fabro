@@ -101,7 +101,20 @@ def test_plan_flow_precedes_a_compact_reference_and_mutation_check() -> None:
     # 2026-10-16, `release` appears in four places and the other three are the
     # Goal summary, the host-captured `Reason:` rule and the still-live sentence.
     # Raise it again only for ratified content, and compact rather than grow.
-    assert len(lines) <= 455
+    #
+    # RE-CALIBRATED again from 455 to 465 for the v117 "Relay delivery" clause
+    # (`bd-ib-t3znvw`), which says in as many words that "This repository's
+    # guidance changes with the implementation" — so the section is ratified
+    # content rather than sprawl. The ten lines are one `#### Relays to another
+    # track` heading and four paragraphs, and they were COMPACTED from thirteen
+    # before this figure moved: the recording call, what delivery is and is not,
+    # whose deadline a relay carries, and the explicit supersession a conflicting
+    # target takes. None of the four is restated elsewhere in the file — measured
+    # 2026-10-20, `relay` appears nowhere else in it — and none can be dropped
+    # without leaving a reader able to record a relay they cannot then discharge:
+    # a plan session that fills the third leg itself, or re-records its own relay
+    # under a longer deadline, produces well-formed records at every surface.
+    assert len(lines) <= 465
 
 
 def test_other_operations_name_their_done_state_before_prerequisites() -> None:

@@ -180,6 +180,7 @@ open_obligations:
     handed_to: peer_session_or_none
     receipt_ack: ISO8601_UTC_or_none
     peer_recorded: ISO8601_UTC_or_none
+    target_evidence: AUTHORITATIVE_OBSERVATION_IDENTITY_or_none
     waiting_on: authoritative_artifact_or_person_or_session_or_check
     wake_mechanism: pane_watcher_or_condition_watcher_or_peer_reply_or_timer
     if_nothing_happens: specific_escalation_or_rearm_action
@@ -187,14 +188,49 @@ open_obligations:
 ```
 
 Every open obligation must carry `holder`, `handed_to`, `receipt_ack`,
-`peer_recorded`, `waiting_on`, `wake_mechanism`, `if_nothing_happens`, and
-`timeout`.
+`peer_recorded`, `target_evidence`, `waiting_on`, `wake_mechanism`,
+`if_nothing_happens`, and `timeout`.
 
-A cross-track handoff remains the sender's obligation until the peer both
-acknowledges receipt and records it durably. Do not change `holder` to the peer
-or close the sender's obligation while either confirmation is absent. A
-`wake_mechanism` of `NONE ARMED` is permitted only with an explicit timeout and
-timeout-and-escalate action.
+A cross-track handoff remains the sender's obligation until ALL THREE delivery
+legs are present: the peer acknowledges receipt, the peer records it durably,
+and the requested TARGET EFFECT has been observed authoritatively. Do not change
+`holder` to the peer or close the sender's obligation while any of the three is
+absent. A `wake_mechanism` of `NONE ARMED` is permitted only with an explicit
+timeout and timeout-and-escalate action.
+
+`target_evidence` is the third leg and it is not interchangeable with the other
+two. `receipt_ack` and `peer_recorded` are facts about TRANSPORT — the peer got
+the message, the peer wrote it down — and `contracts.md`'s "Relay delivery"
+clause says outright that neither establishes delivery: "Messages with no
+durable target effect remain unfulfilled", and "the historical relay `delivered`
+field denotes verified target effect only, never transport delivery". A
+pane-only acknowledgment is the clearest case of all three being confused: the
+peer answered, nothing in any ledger moved, and the obligation is untouched.
+
+Fill `target_evidence` ONLY from an authoritative observation of the requested
+result — the evidence identity the shared authoritative result reader returns on
+a `satisfied` reading. Never from your own assertion that the work is done, and
+never from the peer's. An `unsatisfied` or `unobservable` reading leaves the leg
+`none`: a failure to MEASURE is not a measurement, so it discharges nothing and
+moves no deadline.
+
+A TIMEOUT DOES NOT TRANSFER THE OBLIGATION. When the deadline passes with the
+target still unmet or unobservable, the sender keeps `holder` and keeps the
+ORIGINAL `timeout` while the independent consumer performs bounded recovery;
+owner disappearance takes an explicit recoverable takeover, never a silent
+discharge. Re-recording the same obligation with a later deadline is the one
+move the protocol forbids outright, because every record it writes looks
+well-formed.
+
+Record a cross-track relay through the plan primitive rather than in prose
+alone: `record_relay(...)` in `livespec_orchestrator_beads_fabro.commands.plan`
+takes a stable relay id, a typed expected result, an absolute UTC deadline and
+the sender that owes it, observes the target through that shared reader, and
+appends the `plan-relay-event` record the independent consumer reads. Retrying
+one operation identity returns the observation it already recorded; a distinct
+recheck observes again under the same original deadline; a conflicting target
+takes an explicit supersession that carries the displaced obligation's
+disposition forward.
 
 ## Supervisor completion gate
 

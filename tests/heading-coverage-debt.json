@@ -352,13 +352,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 149 \u2014 Acknowledgment cannot discharge a target-effect relay",
-    "work_item": "bd-ib-t3znvw",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 15 \u2014 Dispatcher composes next's ranking",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-19"
