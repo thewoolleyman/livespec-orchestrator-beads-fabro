@@ -112,6 +112,8 @@ class TerminalEvidence:
     stage_signatures: tuple[str, ...]
     history_signatures: tuple[str, ...]
     outcomes_observed: bool
+    succeeded_predecessor: str | None = None
+    succeeded_output: str | None = None
 
 
 def terminal_evidence(*, payload: object | None) -> TerminalEvidence | None:
@@ -130,12 +132,17 @@ def terminal_evidence(*, payload: object | None) -> TerminalEvidence | None:
         return None
     outcomes = fabro_node_outcomes(record=record, checkpoint=checkpoint)
     failed = _failed_stages(checkpoint=checkpoint, outcomes=outcomes)
+    succeeded_predecessor, succeeded_output = _succeeded_predecessor(
+        checkpoint=checkpoint, outcomes=outcomes
+    )
     return TerminalEvidence(
         current_predecessor=failed[-1] if failed else None,
         failed_stages=failed,
         stage_signatures=_stage_signatures(outcomes=outcomes, failed=failed),
         history_signatures=_history_signatures(checkpoint=checkpoint, failed=failed),
         outcomes_observed=bool(outcomes),
+        succeeded_predecessor=succeeded_predecessor,
+        succeeded_output=succeeded_output,
     )
 
 
@@ -215,6 +222,34 @@ def _node_failed(*, outcome: dict[str, Any]) -> bool:
     if status is not None:
         return status.casefold() == _FAILED_STATUS
     return isinstance(outcome.get("failure"), dict)
+
+
+def _succeeded_predecessor(
+    *, checkpoint: dict[str, Any], outcomes: dict[str, dict[str, Any]]
+) -> tuple[str | None, str | None]:
+    """The terminal's latest succeeded attempt and its recorded final output.
+
+    A release is safe only when the completed-node ordering identifies the
+    successful turn as the terminal's own predecessor. Any other currently
+    failed non-terminal outcome makes the sequence ambiguous and declines the
+    reclassification rather than overriding that failure's existing route.
+    """
+    completed = _completed_nodes(checkpoint=checkpoint)
+    if not completed:
+        return (None, None)
+    indexed = {fabro_stage_node(stage=stage): stage for stage in outcomes}
+    stages = [indexed[node] for node in completed if node in indexed]
+    if not stages or any(
+        fabro_stage_node(stage=stage) != ESCALATION_NODE_ID and _node_failed(outcome=outcome)
+        for stage, outcome in outcomes.items()
+    ):
+        return (None, None)
+    stage = stages[-1]
+    outcome = outcomes[stage]
+    if _text(value=outcome.get("status")) != "succeeded":
+        return (None, None)
+    output = _text(value=outcome.get("output"))
+    return (stage, output)
 
 
 def _stage_signatures(

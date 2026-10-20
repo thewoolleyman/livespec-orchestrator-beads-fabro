@@ -68,6 +68,7 @@ _PEER_REPOSITORY = "livespec-console-beads-fabro"
 
 # MEASURED 2026-08-22 across the ten Codex ceiling refusals on hp.
 _CEILING_CAUSE = "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage"
+_TURN_CAPACITY = "Selected model is at capacity. Please try a different model."
 
 # This repository's OWN journalled record, on the FALLBACK's allowance. It is
 # what makes "only" assertable: the succeeding attempt spends `codex` and must
@@ -217,7 +218,7 @@ def _ceiling_payload() -> list[dict[str, Any]]:
     ]
 
 
-def _success_payload() -> list[dict[str, Any]]:
+def _success_payload(*, output: str | None = None) -> list[dict[str, Any]]:
     """One `fabro inspect --json` record whose `implement` attempt SUCCEEDED."""
     return [
         {
@@ -227,7 +228,11 @@ def _success_payload() -> list[dict[str, Any]]:
                 "current_node": "exit",
                 "completed_nodes": ["setup", "implement", "gate", "exit"],
                 "node_outcomes": {
-                    "implement": {"status": "succeeded"},
+                    "implement": (
+                        {"status": "succeeded"}
+                        if output is None
+                        else {"status": "succeeded", "output": output}
+                    ),
                     "gate": {"status": "succeeded"},
                 },
             },
@@ -280,6 +285,24 @@ def _later_row(*, start_time: str) -> dict[str, Any]:
 
 def _payloads() -> dict[str, object]:
     return {_FAILED_RUN_ID: _ceiling_payload(), _LATER_RUN_ID: _success_payload()}
+
+
+def test_a_succeeded_capacity_turn_does_not_retire_its_live_candidate_hold(
+    tmp_path: Path,
+) -> None:
+    """A refusal recorded as success is failure evidence, not retirement evidence."""
+    repo = _repo(tmp_path=tmp_path)
+
+    verdict = _verdict(
+        repo=repo,
+        rows=[_failed_row(), _later_row(start_time=_LATER_START)],
+        payloads={
+            _FAILED_RUN_ID: _ceiling_payload(),
+            _LATER_RUN_ID: _success_payload(output=_TURN_CAPACITY),
+        },
+    )
+
+    assert _candidate_keys(verdict=verdict) == []
 
 
 def test_a_later_factory_read_success_retires_only_its_matching_domain_record(

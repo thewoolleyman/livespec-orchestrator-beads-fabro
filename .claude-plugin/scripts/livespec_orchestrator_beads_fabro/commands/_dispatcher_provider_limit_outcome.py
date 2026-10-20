@@ -68,6 +68,7 @@ from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidateIdentity
 from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import RenderedCandidate
+from livespec_orchestrator_beads_fabro.commands._acp_failure_signals import AcpFailureSignal
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     resolve_dispatch_candidates,
 )
@@ -80,8 +81,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_detail i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_classify import (
+    ProviderLimitAttempt,
     ProviderLimitRelease,
     classified_release,
+    provider_limit_signal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
     PROVIDER_LIMIT_RELEASE_STAGE,
@@ -91,7 +94,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_events impo
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_executed_candidate import graph_node_id
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroInspectResult
-from livespec_orchestrator_beads_fabro.commands._fabro_terminal_evidence import terminal_evidence
+from livespec_orchestrator_beads_fabro.commands._fabro_terminal_evidence import (
+    TerminalEvidence,
+    terminal_evidence,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -127,6 +133,12 @@ def _provider_limit_release(
     """The release this terminated run owes, or `None` for an unchanged route."""
     if inspect is None:
         return None
+    evidence = terminal_evidence(payload=inspect.payload)
+    succeeded_release = _succeeded_turn_release(
+        plan=plan, evidence=evidence, run_id=run_id, text=text
+    )
+    if succeeded_release is not None:
+        return succeeded_release
     failure = inspect.failure
     if failure is None:
         return None
@@ -135,7 +147,42 @@ def _provider_limit_release(
         return None
     identity = _selected_identity(plan=plan, node=node)
     return classified_release(
-        failure=failure,
+        attempt=ProviderLimitAttempt(
+            signal=provider_limit_signal(failure=failure), failure=failure
+        ),
+        rendered=_rendered_for(repo=plan.repo, identity=identity),
+        node_attempt=node,
+        factory=plan.fabro_factory_name,
+        run_id=run_id,
+        recovery_source=needs_human_terminal_preservation(text=text),
+    )
+
+
+def _succeeded_turn_release(
+    *,
+    plan: DispatchPlan,
+    evidence: TerminalEvidence | None,
+    run_id: str | None,
+    text: str,
+) -> ProviderLimitRelease | None:
+    """Classify the final output of the successful turn preceding needs_human."""
+    if evidence is None:
+        return None
+    predecessor = evidence.succeeded_predecessor
+    output = evidence.succeeded_output
+    if not isinstance(predecessor, str) or not isinstance(output, str):
+        return None
+    node = graph_node_id(node=predecessor)
+    identity = _selected_identity(plan=plan, node=node)
+    return classified_release(
+        attempt=ProviderLimitAttempt(
+            signal=AcpFailureSignal(
+                original_identity=f"{node}|succeeded|unmatched",
+                turn_final_output=output,
+                turn_started=True,
+                turn_succeeded=True,
+            )
+        ),
         rendered=_rendered_for(repo=plan.repo, identity=identity),
         node_attempt=node,
         factory=plan.fabro_factory_name,
@@ -271,7 +318,7 @@ def provider_limit_release_outcome(
         pr_number=None,
         merge_sha=None,
         detail=_provider_limit_release_detail(
-            release=release, recorded_cause=None if failure is None else failure.cause
+            release=release, recorded_cause=release.recorded_cause
         ),
         fabro_run_id=run_id,
         fabro_failure_cause=None if failure is None else failure.cause,

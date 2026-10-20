@@ -131,7 +131,9 @@ def _failure(*, cause: str | None, usage_limit: bool = False) -> FabroFailureDet
 def _release(*, failure: FabroFailureDetail, rendered: Any) -> Any:
     module = importlib.import_module(_MODULE)
     return module.classified_release(
-        failure=failure,
+        attempt=module.ProviderLimitAttempt(
+            signal=module.provider_limit_signal(failure=failure), failure=failure
+        ),
         rendered=rendered,
         node_attempt="implement",
         factory="hp",

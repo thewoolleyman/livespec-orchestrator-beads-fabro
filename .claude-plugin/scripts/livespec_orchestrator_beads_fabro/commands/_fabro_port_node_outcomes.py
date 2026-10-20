@@ -122,12 +122,21 @@ def _stage_state_outcomes(*, record: dict[str, Any]) -> dict[str, dict[str, Any]
     in what order, which `state` answers exactly as `status` does.
     """
     graded = {
-        stage: {"status": state}
+        stage: _stage_outcome(entry=entry, state=state)
         for stage, entry in _mapping_entries(raw=record.get("stages")).items()
         if (state := _text(value=entry.get("state"))) is not None
     }
     newest = _newest_visits(stages=tuple(graded))
     return {stage: outcome for stage, outcome in graded.items() if stage in newest}
+
+
+def _stage_outcome(*, entry: dict[str, Any], state: str) -> dict[str, Any]:
+    """The Petri fields an outcome consumer may grade, without inventing data."""
+    outcome: dict[str, Any] = {"status": state}
+    for field_name in ("output", "response"):
+        if isinstance(entry.get(field_name), str):
+            outcome[field_name] = entry[field_name]
+    return outcome
 
 
 def _newest_visits(*, stages: tuple[str, ...]) -> frozenset[str]:

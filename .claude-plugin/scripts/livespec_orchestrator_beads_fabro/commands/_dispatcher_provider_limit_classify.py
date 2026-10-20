@@ -100,6 +100,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_records import Fabro
 
 __all__: list[str] = [
     "UNNAMED_FAILURE_IDENTITY",
+    "ProviderLimitAttempt",
     "ProviderLimitRelease",
     "classified_release",
     "provider_limit_signal",
@@ -110,6 +111,14 @@ __all__: list[str] = [
 # identity" needs a name to carry, and inventing a provider cause nobody
 # measured is the one thing that arm exists to prevent.
 UNNAMED_FAILURE_IDENTITY = "unnamed-acp-failure"
+
+
+@dataclass(frozen=True, kw_only=True)
+class ProviderLimitAttempt:
+    """The one failed record or reclassified succeeded turn a terminal grades."""
+
+    signal: AcpFailureSignal
+    failure: FabroFailureDetail | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -146,6 +155,7 @@ class ProviderLimitRelease:
     executed: AcpCandidateIdentity | None
     legacy_provider: str | None
     recovery_source: str
+    recorded_cause: str | None = None
 
     @property
     def release_key(self) -> str:
@@ -157,6 +167,11 @@ class ProviderLimitRelease:
         surface that has to compare two releases.
         """
         return f"{self.factory}:{self.run_id}:{self.node_attempt}"
+
+    @property
+    def source(self) -> str | None:
+        """The signature source that classified this release, if one did."""
+        return None if self.matched is None else self.matched.source
 
 
 def provider_limit_signal(*, failure: FabroFailureDetail) -> AcpFailureSignal:
@@ -185,7 +200,7 @@ def provider_limit_signal(*, failure: FabroFailureDetail) -> AcpFailureSignal:
 
 def classified_release(
     *,
-    failure: FabroFailureDetail,
+    attempt: ProviderLimitAttempt,
     rendered: RenderedCandidate | None,
     node_attempt: str,
     factory: str,
@@ -199,15 +214,19 @@ def classified_release(
     signatures` reads. `None` means no entitlement was recorded for that node,
     which is the identity-less legacy posture rather than a failure to measure.
     """
-    signal = provider_limit_signal(failure=failure)
+    failure = attempt.failure
+    classified_signal = attempt.signal
     # BEFORE either arm, because the guard classes sit before configured
     # matching and are "not released for re-dispatch" -- see the module
     # docstring for why the legacy arm needs this and the eligible one does not.
-    if non_eligible_reason(signal=signal) is not None:
+    if non_eligible_reason(signal=classified_signal) is not None:
         return None
-    matched = _eligible(signal=signal, rendered=rendered)
-    if matched is None and not failure.provider_usage_limit:
-        return None
+    matched = _eligible(signal=classified_signal, rendered=rendered)
+    legacy_provider: str | None = None
+    if matched is None:
+        if failure is None or not failure.provider_usage_limit:
+            return None
+        legacy_provider = failure.provider_usage_limit_provider
     return ProviderLimitRelease(
         factory=factory,
         run_id=run_id,
@@ -218,8 +237,15 @@ def classified_release(
         # rule: a matched verdict already names the entitlement whose allowance
         # was spent, so reporting a cause-text provider beside it would be two
         # answers about one attempt.
-        legacy_provider=None if matched is not None else failure.provider_usage_limit_provider,
+        legacy_provider=legacy_provider,
         recovery_source=recovery_source,
+        recorded_cause=(
+            classified_signal.turn_final_output
+            if classified_signal.turn_final_output is not None
+            else None
+            if failure is None
+            else failure.cause
+        ),
     )
 
 
