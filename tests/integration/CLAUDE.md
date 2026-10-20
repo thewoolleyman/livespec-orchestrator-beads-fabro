@@ -1323,6 +1323,35 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   shipped `pr_refresh` bytes — the merge arm is a property of the stage script,
   and restating that harness here would grade a paraphrase of it.
 
+- `test_implement_completion_field_scenario204.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 204 and the v165 clause "An implement
+  turn that ends incomplete does not succeed": the implement stage's outcome is
+  decided from a structured completion field the turn states, and an incomplete
+  or UNSTATED one fails the stage with a partial-progress cause on the same
+  failure edge any other implement failure takes. The measured incident is run
+  01M58QNY3ZNM2YCVVB9G2383M0, whose turn ended "Partial progress only" with one
+  declaration and one test committed and was recorded SUCCEEDED, after which
+  janitor, publication and capture were all spent before the feature was found
+  absent. Two layers, neither establishing the other: the committed GRAPH
+  decides the gate's position, routing and cost, and the gate's own SCRIPT BYTES
+  decide what counts as a stated completion — so the three sub-scenarios take
+  those bytes through `parse_dot_graph` and execute them against a real
+  throwaway clone, because every arm is shell and a substring assertion cannot
+  tell an arm that RUNS from one sitting behind an earlier `exit`. Three
+  controls carry it. The stated-complete case is the control for the two
+  failures, since a script that always exited non-zero satisfies both and stops
+  every conforming run at the gate. The EMPTY record is asserted beside the
+  absent one, because an emptied file is what a half-written record leaves
+  behind and a `test -f` guard would admit it. And the stale-cause case asserts
+  a passing gate leaves no cause standing, since the terminal reads that file
+  whichever stage ended the run — an inherited value would be reported as the
+  question for a failure somewhere else entirely. The budget case asserts the
+  EXACT visit count the gate is billed at rather than "more than nothing": a
+  node absent from that table is billed at ZERO and is one the Dispatcher can
+  kill the engine out from under, while a budget of one is reachable by a second
+  attempt of the turn it guards and would read as correct. The prompt half of
+  the clause is `tests/prompts/test_implement_completion_field.py`.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

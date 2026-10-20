@@ -51,6 +51,11 @@ _SUCCESSFUL_NODES = (
     "start",
     "dod_gate",
     "implement",
+    # The implement stage's completion gate (v165, Scenario 204;
+    # bd-ib-ahxcjx). It is on the success route because it sits on
+    # `implement`'s single fallthrough: a green run reached the diff breaker
+    # THROUGH it, having stated its Definition of Done complete.
+    "implement_completion",
     "implementation_diff",
     "janitor",
     "publish_draft",
