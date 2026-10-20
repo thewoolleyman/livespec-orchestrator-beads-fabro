@@ -26,7 +26,7 @@ repo_root=$(git rev-parse --show-toplevel)
 
 # The orchestrator build THIS repository has registered, read from Claude Code's
 # install registry rather than hard-coded, so a release moves the prompt with it.
-prompt_file=$(python3 - "$repo_root" <<'PY'
+install_root=$(python3 - "$repo_root" <<'PY'
 import json, os, sys
 repo = os.path.realpath(sys.argv[1])
 registry = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
@@ -35,10 +35,40 @@ installs = json.load(open(registry, encoding="utf-8"))["plugins"].get(
 paths = [i["installPath"] for i in installs if os.path.realpath(i.get("projectPath", "")) == repo]
 if not paths:
     sys.exit(f"dod-preflight: no livespec-orchestrator-beads-fabro install registered for {repo}")
-print(os.path.join(paths[0], ".fabro/workflows/implement-work-item/prompts/dod-gate.md"))
+print(paths[0])
 PY
 ) || exit 2
+prompt_file="$install_root/.fabro/workflows/implement-work-item/prompts/dod-gate.md"
 [ -r "$prompt_file" ] || { echo "dod-preflight: prompt not readable: $prompt_file" >&2; exit 2; }
+
+# The in-run gate's own model and effort, and the capability set it can resolve.
+# Measured 2026-10-20 over four PASS-then-refused items: a hard-coded `sonnet` here
+# graded more leniently than the gate's `acp_nodes.dod_gate` route (References and
+# deliverable-policy misses), and a governed repository with no committed
+# `dispatcher.sandbox_capabilities` made this host call withhold check 5 while the
+# sandbox, which publishes the file, ran it. So route like the gate does, and fail
+# closed when the capability set cannot be resolved here.
+read -r judge_model judge_effort < <(python3 - "$install_root" "$repo_root" <<'PY'
+import sys
+from pathlib import Path
+sys.path.insert(0, f"{sys.argv[1]}/scripts")
+sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+block = dispatcher_block(cwd=Path(sys.argv[2]))
+if not block.get("sandbox_capabilities"):
+    sys.exit("dod-preflight: the governed repository commits no dispatcher.sandbox_capabilities, "
+             "so this host cannot run the gate's capability check (check 5); publish the mirror first")
+# No entry means the workflow's built-in dod_gate default, its review_adapter.
+entry = (block.get("acp_nodes") or {}).get("dod_gate") or {
+    "agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high"}
+routes = [entry, *(entry.get("fallbacks") or [])]
+claude = [r for r in routes if r.get("agent") == "claude-acp" and r.get("model")]
+if not claude:
+    sys.exit("dod-preflight: acp_nodes.dod_gate names no claude-acp route this host can run")
+print(claude[0]["model"], claude[0].get("effort") or "high")
+PY
+) || exit 2
+[ -n "${judge_model:-}" ] || exit 2
 
 # The same three parts of the run goal the gate grades: title, description and riders.
 goal=$(python3 - "$item" "$override" <<'PY'
@@ -59,7 +89,7 @@ verdict=$({
   printf 'Goal: %s\n\n\n' "$goal"
   cat "$prompt_file"
   printf '\n\nYou are running on the HOST as a pre-dispatch check, not inside a sandbox, so /etc/livespec/sandbox-capabilities is absent: use the committed mirror. Read files only. End with the JSON failure line on any finding, or with the single word PASS alone on the last line.\n'
-} | claude -p --model sonnet --allowedTools "Read,Grep,Glob") || exit 2
+} | claude -p --model "$judge_model" --effort "$judge_effort" --allowedTools "Read,Grep,Glob") || exit 2
 
 printf '%s\n' "$verdict"
 last=$(printf '%s\n' "$verdict" | awk 'NF { line = $0 } END { print line }')
