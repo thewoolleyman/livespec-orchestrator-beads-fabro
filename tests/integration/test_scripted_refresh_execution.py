@@ -463,6 +463,19 @@ def _branch_clone(*, box: _Refresh, name: str) -> Path:
 _PASSING_GATE = "true"
 _FAILING_GATE = "false"
 
+
+def _recording_gate(*, tmp_path: Path, exit_status: int) -> tuple[str, Path]:
+    """A declared gate that proves the shipped stage executed it."""
+    record = tmp_path / "declared-gate-ran"
+    program = tmp_path / "declared-gate"
+    program.write_text(
+        "#!/bin/sh\n" f"printf 'ran\\n' > {record}\n" f"exit {exit_status}\n",
+        encoding="utf-8",
+    )
+    program.chmod(0o700)
+    return f'"{program}"', record
+
+
 # The jq program the auto-merge read owes `jq`: the field piped through
 # `tojson`, carrying no quote character of its own. A jq program needs no
 # quoting, and the quote characters a backslash-escaped spelling leaves behind
@@ -1144,9 +1157,11 @@ def test_a_merged_record_head_the_gate_rejects_takes_repair(tmp_path: Path) -> N
         default_text='[{"id": "seed"}, {"id": "default"}]\n',
     )
 
-    result = _run(box=box, check_suite=_FAILING_GATE)
+    gate, gate_record = _recording_gate(tmp_path=tmp_path, exit_status=1)
+    result = _run(box=box, check_suite=gate)
 
     assert result.returncode == 1, result.stdout
+    assert gate_record.read_text(encoding="utf-8") == "ran\n"
     assert "LIVESPEC_RECORD_FILE_REFRESH_RESOLVED: pr_refresh" in result.stderr
     assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
     assert box.local_head() == published

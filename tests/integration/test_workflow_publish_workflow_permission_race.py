@@ -66,7 +66,7 @@ def _git(cwd: Path, *argv: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _node_script(*, node: str) -> str:
+def _node_script(*, node: str, check_suite: str = "true") -> str:
     text = _WORKFLOW.read_text(encoding="utf-8")
     block = re.search(
         rf"^\s*{node}\s*\[(?P<body>.*?)^\s*\]",
@@ -76,8 +76,10 @@ def _node_script(*, node: str) -> str:
     assert block is not None
     attr = _SCRIPT.search(block.group("body"))
     assert attr is not None
-    return re.sub(r"\\(?P<escaped>.)", r"\g<escaped>", attr.group("value")).replace(
-        "{{ inputs.default_branch }}", "master"
+    return (
+        re.sub(r"\\(?P<escaped>.)", r"\g<escaped>", attr.group("value"))
+        .replace("{{ inputs.default_branch }}", "master")
+        .replace("{{ inputs.sandbox_check_suite }}", check_suite)
     )
 
 
@@ -259,11 +261,22 @@ def _record_merge_plugins(*, tmp_path: Path) -> Path:
     return plugins_root
 
 
+def _recording_gate(*, tmp_path: Path, exit_status: int) -> tuple[str, Path]:
+    """A declared gate whose marker proves `publish_draft` reached the call."""
+    record = tmp_path / "declared-gate-ran"
+    program = tmp_path / "declared-gate"
+    _executable(
+        path=program,
+        body=("#!/bin/sh\n" f"printf 'ran\\n' > \"{record}\"\n" f"exit {exit_status}\n"),
+    )
+    return f'"{program}"', record
+
+
 def _node(
-    *, node: str, run: Path, env: dict[str, str], stdin: str = ""
+    *, node: str, run: Path, env: dict[str, str], stdin: str = "", check_suite: str = "true"
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["sh", "-c", _node_script(node=node)],
+        ["sh", "-c", _node_script(node=node, check_suite=check_suite)],
         cwd=str(run),
         env=env,
         text=True,
@@ -366,6 +379,40 @@ def test_publish_draft_retry_merges_a_declared_record_conflict_after_a_workflow_
         _remote_tip(repo=run, ref=f"refs/heads/{_PUBLISH_BRANCH}")
         == _git(run, "rev-parse", "HEAD").stdout.strip()
     )
+
+
+def test_publish_draft_gates_a_merged_declared_record_before_republishing(
+    tmp_path: Path,
+) -> None:
+    """A failed declared gate returns the post-merge head to refresh repair."""
+    run, _, default = _run_behind_master(tmp_path=tmp_path)
+    _commit(
+        repo=run,
+        path=_RECORD_JSON,
+        content='[{"id": "seed"}, {"id": "run"}]\n',
+        message="add run record",
+    )
+    _bump(default=default, pin="v2")
+    _bump_during_push(
+        tmp_path=tmp_path,
+        default=default,
+        times=1,
+        record_content='[{"id": "seed"}, {"id": "default"}]',
+    )
+    gate, gate_record = _recording_gate(tmp_path=tmp_path, exit_status=1)
+
+    published = _node(
+        node="publish_draft",
+        run=run,
+        env=_env(tmp_path=tmp_path, plugins_root=_record_merge_plugins(tmp_path=tmp_path)),
+        check_suite=gate,
+    )
+
+    assert published.returncode == 1, published.stderr
+    assert gate_record.read_text(encoding="utf-8") == "ran\n"
+    assert "LIVESPEC_PUBLISH_DRAFT_GATE_REJECTED" in published.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in published.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_PUBLISHED" not in published.stderr
 
 
 def test_publish_draft_names_the_workflow_race_when_master_never_settles(

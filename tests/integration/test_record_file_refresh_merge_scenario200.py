@@ -68,6 +68,10 @@ class _Scenario200PublishDraftCases(Protocol):
         self, tmp_path: Path
     ) -> None: ...
 
+    def test_publish_draft_gates_a_merged_declared_record_before_republishing(
+        self, tmp_path: Path
+    ) -> None: ...
+
 
 @cache
 def _stage_cases() -> _Scenario200StageCases:
@@ -174,6 +178,15 @@ def test_publish_draft_merges_declared_json_records_without_a_repair_round(
     stages named by the contract rather than only `pr_refresh`.
     """
     _publish_draft_cases().test_publish_draft_retry_merges_a_declared_record_conflict_after_a_workflow_race(
+        tmp_path
+    )
+
+
+def test_publish_draft_runs_its_gate_after_merging_a_declared_record(
+    tmp_path: Path,
+) -> None:
+    """The publish-stage arm gates the merged head before it can republish it."""
+    _publish_draft_cases().test_publish_draft_gates_a_merged_declared_record_before_republishing(
         tmp_path
     )
 
