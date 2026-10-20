@@ -6947,10 +6947,16 @@ The Dispatcher MUST refuse, before any claim, ledger write of any kind (status,
 metadata or comment) or Fabro run creation, a dispatch whose resolved factory
 is registry-backed when the registry file is absent or unreadable, does not
 parse as JSON, has a top-level value that is not an object, has no entry for
-that factory name, or gives that entry no valid `server` string. The refusal
-MUST name the factory and the registry path it read. The Dispatcher MUST NOT
+that factory name, or gives that entry no valid `server` string. It MUST
+equally refuse a dispatch whose EXPLICIT factory selection — `--factory`, or a
+set and non-empty `LIVESPEC_FABRO_FACTORY` — names no entry of a declared
+`dispatcher.factories`. The refusal MUST name the factory and the registry path
+it read, or, for an undeclared explicit selection, the offending value and
+every factory name `dispatcher.factories` declares. The Dispatcher MUST NOT
 fall back to the ambient local Fabro target, to `dispatcher.default_factory`,
-or to any other factory in that case. An entry declaring `"registry": true`
+or to any other factory in either case. A repository that declares no
+`dispatcher.factories` keeps its implicit single-factory default target. An
+entry declaring `"registry": true`
 together with `server` or `docker_host` MUST be refused the same way, naming
 the factory.
 
@@ -6974,7 +6980,8 @@ A factory's per-name settings — its dev token, its secret-channel declaration,
 its `bin` and its `environment` — stay keyed by the factory name, unchanged.
 
 The registry refusal applies only to resolving a DECLARED, registry-backed
-entry. It does not change the factory selection order: an explicit
+entry, and the undeclared-name refusal only to an EXPLICIT selection. Neither
+changes the factory selection order: an explicit
 `--factory` is taken first, then `LIVESPEC_FABRO_FACTORY` when it is set and
 non-empty; then the
 item's recorded factory; then factory overflow selection (§"Factory overflow
