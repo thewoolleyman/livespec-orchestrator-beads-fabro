@@ -157,6 +157,71 @@ digraph ImplementWorkItem {
         prompt="@prompts/implement.md"
     ]
 
+    // Implement-completion gate (SPECIFICATION/contracts.md §"Self-contained
+    // plugin dispatch" -> "An implement turn that ends incomplete does not
+    // succeed", ratified v165; Scenario 204; work-item bd-ib-ahxcjx). The
+    // implement stage's outcome is decided from a structured COMPLETION FIELD
+    // the turn states, not from the turn merely ending — and this node is where
+    // that decision is MECHANICAL rather than a prompt instruction the turn can
+    // simply not follow.
+    //
+    // WHAT IT COST TO HAVE NO SUCH GATE, which is the whole reason this node
+    // exists. Measured on run 01M58QNY3ZNM2YCVVB9G2383M0 (work-item
+    // bd-ib-davaxq, 2026-10-19): the implement turn ended with the words
+    // "Partial progress only", having committed one configuration declaration
+    // and one test and never run the final check suite. The stage was recorded
+    // SUCCEEDED, because an ACP node whose turn simply ends succeeds, and the
+    // run spent janitor, publish_draft and proof_capture on it before
+    // proof_capture found the feature absent and routed to `fix` — which then
+    // had to build the whole feature in one turn and died at its ceiling.
+    //
+    // WHY A FILE AND NOT THE REPLY TEXT. The field the clause names rides in
+    // the turn's final reply, and the only ACP reply field the ENGINE decides a
+    // node's outcome from is the structured ending itself: a reply that states
+    // the work incomplete but omits that ending still succeeds, and a reply
+    // that states NOTHING cannot be distinguished from a conforming one at all.
+    // No node sees another node's reply text, so the carrier has to be
+    // something this clone holds. The prompt therefore directs the turn to
+    // record the SAME field at `$GIT_DIR/livespec-implement-completion` as the
+    // last thing it does, and this gate reads that record — the same per-clone
+    // convention `publish_draft` and `pr_refresh` already use for state one
+    // stage writes and another reads, and deliberately inside `$GIT_DIR` so no
+    // checkpoint commit can carry it into the published tree.
+    //
+    // FAIL-CLOSED IN THE ONE DIRECTION THAT MATTERS. An absent record, an empty
+    // one, or one that does not state the Definition of Done COMPLETE is read
+    // as partial progress, which is the clause's own reading of a missing
+    // field: only the declared complete spelling advances. The opposite polarity
+    // — advance unless the record says incomplete — is the behaviour the run
+    // above already had, since a turn that records nothing is exactly the turn
+    // that stopped partway.
+    //
+    // THE SPACE-STRIPPING READ IS NOT FUSSINESS. The declared spelling carries
+    // one space after the colon, and a turn that writes compact JSON has stated
+    // the field perfectly well — so the record is read with spaces and tabs
+    // DELETED rather than matched literally, and the gate accepts either
+    // rendering of the same field. The deletion is spelled with `tr` rather
+    // than with a POSIX whitespace character class because this graph holds
+    // exactly ONE such class, inside `publish_draft`, and
+    // `tests/.../test_dispatcher_resume_entry_pruning.py` keys its
+    // prune-attribution control on that token being unique — a second
+    // occurrence would retire that control rather than fail it.
+    //
+    // THE CAUSE IS ATTRIBUTED TO `implement`, not to this node, and that is
+    // deliberate: the fault is the implement TURN's, this node is that stage's
+    // postcondition, and the ledger question a human reads has to name the
+    // stage whose work is incomplete. It is written to
+    // `$GIT_DIR/livespec-stage-cause` and printed to stderr, the same pair
+    // `pr_refresh` writes, so the `needs_human` terminal renders it as the
+    // recorded question and the Dispatcher carries it on the dispatch outcome
+    // detail.
+    implement_completion [
+        label="Implement completion gate: did the turn state the Definition of Done complete?"
+        shape=parallelogram
+        timeout="600s"
+        script="record=$(git rev-parse --git-path livespec-implement-completion); cause_path=$(git rev-parse --git-path livespec-stage-cause); rm -f \"$cause_path\"; livespec_partial_progress() { printf 'stage: %s\\ncause: %s\\n' implement \"$1\" > \"$cause_path\"; printf '%s\\n' \"$1\" >&2; }; if test ! -s \"$record\"; then livespec_partial_progress 'LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS: the implement turn stated no completion field, so it never said whether the work-item Definition of Done is complete on the committed branch; an unstated completion is read as partial progress rather than as a success, so this run publishes and proves nothing'; exit 1; fi; if tr -d ' \\t' < \"$record\" | grep -qF '\"definition_of_done_complete\":true'; then echo 'LIVESPEC_IMPLEMENT_COMPLETE: the implement turn completion field states the work-item Definition of Done is complete on the committed branch, so the implement stage succeeded and the run proceeds to implementation_diff' >&2; exit 0; fi; livespec_partial_progress \"LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS: the implement turn completion field does not state the work-item Definition of Done complete on the committed branch, so the implement stage failed rather than publishing and proving partial progress. The recorded field was: $(head -c 500 \"$record\" | tr '\\n' ' ')\"; exit 1"
+    ]
+
     // Dead-implementer circuit breaker (C5 / bd-ib-vdpb): after the
     // implementer node is done with its own retry budget, require a byte
     // change relative to the dispatch base BEFORE spending janitor,
@@ -1645,10 +1710,19 @@ digraph ImplementWorkItem {
     // A failed implement (structured needs-human ending, see
     // prompts/implement.md) routes to the needs_human terminal —
     // conditional edges take priority over the unconditional fallback;
-    // everything else proceeds to the diff breaker before any downstream
-    // spend.
+    // everything else proceeds to the completion gate and then to the diff
+    // breaker, both before any downstream spend.
     implement -> needs_human [label="Blocked", condition="outcome=failed"]
-    implement -> implementation_diff
+    implement -> implement_completion
+
+    // Completion-field routing (v165, Scenario 204). A turn whose field states
+    // the Definition of Done incomplete, and a turn that states no field at
+    // all, both reach the SAME needs_human terminal an `outcome=failed`
+    // implement reaches, carrying the partial-progress cause as the recorded
+    // question; a turn that states it complete falls through to the diff
+    // breaker exactly as before this gate existed.
+    implement_completion -> needs_human [label="Partial progress", condition="outcome=failed"]
+    implement_completion -> implementation_diff
 
     // Changed-tree routing: exit 0 means `git diff --quiet` found a
     // diff, so the existing janitor -> review path remains intact.

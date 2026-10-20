@@ -128,6 +128,17 @@ widening of this graph will not be absorbable by declaring the new node's own
 timeout downward: the remaining headroom is in `implement` (14400) and
 `review_fix` (7200), which are measured against real turns, so the honest move
 then is a credential-gate change rather than another bound.
+
+v165 ADDED ONE MORE NODE AND THE SENTENCE ABOVE PROVED TOO PESSIMISTIC, which is
+worth recording rather than quietly editing: the implement stage's completion
+gate (Scenario 204, work-item bd-ib-ahxcjx) is one file read declared DOWNWARD
+at 600 s, and it sits on `implement`'s single fallthrough rather than on any
+cycle, so the derivation bills it at that turn's two attempts and no other
+node's count moves. Measured against THIS tree: 1314075 at the retired `"15m"`
+and 844275 shipped, so the BOUND DOES NOT MOVE and the headroom narrows from
+37420 to 35725 seconds. The warning stands for the node after this one — a new
+node on a cycle, or one whose work is a turn rather than a read, has nowhere
+left to be absorbed.
 This repository routes NO factory node to Codex (`.livespec.jsonc`'s `acp_nodes`
 put every node on a Claude adapter), so nothing here is refused by it; a
 repository that does route one and raises its node timeouts should expect that
@@ -158,7 +169,7 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # this case. The control below pins the 15m figure exactly, because that one is
 # the thing being moved away from and a drifting comparand would hide the move.
 _FRESHNESS_BOUND_SECONDS = 880_000
-_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_310_580
+_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_314_075
 
 
 def _checkpoint() -> dict[str, Any]:

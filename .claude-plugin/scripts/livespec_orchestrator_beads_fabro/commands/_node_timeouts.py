@@ -76,6 +76,14 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # what keeps the ceiling ABOVE the graph rather than level with an optimistic
 # reading of it.
 #
+# `implement_completion` (v165, Scenario 204; work-item bd-ib-ahxcjx) is the
+# OTHER postcondition of that same turn and is budgeted identically for the
+# identical reason: it sits on `implement`'s single fallthrough, so each attempt
+# of the turn can reach it once. It is cheaper still than the diff breaker --
+# one file read -- and this repository declares it DOWNWARD at 600 s in
+# `.livespec.jsonc`, which is the credential floor's own documented remedy
+# applied to work that genuinely takes milliseconds.
+#
 # The three TERMINAL sentinel nodes (`dead_implementer`, `abandon`,
 # `non_converged`) are deliberately absent: each ENDS the run, so they are
 # mutually exclusive with one another and with the tail of the main path,
@@ -141,6 +149,7 @@ WORKFLOW_DEFAULT_LAYER = "default"
 _WORST_CASE_VISITS: Mapping[str, int] = {
     "dod_gate": 2,
     "implement": 2,
+    "implement_completion": 2,
     "implementation_diff": 2,
     "janitor": 3,
     "fix": 2,

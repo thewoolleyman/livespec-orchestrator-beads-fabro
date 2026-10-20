@@ -90,6 +90,13 @@ _PR_ROUTE_ADDED = {"pr_route"}
 # reaches `pr_refresh` through it and its retry route closes a cycle back into
 # the replay.
 _PROOF_GRADE_ADDED = {"proof_grade", "proof_grade_route"}
+
+# The implement stage's completion gate (v165, Scenario 204; work-item
+# bd-ib-ahxcjx), kept as its own constant for the reason every set above gives.
+# It moves NO other node's count: it sits on `implement`'s single fallthrough,
+# closes no cycle, and is reached once per attempt of the turn it guards — which
+# is why it appears here and not in the moved-node allowance below.
+_IMPLEMENT_COMPLETION_ADDED = {"implement_completion"}
 _REFRESH_REPAIR_LOOP = _REFRESH_REPAIR_ADDED | {
     "fix",
     "janitor",
@@ -629,12 +636,16 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
     pre_port = budget(text=_ROLLBACK.read_text(encoding="utf-8"))
 
     # The two new stages, the v134 refresh-repair classifier, the v145 refresh
-    # route and the v156 per-assertion grade are the ONLY nodes added, and nothing
-    # was dropped: a node the ported graph lost would be an executable path
-    # missing from a figure still presented as an allowance.
-    assert (
-        set(ported.node_visits) - set(pre_port.node_visits)
-        == _PUBLICATION_STAGES_ADDED | _REFRESH_REPAIR_ADDED | _PR_ROUTE_ADDED | _PROOF_GRADE_ADDED
+    # route, the v156 per-assertion grade and the v165 completion gate are the
+    # ONLY nodes added, and nothing was dropped: a node the ported graph lost
+    # would be an executable path missing from a figure still presented as an
+    # allowance.
+    assert set(ported.node_visits) - set(pre_port.node_visits) == (
+        _PUBLICATION_STAGES_ADDED
+        | _REFRESH_REPAIR_ADDED
+        | _PR_ROUTE_ADDED
+        | _PROOF_GRADE_ADDED
+        | _IMPLEMENT_COMPLETION_ADDED
     )
     assert set(pre_port.node_visits) - set(ported.node_visits) == set()
 
@@ -654,6 +665,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _REFRESH_REPAIR_LOOP
         | _PR_ROUTE_ADDED
         | _PROOF_GRADE_ADDED
+        | _IMPLEMENT_COMPLETION_ADDED
     )
     assert moved <= reachable, sorted(moved - reachable)
     # And the direction is the honest one: the graph grew, so the allowance grew.

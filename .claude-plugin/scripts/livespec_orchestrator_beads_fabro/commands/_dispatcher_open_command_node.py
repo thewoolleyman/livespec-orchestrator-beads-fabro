@@ -68,6 +68,7 @@ __all__: list[str] = [
 # this tuple against the committed graph so the set cannot drift away from it.
 COMMAND_NODES: tuple[str, ...] = (
     "dead_implementer",
+    "implement_completion",
     "implementation_diff",
     "janitor",
     "needs_human",

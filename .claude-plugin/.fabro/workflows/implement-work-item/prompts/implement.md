@@ -303,6 +303,42 @@ waits for that answer. Reserve it for
 genuine blockers — a failing check you can fix is YOUR job, not the
 operator's.
 
+## The completion field — state whether the Definition of Done is done
+
+This stage's outcome is decided from a structured COMPLETION FIELD you
+state, NOT from your turn merely ending. End your final reply with that
+field, stating whether the work-item's Definition of Done is complete on
+the committed branch, and record the SAME field — as the last thing you
+do before that reply — where this stage's completion gate reads it:
+
+    printf '%s\n' '{"definition_of_done_complete": true}' > "$(git rev-parse --git-path livespec-implement-completion)"
+
+- COMPLETE. Every assertion of the Definition of Done is satisfied by
+  what is COMMITTED on this branch. Record
+  `{"definition_of_done_complete": true}` and end your final reply with
+  that same JSON object on the last line. The stage succeeds and the run
+  proceeds as before.
+- INCOMPLETE. Anything of the Definition of Done is still owed — an
+  assertion not implemented, a test not written, the check suite not run
+  green, work you intended to continue. Record
+  `{"definition_of_done_complete": false}` and end your final reply with
+  one JSON object carrying BOTH the completion field and the structured
+  failed ending, on the last line:
+
+    {"outcome": "failed", "failure_reason": "LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS: <what is committed; what is still owed>", "definition_of_done_complete": false}
+
+- NO FIELD AT ALL is read as INCOMPLETE. A turn that states nothing is
+  the turn that stopped partway, so the gate fails the stage with the
+  same partial-progress cause rather than passing partial work on.
+
+"Partial progress only" is NOT a success, and reporting it as one costs
+far more than ending here: a measured run that did so spent janitor,
+publication and proof capture on an unfinished tree, and the fix turn
+that inherited it died at its ceiling trying to build the whole feature
+at once. A failed stage preserves your tree by reference and rests the
+item at `blocked / needs-human` with your cause as the recorded
+question, which is the cheap ending.
+
 ## Finish the run
 
 After every acceptance assertion has completed its own loop:
@@ -315,6 +351,8 @@ After every acceptance assertion has completed its own loop:
 2. In your final reply, summarize what you changed, list the commits
    (`git log --oneline origin/{{ inputs.default_branch }}..HEAD`), and report any deviation
    or hook output verbatim.
+3. Record the completion field and end your final reply with it, per the
+   section above. This is the LAST thing you do.
 
 ## Ending the turn — leave nothing running in the background
 

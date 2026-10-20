@@ -345,9 +345,12 @@ def test_an_implement_amendment_rests_the_item_at_blocked_needs_human_and_publis
     # CONDITION to the terminal, while the ordinary route is the unconditional
     # fallthrough that conditional edges outrank. Both targets are pinned in
     # one answer, so an added third route changes it rather than slipping past.
+    # The fallthrough has been Scenario 204's completion gate since v165 —
+    # which routes an incomplete turn to the SAME terminal on the same
+    # condition, so the amendment ending asserted below is unaffected by it.
     assert _edge_conditions(source="implement") == {
         "needs_human": "outcome=failed",
-        "implementation_diff": "",
+        "implement_completion": "",
     }
     # Nothing is downstream of the terminal, so nothing it reaches can publish.
     assert _reachable(graph=graph, start="needs_human") == frozenset()

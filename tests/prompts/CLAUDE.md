@@ -72,6 +72,21 @@ instead.
   `tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_payload_implement_prompt.py`,
   per the rendering-seam convention below.
 
+- `test_implement_completion_field.py` — bd-ib-ahxcjx, the PROSE half of the
+  v165 clause "An implement turn that ends incomplete does not succeed": the
+  implement prompt directs the turn to end its final reply with a structured
+  completion field stating whether the Definition of Done is complete on the
+  committed branch, and enumerates all three verdicts — complete, incomplete,
+  and stated nothing, which the clause reads as incomplete. A prompt test
+  because the field is authored by the agent out of this instruction and is
+  rendered by no Python caller, so nothing host-side can observe whether a turn
+  was ever asked for it. The record PATH is derived from the completion gate's
+  own script rather than spelled on both sides, because the two halves are
+  useless apart and a rename of either reads as a turn that recorded correctly
+  and a gate that found nothing — which the gate then reports as the agent's
+  fault. The mechanism that reads the field is
+  `tests/integration/test_implement_completion_field_scenario204.py`.
+
 - `test_fix_check_suite_once_per_tree_scenario199.py` — bd-ib-k6dwyv, and the
   registry binding for `SPECIFICATION/scenarios.md` Scenario 199: the fix-stage
   prompt counts a commit whose repository pre-commit hook ran the FULL check

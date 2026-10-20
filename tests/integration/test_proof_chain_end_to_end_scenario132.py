@@ -879,6 +879,11 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
         _START,
         "dod_gate",
         "implement",
+        # Scenario 204's completion gate (v165) sits on `implement`'s own
+        # fallthrough, so every run passes through it on the way to the diff
+        # breaker; a turn that stated its Definition of Done complete is the
+        # only one that proceeds, which is what this green journey is.
+        "implement_completion",
         "implementation_diff",
         "janitor",
         _PUBLISH_DRAFT,
