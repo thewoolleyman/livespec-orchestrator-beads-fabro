@@ -46,6 +46,13 @@ from returns.io import IOFailure, IOResult, IOSuccess
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro.commands._heading_coverage_map import (
+    CoverageEntry,
+    read_coverage_entries,
+)
+from livespec_orchestrator_beads_fabro.commands._heading_coverage_test_nodes import (
+    names_an_existing_test,
+)
 from livespec_orchestrator_beads_fabro.errors import SpecVersionNotFoundError
 from livespec_orchestrator_beads_fabro.spec_reader import (
     read_current_specification,
@@ -160,8 +167,32 @@ def scan_heading_gaps(
         history = read_specification_history(spec_root=spec_root, version=since_version)
         if not is_successful(history):
             return IOFailure(unsafe_perform_io(history.failure()))
-    return IOSuccess(
-        HeadingGapScan(gaps=live_headings(spec_root=spec_root, project_root=project_root))
+    entries = read_coverage_entries(project_root=project_root)
+    covered = _covered_keys(entries=entries, project_root=project_root)
+    gaps = tuple(
+        heading
+        for heading in live_headings(spec_root=spec_root, project_root=project_root)
+        if (heading.spec_root, heading.spec_file, heading.heading) not in covered
+    )
+    return IOSuccess(HeadingGapScan(gaps=gaps))
+
+
+def _covered_keys(
+    *, entries: tuple[CoverageEntry, ...], project_root: Path
+) -> frozenset[tuple[str, str, str]]:
+    """Every triple a registry row proves is exercised by an existing test.
+
+    A heading is covered when AT LEAST ONE identifying row names an existing
+    test, which is what keeps "exactly one gap per heading" true in the face
+    of duplicate rows: a `TODO` row beside a real one must not re-open a
+    heading some test does exercise.
+    """
+    return frozenset(
+        entry.key
+        for entry in entries
+        if entry.identifies_a_heading
+        and not entry.names_the_todo_sentinel
+        and names_an_existing_test(project_root=project_root, test_node=entry.test)
     )
 
 
