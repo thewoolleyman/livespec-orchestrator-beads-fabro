@@ -1,35 +1,31 @@
 """`/livespec-orchestrator-beads-fabro:detect-impl-gaps` thin-transport command.
 
-CLI surface per SPECIFICATION/contracts.md:
+CLI surface per `SPECIFICATION/contracts.md`:
 
   detect-impl-gaps [--spec-target <path>] [--project-root <path>] [--json]
                    [--since-version <vN>]
 
-Reads the live Specification via the Spec Reader, enumerates every
-MUST / MUST NOT / SHOULD / SHOULD NOT rule, and emits the resulting
-gap-id set. Gap-id derivation is a pure function of the spec-file
-path + canonical heading path + rule text; the same rule text in the
-same context always yields the same gap-id across runs.
+A HEADING-COVERAGE enumerator, not a spec→impl comparator: it reads the
+live Specification's H2 headings via the Spec Reader and the repository's
+heading-coverage map, and emits one gap per heading that no test
+exercises. It never reads implementation state, so a returned gap-id
+means "this heading has no exercising test", never "this heading's
+behaviour is verified absent from the implementation".
 
-When `--since-version <vN>` is set, the scan restricts to files whose
-content differs between the historical version `<vN>` and the live
-spec — i.e., files present in
-`SpecDiff(version_a=<vN>, version_b=<live>).per_file`. For each such
-file, only MUST / SHOULD clauses present in the LIVE version are
-considered (clauses removed by the diff are not gaps — they were spec
-content that no longer exists).
+It does NOT enumerate MUST/SHOULD clauses. A clause with no work-item is
+the ordinary state of every ratified clause, and that signal surfaced 752
+to 1,233 candidates per run in this repository without one completed
+pass.
 
-The skill is the canonical gap-detection surface for the plugin.
-Consumed by:
+The skill is the canonical gap-detection surface for the plugin. Consumed
+by livespec doctor's `gap-tracking-one-to-one` and `no-stale-gap-tied`
+invariants via subprocess, and by the heavyweight `capture-impl-gaps`
+sibling as its detection step. The heavyweight `implement` skill's
+gap-tied closure verification is check-path-anchored and does NOT invoke
+this skill: a gap-id identifies a heading, not the check that settles a
+clause beneath it.
 
-- `livespec` doctor's `gap-tracking-one-to-one` and
-  `no-stale-gap-tied` invariants via subprocess.
-- The heavyweight `capture-impl-gaps` sibling as its detection
-  step.
-- The heavyweight `implement` skill at gap-tied closure
-  verification.
-
-The skill is intrinsically non-mutating: no JSONL writes, no user
+The skill is intrinsically non-mutating: no store writes, no user
 prompts, no spec modifications.
 """
 
@@ -37,25 +33,16 @@ import argparse
 import json
 from pathlib import Path
 
-from livespec_spec_clauses import RuleMatch, extract_rules_from_file
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
-from livespec_orchestrator_beads_fabro.errors import SpecVersionNotFoundError
-from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
-from livespec_orchestrator_beads_fabro.spec_reader import (
-    read_current_specification,
-    read_specification_history,
+from livespec_orchestrator_beads_fabro.commands._heading_gaps import (
+    HeadingGapScan,
+    scan_heading_gaps,
 )
+from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
-# `RuleMatch`, the clause extractor, and the gap-id derivation are
-# single-sourced from the shared `livespec_spec_clauses` primitive
-# (vendored at `_vendor/livespec_spec_clauses.py`, byte-identical to
-# `livespec` core's `dev-tooling/spec_clauses.py`). A gap-id parity
-# test pins the vendored copy to its core source so the derivation
-# can never silently drift between repos. `RuleMatch` is re-exported
-# so existing importers of `detect_impl_gaps.RuleMatch` keep working.
-__all__: list[str] = ["RuleMatch", "detect_rules", "main"]
+__all__: list[str] = ["main"]
 
 _EXIT_USAGE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 3
@@ -86,9 +73,9 @@ def main(*, argv: list[str] | None = None) -> int:
         dest="since_version",
         default=None,
         help=(
-            "Restrict scan to files differing between this historical "
-            "version (positive integer; the vNNN suffix) and the live "
-            "spec. When omitted, scans every file."
+            "Restrict the scan to files differing between this historical "
+            "version (positive integer; the vNNN suffix) and the live spec. "
+            "When omitted, scans every governed file."
         ),
     )
     args = parser.parse_args(argv)
@@ -109,15 +96,19 @@ def main(*, argv: list[str] | None = None) -> int:
             _ = write_stderr(text="".join(parts))
             return _EXIT_USAGE_ERROR
         since_version = parsed
-    try:
-        rules = detect_rules(spec_root=spec_root, since_version=since_version)
-    except SpecVersionNotFoundError as exc:
-        _ = write_stderr(text=f"ERROR: {exc}\n")
+    scan = scan_heading_gaps(
+        spec_root=spec_root,
+        project_root=project_root,
+        since_version=since_version,
+    )
+    if not is_successful(scan):
+        _ = write_stderr(text=f"ERROR: {unsafe_perform_io(scan.failure())}\n")
         return _EXIT_PRECONDITION_ERROR
+    result = unsafe_perform_io(scan.unwrap())
     if args.as_json:
-        _write_json(rules=rules)
+        _write_json(scan=result)
     else:
-        _write_human(rules=rules)
+        _write_human(scan=result)
     return 0
 
 
@@ -136,80 +127,20 @@ def _parse_since_version(*, raw: str) -> int | None:
     return value
 
 
-def detect_rules(
-    *,
-    spec_root: Path,
-    since_version: int | None = None,
-) -> list[RuleMatch]:
-    """Enumerate every MUST/SHOULD rule in the live spec tree.
+def _write_json(*, scan: HeadingGapScan) -> None:
+    """Emit the ratified one-key machine envelope.
 
-    When `since_version` is None, scans every markdown file in the live
-    spec.
-
-    When `since_version` is set, scans only those markdown files whose
-    content differs between version `<since_version>` and the live
-    spec. For each such file, only rules present in the LIVE version
-    are surfaced (removed-in-the-diff content is not a gap).
-
-    Returns rules sorted by (spec_file, heading_path, line_text) so
-    output ordering is deterministic across runs and platforms.
+    `gap_ids` is the ONLY key: doctor's cross-boundary invariants read this
+    stdout, so anything else a run has to say belongs on stderr.
     """
-    snapshot = read_current_specification(spec_root=spec_root)
-    if since_version is None:
-        candidate_files = sorted(snapshot.files.keys())
-    else:
-        candidate_files = sorted(
-            _files_changed_since(spec_root=spec_root, since_version=since_version)
-            & snapshot.files.keys()
-        )
-    rules: list[RuleMatch] = []
-    for spec_file in candidate_files:
-        if not spec_file.endswith(".md"):
-            continue
-        content = snapshot.files[spec_file]
-        rules.extend(extract_rules_from_file(spec_file=spec_file, content=content))
-    rules.sort(key=lambda rule: (rule.spec_file, rule.heading_path, rule.line_text))
-    return rules
-
-
-def _files_changed_since(*, spec_root: Path, since_version: int) -> set[str]:
-    """Return the set of file paths that differ between `<since_version>` and the live spec.
-
-    Compares the live tree (everything under `<spec-root>/` except
-    `history/` and `proposed_changes/`) against the history snapshot
-    at `<since_version>`. A file is "changed" if its content differs,
-    or if it appears in only one of the two sides.
-
-    Raises `SpecVersionNotFoundError` if `<since_version>` does not
-    exist under `<spec-root>/history/`.
-    """
-    # TEMPORARY BRIDGE: `detect_rules` (this module's public surface) is
-    # itself an unconverted ROP offender that still documents a raised
-    # `SpecVersionNotFoundError`, and `main` catches it for its exit code.
-    # Re-raising the SAME error object keeps that chain byte-identical
-    # until `detect_rules` is converted in its own change.
-    since_result = read_specification_history(spec_root=spec_root, version=since_version)
-    if not is_successful(since_result):
-        raise unsafe_perform_io(since_result.failure())
-    since_snapshot = unsafe_perform_io(since_result.unwrap())
-    live_snapshot = read_current_specification(spec_root=spec_root)
-    changed: set[str] = set()
-    all_paths = set(since_snapshot.files.keys()) | set(live_snapshot.files.keys())
-    for path in all_paths:
-        if since_snapshot.files.get(path, "") != live_snapshot.files.get(path, ""):
-            changed.add(path)
-    return changed
-
-
-def _write_json(*, rules: list[RuleMatch]) -> None:
-    payload = {"gap_ids": [rule.gap_id for rule in rules]}
+    payload = {"gap_ids": sorted(gap.gap_id for gap in scan.gaps)}
     _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
-def _write_human(*, rules: list[RuleMatch]) -> None:
-    if not rules:
-        _ = write_stdout(text="(no rules detected)\n")
+def _write_human(*, scan: HeadingGapScan) -> None:
+    if not scan.gaps:
+        _ = write_stdout(text="(no uncovered headings detected)\n")
         return
-    for rule in rules:
-        line = f"{rule.spec_file} > {rule.heading_path}  [{rule.gap_id}]  {rule.line_text}\n"
+    for gap in scan.gaps:
+        line = f"{gap.spec_root}/{gap.spec_file} > {gap.heading}  [{gap.gap_id}]\n"
         _ = write_stdout(text=line)

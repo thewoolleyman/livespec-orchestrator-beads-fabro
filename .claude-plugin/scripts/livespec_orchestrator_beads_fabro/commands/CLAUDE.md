@@ -3,9 +3,15 @@
 The implementation modules behind the thin-transport wrappers. One
 public module per query-only skill:
 
-- `detect_impl_gaps.py` — mechanical spec→impl gap detection via the
-  Spec Reader; pure read-and-emit (never mutates the JSONL, never
-  prompts).
+- `detect_impl_gaps.py` — mechanical HEADING-COVERAGE enumeration via
+  the Spec Reader: one gap per H2 heading of the governed spec tree that
+  no test exercises. Pure read-and-emit (never mutates the store, never
+  prompts). Despite the `-impl-gaps` name it performs no spec↔impl
+  comparison and never reads implementation state. The enumeration and
+  the stable heading-derived gap-id live in the private
+  `_heading_gaps.py` sibling, which the dispatcher's
+  `no-stale-gap-tied` invariant reads too — so the detector and that
+  invariant can never drift onto two derivations.
 - `list_work_items.py` — JSONL store listing.
 - `context.py` — the item-context read primitive
   (SPECIFICATION/contracts.md §"`context`"): resolves one `plan_slug` or

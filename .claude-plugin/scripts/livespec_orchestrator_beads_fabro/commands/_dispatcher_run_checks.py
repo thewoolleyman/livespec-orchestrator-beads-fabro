@@ -126,6 +126,7 @@ def run_spec_check(*, args: argparse.Namespace) -> int:
     findings = run_spec_checks(
         items=load_items(repo=project_root),
         spec_root=spec_root,
+        project_root=project_root,
         manifest=load_manifest(project_root=project_root),
     )
     return _emit_check_findings(findings=findings, as_json=args.as_json, label="spec")
