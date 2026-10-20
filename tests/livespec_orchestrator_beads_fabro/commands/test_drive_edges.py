@@ -331,6 +331,46 @@ def test_run_action_ignores_non_dict_dispatch_entries(tmp_path: Path) -> None:
     assert result["status"] == "failed"
 
 
+def test_impl_dispatch_records_recovery_receipts_from_its_durable_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The executor, not the caller, hands its journal to the receipt writer."""
+    assert hasattr(impl_dispatch, "record_impl_recovery_receipts")
+    repo = tmp_path / "repo"
+    journal = repo / "tmp" / "fabro-dispatch-journal.jsonl"
+    journal.parent.mkdir(parents=True)
+    _ = journal.write_text("", encoding="utf-8")
+    config = _store_config()
+    calls: list[tuple[StoreConfig, str, Path | None, str, str]] = []
+
+    def fake_resolve_store_config(*, cwd: Path, work_items_arg: str | None) -> StoreConfig:
+        assert cwd == repo
+        assert work_items_arg is None
+        return config
+
+    def fake_record(
+        *,
+        config: StoreConfig,
+        work_item_id: str,
+        journal_path: Path | None,
+        author: str,
+        now: str,
+    ) -> tuple[object, ...]:
+        calls.append((config, work_item_id, journal_path, author, now))
+        return ()
+
+    monkeypatch.setattr(impl_dispatch, "resolve_store_config", fake_resolve_store_config)
+    monkeypatch.setattr(impl_dispatch, "record_impl_recovery_receipts", fake_record)
+    monkeypatch.setattr(impl_dispatch, "utc_now_iso", lambda: "2026-10-20T11:00:00Z")
+    runner = _Runner(results=[_run(stdout=json.dumps([{"status": "green"}]))])
+
+    _ = drive.run_action(repo=repo, action_id="impl:bd-ib-123", runner=runner)
+
+    assert calls == [
+        (config, "bd-ib-123", journal, "unattributed drive executor", "2026-10-20T11:00:00Z")
+    ]
+
+
 def test_main_missing_repo_returns_precondition(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
