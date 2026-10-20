@@ -68,6 +68,7 @@ _TARGET_ID = "bd-ib-relaytarget"
 _OTHER_TARGET_ID = "bd-ib-relayother"
 _RELAY_ID = "relay-1"
 _SENDER = "relay-supervisor"
+_CONSUMER = "relay-consumer"
 _ORIGINAL_DEADLINE = "2026-10-20T18:00:00Z"
 _LATER_DEADLINE = "2026-11-30T18:00:00Z"
 _FIRST_AT = "2026-10-20T09:00:00Z"
@@ -205,6 +206,54 @@ def test_a_recheck_of_an_unmet_relay_keeps_the_original_deadline_and_sender(
     assert recheck.observation.status == OBSERVATION_UNSATISFIED
     assert recheck.recorded_at == _RECHECK_AT
     assert len(read_relay_records(client=client, epic_id=_EPIC_ID)) == 2
+
+
+def test_a_recheck_by_an_independent_consumer_keeps_the_relay_s_own_sender(
+    tmp_path: Path,
+) -> None:
+    """The recheck names ITS OWN identity as sender and does not become the owner.
+
+    "Timeout MUST retain sender ownership and the original deadline while the
+    independent consumer performs bounded recovery, even when the sender produces
+    no new handoff", and "Owner disappearance requires explicit recoverable
+    takeover, not silent discharge." The independent consumer IS the clause's own
+    recheck recorder, so the sender is read back off the relay's own history
+    exactly as the deadline is. A recheck that stored the identity it was handed
+    would transfer ownership with none of the three legs present and with no
+    record saying a transfer happened — and because the appended comment is
+    authored AS the relay's sender, the timeline would then report that an expiry
+    falls to the consumer rather than to the party that still owes it.
+
+    THIS IS THE HALF THE DEADLINE CASE ABOVE CANNOT SHOW. That case reuses the
+    original sender in its own request, so its sender assertion holds whether or
+    not the value was carried forward: only a recheck naming a DIFFERENT sender
+    can tell a carried-forward owner from a stored one, which is the same reason
+    the deadline cases all name a later deadline than the first recording.
+    """
+    repo, config, client = _seed(tmp_path=tmp_path)
+    _ = record_relay(request=_request(repo=repo, config=config))
+
+    recheck = _recorded(
+        outcome=record_relay(
+            request=_request(
+                repo=repo,
+                config=config,
+                operation_id="relay-recheck-1",
+                sender=_CONSUMER,
+                deadline=_LATER_DEADLINE,
+                now=_RECHECK_AT,
+            )
+        )
+    )
+
+    assert recheck.sender == _SENDER
+    assert recheck.original_deadline == _ORIGINAL_DEADLINE
+    assert recheck.disposition == DELIVERY_UNDELIVERED
+    assert recheck.ownership_transferable is False
+    text = client.list_comments(issue_id=_EPIC_ID)[1]["text"]
+    assert isinstance(text, str)
+    assert f"\nauthor: {_SENDER}\n" in text
+    assert f"author: {_CONSUMER}" not in text
 
 
 def test_subsequent_target_evidence_discharges_the_relay_under_that_same_deadline(

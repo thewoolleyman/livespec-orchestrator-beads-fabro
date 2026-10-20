@@ -97,8 +97,15 @@ class RelayRecord:
     """One observation of one relay, as the `plan-relay-event` comment carries it.
 
     `original_deadline` is the FIRST deadline this relay id was ever recorded
-    under. Every later observation of the same relay re-renders it unchanged,
-    which is the guarantee the clause words as "its unchanged deadline".
+    under, and `sender` is the party that owed it then. Every later observation
+    of the same relay re-renders BOTH unchanged, which is the guarantee the
+    clause words as "its unchanged deadline" and as "Timeout MUST retain sender
+    ownership ... while the independent consumer performs bounded recovery".
+
+    So `sender` names the owner and never the recorder: an independent
+    consumer's recheck is attributed by its own `operation_id`, while `sender`
+    keeps naming whoever an expiry falls to until `ownership_transferable`
+    admits a transfer.
     """
 
     relay_id: str
