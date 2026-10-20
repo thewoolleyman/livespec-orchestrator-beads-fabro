@@ -588,26 +588,10 @@ digraph ImplementWorkItem {
     // instead (plan `fabro-currency` P4): the `< 3` visit guard this node's edge
     // used to carry is gone, because the key it read is not populated on the
     // Petri-era engine and the guard therefore blocked the route outright there.
-    //
-    // `fidelity="summary:high"` IS WHAT MAKES THE RECAPTURE CHANNEL EXIST (v175,
-    // Scenario 137; work-item bd-ib-j56cur). The contract requires that a
-    // `proof_capture` entered on a recapture verdict receive the reviewer's
-    // proof-record findings "through the engine preamble of preceding stage
-    // output" as well as from the review record on the pull request — and Fabro's
-    // DEFAULT `compact` fidelity EXCLUDES agent response text, so under it the
-    // findings never reach this node at all. That is exactly what the measured
-    // loop did: `proof_capture` was re-entered knowing nothing about why its
-    // record had been rejected and produced the same kind of record again.
-    // `summary:high` includes the source-labelled response, which is the same
-    // reason the `fix` node carries it and the same trap it records — do NOT put a
-    // `fidelity` on any edge INTO this node, because an edge-level value outranks
-    // the node's and would silently restore the compact carry this attribute
-    // exists to replace.
     proof_capture [
         label="Capture Proof of Done on the draft PR (read-only on the tree)"
         backend="acp"
         acp.command="{{ inputs.proof_capture_adapter }}"
-        fidelity="summary:high"
         timeout="1800s"
         max_retries=1
         prompt="@prompts/proof-capture.md"
@@ -1428,90 +1412,6 @@ digraph ImplementWorkItem {
         prompt="@prompts/review-fix.md"
     ]
 
-    // THE RECAPTURE ROUTE (v175 "proof-record findings"; SPECIFICATION/
-    // contracts.md "Definition-of-Done and Proof-of-Done stages";
-    // scenarios.md Scenario 137; work-item bd-ib-j56cur). A COMMAND node
-    // reached ONLY from a review verdict whose every blocking finding is about
-    // the captured RECORD rather than the tree, exiting ZERO into
-    // `proof_capture` for the first and second such verdict and NON-ZERO to
-    // `non_converged` at the third.
-    //
-    // WHY THE ROUTE EXISTS, measured rather than argued. Before it, EVERY
-    // blocking review verdict went `review -> disposition -> review_fix`, and
-    // `review_fix` is a CODE-fix node: it cannot repair a proof record. Two runs
-    // on 2026-10-20 (gmktec 01M5CE38SZJW for bd-ib-wkfwtx and 01M5CDH2FZSE for
-    // bd-ib-22yfvh, the second after 390 minutes) each spent every one of their
-    // review_fix rounds with `just check` green and the code fine, because from
-    // review visit 2 on every blocking finding was about the RECORD -- steps that
-    // ran untracked programs the record never carried, assertions that printed
-    // their own conclusion, a declared head behind the reviewed head. `review_fix`
-    // changed nothing a reviewer had objected to, `proof_capture` was re-entered
-    // with no knowledge of why its record had been rejected, and it produced the
-    // same kind of record until the firing budget ran out. A third run,
-    // 01M5CTQYHVXF for bd-ib-davaxq, reached the same ending through
-    // `pr_refresh`'s own reproof requirement.
-    //
-    // SO THE VERDICT IS SPLIT AT ITS SUBJECT, not at its severity: a finding about
-    // the TREE owes a fix round and a finding about the RECORD owes a re-capture,
-    // and only `review` can tell them apart. `prompts/review.md` classifies each
-    // blocking finding, shows the classification, and emits `recapture` exactly
-    // when there is at least one blocking finding and every one of them is a
-    // proof-record finding. A verdict carrying any tree finding stays a `fix`
-    // verdict and keeps the disposition, budget and cap rules untouched.
-    //
-    // WHY A NODE RATHER THAN A DIRECT `review -> proof_capture` EDGE. The bound is
-    // the whole reason. The contract gives a run TWO recapture laps and sends the
-    // third to `non_converged`, and deciding "the bound is reached" needs a
-    // COUNTER the engine will evaluate -- which the Petri-era engine supplies for
-    // no edge condition (`context.internal.node_visit_count` is not populated, and
-    // an `inputs.*` token in a condition is an `attractor.condition.syntax` error
-    // AT LOAD). The cap that does work, `max_visits`, ABORTS the run instead of
-    // routing, so it cannot express "stop at the bound" either. The run's OWN
-    // counter can, which is exactly the shape `proof_grade_route` already uses for
-    // the grade loop and `pr_refresh` for the refresh loop.
-    //
-    // AND WITHOUT A BOUNDED NODE HERE THE DISPATCH WOULD BE REFUSED OUTRIGHT.
-    // `review -> proof_capture -> review` is a NEW cycle through two nodes that
-    // deliberately carry no `max_visits`, and the credential-lifetime derivation
-    // (`_dispatcher_execution_budget`) reports an uncut cycle UNBOUNDED and
-    // refuses rather than inventing a default. `max_visits=3` is the engine-side
-    // backstop that cuts it, and the COUNTER still decides every reachable
-    // outcome: the third verdict is counted and routed out through
-    // `non_converged`, which produces an explicit non-convergence cause the
-    // Dispatcher already reads, where `max_visits` ABORTS and emits no outcome for
-    // any edge to carry. Three is exactly the three verdicts the contract admits,
-    // so a FOURTH entry is reachable only if the counter file itself were lost --
-    // the one case where an engine abort is the right ending. The value is the
-    // EXACT bound rather than the grade route's bound-plus-one because every visit
-    // admitted here also licenses one more visit of `proof_capture`, `review`,
-    // `proof_verify` and `proof_grade` in the derivation, and all of those seconds
-    // land in the credential-lifetime floor
-    // `tests/test_factory_checkpoint_declaration.py` guards.
-    //
-    // AN EXHAUSTED REVIEW-FIX BUDGET CANNOT PRE-EMPT THIS ROUTE, and that falls
-    // out of the shape rather than needing a guard: the recapture edge reaches
-    // neither `disposition` nor `review_fix`, so neither node's `max_visits=3` is
-    // consulted and neither is spent. The review cap's needs-human rest and its
-    // `merge_on_review_cap` ship edge likewise cannot apply to a verdict that
-    // never enters the loop they bound.
-    //
-    // THE BRIEF IS ECHOED ON STDERR, for the reason `refresh_repair` echoes its
-    // own: this node is `proof_capture`'s immediate predecessor on the recapture
-    // path, so its stderr lands in the position that prompt looks at first, and it
-    // NAMES the review record on the pull request as the durable second route for
-    // a preamble that carries no finding.
-    //
-    // AN UNREADABLE COUNTER FAILS CLOSED AT THE BOUND, the same direction
-    // `pr_refresh` and `proof_grade` take: a counter nothing can compare cannot
-    // bound a loop, and looping on it is the expensive wrong answer.
-    recapture_route [
-        label="Re-capture the Proof of Done, or stop at the recapture bound?"
-        shape=parallelogram
-        timeout="600s"
-        max_visits=3
-        script="state=$(git rev-parse --git-path livespec-publication); mkdir -p \"$state\"; counter=\"$state/livespec-recapture-verdicts\"; count=$(cat \"$counter\" 2>/dev/null || echo 0); if ! test \"$count\" -ge 0 2>/dev/null; then echo \"LIVESPEC_RECAPTURE_COUNT_UNREADABLE: the recorded recapture-verdict count $count is not a number, so the two-lap bound cannot be enforced; failing closed to non_converged rather than re-entering proof_capture against a counter nothing can compare\" >&2; count=2; fi; count=$((count + 1)); printf '%s\\n' \"$count\" > \"$counter\"; if test \"$count\" -ge 3; then echo \"LIVESPEC_RECAPTURE_EXHAUSTED: review has ended with a recapture verdict $count times in this run, so the captured record is not converging on the proof-record findings the reviewer raised; routing to non_converged without entering proof_capture again\" >&2; exit 1; fi; echo \"LIVESPEC_RECAPTURE: recapture lap $count of 2. Every blocking finding of this review verdict is about the captured RECORD rather than the tree, so this run re-enters proof_capture and spends no disposition visit, no review_fix visit and no review-fix round. The reviewer published those findings as its own review record on the pull request; read them there when this preamble carries none.\" >&2; exit 0"
-    ]
-
     // Terminal dead-implementer node (C5 / bd-ib-vdpb): a deliberate
     // dead end for unchanged implement output. It terminates non-green
     // before janitor/review/disposition and carries the governing
@@ -1982,18 +1882,12 @@ digraph ImplementWorkItem {
     //   - fix           -> disposition, then accepted findings route to
     //                      review_fix and all-rejected rounds route directly
     //                      back to review; the budget is review_fix.max_visits.
-    //   - recapture     -> recapture_route, which re-enters proof_capture for the
-    //                      first two such verdicts and routes the third to
-    //                      non_converged; it reaches neither disposition nor
-    //                      review_fix, so a proof-record verdict spends no fix
-    //                      round (v175; see that node's comment).
     //   - node failure  -> needs_human; weight=100 keeps that deterministic
     //                      against other conditions.
     //   - anything else -> needs_human, the unconditional fallthrough that keeps
     //                      `all_conditional_edges` from rejecting this node.
     review -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
     review -> disposition [label="fix", condition="preferred_label=fix"]
-    review -> recapture_route [label="recapture", condition="preferred_label=recapture"]
     review -> proof_verify [label="approve", condition="preferred_label=approve"]
     review -> needs_human [label="unmatched review outcome"]
     disposition -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
@@ -2009,22 +1903,6 @@ digraph ImplementWorkItem {
     // `all_conditional_edges` reason above.
     review_fix -> needs_human [label="Blocked", condition="outcome=failed"]
     review_fix -> janitor
-
-    // Recapture routing (v175; Scenario 137; work-item bd-ib-j56cur). The
-    // re-capture is the UNCONDITIONAL fallthrough and the exhausted bound is the
-    // named exception, which is the shape every command node here uses: the
-    // engine gives a command node exactly two outcomes, and a node whose every
-    // outgoing edge carries a condition is rejected outright before anything runs
-    // (`all_conditional_edges`, the defect that took the whole factory down
-    // twice).
-    //
-    // NO EDGE LEAVES THIS NODE FOR `disposition` OR `review_fix`, and that
-    // absence is the contract's own wording rather than an omission: a recapture
-    // verdict "MUST NOT route to `disposition` or `review_fix`, so the verdict
-    // consumes no `disposition` visit, no `review_fix` visit and no review-fix
-    // round".
-    recapture_route -> non_converged [label="third recapture verdict", condition="outcome=failed"]
-    recapture_route -> proof_capture
 
     // Proof-replay routing (S6 / bd-ib-msnlnv). The replay node emits a routing
     // verdict on its last line (prompts/proof-verify.md), mapping its RECORD

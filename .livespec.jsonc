@@ -762,14 +762,6 @@
       // most-retried turn in the graph -- so the derivation bills it at that
       // turn's attempt count, and 600 s is already three orders of magnitude
       // above a file read.
-      //
-      // `recapture_route` is declared downward for the same reason (v175,
-      // Scenario 137; work-item bd-ib-j56cur): it increments one counter file in
-      // this clone's own `$GIT_DIR` and decides, running no suite, no push and no
-      // agent turn -- while sitting on a NEW cycle back into `proof_capture`, so
-      // the derivation bills it at that loop's own visit count and every
-      // inherited second would land in the Codex credential-lifetime floor
-      // tests/test_factory_checkpoint_declaration.py guards.
       "node_timeouts": {
         "implement": 14400,
         "implement_completion": 600,
@@ -779,8 +771,7 @@
         "publish_draft": 3600,
         "pr_refresh": 3600,
         "proof_grade": 600,
-        "proof_grade_route": 600,
-        "recapture_route": 600
+        "proof_grade_route": 600
       },
       // ACTIVE inventory, not endpoint history: an unnamed `reconcile-runs`
       // pass surveys every entry. Intentionally stopped or retired factories

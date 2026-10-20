@@ -48,47 +48,6 @@ surface the assertion names is broken — that is an IMPLEMENTATION DEFECT,
 not your problem to fix. Do not fix it. Report it: see "A capture that
 needs a code change" below.
 
-## Step 0 — were you re-entered because a review REJECTED the last record?
-
-This node runs once per green janitor, so you may be capturing for the first
-time or re-capturing after `review` found the previous record defective. A
-re-capture that does not know WHY the record was rejected produces the same
-kind of record and is rejected again, which is exactly the loop this step
-exists to end: two runs on 2026-10-20 died on the review-fix firing budget
-with green code because nothing carried the reviewer's findings back here.
-
-So, BEFORE anything else, establish whether findings are owed and read them.
-They arrive by **two routes, and you must try both**:
-
-1. **The engine preamble of preceding stage output**, above this prompt. A
-   recapture entry is preceded by a `recapture_route` stage whose output
-   begins `LIVESPEC_RECAPTURE:`, and the review's own response carries the
-   finding lines. A fix round reaches you several stages later instead, with
-   the review further back in the same preamble.
-2. **The review record on the pull request.** `review` posts one comment per
-   blocking round whose first line begins `Review findings — run `. **Read it
-   whenever the preamble carries no finding** — and reading it is cheap, so
-   read it whenever you are not certain you have the complete list:
-
-       gh pr list --head <publish branch> --state open --json number
-       gh pr view <number> --json comments
-
-   Take the LATEST `Review findings` comment, not the first.
-
-Every `[BLOCKING]` line tagged `(proof-record)` is a defect in the record you
-must fix in the one you are about to post. The four kinds are: a record that
-is not current for the publish head, a behavioural assertion proved by
-test-suite output alone, a step running a program the record does not contain,
-and an assertion whose proof prints its own conclusion. Address **each** of
-them — name them in your final reply and say what you changed — and publish a
-record that is CURRENT for the publish head, per the head declaration in Step
-5. A `(tree)` finding is not yours: a code defect is the fix stage's work and
-you must still not modify the tree.
-
-If findings were owed and you can find none by either route, say so
-explicitly in your final reply and capture afresh and completely rather than
-re-posting the previous record's shape.
-
 ## Step 1 — read the Definition of Done and classify every assertion
 
 Parse the `## Definition of Done` section out of the assignment. Each `- `
@@ -152,33 +111,19 @@ concrete, copy-pasteable action or command. The steps must be:
   asset ordinal it produces, e.g. "produces proof 01". The replay leg
   compares its `verify` asset to the `capture` asset of the SAME ordinal,
   so a step that names no ordinal makes its own proof uncomparable.
-- **Self-contained in its PROGRAM TEXT.** Every program a step executes that
-  is NEITHER tracked in the repository at the commit this record names NOR an
-  installed tool invoked by its name MUST be written into the record itself —
-  its COMPLETE SOURCE in a fenced block, as part of the step or beside its
-  proof — or into a proof asset the record names through the proof asset
-  store. The test is replayability from three things alone: this record, that
-  commit, and the sandbox's installed tools.
-  - **These two are exempt, and naming them is enough.** A program the
-    repository TRACKS at that commit may be invoked by its path, and an
-    INSTALLED tool may be invoked by its name; neither has to be copied into
-    the record, because the replayer has both.
-  - **Everything else is not.** A heredoc into an interpreter (`python -`,
-    `sh -s`), a script you authored in the scratch directory — anything under
-    `"${TMPDIR:-/tmp}/proof-capture"` is untracked by construction — a `-c`
-    one-liner, a patch or a mutation applied to a file: publish the source.
-    Publishing only the invocation line and the program's OUTPUT does not
-    satisfy this: the replayer is a stranger who may not reconstruct a program
-    from its stdout, and may not infer one from the surrounding prose, so a
-    step whose program is absent is UNREPLAYABLE, it is a blocking
-    proof-record finding at review, and the assertion it carries is graded
-    `not_reproduced` however correct the implementation is. Measured
-    2026-10-20: records whose steps ran untracked `/tmp/proof-capture/*.py`
-    programs the record never contained were rejected round after round until
-    the run died on its firing budget.
-  - A phrase such as "with the program shown in the capture" is a PROMISE this
-    bullet makes binding — before you publish, re-read each such step and
-    confirm the source it points at is really there.
+- **Self-contained in its PROGRAM TEXT.** When a step runs a program rather
+  than a bare command — a heredoc into an interpreter (`python -`, `sh -s`),
+  a script you authored in the scratch directory, a `-c` one-liner, a patch
+  or a mutation applied to a file — the record MUST publish that program's
+  COMPLETE SOURCE in a fenced block, as part of the step or beside its
+  proof. Publishing only the invocation line and the program's OUTPUT does
+  not satisfy this: the replayer is a stranger who may not reconstruct a
+  program from its stdout, and may not infer one from the surrounding prose,
+  so a step whose program is absent is UNREPLAYABLE and the assertion it
+  carries is graded `not_reproduced` however correct the implementation is.
+  A phrase such as "with the program shown in the capture" is a PROMISE this
+  bullet makes binding — before you publish, re-read each such step and
+  confirm the source it points at is really there.
 
 ## Step 3 — execute the steps verbatim
 
@@ -217,18 +162,6 @@ entry point, invoke that entry point the way an operator invokes it. Where it
 names a file and the text it carries, read that file out of the delivered
 tree. Reaching for `pytest` because it is nearer to hand is the failure this
 paragraph exists to stop.
-
-### Show the observation, never print the conclusion
-
-A proof must SHOW what was observed. A step whose output is the claim itself
-— an `echo` of the assertion, a `print("verified")`, a program whose only
-output is a line stating that the thing works — proves nothing, and it is a
-blocking proof-record finding at review even when the assertion is perfectly
-true. The published capture has to carry the artifact's OWN output, exactly
-as the artifact emitted it, so a stranger replaying the step can compare
-their observation against yours. Where a step must reduce a large output to
-a verdict, publish the raw observation too, or publish the exact comparison
-that produced the verdict — never the verdict alone.
 
 ### What to capture, per assertion
 
