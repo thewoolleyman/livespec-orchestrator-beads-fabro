@@ -480,8 +480,12 @@ capability is a violation regardless of run outcome.
   §"Store-write consent discipline"). Waivers are explicit,
   class-named, and invocation-scoped — never a default.
 - The Dispatcher's machine-path dispositions of already-filed items
-  (the lifecycle verbs admit / complete / accept / reject, the `backlog` bounce, and — when the effective `admission_policy` is `auto` (via `dispatcher.auto_approve_ready` or a per-item label) — the auto-approve disposition, with `complete` carrying PR + merge-sha audit evidence) are the SOLE exemption from the store-write consent
-  discipline; `--no-close-on-merge` disables the post-merge disposition
+  (the lifecycle verbs admit / complete / accept / reject, the `backlog` bounce, and — when the effective `admission_policy` is `auto` (via `dispatcher.auto_approve_ready` or a per-item label) — the auto-approve disposition, with `complete` carrying PR + merge-sha audit evidence) and the detection-coverage self-bookkeeping on the designated anchor
+  — the attempt, completed-coverage and held-finding records that
+  `capture-impl-gaps`, `capture-spec-drift` and the Dispatcher's drift run
+  append (`contracts.md` §"Detection coverage records and staleness
+  facts" → "The self-bookkeeping exception, scoped") — are the SOLE
+  exemptions from the store-write consent discipline; `--no-close-on-merge` disables the post-merge disposition
   writes entirely. The Dispatcher MUST
   NOT create net-new work-items.
 

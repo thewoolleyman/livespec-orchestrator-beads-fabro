@@ -92,7 +92,11 @@ for any "show me gaps for changes since this version" workflow.
 
 #### `capture-spec-drift`
 
-Detect impl → spec drift heuristically (LLM-driven). For each finding,
+Detect impl → spec drift through the spec-stated judgement of the
+`livespec_runtime.spec_stated` module (the one judgement every
+orchestrator shares, which answers whether a behaviour is stated by the
+ratified specification and names the heading whose generalization would
+state it). For each finding,
 present it to the user with a recommended action; on consent, hand off
 to `/livespec:propose-change` via the cross-boundary handoff (per
 `livespec/SPECIFICATION/contracts.md` §"Cross-boundary handoffs"
@@ -104,8 +108,11 @@ writes to spec-side state directly.
 heuristic above, and a **ledger-intent scan** — a read-only pass over
 recent work-items in the Ledger that surfaces work-item intent (its
 `title`, `description`, `acceptance_criteria`, and closure `reason`)
-encoding an observable behavior, decision, or invariant NOT reflected in
-the current spec. Each ledger-intent finding MUST be surfaced through the
+encoding an observable behavior, decision, or invariant NOT reflected in the current spec. Whether intent is reflected MUST be
+decided by the same spec-stated judgement, over every live work-item and
+every work-item captured on or after the latest version's cut, reading
+the four fields named above; an item's type is never a detection
+exclusion. Each ledger-intent finding MUST be surfaced through the
 same per-finding consent flow and, on consent, handed off to
 `/livespec:propose-change`; the scan reads the Ledger through the store's
 read API only, and MUST NOT emit a finding for intent already reflected
@@ -140,22 +147,32 @@ Detection runs are RECORDED, and their recency is COMPUTED, never
 remembered:
 
 - **Records.** Every invocation of `capture-impl-gaps` or
-  `capture-spec-drift` MUST append an attributed ATTEMPT record
+  `capture-spec-drift`, and every drift run of a reconcile pass or a
+  post-merge janitor ("The drift run" below), MUST append an attributed ATTEMPT record
   (operation, declared scope, invoker, outcome) to the repository's
   designated detection-coverage anchor — a ledger item provisioned once
   by the operator through `capture-work-item`, its id committed in
   `.livespec.jsonc`. A COMPLETED-coverage record — carrying the coverage
-  point: the ratified spec revision the gap capture ran against, or the
-  default-branch merge SHA the drift pass ran through — MUST be appended
+  point: the ratified spec revision the gap capture ran against, or, for the drift pass, the FRONTIER: the newest default-branch
+  merge SHA such that it and every earlier merge after the previous
+  frontier has been processed with every finding durably disposed as
+  defined in this bullet, which for the Dispatcher's drift run means filed,
+  and which a held finding never is — MUST be appended
   ONLY when the run reached a successful terminal outcome over its
   declared scope with EVERY surfaced candidate durably disposed
-  (consented-and-filed, consented-and-handed-off, or explicitly declined
-  on the record). A non-zero exit, an interruption, an unresolved
+  (consented-and-filed, consented-and-handed-off, or explicitly declined on
+  the record; for the drift run, filed through the propose-change handoff). A held
+  finding is NOT disposed. The drift run is all-or-nothing over its
+  declared scope, the merges after the previous frontier: only when every
+  one of them is processed with every finding filed does it write a
+  completed record, whose frontier is the newest of them; otherwise it
+  writes the attempt record alone and the previous frontier stands. A non-zero exit, an interruption, an unresolved
   candidate, or a partial range MUST NOT write a completed record: the
   prior completed point stands, and a complete successful pass clears
   staleness while an aborted or partial pass does not.
-- **The self-bookkeeping exception, scoped.** Appending these two
-  record types to the designated anchor is the ONLY ledger write the
+- **The self-bookkeeping exception, scoped.** Appending these two record types, and the drift run's
+  held-finding records ("`dispatcher.drift_proposal_queue_cap`" below),
+  to the designated anchor is the ONLY ledger write the
   detection operations may perform outside their consent flows: no
   work-item create, no disposition, no edit of any other record.
   `capture-spec-drift`'s ledger-intent scan remains read-only; this
@@ -169,22 +186,54 @@ remembered:
   one binding — and exists for the runs Step 13 cannot guarantee: a
   skipped, interrupted, or bypassed post-step. It MUST NOT trigger any
   run itself.
-- **Drift staleness.** When the count of default-branch merges since the
-  last COMPLETED drift coverage point is at or past the effective
-  `dispatcher.drift_capture_merge_threshold`, the snapshot MUST carry a
-  drift-staleness fact whose handoff names `capture-spec-drift`. Merge
-  counting excludes nothing silently: if a class of commits is excluded,
-  the exclusion is stated on the fact.
+- **The drift run.** Each reconcile pass of the Dispatcher MUST
+  enumerate every default-branch merge after the recorded frontier, in
+  merge order, and MUST run the drift pass over each merge's diff through
+  the spec-stated judgement; the post-merge janitor MAY call the same
+  primitive after its own merge, and a merge no janitor saw — a hand
+  merge, a spec pull request, an externally merged pull request — is
+  processed by the next reconcile pass. For each `partial` or `unstated`
+  behaviour a merge adds, the pass MUST file one proposed change carrying
+  a drift origin and naming the generalization target, through the
+  cross-boundary propose-change handoff, with a finding identity derived
+  from the merge and the behaviour so that a retried pass files no
+  duplicate. The frontier MUST advance to a merge only when every finding of that
+  merge and of every earlier merge is filed; a merge whose pass fails, or
+  that carries a held finding, stops the frontier until it is processed
+  with every finding filed, and a later merge's
+  success MUST NOT advance past it. The pass MUST NOT accept, modify or
+  reject any proposal. When the count of default-branch merges after the
+  frontier is at or past the effective
+  `dispatcher.drift_capture_merge_threshold`, the needs-attention snapshot
+  MUST still carry a drift-staleness fact naming the merges after the
+  frontier, so an unrun or failing pass is visible; merge counting
+  excludes nothing silently.
 - **`dispatcher.drift_capture_merge_threshold`** (sourced from this
   repo's `.livespec.jsonc`, positive integer, default **1**) — the
   merge-count trigger. Declared **API-configurable**: it appears in the console
   Settings surface per §"API-configurable completeness" (the
   consumer-side legs belong to the console's own specification). No
   per-item override — detection recency is a repository property.
-- **Consent is untouched.** Both skills remain consent-gated attended
-  dialogues. A staleness fact is a surfaced, owned TRIGGER carrying a
-  handoff; nothing in this section runs a detector headlessly, and no
-  policy setting MAY do so.
+- **`dispatcher.drift_proposal_queue_cap`** (sourced from this repo's
+  `.livespec.jsonc`, positive integer, default **5**) — the number of
+  drift-origin proposed changes that MAY be open at once. When the cap is
+  reached, further findings MUST be HELD on the detection-coverage anchor
+  with their identities rather than filed, the frontier MUST NOT advance
+  past a merge with a held finding, and `needs-attention` MUST list the
+  held findings with a handoff naming `revise`. Declared
+  **API-configurable**: it appears in the console Settings surface per
+  §"API-configurable completeness" (the consumer-side legs belong to the
+  console's own specification). No per-item override — the open-proposal
+  queue is a repository property.
+- **Filing is the machine path; acceptance is human.** `capture-impl-gaps`
+  remains a consent-gated attended dialogue, and a gap-capture staleness
+  fact is a surfaced, owned TRIGGER that runs nothing. The drift run above
+  files unattended, which livespec core's `spec.md` permits ("Orchestrators
+  MAY file drift (the machine path)"); what it MUST NEVER do is accept a proposal. Acceptance of a drift-origin
+  proposal rests at `revise` with its human gate, or with the unanimous
+  cross-vendor consensus tier where `spec_governance.drift_acceptance_mode`
+  opts into it (`spec.md` §"Terminology"); no `revise_decision_mode`
+  value accepts a drift-origin proposal.
 
 #### `capture-work-item`
 
@@ -1365,8 +1414,9 @@ not under this exception.
 
 ### Machine-path exemption — the Dispatcher
 
-The Dispatcher (`dispatcher.py` `dispatch` / `loop`) writes to the work-items
-store ONLY as machine-path dispositions of already-filed items — the lifecycle
+The Dispatcher (`dispatcher.py` `dispatch` / `loop`) writes to the work-items store ONLY as machine-path dispositions of
+already-filed items, and as the drift run's detection-coverage
+self-bookkeeping named at the end of this paragraph, — the lifecycle
 verbs `admit` (`ready → active`), `complete` (`active → acceptance` on
 confirmed merge, carrying PR-number and merge-sha audit evidence in the
 `AuditRecord`), `accept` (`acceptance → done`, the AI leg of the item's
@@ -1380,9 +1430,12 @@ policy settings") — the auto-`approve` (`pending-approval → ready`)
 disposition. These writes are EXEMPT from the per-operation consent discipline
 by design — the Dispatcher acts on items a human or a consented front-end
 already filed, and `--no-close-on-merge` disables the post-merge disposition
-writes entirely. The exemption covers ONLY dispositions of already-filed
-items; the Dispatcher MUST NOT create net-new work-items on its own
-initiative. The Dispatcher's module docstring documents this boundary. The
+writes entirely. The exemption covers ONLY dispositions of already-filed items and the
+drift run's self-bookkeeping on the designated detection-coverage anchor
+(its attempt, completed-coverage and held-finding records, §"Detection
+coverage records and staleness facts"); the Dispatcher MUST NOT create
+net-new work-items on its own initiative, and the proposals the drift run
+files are spec-side proposed changes, not work-items. The Dispatcher's module docstring documents this boundary. The
 human-triggered operator commands (`drive`
 `approve:`/`accept:`/`reject:`/`resolve-blocked:`/`set-admission:`/`set-acceptance:`/`set-factory-safety:`/`set-workflow-scope-override:`/`set-merge-on-review-cap:`/`set-review-fix-cap:`/`set-acceptance-rework-cap:`/`set-merge-hold:`/`move:`
 action ids, per §"`drive`") are NOT machine-path dispositions — their consent
@@ -1394,9 +1447,11 @@ The thin-transport skills (`list-work-items`, `next`,
 `detect-impl-gaps`, `list-plans`, `needs-attention`) are query-only by
 contract (per `constraints.md` §"Forbidden patterns") and never write to the
 store; the consent discipline does not apply to them.
-`capture-spec-drift` writes nothing to this plugin's store — its
-output is a `/livespec:propose-change` cross-boundary handoff,
-itself per-finding user-consented.
+`capture-spec-drift` writes nothing to this plugin's store beyond its
+detection-coverage records on the designated anchor (§"Detection coverage
+records and staleness facts" → "The self-bookkeeping exception, scoped") —
+its findings' output is a `/livespec:propose-change` cross-boundary
+handoff, itself per-finding user-consented.
 
 
 ## Grooming and slice-size calibration

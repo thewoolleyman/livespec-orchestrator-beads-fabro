@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.228.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.228.0...v0.228.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **plan:** recover a same-operation retry at an exhausted handoff budget ([736c48b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/736c48b1d5973ef5c1d58eba6c5d69723a867e2c))
+
 ## [0.228.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.227.1...v0.228.0) (2026-10-20)
 
 
