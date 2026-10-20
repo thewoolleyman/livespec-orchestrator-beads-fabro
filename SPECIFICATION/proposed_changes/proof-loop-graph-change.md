@@ -31,7 +31,9 @@ Second, a `pr_refresh` that applies cleanly and overlaps neither the item's path
 
 **1.** In SPECIFICATION/contracts.md, section "Worker credential projection", insert after the paragraph that begins "The Dispatcher MUST NOT dispatch a worker unless every projected credential covered by the **freshness gate**" the following paragraph:
 
-> The worker's maximum run budget is the smaller of two figures. The first is the execution allowance the Dispatcher derives from the resolved workflow graph. The second is the bounded credential-use window, which is the resolved `dispatcher.credential_queue_allowance_seconds` plus the whole-run wall budget resolved for the same dispatch (§"ACP node timeouts", "Whole-run wall budget key"). The worker's credential-use deadline MUST be the projection instant plus that same figure, and the in-sandbox guard MUST stop coding-agent execution at that deadline, so the host gate and the in-sandbox guard use one figure. The freshness gate MUST require that figure plus the documented margin. A run that has not reached its deadline is never stopped by this paragraph earlier than the whole-run wall budget would stop it. A run whose queue and preparation time consumed the credential queue allowance MUST be refused at agent launch, naming the deadline, exactly as a queue-aged credential is refused today. `dispatcher.credential_queue_allowance_seconds` is a committed-only positive integer of seconds, default **86400**. A non-positive or non-integer value MUST be rejected before any run exists, naming the key. Its resolution and journaling follow the whole-run wall budget key. The status and manual-renewal surfaces MUST report the same figure and name which of the two figures governed. Scenario 228 in `scenarios.md` exercises this paragraph.
+> The worker's maximum run budget is the smaller of two figures. The first is the execution allowance the Dispatcher derives from the resolved workflow graph. The second is the bounded credential-use window, which is the resolved `dispatcher.credential_queue_allowance_seconds` plus the whole-run wall budget resolved for the same dispatch (§"ACP node timeouts", "Whole-run wall budget key"). The worker's credential-use deadline MUST be the projection instant plus that same figure, and the in-sandbox guard MUST stop coding-agent execution at that deadline, so the host gate and the in-sandbox guard use one figure. The freshness gate MUST require that figure plus the documented margin. The bound on credential use is the guard deadline, not the progress watchdog. The whole-run wall budget is not itself a hard bound: queue time is excluded from it, a held or unmeasured budget lets a run continue past it, and it is enforced only while the watchdog polls. A run first launched within the credential queue allowance is never stopped by the deadline before the whole-run wall budget's worth of running time has elapsed. At the run's first coding-agent launch, the in-sandbox start check MUST refuse the launch when the time remaining before the credential-use deadline is less than the resolved whole-run wall budget, naming the deadline, the remaining time and the budget. This is the queue-exceeded refusal. It is a different measurement from the start check's comparison of the credential's remaining life against the freshness requirement, and both MUST be made. A run that queued past the credential queue allowance is therefore refused before any coding-agent turn starts, and is never stopped by the guard in the middle of a turn on its queue's account. `dispatcher.credential_queue_allowance_seconds` is a committed-only positive integer of seconds, default **86400**. A non-positive or non-integer value MUST be rejected before any run exists, naming the key. Its resolution and journaling follow the whole-run wall budget key. The status and manual-renewal surfaces MUST report the same figure and name which of the two figures governed. For a dispatch in flight they MUST also report the queue time consumed against the credential queue allowance. Scenario 228 in `scenarios.md` exercises this paragraph.
+
+> **A run ended by its credential-use deadline.** When the in-sandbox guard stops a coding agent at the credential-use deadline in the middle of a node, or refuses an agent launch because the deadline has passed, the Dispatcher MUST end the run under the export-then-terminate precondition of §"A factory run never awaits a human". It exports the run's record and writes and reads back the preserve-by-reference pointer, which names the run's published pull request and publish branch head when they exist, before the run is ended. It MUST journal exactly one `credential-use-deadline-reached` record carrying the run id, the factory, the node, the projection instant, the credential-use deadline, the queue time consumed, the governing figure, the preserve-by-reference pointer, and the cause. The cause is `queue-exceeded` for the start check's queue-exceeded refusal, `launch-refused` for a later agent launch refused because the deadline has passed, and `killed-mid-node` for an agent stopped at the deadline. The same disposition applies to all three. It MUST rest the item at `blocked` with `blocked_reason` `needs-human`, with a ledger comment naming the run, the node, the deadline, the cause and the pointer. The record anchors resume under §"Resume from a published pull request (`resume --item`)" exactly as a `run-wall-budget-exceeded` record does. Such an ending MUST NOT be reported as a plain failed run, MUST NOT be left without a journal record, and MUST NOT count toward any non-convergence or rework bound. Scenario 228 in `scenarios.md` exercises this paragraph.
 
 **2.** In SPECIFICATION/contracts.md, section containing "**Proof carry-forward across a refresh.**", paragraph "**The decision.**", replace the clause "every incoming path is beneath an inert class;" with:
 
@@ -66,11 +68,39 @@ Feature: A proof-loop edge cannot price a fresh credential out of dispatch
     Then the worker's credential-use deadline is P plus 108000 seconds
     And a coding agent still running at that deadline is stopped
 
-  Scenario: A long queue is refused at agent launch
-    Given a dispatch whose credential queue allowance is 86400 seconds
+  Scenario: A long queue is refused at agent launch and rests for resume
+    Given a dispatch whose credential queue allowance is 86400 seconds and whose whole-run wall budget is 21600 seconds
     And the run is first launched more than 108000 seconds after projection
     When the first coding-agent node launches
     Then the launch is refused naming the credential-use deadline
+    And the dispatch journal carries one credential-use-deadline-reached record with cause queue-exceeded
+    And the item rests at blocked with blocked_reason needs-human
+
+  Scenario: A queue between the allowance and the deadline is refused before any turn starts
+    Given a dispatch whose credential queue allowance is 86400 seconds and whose whole-run wall budget is 21600 seconds, projected at instant P
+    And the run's first coding-agent launch is at P plus 90000 seconds, so 18000 seconds remain before the deadline
+    When the start check runs
+    Then it refuses the launch because 18000 seconds is less than the 21600-second budget, naming the deadline, the remaining time and the budget
+    And no coding-agent turn starts, so no agent is stopped in the middle of a turn
+    And the dispatch journal carries one credential-use-deadline-reached record with cause queue-exceeded
+    And the item rests at blocked with blocked_reason needs-human
+
+  Scenario: A run whose wall budget is held past it ends at the guard deadline with its work preserved
+    Given a dispatch whose governing figure is 108000 seconds, projected at instant P
+    And the run has published a draft pull request with head H
+    And the run's whole-run wall budget is unmeasured, so the watchdog does not cancel it
+    When a coding agent is still running at P plus 108000 seconds
+    Then the guard stops the agent at that deadline
+    And the Dispatcher exports the run's record and reads back a preserve-by-reference pointer naming the pull request and head H before the run ends
+    And the dispatch journal carries one credential-use-deadline-reached record with cause killed-mid-node naming the node, the deadline, the queue time consumed and the pointer
+    And the item rests at blocked with blocked_reason needs-human, and resume --item is anchored on that record
+    And the ending is not reported as a plain failed run and is not counted toward any non-convergence bound
+
+  Scenario: The status surface shows queue time consumed
+    Given a dispatch in flight whose credential queue allowance is 86400 seconds
+    And its first agent launched 3600 seconds after projection
+    When codex-cred-status is read
+    Then it reports 3600 seconds of queue time consumed against the 86400-second allowance
 ```
 
 ## Scenario 229 — A non-overlapping refresh after one re-proof carries the proof forward
