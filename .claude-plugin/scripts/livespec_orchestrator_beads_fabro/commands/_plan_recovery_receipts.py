@@ -225,8 +225,11 @@ def _attempt_records(
 ) -> tuple[Mapping[str, object], ...]:
     """The journal segment owned by one attempt, or all rows for an unscoped read.
 
-    The next attempt boundary closes the segment even when it names another
-    attempt for the same item.  Thus an attempt recorded after an earlier run is
+    The next boundary for ANOTHER attempt closes the segment even when it names
+    the same work item.  A later boundary for THIS attempt replaces the earlier
+    segment instead: it is the executor's retry of the same authorized command,
+    and the durable records after it are the attempt's newest claim, run and
+    terminal outcome.  Thus an attempt recorded after an earlier run is
     deliberately left with an empty segment until its own dispatcher invocation
     produces durable records; historical evidence cannot flow across that line.
     """
@@ -237,10 +240,11 @@ def _attempt_records(
         boundary = _attempt_boundary_ids(record=record, work_item_id=work_item_id)
         if boundary is None:
             continue
-        if start is not None:
-            return records[start:index]
         if attempt_id in boundary:
             start = index + 1
+            continue
+        if start is not None:
+            return records[start:index]
     return records[start:] if start is not None else ()
 
 
