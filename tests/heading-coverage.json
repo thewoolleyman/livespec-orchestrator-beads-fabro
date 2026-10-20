@@ -2018,5 +2018,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal plan-obligation-supersession, and the owning work-item bd-ib-egzipe lands the supersession writer together with the integration-tier test that binds this entry.",
     "work_item": "bd-ib-egzipe"
+  },
+  {
+    "heading": "## Scenario 212 \u2014 The sandbox-images command reports the sandbox image sources a dispatch without an explicit workflow path resolves, through dispatch resolution, and changes nothing",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal sandbox-image-enumeration, and the owning work-item bd-ib-nqmltq lands the sandbox-images subcommand together with the test that binds this entry.",
+    "work_item": "bd-ib-nqmltq"
   }
 ]
