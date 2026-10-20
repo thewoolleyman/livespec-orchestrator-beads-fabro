@@ -30,6 +30,9 @@ from livespec_orchestrator_beads_fabro.commands._jsonc import loads
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _STAGE_CASES_PATH = _REPO_ROOT / "tests" / "integration" / "test_scripted_refresh_execution.py"
+_PUBLISH_DRAFT_CASES_PATH = (
+    _REPO_ROOT / "tests" / "integration" / "test_workflow_publish_workflow_permission_race.py"
+)
 
 
 class _Scenario200StageCases(Protocol):
@@ -58,6 +61,14 @@ class _Scenario200StageCases(Protocol):
     def test_a_merged_record_head_the_gate_rejects_takes_repair(self, tmp_path: Path) -> None: ...
 
 
+class _Scenario200PublishDraftCases(Protocol):
+    """The shipped `publish_draft` exercise Scenario 200 owns."""
+
+    def test_publish_draft_retry_merges_a_declared_record_conflict_after_a_workflow_race(
+        self, tmp_path: Path
+    ) -> None: ...
+
+
 @cache
 def _stage_cases() -> _Scenario200StageCases:
     """Load the real-Git stage harness without relying on pytest collection order."""
@@ -71,6 +82,21 @@ def _stage_cases() -> _Scenario200StageCases:
     sys.modules[specification.name] = module
     specification.loader.exec_module(module)
     return cast("_Scenario200StageCases", module)
+
+
+@cache
+def _publish_draft_cases() -> _Scenario200PublishDraftCases:
+    """Load the real publish-stage harness without collection-order coupling."""
+    specification = importlib.util.spec_from_file_location(
+        "scenario200_publish_draft_cases", _PUBLISH_DRAFT_CASES_PATH
+    )
+    assert specification is not None
+    assert specification.loader is not None
+    module = importlib.util.module_from_spec(specification)
+    assert isinstance(module, ModuleType)
+    sys.modules[specification.name] = module
+    specification.loader.exec_module(module)
+    return cast("_Scenario200PublishDraftCases", module)
 
 
 # The four shared records every revise and every scenario-binding change in this
@@ -129,6 +155,25 @@ def test_the_committed_configuration_declares_this_repositorys_shared_record_fil
 
 def test_stage_merges_declared_json_records_in_default_then_run_order(tmp_path: Path) -> None:
     _stage_cases().test_a_declared_json_record_conflict_merges_and_republishes_without_repair(
+        tmp_path
+    )
+
+
+def test_publish_draft_merges_declared_json_records_without_a_repair_round(
+    tmp_path: Path,
+) -> None:
+    """Exercise the other refresh stage through its workflow-race retry.
+
+    `publish_draft` reaches its refresh after the forge rejects a first push for
+    a changed workflow file.  Its retry then encounters the declared JSON
+    conflict, so this control proves the publish-stage arm completes a real
+    rebase, emits its merge diagnostic, preserves default-then-run ordering,
+    and publishes rather than routing to refresh repair.  The delegated harness
+    reads the committed node script and uses a real bare origin; this scenario
+    module deliberately calls it as its own case so Scenario 200 covers BOTH
+    stages named by the contract rather than only `pr_refresh`.
+    """
+    _publish_draft_cases().test_publish_draft_retry_merges_a_declared_record_conflict_after_a_workflow_race(
         tmp_path
     )
 
