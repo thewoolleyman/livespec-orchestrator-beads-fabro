@@ -22,16 +22,40 @@ as result references" a property of this surface rather than a scan for
 shell-looking strings; the closed kind set in `_plan_result_targets` does the
 work and this call simply declines what it will not admit.
 
-THE IDENTITY FIELDS ARE GRADED BEFORE THE READ, which is the fail-closed order.
-A relay with a blank id, a blank operation identity, a blank sender or a blank
-deadline is one no later call can address, so spending a tenant or forge read on
-it would be spending it on a question nobody can ask again.
+EVERY OTHER GRADE LIVES IN `_plan_relay_admission` and runs here in the
+fail-closed order: the identity fields, then the relay's own recorded history,
+then the supersession — each before the target is read, because a read spent on
+a relay no later call can address or take is a read spent on a question nobody
+can ask again. The epic's relay comments are read ONCE and the two resolved
+records are handed down, so no two grades can disagree about what the ledger
+holds.
+
+THE DEADLINE A RECORD CARRIES IS READ BACK OFF THE RELAY'S OWN HISTORY, never off
+the request. "If the result is unsatisfied or unobservable, the primitive MUST
+record an undelivered relay, its unchanged deadline and the observation; the
+sender retains the obligation" — and the sender is the party doing the recording,
+so a primitive that stored the deadline it was handed would let that sender roll
+its own clock forward every time it re-observed its own relay, with every record
+well-formed either way. The request's deadline is used only where the relay has
+no history, which is the one call that establishes it.
+
+A SUPERSEDING RECORD CARRIES THE DISPOSITION IT DISPLACES, which is the half of
+the conflicting-target rule that lives here rather than in the grade. The
+predecessor's own comment cannot be amended, so "preserves the old obligation's
+disposition" is satisfiable only on the record that replaces it — and the
+deadline rides with that disposition, because being displaced does not discharge
+an obligation and a reader asked whether anything is still owed needs the clock
+it was owed against.
+
+THE TRANSPORT LEGS CARRY FORWARD and a supplied value replaces the one it
+supersedes. A recheck that dropped them would make a relay look LESS acknowledged
+the more often it was observed, while a recheck that could not replace them could
+never record a peer's later recording — and neither leg moves the delivery
+verdict in either direction.
 
 WHAT THIS CALL NEVER DOES. It never transfers ownership and it never closes an
 obligation: those take all three legs, which `RelayRecord.ownership_transferable`
-answers and which no single recording decides. And it never extends a deadline —
-the deadline a record carries is read back from the relay's own history, never
-from the request, so a later caller naming a longer one changes nothing.
+answers and which no single recording decides.
 """
 
 from __future__ import annotations
@@ -41,11 +65,21 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
-from livespec_orchestrator_beads_fabro.commands._plan_relay_projection import write_relay_event
+from livespec_orchestrator_beads_fabro.commands._plan_relay_admission import (
+    RelayRefusal,
+    RelaySupersession,
+    identity_refusal,
+    target_refusal,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_relay_projection import (
+    read_relay_records,
+    write_relay_event,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_relay_record import (
     RelayAcknowledgements,
     RelayLegs,
     RelayRecord,
+    latest_relay,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
@@ -59,9 +93,14 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
+# `RelayRefusal` and `RelaySupersession` are defined in `_plan_relay_admission`
+# and named here because they are this primitive's own public surface: a caller
+# supplies the one and reads the other, and neither is reached except through
+# `record_relay`. The GRADE moved out by cohesion; the vocabulary did not.
 __all__: list[str] = [
     "RelayRefusal",
     "RelayRequest",
+    "RelaySupersession",
     "record_relay",
 ]
 
@@ -86,18 +125,17 @@ class RelayRequest:
     deadline: str
     acknowledgements: RelayAcknowledgements
     now: str
-
-
-@dataclass(frozen=True, kw_only=True)
-class RelayRefusal:
-    """Why one relay was not recorded. Nothing was written when this is returned."""
-
-    detail: str
+    supersedes: RelaySupersession | None = None
 
 
 def record_relay(*, request: RelayRequest) -> RelayRecord | RelayRefusal:
     """Observe the relay's requested target effect, then record what was observed."""
-    refusal = _identity_refusal(request=request)
+    refusal = identity_refusal(
+        relay_id=request.relay_id,
+        operation_id=request.operation_id,
+        sender=request.sender,
+        deadline=request.deadline,
+    )
     if refusal is not None:
         return refusal
     reference = parse_result_reference(value=request.required_result)
@@ -108,38 +146,38 @@ def record_relay(*, request: RelayRequest) -> RelayRecord | RelayRefusal:
                 f" result reader can observe: {reference.detail}"
             )
         )
+    client = make_beads_client(config=request.config)
+    records = read_relay_records(client=client, epic_id=request.epic_id)
+    history = latest_relay(records=records, relay_id=request.relay_id)
+    displaced = latest_relay(
+        records=records,
+        relay_id="" if request.supersedes is None else request.supersedes.relay_id,
+    )
+    refusal = target_refusal(
+        relay_id=request.relay_id,
+        epic_id=request.epic_id,
+        requested_identity=reference.identity,
+        supersedes=request.supersedes,
+        history=history,
+        displaced=displaced,
+    )
+    if refusal is not None:
+        return refusal
     observation = read_result(
         project_root=request.project_root,
         reference=request.required_result,
         runner=request.runner,
         now=request.now,
     )
-    record = _record(request=request, reference=reference, observation=observation)
-    write_relay_event(
-        client=make_beads_client(config=request.config),
-        epic_id=request.epic_id,
-        record=record,
+    record = _record(
+        request=request,
+        reference=reference,
+        observation=observation,
+        history=history,
+        displaced=displaced,
     )
+    write_relay_event(client=client, epic_id=request.epic_id, record=record)
     return record
-
-
-def _identity_refusal(*, request: RelayRequest) -> RelayRefusal | None:
-    """Refuse a relay no later call could address, before any read is spent."""
-    named = (
-        ("relay id", request.relay_id),
-        ("operation identity", request.operation_id),
-        ("sender", request.sender),
-        ("deadline", request.deadline),
-    )
-    blank = [field for field, value in named if value.strip() == ""]
-    if not blank:
-        return None
-    return RelayRefusal(
-        detail=(
-            "a relay must carry a stable relay id, a stable operation identity, the"
-            f" sender that owes it and an absolute UTC deadline; absent: {', '.join(blank)}"
-        )
-    )
 
 
 def _record(
@@ -147,6 +185,8 @@ def _record(
     request: RelayRequest,
     reference: ResultReference,
     observation: ResultObservation,
+    history: RelayRecord | None,
+    displaced: RelayRecord | None,
 ) -> RelayRecord:
     """Assemble the record this observation produces.
 
@@ -162,13 +202,40 @@ def _record(
         sender=request.sender,
         required_result=request.required_result,
         result_identity=reference.identity,
-        original_deadline=request.deadline,
+        original_deadline=request.deadline if history is None else history.original_deadline,
         delivered=delivered,
         legs=RelayLegs(
-            receipt_ack=request.acknowledgements.receipt_ack,
-            peer_recorded=request.acknowledgements.peer_recorded,
+            receipt_ack=_carried(
+                supplied=request.acknowledgements.receipt_ack,
+                history=None if history is None else history.legs.receipt_ack,
+            ),
+            peer_recorded=_carried(
+                supplied=request.acknowledgements.peer_recorded,
+                history=None if history is None else history.legs.peer_recorded,
+            ),
             target_evidence=observation.evidence if delivered else None,
         ),
         observation=observation,
         recorded_at=request.now,
+        superseded_relay_id=None if displaced is None else displaced.relay_id,
+        superseded_disposition=None if displaced is None else _disposition_of(record=displaced),
+    )
+
+
+def _carried(*, supplied: str | None, history: str | None) -> str | None:
+    """A supplied transport leg, else the one this relay already recorded."""
+    return history if supplied is None else supplied
+
+
+def _disposition_of(*, record: RelayRecord) -> str:
+    """The displaced obligation's disposition, as its successor preserves it.
+
+    The deadline rides WITH the disposition because the displaced obligation is
+    not discharged by being displaced: a reader asked whether anything is still
+    owed needs the clock it was owed against, and the predecessor's own record
+    cannot be amended to say so later.
+    """
+    return (
+        f"{record.disposition} ({record.observation.status})"
+        f" under deadline {record.original_deadline}"
     )

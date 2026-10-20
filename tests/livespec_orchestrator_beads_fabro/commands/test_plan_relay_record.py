@@ -1,27 +1,20 @@
-"""The relay record: its three legs, its selections, and its canonical payload.
+"""The relay record VALUE: its three legs and the two selections over it.
 
-The integration tier binds Scenario 149 end to end. This module covers what the
-record itself owns and that tier cannot reach: the round trip through the
-canonical payload, every malformed shape it must refuse, and the two selections
-a retry and a recheck resolve a relay through.
+The integration tier binds Scenario 149 end to end and
+`test_plan_relay_payload.py` covers the wire form. This module covers the record
+itself: which combinations of legs permit a transfer, and which record a retry
+and a recheck each resolve to.
 """
 
 from __future__ import annotations
 
-import json
-
-import pytest
 from livespec_orchestrator_beads_fabro.commands._plan_relay_record import (
     DELIVERY_DELIVERED,
     DELIVERY_UNDELIVERED,
     RelayLegs,
     RelayRecord,
     latest_relay,
-    parse_relay_payload,
-    payload_line,
     recorded_operation,
-    relay_event_body,
-    render_relay_payload,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     ResultObservation,
@@ -117,85 +110,6 @@ def test_a_delivered_record_with_all_three_legs_may_transfer_ownership() -> None
     assert delivered.disposition == DELIVERY_DELIVERED
     assert delivered.legs.complete is True
     assert delivered.ownership_transferable is True
-
-
-def test_a_record_survives_the_canonical_payload_round_trip() -> None:
-    """A retry is answered from the parse, so the parse must return the record."""
-    for record in (_record(met=False), _record(met=True), _record(superseded="relay-0")):
-        assert parse_relay_payload(text=render_relay_payload(record=record)) == record
-
-
-def test_the_event_body_names_a_superseded_relay_and_carries_the_payload() -> None:
-    """The successor is the only place the displaced obligation can be preserved.
-
-    `bd comments` offers no edit, so the predecessor's record cannot be amended;
-    the clause's "preserves the old obligation's disposition" therefore has to be
-    satisfied by the record that replaces it.
-    """
-    body = relay_event_body(record=_record(superseded="relay-0"))
-
-    assert "supersedes: relay-0 (undelivered)" in body
-    payload = payload_line(text=body)
-    assert payload is not None
-    assert parse_relay_payload(text=payload) is not None
-
-
-def test_an_event_body_without_a_supersession_names_none() -> None:
-    """The ordinary relay carries no supersession line at all."""
-    assert "supersedes:" not in relay_event_body(record=_record())
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "relay: relay-1\nno payload here",
-        "payload:   ",
-    ],
-)
-def test_a_body_carrying_no_usable_payload_line_reads_as_none(text: str) -> None:
-    """An absent and a blank payload are the same absence to every reader."""
-    assert payload_line(text=text) is None
-
-
-def _mutated(*, change: dict[str, object]) -> str:
-    fields = json.loads(render_relay_payload(record=_record()))
-    fields.update(change)
-    return json.dumps(fields)
-
-
-@pytest.mark.parametrize(
-    "change",
-    [
-        {"relay_id": 1},
-        {"delivered": "yes"},
-        {"legs": "none"},
-        {"legs": {"receipt_ack": 1, "peer_recorded": None, "target_evidence": None}},
-        {"observation": "none"},
-        {"observation": {"status": "satisfied"}},
-    ],
-)
-def test_every_malformed_payload_reads_as_no_record_at_all(change: dict[str, object]) -> None:
-    """Fail closed on every partial read.
-
-    A half-read payload would answer a retry with an observation this reader
-    assembled rather than the one that was recorded — and on the `delivered`
-    field that is a discharge nobody observed.
-    """
-    assert parse_relay_payload(text=_mutated(change=change)) is None
-
-
-def test_a_payload_whose_observation_status_is_not_one_of_the_three_is_refused() -> None:
-    """`ResultObservation` admits three statuses; a fourth is not an observation."""
-    fields = json.loads(render_relay_payload(record=_record()))
-    fields["observation"]["status"] = "acknowledged"
-
-    assert parse_relay_payload(text=json.dumps(fields)) is None
-
-
-@pytest.mark.parametrize("text", ["not json at all", '"a string"'])
-def test_a_payload_that_is_not_a_json_object_reads_as_no_record(text: str) -> None:
-    """Both halves: text that will not decode, and text that decodes to a non-object."""
-    assert parse_relay_payload(text=text) is None
 
 
 def test_the_newest_observation_of_one_relay_is_the_one_selected() -> None:

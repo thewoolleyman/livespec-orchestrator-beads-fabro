@@ -68,6 +68,9 @@ _DELIVERY_MODULE = Path(
 _RECORD_MODULE = Path(
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_plan_relay_record.py"
 )
+_PAYLOAD_MODULE = Path(
+    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_plan_relay_payload.py"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -86,6 +89,12 @@ def _modules() -> tuple[Any, Any]:
         importlib.import_module("livespec_orchestrator_beads_fabro.commands._plan_relay_record"),
         importlib.import_module("livespec_orchestrator_beads_fabro.commands._plan_relay_delivery"),
     )
+
+
+def _payload_module() -> Any:
+    """The relay record's wire-form module, proved present before it is read."""
+    assert _PAYLOAD_MODULE.is_file(), f"{_PAYLOAD_MODULE} does not exist"
+    return importlib.import_module("livespec_orchestrator_beads_fabro.commands._plan_relay_payload")
 
 
 @dataclass(kw_only=True)
@@ -287,11 +296,12 @@ def test_the_recorded_relay_is_durable_on_the_epic_with_its_payload(
 
     The ledger is the sole durable store, so a relay the primitive returned but
     never wrote would be an obligation nobody else can see. The payload is
-    asserted through the module's own parse rather than by matching prose,
+    asserted through the production parse rather than by matching prose,
     because the parse is what a retry and a recheck read it back with.
     """
     modules = _modules()
     record_module, delivery_module = modules
+    payload_module = _payload_module()
     repo, config = _seed(tmp_path=tmp_path, target_status="active")
 
     recorded = delivery_module.record_relay(
@@ -301,9 +311,9 @@ def test_the_recorded_relay_is_durable_on_the_epic_with_its_payload(
 
     comments = _relay_comments(config=config)
     assert len(comments) == 1
-    payload = record_module.payload_line(text=comments[0])
+    payload = payload_module.payload_line(text=comments[0])
     assert payload is not None
-    assert record_module.parse_relay_payload(text=payload) == recorded
+    assert payload_module.parse_relay_payload(text=payload) == recorded
 
 
 def test_a_relay_naming_an_untyped_expected_result_is_refused_unwritten(
