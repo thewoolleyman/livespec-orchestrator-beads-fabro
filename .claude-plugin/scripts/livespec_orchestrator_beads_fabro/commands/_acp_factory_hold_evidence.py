@@ -434,6 +434,8 @@ def _reclassified_turn_failure(*, outcome: Mapping[str, object], availability_ke
         return False
     output = outcome.get("output")
     if not isinstance(output, str):
+        output = outcome.get("response")
+    if not isinstance(output, str):
         return False
     signal = AcpFailureSignal(
         original_identity="succeeded-turn-final-output",

@@ -133,7 +133,9 @@ def _payload(*, cause: str) -> list[dict[str, Any]]:
 def _succeeded_turn_payload(*, later_test_failure: bool) -> list[dict[str, Any]]:
     """A needs-human terminal reached from a success-booked Codex review turn."""
     outcomes: dict[str, dict[str, object]] = {
-        "review": {"status": "succeeded", "output": "Review begins." + _TURN_CAPACITY},
+        # Petri retains a succeeded ACP turn's text under `response`, not
+        # `output`.  The terminal has no failure payload that repeats it.
+        "review": {"status": "succeeded", "response": "Review begins." + _TURN_CAPACITY},
         "needs_human": {"status": "failed"},
     }
     completed = ["review"]

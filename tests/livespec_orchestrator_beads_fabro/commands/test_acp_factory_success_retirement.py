@@ -218,8 +218,15 @@ def _ceiling_payload() -> list[dict[str, Any]]:
     ]
 
 
-def _success_payload(*, output: str | None = None) -> list[dict[str, Any]]:
+def _success_payload(
+    *, output: str | None = None, response: str | None = None
+) -> list[dict[str, Any]]:
     """One `fabro inspect --json` record whose `implement` attempt SUCCEEDED."""
+    attempt: dict[str, str] = {"status": "succeeded"}
+    if output is not None:
+        attempt["output"] = output
+    if response is not None:
+        attempt["response"] = response
     return [
         {
             "run_id": _LATER_RUN_ID,
@@ -228,11 +235,7 @@ def _success_payload(*, output: str | None = None) -> list[dict[str, Any]]:
                 "current_node": "exit",
                 "completed_nodes": ["setup", "implement", "gate", "exit"],
                 "node_outcomes": {
-                    "implement": (
-                        {"status": "succeeded"}
-                        if output is None
-                        else {"status": "succeeded", "output": output}
-                    ),
+                    "implement": attempt,
                     "gate": {"status": "succeeded"},
                 },
             },
@@ -284,7 +287,10 @@ def _later_row(*, start_time: str) -> dict[str, Any]:
 
 
 def _payloads() -> dict[str, object]:
-    return {_FAILED_RUN_ID: _ceiling_payload(), _LATER_RUN_ID: _success_payload()}
+    return {
+        _FAILED_RUN_ID: _ceiling_payload(),
+        _LATER_RUN_ID: _success_payload(output="ordinary successful review"),
+    }
 
 
 def test_a_succeeded_capacity_turn_does_not_retire_its_live_candidate_hold(
@@ -298,7 +304,7 @@ def test_a_succeeded_capacity_turn_does_not_retire_its_live_candidate_hold(
         rows=[_failed_row(), _later_row(start_time=_LATER_START)],
         payloads={
             _FAILED_RUN_ID: _ceiling_payload(),
-            _LATER_RUN_ID: _success_payload(output=_TURN_CAPACITY),
+            _LATER_RUN_ID: _success_payload(response=_TURN_CAPACITY),
         },
     )
 

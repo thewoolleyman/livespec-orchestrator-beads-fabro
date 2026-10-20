@@ -233,6 +233,10 @@ def _succeeded_predecessor(
     successful turn as the terminal's own predecessor. Any other currently
     failed non-terminal outcome makes the sequence ambiguous and declines the
     reclassification rather than overriding that failure's existing route.
+
+    Petri keeps a successful ACP turn's retained text in ``response`` rather
+    than ``output``. Prefer the engine's ``output`` spelling when it exists,
+    but read that retained response when it is the only final-output evidence.
     """
     completed = _completed_nodes(checkpoint=checkpoint)
     if not completed:
@@ -248,7 +252,7 @@ def _succeeded_predecessor(
     outcome = outcomes[stage]
     if _text(value=outcome.get("status")) != "succeeded":
         return (None, None)
-    output = _text(value=outcome.get("output"))
+    output = _text(value=outcome.get("output")) or _text(value=outcome.get("response"))
     return (stage, output)
 
 
