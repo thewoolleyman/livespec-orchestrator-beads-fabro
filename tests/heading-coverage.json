@@ -1790,7 +1790,7 @@
     "work_item": "bd-ib-sufca7"
   },
   {
-    "heading": "## Scenario 178 \u2014 A refresh that brings in only inert paths carries the verified proof forward, and anything else re-proves",
+    "heading": "## Scenario 178 \u2014 A refresh carries verified proof forward only when the deterministic carry-forward conditions hold",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_pr_refresh_carry_forward_scenario178"
@@ -2034,5 +2034,21 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal bounded-fabro-events-reads, and the owning work-item bd-ib-2dlh7m lands the bounded Fabro event reads together with the test that binds this entry.",
     "work_item": "bd-ib-2dlh7m"
+  },
+  {
+    "heading": "## Scenario 228 \u2014 The credential freshness requirement is the smaller of the execution allowance and the bounded credential-use window",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal proof-loop-graph-change, and the owning work-item bd-ib-2oxr6v lands the proof-loop graph change together with the test that binds this entry.",
+    "work_item": "bd-ib-2oxr6v"
+  },
+  {
+    "heading": "## Scenario 229 \u2014 A non-overlapping refresh after one re-proof carries the proof forward",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal proof-loop-graph-change, and the owning work-item bd-ib-2oxr6v lands the proof-loop graph change together with the test that binds this entry.",
+    "work_item": "bd-ib-2oxr6v"
   }
 ]

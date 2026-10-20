@@ -6276,7 +6276,7 @@ Feature: Repository hooks inside a sandbox stay within, and are named against, t
     And the dispatch journal still carries the earlier hook-over-limit row
 ```
 
-## Scenario 178 — A refresh that brings in only inert paths carries the verified proof forward, and anything else re-proves
+## Scenario 178 — A refresh carries verified proof forward only when the deterministic carry-forward conditions hold
 
 ```gherkin
 Feature: A pr_refresh re-proves only when the incoming commits could change what the proof observed
@@ -6295,6 +6295,7 @@ Feature: A pr_refresh re-proves only when the incoming commits could change what
 
   Scenario: An incoming change outside the inert classes re-proves
     Given a run whose verified record on head V reads only AGENTS.md
+    And the run has not yet re-proved after a changed-head refresh
     And the default branch advanced with a commit that changes a Python module the item does not touch
     When pr_refresh rebases the branch cleanly and pushes head N
     Then the pull request carries one reproof_required record naming that module as an incoming path outside every inert class
@@ -8150,4 +8151,149 @@ Feature: The Dispatcher's Fabro event reads cannot become unbounded factory load
     Then it does not start a third concurrent read
     And if it cannot start within its caller's timeout it is handled as a failed events read
     And that failure is journaled and backed off under the failed-read rules
+```
+
+## Scenario 228 — The credential freshness requirement is the smaller of the execution allowance and the bounded credential-use window
+
+```gherkin
+Feature: A proof-loop edge cannot price a fresh credential out of dispatch
+  As an operator of a factory that routes nodes to Codex
+  I want the freshness requirement bounded by limits the factory enforces
+  So that a ratified graph change does not refuse every Codex dispatch
+
+  Scenario: The bounded window governs when it is smaller
+    Given the resolved workflow's execution allowance is 902955 seconds
+    And dispatcher.credential_queue_allowance_seconds resolves to 86400 and the whole-run wall budget to 21600
+    And the documented margin is 3600 seconds
+    When codex-cred-status reports the requirement
+    Then the required lifetime is 111600 seconds, naming the bounded credential-use window as the governing figure
+    And a credential with 864000 seconds of remaining life passes the freshness gate and the dispatch creates a run
+
+  Scenario: The worker deadline uses the same figure
+    Given a dispatch whose governing figure is 108000 seconds
+    When the credential is projected at instant P
+    Then the worker's credential-use deadline is P plus 108000 seconds
+    And a coding agent still running at that deadline is stopped
+
+  Scenario: A long queue is refused at agent launch and rests for resume
+    Given a dispatch whose credential queue allowance is 86400 seconds and whose whole-run wall budget is 21600 seconds
+    And the run is first launched more than 108000 seconds after projection
+    When the first coding-agent node launches
+    Then the launch is refused naming the credential-use deadline
+    And the dispatch journal carries one credential-use-deadline-reached record with cause queue-exceeded
+    And before termination the Dispatcher exports the run record and writes and reads back the preserve-by-reference pointer
+    And exactly one credential-use-deadline-reached record names the run id, factory, node, projection instant, deadline, queue time consumed, governing figure, pointer and cause
+    And the item rests at blocked with blocked_reason needs-human
+    And its ledger comment names the run, node, deadline, cause and pointer
+    And the ending is neither a plain failed run nor counted toward any non-convergence or rework bound
+
+  Scenario: A queue between the allowance and the deadline is refused before any turn starts
+    Given a dispatch whose credential queue allowance is 86400 seconds and whose whole-run wall budget is 21600 seconds, projected at instant P
+    And the run's first coding-agent launch is at P plus 90000 seconds, so 18000 seconds remain before the deadline
+    When the start check runs
+    Then it refuses the launch because 18000 seconds is less than the 21600-second budget, naming the deadline, the remaining time and the budget
+    And no coding-agent turn starts, so no agent is stopped in the middle of a turn
+    And the dispatch journal carries one credential-use-deadline-reached record with cause queue-exceeded
+    And before termination the Dispatcher exports the run record and writes and reads back the preserve-by-reference pointer
+    And exactly one credential-use-deadline-reached record names the run id, factory, node, projection instant, deadline, queue time consumed, governing figure, pointer and cause
+    And the item rests at blocked with blocked_reason needs-human
+    And its ledger comment names the run, node, deadline, cause and pointer
+    And the ending is neither a plain failed run nor counted toward any non-convergence or rework bound
+
+  Scenario: A run whose wall budget is held past it ends at the guard deadline with its work preserved
+    Given a dispatch whose governing figure is 108000 seconds, projected at instant P
+    And the run has published a draft pull request with head H
+    And the run's whole-run wall budget is unmeasured, so the watchdog does not cancel it
+    And the run is executing proof_capture immediately after its completed publish_draft
+    And no proof record on the pull request carries this dispatch's identifier
+    And the pull request's current head is H
+    When a coding agent is still running at P plus 108000 seconds
+    Then the guard stops the agent at that deadline
+    And the pointer names the pull request and head H
+    And the dispatch journal carries one credential-use-deadline-reached record with cause killed-mid-node
+    And before termination the Dispatcher exports the run record and writes and reads back the preserve-by-reference pointer
+    And exactly one credential-use-deadline-reached record names the run id, factory, node, projection instant, deadline, queue time consumed, governing figure, pointer and cause
+    And the item rests at blocked with blocked_reason needs-human
+    And its ledger comment names the run, node, deadline, cause and pointer
+    And the ending is neither a plain failed run nor counted toward any non-convergence or rework bound
+    And resume --item is anchored on that record
+
+  Scenario: The status surface shows queue time consumed
+    Given a dispatch in flight whose credential queue allowance is 86400 seconds
+    And its first agent launched 3600 seconds after projection
+    When codex-cred-status is read
+    Then it reports 3600 seconds of queue time consumed against the 86400-second allowance
+
+  Scenario Outline: Invalid queue allowances are rejected before submission
+    Given dispatcher.credential_queue_allowance_seconds is <value>
+    When dispatch admission resolves its configuration
+    Then admission rejects the value naming dispatcher.credential_queue_allowance_seconds
+    And no run exists
+
+    Examples:
+      | value |
+      | 0     |
+      | -1    |
+      | 1.5   |
+      | "bad" |
+
+  Scenario Outline: Reporting uses the execution allowance when it is smaller
+    Given the execution allowance is 60000 seconds
+    And the credential queue allowance is 86400 seconds and the wall budget is 21600 seconds
+    And the documented margin is 3600 seconds
+    And the first agent launched 3600 seconds after projection
+    When <surface> reports this dispatch in flight
+    Then it reports a governing budget of 60000 seconds and required lifetime of 63600 seconds
+    And it names the execution allowance as governing
+    And it reports 3600 seconds consumed against the 86400-second queue allowance
+
+    Examples:
+      | surface           |
+      | codex-cred-status |
+      | manual-renewal    |
+
+  Scenario: Credential lifetime is checked independently of queue capacity
+    Given the first launch has at least the whole-run wall budget remaining before the deadline
+    And the projected credential's remaining lifetime fails the freshness requirement
+    When the start check runs
+    Then it refuses the launch for insufficient credential lifetime
+    And no coding-agent turn starts
+
+  Scenario: A later launch at the deadline receives the deadline disposition
+    Given the run has already launched a coding agent successfully
+    When a later coding-agent launch is attempted at the credential-use deadline
+    Then the launch is refused
+    And the dispatch journal carries one credential-use-deadline-reached record with cause launch-refused
+    And before termination the Dispatcher exports the run record and writes and reads back the preserve-by-reference pointer
+    And exactly one credential-use-deadline-reached record names the run id, factory, node, projection instant, deadline, queue time consumed, governing figure, pointer and cause
+    And the item rests at blocked with blocked_reason needs-human
+    And its ledger comment names the run, node, deadline, cause and pointer
+    And the ending is neither a plain failed run nor counted toward any non-convergence or rework bound
+```
+
+## Scenario 229 — A non-overlapping refresh after one re-proof carries the proof forward
+
+```gherkin
+Feature: A run stops chasing an advancing default branch once it has re-proved
+  As the maintainer of a repository dispatched to the factory
+  I want a re-proved run to keep its proof across a clean refresh that cannot touch what it proved
+  So that a run is not sent round capture, review and replay for every base advance
+
+  Scenario: A second clean refresh with non-inert, non-overlapping paths carries forward
+    Given a run that re-proved after one changed-head pr_refresh, with verified record R on head V
+    And the default branch advanced again with a commit that changes a Python module that is neither an item path nor in R's observation scope
+    And every reproduction step in R is inside the direct-read grammar
+    And every observation-scope path and item path has the same blob identity at V and N, or is absent at both
+    And every working-tree read operand has a read identity in R matching its bytes at N
+    And mechanical replay at N reproduces every step's single captured proof block byte for byte
+    When pr_refresh rebases the branch cleanly, the gate passes and the leased push yields head N with an unchanged patch identity
+    Then the pull request carries one carried_forward record naming V and N that says the incoming paths were not all inert and that the run's one re-proof covered them
+    And the run proceeds from pr_refresh to pr without visiting proof_capture
+
+  Scenario: An overlapping refresh still re-proves
+    Given a run that re-proved after one changed-head pr_refresh
+    And the default branch advanced with a commit that changes a path in the verified record's observation scope
+    When pr_refresh rebases the branch cleanly and pushes head N
+    Then the pull request carries one reproof_required record naming that path
+    And the run enters proof_capture for head N
 ```
