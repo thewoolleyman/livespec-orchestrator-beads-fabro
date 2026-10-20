@@ -3,8 +3,8 @@
 The CLI above this module is driven end to end by
 `test_detect_impl_gaps.py`. These cases cover what that surface cannot
 observe: the heading-enumeration rules that decide which headings EXIST
-at all, and the two spellings a spec root can reach the coverage
-registry under.
+at all, the two spellings a spec root can reach the coverage registry
+under, and how the `--since-version` scope is computed.
 """
 
 from __future__ import annotations
@@ -186,3 +186,61 @@ def test_scan_with_an_absent_since_version_rides_the_failure_track(tmp_path: Pat
     scan = scan_heading_gaps(spec_root=spec, project_root=tmp_path, since_version=999)
     assert not is_successful(scan)
     assert "v999" in str(unsafe_perform_io(scan.failure()))
+
+
+def test_an_empty_restriction_yields_no_headings_rather_than_every_heading(
+    tmp_path: Path,
+) -> None:
+    """The empty set means "the scope was computed and nothing is in it".
+
+    Its paired control is the `None` case above: collapsing the two would turn
+    a tree identical to its snapshot into a full re-scan, which is the one
+    wrong answer that looks like a healthy run.
+    """
+    spec = tmp_path / "SPECIFICATION"
+    _write_spec(root=spec, files={"spec.md": "## One\n"})
+    assert live_headings(spec_root=spec, project_root=tmp_path, restrict_to=frozenset()) == ()
+
+
+def test_a_restriction_keeps_only_the_named_files(tmp_path: Path) -> None:
+    spec = tmp_path / "SPECIFICATION"
+    _write_spec(
+        root=spec,
+        files={"spec.md": "## From spec\n", "contracts.md": "## From contracts\n"},
+    )
+    headings = live_headings(
+        spec_root=spec, project_root=tmp_path, restrict_to=frozenset({"contracts.md"})
+    )
+    assert [heading.spec_file for heading in headings] == ["contracts.md"]
+
+
+def test_a_file_the_snapshot_carried_and_the_live_tree_dropped_is_in_scope(
+    tmp_path: Path,
+) -> None:
+    """It differs, so it is in scope — and it contributes no heading, being gone.
+
+    The CHANGED file beside it is the control: a scope computation that died
+    or returned nothing when it met a deleted file would emit no gap at all,
+    which a one-file fixture could not tell from the correct answer.
+    """
+    spec = tmp_path / "SPECIFICATION"
+    _write_spec(root=spec, files={"spec.md": "## Survivor\n\n## Added since\n"})
+    history = spec / "history" / "v001"
+    (history / "spec.md").write_text("## Survivor\n")
+    (history / "contracts.md").write_text("## Deleted away\n")
+    scan = scan_heading_gaps(spec_root=spec, project_root=tmp_path, since_version=1)
+    assert is_successful(scan)
+    assert [gap.heading for gap in unsafe_perform_io(scan.unwrap()).gaps] == [
+        "## Survivor",
+        "## Added since",
+    ]
+
+
+def test_a_file_only_the_live_tree_carries_is_in_scope(tmp_path: Path) -> None:
+    """A file added since the snapshot differs from it, so its headings surface."""
+    spec = tmp_path / "SPECIFICATION"
+    _write_spec(root=spec, files={"spec.md": "## Unchanged\n", "contracts.md": "## Brand new\n"})
+    (spec / "history" / "v001" / "spec.md").write_text("## Unchanged\n")
+    scan = scan_heading_gaps(spec_root=spec, project_root=tmp_path, since_version=1)
+    assert is_successful(scan)
+    assert [gap.heading for gap in unsafe_perform_io(scan.unwrap()).gaps] == ["## Brand new"]

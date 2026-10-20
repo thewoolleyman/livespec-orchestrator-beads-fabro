@@ -28,6 +28,10 @@ _GAP_TODO = "gap-cklnfbug"  # spec.md "## Todo heading"
 _GAP_DANGLING = "gap-z7ijrvk5"  # spec.md "## Dangling heading"
 _GAP_SHARED_IN_CONTRACTS = "gap-furwz3zz"  # contracts.md "## Shared heading"
 _GAP_SHARED_IN_SCENARIOS = "gap-ycahxxq5"  # scenarios.md "## Shared heading"
+_GAP_SPEC_STABLE = "gap-ex3uacav"  # spec.md "## Stable heading"
+_GAP_CONTRACTS_OLD = "gap-lnvdmile"  # contracts.md "## Old heading"
+_GAP_CONTRACTS_NEW = "gap-27jaon24"  # contracts.md "## New heading"
+_GAP_CONTRACTS_REMOVED = "gap-ucynx5xw"  # contracts.md "## Removed heading"
 
 _EXISTING_TEST_NODE = "tests.integration.test_present.test_present_case"
 
@@ -655,3 +659,167 @@ def test_since_version_naming_an_absent_history_directory_exits_three(
     assert rc == 3
     assert "ERROR" in captured.err
     assert "v999" in captured.err
+
+
+# ---------------------------------------------------------------
+# --since-version restricts the enumeration to the changed files
+# ---------------------------------------------------------------
+
+
+def _write_history_version(*, spec_root: Path, version: int, files: dict[str, str]) -> None:
+    version_dir = spec_root / "history" / f"v{version:03d}"
+    version_dir.mkdir(parents=True, exist_ok=True)
+    for name, content in files.items():
+        (version_dir / name).write_text(content)
+
+
+def _diffing_tree_fixture(*, project_root: Path) -> None:
+    """A tree where `contracts.md` changed since v080 and `spec.md` did not.
+
+    `contracts.md` KEEPS a heading that predates v080 and GAINS one, and also
+    drops one the snapshot carried — the three cases the flag must separate.
+    """
+    spec = project_root / "SPECIFICATION"
+    spec.mkdir(parents=True, exist_ok=True)
+    _write_history_version(
+        spec_root=spec,
+        version=80,
+        files={
+            "spec.md": "# Spec\n\n## Stable heading\n",
+            "contracts.md": "# Contracts\n\n## Old heading\n\n## Removed heading\n",
+        },
+    )
+    (spec / "spec.md").write_text("# Spec\n\n## Stable heading\n")
+    (spec / "contracts.md").write_text("# Contracts\n\n## Old heading\n\n## New heading\n")
+    _write_coverage(project_root=project_root, entries=[])
+
+
+def test_since_version_restricts_the_enumeration_to_the_files_that_differ(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The unchanged file's heading drops out; the changed file's two stay.
+
+    The unchanged heading is the control: without it a build that ignored the
+    flag entirely and one that scoped correctly emit the same set.
+    """
+    monkeypatch.chdir(tmp_path)
+    _diffing_tree_fixture(project_root=tmp_path)
+    rc = main(argv=["--json", "--since-version", "v080"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == sorted([_GAP_CONTRACTS_OLD, _GAP_CONTRACTS_NEW])
+    assert _GAP_SPEC_STABLE not in json.loads(captured.out)["gap_ids"]
+
+
+def test_a_changed_file_resurfaces_every_uncovered_live_heading_it_carries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The flag is NOT "headings added since vN", and the contract says so.
+
+    `## Old heading` predates v080 and was untouched by the edit, yet it
+    resurfaces because its FILE changed. A caller reading this output as a
+    diff of newly-introduced headings would be wrong about most of it.
+    """
+    monkeypatch.chdir(tmp_path)
+    _diffing_tree_fixture(project_root=tmp_path)
+    rc = main(argv=["--json", "--since-version", "v080"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert _GAP_CONTRACTS_OLD in json.loads(captured.out)["gap_ids"]
+
+
+def test_a_heading_the_diff_removed_is_not_a_gap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Only LIVE headings are considered: removed spec content is not owed a test."""
+    monkeypatch.chdir(tmp_path)
+    _diffing_tree_fixture(project_root=tmp_path)
+    rc = main(argv=["--json", "--since-version", "v080"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert _GAP_CONTRACTS_REMOVED not in json.loads(captured.out)["gap_ids"]
+
+
+def test_since_version_accepts_the_bare_integer_form(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _diffing_tree_fixture(project_root=tmp_path)
+    rc = main(argv=["--json", "--since-version", "80"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == sorted([_GAP_CONTRACTS_OLD, _GAP_CONTRACTS_NEW])
+
+
+def test_a_tree_identical_to_its_snapshot_yields_an_empty_gap_set(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """No file differs, so nothing is in scope — a real answer, not a degraded one."""
+    monkeypatch.chdir(tmp_path)
+    spec = tmp_path / "SPECIFICATION"
+    spec.mkdir(parents=True)
+    files = {"spec.md": "# Spec\n\n## Stable heading\n"}
+    _write_history_version(spec_root=spec, version=42, files=files)
+    for name, content in files.items():
+        (spec / name).write_text(content)
+    _write_coverage(project_root=tmp_path, entries=[])
+    rc = main(argv=["--json", "--since-version", "v042"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == []
+
+
+def test_omitting_since_version_scans_every_governed_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The control for every case above: unscoped, the stable heading is a gap."""
+    monkeypatch.chdir(tmp_path)
+    _diffing_tree_fixture(project_root=tmp_path)
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == sorted(
+        [_GAP_SPEC_STABLE, _GAP_CONTRACTS_OLD, _GAP_CONTRACTS_NEW]
+    )
+
+
+def test_since_version_composes_with_an_explicit_spec_target(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    project = tmp_path / "elsewhere"
+    spec = project / "MySpec"
+    spec.mkdir(parents=True)
+    _write_history_version(
+        spec_root=spec,
+        version=10,
+        files={"contracts.md": "# Contracts\n\n## Old heading\n"},
+    )
+    (spec / "contracts.md").write_text("# Contracts\n\n## Old heading\n\n## New heading\n")
+    _write_coverage(project_root=project, entries=[])
+    rc = main(
+        argv=[
+            "--project-root",
+            str(project),
+            "--spec-target",
+            str(spec),
+            "--json",
+            "--since-version",
+            "v010",
+        ]
+    )
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == sorted([_GAP_CONTRACTS_OLD, _GAP_CONTRACTS_NEW])
