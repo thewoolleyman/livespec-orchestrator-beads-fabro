@@ -25,13 +25,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from livespec_orchestrator_beads_fabro.commands._plan_relay_record import (
+from livespec_orchestrator_beads_fabro.commands._plan_relay_payload import (
     PLAN_RELAY_PREFIX,
-    RelayRecord,
     parse_relay_payload,
     payload_line,
     relay_event_body,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_relay_record import RelayRecord
 from livespec_orchestrator_beads_fabro.commands._plan_timeline import plan_comment_body
 
 if TYPE_CHECKING:

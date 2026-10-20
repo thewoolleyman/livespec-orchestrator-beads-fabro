@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, IssueDraft
+from livespec_orchestrator_beads_fabro.commands._plan_relay_payload import PLAN_RELAY_PREFIX
 from livespec_orchestrator_beads_fabro.commands._plan_relay_projection import (
     read_relay_records,
     write_relay_event,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_relay_record import (
-    PLAN_RELAY_PREFIX,
     RelayLegs,
     RelayRecord,
 )
