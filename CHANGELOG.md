@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.226.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.226.0...v0.226.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* require canonical plan repository identity ([0f366ab](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0f366ab069109987b769a080b9f20c37130fcc20))
+* resolve legacy self repository identities ([c923cd0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c923cd05cad3db041881e8e7c6daaee50ab63297))
+
 ## [0.226.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.225.4...v0.226.0) (2026-10-20)
 
 
