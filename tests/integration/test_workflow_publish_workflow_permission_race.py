@@ -267,7 +267,12 @@ def _recording_gate(*, tmp_path: Path, exit_status: int) -> tuple[str, Path]:
     program = tmp_path / "declared-gate"
     _executable(
         path=program,
-        body=("#!/bin/sh\n" f"printf 'ran\\n' > \"{record}\"\n" f"exit {exit_status}\n"),
+        body=(
+            "#!/bin/sh\n"
+            f"printf 'ran\\n' > \"{record}\"\n"
+            "printf 'LIVESPEC_DECLARED_GATE_RAN\\n' >&2\n"
+            f"exit {exit_status}\n"
+        ),
     )
     return f'"{program}"', record
 
@@ -413,6 +418,40 @@ def test_publish_draft_gates_a_merged_declared_record_before_republishing(
     assert "LIVESPEC_PUBLISH_DRAFT_GATE_REJECTED" in published.stderr
     assert "LIVESPEC_REFRESH_REPAIR" in published.stderr
     assert "LIVESPEC_PUBLISH_DRAFT_PUBLISHED" not in published.stderr
+
+
+def test_publish_draft_reports_a_successful_declared_gate_after_merging(
+    tmp_path: Path,
+) -> None:
+    """A successful merged-record gate remains visible in the stage transcript."""
+    run, _, default = _run_behind_master(tmp_path=tmp_path)
+    _commit(
+        repo=run,
+        path=_RECORD_JSON,
+        content='[{"id": "seed"}, {"id": "run"}]\n',
+        message="add run record",
+    )
+    _bump(default=default, pin="v2")
+    _bump_during_push(
+        tmp_path=tmp_path,
+        default=default,
+        times=1,
+        record_content='[{"id": "seed"}, {"id": "default"}]',
+    )
+    gate, gate_record = _recording_gate(tmp_path=tmp_path, exit_status=0)
+
+    published = _node(
+        node="publish_draft",
+        run=run,
+        env=_env(tmp_path=tmp_path, plugins_root=_record_merge_plugins(tmp_path=tmp_path)),
+        check_suite=gate,
+    )
+
+    assert published.returncode == 0, published.stderr
+    assert gate_record.read_text(encoding="utf-8") == "ran\n"
+    assert "LIVESPEC_DECLARED_GATE_RAN" in published.stderr
+    assert "LIVESPEC_RECORD_FILE_REFRESH_RESOLVED: publish_draft" in published.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" not in published.stderr
 
 
 def test_publish_draft_names_the_workflow_race_when_master_never_settles(
