@@ -1850,6 +1850,23 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   to a `NextAction` and reached through a `ResultReferenceRefusal` for an
   identity, crashing on an epic with no pointer and on a legacy one — the two
   states it most needed to answer for.
+  AN EIGHTH PROPERTY, AND IT IS ABOUT THE ORDER OF `_plan_tracked_write`'S
+  SEQUENCE (`bd-ib-b5npv2`). The OPERATION IDENTITY is recognised FIRST, through
+  the chain's public `recover_committed_operation`, and only then is the
+  obligation decided. `commit_transition` carries its own retry guard and keeps
+  it — that guard is the chain's last word, and a caller cannot be allowed to
+  satisfy it on the chain's behalf — but a write refused BEFORE it is reached
+  never gets the recovery the clause owes: the decision's expiry ladder reads the
+  OBSERVED head, so the retry of the handoff that consumed the final
+  `max_handoffs` unit is read as an expired continuation and refused, although
+  the write it retries succeeded. Nothing duplicated, and the caller was told to
+  register a causal recovery for an obligation it had just met. Asking early
+  costs one comment read and can change nothing, because that reading performs
+  no write; the CONTROL is that a DIFFERENT operation identity at the same
+  exhausted budget is still refused, which is what keeps the repair from being
+  "stop grading expiry". A twin committing in the window between that scan and
+  the chain's own is still answered as a recovery, by the chain's guard, which is
+  why `_persist`'s idempotent arm stays reachable rather than becoming dead.
 - `_plan_resume_reconcile.py` — the reconciliation half of the resume, split out
   of `_plan_resume` by cohesion once the durable progress check pushed that file
   past its size ceiling. `_plan_resume` keeps the TOP-LEVEL sequence (the
