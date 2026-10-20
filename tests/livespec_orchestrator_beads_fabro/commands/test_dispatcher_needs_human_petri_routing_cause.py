@@ -65,7 +65,8 @@ absence — and the remedy is a fresh measurement, not a guessed key.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -232,12 +233,16 @@ def _plan(*, tmp_path: Path) -> DispatchPlan:
 
 
 def _outcome(
-    *, tmp_path: Path, inspect_payload: list[object], events_payload: list[object] | None
+    *,
+    tmp_path: Path,
+    inspect_payload: list[object],
+    events_payload: list[object] | None,
+    plan: DispatchPlan | None = None,
 ) -> DispatchOutcome:
     """The terminal outcome, with both payloads read by the production parsers."""
     outcome = fabro_run_terminal_outcome(
         outcome_type=DispatchOutcome,
-        plan=_plan(tmp_path=tmp_path),
+        plan=_plan(tmp_path=tmp_path) if plan is None else plan,
         run_id=_RUN,
         inspect=FabroInspectResult(
             command=CommandResult(exit_code=0, stdout="", stderr=""),
@@ -340,6 +345,58 @@ def test_a_petri_stage_output_supplies_a_provider_limit_when_events_timed_out(
     assert outcome.provider_usage_limit_provider == "anthropic"
     assert f"innermost cause: {_WEEKLY_LIMIT_MESSAGE}" in outcome.detail
     assert f"innermost cause: {_WEEKLY_LIMIT_MESSAGE}" in needs_human_cause_body(outcome=outcome)
+
+
+def test_stage_output_provider_limit_survives_a_legacy_plan_without_acp_nodes(
+    tmp_path: Path,
+) -> None:
+    """The terminal fallback does not require optional plan routing metadata.
+
+    The proof-capture reproduction deliberately supplies only the plan fields
+    this terminal needs.  ``acp_nodes`` is optional on ``DispatchPlan`` and a
+    terminal cause must still be reported when that metadata is absent.
+    """
+    inspect_payload = _petri_inspect()
+    record = inspect_payload[0]
+    assert isinstance(record, dict)
+    stages = record["stages"]
+    assert isinstance(stages, dict)
+    stage = stages[_ROUTING_STAGE]
+    assert isinstance(stage, dict)
+    stage["output"] = f"ACP error: code -32603, Internal error: {_WEEKLY_LIMIT_MESSAGE}"
+    legacy_plan = cast(
+        DispatchPlan,
+        SimpleNamespace(
+            repo=tmp_path,
+            work_item_id=_ITEM,
+            branch=f"feat/{_ITEM}",
+            workflow_toml=tmp_path / "workflow.toml",
+            goal_file=tmp_path / "goal.txt",
+            fabro_bin="fabro",
+            fabro_factory_name="hp-candidate",
+            fabro_factory_server="https://hp-xubuntu.example:32278",
+            fabro_factory_dev_token=None,
+            janitor=None,
+            janitor_checkout=tmp_path / ".janitor",
+            janitor_core_checkout=tmp_path / ".janitor" / ".livespec-core",
+            janitor_core_repo_url="https://github.com/thewoolleyman/livespec.git",
+            janitor_core_ref="master",
+            review_fix_visit_cap=3,
+            merge_on_review_cap_outcome="succeeded",
+        ),
+    )
+    assert not hasattr(legacy_plan, "acp_nodes")
+
+    outcome = _outcome(
+        tmp_path=tmp_path,
+        inspect_payload=inspect_payload,
+        events_payload=None,
+        plan=legacy_plan,
+    )
+
+    assert outcome.fabro_failure_cause == _WEEKLY_LIMIT_MESSAGE
+    assert outcome.provider_usage_limit is True
+    assert outcome.provider_usage_limit_provider == "anthropic"
 
 
 def test_a_succeeded_step_on_the_routing_node_is_not_read_as_its_failure(

@@ -191,8 +191,14 @@ def _failing_node(*, inspect: FabroInspectResult) -> str | None:
 
 
 def _selected_identity(*, plan: DispatchPlan, node: str) -> AcpCandidateIdentity | None:
-    """The entitlement this dispatch selected for one node, or `None`."""
-    resolution = plan.acp_nodes
+    """The entitlement this dispatch selected for one node, or `None`.
+
+    ``acp_nodes`` is optional plan metadata.  Older proof and recovery callers
+    that supply the terminal's minimal plan shape therefore have no selected
+    identity, rather than losing the terminal cause while this optional lookup
+    raises before the ordinary provider-limit classifier can run.
+    """
+    resolution = getattr(plan, "acp_nodes", None)
     if resolution is None:
         return None
     return resolution.candidates.get(node)
