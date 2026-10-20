@@ -738,8 +738,17 @@
       // tests/test_factory_checkpoint_declaration.py guards: inherited, the two
       // nodes demanded 31320 s more of a token's remaining life than declared at
       // 600 (bd-ib-kcq6pu).
+      //
+      // `implement_completion` is declared downward for the same reason and is
+      // the sharpest instance of it (v165, Scenario 204; bd-ib-ahxcjx): the
+      // implement stage's completion gate reads ONE file in this clone's own
+      // `$GIT_DIR` and decides, while sitting on the single fallthrough of the
+      // most-retried turn in the graph -- so the derivation bills it at that
+      // turn's attempt count, and 600 s is already three orders of magnitude
+      // above a file read.
       "node_timeouts": {
         "implement": 14400,
+        "implement_completion": 600,
         "janitor": 4340,
         "fix": 3600,
         "review_fix": 7200,

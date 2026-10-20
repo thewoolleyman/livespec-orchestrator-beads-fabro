@@ -104,11 +104,30 @@ def test_dead_implementer_gate_checks_for_a_dispatch_base_diff() -> None:
 
 
 def test_dead_implementer_routes_unchanged_work_away_from_review() -> None:
-    """Unchanged implement output terminates before janitor, review, or disposition."""
+    """Unchanged implement output terminates before janitor, review, or disposition.
+
+    THE ROUTE FROM THE TURN TO THE BREAKER IS TWO EDGES SINCE v165, and the
+    claim here is unchanged by that: it is that the breaker is reached
+    UNCONDITIONALLY before any downstream spend, not that it is reached in one
+    hop. Scenario 204's completion gate (`implement_completion`) consumed
+    `implement`'s own fallthrough and supplies the breaker's, so both legs are
+    asserted — a graph that dropped either would reach janitor with the
+    dead-implementer question unasked. The gate is cheap and spends no provider,
+    so nothing about the containment this case guards moved with it;
+    `tests/integration/test_implement_completion_field_scenario204.py` owns the
+    gate's own behaviour.
+    """
     text = _dot_text()
 
     assert (
-        re.search(r"implement\s*->\s*implementation_diff\b(?![^\n]*condition=)", text) is not None
+        re.search(r"implement\s*->\s*implement_completion\b(?![^\n]*condition=)", text) is not None
+    )
+    assert (
+        re.search(
+            r"implement_completion\s*->\s*implementation_diff\b(?![^\n]*condition=)",
+            text,
+        )
+        is not None
     )
     assert (
         re.search(
