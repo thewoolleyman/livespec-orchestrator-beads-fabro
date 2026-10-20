@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TypeVar
 
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_policy_settings
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_overrides import (
     _is_spec_change_tier,
     effective_acceptance_rework_cap,
@@ -20,6 +21,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     DEFAULT_REVIEW_FIX_CAP,
     resolve_auto_approve_ready,
 )
+from livespec_orchestrator_beads_fabro.commands._drive_config_schema import config_key_by_name
 from livespec_orchestrator_beads_fabro.types import WorkItem
 from returns.io import IOResult
 from returns.unsafe import unsafe_perform_io
@@ -81,6 +83,25 @@ def test_boolean_setting_reads_explicit_false(tmp_path: Path) -> None:
     )
 
     assert _read(resolve_auto_approve_ready(cwd=cwd)) is False
+
+
+def test_availability_probe_timeout_is_committed_only_and_defaults_to_120(tmp_path: Path) -> None:
+    """The confirmation probe uses a committed positive-integer timeout dial."""
+    resolver_name = "resolve_availability_probe_timeout_seconds"
+
+    assert resolver_name in _dispatcher_policy_settings.__all__
+    resolve = _dispatcher_policy_settings.resolve_availability_probe_timeout_seconds
+    configured = _write_config(
+        tmp_path=tmp_path,
+        text=(
+            '{"livespec-orchestrator-beads-fabro": '
+            '{"dispatcher": {"availability_probe_timeout_seconds": 45}}}'
+        ),
+    )
+
+    assert _read(resolve(cwd=_NO_CONFIG_CWD)) == 120
+    assert _read(resolve(cwd=configured)) == 45
+    assert config_key_by_name(key="availability_probe_timeout_seconds") is None
 
 
 def test_raw_boolean_false_label_beats_true_global(tmp_path: Path) -> None:

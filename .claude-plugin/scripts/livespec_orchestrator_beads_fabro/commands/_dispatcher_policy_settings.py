@@ -53,6 +53,7 @@ __all__: list[str] = [
     "DEFAULT_ANSWER_DISPOSITION",
     "DEFAULT_AUTOMATED_REGROOM_CAP",
     "DEFAULT_AUTO_APPROVE_READY",
+    "DEFAULT_AVAILABILITY_PROBE_TIMEOUT_SECONDS",
     "DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS",
     "DEFAULT_DRIFT_CAPTURE_MERGE_THRESHOLD",
     "DEFAULT_GROOM_CUT_APPROVAL",
@@ -68,6 +69,7 @@ __all__: list[str] = [
     "resolve_answer_disposition",
     "resolve_auto_approve_ready",
     "resolve_automated_regroom_cap",
+    "resolve_availability_probe_timeout_seconds",
     "resolve_credential_reprobe_interval_seconds",
     "resolve_drift_capture_merge_threshold",
     "resolve_groom_cut_approval",
@@ -92,6 +94,7 @@ DEFAULT_GROOM_CUT_APPROVAL = "human"
 DEFAULT_AUTOMATED_REGROOM_CAP = 2
 DEFAULT_ANSWER_DISPOSITION = "human"
 DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS = 300
+DEFAULT_AVAILABILITY_PROBE_TIMEOUT_SECONDS = 120
 
 _LIVESPEC_CONFIG = ".livespec.jsonc"
 _PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
@@ -109,6 +112,7 @@ _GROOM_CUT_APPROVAL_KEY = "groom_cut_approval"
 _AUTOMATED_REGROOM_CAP_KEY = "automated_regroom_cap"
 _ANSWER_DISPOSITION_KEY = "answer_disposition"
 _CREDENTIAL_REPROBE_INTERVAL_SECONDS_KEY = "credential_reprobe_interval_seconds"
+_AVAILABILITY_PROBE_TIMEOUT_SECONDS_KEY = "availability_probe_timeout_seconds"
 _ACCEPTANCE_POLICIES = frozenset(("ai-only", "ai-then-human", "human-only"))
 _GROOM_CUT_APPROVALS = frozenset(("human", "consensus"))
 _ANSWER_DISPOSITIONS = frozenset(("human", "consensus"))
@@ -270,6 +274,22 @@ def resolve_credential_reprobe_interval_seconds(
         cwd=cwd,
         key=_CREDENTIAL_REPROBE_INTERVAL_SECONDS_KEY,
         default=DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS,
+        minimum=1,
+    )
+
+
+def resolve_availability_probe_timeout_seconds(
+    *, cwd: Path
+) -> IOResult[int, PolicySettingUnreadable]:
+    """Read `dispatcher.availability_probe_timeout_seconds`, defaulting to 120.
+
+    This is committed-only: confirmation evidence must not be weakened through
+    the API configuration surface that it protects.
+    """
+    return _resolve_int_setting(
+        cwd=cwd,
+        key=_AVAILABILITY_PROBE_TIMEOUT_SECONDS_KEY,
+        default=DEFAULT_AVAILABILITY_PROBE_TIMEOUT_SECONDS,
         minimum=1,
     )
 
