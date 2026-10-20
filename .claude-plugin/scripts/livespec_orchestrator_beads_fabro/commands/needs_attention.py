@@ -60,6 +60,9 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_model_fallback 
 from livespec_orchestrator_beads_fabro.commands._needs_attention_orphan_runs import (
     orphan_run_items,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_plan_progress import (
+    plan_progress_items,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_proof import (
     pending_host_leg_items,
     pending_human_attestation_items,
@@ -203,7 +206,13 @@ def build_attention(
         ),
         plan_threads=plans(project_root=project_root, config=config, items=materialized),
     ) + (
-        auto_admission_items(project_root=project_root, repo=repo_name, items=materialized)
+        plan_progress_items(
+            context=context,
+            config=config,
+            items=materialized,
+            now=_utc_now_iso(),
+        )
+        + auto_admission_items(project_root=project_root, repo=repo_name, items=materialized)
         + provider_exhaustion_items(project_root=project_root, repo=repo_name, items=materialized)
         + host_only_items(project_root=project_root, repo=repo_name, items=materialized)
         + stranded_dispatch_items(
