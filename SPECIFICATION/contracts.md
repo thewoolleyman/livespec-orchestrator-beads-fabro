@@ -1725,6 +1725,20 @@ remedy is a plain dispatch; it MUST NOT substitute dispatch for a human
 decision, reconciliation, or a required wait.
 Scenario 172 in `scenarios.md` exercises this subsection.
 
+### Bounded Fabro event reads
+
+Every `fabro events` read the Dispatcher issues — from the progress watchdog, the ACP projection and its reconcile replay, the review-gate and cost readers, and any other caller — is a read of one run's event log on one factory. Each such read MUST be bounded in size, in retries and in concurrency, so that a run whose event log is large or slow to serve cannot turn the Dispatcher into an unbounded source of load on the factory. This subsection does not govern how the factory serves the log.
+
+**Read size.** Once a caller has read a run's events, every later read of that run by the same Dispatcher process MUST be bounded to the events after the newest event instant it has already observed, or to a bounded number of trailing events. A liveness sample taken from a bounded read MUST carry forward the progress instant and the open command node that earlier samples of the same run established, so bounding a read never hides a command node that started before the bound; §"Dispatcher progress watchdog" continues to govern what those values mean. The cost of one watchdog sample MUST NOT grow with the run's total event count.
+
+**Failed reads and backoff.** A `fabro events` read that times out, exits non-zero, or returns zero bytes is a FAILED events read. On each failed events read the Dispatcher MUST journal one `fabro-events-read-failed` record naming the work-item, the run id, the factory, the reading caller, the elapsed seconds, the consecutive attempt number for that run and caller, and the backoff before that caller's next read of the run. That caller MUST NOT start its next read of the run until the backoff has elapsed. The backoff MUST be at least 60 seconds after a first failure and MUST at least double after each further consecutive failure; a successful read resets the count. A failed events read MUST be treated as an unobservable sample, never as the run having disappeared or having made no progress.
+
+**Exhausted projection reads.** When the ACP projection's read of one run has failed on five consecutive attempts, `reconcile-runs` MUST journal one `acp-projection-exhausted` record naming the work-item, the run id, the factory, the attempt count and the last failure reason, and MUST NOT re-read that run's events on any later pass. The projection failure MUST remain visible as exhausted rather than being cleared. A new dispatch of the work-item creates a new run and is not affected by the exhausted state of an earlier run.
+
+**Concurrency.** One `reconcile-runs` pass MUST issue at most one `fabro events` read per run. Across every Dispatcher process on one host, at most two `fabro events` reads against one factory MUST be in flight at the same time; a read that cannot start within its caller's timeout because the bound is full MUST be treated as a failed events read for backoff purposes.
+
+Scenario 227 in `scenarios.md` exercises this subsection.
+
 ### Calibration telemetry and the single Fabro tweak
 
 Breakdown is entirely UPSTREAM of Fabro (ledger + Dispatcher +
@@ -3550,7 +3564,21 @@ missing capability. Where an assertion is governed by a referenced
 scenario heading, the reproduction steps SHOULD follow one of that
 heading's scenarios step for step, and the record MUST name, per
 assertion, the referenced heading and the scenario title the steps
-exercise, or state that no scenario governs it. It MUST NOT modify the
+exercise, or state that no scenario governs it. Every program a
+reproduction step executes that is neither tracked in the repository at
+the commit the record names nor an installed tool invoked by its name
+MUST be written into the record itself, inline or as an asset the record
+names through the proof asset store, so that each step can be replayed
+from the record, that commit and the sandbox's installed tools alone; a
+step MAY invoke a program the repository tracks at that commit by its
+path, and an installed tool by its name, without copying it into the
+record. The record MUST state the commit sha its steps ran against, which
+MUST be the publish branch head at the moment of capture. A record is
+CURRENT for a head under review when the tree of the commit the record
+names equals the tree of that head. A commit that changes no tree, such
+as an engine checkpoint commit that lands after `proof_capture` publishes,
+MUST NOT make a record stale, and no rule MAY require a record to
+postdate a commit that changes no tree. It MUST NOT modify the
 tree; a capture that requires a code change is an implementation defect
 and the node MUST end succeeded with `preferred_label=fix`, which routes
 to `fix`, after publishing a record whose first-line verdict is
@@ -3562,11 +3590,42 @@ ACP node's does. It MUST state, in the record, which assertions are
 `host_captured` or `human_attested` and therefore not captured. `review` MUST review the
 latest captured record alongside the code; because `review_fix`
 re-enters `janitor`, every accepted fix round re-enters `publish_draft`
-and `proof_capture` before `review`, and a captured record older than the
-tree under review is a blocking review finding. A captured record whose
-proof of a behavioural assertion is test-suite output alone is likewise
-a blocking review finding, so the run re-enters `proof_capture` through
-that same route rather than replaying a proof that exercised nothing.
+and `proof_capture` before `review`, so the record `review` reads is
+normally current.
+
+A blocking review finding whose subject is the latest captured record
+rather than the tree is a PROOF-RECORD finding. Each of these is one: a
+record that is not current for the head under review; a behavioural
+assertion whose proof is test-suite output alone; a step that runs a
+program the rule above requires the record to contain and that the record
+does not contain; and an assertion whose proof is a printed conclusion
+rather than the observed output. A review verdict is a RECAPTURE verdict
+when it carries at least one blocking finding and every blocking finding
+it carries is a proof-record finding. A recapture verdict MUST end
+`review` with `preferred_label=recapture`, which MUST route to
+`proof_capture` and MUST NOT route to `disposition` or `review_fix`, so
+the verdict consumes no `disposition` visit, no `review_fix` visit and no
+review-fix round. That holds for the first and second recapture verdicts
+of a run; the third recapture verdict in one run MUST route to the
+existing `non_converged` terminal without entering `proof_capture`.
+Recapture verdicts are governed by that bound alone: an exhausted
+review-fix budget MUST NOT pre-empt a recapture verdict, and neither the
+review cap's needs-human rest nor its `merge_on_review_cap` ship edge
+applies to one. A `review` visit entered after a recapture consumes no
+review-fix round, and the engine visit limit of `review` MUST admit the
+review-fix budget's visits plus the two recapture laps. A verdict with no
+blocking finding keeps the approval route unchanged. `proof_capture`
+entered on a recapture verdict MUST receive the verdict's findings by two
+routes, the engine's preamble of preceding stage output and the review
+record on the pull request, MUST read that review record when the
+preamble carries no finding, and MUST publish a new captured record,
+current for the publish head, that addresses each finding. A verdict that
+carries at least one blocking finding about the tree is a fix verdict: it
+routes through `disposition` and `review_fix` and is bounded by the
+review-fix budget and the review cap exactly as before, and when its fix
+round reaches `proof_capture` through `janitor` and `publish_draft`, that
+`proof_capture` visit MUST also receive the verdict's proof-record
+findings by the same two routes.
 
 **`proof_verify`.** The node MUST run on an adapter distinct from the
 implementer's, MUST replay the published reproduction steps verbatim on

@@ -436,20 +436,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 162 \u2014 Receipt is distinct from consumed recovery and fulfilled work",
-    "work_item": "bd-ib-dle6l3",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 163 \u2014 Duplicate and stale recovery reconcile safely",
-    "work_item": "bd-ib-dle6l3",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 164 \u2014 Human HOLD and commit safety barriers retain recovery obligations",
     "work_item": "bd-ib-jy23vh",
     "first_seen": "2026-10-08"
@@ -921,6 +907,13 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario 212 \u2014 The sandbox-images command reports the sandbox image sources a dispatch without an explicit workflow path resolves, through dispatch resolution, and changes nothing",
     "work_item": "bd-ib-nqmltq",
+    "first_seen": "2026-10-20"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 227 \u2014 Fabro event reads are bounded in size, retries and concurrency",
+    "work_item": "bd-ib-2dlh7m",
     "first_seen": "2026-10-20"
   }
 ]

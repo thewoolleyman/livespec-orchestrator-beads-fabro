@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.229.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.228.1...v0.229.0) (2026-10-20)
+
+
+### Features
+
+* converge competing recovery consumers on one generation-fenced owner ([9e12ee9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9e12ee9a7f1198fcac4dd96670982f1c03b45303))
+* defer recovery mutation behind a real safety barrier without losing the obligation ([e559a9a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e559a9afced457570882b24bd385f98527f39dec))
+* reconcile a stale recovery pointer against current authoritative evidence ([f575ab8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f575ab8e004fa6dcaeac17f88ea5be14f5f2b58b))
+* record each recovery consumer transition as its own observation ([f16b133](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f16b13331b37d0d6666fd6a8fbbab85623d41381))
+
+
+### Bug Fixes
+
+* **recovery:** record the consumer claim as its own durable transition ([078a69b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/078a69b09f335820af4e887b5b8e54b7caf8cf2a))
+
 ## [0.228.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.228.0...v0.228.1) (2026-10-20)
 
 

@@ -405,6 +405,7 @@ Feature: A senior-engineer review gate reviews a green build before the PR stage
   Scenario: A capped-out review ships when merge_on_review_cap is set
     Given the review gate has reached its review fix-round cap (dispatcher.review_fix_cap)
     And the review gate still raises a blocking finding
+    And the verdict contains a blocking finding about the tree
     And the item's effective merge_on_review_cap is true
     Then the run ships to the PR stage anyway
     And the still-blocking finding does not gate the change
@@ -412,6 +413,7 @@ Feature: A senior-engineer review gate reviews a green build before the PR stage
   Scenario: A capped-out review blocks under the default merge_on_review_cap
     Given the review gate has reached its review fix-round cap (dispatcher.review_fix_cap)
     And the review gate still raises a blocking finding
+    And the verdict contains a blocking finding about the tree
     And the item's effective merge_on_review_cap is false (the default)
     Then the change does not ship
     And the item transitions to blocked with blocked_reason needs-human
@@ -4485,14 +4487,85 @@ Feature: Proof exercises the delivered behaviour through its real surface
     And no record claims the assertion from a test run, a fixture or a test double
   Scenario: Suite-only proof is a blocking review finding
     Given a captured record whose proof of a behavioural assertion is test-suite output alone
+    And that defect is the review verdict's only blocking finding
+    And the run has issued fewer than two recapture verdicts
     When the review node reviews the record alongside the code
     Then the suite-only proof is a blocking review finding
-    And the run re-enters proof_capture through the review-fix route before any replay
+    And the run re-enters proof_capture with that finding before any replay, through no disposition or review_fix visit
   Scenario: The replay backstop does not call suite-only proof not reproduced
     Given a captured record whose proof of a behavioural assertion is test-suite output alone reaches proof_verify
     When the proof_verify node evaluates the record
     Then the run ends through the structured needs-human ending naming that assertion
     And no not_reproduced record and no verified record is published for it
+  Scenario: A proof-record-only verdict re-captures without a fix round
+    Given a review verdict whose only blocking finding is that a captured step runs a program the record is required to contain but does not contain
+    And the run has issued fewer than two recapture verdicts
+    When the review node ends
+    Then the run routes to proof_capture with preferred_label recapture
+    And no disposition visit, no review_fix visit and no review-fix round is consumed
+    And proof_capture publishes a new captured record, current for the publish head, that addresses the finding
+  Scenario: The recapture findings arrive by both channels
+    Given a review verdict with at least one blocking finding and only proof-record blocking findings
+    And the run has issued fewer than two recapture verdicts
+    When the run enters proof_capture with preferred_label recapture
+    Then the engine preamble of preceding stage output carries the findings
+    And the review record on the pull request carries the same findings
+  Scenario: proof_capture reads the review record when the preamble is empty
+    Given a recapture entry whose engine preamble carries no review finding
+    And a review record on the pull request carrying a proof-record finding
+    When the proof_capture node runs
+    Then it reads that review record
+    And the new captured record addresses that finding
+  Scenario: An exhausted review-fix budget does not pre-empt recapture
+    Given a run whose review fix-round budget (dispatcher.review_fix_cap) is exhausted
+    And a review verdict with at least one blocking finding and only proof-record blocking findings
+    And the run has issued fewer than two recapture verdicts
+    When the review node ends
+    Then the run routes to proof_capture with preferred_label recapture
+    And the run does not rest at needs-human and does not ship on the review cap
+  Scenario: A captured record is self-contained and names its head
+    Given a factory-captured assertion whose reproduction step runs a helper program that the repository does not track
+    And another step that runs a script the repository tracks, by its path, and an installed tool, by its name
+    When the proof_capture node publishes the record
+    Then the helper program's text is in the record or in a proof asset the record names
+    And the tracked script and the installed tool are not required to be copied into the record
+    And the record states the commit sha its steps ran against, equal to the publish branch head at capture time
+  Scenario: A checkpoint commit does not make a record stale
+    Given a captured record naming the publish head at capture time
+    And an engine checkpoint commit that changes no tree lands on the publish branch after proof_capture publishes
+    When the review node reviews the record against the new head
+    Then the record is current, because the two commits carry the same tree
+    And no proof-record finding is raised for its head
+  Scenario: A mixed verdict still fixes the tree first
+    Given a review verdict with one blocking finding about the tree and one proof-record finding
+    And the review fix-round budget (dispatcher.review_fix_cap) is not yet exhausted
+    When the disposition stage accepts the finding about the tree
+    Then the run routes through review_fix as a fix verdict
+    And the proof_capture visit its fix round reaches receives the proof-record finding
+  Scenario: A different tree makes the captured record stale
+    Given a captured record whose named commit has a different tree from the head under review
+    When review evaluates the record
+    Then the stale record is a blocking proof-record finding
+  Scenario: A printed conclusion is not observed proof
+    Given a captured record whose proof merely prints the claimed conclusion instead of observing the asserted behaviour
+    When review evaluates the record
+    Then the printed conclusion is a blocking proof-record finding
+  Scenario: Both recapture laps remain available after the review-fix budget is exhausted
+    Given a run that has exhausted its review-fix budget and issued no recapture verdict
+    When review issues a first recapture verdict and then a second recapture verdict
+    Then each verdict enters proof_capture and returns to review
+    And neither returned review visit consumes a review-fix round
+    And the engine review visit limit admits both returned visits
+    When the returned review issues a third recapture verdict
+    Then the run routes to non_converged without entering proof_capture
+  Scenario: Re-capture is bounded
+    Given a run whose review has ended with preferred_label recapture twice
+    When review ends with a recapture verdict a third time
+    Then the run routes to non_converged without entering proof_capture
+  Scenario: A clean review keeps the approval route
+    Given a review verdict with no blocking finding
+    When the review node ends
+    Then the run takes the approval route and does not route to proof_capture
 ```
 
 ## Scenario 138 — A proof finding reaches the fix stage, and a parked acceptance verdict is recorded with its reason and its pointer
@@ -7987,4 +8060,94 @@ Feature: Read-only sandbox image enumeration
     Then no ledger record, dispatch-journal row or Fabro run is created
     And no image is pulled, built or tagged
     And no file is created, modified or deleted, including any lease file
+```
+
+## Scenario 227 — Fabro event reads are bounded in size, retries and concurrency
+
+```gherkin
+Feature: The Dispatcher's Fabro event reads cannot become unbounded factory load
+  As an operator of a shared factory
+  I want every events read bounded
+  So that a long run's slow event log does not draw continuous re-reads
+
+  Scenario Outline: Later reads are bounded for every caller
+    Given <caller> has already read a run's events
+    When that Dispatcher process reads the run again
+    Then the read is bounded to events after the newest observed instant or to a bounded tail
+
+    Examples:
+      | caller                |
+      | progress watchdog     |
+      | ACP projection        |
+      | ACP reconcile replay  |
+      | review-gate reader    |
+      | cost reader           |
+
+  Scenario: Bounded samples preserve established liveness state
+    Given the watchdog has established a run's progress instant
+    And a command node started before the read boundary and has not completed
+    When a successful bounded read contains no newer progress or command-node transition
+    Then the sample retains the established progress instant
+    And it still reports that command node as open
+    And an older event instant does not mask a newer heartbeat instant
+
+  Scenario: A completion updates carried command-node state
+    Given an earlier sample established an open command node
+    When a successful bounded read contains that node's completion and no new command-node start
+    Then the sample no longer reports that command node as open
+
+  Scenario: Watchdog sample cost is independent of total event count
+    Given two runs with the same bounded observation data and established liveness state
+    And one run has a larger historical event log
+    When the watchdog samples each run
+    Then the sample cost does not grow with the larger total event count
+
+  Scenario Outline: Failed reads are journaled and remain unobservable
+    Given a fabro events read <failure>
+    When the Dispatcher handles the result
+    Then it journals exactly one fabro-events-read-failed record
+    And the record names the work-item, run id, factory, reading caller, elapsed seconds, consecutive attempt number and next-read backoff
+    And that caller does not read that run again before the backoff expires
+    And the failure is an unobservable sample
+    And the failure is not evidence of disappearance or lack of progress
+
+    Examples:
+      | failure             |
+      | times out           |
+      | exits non-zero      |
+      | returns zero bytes  |
+
+  Scenario: Consecutive failures increase backoff and success resets it
+    Given a caller's first failed read of a run
+    When further consecutive reads by that caller fail
+    Then the first backoff is at least 60 seconds
+    And each subsequent backoff is at least twice the preceding backoff
+    And the consecutive attempt number increases on each failure
+    When a read succeeds and the following read fails
+    Then the new failure has consecutive attempt number 1
+    And its backoff is at least 60 seconds
+
+  Scenario: Repeated projection read failures are exhausted durably
+    Given the ACP projection's read of a run has failed on four consecutive attempts
+    When its fifth consecutive attempt fails
+    Then reconcile-runs journals exactly one acp-projection-exhausted record
+    And the record names the work-item, run id, factory, attempt count 5 and last failure reason
+    And the projection failure remains visible as exhausted
+    When later reconcile-runs passes run
+    Then none reads that run's events
+    And none duplicates the exhaustion record or clears the failure
+    When a new dispatch creates a new run for the same work-item
+    Then the earlier run's exhaustion does not prevent reading the new run
+
+  Scenario: A reconcile pass deduplicates reads of one run
+    Given multiple reconciliation paths require events from the same run
+    When one reconcile-runs pass executes
+    Then it issues at most one fabro events read for that run
+
+  Scenario: Concurrent reads are capped across processes on one host
+    Given two fabro events reads against one factory are already in flight from different Dispatcher processes on this host
+    When another Dispatcher process needs to read a run on that factory
+    Then it does not start a third concurrent read
+    And if it cannot start within its caller's timeout it is handled as a failed events read
+    And that failure is journaled and backed off under the failed-read rules
 ```

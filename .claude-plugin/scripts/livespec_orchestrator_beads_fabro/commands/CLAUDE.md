@@ -1940,6 +1940,55 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   the relay contract's and arrive AS GIVEN; nothing here computes, defaults or
   refreshes any of them, because that would be the second result model the same
   clause forbids.
+- The CONSUMED RECOVERY of the same clause (`bd-ib-dle6l3`, Scenarios 162, 163
+  and 164) — the orchestrator-side consumer API a supervised scheduler drives
+  over ONE recovery attempt, plus the sanctioned-action bridge it executes
+  through. The overseer repository owns the daemon, the schedule and the
+  takeover; what lives here is one PASS and its result. Nine cohesive modules,
+  dependency direction bottom-up: `_session_recovery_shape` (PURE: what a
+  version-1 attempt record IS, and the three ways bytes fail to be one) and
+  `_session_recovery_lease_reading` (PURE: the standing lease, or the fact that
+  it cannot be read) → `_session_recovery_records` (the attempt, the closed
+  transition vocabulary, and the two writes: open, then append-once) →
+  `_session_recovery_consumption` (PURE: consumed only on execution evidence,
+  and the latency that took) and `_session_recovery_lease` (the
+  generation-fenced claim, takeover and fence accounting) and
+  `_session_recovery_effect` (the execution receipt and the two seams a caller
+  supplies) and `_session_recovery_safety` (PURE: the three real barriers and
+  the four facts that only look like one) and `_session_recovery_action` (PURE:
+  the typed action current ledger/forge/remote-factory evidence sanctions) →
+  `_session_recovery_execution` (run the command at most once) →
+  `_session_recovery_outcome` (what the pass reports) →
+  `_session_recovery_consumer` (the ORDER of the pass: receipt, claim, safety,
+  action, execution, reconciled next action).
+  Seven properties an editor must not invert. The transition vocabulary is
+  CLOSED and holds no word for fulfillment, so no surface here can discharge
+  the relay-owned required result — the consumption grade reports the identity
+  it leaves outstanding instead. CONSUMPTION is execution EVIDENCE and nothing
+  else: a receipt and a claim leave recovery unconsumed, which is the whole of
+  Scenario 162. A DUPLICATE converges on the first observation and is COUNTED
+  rather than appended, and a displaced consumer's refused mutation is counted
+  too, because `duplicate_count` and `fenced_count` are measurements the clause
+  asks for and a silently dropped event reports a clean zero. A LAPSED HOLDER
+  reclaiming gets a NEW generation, which is the one arm where a duplicate
+  effect otherwise survives — a paused process is still inside its own command
+  when its newer self reclaims. A `started` transition with NO effect IS the
+  ambiguity, so it routes the next pass into the durable-effect LOOKUP and an
+  unobservable lookup writes nothing and runs nothing; this family claims no
+  exactly-once arbitrary shell execution and there is no shell string anywhere
+  in it — the command is a protocol the caller supplies. The LOCAL GATE OUTCOME
+  is carried and never consulted: the measured 2026-10-09 case had a gate
+  reporting FAILED at 05:19:06Z for a pull request that merged at 05:18:03Z, so
+  the forge rung precedes the ledger rung and a failed gate selects the same
+  action a green one would. And a SAFETY DEFERRAL writes exactly one
+  transition: the original deadline, the epoch and the required result are read
+  BACK off the record and reported, which is how "retaining the original
+  obligation/deadline history" is checkable from the outcome rather than from
+  this family's care. The stable attempt id, the epoch, the original deadline
+  and the executable-operation grammar are the relay contract's and arrive AS
+  GIVEN — `sanctioned_operation` reaches the relay's own
+  `is_executable_operation` and adds exactly ONE consumer-side form, the
+  per-item `reconcile-merged`.
 - The PROOF CARRY-FORWARD DECISION a changed-head `pr_refresh` takes
   (`contracts.md` §"Definition-of-Done and Proof-of-Done stages" → "Proof
   carry-forward across a refresh", "The observation scope" and "The decision";
