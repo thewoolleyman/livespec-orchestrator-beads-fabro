@@ -159,6 +159,102 @@ def test_recovered_engine_failure_is_surfaced_as_the_runs_cause(tmp_path: Path) 
     assert _ENGINE_FAILURE in surfaced.detail
 
 
+def test_a_recovered_failure_cycle_classifies_the_ending_by_that_cycle(
+    tmp_path: Path,
+) -> None:
+    journal = _RecordingJournal()
+    surfaced = _module().worker_exit_engine_failure_outcome(
+        plan=_plan(tmp_path=tmp_path),
+        runner=_ExportRunner(log_text=_RUN_LOG),
+        journal=journal,
+        run_id=_RUN_ID,
+        inspect=_inspect(),
+        terminal=_terminal(),
+    )
+    assert surfaced is not None
+    # The cycle the engine named, not the run it reported as terminated: the
+    # arriving ending carried no signature at all.
+    assert _terminal().fabro_failure_signature is None
+    assert surfaced.fabro_failure_signature == _SIGNATURE
+    assert surfaced.fabro_failure_category == "deterministic"
+    assert f"signature={_SIGNATURE}" in surfaced.detail
+    rows = [
+        record
+        for record in journal.records
+        if record.get("stage") == "fabro-worker-exit-engine-failure"
+    ]
+    assert rows[0].get("failure_cycle_signature") == _SIGNATURE
+
+
+def test_an_engine_failure_that_is_not_a_failure_cycle_keeps_the_arriving_class(
+    tmp_path: Path,
+) -> None:
+    journal = _RecordingJournal()
+    other = "Workflow run failed to persist its terminal state"
+    surfaced = _module().worker_exit_engine_failure_outcome(
+        plan=_plan(tmp_path=tmp_path),
+        runner=_ExportRunner(log_text=f"2026-10-19T06:27:31.222Z ERROR {other}"),
+        journal=journal,
+        run_id=_RUN_ID,
+        inspect=_inspect(),
+        terminal=_terminal(),
+    )
+    assert surfaced is not None
+    assert surfaced.fabro_failure_cause == other
+    assert surfaced.fabro_failure_signature is None
+    assert surfaced.fabro_failure_category == "deterministic"
+    rows = [
+        record
+        for record in journal.records
+        if record.get("stage") == "fabro-worker-exit-engine-failure"
+    ]
+    assert rows[0].get("failure_cycle_signature") is None
+
+
+def test_a_failure_cycle_signature_of_the_wrong_shape_names_no_category(
+    tmp_path: Path,
+) -> None:
+    truncated = "janitor"
+    surfaced = _module().worker_exit_engine_failure_outcome(
+        plan=_plan(tmp_path=tmp_path),
+        runner=_ExportRunner(
+            log_text=(
+                "2026-10-19T06:27:31.222Z ERROR Workflow run failed deterministic"
+                f" failure cycle detected: signature {truncated}"
+            )
+        ),
+        journal=_RecordingJournal(),
+        run_id=_RUN_ID,
+        inspect=_inspect(),
+        terminal=_terminal(),
+    )
+    assert surfaced is not None
+    assert surfaced.fabro_failure_signature == truncated
+    assert surfaced.fabro_failure_category == "deterministic"
+
+
+def test_a_failure_cycle_category_replaces_the_conclusions_own_category(
+    tmp_path: Path,
+) -> None:
+    signature = "janitor|transient_infra|script failed with exit code 1"
+    surfaced = _module().worker_exit_engine_failure_outcome(
+        plan=_plan(tmp_path=tmp_path),
+        runner=_ExportRunner(
+            log_text=(
+                "2026-10-19T06:27:31.222Z ERROR Workflow run failed deterministic"
+                f" failure cycle detected: signature {signature}"
+            )
+        ),
+        journal=_RecordingJournal(),
+        run_id=_RUN_ID,
+        inspect=_inspect(),
+        terminal=_terminal(),
+    )
+    assert surfaced is not None
+    assert surfaced.fabro_failure_signature == signature
+    assert surfaced.fabro_failure_category == "transient_infra"
+
+
 def test_the_journal_records_the_conclusion_and_the_recovered_failure_separately(
     tmp_path: Path,
 ) -> None:

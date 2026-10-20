@@ -40,6 +40,16 @@ verdict as distinct fields rather than one resolved cause, and the outcome
 carries the recovered verdict alone, because the outcome's job is to name the
 fault.
 
+THE CLASSIFICATION FOLLOWS THE RECOVERED VERDICT, NOT THE WORKER EXIT. Where
+the recovered line reports a deterministic failure cycle it also names the
+signature the engine cycled on, and that signature carries its own node and
+category -- so the ending is classified by the cycle it really was rather than
+as a terminated run, which carries no signature at all and takes its category
+from the generic conclusion. Where the recovered line is some other engine
+workflow failure there is no signature to take and the arriving classification
+stands; inventing one from the prose would put this module's own rendering
+where the engine's grading belongs.
+
 EVERY ARM THAT CANNOT MEASURE THE LOG LEAVES THE ENDING EXACTLY AS IT ARRIVED.
 An export that failed, an export carrying no log, and a log carrying no engine
 workflow-failure line are all reads that did not happen rather than evidence of
@@ -101,6 +111,17 @@ WORKER_EXIT_ENGINE_FAILURE_STAGE = "fabro-worker-exit-engine-failure"
 # could not match a build that reformats either, while reporting the same clean
 # "no engine failure line" a genuinely silent log reports.
 _ENGINE_FAILURE_MARKER = "Workflow run failed"
+# The marker after which a deterministic failure cycle names the signature it
+# cycled on. Read from the SAME recovered line rather than from a second pass
+# over the log, so the surfaced cause and the classification can only ever
+# describe one verdict.
+_FAILURE_CYCLE_MARKER = "failure cycle detected: signature "
+# A failure signature is `<node>|<category>|<reason>`, so the category is its
+# middle field. A signature carrying fewer fields is not that shape, so it
+# names no category rather than whatever happens to sit at that index.
+_SIGNATURE_SEPARATOR = "|"
+_SIGNATURE_CATEGORY_FIELD = 1
+_SIGNATURE_FIELDS = 3
 # The export path the measurement names. Read EXACTLY, and an absence reported
 # as an absence: a glob over whatever else the export holds would be this
 # module guessing at a file nobody has measured, and a verdict recovered from
@@ -118,10 +139,17 @@ class WorkerExitEngineFailure:
     every other surface will keep reporting, while `engine_failure` is the
     verdict it had already reached. A value carrying only the recovered line
     would leave an operator unable to tell that the two describe one run.
+
+    `failure_cycle_signature` is the signature a recovered DETERMINISTIC
+    FAILURE CYCLE names, and `None` for any other engine workflow failure --
+    which is a reading rather than a defect: only a failure cycle names one,
+    and manufacturing a signature for a line that does not carry one would put
+    this module's own rendering where the engine's grading belongs.
     """
 
     conclusion_cause: str
     engine_failure: str
+    failure_cycle_signature: str | None
 
 
 def worker_exit_engine_failure_outcome(
@@ -153,7 +181,11 @@ def worker_exit_engine_failure_outcome(
     recovered = (
         None
         if message is None
-        else WorkerExitEngineFailure(conclusion_cause=conclusion, engine_failure=message)
+        else WorkerExitEngineFailure(
+            conclusion_cause=conclusion,
+            engine_failure=message,
+            failure_cycle_signature=_failure_cycle_signature(message=message),
+        )
     )
     journal.append(
         record={
@@ -167,6 +199,9 @@ def worker_exit_engine_failure_outcome(
             # and seen to describe one run.
             "conclusion_cause": conclusion,
             "engine_failure": None if recovered is None else recovered.engine_failure,
+            "failure_cycle_signature": (
+                None if recovered is None else recovered.failure_cycle_signature
+            ),
         }
     )
     if recovered is None:
@@ -189,6 +224,29 @@ def _engine_failure_message(*, text: str) -> str | None:
         if index >= 0:
             found = line[index:].strip()
     return found
+
+
+def _failure_cycle_signature(*, message: str) -> str | None:
+    """The signature a recovered failure-cycle line names, else `None`.
+
+    An EMPTY signature reads as none rather than as the empty string: the
+    classification is what this value feeds, and an empty signature would be
+    rendered on the ending's detail as a grading nobody recorded.
+    """
+    index = message.find(_FAILURE_CYCLE_MARKER)
+    if index < 0:
+        return None
+    return message[index + len(_FAILURE_CYCLE_MARKER) :].strip() or None
+
+
+def _signature_category(*, signature: str | None) -> str | None:
+    """The category one failure signature names, or `None` for another shape."""
+    if signature is None:
+        return None
+    fields = signature.split(_SIGNATURE_SEPARATOR)
+    if len(fields) < _SIGNATURE_FIELDS:
+        return None
+    return fields[_SIGNATURE_CATEGORY_FIELD].strip() or None
 
 
 def _exported_log_text(*, plan: DispatchPlan, runner: CommandRunner, run_id: str) -> str:
@@ -219,11 +277,21 @@ def _exported_log_text(*, plan: DispatchPlan, runner: CommandRunner, run_id: str
 
 
 def _surfaced(*, terminal: DispatchOutcome, recovered: WorkerExitEngineFailure) -> DispatchOutcome:
-    """The same ending, reported with the fault the engine had already named."""
+    """The same ending, classified by the fault the engine had already named.
+
+    THE ARRIVING CLASSIFICATION IS THE FALLBACK AND NEVER THE ANSWER WHERE A
+    CYCLE WAS RECOVERED. A terminated run carries no signature at all and takes
+    its category from the generic conclusion, so where the recovered verdict is
+    a failure cycle both are replaced by what that cycle names -- and where it
+    is not, the arriving pair stands, because there is nothing to replace it
+    with that the engine recorded.
+    """
+    signature = recovered.failure_cycle_signature
+    category = _signature_category(signature=signature)
     failure = FabroFailureDetail(
         cause=recovered.engine_failure,
-        category=terminal.fabro_failure_category,
-        signature=terminal.fabro_failure_signature,
+        category=category if category is not None else terminal.fabro_failure_category,
+        signature=signature if signature is not None else terminal.fabro_failure_signature,
     )
     return replace(
         terminal,
