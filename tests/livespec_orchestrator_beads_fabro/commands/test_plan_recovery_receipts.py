@@ -676,3 +676,33 @@ def test_no_readable_record_for_this_item_yields_no_receipt_at_all(
     would credit another item's dispatch, run or terminal to this attempt.
     """
     assert execution_records(records=records, work_item_id=_TARGET_ID) == ExecutionRecords()
+
+
+def test_impl_executor_records_the_matching_attempts_three_durable_receipts(
+    tmp_path: Path,
+) -> None:
+    """The executor, rather than a caller, attaches its journal evidence."""
+    assert hasattr(_plan_recovery_receipt_write, "record_impl_recovery_receipts")
+    config = _seed(tmp_path=tmp_path)
+    journal = _journal(
+        tmp_path=tmp_path,
+        records=(_dispatch_record(), _run_record(), _outcome_record()),
+    )
+
+    writes = _plan_recovery_receipt_write.record_impl_recovery_receipts(
+        config=config,
+        work_item_id=_TARGET_ID,
+        journal_path=journal,
+        author="relay-session",
+        now=_NOW,
+    )
+
+    assert len(writes) == 1
+    write = _write(writes[0])
+    assert write.status == RECEIPTS_RECORDED
+    assert write.receipts == ReceiptSet(
+        claim=f"dispatch {_DISPATCH_ID}",
+        execution=f"fabro run {_RUN_ID}",
+        outcome="green pull request 2904",
+    )
+    assert _recorded_receipts(config=config) == write.receipts
