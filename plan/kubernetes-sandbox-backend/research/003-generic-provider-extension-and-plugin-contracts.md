@@ -198,7 +198,23 @@ assertion on `bd-ib-fghubm`). Post to **`fabro-sh/fabro`**, as a
 follow-on referencing issue 937. Record the issue number back into this
 section when it is posted.
 
-> **Posted as fabro-sh/fabro issue #____** (fill in after posting)
+> **Posted 2026-10-20, in a different shape from the draft below.** The draft
+> was never posted. On 2026-10-20 a prior-art check found that the Petri
+> maintainers' own lithoscomputer/petri PR #122 (for Petri issue #114) already
+> does the plugin backend selection, and that fabro-sh/fabro #937 already
+> states the Fabro half. The work was therefore rebased onto #122, and only
+> the new gap was posted:
+>
+> - Issue **lithoscomputer/petri#130**: "Let a run size its sandbox on a
+>   registered provider".
+> - PR **lithoscomputer/petri#131**, stacked on #122: per-run resources over
+>   the registered template.
+> - Draft PR **fabro-sh/fabro#1048**, for #937: registering
+>   `[server.sandbox.providers.<kind>]` plugins through #122's
+>   `register_plugin`.
+>
+> Research note 004 records the finding and the measurements behind it.
+> The draft below is kept as written, for the history of the reasoning.
 
 ---
 
