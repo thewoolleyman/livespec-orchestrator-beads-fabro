@@ -1432,10 +1432,7 @@ functional cross-boundary contract.
      an epic and routes to `backlog` for decomposition.
    - **The acceptance is autonomously verifiable** with no human
      judgement call.
-   - **An autonomy tier is assigned** — spec-change is human-gated
-     (effective `admission_policy` `manual`) and
-     routes to `/livespec:propose-change` / `/livespec:revise`;
-     everything else is factory-dispatchable.
+   - **An autonomy tier is assigned** — the spec-change tier is DECIDED by the spec-stated judgement of §"Effective acceptance criteria", never declared by the filer and never read off `spec_commitment_hint` (which marks an implementation follow-up to an already ratified change). At filing, at groom and again on every dispatch path, every implement-kind item MUST be classified; an item classified `feature` whose asked-for behaviour the judgement reports `partial` or `unstated` is spec-change tier. A spec-change-tier item MUST carry a linked proposed-change topic, filed beside it through `/livespec:propose-change` as the parallel deposit, and the judgement MUST name an existing heading to generalize in preference to a new clause whenever one exists. The item MUST be held out of `ready` until BOTH hold: the linked topic's revision record under `<spec-root>/history/vNNN/proposed_changes/` carries decision `accept` or `modify`, and the judgement, re-run against the ratified specification, returns `stated` for the item's asked-for behaviour. That hold is a read of the spec history and needs no model, so it MUST fail closed; the pre-dispatch wall MUST refuse a held item with exit code `5` naming the unratified topic, and once both conditions hold the item is no longer spec-change tier but an implementation follow-up to an already ratified change: the next intake or drain pass MUST release the hold with no human valve and route the item exactly as its effective `admission_policy` decides, so `auto` admission routes it to `ready` and `manual` admission rests it at `pending-approval` for the `approve` valve, as it would any other item. An item classified `bug`, `chore` or `non_functional` is never spec-change tier and routes as every other factory-dispatchable item. When the classification cannot run (no eligible model, a timeout, or an unparseable verdict), intake MUST record that on the item and route it as it would without the classification; the `dod_gate` node, which runs the same judgement in-run, remains the backstop that refuses an unstated feature before any implementation spend. Plan-child disposition refuses a held spec-change-tier child and admits an implementation follow-up.
    - **Dependencies are linked** as beads `blocked-by` edges (ready
      requires blockers closed AND an acceptance — never deps alone).
    - **The repo target is named** — one slice maps to one ledger.
@@ -5899,6 +5896,8 @@ Definition-of-Done finding, so that it is repaired before a sandbox is
 spent on it. The implement prompt MUST state the kept-current rule
 below. Scenario 140 in `scenarios.md` exercises this clause.
 
+**The spec-stated judgement is one shared component.** The Dispatcher MUST obtain two verdicts from the `livespec_runtime.spec_stated` module of the livespec-runtime release this plugin vendors, and from nowhere else: for a behaviour statement, whether the ratified specification states it — `stated`, naming each governing H2 heading verbatim; `partial` or `unstated`, naming the existing heading whose generalization would state it, or none — and for a work-item, whether it is a `feature`, a `bug`, a `chore` or `non_functional`, the stored type being evidence rather than the answer. The module defines the prompt, the inputs and the verdict schema and invokes no model itself; the Dispatcher supplies the model runner through the module's injected callable, so the judgement is defined once for every orchestrator. The Definition-of-Done judgement named in the two paragraphs that follow, the `dod_gate` node, and the filing-time reference advisory MUST take the governing-heading verdict for each assertion from this component and MUST name the heading it returns as the remedy for a reference that does not govern the assertion; coherence, proof-mode feasibility, rider coherence and every existing refusal remedy remain graded exactly as before, because this component answers only the two questions above. A verdict MUST be reused while the item's effective criteria and referenced headings are byte-unchanged and no specification revision has been ratified since it was taken; a new revision under `<spec-root>/history/` invalidates every earlier verdict, so the judgement that releases a held spec-change-tier item always runs against the ratified specification. Scenario 206 in `scenarios.md` exercises this paragraph together with the autonomy-tier bullet below.
+
 **Judged before admission.** Before intake routes an implement-kind
 item to `ready` — from `backlog` or `pending-approval`, whether through
 intake, the approve valve, or groom — the Dispatcher MUST run the same
@@ -5943,12 +5942,11 @@ Dispatcher MUST record on the item that the pre-dispatch judgement did
 not run and why, and MUST proceed as it would without the judgement; the
 in-run `dod_gate` node remains the backstop. The Dispatcher MUST reuse
 the most recent verdict recorded for the item, the pre-admission verdict
-or an earlier pre-dispatch verdict, while the item's effective criteria
-and referenced headings are byte-unchanged since that verdict was taken,
-and MUST NOT run the judgement again or append another comment for a
+or an earlier pre-dispatch verdict, while the item's effective criteria and referenced headings are byte-unchanged since that verdict was taken and no specification
+revision has been ratified since, and MUST NOT run the judgement again or append another comment for a
 reused verdict; a reused refusing verdict refuses the dispatch without a
-new comment. A refused item MUST be excluded from drain candidate
-enumeration until its effective criteria or referenced headings change,
+new comment. A refused item MUST be excluded from drain candidate enumeration until its effective criteria or referenced headings change or a
+specification revision is ratified,
 and `needs-attention` MUST list it as a hygiene fact naming the
 verdict's first remedy, exactly as the pre-admission paragraph does for
 held items. The did-not-run record MUST likewise be written at most once
@@ -6163,7 +6161,10 @@ empty or ungradeable, or the Definition of Done section is absent or
 carries no valid reference line (§"Effective acceptance criteria"), or
 the pre-dispatch Definition-of-Done judgement refused a hand-picked
 dispatch (§"Effective acceptance criteria" → "Authoring at filing time"
-→ "Judged again before dispatch"). `skipped`-severity findings never flip the exit code.
+→ "Judged again before dispatch"), or the pre-dispatch wall refused a
+spec-change-tier item held for its linked proposal's ratification
+(§"Grooming and slice-size calibration" → "The four maintainer
+touchpoints", touchpoint 1). `skipped`-severity findings never flip the exit code.
 
 ### Post-merge acceptance (`acceptance → done`)
 

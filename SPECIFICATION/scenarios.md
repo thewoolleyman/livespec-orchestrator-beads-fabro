@@ -5937,17 +5937,18 @@ Feature: A judged Definition-of-Done defect is found before a dispatch is spent 
     And a ledger comment records that the pre-dispatch judgement did not run and why
   Scenario: A refused item is not judged or commented again while it is unchanged
     Given an item whose pre-dispatch judgement refused it and whose effective criteria and referenced headings are unchanged since
+    And no specification revision has been ratified since that verdict was taken
     When the Dispatcher's drain enumerates dispatch candidates
     Then the item is excluded from the candidates
     And no further judgement runs and no further ledger comment is appended for it
     And needs-attention lists the item with its verdict's first remedy
-  Scenario: A refused item re-enters enumeration and is judged once after its criteria change
+  Scenario: A refused item re-enters enumeration and is judged once after its criteria change or a revision is ratified
     Given an item excluded from drain candidates by a pre-dispatch refusal
-    And its effective criteria or referenced headings have changed since that verdict was taken
-    And the judgement of the changed criteria would still rest the item at needs-human
+    And its effective criteria or referenced headings have changed, or a specification revision has been ratified, since that verdict was taken
+    And the judgement of its current criteria would still rest the item at needs-human
     When the Dispatcher's drain enumerates dispatch candidates
     Then the item is included among the candidates
-    And the pre-dispatch judgement runs exactly once against the changed criteria before any claim is taken
+    And the pre-dispatch judgement runs exactly once against the item's current criteria and the ratified specification before any claim is taken
     And the dispatch is refused before any factory run is created
     And exactly one new verdict comment is appended to the item
 ```
@@ -7727,4 +7728,67 @@ Feature: A ready item still assigned fabro is a stale assignee, not a dispatch c
     When another reconciliation surface on the same host runs before any new dispatch
     Then no second stale-assignee-clear record and no second ledger comment is written
     And the item stays ready with no assignee
+```
+
+## Scenario 206 — The spec-change tier is decided by the spec-stated judgement, and a feature waits for ratification
+
+```gherkin
+Feature: New behaviour gets new spec before it is built
+  As the maintainer keeping the implementation and the specification in lockstep
+  I want every feature whose behaviour the spec does not state to wait for its proposal to ratify
+  So that implementation never runs ahead of the specification while bugs and chores keep their leeway
+
+  Scenario: An unstated feature is held and the wall refuses it
+    Given an implement-kind item typed feature whose asked-for behaviour the spec-stated judgement reports unstated
+    When the item is filed
+    Then the verdict, the generalization target and the proposed-change topic it must link are recorded on the item
+    And the item is spec-change tier and is not routed to ready
+    And a dispatch of the item is refused with exit code 5 naming the unratified topic
+
+  Scenario: A bug is routed as today
+    Given an implement-kind item the judgement classifies bug
+    When the item is filed
+    Then it is routed through intake exactly as an item not subject to the tier
+
+  Scenario: Ratification releases the hold without a human valve
+    Given a held spec-change-tier item whose linked topic now has a revision record with decision accept
+    And the judgement re-run against the ratified spec returns stated for its asked-for behaviour
+    And the item's effective admission_policy is auto
+    When the next intake or drain pass reaches the item
+    Then the item is no longer spec-change tier and is routed to ready with no human valve
+
+  Scenario: Ratification releases the hold but leaves a manual admission policy in force
+    Given a held spec-change-tier item whose linked topic now has a revision record with decision modify
+    And the judgement re-run against the ratified spec returns stated for its asked-for behaviour
+    And the item's effective admission_policy is manual
+    When the next intake or drain pass reaches the item
+    Then the spec hold is released and the item rests at pending-approval for the approve valve
+
+  Scenario: A rejected or narrowed proposal does not release the hold
+    Given a held spec-change-tier item whose linked topic has a revision record with decision reject
+    When the next drain pass reaches the item
+    Then the item stays held and the refusal names the topic
+
+  Scenario: A follow-up to a ratified change is not held
+    Given an implement-kind item carrying a spec_commitment_hint from a ratified proposal
+    And the judgement reports its asked-for behaviour stated
+    When the item is filed
+    Then it is not spec-change tier
+
+  Scenario: A commitment hint does not exempt unstated behaviour
+    Given an implement-kind item typed feature carrying a spec_commitment_hint from a ratified proposal
+    And the judgement reports part of its asked-for behaviour unstated
+    When the item is filed
+    Then it is spec-change tier and is held for a linked proposal
+
+  Scenario: A classification that cannot run records itself and leaves the backstop
+    Given the classification cannot run for a filed feature
+    When intake routes the item
+    Then the item is routed as it would be without the classification and the did-not-run cause is recorded on it
+    And the dod_gate node refuses the item before implement when the judgement in-run reports the behaviour unstated
+
+  Scenario: A citation that does not govern is remedied with the judgement's heading
+    Given a ready item whose References line names a heading that does not govern its assertions
+    When the pre-admission judgement runs
+    Then the item is held with the governing heading the spec-stated judgement returned as the remedy
 ```

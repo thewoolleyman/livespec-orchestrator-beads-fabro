@@ -894,5 +894,12 @@
     "heading": "## Scenario 210 \u2014 Reconciliation clears a stale fabro assignee from a ready item, and holds with a named reason every one it cannot clear",
     "work_item": "bd-ib-3lbt4o",
     "first_seen": "2026-10-20"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 206 \u2014 The spec-change tier is decided by the spec-stated judgement, and a feature waits for ratification",
+    "work_item": "bd-ib-57ss2n",
+    "first_seen": "2026-10-20"
   }
 ]
