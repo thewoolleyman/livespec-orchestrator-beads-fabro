@@ -545,6 +545,15 @@ if argv[:2] == ["pr", "merge"] and "--disable-auto" in argv:
         sys.exit(1)
     sys.exit(0)
 
+if argv[:2] == ["pr", "list"]:
+    # No prior run owns this control's branch, so the stage must create its
+    # first draft after publishing the refreshed head.
+    sys.exit(0)
+
+if argv[:2] == ["pr", "create"]:
+    print("https://example.invalid/pull/1")
+    sys.exit(0)
+
 sys.stderr.write("unstubbed gh invocation: %%s\n" %% " ".join(argv))
 sys.exit(2)
 """
