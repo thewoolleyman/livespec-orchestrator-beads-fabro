@@ -107,6 +107,7 @@ __all__: list[str] = [
     "FLOOR_SKIP_KIND",
     "HEADROOM_SKIP",
     "LEGACY_HOLD_SKIP",
+    "OUTSTANDING_CONFIRMATION_SKIP",
     "PROBE_SKIP",
     "PROJECTION_SKIP_KIND",
     "PROVIDER_LIMIT_CONDITIONS",
@@ -121,6 +122,7 @@ __all__: list[str] = [
 # The five reasons a candidate leaves the selectable set, as stable machine
 # tokens so a verdict's explanation is greppable rather than prose-matched.
 TYPED_HOLD_SKIP = "typed-availability-hold"
+OUTSTANDING_CONFIRMATION_SKIP = "outstanding-availability-confirmation"
 LEGACY_HOLD_SKIP = "legacy-provider-hold"
 PROBE_SKIP = "credential-probe-refusal"
 HEADROOM_SKIP = "session-headroom-shortfall"
@@ -195,6 +197,7 @@ class SkippedCandidate:
     headroom_floor_percent: int | None = None
     headroom_horizon_minutes: int | None = None
     headroom_skip_kind: str | None = None
+    confirmation_observation_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -247,6 +250,7 @@ class PreflightInputs:
     """
 
     holds: tuple[AcpAvailabilityHold, ...] = ()
+    expired_holds: tuple[AcpAvailabilityHold, ...] = ()
     legacy_providers: frozenset[str] = frozenset()
     builtin_pairs: frozenset[tuple[str, str]] = frozenset()
     probe: Callable[[str], str] | None = None
@@ -311,6 +315,13 @@ def _skip_for(
                 scope=hold.scope,
                 hold_key=hold.hold_key,
             )
+    outstanding = tuple(
+        hold
+        for hold in inputs.expired_holds
+        if hold_covers_candidate(hold=hold, candidate=candidate)
+    )
+    if outstanding:
+        return _confirmation_skip(candidate=candidate, holds=outstanding)
     legacy = _legacy_provider(candidate=candidate, inputs=inputs)
     if legacy is not None:
         return _record_skip(candidate=candidate, reason=LEGACY_HOLD_SKIP, hold_key=legacy)
@@ -453,6 +464,19 @@ def _record_skip(
         cause=cause,
         scope=scope,
         hold_key=hold_key,
+    )
+
+
+def _confirmation_skip(
+    *, candidate: AcpCandidate, holds: tuple[AcpAvailabilityHold, ...]
+) -> SkippedCandidate:
+    """Record the exact expired observations a candidate must re-confirm."""
+    availability_key, candidate_key = _skip_identity(candidate=candidate)
+    return SkippedCandidate(
+        availability_key=availability_key,
+        candidate_key=candidate_key,
+        reason=OUTSTANDING_CONFIRMATION_SKIP,
+        confirmation_observation_ids=tuple(hold.observation_id for hold in holds),
     )
 
 

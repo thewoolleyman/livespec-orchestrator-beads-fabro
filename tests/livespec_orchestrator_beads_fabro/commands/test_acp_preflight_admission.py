@@ -62,6 +62,8 @@ _NEW_MODULES = (
     "_acp_workflow_graph",
     "_acp_success_critical",
     "_acp_candidate_preflight",
+    "_acp_hold_ledger",
+    "_acp_hold_records",
     "_acp_preflight_verdict",
     "_acp_reached_termination",
     "_dispatcher_acp_chain_sources",
@@ -380,6 +382,44 @@ def test_a_domain_hold_reaches_a_declared_override_hold_key() -> None:
     )
 
     assert _keys(preflight=result) == ["two"]
+
+
+def test_an_expired_observation_blocks_its_covered_candidate_pending_confirmation(
+    tmp_path: Path,
+) -> None:
+    """Expiry ends the live hold but leaves a candidate-specific confirmation due."""
+    modules = _modules()
+    journal = tmp_path / "dispatch.jsonl"
+    journal.write_text(
+        json.dumps(
+            {
+                "stage": modules["_acp_hold_records"].HOLD_STAGE,
+                "schema_version": 1,
+                "observation_id": "expired-observation",
+                "scope": "availability-domain",
+                "hold_key": "codex",
+                "candidate_key": None,
+                "cause": "quota",
+                "occurred_at": "2026-09-12T11:00:00Z",
+                "expires_at": "2026-09-12T11:15:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    ledger = modules["_acp_hold_ledger"].read_acp_hold_ledger(journal_path=journal, now_iso=_NOW)
+    expired_holds = getattr(ledger, "expired_holds", ())
+
+    assert [hold.observation_id for hold in expired_holds] == ["expired-observation"]
+
+    result = _filter(
+        chain=_chain(node="implement", candidates=(_candidate(candidate_key="held"),)),
+        inputs=_inputs(expired_holds=expired_holds),
+    )
+
+    assert result.candidates == ()
+    assert result.skipped[0].reason == "outstanding-availability-confirmation"
+    assert result.skipped[0].confirmation_observation_ids == ("expired-observation",)
 
 
 def test_a_live_legacy_provider_record_covers_a_matching_builtin_candidate() -> None:
