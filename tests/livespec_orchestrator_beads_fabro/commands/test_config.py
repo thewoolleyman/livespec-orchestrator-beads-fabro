@@ -614,7 +614,7 @@ def test_committed_config_resolves_its_default_factory_through_the_registry(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """This repo's committed default is `legacy`, whose address is host state.
+    """This repo's committed default is `petri` (bd-ib-iud52v), whose address is host state.
 
     The registry is pointed at a FIXTURE file rather than left to the host
     default, for two reasons that pull the same way. It makes the test
@@ -625,10 +625,10 @@ def test_committed_config_resolves_its_default_factory_through_the_registry(
     server equal to the fixture's can only have come through the registry.
     """
     monkeypatch.delenv("LIVESPEC_FABRO_FACTORY", raising=False)
-    monkeypatch.delenv("FABRO_DEV_TOKEN__legacy", raising=False)
+    monkeypatch.delenv("FABRO_DEV_TOKEN__petri", raising=False)
     registry = tmp_path / "fabro-factories.json"
     _ = registry.write_text(
-        json.dumps({"legacy": {"server": "https://legacy.example.test:32276"}}),
+        json.dumps({"petri": {"server": "https://petri.example.test:32276"}}),
         encoding="utf-8",
     )
     monkeypatch.setenv("LIVESPEC_FABRO_FACTORY_REGISTRY", str(registry))
@@ -636,9 +636,9 @@ def test_committed_config_resolves_its_default_factory_through_the_registry(
 
     target = _config.resolve_fabro_factory(cwd=repo_root)
 
-    assert target.name == "legacy"
+    assert target.name == "petri"
     assert target.registry.declared is True
-    assert target.server == "https://legacy.example.test:32276"
+    assert target.server == "https://petri.example.test:32276"
     assert target.dev_token is None
 
 
