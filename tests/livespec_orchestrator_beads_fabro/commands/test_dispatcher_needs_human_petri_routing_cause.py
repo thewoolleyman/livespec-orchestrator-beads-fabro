@@ -65,7 +65,8 @@ absence — and the remedy is a fresh measurement, not a guessed key.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -81,6 +82,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_cause im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     NEEDS_HUMAN_MARKER,
     DispatchPlan,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
+    record_provider_exhaustion_if_observed,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_outcome import (
+    PROVIDER_LIMIT_RELEASE_STATUS,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroInspectResult
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
@@ -102,6 +109,11 @@ _INNERMOST_CAUSE = "script exited with status 1"
 # The shape the Petri-era engine IS measured writing for a failed step:
 # one `message` inside `outcome.status.failure`, with no chain beside it.
 _FAILURE_MESSAGE = "the agent process exited before the protocol completed"
+_WEEKLY_LIMIT_MESSAGE = "You've hit your weekly limit · resets Oct 23, 3pm (UTC)"
+_MEASURED_WEEKLY_LIMIT_OUTPUT = (
+    "ACP error: code -32603, Internal error: " f"{_WEEKLY_LIMIT_MESSAGE}, errorKind rate_limit"
+)
+_NOW = "2026-10-20T04:40:00Z"
 
 # The terminal's own failed step, which can never be the cause: it is a
 # dead-end script that exits 1 by design on every run that reaches it.
@@ -230,13 +242,27 @@ def _plan(*, tmp_path: Path) -> DispatchPlan:
     )
 
 
+class _RecordingJournal:
+    """The post-run journal seam, retaining the hold this outcome writes."""
+
+    def __init__(self) -> None:
+        self.records: list[dict[str, object]] = []
+
+    def append(self, *, record: dict[str, object]) -> None:
+        self.records.append(record)
+
+
 def _outcome(
-    *, tmp_path: Path, inspect_payload: list[object], events_payload: list[object] | None
+    *,
+    tmp_path: Path,
+    inspect_payload: list[object],
+    events_payload: list[object] | None,
+    plan: DispatchPlan | None = None,
 ) -> DispatchOutcome:
     """The terminal outcome, with both payloads read by the production parsers."""
     outcome = fabro_run_terminal_outcome(
         outcome_type=DispatchOutcome,
-        plan=_plan(tmp_path=tmp_path),
+        plan=_plan(tmp_path=tmp_path) if plan is None else plan,
         run_id=_RUN,
         inspect=FabroInspectResult(
             command=CommandResult(exit_code=0, stdout="", stderr=""),
@@ -306,6 +332,131 @@ def test_the_measured_petri_failure_message_is_named_as_the_cause(
     assert outcome.fabro_failure_cause == _FAILURE_MESSAGE
     assert f"innermost cause: {_FAILURE_MESSAGE}" in outcome.detail
     assert f"innermost cause: {_FAILURE_MESSAGE}" in needs_human_cause_body(outcome=outcome)
+
+
+def test_a_petri_stage_output_supplies_a_provider_limit_when_events_timed_out(
+    tmp_path: Path,
+) -> None:
+    """The stage record is the fallback when no terminal-event payload arrived.
+
+    Petri keeps an ACP error in the failing stage's ``output`` while the run
+    conclusion records only the deliberate needs-human script exit.  A timed-out
+    ``fabro events`` read therefore cannot be treated as evidence that the stage
+    supplied no cause: the inspect record already carries the provider's own
+    sentence.
+    """
+    inspect_payload = _petri_inspect()
+    record = inspect_payload[0]
+    assert isinstance(record, dict)
+    stages = record["stages"]
+    assert isinstance(stages, dict)
+    stage = stages[_ROUTING_STAGE]
+    assert isinstance(stage, dict)
+    stage["output"] = _MEASURED_WEEKLY_LIMIT_OUTPUT
+
+    outcome = _outcome(
+        tmp_path=tmp_path,
+        inspect_payload=inspect_payload,
+        events_payload=None,
+    )
+
+    assert outcome.status == PROVIDER_LIMIT_RELEASE_STATUS
+    assert outcome.provider_limit_release is not None
+    assert outcome.fabro_failure_cause == _WEEKLY_LIMIT_MESSAGE
+    assert outcome.provider_usage_limit is True
+    assert outcome.provider_usage_limit_provider == "anthropic"
+    assert f"innermost cause: {_WEEKLY_LIMIT_MESSAGE}" in outcome.detail
+    assert "errorKind rate_limit" not in outcome.fabro_failure_cause
+
+    journal = _RecordingJournal()
+    record_provider_exhaustion_if_observed(
+        outcome=outcome,
+        journal=journal,
+        journal_path=None,
+        now_iso=_NOW,
+    )
+
+    assert journal.records[0]["provider"] == "anthropic"
+    assert journal.records[0]["governing_condition"] == "provider_usage_limit"
+
+
+def test_stage_output_provider_limit_survives_a_legacy_plan_without_acp_nodes(
+    tmp_path: Path,
+) -> None:
+    """The terminal fallback does not require optional plan routing metadata.
+
+    The proof-capture reproduction deliberately supplies only the plan fields
+    this terminal needs.  ``acp_nodes`` is optional on ``DispatchPlan`` and a
+    terminal cause must still be reported when that metadata is absent.
+    """
+    inspect_payload = _petri_inspect()
+    record = inspect_payload[0]
+    assert isinstance(record, dict)
+    stages = record["stages"]
+    assert isinstance(stages, dict)
+    stage = stages[_ROUTING_STAGE]
+    assert isinstance(stage, dict)
+    stage["output"] = _MEASURED_WEEKLY_LIMIT_OUTPUT
+    legacy_plan = cast(
+        DispatchPlan,
+        SimpleNamespace(
+            repo=tmp_path,
+            work_item_id=_ITEM,
+            branch=f"feat/{_ITEM}",
+            workflow_toml=tmp_path / "workflow.toml",
+            goal_file=tmp_path / "goal.txt",
+            fabro_bin="fabro",
+            fabro_factory_name="hp-candidate",
+            fabro_factory_server="https://hp-xubuntu.example:32278",
+            fabro_factory_dev_token=None,
+            janitor=None,
+            janitor_checkout=tmp_path / ".janitor",
+            janitor_core_checkout=tmp_path / ".janitor" / ".livespec-core",
+            janitor_core_repo_url="https://github.com/thewoolleyman/livespec.git",
+            janitor_core_ref="master",
+            review_fix_visit_cap=3,
+            merge_on_review_cap_outcome="succeeded",
+        ),
+    )
+    assert not hasattr(legacy_plan, "acp_nodes")
+
+    outcome = _outcome(
+        tmp_path=tmp_path,
+        inspect_payload=inspect_payload,
+        events_payload=None,
+        plan=legacy_plan,
+    )
+
+    assert outcome.fabro_failure_cause == _WEEKLY_LIMIT_MESSAGE
+    assert outcome.provider_usage_limit is True
+    assert outcome.provider_usage_limit_provider == "anthropic"
+
+
+def test_a_petri_stage_output_names_the_needs_human_cause_when_events_timed_out(
+    tmp_path: Path,
+) -> None:
+    """An ordinary stage failure is named instead of reporting an absent cause."""
+    inspect_payload = _petri_inspect()
+    record = inspect_payload[0]
+    assert isinstance(record, dict)
+    stages = record["stages"]
+    assert isinstance(stages, dict)
+    stage = stages[_ROUTING_STAGE]
+    assert isinstance(stage, dict)
+    stage["output"] = f"ACP error: code -32603, Internal error: {_FAILURE_MESSAGE}"
+
+    outcome = _outcome(
+        tmp_path=tmp_path,
+        inspect_payload=inspect_payload,
+        events_payload=None,
+    )
+
+    assert outcome.status == "blocked"
+    assert outcome.needs_human_kind == "stage-failure"
+    assert outcome.fabro_failure_cause == _FAILURE_MESSAGE
+    cause_body = needs_human_cause_body(outcome=outcome)
+    assert f"innermost cause: {_FAILURE_MESSAGE}" in cause_body
+    assert "innermost cause: ABSENT" not in cause_body
 
 
 def test_a_succeeded_step_on_the_routing_node_is_not_read_as_its_failure(

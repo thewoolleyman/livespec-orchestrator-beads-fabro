@@ -383,5 +383,6 @@ def _outcome_payload(*, outcome: DispatchOutcome) -> dict[str, object]:
     for name in _OPTIONAL_OUTCOME_FIELDS:
         if payload.get(name) is None:
             _ = payload.pop(name)
-    _ = payload.pop("provider_usage_limit", None)
+    if not payload.get("provider_usage_limit"):
+        _ = payload.pop("provider_usage_limit", None)
     return payload

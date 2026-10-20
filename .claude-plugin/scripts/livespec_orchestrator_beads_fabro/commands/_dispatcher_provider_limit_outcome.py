@@ -90,7 +90,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_events impo
     terminal_event_output,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_executed_candidate import graph_node_id
-from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroInspectResult
+from livespec_orchestrator_beads_fabro.commands._fabro_port import (
+    FabroFailureDetail,
+    FabroInspectResult,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_terminal_evidence import terminal_evidence
 
 if TYPE_CHECKING:
@@ -121,13 +124,13 @@ def _provider_limit_release(
     *,
     plan: DispatchPlan,
     inspect: FabroInspectResult | None,
+    failure: FabroFailureDetail | None,
     run_id: str | None,
     text: str,
 ) -> ProviderLimitRelease | None:
     """The release this terminated run owes, or `None` for an unchanged route."""
     if inspect is None:
         return None
-    failure = inspect.failure
     if failure is None:
         return None
     node = _failing_node(inspect=inspect)
@@ -169,7 +172,7 @@ def _provider_limit_release_detail(
     return (
         f"run {release.run_id} on factory {release.factory} failed at stage "
         f"{release.node_attempt} on a provider availability limit "
-        f"(cause={cause} scope={scope}): {recorded_cause}; the item was "
+        f"(cause={cause} scope={scope}); innermost cause: {recorded_cause}; the item was "
         "released to `ready` for the ordinary admission valve to re-dispatch, "
         "no rework-cap budget was consumed, and NO human decision is owed. "
         f"Preserved work: {release.recovery_source}"
@@ -191,8 +194,14 @@ def _failing_node(*, inspect: FabroInspectResult) -> str | None:
 
 
 def _selected_identity(*, plan: DispatchPlan, node: str) -> AcpCandidateIdentity | None:
-    """The entitlement this dispatch selected for one node, or `None`."""
-    resolution = plan.acp_nodes
+    """The entitlement this dispatch selected for one node, or `None`.
+
+    ``acp_nodes`` is optional plan metadata.  Older proof and recovery callers
+    that supply the terminal's minimal plan shape therefore have no selected
+    identity, rather than losing the terminal cause while this optional lookup
+    raises before the ordinary provider-limit classifier can run.
+    """
+    resolution = getattr(plan, "acp_nodes", None)
     if resolution is None:
         return None
     return resolution.candidates.get(node)
@@ -226,6 +235,7 @@ def provider_limit_release_outcome(
     run_id: str | None,
     inspect: FabroInspectResult | None,
     stderr: str,
+    failure: FabroFailureDetail | None,
 ) -> DispatchOutcome | None:
     """Map an eligible provider-limit terminal onto the RELEASE outcome.
 
@@ -253,12 +263,12 @@ def provider_limit_release_outcome(
     tree the terminal demonstrably preserved -- measured here on the Petri-era
     fixture, where the sentinel lives only in the structured detail.
     """
-    failure = None if inspect is None else inspect.failure
     failure_detail = fabro_failure_outcome_detail(failure=failure, fallback=tail(text=stderr))
     emitted = terminal_event_output(payload=None if inspect is None else inspect.events_payload)
     release = _provider_limit_release(
         plan=plan,
         inspect=inspect,
+        failure=failure,
         run_id=run_id,
         text=f"{emitted}\n{stderr}\n{failure_detail}",
     )
