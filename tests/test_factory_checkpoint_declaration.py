@@ -139,6 +139,22 @@ and 844275 shipped, so the BOUND DOES NOT MOVE and the headroom narrows from
 37420 to 35725 seconds. The warning stands for the node after this one — a new
 node on a cycle, or one whose work is a turn rather than a read, has nowhere
 left to be absorbed.
+
+v175 WAS THAT NODE, AND THE WARNING WAS RIGHT (the recapture route, Scenario
+137; work-item bd-ib-j56cur). `recapture_route` is one counter increment,
+declared DOWNWARD at 600 s like the two route nodes before it, and it is
+expensive for the same reason they are: it closes a THIRD cycle through the
+proof loop, `review -> recapture_route -> proof_capture -> review`, so the
+derivation bills `proof_capture`, `review`, `proof_verify` and `proof_grade` for
+one more visit each per lap it admits. `max_visits` is therefore the EXACT bound
+the contract admits — three verdicts, not the grade route's bound-plus-one —
+because a fourth admitted visit here would buy a fourth visit of each of those
+four nodes. Measured against THIS tree: 1419555 at the retired `"15m"` and
+906555 shipped, so the bound moves to 940000 to stay between them, with 33445
+seconds of headroom. There is no absorbing left to do: as the paragraph above
+predicted, the remaining headroom is in `implement` (14400) and `review_fix`
+(7200), both measured against real turns, so the honest move for the node after
+this one is a credential-gate change rather than another bound.
 This repository routes NO factory node to Codex (`.livespec.jsonc`'s `acp_nodes`
 put every node on a Claude adapter), so nothing here is refused by it; a
 repository that does route one and raises its node timeouts should expect that
@@ -164,12 +180,12 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 
 # The bound the freshness requirement has to sit under, and the figure the
 # RETIRED `"15m"` resolved. The bound is deliberately looser than the measured
-# 842580 seconds this budget yields: the requirement also sums the resolved node
+# 906555 seconds this budget yields: the requirement also sums the resolved node
 # timeouts, so pinning it exactly would make every unrelated timeout edit fail
 # this case. The control below pins the 15m figure exactly, because that one is
 # the thing being moved away from and a drifting comparand would hide the move.
-_FRESHNESS_BOUND_SECONDS = 880_000
-_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_314_075
+_FRESHNESS_BOUND_SECONDS = 940_000
+_FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_419_555
 
 
 def _checkpoint() -> dict[str, Any]:
