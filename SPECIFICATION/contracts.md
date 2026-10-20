@@ -53,23 +53,25 @@ primitive) are detailed in the subsections that follow.
 
 #### `capture-impl-gaps`
 
-Surface untracked spec clauses as candidate work-items by invoking the
-sibling `/livespec-orchestrator-beads-fabro:detect-impl-gaps --json`
-thin-transport skill (no in-skill duplication of the detection logic;
-both this skill and doctor consume the same canonical surface).
+Surface spec headings that no test exercises as candidate work-items by
+invoking the sibling `/livespec-orchestrator-beads-fabro:detect-impl-gaps
+--json` thin-transport skill (no in-skill duplication of the detection
+logic; both this skill and doctor consume the same canonical surface).
 
 **Naming note.** Despite the `-impl-gaps` name, this operation performs
-NO spec↔impl comparison. `detect-impl-gaps` (below) enumerates ratified
-MUST/SHOULD clauses from spec TEXT alone and never reads implementation
-state, so a clause it surfaces may already be fully implemented. A
-returned gap-id means "this clause is not yet tracked by a work-item",
-never "this clause is verified absent from the implementation" — that
-comparison, when one exists, is a per-clause human judgement or a cited
-executable check, not this operation's mechanism.
+NO spec↔impl comparison. `detect-impl-gaps` (below) enumerates the H2
+headings of the governed spec tree whose entry in the repository's
+heading-coverage map (`tests/heading-coverage.json`) is absent or names
+no exercising test, and never reads implementation state. A returned
+gap-id means "this heading has no exercising test", never "this
+heading's behaviour is verified absent from the implementation".
 
 The returned gap-ids are presented to the user one at a time; on
 consent, a new work-item is created in the tenant DB via `bd create`
-carrying the `origin:gap-tied` and `gap-id:<stable-id>` labels.
+carrying the `origin:gap-tied` and `gap-id:<stable-id>` labels, whose
+title names the uncovered heading verbatim and whose description names
+the coverage entry the implementing change MUST fill with the
+exercising test.
 Detection state is in-memory and discarded at skill exit — no
 persistent intermediate artifact. Re-running the skill is idempotent:
 an already-tracked gap-id is detected as "already filed" and not
@@ -222,9 +224,9 @@ the issue's `metadata` JSON column. No second record is appended.
 
 - **gap-tied completion** — closure is anchored to a CHECK PATH recorded
   on the work-item's own metadata (`gap_check_path`), never to `gap_id`
-  (a `gap_id` hashes a hard-wrapped source line and re-keys on reflow,
-  so it cannot anchor a closure that must survive the clause being
-  edited). The check path is recorded the first time it is cited for
+  (a `gap_id` identifies a heading, not the check that settles a
+  clause beneath it, so it cannot anchor a closure that must survive
+  the clause being edited). The check path is recorded the first time it is cited for
   this work-item — at latest, `implement` MUST ask the user which
   executable check settles the clause and record it (with its current
   blob hash as the closure-drift baseline) before evaluating closure at
@@ -734,33 +736,59 @@ CLI surface: `detect-impl-gaps [--spec-target <path>]
 [--project-root <path>] [--since-version <vN>] [--json]`. No `--filter`
 flag — the skill emits the complete current gap-id set.
 
-**Naming note.** This is a spec-clause enumerator, not a spec→impl
+**Naming note.** This is a heading-coverage enumerator, not a spec→impl
 comparator — despite the `-impl-gaps` name, it never reads
-implementation state (see the `capture-impl-gaps` naming note above,
-which this section's own mechanics substantiate).
+implementation state. It reads the spec tree and the heading-coverage
+map and nothing else.
 
-The skill reads the live Specification via the Spec Reader, enumerates
-every MUST/SHOULD rule per the gap-rule enumeration contract (per the
-upstream Spec Reader required-capability surface, capability 1), and
-computes a stable `gap_id` per detected rule. Gap-id derivation is a
-pure function of rule text + canonical heading path; the same rule text
-always yields the same gap-id across runs. This skill is
-substrate-agnostic — it reads the spec tree, never the work-items store.
+The skill MUST read the live Specification's H2 headings via the Spec
+Reader and the repository's heading-coverage map, and MUST emit exactly
+one gap per H2 heading whose map entry — matched on spec root, spec file
+and heading — is absent, carries the literal `TODO` as its `test` value,
+or names a test that does not exist. A dangling entry (its `test`
+names no existing test) or an incomplete entry (it identifies a live H2
+heading by `spec_root`, `spec_file` and `heading` but lacks a non-empty
+`test` value) MUST be reported as an uncovered heading AND as a surfaced
+finding naming the entry and its defect, never as a clean absence. An
+unidentifiable entry (it lacks a non-empty `spec_root`, `spec_file` or
+`heading` value, or names a heading the live spec tree does not contain)
+MUST be reported as a surfaced finding naming the entry, MUST NOT produce
+a gap or a gap-id, and MUST NOT count as covering any heading. A heading
+with no identifying entry is an uncovered heading and carries no finding
+of its own. A heading whose entry names an existing exercising test
+MUST NOT produce a gap. The skill MUST compute a stable `gap_id` per heading
+as a pure function of the spec file path and the canonical heading path,
+so the same heading always yields the same gap-id across runs. It MUST
+NOT enumerate MUST/SHOULD clauses, because a clause with no work-item is
+the ordinary state of every ratified clause and that signal surfaced 752
+to 1,233 candidates per run in this repository without one completed
+pass. This skill is substrate-agnostic — it reads the spec tree and the
+coverage map, never the work-items store.
 
 **`--since-version <vN>`** (optional, default `null`). When set to a
 historical version integer that exists under
 `<spec-root>/history/v<NNN>/`, the skill restricts its scan to files
 whose content differs between `<vN>` and the live spec (i.e., the file
-appears in `SpecDiff(version_a=<vN>, version_b=<live>).per_file`). For
-each such file, only MUST / SHOULD clauses present in the live version
-are considered (clauses removed by the diff are not gaps — they were
-spec content that no longer exists).
+appears in `SpecDiff(version_a=<vN>, version_b=<live>).per_file`). For each such file, only H2 headings present in the live version are
+considered (headings removed by the diff are not gaps — they were spec
+content that no longer exists).
 
-**Caller caution.** This is NOT "clauses added since `<vN>`" — a file
-that changed for any reason resurfaces EVERY live MUST/SHOULD clause it
-contains, including clauses that predate `<vN>` and were untouched by
+**Caller caution.** This is NOT "headings added since `<vN>`" — a file
+that changed for any reason resurfaces EVERY uncovered live H2 heading it
+contains, including headings that predate `<vN>` and were untouched by
 the edit. A caller (the `revise` operation's Step 13 post-step included)
-MUST NOT read this flag's output as a diff of newly-introduced clauses.
+MUST NOT read this flag's output as a diff of newly-introduced headings.
+
+**Migration of clause-derived gap ids.** A gap-tied work-item filed under
+the retired clause enumeration carries a clause-derived `gap-id:` label.
+Every live such item MUST be re-labelled with the heading-derived gap-id
+of the heading its clause sits under, and the implementation of this
+clause MUST NOT be reported complete until that re-labelling has run, so
+livespec core's `gap-tracking-one-to-one` and `no-stale-gap-tied`
+invariants pass on this repository against the new enumeration. The
+detector change and the live re-labelling MAY land as separate changes,
+in that order. A closed item MUST keep its historical clause-derived
+label.
 
 Validation:
 
@@ -783,7 +811,7 @@ value is an array of strings:
 ```
 
 Default human output: one line per gap-id, prefixed with the spec-file
-path + heading the rule was sourced from.
+path + heading the gap-id derives from.
 
 The skill is the canonical gap-detection surface for the plugin.
 Consumers:
@@ -797,11 +825,13 @@ Consumers:
 - The heavyweight `implement` skill's gap-tied closure verification is
   check-path-anchored (§"`implement`" → "gap-tied completion") and does
   NOT invoke this skill at closure — a `gap_id` is unsound as a closure
-  anchor (it hashes a hard-wrapped source line and re-keys on reflow).
+  anchor (it identifies a heading, not the check that settles a clause
+  beneath it).
 
 The skill MUST NOT mutate any impl-side store; it MUST NOT write to the
 tenant DB; it MUST NOT prompt the user. It is a pure read-and-emit
-pass-through over the Spec Reader's output and the gap-rule enumeration.
+pass-through over the Spec Reader's heading enumeration and the
+heading-coverage map.
 
 #### `needs-attention`
 
@@ -1912,14 +1942,14 @@ escalation still reaches a human", and this subsection leaves it so.
 ### Gap-detectable behavior clauses
 
 This subsection restates the realization's NON-Dispatcher fundamental
-behaviors as explicit normative clauses so the mechanical gap-detector
-and the heading-coverage map can hold the impl accountable; the
+behaviors as explicit normative clauses so the heading-coverage map and its
+exercising tests can hold the impl accountable; the
 surrounding prose subsections remain as augmentation. Where behaviors
 1-3, 7, and 8 were previously stated only as prose in §"The four
 maintainer touchpoints" / §"Calibration telemetry and the single Fabro
 tweak", that prose stays in place as augmentation but the authoritative
 normative statement is now the clause line here. The DISPATCHER behaviors (surface manual-admission items resting at `pending-approval` for the human's `approve`; bounce on non-convergence; emit calibration telemetry) are NOT restated here to avoid a duplicate
-gap-detectable line — their authoritative normative clauses live in
+normative line — their authoritative normative clauses live in
 §"Dispatcher grooming behavior", and the periodic calibration analysis
 pass (a non-Dispatcher behavior) plus the single Fabro DOT tweak remain
 below.
@@ -1942,7 +1972,7 @@ rather than re-ranking inline; its existing normative clause line in
 statement) is already implemented per in-flight work-item
 `livespec-impl-beads-i3jiny`, and is therefore documented and
 scenario-covered (Scenario 15) but is NOT a fresh gap. It is deliberately
-left out of the clause list above so that no duplicate gap-detectable
+left out of the clause list above so that no duplicate normative
 line is introduced for an already-satisfied behavior.
 
 
@@ -8614,14 +8644,15 @@ closed-item-integrity invariant in `constraints.md` §"Closed-item
 integrity" — it makes "closed but unproven is forbidden" un-bypassable
 rather than a remember-to-verify review.
 
-The `closed_item_integrity` check MUST enumerate every closed gap-tied work-item in the beads store, derive each item's `gap-id` from its `gap-id:<id>` label, resolve that gap-id to an acceptance scenario via the `clauses[]` gap-id→scenario map in `tests/heading-coverage.json`, and emit a `closed-item-integrity` finding for any such item whose resolved scenario's `heading-coverage` entry is still bound to the `TODO` sentinel (not a real integration-tier-or-above test node id) OR which lacks the `resolution:completed` label.
+The `closed_item_integrity` check MUST enumerate every closed gap-tied work-item in the beads store, derive each item's `gap-id` from its `gap-id:<id>` label, resolve that gap-id to its acceptance heading — a heading-derived gap-id (the live `detect-impl-gaps` derivation) names its heading's own `heading-coverage` entry directly, and a historical clause-derived gap-id, which a closed item keeps per §"`detect-impl-gaps`" → "Migration of clause-derived gap ids", resolves via the `clauses[]` gap-id→scenario map in `tests/heading-coverage.json` — and emit a `closed-item-integrity` finding for any such item whose resolved scenario's `heading-coverage` entry is still bound to the `TODO` sentinel (not a real integration-tier-or-above test node id) OR which lacks the `resolution:completed` label.
 
 The `closed_item_integrity` check MUST be always-wired into the `just check` aggregate and always-running; it MUST NOT be silently skipped. Its severity is governed by a self-documenting per-check lever — the `LIVESPEC_CLOSED_ITEM_INTEGRITY` environment variable — whose only recognized values are `warn` and `fail`. In `warn` mode (the DEFAULT) the check MUST surface each offender as a warning and exit `0`; in `fail` mode it MUST surface each offender as an error and exit non-zero. An unset or unrecognized lever value MUST default to `warn`. The lever is the SEVERITY switch, not a wiring carve-out: the check always enumerates every closed gap-tied item and always runs regardless of the lever value.
 
 The check REUSES existing primitives and introduces NO new gap-id logic:
-it derives gap-ids through the shared `livespec_spec_clauses` extractor
-(the same primitive impl-beads' `detect-impl-gaps` detector already
-imports — single-source gap-id, no duplication), reads the `clauses[]`
+it reads each item's gap-id from its label, resolves a
+historical clause-derived id through the shared `livespec_spec_clauses`
+extractor (single-source clause-id, no duplication) and a heading-derived
+id through the same derivation `detect-impl-gaps` uses, reads the `clauses[]`
 map already defined by livespec core's `constraints.md`, and reads
 closed gap-tied items through the existing beads
 reader (`bd` store). This check is enforced by
@@ -8634,8 +8665,9 @@ each gap-tied behavior clause (linking its gap-id to its acceptance
 scenario's H2 section name) — this is the core `clauses[]` contract
 (`constraints.md`, `non-functional-requirements.md`) that impl-beads
 adopts; and
-(b) the shared `livespec_spec_clauses` extractor available to
-impl-beads' dev-tooling. Both are existing primitives; the impl
+(b) for historical clause-derived gap-ids only, the shared
+`livespec_spec_clauses` extractor available to impl-beads' dev-tooling.
+Both are existing primitives; the impl
 work-item adopts the `clauses[]` map into impl-beads' heading-coverage
 and wires the check — it does not build new gap-id machinery.
 
