@@ -15,6 +15,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_workflow_graph import (
     parse_workflow_graph,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import workflow_graph_path
+from livespec_orchestrator_beads_fabro.commands._dispatcher_worker_exit_log_cause import (
+    WORKER_EXIT_BEFORE_TERMINAL_EVENT,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroInspectResult
 from livespec_orchestrator_beads_fabro.commands._fabro_port_checkpoints import (
     fabro_inspect_checkpoints,
@@ -36,7 +39,11 @@ __all__: list[str] = [
     "successful_store_loss_evidence",
 ]
 
-_RUN_STORE_LOSS_MESSAGE = "Worker exited before emitting a terminal run event: exit status: 0"
+# The engine sentence BOTH readers of this conclusion key on. Named by the
+# failure-path sibling and imported rather than copied: two spellings of one
+# measured literal are two readings that can drift, and a drifted copy reports
+# the ordinary non-green for exactly the runs each rule exists to read.
+_RUN_STORE_LOSS_MESSAGE = WORKER_EXIT_BEFORE_TERMINAL_EVENT
 
 
 @dataclass(frozen=True, kw_only=True)

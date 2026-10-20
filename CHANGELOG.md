@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.228.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.228.0...v0.228.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **plan:** recover a same-operation retry at an exhausted handoff budget ([736c48b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/736c48b1d5973ef5c1d58eba6c5d69723a867e2c))
+
+## [0.228.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.227.1...v0.228.0) (2026-10-20)
+
+
+### Features
+
+* answer a retried relay operation from its own recorded observation ([bbde025](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bbde025d45d2d958ddd80f38c002f015a479a9fd))
+* keep a relay's original deadline and sender across every recheck ([5c3da51](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5c3da513c155519a11cb924670aae8fab4fdaf53))
+* record a plan relay only after observing its target effect ([3b90e03](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3b90e03b694f12dff7fcf8525db95d695e76ab42))
+
+
+### Bug Fixes
+
+* **dispatcher:** classify a lost-store ending by the recovered failure cycle ([129b66d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/129b66d661de1e765592e9d72ff0920f7e923213))
+* **dispatcher:** journal the worker-exit conclusion beside the recovered failure ([fb9eb22](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fb9eb22ca10c2b892b35cca73c32cafd1b4d5f70))
+* **dispatcher:** surface the engine failure a lost-store run logged ([b798e34](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b798e345575e1be043d225a2063b02bc618e98e7))
+* export RelaySupersession from the plan facade its prose names ([eb0ab5d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/eb0ab5d36f2af26d2ad7373f5957f08eed62ee1c))
+* keep a rechecked relay's sender the party that still owes it ([9f2e3ff](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9f2e3ff2db7df8a7e2865ecf50fdbb3dfa478114))
+
 ## [0.227.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.227.0...v0.227.1) (2026-10-20)
 
 
