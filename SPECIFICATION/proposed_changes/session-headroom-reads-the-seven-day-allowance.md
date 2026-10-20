@@ -23,11 +23,11 @@ Work-items bd-ib-u3jq5r (spec-change tier; its deliverable is this proposal) and
 
 In SPECIFICATION/contracts.md, section "Provider spend containment", paragraph "**Admission filters candidates by projected Claude session headroom.**", insert immediately AFTER the sentence "It MUST read the provider's five-hour session utilization using the exact credential snapshot that the dispatch would project." the following sentences:
 
-> From the same provider response it MUST also take the seven-day utilization and the seven-day status where the provider reports them. A covered candidate whose seven-day status reports the weekly allowance exhausted MUST be skipped exactly as a candidate below the floor is, and per-node selection MUST continue to the next eligible candidate. An absent or unparseable seven-day reading MUST NOT skip a candidate. The journal record of each assessment MUST carry the seven-day utilization percentage, or an explicit unobservable result, beside the five-hour figures. Scenario 227 in `scenarios.md` exercises these sentences.
+> From the same provider response it MUST also take the seven-day utilization and the seven-day status where the provider reports them. A covered candidate whose seven-day status reports the weekly allowance exhausted MUST be skipped exactly as a candidate below the floor is, and per-node selection MUST continue to the next eligible candidate. An absent or unparseable seven-day reading MUST NOT skip a candidate. The journal record of each assessment MUST carry the seven-day utilization percentage, or an explicit unobservable result, beside the five-hour figures. Scenario 228 in `scenarios.md` exercises these sentences.
 
 In SPECIFICATION/scenarios.md, add at the end of the file a new scenario heading (tests/heading-coverage.json MUST gain an entry for it in the same revise):
 
-## Scenario 227 — Admission skips a Claude candidate whose seven-day allowance is exhausted
+## Scenario 228 — Admission skips a Claude candidate whose seven-day allowance is exhausted
 
 ```gherkin
 Feature: A weekly-exhausted account is never dispatched into a refusal
