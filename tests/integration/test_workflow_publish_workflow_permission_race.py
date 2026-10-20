@@ -29,11 +29,29 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal impor
     fabro_run_terminal_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_merge import (
+    RECORD_FILE_MERGE_PROGRAM_FILENAME,
+    record_file_merge_program_source,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
+    SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
+)
 
 _WORKFLOW = Path(".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro")
 _PUBLISH_BRANCH = "feat/bd-ib-cvge"
 _RUN_ID = "01WORKFLOWRACE"
 _CI = ".github/workflows/ci.yml"
+_RECORD_JSON = "record.json"
+_DECLARATION = """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "record_files": [
+        {"path": "record.json", "format": "json-array", "key": ["id"]}
+      ]
+    }
+  }
+}
+"""
 _SCRIPT = re.compile(r'script="(?P<value>(?:[^"\\]|\\.)*)"')
 _FORGE_REFUSAL = "refusing to allow a GitHub App to create or update workflow"
 
@@ -48,7 +66,7 @@ def _git(cwd: Path, *argv: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _node_script(*, node: str) -> str:
+def _node_script(*, node: str, check_suite: str = "true") -> str:
     text = _WORKFLOW.read_text(encoding="utf-8")
     block = re.search(
         rf"^\s*{node}\s*\[(?P<body>.*?)^\s*\]",
@@ -58,8 +76,10 @@ def _node_script(*, node: str) -> str:
     assert block is not None
     attr = _SCRIPT.search(block.group("body"))
     assert attr is not None
-    return re.sub(r"\\(?P<escaped>.)", r"\g<escaped>", attr.group("value")).replace(
-        "{{ inputs.default_branch }}", "master"
+    return (
+        re.sub(r"\\(?P<escaped>.)", r"\g<escaped>", attr.group("value"))
+        .replace("{{ inputs.default_branch }}", "master")
+        .replace("{{ inputs.sandbox_check_suite }}", check_suite)
     )
 
 
@@ -114,6 +134,18 @@ def _run_behind_master(*, tmp_path: Path) -> tuple[Path, Path, Path]:
     seed.mkdir()
     _git(seed, "init", "-b", "master")
     _configure(repo=seed)
+    _commit(
+        repo=seed,
+        path=".livespec.jsonc",
+        content=_DECLARATION,
+        message="declare shared records",
+    )
+    _commit(
+        repo=seed,
+        path=_RECORD_JSON,
+        content='[{"id": "seed"}]\n',
+        message="seed record",
+    )
     _commit(repo=seed, path=_CI, content="pin: v1\n", message="initial workflow")
     _git(seed, "remote", "add", "origin", str(origin))
     _git(seed, "push", "-u", "origin", "master")
@@ -155,10 +187,19 @@ def _bump(*, default: Path, pin: str) -> str:
     return sha
 
 
-def _bump_during_push(*, tmp_path: Path, default: Path, times: int) -> None:
+def _bump_during_push(
+    *, tmp_path: Path, default: Path, times: int, record_content: str | None = None
+) -> None:
     """A pre-push hook that lands a pin bump while the push is in flight."""
     counter = tmp_path / "bumps"
     counter.write_text("0\n", encoding="utf-8")
+    record_write = ""
+    paths_to_add = _CI
+    if record_content is not None:
+        record_write = (
+            f"    printf '%s\\n' '{record_content.rstrip()}' > \"{default / _RECORD_JSON}\"\n"
+        )
+        paths_to_add = f"{_CI} {_RECORD_JSON}"
     _executable(
         path=tmp_path / "run-hooks" / "pre-push",
         body=(
@@ -171,7 +212,8 @@ def _bump_during_push(*, tmp_path: Path, default: Path, times: int) -> None:
             "    unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE\n"
             "    git pull --quiet --rebase origin master >/dev/null 2>&1 || exit 1\n"
             f'    printf "pin: race-%s\\n" "$count" > "{default / _CI}"\n'
-            f"    git add {_CI} && git commit --quiet -m race >/dev/null 2>&1 || exit 1\n"
+            + record_write
+            + f"    git add {paths_to_add} && git commit --quiet -m race >/dev/null 2>&1 || exit 1\n"
             "    git push --quiet origin master >/dev/null 2>&1 || exit 1\n"
             "fi\n"
             "exit 0\n"
@@ -179,7 +221,7 @@ def _bump_during_push(*, tmp_path: Path, default: Path, times: int) -> None:
     )
 
 
-def _env(*, tmp_path: Path) -> dict[str, str]:
+def _env(*, tmp_path: Path, plugins_root: Path | None = None) -> dict[str, str]:
     bin_dir = tmp_path / "bin"
     _executable(
         path=bin_dir / "gh",
@@ -201,16 +243,45 @@ def _env(*, tmp_path: Path) -> dict[str, str]:
             "LIVESPEC_GIT_AUTHOR_NAME": "Workflow Race Test",
             "LIVESPEC_GIT_AUTHOR_EMAIL": "workflow-race-test@example.invalid",
             "LIVESPEC_PUBLISH_BRANCH": _PUBLISH_BRANCH,
+            "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(tmp_path / "no-push-helper"),
         }
     )
+    if plugins_root is not None:
+        env[SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR] = str(plugins_root)
     return env
 
 
+def _record_merge_plugins(*, tmp_path: Path) -> Path:
+    """Materialize the production resolver where the shipped stage looks for it."""
+    plugins_root = tmp_path / "plugins"
+    plugins_root.mkdir()
+    program = plugins_root / RECORD_FILE_MERGE_PROGRAM_FILENAME
+    program.write_text(record_file_merge_program_source(), encoding="utf-8")
+    program.chmod(0o700)
+    return plugins_root
+
+
+def _recording_gate(*, tmp_path: Path, exit_status: int) -> tuple[str, Path]:
+    """A declared gate whose marker proves `publish_draft` reached the call."""
+    record = tmp_path / "declared-gate-ran"
+    program = tmp_path / "declared-gate"
+    _executable(
+        path=program,
+        body=(
+            "#!/bin/sh\n"
+            f"printf 'ran\\n' > \"{record}\"\n"
+            "printf 'LIVESPEC_DECLARED_GATE_RAN\\n' >&2\n"
+            f"exit {exit_status}\n"
+        ),
+    )
+    return f'"{program}"', record
+
+
 def _node(
-    *, node: str, run: Path, env: dict[str, str], stdin: str = ""
+    *, node: str, run: Path, env: dict[str, str], stdin: str = "", check_suite: str = "true"
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["sh", "-c", _node_script(node=node)],
+        ["sh", "-c", _node_script(node=node, check_suite=check_suite)],
         cwd=str(run),
         env=env,
         text=True,
@@ -266,6 +337,121 @@ def test_publish_draft_refreshes_again_when_master_moves_a_workflow_mid_push(
     assert _git(run, "merge-base", "HEAD", "origin/master").stdout.strip() == master
     assert (run / _CI).read_text(encoding="utf-8") == "pin: race-1\n"
     assert (tmp_path / "draft-created").exists()
+
+
+def test_publish_draft_retry_merges_a_declared_record_conflict_after_a_workflow_race(
+    tmp_path: Path,
+) -> None:
+    """The workflow-race retry takes the same declared-record arm as first refreshes.
+
+    The initial refresh is deliberately conflict-free.  The pre-push hook then
+    advances both a workflow and the declared JSON record, so the forge refuses
+    the first push for its workflow comparison and ONLY the retry sees the
+    record conflict.  That separates the retry from the ordinary refresh arm:
+    a resolver that is present only before the first push leaves this case in a
+    stopped rebase instead of publishing the merged head.
+    """
+    run, _, default = _run_behind_master(tmp_path=tmp_path)
+    _commit(
+        repo=run,
+        path=_RECORD_JSON,
+        content='[{"id": "seed"}, {"id": "run"}]\n',
+        message="add run record",
+    )
+    _bump(default=default, pin="v2")
+    _bump_during_push(
+        tmp_path=tmp_path,
+        default=default,
+        times=1,
+        record_content='[{"id": "seed"}, {"id": "default"}]',
+    )
+
+    published = _node(
+        node="publish_draft",
+        run=run,
+        env=_env(tmp_path=tmp_path, plugins_root=_record_merge_plugins(tmp_path=tmp_path)),
+    )
+
+    assert published.returncode == 0, published.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_WORKFLOW_RACE" in published.stderr
+    assert "LIVESPEC_RECORD_FILE_REFRESH_RESOLVED: publish_draft" in published.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" not in published.stderr
+    assert (run / _RECORD_JSON).read_text(encoding="utf-8") == (
+        '[\n  {\n    "id": "seed"\n  },\n  {\n    "id": "default"\n  },\n'
+        '  {\n    "id": "run"\n  }\n]\n'
+    )
+    assert (
+        _remote_tip(repo=run, ref=f"refs/heads/{_PUBLISH_BRANCH}")
+        == _git(run, "rev-parse", "HEAD").stdout.strip()
+    )
+
+
+def test_publish_draft_gates_a_merged_declared_record_before_republishing(
+    tmp_path: Path,
+) -> None:
+    """A failed declared gate returns the post-merge head to refresh repair."""
+    run, _, default = _run_behind_master(tmp_path=tmp_path)
+    _commit(
+        repo=run,
+        path=_RECORD_JSON,
+        content='[{"id": "seed"}, {"id": "run"}]\n',
+        message="add run record",
+    )
+    _bump(default=default, pin="v2")
+    _bump_during_push(
+        tmp_path=tmp_path,
+        default=default,
+        times=1,
+        record_content='[{"id": "seed"}, {"id": "default"}]',
+    )
+    gate, gate_record = _recording_gate(tmp_path=tmp_path, exit_status=1)
+
+    published = _node(
+        node="publish_draft",
+        run=run,
+        env=_env(tmp_path=tmp_path, plugins_root=_record_merge_plugins(tmp_path=tmp_path)),
+        check_suite=gate,
+    )
+
+    assert published.returncode == 1, published.stderr
+    assert gate_record.read_text(encoding="utf-8") == "ran\n"
+    assert "LIVESPEC_PUBLISH_DRAFT_GATE_REJECTED" in published.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in published.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_PUBLISHED" not in published.stderr
+
+
+def test_publish_draft_reports_a_successful_declared_gate_after_merging(
+    tmp_path: Path,
+) -> None:
+    """A successful merged-record gate remains visible in the stage transcript."""
+    run, _, default = _run_behind_master(tmp_path=tmp_path)
+    _commit(
+        repo=run,
+        path=_RECORD_JSON,
+        content='[{"id": "seed"}, {"id": "run"}]\n',
+        message="add run record",
+    )
+    _bump(default=default, pin="v2")
+    _bump_during_push(
+        tmp_path=tmp_path,
+        default=default,
+        times=1,
+        record_content='[{"id": "seed"}, {"id": "default"}]',
+    )
+    gate, gate_record = _recording_gate(tmp_path=tmp_path, exit_status=0)
+
+    published = _node(
+        node="publish_draft",
+        run=run,
+        env=_env(tmp_path=tmp_path, plugins_root=_record_merge_plugins(tmp_path=tmp_path)),
+        check_suite=gate,
+    )
+
+    assert published.returncode == 0, published.stderr
+    assert gate_record.read_text(encoding="utf-8") == "ran\n"
+    assert "LIVESPEC_DECLARED_GATE_RAN" in published.stderr
+    assert "LIVESPEC_RECORD_FILE_REFRESH_RESOLVED: publish_draft" in published.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" not in published.stderr
 
 
 def test_publish_draft_names_the_workflow_race_when_master_never_settles(
