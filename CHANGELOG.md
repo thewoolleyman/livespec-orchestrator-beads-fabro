@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.225.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.225.0...v0.225.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **factory:** fail the implement stage on a partial-progress turn ([6a55ff0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6a55ff0e905b150447db2c4744aef2ce57dba881))
+
 ## [0.225.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.224.1...v0.225.0) (2026-10-19)
 
 
