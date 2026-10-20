@@ -96,7 +96,7 @@ def reconciled_directive(
     pointer must never reach the factory, so a factory outage cannot mask the
     staleness this resume owes its reader.
     """
-    observation = result_observation(config=config, action=action)
+    observation = result_observation(config=config, epic_id=epic_id, action=action)
     if observation is not None and observation.status == OBSERVATION_SATISFIED:
         return advance_after_satisfied_result(
             request=AdvanceRequest(

@@ -192,3 +192,67 @@ def test_a_derived_plan_step_names_the_plans_own_repository_not_the_carriers(
         "repo": _OWN,
         "item_comment": {"item_id": "bd-ib-plan", "marker": _PROOF_MARKER},
     }
+
+
+def test_an_obligation_naming_the_plan_epic_elsewhere_is_read_from_the_plans_tenant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pointer already poisoned must still be observable, or the plan stays locked.
+
+    Both epics carry a recorded proof obligation on THEMSELVES under a sibling
+    whose clone resolves and whose tenant does not, which is the state the
+    measured plan was found in: the read fails, `resume_directive` reports
+    `plan-progress-tracking: unobservable`, and no sanctioned write can replace
+    an unobservable obligation. A plan epic lives in the plan's own tenant
+    whatever its pointer says, so the read resolves there.
+
+    The POSITIVE control is what separates "observable" from "read from the right
+    tenant": the marker comment exists only on the plan's own epic record, so the
+    satisfied reading — and the review leg it advances to — is reachable from no
+    other tenant.
+    """
+    repo = _governed_project(tmp_path=tmp_path)
+    monkeypatch.chdir(repo)
+    for epic_id in ("bd-ib-pointed", "bd-ib-proved"):
+        _seed_epic(
+            repo=repo,
+            epic_id=epic_id,
+            kind="proof",
+            ref=f"capture:{epic_id}",
+            required_result={
+                "repo": _STRANGER_REPO,
+                "item_comment": {"item_id": epic_id, "marker": _PROOF_MARKER},
+            },
+        )
+    _fake(repo=repo).seed_comment(
+        issue_id="bd-ib-proved",
+        text=f"{_PROOF_MARKER} — captured — run 31f05f67 — {_NOW}",
+        author="plan-session",
+        created_at=_NOW,
+    )
+
+    unmet = resume_directive(config=_config(repo=repo), epic_id="bd-ib-pointed", unattended=True)
+    met = resume_directive(config=_config(repo=repo), epic_id="bd-ib-proved", unattended=True)
+
+    assert unmet.observation is not None
+    assert unmet.observation.status == "unsatisfied"
+    assert unmet.observation.repo == _OWN
+    assert unmet.next_action == "proof:capture:bd-ib-pointed"
+    # The READ redirects; it does not repair. The recorded pointer still names
+    # the stranger, and the advance below is what replaces it with the plan's own
+    # repository — so neither half of this fix stands in for the other.
+    assert _pointer(repo=repo, epic_id="bd-ib-pointed")["required_result"] == {
+        "repo": _STRANGER_REPO,
+        "item_comment": {"item_id": "bd-ib-pointed", "marker": _PROOF_MARKER},
+    }
+
+    assert met.observation is not None
+    assert met.observation.status == "satisfied"
+    assert met.next_action == "review:bd-ib-proved"
+    assert _pointer(repo=repo, epic_id="bd-ib-proved")["required_result"] == {
+        "repo": _OWN,
+        "item_comment": {
+            "item_id": "bd-ib-proved",
+            "marker": "plan-completeness-review-evidence",
+        },
+    }
