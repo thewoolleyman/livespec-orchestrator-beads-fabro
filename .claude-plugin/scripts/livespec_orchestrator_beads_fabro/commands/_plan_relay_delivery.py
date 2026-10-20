@@ -46,14 +46,29 @@ runs before the target grades for the same reason the grades run before the
 read — a retry has nothing left to grade, because the act it repeats was graded
 when it happened.
 
-THE DEADLINE A RECORD CARRIES IS READ BACK OFF THE RELAY'S OWN HISTORY, never off
-the request. "If the result is unsatisfied or unobservable, the primitive MUST
-record an undelivered relay, its unchanged deadline and the observation; the
-sender retains the obligation" — and the sender is the party doing the recording,
-so a primitive that stored the deadline it was handed would let that sender roll
-its own clock forward every time it re-observed its own relay, with every record
-well-formed either way. The request's deadline is used only where the relay has
-no history, which is the one call that establishes it.
+THE DEADLINE AND THE SENDER A RECORD CARRIES ARE BOTH READ BACK OFF THE RELAY'S
+OWN HISTORY, never off the request. "If the result is unsatisfied or
+unobservable, the primitive MUST record an undelivered relay, its unchanged
+deadline and the observation; the sender retains the obligation" — and the party
+doing the recording is not necessarily the party that owes it, so a primitive
+that stored either value as handed would let a sender roll its own clock forward
+every time it re-observed its own relay, with every record well-formed either
+way. The request supplies both only where the relay has no history, which is the
+one call that establishes them.
+
+THE OWNER IS CARRIED PAST THE RECHECK RECORDER SPECIFICALLY, which is the half of
+that rule easiest to leave out — the deadline reads as the whole of it, because a
+recheck ordinarily restates the sender it already has and nothing then looks
+wrong. "Timeout MUST retain sender ownership and the original deadline while the
+independent consumer performs bounded recovery, even when the sender produces no
+new handoff", and "Owner disappearance requires explicit recoverable takeover,
+not silent discharge": the independent consumer IS this primitive's recheck
+caller, so it records an observation without becoming the owner. Taking `sender`
+from the request instead transfers ownership with none of the three legs present
+and with no record saying a transfer happened — and because `write_relay_event`
+authors the comment AS the relay's sender, the timeline would then report an
+expiry as falling to the consumer rather than to the party that still owes it.
+The recording party stays attributable by its own `operation_id`.
 
 A SUPERSEDING RECORD CARRIES THE DISPOSITION IT DISPLACES, which is the half of
 the conflicting-target rule that lives here rather than in the grade. The
@@ -220,7 +235,7 @@ def _record(
     return RelayRecord(
         relay_id=request.relay_id,
         operation_id=request.operation_id,
-        sender=request.sender,
+        sender=request.sender if history is None else history.sender,
         required_result=request.required_result,
         result_identity=reference.identity,
         original_deadline=request.deadline if history is None else history.original_deadline,
