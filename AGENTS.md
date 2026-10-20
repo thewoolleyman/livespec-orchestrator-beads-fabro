@@ -1635,12 +1635,15 @@ references passes with its guidance orphaned.
   own CI uses, and the fact that a fork pull request against the carrier
   branch shows NO checks — the merge gate is local and must be recorded before
   merging. It also records that merging into the carrier deploys nothing.
-- Read `.ai/herdr-plan-tabs.md` BEFORE opening a plan session as a herdr tab
-  or moving one out of tmux. Tab label, Claude session name and plan slug are
-  identical by maintainer direction, and a herdr agent name is capped at 32
-  characters, so a slug chosen without that limit cannot carry the matching
-  session name. The file carries the measured recipe and the kill-the-tmux-
-  session-first rule.
+- Read `.ai/herdr-plan-tabs.md` BEFORE opening a plan session as a herdr tab,
+  moving one out of tmux, or placing or moving any herdr tab. Tab label, Claude
+  session name and plan slug are identical by maintainer direction, and a herdr
+  agent name is capped at 32 characters, so a slug chosen without that limit
+  cannot carry the matching session name. The file carries the measured recipe
+  and the kill-the-tmux-session-first rule. It also records that herdr CAN move
+  tabs, through the socket API's `tab.move` method, even though the `herdr tab`
+  command line has no `move` subcommand. Never tell the maintainer a tab cannot
+  be placed.
 - Read `.ai/host-captured-proof-replay.md` BEFORE taking or replaying a
   host-captured proof. It states the procedure in order — declare the assertion
   under `Host-captured` with a `Reason:` line, let the merged item rest in
