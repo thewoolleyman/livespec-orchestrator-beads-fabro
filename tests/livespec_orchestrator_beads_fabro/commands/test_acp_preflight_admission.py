@@ -38,7 +38,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -420,6 +420,38 @@ def test_an_expired_observation_blocks_its_covered_candidate_pending_confirmatio
     assert result.candidates == ()
     assert result.skipped[0].reason == "outstanding-availability-confirmation"
     assert result.skipped[0].confirmation_observation_ids == ("expired-observation",)
+
+
+def test_a_successful_confirmation_clears_only_its_named_expired_observations() -> None:
+    """A newer expired observation stays due after an older one is confirmed."""
+    module_path = _COMMANDS / "_acp_availability_confirmation.py"
+
+    assert module_path.is_file()
+
+    confirmations = importlib.import_module(f"{_PACKAGE}._acp_availability_confirmation")
+    candidate = _candidate(availability_key="codex", candidate_key="held")
+    older = replace(
+        _hold(scope="availability-domain", hold_key="codex"), observation_id="older-observation"
+    )
+    newer = replace(
+        _hold(scope="availability-domain", hold_key="codex"), observation_id="newer-observation"
+    )
+    result = _filter(
+        chain=_chain(node="implement", candidates=(candidate,)),
+        inputs=_inputs(
+            expired_holds=(older, newer),
+            confirmations=(
+                confirmations.AcpAvailabilityConfirmation(
+                    availability_key="codex",
+                    candidate_key="held",
+                    observation_ids=frozenset({"older-observation"}),
+                ),
+            ),
+        ),
+    )
+
+    assert result.candidates == ()
+    assert result.skipped[0].confirmation_observation_ids == ("newer-observation",)
 
 
 def test_a_live_legacy_provider_record_covers_a_matching_builtin_candidate() -> None:
