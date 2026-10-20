@@ -38,6 +38,15 @@ THE FINDING NAMES THE LIMIT, THE OBLIGATION AND THE REMEDY, because the three
 have different remedies and an operator reading only "expired" cannot tell an
 exhausted ceiling from a passed clock — nor which operation they are now
 permitted to run.
+
+THE CHAIN-HELD OBLIGATION IS READ THROUGH THE SHARED PLAN-OWNED REDIRECT, for a
+reason this module's position makes acute: `decide_plan_resume` RETURNS on this
+reading's verdict, before the pointer is consulted at all. So an obligation that
+names the plan epic itself under some other repository is read here against the
+wrong tenant, reported UNOBSERVABLE, and the plan is locked for its whole budget
+— and a redirect applied only at the pointer read never runs for any
+chain-tracked plan. `_plan_result_plan_owned` carries the measurement and owns
+the discrimination; the only thing recorded here is that THIS read owes it too.
 """
 
 from __future__ import annotations
@@ -63,6 +72,9 @@ from livespec_orchestrator_beads_fabro.commands._plan_recovery import (
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
     OBSERVATION_UNOBSERVABLE,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_result_plan_owned import (
+    plan_owned_reference,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_reader import read_result
 
@@ -137,7 +149,9 @@ def evaluate_resume_progress(
         return _untracked_chain_progress(head=head)
     observation = read_result(
         project_root=_project_root(config=config),
-        reference=obligation.required_result,
+        reference=plan_owned_reference(
+            config=config, epic_id=epic_id, required_result=obligation.required_result
+        ),
         runner=ShellCommandRunner(),
         now=now,
     )
