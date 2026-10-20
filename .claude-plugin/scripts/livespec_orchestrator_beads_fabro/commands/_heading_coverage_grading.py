@@ -21,6 +21,16 @@ coverage it owes and carries a `reason` saying so, and the shared
 `heading_coverage` gate plus the debt register already govern it. This
 repository carries 128 of them against 6 genuinely dangling rows, so grading
 the sentinel as a defect would bury every real finding twenty deep.
+
+WHY AN UNIDENTIFIABLE ROW IS GRADED AGAINST THE LIVE HEADINGS AND NOT ONLY
+AGAINST ITS OWN FIELDS. A row identifies nothing in two ways: it may state
+no spec root, spec file or heading, or it may state all three and name a
+heading the live tree no longer contains. The second is the one that hides,
+because such a row may name a test that EXISTS — so a pass grading only the
+test reads it as proven coverage and says nothing, and the row sits in the
+registry for ever claiming a heading that was renamed away. Either way it
+covers nothing: counting it as covering would let it mask a live heading
+that happens to share its triple with no one.
 """
 
 from __future__ import annotations
@@ -41,7 +51,7 @@ __all__: list[str] = [
     "grade_coverage_entries",
 ]
 
-Defect = Literal["dangling-test", "incomplete-entry"]
+Defect = Literal["dangling-test", "incomplete-entry", "unidentifiable-entry"]
 
 _FINDING_PREFIX = "FINDING"
 
@@ -71,9 +81,12 @@ class CoverageGrading:
 
 
 def grade_coverage_entries(
-    *, entries: tuple[CoverageEntry, ...], project_root: Path
+    *,
+    entries: tuple[CoverageEntry, ...],
+    project_root: Path,
+    live_keys: frozenset[tuple[str, str, str]],
 ) -> CoverageGrading:
-    """Grade every registry row against the tree, in file order.
+    """Grade every registry row against the live headings and the tree, in file order.
 
     A triple is covered when AT LEAST ONE identifying row names an existing
     test. That is what keeps "exactly one gap per heading" true in the face of
@@ -84,6 +97,23 @@ def grade_coverage_entries(
     findings: list[CoverageFinding] = []
     for entry in entries:
         if not entry.identifies_a_heading:
+            findings.append(
+                CoverageFinding(
+                    defect="unidentifiable-entry",
+                    detail=f"{entry.describe()} states no spec root, spec file or heading",
+                )
+            )
+            continue
+        if entry.key not in live_keys:
+            findings.append(
+                CoverageFinding(
+                    defect="unidentifiable-entry",
+                    detail=(
+                        f"{entry.describe()} names a heading the live spec tree "
+                        f"does not contain"
+                    ),
+                )
+            )
             continue
         if entry.names_the_todo_sentinel:
             continue
