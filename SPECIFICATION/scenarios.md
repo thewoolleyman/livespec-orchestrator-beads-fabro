@@ -5951,6 +5951,30 @@ Feature: A judged Definition-of-Done defect is found before a dispatch is spent 
     And the pre-dispatch judgement runs exactly once against the item's current criteria and the ratified specification before any claim is taken
     And the dispatch is refused before any factory run is created
     And exactly one new verdict comment is appended to the item
+  Scenario Outline: The judgement authenticates with the account a dispatch would use
+    Given the account-selection process has published a selected account whose credential is present in the environment
+    And the environment's unnumbered Claude credential names a different account
+    When the <phase> judgement runs its Claude model on the host
+    Then the judge is started with the selected account's credential
+
+    Examples:
+      | phase         |
+      | pre-admission |
+      | pre-dispatch  |
+
+  Scenario Outline: The judgement falls back to the unnumbered credential and says so
+    Given <selection state>
+    And the unnumbered Claude credential is present in the environment
+    When the <phase> judgement runs its Claude model on the host
+    Then the judge is started with the unnumbered Claude credential
+    And one stderr line names that fallback and its reason
+
+    Examples:
+      | phase         | selection state                                                                 |
+      | pre-admission | no account selection is published                                               |
+      | pre-dispatch  | no account selection is published                                               |
+      | pre-admission | a selected account is published but its credential is absent from the environment |
+      | pre-dispatch  | a selected account is published but its credential is absent from the environment |
 ```
 
 ## Scenario 175 — A run past the whole-run wall budget is exported, cancelled and rested for a human

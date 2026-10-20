@@ -5965,7 +5965,7 @@ item to `ready` — from `backlog` or `pending-approval`, whether through
 intake, the approve valve, or groom — the Dispatcher MUST run the same
 Definition-of-Done judgement the `dod_gate` node applies (its prompt,
 against the item's effective criteria, the referenced specification
-headings and the resolved sandbox capabilities). When that judgement
+headings and the resolved sandbox capabilities). When that judgement runs a Claude model on the host, it MUST authenticate with the Claude subscription credential the Dispatcher selects for a dispatch it would launch at that moment, which is the account-selection process's selected account when one is published and its credential is present, and otherwise the unnumbered credential. It MUST NOT authenticate solely with the unnumbered credential the environment carries while a selected account's credential is present. When it falls back to the unnumbered credential, it MUST say so on stderr, naming the reason. The same rule governs the pre-dispatch judgement of the paragraph that follows. When that judgement
 would end a run through the structured needs-human ending, the item
 MUST NOT be routed to `ready`: it rests where a mechanical finding
 would hold it, and the verdict, with each remedy, MUST be appended to
