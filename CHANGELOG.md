@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.229.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.0...v0.229.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **plan:** derive plan steps against the plan's own repository ([661fddb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/661fddbf6f95eac3ffcb39f04c13ad434511a745))
+* **plan:** read a plan-own obligation from the plan's tenant at the chain read ([5bbba0c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5bbba0c582ec371153b961956777a7ad736c65f9))
+* **plan:** read a plan-own obligation from the plan's tenant at the sanctioned write ([3525d3d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3525d3d0da4110c5ae994dc9a4973525190763bf))
+* **plan:** read a plan's own obligation from the plan's own tenant ([39a721e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/39a721e06639c5d58b7fed8b5ef452323d170b6e))
+
 ## [0.229.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.228.1...v0.229.0) (2026-10-20)
 
 
