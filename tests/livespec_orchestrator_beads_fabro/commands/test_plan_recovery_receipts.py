@@ -185,6 +185,17 @@ def _commit(*, config: StoreConfig, authority: AuthorityState) -> None:
 
 def _journal(*, tmp_path: Path, records: tuple[dict[str, Any], ...]) -> Path:
     path = tmp_path / "dispatcher-journal.jsonl"
+    # The drive executor writes this boundary before it hands the impl action to
+    # the Dispatcher.  Receipt selection reads only executor records between
+    # that attempt's boundary and the next one, never the item's whole history.
+    records = (
+        {
+            "stage": "causal-recovery-attempt",
+            "work_item_id": _TARGET_ID,
+            "attempt_id": _ATTEMPT_ID,
+        },
+        *records,
+    )
     _ = path.write_text(
         "".join(f"{json.dumps(record, sort_keys=True)}\n" for record in records),
         encoding="utf-8",
