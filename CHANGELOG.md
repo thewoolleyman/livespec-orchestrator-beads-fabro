@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.227.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.227.0...v0.227.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* prescribe parser-safe dod references ([4358bd2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4358bd22208fad6fd301b8b1677b103abafdceab))
+
+## [0.227.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.226.1...v0.227.0) (2026-10-20)
+
+
+### Features
+
+* **capture-impl-gaps:** compose the gap-tied record for an uncovered heading ([4ac13b3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4ac13b30a7f5eae9b89943c56b5c5602ae072b22))
+* **detect-impl-gaps:** a heading an existing test exercises is not a gap ([563e632](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/563e632e41ef8cfc91d869c3ebc76aa082d725f9))
+* **detect-impl-gaps:** emit one gap per uncovered spec H2 heading ([60aa046](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/60aa046da55de5266892beaf4ecec54cda79c480))
+* **detect-impl-gaps:** scope the enumeration with --since-version ([d2a9b5e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d2a9b5ee6c565751e6ca3467fa909a6a0ec02d48))
+* **detect-impl-gaps:** surface a defective coverage entry as a finding ([91a38e1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/91a38e170c5776e8a81e6ee5b4a336061e7443cd))
+* **detect-impl-gaps:** surface an entry that identifies no live heading ([14cd534](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/14cd534444f8cb19202e55d664934cbe24493868))
+
 ## [0.226.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.226.0...v0.226.1) (2026-10-20)
 
 
