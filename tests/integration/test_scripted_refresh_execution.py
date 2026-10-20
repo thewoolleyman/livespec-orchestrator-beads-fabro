@@ -82,6 +82,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state im
     REFRESH_COUNT_STATE_FILENAME,
     publication_state_filenames,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_merge import (
+    RECORD_FILE_MERGE_PROGRAM_FILENAME,
+    record_file_merge_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import resume_checkout_for
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
@@ -104,6 +108,26 @@ _DEFAULT_BRANCH = "master"
 # stage must abort rather than resolve.
 _OWNED_FILE = "owned.txt"
 _SHARED_FILE = "shared.txt"
+
+# The two DECLARED shared records, and the declaration that makes them so. They
+# ride the seed commit beside `_SHARED_FILE` rather than a commit of their own,
+# so no case in this module acquires an extra ancestor it does not use: an
+# undeclared conflict still lands in `_SHARED_FILE` exactly as before.
+_RECORD_JSON = "record.json"
+_RECORD_MARKDOWN = "notes.md"
+_DECLARATION_FILE = ".livespec.jsonc"
+_DECLARATION = """{
+  // JSONC, because the committed declaration the merger opens carries comments.
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "record_files": [
+        {"path": "record.json", "format": "json-array", "key": ["id"]},
+        {"path": "notes.md", "format": "markdown-insertions"}
+      ]
+    }
+  }
+}
+"""
 
 
 # The coverage hooks an allowlisted spawn must scrub, so no child of this file
@@ -302,23 +326,31 @@ def _origin_with_default(*, root: Path) -> Path:
     seed = root / "seed"
     _ = seed.mkdir()
     _ = _git("init", "--quiet", f"--initial-branch={_DEFAULT_BRANCH}", cwd=seed)
+    _ = (seed / _DECLARATION_FILE).write_text(_DECLARATION, encoding="utf-8")
+    _ = (seed / _RECORD_JSON).write_text('[{"id": "seed"}]\n', encoding="utf-8")
+    _ = (seed / _RECORD_MARKDOWN).write_text("- seed entry\n", encoding="utf-8")
+    _ = _git("add", _DECLARATION_FILE, _RECORD_JSON, _RECORD_MARKDOWN, cwd=seed)
     _ = _commit(cwd=seed, path=_SHARED_FILE, text="base\n", subject="chore: seed")
     _ = _git("push", "--quiet", str(origin), f"HEAD:refs/heads/{_DEFAULT_BRANCH}", cwd=seed)
     return origin
 
 
 def _materialized_plugins_root(*, root: Path) -> Path:
-    """The sandbox plugins root, carrying the two PRODUCTION helpers.
+    """The sandbox plugins root, carrying the three PRODUCTION helpers.
 
-    The push program is written from its own source and the gate from its own
-    prepare-step body, so the lease the stage performs is the lease the
-    Dispatcher ships rather than one restated here.
+    The push program and the declared-record-file merger are written from their
+    own sources and the gate from its own prepare-step body, so the lease and the
+    merge the stage performs are the ones the Dispatcher ships rather than ones
+    restated here.
     """
     plugins_root = root / "plugins"
     _ = plugins_root.mkdir()
     push_program = plugins_root / PUBLICATION_PUSH_PROGRAM_FILENAME
     _ = push_program.write_text(publication_push_program_source(), encoding="utf-8")
     push_program.chmod(0o700)
+    merge_program = plugins_root / RECORD_FILE_MERGE_PROGRAM_FILENAME
+    _ = merge_program.write_text(record_file_merge_program_source(), encoding="utf-8")
+    merge_program.chmod(0o700)
     gate_script = root / "install-plugin-gate.sh"
     _ = gate_script.write_text(plugin_cache_gate_script(), encoding="utf-8")
     return plugins_root
@@ -901,6 +933,223 @@ def test_a_conflicting_rebase_is_aborted_with_no_side_chosen(tmp_path: Path) -> 
     assert not (box.clone / ".git" / "rebase-merge").exists()
     assert not (box.clone / ".git" / "rebase-apply").exists()
     assert "<<<<<<<" not in (box.clone / _SHARED_FILE).read_text(encoding="utf-8")
+    assert box.remote_head(ref=_BRANCH) == published
+    assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
+
+
+def _published_record_conflict(
+    *,
+    box: _Refresh,
+    path: str,
+    run_text: str,
+    default_text: str,
+    extra: tuple[str, str] | None = None,
+) -> str:
+    """Publish a run edit to one record file, then advance the default branch into it.
+
+    The two sides edit the SAME file and Git decides whether that is a conflict,
+    which is the whole point of driving the shipped stage here rather than the
+    merger alone: a fixture that declared a conflict could not tell a stage that
+    merges declared records from one that merges whatever it is handed.
+    """
+    if extra is not None:
+        extra_path, extra_text = extra
+        _ = (box.clone / extra_path).write_text(extra_text, encoding="utf-8")
+        _ = _git("add", extra_path, cwd=box.clone)
+    published = _commit(
+        cwd=box.clone, path=path, text=run_text, subject="feat: this run's record entry"
+    )
+    _ = _git("push", "--quiet", "--force", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=box.clone)
+    _ = (box.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(published, encoding="utf-8")
+    if extra is not None:
+        _ = _advance_default(box=box, path=extra[0], text="a conflicting default edit\n")
+    _ = _advance_default(box=box, path=path, text=default_text)
+    return published
+
+
+def test_a_declared_json_record_conflict_merges_and_republishes_without_repair(
+    tmp_path: Path,
+) -> None:
+    """Scenario 200's first sub-scenario, against the shipped `pr_refresh` bytes.
+
+    Five things have to hold together, and each is separately satisfiable while
+    the requirement is unmet: the rebase must COMPLETE (a stage that resolved the
+    file and left the rebase stopped publishes nothing), the merged array must
+    carry both sides' entries in the ratified order, the gate must have run on
+    the merged head, origin must now carry it, and NO refresh-repair round may be
+    counted — which is the whole cost this item was filed to remove.
+    """
+    box = _build(root=tmp_path)
+    _ = _published_record_conflict(
+        box=box,
+        path=_RECORD_JSON,
+        run_text='[{"id": "seed"}, {"id": "run"}]\n',
+        default_text='[{"id": "seed"}, {"id": "default"}]\n',
+    )
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_RECORD_FILE_REFRESH_RESOLVED: pr_refresh" in result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" not in result.stderr
+    assert json.loads((box.clone / _RECORD_JSON).read_text(encoding="utf-8")) == [
+        {"id": "seed"},
+        {"id": "default"},
+        {"id": "run"},
+    ]
+    assert not (box.clone / ".git" / "rebase-merge").exists()
+    assert not (box.clone / ".git" / "rebase-apply").exists()
+    assert box.remote_head(ref=_BRANCH) == box.local_head()
+    assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) == ""
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
+
+
+def test_a_declared_json_record_merge_is_recorded_with_its_format_and_per_side_counts(
+    tmp_path: Path,
+) -> None:
+    """The stage's own output names each file it merged, its format and both counts.
+
+    Separate from the case above because it is a claim about the RECORD rather
+    than about the tree: a stage that merged correctly and reported nothing
+    leaves an operator triaging the next collision with no way to tell a merged
+    refresh from one that never conflicted.
+    """
+    box = _build(root=tmp_path)
+    _ = _published_record_conflict(
+        box=box,
+        path=_RECORD_JSON,
+        run_text='[{"id": "seed"}, {"id": "run"}]\n',
+        default_text='[{"id": "seed"}, {"id": "default"}]\n',
+    )
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        f"LIVESPEC_RECORD_FILE_MERGED: path={_RECORD_JSON} format=json-array "
+        "default-count=2 run-count=1"
+    ) in result.stderr
+
+
+def test_a_declared_markdown_record_conflict_keeps_the_defaults_lines_then_the_runs(
+    tmp_path: Path,
+) -> None:
+    """Scenario 200's second sub-scenario: both sides inserted at the same place.
+
+    This is the `tests/integration/CLAUDE.md` collision in miniature — two runs
+    each appending their own entry to the end of one registry — and the ORDER is
+    asserted rather than mere containment, because a stage that kept both lines
+    in the other order has resolved the conflict by rewriting the default
+    branch's record rather than by extending it.
+    """
+    box = _build(root=tmp_path)
+    _ = _published_record_conflict(
+        box=box,
+        path=_RECORD_MARKDOWN,
+        run_text="- seed entry\n- the run's entry\n",
+        default_text="- seed entry\n- the default branch's entry\n",
+    )
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_RECORD_FILE_REFRESH_RESOLVED: pr_refresh" in result.stderr
+    assert (box.clone / _RECORD_MARKDOWN).read_text(encoding="utf-8") == (
+        "- seed entry\n- the default branch's entry\n- the run's entry\n"
+    )
+    assert (
+        f"LIVESPEC_RECORD_FILE_MERGED: path={_RECORD_MARKDOWN} format=markdown-insertions "
+        "default-count=1 run-count=1"
+    ) in result.stderr
+    assert box.remote_head(ref=_BRANCH) == box.local_head()
+
+
+def test_a_conflict_outside_the_declared_records_merges_nothing_and_takes_repair(
+    tmp_path: Path,
+) -> None:
+    """Scenario 200's fourth sub-scenario, and the control the merge arm needs.
+
+    The declared record conflicts HERE TOO, so a stage that merged the paths it
+    recognised and handed back only the rest would pass every assertion of the
+    merge cases above while publishing a tree whose undeclared conflict nobody
+    resolved. The discriminating assertion is that the record file is UNCHANGED
+    on the restored head: nothing was merged, not merely nothing was pushed.
+    """
+    box = _build(root=tmp_path)
+    published = _published_record_conflict(
+        box=box,
+        path=_RECORD_JSON,
+        run_text='[{"id": "seed"}, {"id": "run"}]\n',
+        default_text='[{"id": "seed"}, {"id": "default"}]\n',
+        extra=(_SHARED_FILE, "this run's edit\n"),
+    )
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_RECORD_FILE_REFRESH_RESOLVED" not in result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+    assert _SHARED_FILE in result.stderr
+    assert box.local_head() == published
+    assert box.remote_head(ref=_BRANCH) == published
+    assert json.loads((box.clone / _RECORD_JSON).read_text(encoding="utf-8")) == [
+        {"id": "seed"},
+        {"id": "run"},
+    ]
+    assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
+
+
+def test_a_declared_record_whose_key_both_sides_changed_differently_takes_repair(
+    tmp_path: Path,
+) -> None:
+    """Scenario 200's third sub-scenario: a declared path is not enough on its own.
+
+    Same file, same declaration and the same Git conflict as the merge case —
+    only the CONTENT differs, both sides having changed the entry keyed `seed`.
+    So a stage that merged every conflict in a declared path, rather than every
+    RESOLVABLE one, is green above and red only here.
+    """
+    box = _build(root=tmp_path)
+    published = _published_record_conflict(
+        box=box,
+        path=_RECORD_JSON,
+        run_text='[{"id": "seed", "test": "tests.run"}]\n',
+        default_text='[{"id": "seed", "test": "tests.default"}]\n',
+    )
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_RECORD_FILE_MERGE_REFUSED" in result.stderr
+    assert "LIVESPEC_RECORD_FILE_REFRESH_RESOLVED" not in result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+    assert box.local_head() == published
+    assert box.remote_head(ref=_BRANCH) == published
+    assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
+
+
+def test_a_merged_record_head_the_gate_rejects_takes_repair(tmp_path: Path) -> None:
+    """Scenario 200's fifth sub-scenario: the gate still decides the merged head.
+
+    The merge is the SAME resolvable one that republishes above, so this case
+    separates "the arm completed the rebase" from "the arm published": a stage
+    that treated its own merge as sufficient would leave origin carrying a head
+    the repository's gate refuses.
+    """
+    box = _build(root=tmp_path)
+    published = _published_record_conflict(
+        box=box,
+        path=_RECORD_JSON,
+        run_text='[{"id": "seed"}, {"id": "run"}]\n',
+        default_text='[{"id": "seed"}, {"id": "default"}]\n',
+    )
+
+    result = _run(box=box, check_suite=_FAILING_GATE)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_RECORD_FILE_REFRESH_RESOLVED: pr_refresh" in result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+    assert box.local_head() == published
     assert box.remote_head(ref=_BRANCH) == published
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
 
