@@ -887,5 +887,12 @@
     "heading": "## Scenario 205 \u2014 Gap detection enumerates headings without an exercising test",
     "work_item": "bd-ib-4dlokv",
     "first_seen": "2026-10-20"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 209 \u2014 A provider refusal booked as a successful turn is released, not left for a human",
+    "work_item": "bd-ib-wkfwtx",
+    "first_seen": "2026-10-20"
   }
 ]

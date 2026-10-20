@@ -7568,3 +7568,59 @@ Feature: The gap signal is heading coverage, not clause tracking
     And livespec core's gap-tracking-one-to-one and no-stale-gap-tied invariants pass
     And a closed item keeps its historical clause-derived label
 ```
+
+## Scenario 209 — A provider refusal booked as a successful turn is released, not left for a human
+
+```gherkin
+Feature: A provider refusal delivered as turn text is a failed attempt of its candidate
+  As the maintainer of a repository dispatched to the factory
+  I want a turn that ends with a measured provider refusal to count as that candidate's failure
+  So that a transient provider condition releases the item for re-dispatch instead of losing the run to a human gate
+
+  Scenario: A codex-acp capacity refusal on review releases the item
+    Given a review node attempt on the codex-acp candidate that the engine recorded as succeeded
+    And the attempt's recorded turn output is "I'm reviewing the branch and its latest captured proof against the six stated acceptance assertions. I'll make no changes.Selected model is at capacity. Please try a different model."
+    And the run ended at the needs_human terminal through that attempt's unmatched review outcome edge
+    And no later attempt of any node failed
+    When the Dispatcher reconciles the terminal run
+    Then it records a candidate hold with cause provider_capacity for that codex-acp candidate
+    And it journals one provider-limit-release record whose source is turn.final_output
+    And the item returns to ready with no blocked reason and no needs-human decision
+
+  Scenario: Refusal words that are not the output's tail do not match
+    Given a succeeded agent node attempt whose output contains "Selected model is at capacity. Please try a different model." and then continues with a review verdict
+    When the Dispatcher classifies the attempt
+    Then no turn.final_output signature matches and the attempt remains a success
+
+  Scenario: An output ending with an explicitly marked quotation of the refusal does not match
+    Given a succeeded codex-acp agent node attempt whose output ends with: The adapter reported "Selected model is at capacity. Please try a different model."
+    And another whose output ends with: The adapter reported: Selected model is at capacity. Please try a different model.
+    When the Dispatcher classifies each attempt
+    Then no turn.final_output signature matches either attempt and each remains a success
+
+  Scenario: An unmarked reproduction of the refusal at the end of the output matches
+    Given a succeeded codex-acp review attempt whose output is "Review passed. The adapter diagnostic is reproduced verbatim below. Selected model is at capacity. Please try a different model."
+    And the run reaches its successful exit
+    When the Dispatcher reconciles the run
+    Then the capacity form matches the attempt and it records the candidate hold for that codex-acp candidate
+    And the run keeps its successful outcome and the Dispatcher journals no provider-limit-release record
+
+  Scenario: A later failure keeps its own route
+    Given a codex-acp review attempt reclassified as a failed attempt by the capacity form
+    And a later command node attempt in the same run failed with a test failure that determined the run's terminal
+    When the Dispatcher reconciles the terminal run
+    Then it records the candidate hold for the codex-acp candidate
+    And it journals no provider-limit-release record for the run
+    And the item keeps the test failure's existing route
+
+  Scenario: A reclassified attempt does not retire a hold
+    Given a live candidate hold on the codex-acp candidate
+    And a later attempt on that candidate whose recorded turn output ends with the measured capacity refusal
+    When the Dispatcher evaluates hold retirement
+    Then the hold is not retired by that attempt
+
+  Scenario: The codex-acp form does not match a claude-acp attempt
+    Given a succeeded claude-acp attempt whose recorded turn output ends with "Selected model is at capacity. Please try a different model."
+    When the Dispatcher classifies the attempt
+    Then the built-in codex-acp capacity form does not match it
+```

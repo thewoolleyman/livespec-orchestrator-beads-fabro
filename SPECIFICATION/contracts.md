@@ -5674,7 +5674,9 @@ a chain executed. No record, current or legacy, MAY refuse a dispatch whose
 resolved candidates all lie outside its coverage.
 
 **A record is falsifiable only by later matching execution.** A node attempt
-that starts after a domain observation and completes successfully against that
+that starts after a domain observation and completes successfully (an attempt
+reclassified as failed under "A provider refusal booked as a successful turn is
+a failed attempt" is not a successful completion) against that
 same hold key retires only the older domain record. A later successful attempt
 by the exact `(availability_key, candidate_key)` retires only the older
 candidate record. Overall run success is insufficient: it MUST NOT clear a
@@ -7596,13 +7598,18 @@ structured candidate with overrides, and a manual candidate, look like this:
 }
 ```
 
-`source` is exactly `protocol.machine_code`, `protocol.message`, or
-`process.terminal_diagnostic`. `cause` is exactly `quota`, `rate_limit`,
+`source` is exactly `protocol.machine_code`, `protocol.message`,
+`process.terminal_diagnostic`, or `turn.final_output`. `cause` is exactly `quota`, `rate_limit`,
 `provider_capacity`, `provider_server_unavailable`, `model_unavailable`,
 `model_not_found`, `model_unsupported`, or `model_not_entitled`. `scope` is
 exactly `availability-domain` or `candidate`. A machine-code source requires one
-non-empty exact `machine_code` and forbids `all_literals`; the other sources
-require a non-empty array of non-empty `all_literals` and forbid `machine_code`.
+non-empty exact `machine_code` and forbids `all_literals`; the
+`protocol.message` and `process.terminal_diagnostic` sources require a
+non-empty array of non-empty `all_literals` and forbid `machine_code`. A
+`turn.final_output` signature requires one non-empty `final_text`, the complete
+measured refusal text the provider delivers, and forbids `all_literals`,
+`machine_code` and `exit_code`; it MUST declare `scope: candidate`. No other
+source accepts `final_text`.
 An optional `exit_code` is an integer from 1 through 125 and only refines the
 required discriminator; it is never sufficient by itself. Domain scope MAY
 carry a non-empty opaque `hold_key`, defaulting to `availability_key`. Candidate
@@ -7616,8 +7623,8 @@ diagnostic with different cause/scope/key dispositions, the failure is
 non-eligible and surfaced as ambiguous, and it creates no hold; runtime first-
 match choice is forbidden.
 
-Text matching is a conjunction after Unicode case-folding and whitespace
-normalization, never a regular expression. The Dispatcher applies signatures to
+Literal-based text matching is a conjunction after Unicode case-folding and
+whitespace normalization, never a regular expression. The Dispatcher applies signatures to
 the failing node's recorded failure as read from the run's resolved factory:
 a `protocol.machine_code` signature matches only where the engine preserved the
 provider's structured payload; a `protocol.message` signature matches the
@@ -7630,7 +7637,31 @@ at the workflow's `needs_human` terminal and the terminal message no longer
 carries the provider's sentence, the Dispatcher MUST read the failing node's own
 recorded attempt outcome before classifying, and MUST NOT classify from the
 needs-human script's own output. Matching never reads an arbitrary exec-output
-tail, agent response, prompt, tool/test/review output, or run log. Structured
+tail, prompt, tool/test/review output, or run log, and it reads agent response
+text ONLY through a `turn.final_output` signature. A `turn.final_output`
+signature applies only to an agent node attempt that the engine recorded as
+succeeded, and it is not a conjunction of literals. Both the recorded turn
+output and the signature's `final_text` are normalized by Unicode case-folding,
+collapsing every maximal run of whitespace to one space, and removing leading
+and trailing whitespace. The signature matches only when the normalized output
+ENDS WITH the normalized `final_text` at a sentence boundary: the output either
+equals that text, or the character immediately before the text is `.`, `!` or
+`?`, or the text is preceded by exactly one space whose preceding character is
+`.`, `!` or `?`. Nothing else satisfies it. (The measured output that motivated
+this form reads `I'll make no changes.Selected model is at capacity. Please try
+a different model.`, with no space after the preceding terminator.) Refusal words that
+appear anywhere other than that tail do not match, so a turn that discusses a
+refusal and then continues is not a refusal; and an output that ends with the
+refusal text marked as a quotation, by a closing quotation mark after the text
+or by a lead-in such as a colon immediately before it, does not match. An output
+whose final sentences reproduce the refusal text unmarked is textually
+indistinguishable from the refusal itself and DOES match; that
+misclassification is accepted, because a match only mints a candidate hold and
+journals a warning, and it releases the item only under the unrecovered-cause
+condition of "A provider refusal booked as a successful turn is a failed
+attempt" below. The Dispatcher MUST read that
+recorded output from the run's resolved factory, exactly as it reads a failure
+for the other sources. Structured
 machine codes take precedence. Authentication,
 command-not-found, cancellation, node deadline or stall expiry, generic HTTP
 400/404, remote-compaction 404, malformed command/configuration, signal exit,
@@ -7653,7 +7684,10 @@ generic HTTP 400 remains non-eligible; the exact model-naming discriminator is
 candidate-scoped. Every provider-limit mapping MUST exist as a
 `protocol.message` signature, and additionally as a `protocol.machine_code`
 signature where the adapter emits a structured token, so that detection survives
-an engine that keeps only message text. The measured minimum set at this
+an engine that keeps only message text. A `turn.final_output` form is the one
+exception: it describes a refusal the adapter delivers as turn text on an attempt
+the engine recorded as succeeded, so there is no recorded failure for a
+`protocol.message` form to match, and none is required. The measured minimum set at this
 ratification, each `cause: quota` and `scope: availability-domain`, is: for
 `claude-acp`, the session-limit form (literals `hit your session limit`), the
 generic limit form (literals `hit your limit` and `resets`), the usage-limit form
@@ -7663,7 +7697,12 @@ field in BOTH its camelCase spelling (`codexErrorInfo` carrying
 `usageLimitExceeded`) and its snake_case spelling (`codex_error_info` carrying
 `usage_limit_exceeded`), and the message forms (literals `hit your usage limit`;
 literals `usage limit exceeded`). Both measured Codex spellings MUST be
-recognized. A Claude `rate_limit` kind alone does not establish quota
+recognized. The measured minimum set additionally carries one form that is
+neither `cause: quota` nor domain-scoped: for `codex-acp`, the capacity form,
+source `turn.final_output`, `cause: provider_capacity`, `scope: candidate`,
+`final_text` `Selected model is at capacity. Please try a different model.`
+The capacity form is candidate-scoped to `codex-acp`: a `claude-acp` attempt
+whose output ends with the same words MUST NOT match it. A Claude `rate_limit` kind alone does not establish quota
 exhaustion; its measured message discriminator is required. A non-dispositive
 structured kind MUST NOT suppress that discriminator. Every listed measured
 form MUST be exercised against its recorded executed candidate, including
@@ -7700,6 +7739,32 @@ never from ingestion. No hold may come from credentials, catalogs, the
 admission-time credential-usability probe, predicted health, price, model
 strength, or provider reset claims. The Dispatcher MUST retain configured order
 after filtering.
+
+**A provider refusal booked as a successful turn is a failed attempt.** An
+agent node attempt that the engine recorded as succeeded, but whose turn
+matches a `turn.final_output` signature of its executed candidate, MUST be
+treated by the Dispatcher as a FAILED attempt of that candidate with the
+matched cause and scope, for every purpose of this section. It mints the
+candidate hold that the signature declares, with expiry computed from the
+attempt's completion instant. It journals the model-fallback warning exactly
+as a failed attempt does. It MUST NOT count as a successful completion under
+"A record is falsifiable only by later matching execution", under the
+warning-retirement rule, or as a successfully completed availability
+confirmation turn. Such an attempt is the failing node attempt for
+"Provider-limit release and re-dispatch" ONLY when it is the unrecovered failure
+responsible for the run's terminal disposition, as that paragraph requires: the
+run reached a terminal other than its successful exit through the reclassified
+attempt's own outcome, or through retries of the same node every one of which
+was also reclassified, and no later attempt of any node, agent or non-agent,
+failed on its own. In that case the Dispatcher MUST perform the release,
+including returning the item to `ready` with no `blocked_reason`, and MUST NOT
+rest the item at `blocked / needs-human`. When a later failure determined the
+terminal instead, that later failure keeps its own classification and route,
+including a non-eligible failure's route, and the reclassified attempt does not
+release the item. A run that reaches its successful exit keeps its outcome.
+The run's overall outcome, successful or not, never retires the reclassified
+attempt's hold or warning; their existing retirement rules still apply. The release
+record MUST name the matched signature's source as `turn.final_output`.
 
 **Holds are per provider domain and discoverable host-wide from factory-native
 run records.** A domain hold keyed on a provider allowance's `availability_key`
