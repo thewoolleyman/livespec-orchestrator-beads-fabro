@@ -39,6 +39,14 @@ freshness measurement and the projection -- a bounded renewal request, a queue
 wait, sandbox preparation. Anchoring on the projection instant alone stamps a
 deadline the credential cannot cover whenever that delay is non-zero, which is
 every real dispatch.
+
+WHY `check-tests-no-real-time` IS STOOD DOWN PER OCCURRENCE BELOW. The
+behaviour under test is a SHIPPED SHELL SCRIPT comparing `date +%s` against an
+absolute epoch, enforced against processes this interpreter does not run. There
+is no clock to inject into `/bin/sh`, and the question "was the child still
+executing after that instant" is answerable only by reading the instants the
+child itself stamped. Each marker below names the specific thing real time is
+doing at that line; none of them is a polling convenience.
 """
 
 from __future__ import annotations
@@ -285,6 +293,7 @@ def test_a_credential_using_grandchild_stops_by_the_deadline_after_its_parent_ex
     assert time.time() < deadline, "the parent did not exit before the deadline"
 
     # Wait THROUGH the deadline, then read when the grandchild last ran.
+    # real-time-required: the absolute epoch under test can only arrive in real time
     time.sleep((deadline - time.time()) + _HARD_TOLERANCE_SECONDS + 1.0)
 
     last = _last_beat(beat_file=beat_file)
@@ -340,6 +349,7 @@ def test_a_retried_launch_inherits_the_same_deadline_rather_than_a_fresh_budget(
         deadline=deadline,
         argv=["/bin/sh", "-c", f"printf one > {first_marker}"],
     )
+    # real-time-required: the one shared deadline must genuinely fall between the launches
     time.sleep(_SOON_SECONDS + 1)
     second = _run(
         tmp_path=tmp_path,
@@ -523,11 +533,13 @@ def test_losing_the_waiting_process_does_not_disarm_the_bound(
     )
     settle = time.time() + 10
     while time.time() < settle and not beat_file.exists():
+        # real-time-required: a /bin/sh child stamps the beat file out of process
         time.sleep(0.1)
 
     guarded.send_signal(signal.SIGKILL)
     _ = guarded.wait(timeout=10)
 
+    # real-time-required: the reaper's own epoch must pass with no waiter alive
     time.sleep(_SOON_SECONDS + _HARD_TOLERANCE_SECONDS + 2)
 
     last = _last_beat(beat_file=beat_file)
@@ -604,6 +616,7 @@ def test_a_fractional_start_still_stops_by_the_absolute_epoch(
     # entry, so whether it executes depends on timing. Excluded so per-file
     # coverage cannot fail at random (run 38878333019, PR 3090).
     while not (start_fraction <= (time.time() % 1) <= start_fraction + 0.08):
+        # real-time-required: the defect is sub-second rounding of the real epoch
         time.sleep(0.005)  # pragma: no cover - timing-dependent alignment wait
     deadline = int(time.time()) + _SOON_SECONDS
 
