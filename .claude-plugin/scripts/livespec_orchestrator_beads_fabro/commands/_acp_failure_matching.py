@@ -55,6 +55,8 @@ __all__: list[str] = [
 
 MACHINE_CODE_SOURCE = "protocol.machine_code"
 _MESSAGE_SOURCE = "protocol.message"
+_TURN_FINAL_OUTPUT_SOURCE = "turn.final_output"
+_PREFIX_WITH_SPACE_MINIMUM = 2
 
 # The vocabulary a bare HTTP 400/404 already contains. A signature naming
 # nothing else is claiming the status itself, which the contract forbids.
@@ -115,12 +117,18 @@ def signature_matches(*, signature: AcpAvailabilitySignature, signal: AcpFailure
     if signature.source == MACHINE_CODE_SOURCE:
         code = signature.machine_code
         return code is not None and code.strip() == observed.strip()
+    if signature.source == _TURN_FINAL_OUTPUT_SOURCE:
+        return signal.turn_succeeded and _final_output_matches(
+            output=observed, final_text=signature.final_text
+        )
     return conjunction_matches(literals=signature.all_literals, text=observed)
 
 
 def signature_discriminates(*, signature: AcpAvailabilitySignature) -> bool:
     """Whether this signature names anything beyond bare HTTP status vocabulary."""
     if signature.source == MACHINE_CODE_SOURCE:
+        return True
+    if signature.source == _TURN_FINAL_OUTPUT_SOURCE:
         return True
     return any(
         normalized(text=literal) not in GENERIC_STATUS_LITERALS
@@ -150,4 +158,22 @@ def _field(*, source: str, signal: AcpFailureSignal) -> str | None:
         return signal.machine_code
     if source == _MESSAGE_SOURCE:
         return signal.protocol_message
+    if source == _TURN_FINAL_OUTPUT_SOURCE:
+        return signal.turn_final_output
     return signal.terminal_diagnostic
+
+
+def _final_output_matches(*, output: str, final_text: str | None) -> bool:
+    """Whether one succeeded turn ends in its complete refusal at a sentence boundary."""
+    if final_text is None:
+        return False
+    normalized_output = normalized(text=output)
+    normalized_final = normalized(text=final_text)
+    if not normalized_final or not normalized_output.endswith(normalized_final):
+        return False
+    prefix = normalized_output[: -len(normalized_final)]
+    if not prefix:
+        return True
+    if prefix[-1] in ".!?":
+        return True
+    return len(prefix) >= _PREFIX_WITH_SPACE_MINIMUM and prefix[-1] == " " and prefix[-2] in ".!?"

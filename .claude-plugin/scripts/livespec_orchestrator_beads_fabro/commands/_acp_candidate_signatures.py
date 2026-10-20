@@ -7,12 +7,11 @@ this module is the parse half of it: the enumerations, the
 discriminator rule, and the STATIC conflict refusal.
 
 THE DISCRIMINATOR RULE IS THE POINT OF THE SHAPE. A machine-code source
-requires one non-empty exact `machine_code` and FORBIDS `all_literals`;
-every other source requires a non-empty array of non-empty `all_literals`
-and forbids `machine_code`. `exit_code` only REFINES whichever
-discriminator is required and is never sufficient alone -- an exit status
-is shared by every failure a process can have, so a signature keyed on one
-would claim unrelated failures as its provider's.
+requires one non-empty exact `machine_code`; protocol and terminal sources
+require a non-empty array of non-empty `all_literals`; and a final-turn source
+requires the complete non-empty `final_text`. The latter is deliberately not a
+literal conjunction: a provider refusal delivered as a successful turn needs
+the full terminal sentence and its boundary, not a match somewhere in prose.
 
 WHAT IS NOT HERE. Runtime MATCHING -- case folding, whitespace
 normalization, conjunction, machine-code precedence, the non-eligible
@@ -53,6 +52,7 @@ SIGNATURE_SOURCES: tuple[str, ...] = (
     "process.terminal_diagnostic",
     "protocol.machine_code",
     "protocol.message",
+    "turn.final_output",
 )
 
 SIGNATURE_CAUSES: tuple[str, ...] = (
@@ -69,13 +69,16 @@ SIGNATURE_CAUSES: tuple[str, ...] = (
 SIGNATURE_SCOPES: tuple[str, ...] = ("availability-domain", "candidate")
 
 _MACHINE_CODE_SOURCE = "protocol.machine_code"
+_TURN_FINAL_OUTPUT_SOURCE = "turn.final_output"
 _DOMAIN_SCOPE = "availability-domain"
+_CANDIDATE_SCOPE = "candidate"
 
 _SIGNATURE_KEYS: frozenset[str] = frozenset(
     {
         "all_literals",
         "cause",
         "exit_code",
+        "final_text",
         "hold_key",
         "machine_code",
         "scope",
@@ -100,11 +103,12 @@ class AcpAvailabilitySignature:
     scope: str
     machine_code: str | None = None
     all_literals: tuple[str, ...] = ()
+    final_text: str | None = None
     exit_code: int | None = None
     hold_key: str | None = None
 
     @property
-    def matcher(self) -> tuple[str, str, frozenset[str], int | None]:
+    def matcher(self) -> tuple[str, str, frozenset[str], str, int | None]:
         """What this signature MATCHES, independent of what it then decides.
 
         `all_literals` collapses to a frozenset because the contract makes
@@ -112,7 +116,13 @@ class AcpAvailabilitySignature:
         different order match exactly the same diagnostics, so ordering
         them would hide a conflict behind a cosmetic difference.
         """
-        return (self.source, self.machine_code or "", frozenset(self.all_literals), self.exit_code)
+        return (
+            self.source,
+            self.machine_code or "",
+            frozenset(self.all_literals),
+            self.final_text or "",
+            self.exit_code,
+        )
 
     @property
     def disposition(self) -> tuple[str, str, str]:
@@ -150,7 +160,7 @@ def conflicting_signature_refusal(
     first-match choice the contract forbids, so it is refused here, before
     any claim, rather than surfaced as an ambiguous failure mid-run.
     """
-    seen: dict[tuple[str, str, frozenset[str], int | None], tuple[str, str, str]] = {}
+    seen: dict[tuple[str, str, frozenset[str], str, int | None], tuple[str, str, str]] = {}
     for signature in signatures:
         previous = seen.get(signature.matcher)
         if previous is not None and previous != signature.disposition:
@@ -176,13 +186,14 @@ def _parse_one(*, entry: object, key: str) -> AcpAvailabilitySignature | str:
     discriminator = _discriminator(table=table, key=key)
     if isinstance(discriminator, str):
         return discriminator
-    machine_code, all_literals = discriminator
+    machine_code, all_literals, final_text = discriminator
     return AcpAvailabilitySignature(
         source=str(table["source"]),
         cause=str(table["cause"]),
         scope=str(table["scope"]),
         machine_code=machine_code,
         all_literals=all_literals,
+        final_text=final_text,
         exit_code=table.get("exit_code"),
         hold_key=table.get("hold_key"),
     )
@@ -237,24 +248,63 @@ def _hold_key_refusal(*, table: Mapping[str, Any], key: str) -> str | None:
 
 def _discriminator(
     *, table: Mapping[str, Any], key: str
-) -> tuple[str | None, tuple[str, ...]] | str:
+) -> tuple[str | None, tuple[str, ...], str | None] | str:
     """The required discriminator for this source, or a refusal naming it."""
     if table["source"] == _MACHINE_CODE_SOURCE:
-        if "all_literals" in table:
-            return f"{key}.all_literals is forbidden for source {_MACHINE_CODE_SOURCE!r}"
-        code = non_empty_text(value=table.get("machine_code"))
-        if code is None:
-            return (
-                f"{key}.machine_code must be one exact non-empty code for source "
-                f"{_MACHINE_CODE_SOURCE!r}; got {table.get('machine_code')!r}"
-            )
-        return (code, ())
-    if "machine_code" in table:
-        return f"{key}.machine_code is forbidden for source {table['source']!r}"
+        return _machine_code_discriminator(table=table, key=key)
+    if table["source"] == _TURN_FINAL_OUTPUT_SOURCE:
+        return _turn_final_output_discriminator(table=table, key=key)
+    return _literal_discriminator(table=table, key=key)
+
+
+def _machine_code_discriminator(
+    *, table: Mapping[str, Any], key: str
+) -> tuple[str | None, tuple[str, ...], str | None] | str:
+    """Read the exact code required by the machine-code source."""
+    for field_name in ("all_literals", "final_text"):
+        if field_name in table:
+            return f"{key}.{field_name} is forbidden for source {_MACHINE_CODE_SOURCE!r}"
+    code = non_empty_text(value=table.get("machine_code"))
+    if code is None:
+        return (
+            f"{key}.machine_code must be one exact non-empty code for source "
+            f"{_MACHINE_CODE_SOURCE!r}; got {table.get('machine_code')!r}"
+        )
+    return (code, (), None)
+
+
+def _turn_final_output_discriminator(
+    *, table: Mapping[str, Any], key: str
+) -> tuple[str | None, tuple[str, ...], str | None] | str:
+    """Read the complete sentence required by a succeeded turn's output."""
+    for field_name in ("all_literals", "machine_code", "exit_code"):
+        if field_name in table:
+            return f"{key}.{field_name} is forbidden for source {_TURN_FINAL_OUTPUT_SOURCE!r}"
+    if table["scope"] != _CANDIDATE_SCOPE:
+        return (
+            f"{key}.scope must be {_CANDIDATE_SCOPE!r} for source "
+            f"{_TURN_FINAL_OUTPUT_SOURCE!r}; got {table['scope']!r}"
+        )
+    final_text = non_empty_text(value=table.get("final_text"))
+    if final_text is None:
+        return (
+            f"{key}.final_text must be one complete non-empty refusal for source "
+            f"{_TURN_FINAL_OUTPUT_SOURCE!r}; got {table.get('final_text')!r}"
+        )
+    return (None, (), final_text)
+
+
+def _literal_discriminator(
+    *, table: Mapping[str, Any], key: str
+) -> tuple[str | None, tuple[str, ...], str | None] | str:
+    """Read the literal conjunction required by protocol and terminal sources."""
+    for field_name in ("machine_code", "final_text"):
+        if field_name in table:
+            return f"{key}.{field_name} is forbidden for source {table['source']!r}"
     literals = string_tuple(value=table.get("all_literals"))
     if literals is None or not literals or any(literal.strip() == "" for literal in literals):
         return (
             f"{key}.all_literals must be a non-empty array of non-empty strings for source "
             f"{table['source']!r}; got {table.get('all_literals')!r}"
         )
-    return (None, literals)
+    return (None, literals, None)
