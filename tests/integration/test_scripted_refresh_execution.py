@@ -1069,6 +1069,96 @@ def test_publish_draft_merges_a_declared_json_record_conflict_without_repair(
     assert box.remote_head(ref=_BRANCH) == box.local_head()
 
 
+def test_publish_draft_keeps_default_markdown_lines_before_the_runs(
+    tmp_path: Path,
+) -> None:
+    """The second Scenario 200 merge rule also holds in ``publish_draft``."""
+    box = _build(root=tmp_path)
+    _ = _published_record_conflict(
+        box=box,
+        path=_RECORD_MARKDOWN,
+        run_text="- seed entry\n- the run's entry\n",
+        default_text="- seed entry\n- the default branch's entry\n",
+    )
+
+    result = _run_publish_draft(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_RECORD_FILE_REFRESH_RESOLVED: publish_draft" in result.stderr
+    assert (box.clone / _RECORD_MARKDOWN).read_text(encoding="utf-8") == (
+        "- seed entry\n- the default branch's entry\n- the run's entry\n"
+    )
+    assert (
+        f"LIVESPEC_RECORD_FILE_MERGED: path={_RECORD_MARKDOWN} format=markdown-insertions "
+        "default-count=1 run-count=1"
+    ) in result.stderr
+    assert box.remote_head(ref=_BRANCH) == box.local_head()
+
+
+def test_publish_draft_routes_an_undeclared_conflict_to_repair(tmp_path: Path) -> None:
+    """A declared-record merge cannot conceal a concurrent ordinary conflict."""
+    box = _build(root=tmp_path)
+    published = _published_record_conflict(
+        box=box,
+        path=_RECORD_JSON,
+        run_text='[{"id": "seed"}, {"id": "run"}]\n',
+        default_text='[{"id": "seed"}, {"id": "default"}]\n',
+        extra=(_SHARED_FILE, "this run's edit\n"),
+    )
+
+    result = _run_publish_draft(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_RECORD_FILE_REFRESH_RESOLVED" not in result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+    assert _SHARED_FILE in result.stderr
+    assert box.local_head() == published
+    assert box.remote_head(ref=_BRANCH) == published
+
+
+def test_publish_draft_refuses_a_declared_record_with_differing_same_key(
+    tmp_path: Path,
+) -> None:
+    """A declaration does not authorize resolving incompatible JSON objects."""
+    box = _build(root=tmp_path)
+    published = _published_record_conflict(
+        box=box,
+        path=_RECORD_JSON,
+        run_text='[{"id": "seed", "test": "tests.run"}]\n',
+        default_text='[{"id": "seed", "test": "tests.default"}]\n',
+    )
+
+    result = _run_publish_draft(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_RECORD_FILE_MERGE_REFUSED" in result.stderr
+    assert "LIVESPEC_RECORD_FILE_REFRESH_RESOLVED" not in result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+    assert box.local_head() == published
+    assert box.remote_head(ref=_BRANCH) == published
+
+
+def test_publish_draft_routes_a_gate_rejection_of_a_merged_record_head_to_repair(
+    tmp_path: Path,
+) -> None:
+    """The post-merge gate is a precondition of publishing the refreshed head."""
+    box = _build(root=tmp_path)
+    published = _published_record_conflict(
+        box=box,
+        path=_RECORD_JSON,
+        run_text='[{"id": "seed"}, {"id": "run"}]\n',
+        default_text='[{"id": "seed"}, {"id": "default"}]\n',
+    )
+
+    result = _run_publish_draft(box=box, check_suite=_FAILING_GATE)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_RECORD_FILE_REFRESH_RESOLVED: publish_draft" in result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+    assert box.local_head() == published
+    assert box.remote_head(ref=_BRANCH) == published
+
+
 def test_a_declared_json_record_merge_is_recorded_with_its_format_and_per_side_counts(
     tmp_path: Path,
 ) -> None:
