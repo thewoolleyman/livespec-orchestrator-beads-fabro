@@ -4097,9 +4097,16 @@ The Dispatcher's guarded recovery surface for an already-merged item is
 `reconcile-merged --repo <path> --item <work-item-id> [--json]` and, only after
 an operator has confirmed the original dispatcher process is dead,
 `reconcile-merged --repo <path> --item <work-item-id> --force [--json]`. It MUST
-refuse unless the named item is currently `active` or rests in `acceptance`.
-For an `active` item this valve exists for a dispatch whose merged PR did not
-complete post-run disposition. For an item resting in `acceptance` it MUST NOT
+refuse unless the named item is currently `active`, rests in `acceptance`, or
+rests at `ready` with recovery routing holding its next dispatch because the
+pull request of its latest dispatch is merged (§"Factory-configurable ACP
+fallback priority" → "Recovery from the failed run's preserved work").
+For an `active` item, and for such a `ready` item, this valve exists for a
+dispatch whose merged PR did not complete post-run disposition. For the `ready`
+item it applies every guard and the post-merge disposition below exactly as for
+an `active` one, with `ready` in place of `active` in each state effect: a green
+janitor writes `ready -> acceptance` where an `active` item's writes `active ->
+acceptance`, and every failed guarded precondition leaves the item `ready`. For an item resting in `acceptance` it MUST NOT
 re-run the post-merge janitor or re-merge anything: it MUST re-run only the
 acceptance pass of §"Post-merge acceptance (`acceptance → done`)" against the
 records now on the pull request, apply that pass's ordinary disposition, and
@@ -4262,12 +4269,14 @@ It is a published state-changing entry point and inherits `--invoker`
 the `impl:<id>` action remains a plain dispatch. The exceptions to both
 statements are an item released under §"Factory-configurable ACP fallback
 priority" → "Provider-limit release and re-dispatch", an item released by that
-section's adapter launch release, and an item released after a first stall
-cancel under §"Dispatcher progress watchdog": for each the Dispatcher
+section's adapter launch release, an item released after a first stall
+cancel under §"Dispatcher progress watchdog", and an item released for recovery
+under §"Stranded claim release" → "Stale assignee clearance": for each the Dispatcher
 itself invokes this resume, under its own invoker identity, when every
-precondition below passes, and otherwise dispatches a plain run seeded from
-the failed run's preserved work rather than from the default branch, as that
-section's "Recovery from the failed run's preserved work" specifies.
+precondition below passes, and otherwise follows the recovery routing of that
+section's "Recovery from the failed run's preserved work", which dispatches a
+plain run seeded from the failed run's preserved work, a fresh run, or holds the
+dispatch, as that routing specifies.
 
 **What it resumes.** The *earlier run* is the dispatch whose identifier
 the latest proof record on the item's open pull request carries, resolved
@@ -6757,7 +6766,7 @@ Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
 
 - **The claim stamp names its owning host, and admission replaces it.** The run stamp the Dispatcher writes onto the item when it learns its run (the run id and the factory server target) MUST also name the *dispatching host*: the stable host identity of the machine whose Dispatcher process holds the claim. At admission, in the same ledger write that moves the item to `active` with assignee `fabro`, or in a write that precedes it, the Dispatcher MUST replace any earlier stamp with a *pending* stamp. The pending stamp names the new dispatch and its dispatching host and carries no run id. So a newly admitted dispatch that has not yet learned its run can never be read as the previous claim. The Dispatcher replaces the pending stamp with the run stamp when it learns the run.
 - **Only the owning host recovers a claim.** Ledger writers may run on any number of hosts and share nothing but the Beads server, so no reconciler can observe another host's processes. A reconciler MUST therefore act on a claim only when the claim's stamp names the reconciler's own host. A claim stamped by another host, or by none, MUST be held. This confines every writer of a given claim's recovery to the one host where the owning Dispatcher's liveness is observable.
-- **Survey.** Every reconciliation surface named in §"A factory run never awaits a human" (the loop tick, the dispatch preamble, and the standalone `reconcile-runs` sweep) MUST also survey the ledger's `active` items assigned `fabro`. An item carrying `rework:pending` or a `merge-hold:` label MUST NOT be surveyed, per §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Stranded-state discrimination". For each surveyed claim the Dispatcher MUST take these measurements, and an unobservable measurement MUST NOT be read as a negative answer:
+- **Survey.** Every reconciliation surface named in §"A factory run never awaits a human" (the loop tick, the dispatch preamble, and the standalone `reconcile-runs` sweep) MUST also survey the ledger's `active` items assigned `fabro`, and every stale assignee as "Stale assignee clearance" below defines one. An item carrying `rework:pending` or a `merge-hold:` label MUST NOT be surveyed, per §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Stranded-state discrimination". For each surveyed claim the Dispatcher MUST take these measurements, and an unobservable measurement MUST NOT be read as a negative answer:
   - *Attribution*: the run id, factory and dispatching host, read from the item's ledger run stamp.
   - *Run state*: that factory's answer for that run, asked by the factory's declared server target.
   - *Owner liveness*: whether a dispatch-scoped ownership lock for the item (§"Dispatcher loop invocation surface") is held by a live process in any checkout of the tenant's repository on this host. "No live owner" is established only when every such lock location was read and each is either absent or names a process that is not alive. An unreadable lock is not an absent lock.
@@ -6779,6 +6788,14 @@ Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
   - the `blocked / needs-human` rest of §"A factory run never awaits a human", with its needs-human cause comment.
 
   Failure evidence that is missing or unreadable is unavailable: the claim is held as `terminal-evidence-unavailable` and observed again on the next pass, as that section requires. It MUST NOT be released and MUST NOT be converted into a needs-human decision.
+- **Stale assignee clearance.** A *stale assignee* is a work-item resting at `ready` whose assignee is still `fabro`. It is not a dispatch claim: its claim ended when the item left `active`, through the Dispatcher's own transition or a human valve, so no terminal disposition is owed, and reconciliation MUST NOT apply one to it. Whether or not it is cleared, a stale assignee whose run stamp names a run is released for recovery: its next dispatch is graded by the recovery routing of §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work", which resumes a published pull request when every resume precondition passes, holds the dispatch while the earlier run is live, a live process owns the item, the pull request is merged, or a measurement cannot be taken, and otherwise dispatches seeded or fresh as that routing specifies. A `ready` status alone does not establish that no dispatch owns the item, so clearance requires the conditions below. The survey exclusion of `rework:pending` and `merge-hold:` items applies to a stale assignee, and the reconciler MUST take the Attribution, Run state and Owner liveness measurements above for it. The Dispatcher MUST clear the stale assignee when all of the following hold:
+  - it is attributed to this host by a run stamp that is not pending;
+  - the factory reports its stamped run terminal, whether failed or succeeded, or positively reports that the run does not exist;
+  - no live owner is established.
+
+  Clearing removes the `fabro` assignee and leaves the item's status, labels and run stamp unchanged. It MUST journal one `stale-assignee-clear` record naming the item, the run id, the factory and the run state (`failed`, `succeeded` or `absent`), and MUST write one ledger comment on the item naming the same facts. That record keeps the item released for recovery after its assignee is gone. The clearance follows "Recovery is exclusive on its host and convergent" above, with the assignee write in place of the status transition: the journal record, then the ledger comment, then the assignee write last. Its effects are keyed by item, run and the `stale-assignee-clear` kind, so they are distinct from any recovery effect earlier written for the same item and run. Each re-read requires the item to be still `ready`, still assigned `fabro`, and stamped (not pending) with the same run, and the accepted window of "Residual race" above covers the assignee write exactly as it covers a status transition.
+
+  Every stale assignee that is not cleared MUST be left exactly as it is and listed in the pass's `held` output with the reason of the first condition that applies, graded in this order: `claim-unattributable`, `attribution-pending`, `owner-elsewhere`, `factory-unobservable`, `run-live`, `liveness-unobservable`, `dispatch-live`, `claim-changed`, `effect-unobservable`. Each reason has the meaning the hold list below gives it, except that `claim-changed` means that a re-read before writing found the item no longer `ready`, no longer assigned `fabro`, carrying a pending stamp, or stamped with a different run. A held stale assignee whose run stamp names a run remains released for recovery, so the safety of its next dispatch is decided by recovery routing's own measurements, not by this hold. A stale assignee whose run stamp is pending, or that carries no readable run stamp, names no run for recovery routing to measure: it is not released for recovery, it is held as `attribution-pending` or `claim-unattributable`, and its admission is unchanged by this clause, so its next admission replaces its stamp exactly as any admission of a `ready` item does.
 - **Holds.** Every surveyed claim that is neither released nor completed MUST be left exactly as it is. It MUST be listed in the pass's `held` output with the reason of the FIRST condition below that applies, graded in this order:
   1. `claim-unattributable`: the item carries no readable run stamp, or the stamp names no declared factory.
   2. `attribution-pending`: the item carries a pending stamp, because its newest dispatch has not yet learned its run. This includes a dispatch that died before its run existed. This subsection never releases such a claim, because a dispatch between admission and taking its ownership lock is indistinguishable from a dead one. Its held entry MUST name the operator `move` valve as the remedy.
@@ -6796,9 +6813,9 @@ Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
   14. `effect-unobservable`: as defined above.
 
   Stranded-claim holds join `held` beside the parked runs the blocked-run grace already lists there. A held claim is observed again on the next pass.
-- **Status changes.** The absent-run release, the `run-absent-repeated` rest, and the terminal-run completions are the only item status changes any reconciliation surface makes. The bullet of §"A factory run never awaits a human" that forbids reconciling or terminating a run from changing an item's status continues to govern runs, and does not govern these. The `already claimed by a dispatch` refusal, and the resume refusal of §"Resume from a published pull request (`resume --item`)", name `reconcile-runs` as the remedy for a stranded claim; this subsection is what makes that remedy work.
+- **Status changes.** The absent-run release, the `run-absent-repeated` rest, and the terminal-run completions are the only item status changes any reconciliation surface makes. A stale assignee clearance changes no status. The bullet of §"A factory run never awaits a human" that forbids reconciling or terminating a run from changing an item's status continues to govern runs, and does not govern these. The `already claimed by a dispatch` refusal, and the resume refusal of §"Resume from a published pull request (`resume --item`)", name `reconcile-runs` as the remedy for a stranded claim; this subsection is what makes that remedy work.
 
-Scenario 196 in `scenarios.md` exercises this section.
+Scenarios 196 and 210 in `scenarios.md` exercise this section.
 
 ### The human answer route: marker, poison preflight, run account, and write-before-transition ordering
 
@@ -7906,8 +7923,11 @@ When a run terminates -- through any terminal, the workflow's `needs_human` term
 
 **Recovery from the failed run's preserved work.** An item is *released for
 recovery* when its latest journaled dispatch ended in a first-stall release
-(§"Dispatcher progress watchdog"), a `provider-limit-release` record, or an
-`adapter-launch-release` record. Both `dispatch` and `loop` MUST perform
+(§"Dispatcher progress watchdog"), a `provider-limit-release` record, an
+`adapter-launch-release` record, or a `stale-assignee-clear` record for that
+dispatch's run; an item is also released for recovery while it is a stale
+assignee whose run stamp names a run (§"Stranded claim release" → "Stale
+assignee clearance"). Both `dispatch` and `loop` MUST perform
 *recovery routing* for every released candidate. Routing comes after the
 pre-dispatch wall and BEFORE the admission valve, while the item is still
 `ready`, and assigns the item exactly one route. Routes are graded in the order
