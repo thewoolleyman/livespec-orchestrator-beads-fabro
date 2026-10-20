@@ -7909,3 +7909,82 @@ Feature: A wrong obligation can be retired without letting a rename evade expiry
     When the same operation identity is retried
     Then the recorded event is returned and no second event is written
 ```
+
+## Scenario 212 — The sandbox-images command reports the sandbox image sources a dispatch without an explicit workflow path resolves, through dispatch resolution, and changes nothing
+
+```gherkin
+Feature: Read-only sandbox image enumeration
+  As the operator of a docker factory host's image-warm timer
+  I want the sandbox image sources of every dispatch without an explicit workflow path, across the defined repositories and builds
+  So that the host holds each tag before the first run that needs it
+  Scenario: A factory with a catalog environment reports the environment, not an image
+    Given a repository whose dispatcher.factories entry for factory F declares a catalog environment E
+    When dispatcher.py sandbox-images --factory F --repo <that repository> --json runs
+    Then it prints one entry for that repository with source catalog_environment and environment E
+    And that entry carries no image of its own
+  Scenario: The configured-image resolver wins over every workflow pin, environment first
+    Given a repository R with no catalog environment for factory F that sets dispatcher.fabro_sandbox_image to I and commits its own implement-work-item workflow.toml
+    And LIVESPEC_FABRO_SANDBOX_IMAGE is J in the command's environment
+    When the command runs for factory F and R
+    Then it calls the same configured-image resolver a dispatch calls
+    And it prints one entry for R with image J and source dispatcher.fabro_sandbox_image
+  Scenario: Each declared named variant and the reserved workflow are reported
+    Given a repository R with neither a catalog environment nor a configured image that declares named variants V1 and V2 under dispatcher.workflows
+    And R commits its own implement-work-item workflow.toml pinning image J
+    When the command runs for factory F and R
+    Then it calls the same workflow resolver a dispatch calls
+    And it prints one named_variant entry for V1 and one for V2, each with that variant's docker pin and the path of its workflow.toml
+    And it prints one committed_run_config entry with image J and the path of that workflow.toml
+  Scenario: Executing builds form a host-wide deduplicated union
+    Given a repository R with neither a configured image, its own workflow nor named variants, whose registered build is B1
+    And B1 has only a stale lease
+    And a live session for another repository holds a lease on B2
+    And a running Dispatcher executes B3 without a live lease
+    And another running Dispatcher executes B2
+    And B4 has only a stale lease and no other inclusion route
+    When the command runs for factory F and R
+    Then it reports exactly one bundled_run_config entry each for B1, B2 and B3, each with that build's bundled docker pin
+    And it reports none for B4
+    And each entry names R, its build identity and its workflow path
+  Scenario: Default discovery uses this plugin's project registrations
+    Given this plugin has install records with projectPath roots R1 and R2
+    And another plugin alone is registered for R3
+    When the command runs without --repo
+    Then it enumerates exactly R1 and R2
+  Scenario: Explicit repositories replace registry discovery
+    Given this plugin is registered for R1 and R2
+    When the command runs with --repo R3 --repo R4
+    Then it enumerates exactly R3 and R4
+  Scenario: An undeclared factory is a successful report
+    Given repository R does not declare factory F
+    When the command runs for F and R
+    Then it reports source factory_undeclared naming R with no image
+    And it exits zero
+  Scenario: JSON output contains every repository-labelled entry
+    Given multiple repositories produce multiple entries including an unreadable entry
+    When the command runs with --json
+    Then stdout is one JSON array containing every entry as an object
+    And every object names its repository
+  Scenario Outline: Unreadable dependencies do not truncate enumeration
+    Given an entry depends on a <source> that <failure>
+    And other entries have readable dependencies
+    When the command runs
+    Then it reports source unreadable naming the failed path and repository
+    And it reports every other entry
+    And it exits non-zero
+
+    Examples:
+      | source                  | failure          |
+      | .livespec.jsonc         | cannot be read   |
+      | .livespec.jsonc         | cannot be parsed |
+      | named variant workflow  | cannot be read   |
+      | committed workflow      | cannot be parsed |
+      | bundled workflow        | cannot be read   |
+      | bundled workflow        | cannot be parsed |
+  Scenario: The command changes nothing
+    Given any repositories and factory F
+    When the command runs
+    Then no ledger record, dispatch-journal row or Fabro run is created
+    And no image is pulled, built or tagged
+    And no file is created, modified or deleted, including any lease file
+```

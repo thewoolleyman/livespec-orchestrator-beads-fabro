@@ -915,5 +915,12 @@
     "heading": "## Scenario 211 \u2014 An unmet plan obligation is superseded only by a typed event whose cause verifies, and keeps its original budget",
     "work_item": "bd-ib-egzipe",
     "first_seen": "2026-10-20"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 212 \u2014 The sandbox-images command reports the sandbox image sources a dispatch without an explicit workflow path resolves, through dispatch resolution, and changes nothing",
+    "work_item": "bd-ib-nqmltq",
+    "first_seen": "2026-10-20"
   }
 ]
