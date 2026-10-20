@@ -7,28 +7,71 @@ append-only records is merged entry by entry rather than handed to the fix
 agent. The declaration is the whole input to that arm, and it lives in committed
 configuration rather than in code, so nothing in the package can establish it.
 
-The five STAGE sub-scenarios are exercised against the shipped `pr_refresh`
-bytes in `test_scripted_refresh_execution.py`, beside that module's real-Git
-harness; the merge arm is a property of the stage script, and restating that
-harness here would grade a paraphrase of it.
-
-The declaration case below is therefore a CONFIGURATION assertion, graded
-against the committed `.livespec.jsonc` exactly as the refresh stage reads it:
-the stage runs in a governed clone with no copy of this package, so it opens
-that file itself, and a declaration that drifted from the four files this
-repository's revise and scenario-binding changes actually append to would leave
-the arm armed for paths nothing ever conflicts in — silently, because a refresh
-that found no declared path routes to repair exactly as it did before v162.
+This module executes the five stage sub-scenarios against the shipped
+`pr_refresh` bytes through the real-Git harness in
+`test_scripted_refresh_execution.py`.  The harness is deliberately loaded as
+the test subject rather than paraphrased here: it parses the committed DOT
+graph, materializes the production merger and helpers, and asserts origin's
+actual refs.  Keeping Scenario 200's cases here makes the scenario's own test
+entry point a reproducible stage-level proof of configuration, merge ordering,
+observability, and repair routing.
 """
 
 from __future__ import annotations
 
+import importlib.util
+import sys
+from functools import cache
 from pathlib import Path
-from typing import cast
+from types import ModuleType
+from typing import Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._jsonc import loads
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+_STAGE_CASES_PATH = _REPO_ROOT / "tests" / "integration" / "test_scripted_refresh_execution.py"
+
+
+class _Scenario200StageCases(Protocol):
+    """The shipped-stage cases Scenario 200 owns, loaded from their real-Git harness."""
+
+    def test_a_declared_json_record_conflict_merges_and_republishes_without_repair(
+        self, tmp_path: Path
+    ) -> None: ...
+
+    def test_a_declared_json_record_merge_is_recorded_with_its_format_and_per_side_counts(
+        self, tmp_path: Path
+    ) -> None: ...
+
+    def test_a_declared_markdown_record_conflict_keeps_the_defaults_lines_then_the_runs(
+        self, tmp_path: Path
+    ) -> None: ...
+
+    def test_a_conflict_outside_the_declared_records_merges_nothing_and_takes_repair(
+        self, tmp_path: Path
+    ) -> None: ...
+
+    def test_a_declared_record_whose_key_both_sides_changed_differently_takes_repair(
+        self, tmp_path: Path
+    ) -> None: ...
+
+    def test_a_merged_record_head_the_gate_rejects_takes_repair(self, tmp_path: Path) -> None: ...
+
+
+@cache
+def _stage_cases() -> _Scenario200StageCases:
+    """Load the real-Git stage harness without relying on pytest collection order."""
+    specification = importlib.util.spec_from_file_location(
+        "scenario200_shipped_stage_cases", _STAGE_CASES_PATH
+    )
+    assert specification is not None
+    assert specification.loader is not None
+    module = importlib.util.module_from_spec(specification)
+    assert isinstance(module, ModuleType)
+    sys.modules[specification.name] = module
+    specification.loader.exec_module(module)
+    return cast("_Scenario200StageCases", module)
+
 
 # The four shared records every revise and every scenario-binding change in this
 # repository appends to, and therefore the four this repository declares. The two
@@ -82,3 +125,43 @@ def test_the_committed_configuration_declares_this_repositorys_shared_record_fil
     dispatcher = _committed_dispatcher_configuration()
 
     assert dispatcher.get("record_files") == _EXPECTED_RECORD_FILES
+
+
+def test_stage_merges_declared_json_records_in_default_then_run_order(tmp_path: Path) -> None:
+    _stage_cases().test_a_declared_json_record_conflict_merges_and_republishes_without_repair(
+        tmp_path
+    )
+
+
+def test_stage_records_each_json_merge_with_its_format_and_side_counts(tmp_path: Path) -> None:
+    _stage_cases().test_a_declared_json_record_merge_is_recorded_with_its_format_and_per_side_counts(
+        tmp_path
+    )
+
+
+def test_stage_merges_declared_markdown_insertions_in_default_then_run_order(
+    tmp_path: Path,
+) -> None:
+    _stage_cases().test_a_declared_markdown_record_conflict_keeps_the_defaults_lines_then_the_runs(
+        tmp_path
+    )
+
+
+def test_stage_routes_an_undeclared_conflict_to_refresh_repair(tmp_path: Path) -> None:
+    _stage_cases().test_a_conflict_outside_the_declared_records_merges_nothing_and_takes_repair(
+        tmp_path
+    )
+
+
+def test_stage_routes_a_differently_changed_record_key_to_refresh_repair(
+    tmp_path: Path,
+) -> None:
+    _stage_cases().test_a_declared_record_whose_key_both_sides_changed_differently_takes_repair(
+        tmp_path
+    )
+
+
+def test_stage_routes_a_gate_rejection_of_the_merged_head_to_refresh_repair(
+    tmp_path: Path,
+) -> None:
+    _stage_cases().test_a_merged_record_head_the_gate_rejects_takes_repair(tmp_path)
