@@ -1151,6 +1151,27 @@ def test_an_enabled_repository_resolves_a_viable_two_candidate_chain(tmp_path: P
     assert _keys(preflight=verdict.node_preflight(node="implement")) == ["primary", "fallback"]
 
 
+@pytest.mark.parametrize("timeout", [0, "not-an-integer"])
+def test_an_invalid_availability_probe_timeout_refuses_before_claim(
+    tmp_path: Path, timeout: object
+) -> None:
+    """The committed confirmation timeout is validated in admission preflight."""
+    modules = _modules()
+    repo = _enabled_repo(tmp_path=tmp_path)
+    config = json.loads((repo / ".livespec.jsonc").read_text(encoding="utf-8"))
+    config["livespec-orchestrator-beads-fabro"]["dispatcher"][
+        "availability_probe_timeout_seconds"
+    ] = timeout
+    (repo / ".livespec.jsonc").write_text(json.dumps(config), encoding="utf-8")
+
+    verdict = modules["_dispatcher_acp_preflight"].resolve_acp_preflight(
+        repo=repo, journal_path=None, now_iso=_NOW
+    )
+
+    assert verdict.viable is False
+    assert "dispatcher.availability_probe_timeout_seconds" in verdict.detail
+
+
 def test_a_malformed_structured_workflow_default_refuses_the_preflight(
     tmp_path: Path,
 ) -> None:
