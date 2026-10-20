@@ -8061,3 +8061,93 @@ Feature: Read-only sandbox image enumeration
     And no image is pulled, built or tagged
     And no file is created, modified or deleted, including any lease file
 ```
+
+## Scenario 227 — Fabro event reads are bounded in size, retries and concurrency
+
+```gherkin
+Feature: The Dispatcher's Fabro event reads cannot become unbounded factory load
+  As an operator of a shared factory
+  I want every events read bounded
+  So that a long run's slow event log does not draw continuous re-reads
+
+  Scenario Outline: Later reads are bounded for every caller
+    Given <caller> has already read a run's events
+    When that Dispatcher process reads the run again
+    Then the read is bounded to events after the newest observed instant or to a bounded tail
+
+    Examples:
+      | caller                |
+      | progress watchdog     |
+      | ACP projection        |
+      | ACP reconcile replay  |
+      | review-gate reader    |
+      | cost reader           |
+
+  Scenario: Bounded samples preserve established liveness state
+    Given the watchdog has established a run's progress instant
+    And a command node started before the read boundary and has not completed
+    When a successful bounded read contains no newer progress or command-node transition
+    Then the sample retains the established progress instant
+    And it still reports that command node as open
+    And an older event instant does not mask a newer heartbeat instant
+
+  Scenario: A completion updates carried command-node state
+    Given an earlier sample established an open command node
+    When a successful bounded read contains that node's completion and no new command-node start
+    Then the sample no longer reports that command node as open
+
+  Scenario: Watchdog sample cost is independent of total event count
+    Given two runs with the same bounded observation data and established liveness state
+    And one run has a larger historical event log
+    When the watchdog samples each run
+    Then the sample cost does not grow with the larger total event count
+
+  Scenario Outline: Failed reads are journaled and remain unobservable
+    Given a fabro events read <failure>
+    When the Dispatcher handles the result
+    Then it journals exactly one fabro-events-read-failed record
+    And the record names the work-item, run id, factory, reading caller, elapsed seconds, consecutive attempt number and next-read backoff
+    And that caller does not read that run again before the backoff expires
+    And the failure is an unobservable sample
+    And the failure is not evidence of disappearance or lack of progress
+
+    Examples:
+      | failure             |
+      | times out           |
+      | exits non-zero      |
+      | returns zero bytes  |
+
+  Scenario: Consecutive failures increase backoff and success resets it
+    Given a caller's first failed read of a run
+    When further consecutive reads by that caller fail
+    Then the first backoff is at least 60 seconds
+    And each subsequent backoff is at least twice the preceding backoff
+    And the consecutive attempt number increases on each failure
+    When a read succeeds and the following read fails
+    Then the new failure has consecutive attempt number 1
+    And its backoff is at least 60 seconds
+
+  Scenario: Repeated projection read failures are exhausted durably
+    Given the ACP projection's read of a run has failed on four consecutive attempts
+    When its fifth consecutive attempt fails
+    Then reconcile-runs journals exactly one acp-projection-exhausted record
+    And the record names the work-item, run id, factory, attempt count 5 and last failure reason
+    And the projection failure remains visible as exhausted
+    When later reconcile-runs passes run
+    Then none reads that run's events
+    And none duplicates the exhaustion record or clears the failure
+    When a new dispatch creates a new run for the same work-item
+    Then the earlier run's exhaustion does not prevent reading the new run
+
+  Scenario: A reconcile pass deduplicates reads of one run
+    Given multiple reconciliation paths require events from the same run
+    When one reconcile-runs pass executes
+    Then it issues at most one fabro events read for that run
+
+  Scenario: Concurrent reads are capped across processes on one host
+    Given two fabro events reads against one factory are already in flight from different Dispatcher processes on this host
+    When another Dispatcher process needs to read a run on that factory
+    Then it does not start a third concurrent read
+    And if it cannot start within its caller's timeout it is handled as a failed events read
+    And that failure is journaled and backed off under the failed-read rules
+```
