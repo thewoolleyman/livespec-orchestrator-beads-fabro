@@ -1,6 +1,6 @@
 ---
 name: livespec-orchestrator-beads-fabro-capture-impl-gaps
-description: "File a gap-tied work-item per gap over the gap-id set emitted by the sibling detect-impl-gaps skill, with per-gap user consent. That sibling is a spec-clause enumerator, not a spec→impl comparator — it never reads implementation state, so a captured gap-id means the clause is not yet tracked by a work-item, never that it is missing from the implementation. Use when the user wants enumerated spec clauses turned into tracked work. Mutating: it writes one record per consented gap."
+description: "File a gap-tied work-item per gap over the gap-id set emitted by the sibling detect-impl-gaps skill, with per-gap user consent. That sibling is a heading-coverage enumerator, not a spec→impl comparator — it never reads implementation state, so a captured gap-id means the heading has no exercising test, never that its behaviour is missing from the implementation. Use when the user wants enumerated spec clauses turned into tracked work. Mutating: it writes one record per consented gap."
 allowed-tools: bash read
 ---
 

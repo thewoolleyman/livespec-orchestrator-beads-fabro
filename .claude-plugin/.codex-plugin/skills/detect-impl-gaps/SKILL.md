@@ -1,6 +1,6 @@
 ---
 name: detect-impl-gaps
-description: Enumerate the ratified spec's MUST/SHOULD clauses mechanically via the Spec Reader and emit the gap-id set (read-only thin transport). This is a spec-clause enumerator, not a spec→impl comparator — it never reads implementation state, so a returned gap-id means the clause is not yet tracked by a work-item, never that it is missing from the implementation. Invoked as livespec-orchestrator-beads-fabro:detect-impl-gaps.
+description: Enumerate the H2 headings of the governed spec tree that no test exercises, via the Spec Reader and the repository's heading-coverage map, and emit the gap-id set (read-only thin transport). This is a heading-coverage enumerator, not a spec→impl comparator — it never reads implementation state, so a returned gap-id means the heading has no exercising test, never that its behaviour is missing from the implementation. Invoked as livespec-orchestrator-beads-fabro:detect-impl-gaps.
 ---
 
 # detect-impl-gaps — Codex binding
