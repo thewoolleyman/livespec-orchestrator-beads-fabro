@@ -25,6 +25,7 @@ OBSERVED through the ledger.
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -42,6 +43,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_tokens import create_token
 from livespec_orchestrator_beads_fabro.commands._plan_handoff import append_handoff
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
+    NEXT_ACTION_METADATA_KEY,
     NextAction,
     ResumeDirective,
     resume_directive,
@@ -287,6 +289,60 @@ def test_an_absolute_repository_identity_is_refused_with_the_canonical_bare_name
     assert isinstance(refusal, NextActionRefusal), refusal
     assert "canonical bare repository identity" in refusal.detail
     assert _PROJECT_NAME in refusal.detail
+
+
+def test_a_legacy_primary_checkout_path_is_observed_by_resume(tmp_path: Path) -> None:
+    """A stored pre-admission pointer naming `livespec.primaryPath` still resumes.
+
+    New writes correctly refuse this absolute form, but a primary checkout may
+    already have recorded it before that admission rule existed.  This exercises
+    the reader through `resume_directive`, rather than only resolving the path in
+    isolation: the stored pointer must reach this sandbox's own tenant and yield
+    a ledger observation, not an unobservable repository-resolution result.
+    """
+    primary = tmp_path / _PROJECT_NAME
+    primary.mkdir()
+    checkout = tmp_path / "factory-sandbox"
+    checkout.mkdir()
+    _ = subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+    _ = subprocess.run(
+        ["git", "-C", str(checkout), "config", "livespec.primaryPath", str(primary)],
+        check=True,
+    )
+    _ = (checkout / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
+    config = store_config(repo=checkout)
+    _seed_epic(config=config, epic_id=_PATH_EPIC, target_id=_PATH_TARGET)
+    refusal = set_next_action(
+        config=config,
+        epic_id=_PATH_EPIC,
+        action=_action(target_id=_PATH_TARGET, repo=_PROJECT_NAME),
+        session=_SESSION,
+        now=_NOW,
+    )
+    assert refusal is None, refusal
+
+    # Model an already-persisted pointer from before writer-side path refusal.
+    # It must be read through the same resume surface an operator uses.
+    metadata = _fake(config=config).show_issue(issue_id=_PATH_EPIC)["metadata"]
+    assert isinstance(metadata, dict)
+    legacy_pointer = dict(metadata[NEXT_ACTION_METADATA_KEY])
+    legacy_pointer["required_result"] = {
+        "repo": str(primary),
+        "item_status": {"item_id": _PATH_TARGET, "status": "done"},
+    }
+    metadata[NEXT_ACTION_METADATA_KEY] = legacy_pointer
+    _fake(config=config).update_issue(issue_id=_PATH_EPIC, metadata=metadata)
+
+    directive = resume_directive(config=config, epic_id=_PATH_EPIC, unattended=True)
+
+    assert not directive.ask
+    assert directive.next_action == f"impl:{_PATH_TARGET}"
+    assert directive.observation is not None
+    assert directive.observation.status == OBSERVATION_UNSATISFIED
+    assert directive.observation.source == SOURCE_LEDGER
 
 
 def test_the_forge_path_form_of_this_project_is_refused_naming_the_bare_identity(
