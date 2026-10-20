@@ -19,12 +19,33 @@ closes, and `_dispatcher_preserve_reference` imports this module directly for
 exactly that reason. A module added to that chain must do the same -- the symptom
 is a loud `ImportError` at collection, never a silent one.
 
-`ShellCommandRunner` converts both a TIMEOUT (exit 124) and an ABSENT
-EXECUTABLE (exit 127) into non-zero `CommandResult`s, because the engine treats
-every failure as routable data and the runner never lets an expected failure
-escape as an exception. The absent-executable mapping is what keeps the
-post-verdict self-update's fail-open invariant intact on a host whose PATH lacks
-`gh`: an unresolvable binary skips the stage exactly as a `gh` ERROR does.
+`ShellCommandRunner` converts a TIMEOUT (exit 124), an ABSENT EXECUTABLE (exit
+127) and a launch the operating system REFUSES (exit 126) into non-zero
+`CommandResult`s, because the engine treats every failure as routable data and
+the runner never lets an expected failure escape as an exception. The
+absent-executable mapping is what keeps the post-verdict self-update's fail-open
+invariant intact on a host whose PATH lacks `gh`: an unresolvable binary skips
+the stage exactly as a `gh` ERROR does.
+
+THE THIRD ARM IS THE WHOLE `OSError` CLASS, and it is the repair of a measured
+dispatcher crash. `FileNotFoundError` used to be the only `OSError` this runner
+named, so every other launch failure escaped as a bug-class exception: `E2BIG`
+from an argv entry past Linux's 131072-byte `MAX_ARG_STRLEN` cap, `EACCES` from
+a file without the execute bit, `ENOTDIR` from an unusable working directory.
+None of those is a bug — each is an environmental condition a caller must
+classify — and the one that fired was `E2BIG`, from the Definition-of-Done
+judgement, which passes its whole prompt as ONE argv entry and inlines the
+verbatim body of every specification heading an item's reference line names. An
+item citing a large governing heading therefore crashed the pre-dispatch wall,
+the intake routing and the approve valve, on exactly the condition those paths
+are required to treat as "the judgement could not run".
+
+126 rather than 127, because the two have DIFFERENT REMEDIES and only one
+caller-visible value distinguishes them: 127 is the POSIX command-not-found
+convention and the judgement reads it as a missing judge, so an uninvokable
+command reported as 127 would send an operator to install a binary that is
+already there. 126 is the POSIX "command found but could not be executed"
+counterpart, and every caller already reads any non-zero exit as a failure.
 """
 
 from __future__ import annotations
@@ -91,7 +112,11 @@ class ShellCommandRunner:
                 stdin=stdin,
                 start_new_session=start_new_session,
             ),
-            exceptions=(subprocess.TimeoutExpired, FileNotFoundError),
+            # `OSError` rather than `FileNotFoundError`, which is one of its
+            # subclasses: every launch failure the operating system reports
+            # arrives as an `OSError`, and the narrower tuple let the rest of
+            # them escape as bug-class exceptions.
+            exceptions=(subprocess.TimeoutExpired, OSError),
         )
         if isinstance(completed, AttemptFailure):
             return _failure_result(
@@ -114,18 +139,37 @@ def _failure_result(
 ) -> CommandResult:
     """Map a caught runner exception onto a non-zero `CommandResult`.
 
-    Both branches keep the failure as routable DATA rather than letting it
-    escape: a TIMED-OUT command becomes exit 124, and a command whose
-    EXECUTABLE IS ABSENT becomes exit 127 (the POSIX command-not-found
-    convention). The absent case matters to every post-verdict probe that
-    shells through this runner: callers receive data they can journal or
-    classify instead of crashing the dispatch with a `FileNotFoundError`.
+    All three branches keep the failure as routable DATA rather than letting it
+    escape: a TIMED-OUT command becomes exit 124, a command whose EXECUTABLE IS
+    ABSENT becomes exit 127 (the POSIX command-not-found convention), and a
+    command the operating system refuses to LAUNCH becomes exit 126 (its
+    found-but-not-executable counterpart). The absent case matters to every
+    post-verdict probe that shells through this runner: callers receive data
+    they can journal or classify instead of crashing the dispatch with a
+    `FileNotFoundError`.
+
+    THE ORDER OF THE FIRST TWO ARMS IS LOAD-BEARING. `FileNotFoundError` is an
+    `OSError`, so a generic arm placed first would swallow it and report every
+    absent executable as 126 — collapsing the one code `_invocation_cause`
+    reads as `no-eligible-model` into the one it reads as a failed command.
+
+    The ERRNO MESSAGE rides the generic arm's stderr, because the exit code
+    alone cannot say which refusal it was: an oversized argument list and a
+    missing execute bit are both 126 here and have nothing in common as
+    remedies, so the operating system's own account of the fault is the only
+    thing that points an operator anywhere.
     """
     if isinstance(error, FileNotFoundError):
         return CommandResult(
             exit_code=127,
             stdout="",
             stderr=f"executable not found: {argv[0]}: {error}",
+        )
+    if isinstance(error, OSError):
+        return CommandResult(
+            exit_code=126,
+            stdout="",
+            stderr=f"command could not be invoked: {argv[0]}: {error}",
         )
     exc = cast("subprocess.TimeoutExpired", error)
     return CommandResult(

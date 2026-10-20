@@ -22,11 +22,22 @@ requires, and the inline bodies mean the assertion can still be judged against
 its governing heading on a host where that search returns nothing.
 
 WHY EVERY FAILURE CAUSE IS MEASURED RATHER THAN PROBED. The runner already maps
-an absent executable to exit 127 and a timeout to exit 124, so reading those
-codes reports what actually happened. A separate probe of our own — "is the
-judge installed?" — would be a second instrument that can disagree with the one
-that ran, and the disagreement would be invisible: both answers are plausible
-and neither names the other.
+an absent executable to exit 127, a timeout to exit 124 and a launch the
+operating system refuses to exit 126, so reading those codes reports what
+actually happened. A separate probe of our own — "is the judge installed?" —
+would be a second instrument that can disagree with the one that ran, and the
+disagreement would be invisible: both answers are plausible and neither names
+the other.
+
+THE 126 CASE IS THIS CALL'S OWN EXPOSURE rather than a courtesy, because the
+whole prompt travels as ONE argv entry and `judgement_subject` inlines the
+verbatim body of every heading the item's reference line names. Linux caps a
+single entry at 131072 bytes, so an item citing a large governing heading
+renders an entry the kernel refuses, and the runner's generic launch-failure
+arm is what keeps that a `judge-command-failed` did-not-run verdict instead of
+an `OSError` escaping the pre-dispatch wall, the intake routing and the approve
+valve. It is deliberately NOT `no-eligible-model`: the judge resolved, so the
+remedy is a smaller subject rather than an installed binary.
 """
 
 from __future__ import annotations
