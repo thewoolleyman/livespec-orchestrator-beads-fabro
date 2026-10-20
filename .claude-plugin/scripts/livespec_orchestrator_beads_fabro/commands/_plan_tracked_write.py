@@ -63,11 +63,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 from json import dumps
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain import (
     COMMITTED,
     ChainHead,
@@ -103,7 +101,9 @@ from livespec_orchestrator_beads_fabro.commands._plan_progress_decision import (
     decide_tracked_write,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_recovery import CausalRecovery
-from livespec_orchestrator_beads_fabro.commands._plan_result_reader import read_result
+from livespec_orchestrator_beads_fabro.commands._plan_result_plan_owned import (
+    read_plan_owned_result,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
     PLAN_HANDOFF_PREFIX,
     plan_comment_body,
@@ -392,14 +392,24 @@ def _prior_observation(
     is the PRIOR one rather than the candidate's: reading the candidate's target
     would let a writer rename the obligation to something already satisfied and
     have the rename grade itself.
+
+    IT IS THE THIRD READ OF THAT ONE OBLIGATION AND TAKES THE SAME PLAN-OWNED
+    REDIRECT the two resume reads do, so an obligation naming THE PLAN EPIC
+    ITSELF resolves against the plan's own tenant whatever repository the record
+    names (`_plan_result_plan_owned`, which carries the measurement). The
+    consequence of omitting it here is worse than at either read, because this
+    reading does not report — it DECIDES: an unobservable prior obligation cannot
+    be replaced, so the write is refused and the resume that had just observed
+    the plan's step satisfied answers with no further step at all. A plan is
+    silently stopped rather than diagnosably locked, which under an unattended
+    resume is the one outcome nothing downstream surfaces.
     """
     obligation = obligation_of(authority=head.authority)
     if obligation is None:
         return None
-    project_root = request.config.repo_root
-    return read_result(
-        project_root=Path.cwd() if project_root is None else project_root,
-        reference=obligation.required_result,
-        runner=ShellCommandRunner(),
+    return read_plan_owned_result(
+        config=request.config,
+        epic_id=request.epic_id,
+        required_result=obligation.required_result,
         now=request.now,
     )

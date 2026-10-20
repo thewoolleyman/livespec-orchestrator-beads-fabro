@@ -39,23 +39,24 @@ have different remedies and an operator reading only "expired" cannot tell an
 exhausted ceiling from a passed clock — nor which operation they are now
 permitted to run.
 
-THE CHAIN-HELD OBLIGATION IS READ THROUGH THE SHARED PLAN-OWNED REDIRECT, for a
+THE CHAIN-HELD OBLIGATION IS READ THROUGH THE SHARED PLAN-OWNED READER, for a
 reason this module's position makes acute: `decide_plan_resume` RETURNS on this
 reading's verdict, before the pointer is consulted at all. So an obligation that
-names the plan epic itself under some other repository is read here against the
-wrong tenant, reported UNOBSERVABLE, and the plan is locked for its whole budget
+names the plan epic itself under some other repository would be read here against
+the wrong tenant, reported UNOBSERVABLE, and the plan locked for its whole budget
 — and a redirect applied only at the pointer read never runs for any
-chain-tracked plan. `_plan_result_plan_owned` carries the measurement and owns
-the discrimination; the only thing recorded here is that THIS read owes it too.
+chain-tracked plan. `read_plan_owned_result` is the one entry point every
+plan-level reader takes, rather than this module composing the project root, the
+redirect and `read_result` itself: that composition is a rule a reader has to
+remember, and the only part of it that announces its own absence is the root.
+`_plan_result_plan_owned` carries the measurement and owns the discrimination.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._plan_continuation import instant_expired
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain_head import ChainHead
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import ChainFinding
@@ -74,9 +75,8 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_observation import 
     OBSERVATION_UNOBSERVABLE,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_plan_owned import (
-    plan_owned_reference,
+    read_plan_owned_result,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_result_reader import read_result
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig
@@ -147,13 +147,8 @@ def evaluate_resume_progress(
     obligation = obligation_of(authority=head.authority)
     if obligation is None:
         return _untracked_chain_progress(head=head)
-    observation = read_result(
-        project_root=_project_root(config=config),
-        reference=plan_owned_reference(
-            config=config, epic_id=epic_id, required_result=obligation.required_result
-        ),
-        runner=ShellCommandRunner(),
-        now=now,
+    observation = read_plan_owned_result(
+        config=config, epic_id=epic_id, required_result=obligation.required_result, now=now
     )
     if observation.status == OBSERVATION_UNOBSERVABLE:
         return _unobservable_progress(
@@ -343,8 +338,3 @@ def _bounded_attempt(  # noqa: PLR0911 -- one fail-closed return per malformed s
     if instant_expired(until=attempt_deadline, now=now):
         return None
     return attempt_id, operation, attempt_deadline
-
-
-def _project_root(*, config: StoreConfig) -> Path:
-    root = config.repo_root
-    return Path.cwd() if root is None else root
