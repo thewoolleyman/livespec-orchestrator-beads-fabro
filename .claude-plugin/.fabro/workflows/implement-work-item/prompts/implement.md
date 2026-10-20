@@ -251,6 +251,43 @@ reports. Run it BEFORE the commit, never after a hook has refused one.
   exactly as they are; running the check yourself only moves a failure
   you would hit anyway to where it is cheap to fix.
 
+## A commit hook outlasts a tool call — a return is not a verdict
+
+This repository's commit hook runs its whole declared check suite, so on a
+factory host that aggregate runs for MINUTES — measured at 142 and 553
+seconds for commits that completed, which is up to about ten minutes. Some
+agent shell tools return before a command that long has finished, and the
+return they hand back carries no verdict. Measured on this factory, a
+`git commit` reported failure at 40.6 seconds while its own hook processes
+were still running, and three further calls returned the same way at 100.7,
+263 and 298 seconds. Three of four implement runs in one night then ended
+with the Red committed and the Green amend abandoned. No timeout fired in
+any of them; each turn chose to stop.
+
+So, for every commit in this stage:
+
+- A RETURN WHILE THE HOOK IS STILL RUNNING IS NOT A FAILED COMMIT. The hook
+  has reached no verdict yet, so whatever the tool call reported is not the
+  commit's outcome. Read the commit's own result — whether `HEAD` moved, and
+  what the hook itself finally printed — never the tool call's return.
+- WAIT FOR A RUNNING COMMIT HOOK'S OWN EXIT BEFORE ANY FURTHER COMMIT. Raise
+  the timeout of ONE foreground call and let it block until the hook exits;
+  where this stage prompt names a commit runner, repeat that runner's bounded
+  waits instead until it reports a terminal state.
+- DO NOT KILL THE HOOK'S PROCESSES. Ending the aggregate, one of its
+  children, or your own commit destroys the verdict you are waiting for and
+  leaves the tree with nothing to show for the full suite it had already run.
+  Reaping a hook run that outlived a limit belongs to the run itself, never
+  to you.
+- DO NOT START ANOTHER `git commit` WHILE ONE IS STILL LIVE. Two hook runs
+  must never execute at once in this sandbox, and a second attempt cannot
+  overtake the one already running.
+- DO NOT END YOUR TURN WHILE A COMMIT HOOK YOU STARTED IS STILL RUNNING. The
+  turn-end rule below forbids LEAVING a tool call running in the background;
+  a commit hook is waited out in the FOREGROUND until it exits, and only then
+  is the final message written. Stopping while it runs abandons work that was
+  about to pass and reports it as partial progress.
+
 ## The Definition of Done is the brief — amend it, never work around it
 
 The work-item's `## Definition of Done` section, exactly as it reached
