@@ -14,10 +14,10 @@
 # The optional description file replaces the item's description, so a candidate
 # edit can be checked before it is written to the ledger.
 #
-# Exit 0 and a last line of PASS: dispatch may proceed. Exit 1 and a last line of
-# the gate's {"outcome": "failed", ...} JSON: do NOT dispatch; apply the remedies.
-# Exit 2: the judgement could not run, which is a reason to fix the tool, not to
-# skip the check.
+# Exit 0 and a last line of PASS: every candidate of the gate's chain passed, so
+# dispatch may proceed. Exit 1 and a failure JSON line from any candidate: do NOT
+# dispatch; apply the remedies. Exit 2: the judgement could not run, which is a
+# reason to fix the tool, not to skip the check.
 set -euo pipefail
 
 item="${1:?usage: dod-preflight.sh <item-id> [<description-file>]}"
@@ -41,14 +41,18 @@ PY
 prompt_file="$install_root/.fabro/workflows/implement-work-item/prompts/dod-gate.md"
 [ -r "$prompt_file" ] || { echo "dod-preflight: prompt not readable: $prompt_file" >&2; exit 2; }
 
-# The in-run gate's own model and effort, and the capability set it can resolve.
-# Measured 2026-10-20 over four PASS-then-refused items: a hard-coded `sonnet` here
+# EVERY candidate of the in-run gate's chain, and the capability set it can resolve.
+# Measured 2026-10-20 over five PASS-then-refused items. A hard-coded `sonnet` here
 # graded more leniently than the gate's `acp_nodes.dod_gate` route (References and
-# deliverable-policy misses), and a governed repository with no committed
+# deliverable-policy misses). A governed repository with no committed
 # `dispatcher.sandbox_capabilities` made this host call withhold check 5 while the
-# sandbox, which publishes the file, ran it. So route like the gate does, and fail
-# closed when the capability set cannot be resolved here.
-read -r judge_model judge_effort < <(python3 - "$install_root" "$repo_root" <<'PY'
+# sandbox, which publishes the file, ran it. And the admission session-headroom filter
+# can skip the claude-acp primary at dispatch time, so the gate then runs a FALLBACK
+# (bd-ib-h7iaai: the gate ran codex-acp gpt-5.6-terra while this script graded on
+# claude-opus-5). Which candidate a dispatch will select is not knowable here, so the
+# judgement runs on every candidate in the chain and passes only if all of them pass.
+# It fails closed when the capability set cannot be resolved.
+routes=$(python3 - "$install_root" "$repo_root" <<'PY'
 import sys
 from pathlib import Path
 sys.path.insert(0, f"{sys.argv[1]}/scripts")
@@ -61,14 +65,13 @@ if not block.get("sandbox_capabilities"):
 # No entry means the workflow's built-in dod_gate default, its review_adapter.
 entry = (block.get("acp_nodes") or {}).get("dod_gate") or {
     "agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high"}
-routes = [entry, *(entry.get("fallbacks") or [])]
-claude = [r for r in routes if r.get("agent") == "claude-acp" and r.get("model")]
-if not claude:
-    sys.exit("dod-preflight: acp_nodes.dod_gate names no claude-acp route this host can run")
-print(claude[0]["model"], claude[0].get("effort") or "high")
+for route in [entry, *(entry.get("fallbacks") or [])]:
+    if route.get("agent") not in ("claude-acp", "codex-acp") or not route.get("model"):
+        sys.exit(f"dod-preflight: acp_nodes.dod_gate candidate {route!r} is not one this host can run")
+    print(route["agent"], route["model"], route.get("effort") or "high")
 PY
 ) || exit 2
-[ -n "${judge_model:-}" ] || exit 2
+[ -n "$routes" ] || exit 2
 
 # The same three parts of the run goal the gate grades: title, description and riders.
 goal=$(python3 - "$item" "$override" <<'PY'
@@ -85,16 +88,32 @@ print("\n".join(lines))
 PY
 ) || exit 2
 
-verdict=$({
+judgement_input=$(mktemp)
+trap 'rm -f "$judgement_input" "$judgement_input.last"' EXIT
+{
   printf 'Goal: %s\n\n\n' "$goal"
   cat "$prompt_file"
   printf '\n\nYou are running on the HOST as a pre-dispatch check, not inside a sandbox, so /etc/livespec/sandbox-capabilities is absent: use the committed mirror. Read files only. End with the JSON failure line on any finding, or with the single word PASS alone on the last line.\n'
-} | claude -p --model "$judge_model" --effort "$judge_effort" --allowedTools "Read,Grep,Glob") || exit 2
+} > "$judgement_input"
 
-printf '%s\n' "$verdict"
-last=$(printf '%s\n' "$verdict" | awk 'NF { line = $0 } END { print line }')
-case "$last" in
-  PASS) exit 0 ;;
-  *'"outcome"'*'"failed"'*) exit 1 ;;
-  *) echo "dod-preflight: no verdict line; treat as not run" >&2; exit 2 ;;
-esac
+status=0
+while read -r agent model effort; do
+  echo "=== dod-preflight candidate: $agent $model $effort"
+  if [ "$agent" = claude-acp ]; then
+    verdict=$(claude -p --model "$model" --effort "$effort" --allowedTools "Read,Grep,Glob" < "$judgement_input") || exit 2
+  else
+    codex exec -m "$model" -c "model_reasoning_effort=$effort" -s read-only --skip-git-repo-check \
+      -o "$judgement_input.last" < "$judgement_input" > /dev/null 2>&1 || exit 2
+    verdict=$(cat "$judgement_input.last")
+  fi
+  printf '%s\n' "$verdict"
+  last=$(printf '%s\n' "$verdict" | awk 'NF { line = $0 } END { print line }')
+  case "$last" in
+    PASS) ;;
+    *'"outcome"'*'"failed"'*) status=1 ;;
+    *) echo "dod-preflight: $agent $model gave no verdict line; treat as not run" >&2; exit 2 ;;
+  esac
+done <<< "$routes"
+
+[ "$status" -eq 0 ] && echo PASS
+exit "$status"
