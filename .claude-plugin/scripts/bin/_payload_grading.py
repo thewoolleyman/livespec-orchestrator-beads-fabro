@@ -61,9 +61,23 @@ _DIGEST_CHUNK_BYTES = 65536
 # were never established, which is not a match.
 UNREADABLE = "unreadable"
 
-# Byte-compiled caches are reproducible from the sources beside them, so they
-# are the one thing the copy leaves behind.
-IGNORED_NAMES = ("__pycache__",)
+# What the copy deliberately leaves behind, and is therefore never graded
+# against. Each is a directory the build CARRIES but does not consist of.
+#
+# Byte-compiled caches are reproducible from the sources beside them.
+#
+# `.in_use` is the plugin cache's LEASE directory: one file per session bound
+# to this build, named by the holding process id. It is per-session state owned
+# by the harness and by OTHER sessions, which create and remove those files at
+# any moment, so it is the one part of the tree guaranteed not to hold still
+# across a copy — and nothing in a payload ever reads it. Grading it refused an
+# unrelated invocation in BOTH directions: a lease RELEASED between the
+# inventory and the copy reads as a member the copy lost, and one TAKEN while
+# provisioning is under way reads as a member the copy omitted. Measured
+# 2026-10-19 on cache build 29d454be7a46 with ten seats restarting at once —
+# `.in_use/661440` named in a fidelity refusal, its pid already gone, and an
+# immediate retry of the same command succeeding.
+IGNORED_NAMES = ("__pycache__", ".in_use")
 # How many differing paths a fidelity refusal names. An operator needs enough
 # to recognise WHAT is missing, not the whole set.
 FIDELITY_REPORT_LIMIT = 5

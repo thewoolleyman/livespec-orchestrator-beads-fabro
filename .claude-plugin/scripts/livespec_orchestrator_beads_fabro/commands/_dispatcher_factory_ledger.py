@@ -7,9 +7,11 @@ import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._config import (
     FactoryTarget,
+    dispatcher_block,
     has_fabro_factories,
     has_fabro_factory,
     resolve_fabro_factory,
@@ -43,6 +45,7 @@ __all__: list[str] = [
     "args_with_dispatch_factory_target",
     "dispatch_factory_targets",
     "explicit_dispatch_factory",
+    "explicit_factory_selection_refusal",
     "resolve_dispatch_factory_target",
     "unrecorded_dispatch_factory_target",
 ]
@@ -383,6 +386,33 @@ def explicit_dispatch_factory(*, args: argparse.Namespace) -> str | None:
     """
     factory = getattr(args, "factory", None)
     return factory if isinstance(factory, str) and factory != "" else None
+
+
+def explicit_factory_selection_refusal(*, args: argparse.Namespace, repo: Path) -> str | None:
+    """Refuse an explicit name absent from a declared factory table.
+
+    An implicit target and a recorded pin deliberately do not pass through this
+    grade: an unconfigured repository retains its ambient single-factory target,
+    and a stale recorded pin remains an unpinned dispatch.  Only a caller's flag
+    or non-empty environment selection is an instruction to address that exact
+    declared factory.
+    """
+    selected = explicit_dispatch_factory(args=args) or _env_factory()
+    if selected is None:
+        return None
+    factories_raw = dispatcher_block(cwd=repo).get("factories")
+    if not isinstance(factories_raw, dict):
+        return None
+    factories = cast("dict[str, object]", factories_raw)
+    if selected in factories:
+        return None
+    declared = ", ".join(repr(name) for name in factories)
+    return (
+        f"ERROR: explicit factory selection {selected!r} is not declared by"
+        f" dispatcher.factories; declared factories are: {declared}. This dispatch"
+        " is refused rather than falling back to another factory or this host's"
+        " local Fabro server\n"
+    )
 
 
 def _env_factory() -> str | None:

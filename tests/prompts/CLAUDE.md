@@ -111,6 +111,29 @@ instead.
   adjacent lines and a blank-line split would let a qualifier on step 1 satisfy
   an assertion about step 2.
 
+- `test_commit_hook_outlasts_a_tool_call.py` — bd-ib-aaxsta: the implement and
+  fix prompts carry ONE wording of the four commit-hook directions — how long
+  the hook aggregate runs (minutes, measured at 142 and 553 seconds), that a
+  tool call returning mid-hook is not a failed commit, that a running hook is
+  waited out before any further commit without killing its processes and
+  without a second live `git commit`, and that the turn does not end while a
+  hook it started is still running. A prompt test because no timeout fired on
+  the runs that lost their Green amend: the turns ran 32.6 and 27.6 minutes
+  against a 14400-second node limit and both ACP turns ended `end_turn`, so
+  nothing host-side could have intervened and the prompt is the whole
+  mitigation. The two prompts are derived from the graph's `implement` and
+  `fix` node blocks, with a control asserting one prompt per node on disk, and
+  the fix prompt's compliance is asserted BOTH per-needle and as byte-identity
+  with the implement section, because two paraphrases satisfy a needle list
+  while drifting apart. Every needle is a sentence that must be PRESENT: an
+  absence probe would read clean over the prompts as they stood, which is the
+  state the item exists to end. Two needles pin compatibility with
+  `contracts.md` §"A commit leg completes past one tool call" — the waiting
+  direction admits a commit runner's bounded waits, and over-limit reaping is
+  the run's job, not the agent's — so bd-ib-sufca7, which owns that clause and
+  Scenario 179's registry binding, can ship the runner without contradicting
+  this prose.
+
 Conventions:
 
 - Read the prompt as COMMITTED BYTES. Never render it through a template engine

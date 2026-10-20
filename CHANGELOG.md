@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.225.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.225.2...v0.225.3) (2026-10-20)
+
+
+### Bug Fixes
+
+* exclude plugin cache leases from payload provisioning grading ([2a22dbd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2a22dbde1aa579af6a62693b0c149b6db0f25fe0))
+
+## [0.225.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.225.1...v0.225.2) (2026-10-20)
+
+
+### Bug Fixes
+
+* refuse explicit undeclared factory selections ([bbeb504](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bbeb504d934f87051b8c2d6d0ffe458b58da9a48))
+
 ## [0.225.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.225.0...v0.225.1) (2026-10-20)
 
 

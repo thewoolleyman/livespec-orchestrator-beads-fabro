@@ -19,6 +19,9 @@ from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_environment import (
     factory_declaration_refusal,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
+    explicit_factory_selection_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_validation import (
     schema_validation_refusal,
 )
@@ -256,6 +259,7 @@ def dispatch_preamble(
     config_refusal = (
         schema_validation_refusal(args=args, repo=repo)
         or sandbox_capabilities_refusal(repo=repo)
+        or explicit_factory_selection_refusal(args=args, repo=repo)
         or factory_declaration_refusal(factory=args.fabro_factory_target)
         or overflow_factories_refusal(repo=repo)
     )
