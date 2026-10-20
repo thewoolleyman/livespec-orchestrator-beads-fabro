@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.225.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.225.1...v0.225.2) (2026-10-20)
+
+
+### Bug Fixes
+
+* refuse explicit undeclared factory selections ([bbeb504](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bbeb504d934f87051b8c2d6d0ffe458b58da9a48))
+
 ## [0.225.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.225.0...v0.225.1) (2026-10-20)
 
 
