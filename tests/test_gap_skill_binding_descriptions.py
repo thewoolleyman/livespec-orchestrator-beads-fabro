@@ -2,9 +2,9 @@
 
 The ratified contract (`SPECIFICATION/contracts.md`) carries a Naming note on
 both gap operations: `detect-impl-gaps` performs NO spec↔impl comparison — it
-is a **spec-clause enumerator, not a spec→impl comparator** — so a returned
-gap-id means "this clause is not yet tracked by a work-item", never "this
-clause is verified absent from the implementation".
+is a **heading-coverage enumerator, not a spec→impl comparator** — so a
+returned gap-id means "this heading has no exercising test", never "this
+heading's behaviour is verified absent from the implementation".
 
 That ratification landed on the contract and the driving prose but NOT on the
 thin bindings, which kept advertising `Detect spec→impl gaps`. A SKILL.md
@@ -61,8 +61,8 @@ _GAP_BINDINGS: dict[str, Path] = {
 
 # The ratified naming note's own vocabulary, verbatim from the
 # `detect-impl-gaps` contract in SPECIFICATION/contracts.md.
-_ENUMERATOR_PHRASE = "spec-clause enumerator"
-_ENUMERATOR_CLAUSE = "spec-clause enumerator, not a spec→impl comparator"
+_ENUMERATOR_PHRASE = "heading-coverage enumerator"
+_ENUMERATOR_CLAUSE = "heading-coverage enumerator, not a spec→impl comparator"
 
 _DESCRIPTION_RE = re.compile(r"^description:\s*(\S.*?)\s*$", re.MULTILINE)
 
@@ -121,7 +121,7 @@ def test_every_gap_binding_ships_on_disk() -> None:
         assert path.is_file(), f"missing gap-operation binding: {name} ({path})"
 
 
-def test_every_gap_binding_description_names_the_spec_clause_enumerator() -> None:
+def test_every_gap_binding_description_names_the_heading_coverage_enumerator() -> None:
     """Each of the six descriptions carries the ratified enumerator wording."""
     for name, description in _shipped_descriptions().items():
         assert _ENUMERATOR_PHRASE in description, f"{name} description omits the naming note"

@@ -8,7 +8,7 @@ Done is the filed consented gap items with every finding displayed, or a reporte
 no candidate; each filed item reports its id and actual lifecycle state.
 
 This operation composes the mechanical `detect-impl-gaps` surface with user classification of
-each candidate against implementation state.
+each candidate — each an H2 heading of the governed spec tree that no test exercises.
 
 ## Pre-requisites
 
@@ -44,15 +44,33 @@ python3 "<plugin-root>/scripts/bin/detect_impl_gaps.py" --json
 
 # Rich human-readable context for display:
 python3 "<plugin-root>/scripts/bin/detect_impl_gaps.py"
-# → each line: <spec-file> > <heading-path>  [<gap_id>]  <rule-text>
+# → each line: <spec-root>/<spec-file> > <heading>  [<gap_id>]
 ```
 
-Both invocations use the same canonical `detect_rules` function and
-emit deterministically-sorted output, so the two outputs can be joined
+Both invocations use the same canonical `scan_heading_gaps` function and
+emit deterministically-ordered output, so the two outputs can be joined
 by `gap_id` to produce a candidate list of
-`(gap_id, spec_file, heading_path, rule_text)` tuples. The `--json`
-form is the authoritative set; the rich form is convenience metadata
-for human display.
+`(gap_id, spec_root, spec_file, heading)` tuples. The `--json` form is
+the authoritative set; the rich form is convenience metadata for human
+display.
+
+A gap names an H2 HEADING of the governed spec tree that no test
+exercises — never a MUST / SHOULD clause. So the candidate question in
+Step 2 is about an exercising test, not about implementation state.
+
+#### Surfaced findings ride stderr — DISPLAY THEM
+
+Both invocations write a `FINDING: <defect> — <entry>` line to STDERR for
+every coverage entry the detector graded as defective: a `dangling-test`
+row whose test no longer exists, an `incomplete-entry` row that states no
+test value, and an `unidentifiable-entry` row that identifies no live
+heading. They are on stderr rather than in the `--json` payload because
+that payload is the ratified one-key object doctor reads.
+
+Show every finding to the user alongside the candidate list. A dangling
+row is NOT the same debt as an un-entered heading — its heading used to be
+proven and silently stopped being — and an unidentifiable row produces no
+gap at all, so it is invisible unless its finding is displayed.
 
 #### Optional `--since-version <vN>` scoping
 
@@ -89,74 +107,89 @@ and aborts before reaching Step 2; no work-items are filed.
 When `--since-version` is omitted, behavior is unchanged — every
 file in the live spec is scanned.
 
-### Step 2 — Per-rule gap classification
+### Step 2 — Per-heading gap classification
 
 For each candidate, ask the user:
 
-> Is the implementation honoring this rule? (yes / no / skip)
+> This heading has no exercising test. File a work-item to add one? (yes / no / skip)
 
-- `yes` — no gap; move on.
-- `no` — a gap exists. Proceed to Step 3.
+- `no` — not worth tracking; move on.
+- `yes` — file it. Proceed to Step 3.
 - `skip` — defer judgment; move on without filing.
 
 ### Step 3 — Per-gap consent + filing
 
-For each `no` rule, the `gap_id` is already in hand from Step 1 (derived
-inside `detect-impl-gaps` from `<spec-file>\x1f<heading-path>\x1f<rule-text>`
-hashing; shape `gap-<8-char-base32-suffix>`). Then:
+For each `yes` heading, the `gap_id` is already in hand from Step 1 (derived
+inside `detect-impl-gaps` from the spec file and the heading path; shape
+`gap-<8-char-base32-suffix>`). Then:
 
 1. Check the work-items store: if a record with this `gap_id` already
    exists and is not closed, surface "already filed as `<li-id>`" and
    skip filing.
-2. Otherwise, ask the user to confirm title + description (auto-drafted
-   from the rule text). Defaults are pre-filled; the user accepts or
-   edits. Offer to author the item's `## Definition of Done` section as the
-   FIRST heading of that description, to the rules below.
-3. On confirm, append a new work-item JSONL record. Initialize `prev_rank` once before the per-gap filing pass; each newly filed item threads the prior value through `key_between(a=prev_rank, b=None)` so multi-item passes preserve filing order.
+2. Otherwise, COMPOSE the record through the one filing primitive, then ask
+   the user to confirm its title + description. Defaults are pre-filled; the
+   user accepts or edits. Offer to author the item's `## Definition of Done`
+   section as the FIRST heading of that description, to the rules below.
+3. On confirm, append the record. Initialize `prev_rank` once before the
+   per-gap filing pass; each newly filed item threads the prior value through
+   `key_between(a=prev_rank, b=None)` so multi-item passes preserve filing
+   order.
+
+⛔ DO NOT HAND-BUILD THE `WorkItem`. `heading_gap_work_item` is the ONE
+composition, and it is what makes the filed record's four ratified
+properties hold: the `origin:gap-tied` label, the heading-derived
+`gap-id:` label, a title naming the heading VERBATIM, and a description
+naming the coverage entry to fill. A hand-built record is a second
+composition that can differ from it silently — and the two labels do not
+exist until the store writes the record, so nothing downstream would
+catch the difference.
 
 ```python
-from livespec_orchestrator_beads_fabro._ids import new_work_item_id
-from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
-from livespec_orchestrator_beads_fabro.store import append_work_item
-from livespec_orchestrator_beads_fabro.types import WorkItem
-from livespec_runtime.work_items.rank import key_between
 from datetime import datetime, timezone
 from pathlib import Path
+
+from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.commands._heading_gap_filing import (
+    heading_gap_work_item,
+)
+from livespec_orchestrator_beads_fabro.commands._heading_gaps import SpecHeading
+from livespec_orchestrator_beads_fabro.store import append_work_item
+from livespec_runtime.work_items.rank import key_between
 
 config = resolve_store_config(cwd=Path.cwd(), work_items_arg=None)
 prev_rank: str | None = None
 
-# Inside each confirmed filing:
+# Inside each confirmed filing. The gap fields come from the Step 1 join;
+# the id-prefix is the tenant's server-stored bd create-prefix
+# (config.prefix), DECOUPLED from the tenant DB name, which the primitive
+# carries into the minted id.
 rank = key_between(a=prev_rank, b=None)
 prev_rank = rank
-item = WorkItem(
-    # The id-prefix is the tenant's server-stored bd create-prefix
-    # (config.prefix), DECOUPLED from the tenant DB name — so the id
-    # carries config.prefix, not a hardcoded `li-`.
-    id=new_work_item_id(prefix=config.prefix),
-    type="task",
-    status="pending-approval",
-    title=user_confirmed_title,
-    description=user_confirmed_description,
-    origin="gap-tied",
-    gap_id=gap_id,
+item = heading_gap_work_item(
+    gap=SpecHeading(
+        spec_root=spec_root,
+        spec_file=spec_file,
+        heading=heading,
+        gap_id=gap_id,
+    ),
+    prefix=config.prefix,
     rank=rank,
-    assignee=None,
-    depends_on=(),
     captured_at=datetime.now(tz=timezone.utc).isoformat(),
-    resolution=None,
-    reason=None,
-    audit=None,
-    superseded_by=None,
 )
 append_work_item(path=config, item=item)
 ```
 
+When the user EDITS the drafted title or description, keep both ratified
+properties intact: the heading stays verbatim in the title, and the
+description keeps naming the registry entry — its `spec_root`, `spec_file`
+and `heading` — that the implementing change must fill. Re-compose with
+`dataclasses.replace` rather than building a fresh `WorkItem`.
+
 #### Authoring the Definition of Done
 
 A gap-tied item is implement-kind, so it carries a `## Definition of Done`
-section as the FIRST heading of its description. A gap's rule text names the
-spec RULE, which is a good reference line and a poor assertion — the assertion
+section as the FIRST heading of its description. A gap names the uncovered
+HEADING, which is a good reference line and a poor assertion — the assertion
 has to name what the delivered artifact will DO. Author the section to these
 four rules, which are the rules the `dod_gate` node and the host-side wall both
 grade it against
@@ -225,8 +258,8 @@ logic is the ONE shared `livespec_orchestrator_beads_fabro.intake_dor`
 primitive — never re-derive the gates in prose here.
 
 Immediately after filing each gap-tied item, resolve the six gates from
-the gap context (the rule text usually names a single coherent "done"
-and a repo target) plus a short confirmation, then route the item:
+the gap context (one heading's exercising test is a single coherent "done"
+in this repository) plus a short confirmation, then route the item:
 
 ```python
 from livespec_orchestrator_beads_fabro.intake_dor import (
@@ -270,7 +303,7 @@ valve.
 
 When all candidates are processed, print a summary:
 
-- N candidate rules surfaced
+- N candidate headings surfaced
 - M classified as gaps, of which K were newly filed and J were already-tracked
 - Skipped: S
 
@@ -350,9 +383,10 @@ outside its per-gap consent flow. No other record is created or edited.
   explicit confirmation.
 - **Idempotent** — re-running surfaces no duplicates for gaps already
   tracked (status≠closed).
-- **No LLM in the detection path itself** — pattern-matching of MUST /
-  SHOULD clauses is deterministic. LLM dialogue is used only for the
-  classification and authoring steps (and only with user-in-the-loop).
+- **No LLM in the detection path itself** — enumerating the governed spec
+  tree's H2 headings and joining them against the heading-coverage registry
+  is deterministic. LLM dialogue is used only for the classification and
+  authoring steps (and only with user-in-the-loop).
 
 ## What this operation does NOT do
 
