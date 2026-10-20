@@ -102,6 +102,7 @@ _INNERMOST_CAUSE = "script exited with status 1"
 # The shape the Petri-era engine IS measured writing for a failed step:
 # one `message` inside `outcome.status.failure`, with no chain beside it.
 _FAILURE_MESSAGE = "the agent process exited before the protocol completed"
+_WEEKLY_LIMIT_MESSAGE = "You've hit your weekly limit · resets Oct 23, 3pm (UTC)"
 
 # The terminal's own failed step, which can never be the cause: it is a
 # dead-end script that exits 1 by design on every run that reaches it.
@@ -306,6 +307,39 @@ def test_the_measured_petri_failure_message_is_named_as_the_cause(
     assert outcome.fabro_failure_cause == _FAILURE_MESSAGE
     assert f"innermost cause: {_FAILURE_MESSAGE}" in outcome.detail
     assert f"innermost cause: {_FAILURE_MESSAGE}" in needs_human_cause_body(outcome=outcome)
+
+
+def test_a_petri_stage_output_supplies_a_provider_limit_when_events_timed_out(
+    tmp_path: Path,
+) -> None:
+    """The stage record is the fallback when no terminal-event payload arrived.
+
+    Petri keeps an ACP error in the failing stage's ``output`` while the run
+    conclusion records only the deliberate needs-human script exit.  A timed-out
+    ``fabro events`` read therefore cannot be treated as evidence that the stage
+    supplied no cause: the inspect record already carries the provider's own
+    sentence.
+    """
+    inspect_payload = _petri_inspect()
+    record = inspect_payload[0]
+    assert isinstance(record, dict)
+    stages = record["stages"]
+    assert isinstance(stages, dict)
+    stage = stages[_ROUTING_STAGE]
+    assert isinstance(stage, dict)
+    stage["output"] = f"ACP error: code -32603, Internal error: {_WEEKLY_LIMIT_MESSAGE}"
+
+    outcome = _outcome(
+        tmp_path=tmp_path,
+        inspect_payload=inspect_payload,
+        events_payload=None,
+    )
+
+    assert outcome.fabro_failure_cause == _WEEKLY_LIMIT_MESSAGE
+    assert outcome.provider_usage_limit is True
+    assert outcome.provider_usage_limit_provider == "anthropic"
+    assert f"innermost cause: {_WEEKLY_LIMIT_MESSAGE}" in outcome.detail
+    assert f"innermost cause: {_WEEKLY_LIMIT_MESSAGE}" in needs_human_cause_body(outcome=outcome)
 
 
 def test_a_succeeded_step_on_the_routing_node_is_not_read_as_its_failure(

@@ -109,6 +109,8 @@ _PROVIDER_MARKERS: tuple[tuple[str, str], ...] = (
 #   (`plan/fabro-currency/research/004-acp-spend-limit-evidence.json`, mode
 #   `usage-cap`). `resets` is load-bearing: it is what distinguishes a spent
 #   allowance from a sentence that merely opens the same way.
+# - `hit your weekly limit` -- Anthropic's weekly ceiling, measured on
+#   2026-10-18 as "You've hit your weekly limit · resets Oct 23, 3pm (UTC)".
 # - `hit your usage limit` -- the Codex form, measured ten times in the
 #   2026-08-22 sweep below. Claude emits the same sentence, which is why
 #   vendor attribution is a separate pass rather than read off the hint.
@@ -123,6 +125,7 @@ _PROVIDER_MARKERS: tuple[tuple[str, str], ...] = (
 # matches the measured sentence.
 _PROVIDER_USAGE_LIMIT_HINTS: tuple[tuple[tuple[str, ...], str], ...] = (
     (("hit your session limit",), _PROVIDER_ANTHROPIC),
+    (("hit your weekly limit",), _PROVIDER_ANTHROPIC),
     (("hit your limit", "resets"), _PROVIDER_ANTHROPIC),
     (("hit your usage limit",), _PROVIDER_CODEX),
     (("org", "spend limit"), _PROVIDER_ANTHROPIC),

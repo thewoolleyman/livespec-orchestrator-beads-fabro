@@ -177,7 +177,7 @@ def _routed_failure(
     events_payload: object | None,
     stage: str,
 ) -> FabroFailureDetail | None:
-    """One stage's own failure, checkpoint first and its events as the fallback.
+    """One stage's own failure from checkpoint, events, then stage output.
 
     THE NEWEST EVENT BLOCK THAT YIELDS A DETAIL WINS, not merely the newest
     block. One node records more than one failure — the bounded fix loop
@@ -197,7 +197,7 @@ def _routed_failure(
         detail = _failure_detail(block=block)
         if detail is not None:
             return detail
-    return checkpoint
+    return _stage_output_failure(payload=inspect_payload, stage=stage) or checkpoint
 
 
 def _carrying_observed_ceiling(
@@ -241,6 +241,25 @@ def _checkpoint_failure(*, payload: object | None, stage: str) -> FabroFailureDe
             outcome = _mapping(value=outcomes[stage])
             return _failure_detail(block=_mapping(value=outcome.get("failure")))
     return None
+
+
+def _stage_output_failure(*, payload: object | None, stage: str) -> FabroFailureDetail | None:
+    """The ACP error text a Petri stage retained after its event read timed out.
+
+    Petri's inspect checkpoint can omit ``node_outcomes`` and a long run's
+    terminal-events read can time out together, while the failed stage record
+    still retains its ACP response in ``output``.  The ACP transport prefixes
+    the provider sentence with ``Internal error:``; the provider's sentence is
+    what the journal and needs-human outcome must name.
+    """
+    record = fabro_inspect_record(payload=payload)
+    stages = _mapping(value=None if record is None else record.get("stages"))
+    stage_record = _mapping(value=stages.get(stage))
+    output = stage_record.get("output")
+    if not isinstance(output, str):
+        return None
+    message = output.partition("Internal error: ")[2] or output
+    return _failure_detail(block={"message": message})
 
 
 def _failure_detail(*, block: dict[str, object]) -> FabroFailureDetail | None:
