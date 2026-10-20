@@ -85,6 +85,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Protocol
 
+from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro.commands._acp_availability_wait import (
@@ -126,6 +127,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_chain_sources im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS,
+    resolve_availability_probe_timeout_seconds,
     resolve_credential_reprobe_interval_seconds,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
@@ -185,6 +187,10 @@ def resolve_acp_preflight(
     factory, and a default that read every declared one would put two round
     trips on every verdict a snapshot composes.
     """
+    timeout = resolve_availability_probe_timeout_seconds(cwd=repo)
+    if not is_successful(timeout):
+        failure = unsafe_perform_io(timeout.failure())
+        return AcpPreflightVerdict(fallback_enabled=True, refusal=failure.detail)
     block = workflow_scoped_dispatcher_block(repo=repo)
     catalogs = resolve_acp_catalogs(block=block)
     if isinstance(catalogs, str):
