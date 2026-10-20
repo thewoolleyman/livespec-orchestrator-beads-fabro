@@ -61,6 +61,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_record_rate import (
 from livespec_orchestrator_beads_fabro.commands._plan_relay_delivery import (
     RelayRefusal,
     RelayRequest,
+    RelaySupersession,
     record_relay,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_relay_record import (
@@ -112,6 +113,7 @@ __all__: list[str] = [
     "RelayRecord",
     "RelayRefusal",
     "RelayRequest",
+    "RelaySupersession",
     "ResumeDirective",
     "_blocking_dependency_ids",
     "_is_blocks_dependency_edge",
