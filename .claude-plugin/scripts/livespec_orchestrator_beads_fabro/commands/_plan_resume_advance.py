@@ -63,6 +63,9 @@ from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
 from livespec_orchestrator_beads_fabro.commands._plan_proof_record import (
     PLAN_PROOF_RECORD_TITLE,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_result_repository import (
+    project_repository_identity,
+)
 from livespec_orchestrator_beads_fabro.commands.next import rank_candidates
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 
@@ -85,8 +88,8 @@ _MAX_HANDOFFS_FIELD = "max_handoffs"
 class _Carried:
     """What every derived pointer carries forward from the satisfied one.
 
-    The repository identity and the plan's own `deadline`/`max_handoffs` are
-    read ONCE and threaded through, so no derived leg can resolve a different
+    The plan's own repository identity and its `deadline`/`max_handoffs` are read
+    ONCE and threaded through, so no derived leg can resolve a different
     repository or a different wall clock from its siblings.
     """
 
@@ -255,10 +258,22 @@ def _pointer(
 def _carried(*, request: AdvanceRequest) -> _Carried:
     """What the derived pointer carries forward, read ONCE for every leg.
 
-    The repository comes from the OBSERVATION rather than from the pointer's own
-    `required_result`: the reader has already resolved it, and re-deriving it
-    here would be a second reading of one identity that cannot be shown to agree
-    with the reading the satisfaction was established under.
+    THE REPOSITORY IS THE PLAN'S OWN AND NEVER THE SATISFIED OBLIGATION'S. Every
+    step derivable here is a step against the PLAN: the proof, review and archive
+    legs each target the plan epic, and the `impl` leg targets a child read out of
+    the plan's own tenant. The satisfied obligation's repository is a fact about
+    the leg that just LANDED — legitimately a sibling tenant, where a carrier
+    child was filed under the cross-tenant execution mirror — so carrying it
+    forward stamps a repository the derived step's own target does not live in.
+
+    That mis-stamping is terminal rather than cosmetic, which is why it is read
+    from this project rather than from the observation the reader already
+    resolved. The next resume reads the derived obligation against the wrong
+    tenant and reports it UNOBSERVABLE; dispatch is withheld while a required
+    result is unobservable, and replacing an unobservable obligation is refused by
+    design — so the plan locks behind the pointer for its whole budget, with no
+    sanctioned write able to correct it. Measured 2026-10-20 on plan epic
+    `bd-ib-fyozyd`, whose satisfied `await` named a `livespec-dev-tooling` item.
 
     The two budget fields are carried through AS FOUND, not validated, and a
     recorded budget that is not an object at all yields both as absent. A
@@ -272,7 +287,7 @@ def _carried(*, request: AdvanceRequest) -> _Carried:
     typed: dict[str, Any] = cast("dict[str, Any]", recorded) if isinstance(recorded, dict) else {}
     return _Carried(
         epic_id=request.epic_id,
-        repo=request.observation.repo,
+        repo=project_repository_identity(config=request.config),
         budget={
             _DEADLINE_FIELD: typed.get(_DEADLINE_FIELD),
             _MAX_HANDOFFS_FIELD: typed.get(_MAX_HANDOFFS_FIELD),

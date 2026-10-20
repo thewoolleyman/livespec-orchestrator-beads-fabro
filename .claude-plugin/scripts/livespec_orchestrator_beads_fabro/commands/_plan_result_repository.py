@@ -77,6 +77,7 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "ResultRepository",
+    "project_repository_identity",
     "resolve_result_repository",
     "result_store_config",
 ]
@@ -124,6 +125,41 @@ def resolve_result_repository(*, project_root: Path, name: str) -> ResultReposit
     if not clone.is_dir():
         return None
     return ResultRepository(name=name, clone=clone)
+
+
+def project_repository_identity(*, config: StoreConfig) -> str:
+    """The canonical identity by which this project NAMES its own repository.
+
+    `resolve_result_repository` answers the reading question — whether a recorded
+    name resolves to this checkout — and this answers the WRITING one: which of
+    the identities that resolve a pointer this project authors should carry. The
+    two belong in one module because they are two directions of one identity, and
+    a writer that chose its own spelling is how a pointer comes to name something
+    no later observation of it can resolve (`_plan_next_action_admission`).
+
+    THE ORIGIN REMOTE'S REPOSITORY NAME LEADS, because a recorded pointer outlives
+    the checkout that wrote it. The directory name is the identity a worktree
+    cannot carry — such a directory is named after its BRANCH — and a sandbox
+    clone carries no `livespec.primaryPath`, so a pointer written under either
+    name becomes unresolvable the moment another checkout reads it. The origin
+    name is the one identity every checkout of one repository agrees on, and it is
+    read from LOCAL git configuration, so it costs no network and no credential.
+
+    The fallback is the primary checkout's basename, which `resolve_primary_repository`
+    collapses to this checkout's own directory name where no primary is recorded —
+    so a project with no origin remote at all still names an identity that
+    resolves, rather than naming nothing. Both arms are resolvable BY
+    CONSTRUCTION: each is one of the identities the resolver already matches.
+
+    The CONFIG is the argument rather than a project root, because every caller is
+    a pointer writer or reader holding one, and the root fallback is the same two
+    readings they would each otherwise repeat.
+    """
+    project_root = config.repo_root if config.repo_root is not None else Path.cwd()
+    origin = _origin_repository_identities(project_root=project_root)
+    if origin:
+        return origin[0]
+    return resolve_primary_repository(repository=project_root).name
 
 
 def result_store_config(*, repository: ResultRepository) -> StoreConfig | None:
