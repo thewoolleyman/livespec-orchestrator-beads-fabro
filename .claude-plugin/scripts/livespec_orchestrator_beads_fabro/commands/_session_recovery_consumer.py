@@ -23,6 +23,16 @@ and then lost the claim would have spent its reading on an attempt it may not
 touch — and, worse, a pass that executed before claiming is the duplicate the
 whole fencing exists to prevent.
 
+AND THE GRANTED CLAIM IS RECORDED AS ITS OWN TRANSITION, because the clause makes
+"consumer claim" one of seven SEPARATE durable observations. The lease itself
+cannot stand in for that record: `holder`, `generation` and `lease_expires_at`
+are current STATE, overwritten by every renewal and every takeover, so after a
+generation bump nothing says the displaced consumer ever held the attempt. The
+transition carries the consumer and the generation TOGETHER, because that pair is
+what the fence is — a name alone cannot tell a current holder from the copy of
+itself that lapsed. A REFUSED claim writes nothing, since there is no claim to
+observe.
+
 SAFETY THIRD, between the claim and the action, which is the position the clause
 fixes: "The consumer MUST observe and queue recovery without interrupting or
 abandoning protected work and record the specific barrier kind ... within 60
@@ -82,6 +92,7 @@ from livespec_orchestrator_beads_fabro.commands._session_recovery_outcome import
     consumer_state,
 )
 from livespec_orchestrator_beads_fabro.commands._session_recovery_records import (
+    TRANSITION_CLAIMED,
     TRANSITION_DEFERRED,
     TRANSITION_RECEIPT,
     TRANSITION_RECONCILED,
@@ -143,6 +154,14 @@ def consume_recovery_obligation(
             decision=ConsumerDecision(state=CONSUMER_UNCLAIMED, diagnostics=(claim.state,)),
             generation=claim.generation,
         )
+    _ = append_recovery_transition(
+        recovery_store_root=request.recovery_store_root,
+        attempt_id=request.attempt_id,
+        transition=TRANSITION_CLAIMED,
+        observed_at=request.observed_at,
+        detail={"consumer": request.consumer, "generation": claim.generation},
+        lock_budget=request.lock_budget,
+    )
     graded = safety_verdict(state=safety)
     if not graded.mutation_permitted:
         return _deferred(request=request, graded=graded, generation=claim.generation)

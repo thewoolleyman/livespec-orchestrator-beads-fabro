@@ -57,6 +57,7 @@ from livespec_orchestrator_beads_fabro.commands._session_recovery_outcome import
     CONSUMER_EXECUTED,
 )
 from livespec_orchestrator_beads_fabro.commands._session_recovery_records import (
+    TRANSITION_CLAIMED,
     TRANSITION_DEFERRED,
     TRANSITION_EXECUTED,
     TRANSITION_NOTIFICATION,
@@ -192,6 +193,7 @@ def test_scenario_162_receipt_and_claim_leave_the_result_outstanding_until_execu
     assert observed_transitions(payload=_payload(store=store)) == (
         TRANSITION_NOTIFICATION,
         TRANSITION_RECEIPT,
+        TRANSITION_CLAIMED,
         TRANSITION_DEFERRED,
     )
 
@@ -213,6 +215,7 @@ def test_scenario_162_receipt_and_claim_leave_the_result_outstanding_until_execu
     assert observed_transitions(payload=_payload(store=store)) == (
         TRANSITION_NOTIFICATION,
         TRANSITION_RECEIPT,
+        TRANSITION_CLAIMED,
         TRANSITION_DEFERRED,
         TRANSITION_STARTED,
         TRANSITION_EXECUTED,
