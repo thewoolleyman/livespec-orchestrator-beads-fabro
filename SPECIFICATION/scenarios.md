@@ -7624,3 +7624,107 @@ Feature: A provider refusal delivered as turn text is a failed attempt of its ca
     When the Dispatcher classifies the attempt
     Then the built-in codex-acp capacity form does not match it
 ```
+
+## Scenario 210 — Reconciliation clears a stale fabro assignee from a ready item, and holds with a named reason every one it cannot clear
+
+```gherkin
+Feature: A ready item still assigned fabro is a stale assignee, not a dispatch claim
+  As a maintainer whose ownership surveys read an item's status and assignee
+  I want reconciliation to clear the fabro assignee a finished claim left behind on a ready item, and its next dispatch to go through recovery routing
+  So that a ready item is not read as both available and owned, its published work is resumed when the resume preconditions pass and otherwise routed by recovery routing, and one that may still be owned is never touched
+
+  Background:
+    Given an item ready with assignee fabro, carrying neither rework:pending nor a merge-hold: label
+
+  Scenario: A stale assignee whose run failed is cleared without a terminal disposition
+    Given its ledger run stamp, which is not pending, names its run id, a declared factory, and this host as the dispatching host
+    And every ownership lock location for the item on this host was read and none is held by a live process
+    And the factory, queried by its declared server target, reports the run terminal and failed
+    When a reconcile-runs pass runs
+    Then the item is ready with no fabro assignee, and its labels and run stamp are unchanged
+    And one stale-assignee-clear journal record names the item, the run id, the factory and the run state failed
+    And one ledger comment on the item names the same facts
+    And no provider-limit-release record, no stranded-claim-release record and no needs-human rest is written
+
+  Scenario: A stale assignee whose run is absent is cleared
+    Given its run stamp names its run and this host, and no live owner is established
+    And the factory positively reports that the run does not exist
+    When a reconcile-runs pass runs
+    Then the item is ready with no fabro assignee
+    And one stale-assignee-clear journal record names the run state absent
+
+  Scenario: A cleared stale assignee whose run published an open pull request resumes it
+    Given its run stamp names its run and this host, and no live owner is established
+    And the factory reports the run terminal and succeeded, and the run's pull request is open
+    And every published-pull-request resume precondition passes for that pull request
+    When a reconcile-runs pass runs and the item is next dispatched
+    Then the pass clears the stale assignee with one stale-assignee-clear record naming the run state succeeded
+    And recovery routing grades the next dispatch and takes the resume route from that pull request rather than a fresh dispatch
+
+  Scenario Outline: A stale assignee that cannot be cleared is held with the reason of its first failing condition
+    Given every condition graded before <reason> in the stale assignee hold order passes
+    And <condition>
+    When a reconcile-runs pass runs
+    Then the item stays ready with assignee fabro and its labels unchanged
+    And the pass lists the item in held with the reason <reason>
+
+    Examples:
+      | condition                                                                       | reason                |
+      | the item carries no readable run stamp                                          | claim-unattributable  |
+      | the item carries a pending stamp with no run id                                 | attribution-pending   |
+      | the run stamp names another host as the dispatching host                        | owner-elsewhere       |
+      | the declared factory cannot be reached                                          | factory-unobservable  |
+      | the claim half observes the run running, blocked or queued                      | run-live              |
+      | the run is terminal and one ownership lock location for the item cannot be read | liveness-unobservable |
+      | the run is terminal and a live process holds the item's ownership lock          | dispatch-live         |
+      | the run failed and the presence of the journal record cannot be read            | effect-unobservable   |
+
+  Scenario: A human move before the assignee write is respected
+    Given its run stamp names its run and this host, and no live owner is established
+    And the factory reports the run terminal and failed
+    And the clearance has written its journal record and ledger comment
+    And a human valve moved the item to backlog before the clearance's final re-read
+    When the clearance reaches the assignee write
+    Then no assignee write is made and the item stays backlog with assignee fabro
+    And the pass lists the item in held with the reason claim-changed
+
+  Scenario: A held stale assignee is still graded by recovery routing
+    Given a stale assignee the pass has listed in held with the reason owner-elsewhere
+    And the run's pull request is open, and the factory cannot be reached when the item is next dispatched
+    When the item is next dispatched
+    Then recovery routing grades the dispatch and routes it held because a measurement cannot be taken
+    And no fresh dispatch is started for the item
+
+  Scenario: A merged pull request is recovered by reconcile-merged from ready
+    Given a ready item, cleared or held as a stale assignee, whose latest dispatch's pull request has merged
+    When the item is next dispatched
+    Then recovery routing holds the dispatch for the merged pull request, naming reconcile-merged as the remedy
+    And reconcile-merged for the item runs its post-merge janitor and, when the janitor is green, moves the item from ready to acceptance
+    And when a guarded precondition of reconcile-merged fails, the item stays ready
+
+  Scenario: A pending-stamp stale assignee is held and admitted as any ready item
+    Given its ledger stamp is a pending stamp with no run id
+    When a reconcile-runs pass runs
+    Then the item stays ready with assignee fabro and the pass lists it in held with the reason attribution-pending
+    And the item is not released for recovery, and its next admission replaces the pending stamp as any admission of a ready item does
+
+  Scenario: An interrupted clearance resumes from its first missing effect
+    Given its run stamp names its run and this host, no live owner is established, and the factory reports the run terminal and failed
+    And a clearance wrote the stale-assignee-clear journal record and stopped before the ledger comment
+    When the next reconcile-runs pass runs
+    Then it writes the ledger comment and then the assignee write
+    And no second stale-assignee-clear journal record is written
+
+  Scenario: A pull request that merges after clearance is recovered by reconcile-merged
+    Given a stale assignee cleared while its run's pull request was open
+    And that pull request merged before the item's next dispatch
+    When the item is next dispatched
+    Then recovery routing holds the dispatch for the merged pull request, naming reconcile-merged as the remedy
+    And reconcile-merged for the item, which is ready with no assignee, runs its post-merge janitor and, when the janitor is green, moves the item from ready to acceptance
+
+  Scenario: A second pass over a cleared stale assignee writes nothing
+    Given a stale assignee that one reconcile-runs pass has already cleared
+    When another reconciliation surface on the same host runs before any new dispatch
+    Then no second stale-assignee-clear record and no second ledger comment is written
+    And the item stays ready with no assignee
+```
