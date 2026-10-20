@@ -75,6 +75,29 @@ Tests for the thin-transport command modules under
   defect these cases were added to close, where a merge nobody could read graded
   as a merge nobody recorded and the containment relation then did not run.
 
+- `test_plan_relay_record.py`, `test_plan_relay_payload.py`,
+  `test_plan_relay_projection.py`, `test_plan_relay_delivery.py` and
+  `test_plan_relay_retry.py` — the relay-delivery primitive. The scenario itself
+  is bound at the integration tier by
+  `tests/integration/test_plan_relay_delivery_scenario149.py`; these cover what
+  that tier cannot observe, and the split follows the one in the product tree.
+  Three of them are worth knowing about before editing. `..._delivery` names a
+  LATER deadline on every recheck, because a recheck asking for the deadline it
+  already has passes against an implementation that simply stores whatever it is
+  handed — which is the defect, since the SENDER is the party recording and every
+  record it writes is well-formed either way; its conflicting-target pair changes
+  only the target, so the refusal is evidence about the target rather than about
+  anything else the request carries. `..._retry` MOVES THE TARGET between the two
+  calls, which is the one fixture under which a re-observing implementation
+  cannot return the recorded observation by coincidence, and each of its other
+  cases reads something the return value cannot carry — the comment count, or the
+  forge read count — because a re-observing retry agrees with the first record on
+  the deadline, the relay and the target, the three fields an obvious assertion
+  would check. Both modules reach the supersession surface through an ASSERTION
+  rather than an import, since the name does not exist when their Red is authored
+  and a top-level import of an absent name dies at collection, proving only that
+  the name is absent.
+
 - `test_plan_next_action_admission.py` sits beside those too, on the WRITER's
   side of the same repository identity: a `repo` value the writer accepted could
   be one the reader can never resolve, which locked a plan for its whole budget

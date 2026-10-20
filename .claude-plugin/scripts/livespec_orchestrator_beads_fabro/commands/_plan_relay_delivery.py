@@ -26,9 +26,25 @@ EVERY OTHER GRADE LIVES IN `_plan_relay_admission` and runs here in the
 fail-closed order: the identity fields, then the relay's own recorded history,
 then the supersession — each before the target is read, because a read spent on
 a relay no later call can address or take is a read spent on a question nobody
-can ask again. The epic's relay comments are read ONCE and the two resolved
-records are handed down, so no two grades can disagree about what the ledger
-holds.
+can ask again. The epic's relay comments are read ONCE and the resolved records
+are handed down, so no two grades can disagree about what the ledger holds.
+
+A RETRY IS ANSWERED FROM THE RECORD AND NEVER BY OBSERVING AGAIN. "Retrying the
+same operation identity for an existing relay MUST return its recorded
+observation and MUST NOT extend the original deadline": a retry is the SAME act
+re-entered, by a caller that could not tell whether its first attempt landed, so
+asking twice must be indistinguishable from asking once. A primitive that simply
+re-observed would return a record agreeing on the deadline, the relay and the
+target while writing a second comment and — if the target had moved in between —
+reporting a DIFFERENT observation under one operation identity.
+
+THE MATCH IS WITHIN THE RELAY, never across the epic. A sender numbering its
+operations per relay is the ordinary case, so an identity matched epic-wide
+would answer a fresh relay's FIRST recording with another relay's record: a
+target the caller never named, under a deadline it never set. The retry check
+runs before the target grades for the same reason the grades run before the
+read — a retry has nothing left to grade, because the act it repeats was graded
+when it happened.
 
 THE DEADLINE A RECORD CARRIES IS READ BACK OFF THE RELAY'S OWN HISTORY, never off
 the request. "If the result is unsatisfied or unobservable, the primitive MUST
@@ -80,6 +96,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_relay_record import (
     RelayLegs,
     RelayRecord,
     latest_relay,
+    recorded_operation,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
@@ -148,6 +165,10 @@ def record_relay(*, request: RelayRequest) -> RelayRecord | RelayRefusal:
         )
     client = make_beads_client(config=request.config)
     records = read_relay_records(client=client, epic_id=request.epic_id)
+    own = tuple(record for record in records if record.relay_id == request.relay_id)
+    retried = recorded_operation(records=own, operation_id=request.operation_id)
+    if retried is not None:
+        return retried
     history = latest_relay(records=records, relay_id=request.relay_id)
     displaced = latest_relay(
         records=records,

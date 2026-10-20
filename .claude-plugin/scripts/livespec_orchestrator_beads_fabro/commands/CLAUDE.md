@@ -1699,6 +1699,44 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `none` pointer names no repository at all, so an opinion here would either
   restate another module's refusal or invent one for a correct pointer.
 
+- RELAY DELIVERY of `contracts.md`'s "Relay delivery" clause (`bd-ib-t3znvw`,
+  Scenario 149) — the plan primitive that records a relay, and the one thing
+  that discharges it. FIVE cohesive modules, split pure-from-impure the usual
+  way, and the dependency direction reads bottom-up: `_plan_relay_record`
+  (PURE: the three delivery legs, the record, and the two selections a retry
+  and a recheck resolve a relay through) and `_plan_relay_admission` (PURE:
+  every refusal, plus the explicit supersession that admits a conflicting
+  target) → `_plan_relay_payload` (PURE: the canonical payload and the
+  `plan-relay-event` body, render and parse together) →
+  `_plan_relay_projection` (the one write and the one read of those epic
+  comments) → `_plan_relay_delivery` (the primitive: grade, observe through the
+  shared authoritative result reader, then record what was observed).
+  SIX PROPERTIES AN EDITOR MUST NOT INVERT. `delivered` is written from ONE
+  input — a `satisfied` reading taken in this call — and never from anything a
+  caller supplied, which is why the caller's type (`RelayAcknowledgements`)
+  carries only `receipt_ack` and `peer_recorded` while the recorded type
+  (`RelayLegs`) carries all three: a caller-writable evidence leg would be the
+  sender certifying its own delivery, and a record holding all three reads as
+  discharged whoever wrote the third. The DEADLINE a record carries is read back
+  off the relay's own history and never off the request — the SENDER is the
+  party recording, so a stored request deadline lets it roll its own clock
+  forward on every recheck, with every record well-formed either way; the
+  request's deadline is used only where the relay has no history. A RETRY is
+  answered from the record and never by observing again, and the operation
+  identity is matched WITHIN the relay: matched epic-wide it would answer a
+  fresh relay's first recording with another relay's record, naming a target the
+  caller never named. A CONFLICTING target is refused rather than recorded, the
+  supersession that admits one must carry its own relay id (reusing the
+  displaced id makes the successor the latest record for that id and shadows the
+  disposition the clause requires preserved), and a supersession of an UNCHANGED
+  target is refused too — without that arm the deadline rule is launderable by a
+  fresh relay id plus a record that reads as the sanctioned path. The epic's
+  relay comments are read ONCE per call and the resolved records handed down, so
+  no two grades can disagree about what the ledger holds. And every malformed
+  payload parses to `None` rather than to a partial record — a half-read one
+  would answer a retry with an observation the READER assembled, satisfaction
+  included.
+
 - The PLAN-AUTHORITY EPOCH CHAIN of `contracts.md`'s "Required result, budget
   and progress epoch" clause (`bd-ib-wdl577`, Scenario 147) — how a plan epic's
   authority transitions serialize when several writers commit from one epoch at
