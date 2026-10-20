@@ -395,6 +395,63 @@ def test_an_undispatched_attempt_keeps_every_receipt_null_and_reports_not_execut
     assert _head(config=config).epoch == epoch_before
 
 
+def test_a_later_attempt_refuses_to_inherit_an_earlier_attempts_executor_records(
+    tmp_path: Path,
+) -> None:
+    """Executor records belong to the attempt whose journal boundary names them.
+
+    A work item may be authorized again after an earlier dispatch.  The later
+    attempt is recorded but undispatched, so it must not turn the earlier
+    attempt's durable journal rows into its own claim, execution, or outcome
+    receipts merely because both attempts authorized the same `impl:` action.
+    """
+    later_attempt_id = "attempt-0002"
+    config = _seed(
+        tmp_path=tmp_path,
+        authority=_authority(
+            attempt={
+                **_attempt_record(),
+                "attempt": {
+                    **_attempt_record()["attempt"],
+                    "attempt_id": later_attempt_id,
+                },
+            }
+        ),
+    )
+    journal = _journal(
+        tmp_path=tmp_path,
+        records=(
+            {
+                "stage": "causal-recovery-attempt",
+                "work_item_id": _TARGET_ID,
+                "attempt_id": _ATTEMPT_ID,
+            },
+            _dispatch_record(),
+            _run_record(),
+            _outcome_record(),
+            {
+                "stage": "causal-recovery-attempt",
+                "work_item_id": _TARGET_ID,
+                "attempt_id": later_attempt_id,
+            },
+        ),
+    )
+
+    write = _write(
+        record_recovery_receipts(
+            request=_request(
+                config=config,
+                journal_path=journal,
+                attempt_id=later_attempt_id,
+            )
+        )
+    )
+
+    assert write.status == RECORDED_NOT_EXECUTED
+    assert write.receipts == ReceiptSet()
+    assert _recorded_receipts(config=config) == ReceiptSet()
+
+
 def test_recording_a_receipt_leaves_the_deadline_the_count_and_the_attempt_tally_alone(
     tmp_path: Path,
 ) -> None:
