@@ -42,3 +42,27 @@ def test_emit_outcomes_json_includes_present_fabro_failure_fields(
             "work_item_id": "bd-ib-rdbtzo.3",
         }
     ]
+
+
+def test_emit_outcomes_json_preserves_provider_limit_evidence(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cause = "You've hit your weekly limit · resets Oct 23, 3pm (UTC)"
+    outcome = DispatchOutcome(
+        work_item_id="bd-ib-36d3x5",
+        status="provider-limit-release",
+        stage="fabro-run",
+        pr_number=None,
+        merge_sha=None,
+        detail=f"innermost cause: {cause}",
+        fabro_run_id="01PETRILIMIT",
+        fabro_failure_cause=cause,
+        provider_usage_limit=True,
+        provider_usage_limit_provider="anthropic",
+    )
+
+    emit_outcomes(outcomes=[outcome], as_json=True)
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload[0]["provider_usage_limit"] is True
+    assert payload[0]["fabro_failure_cause"] == cause
