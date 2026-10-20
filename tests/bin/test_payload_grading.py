@@ -105,10 +105,16 @@ def test_the_ignored_names_tuple_is_shared_rather_than_restated() -> None:
     `payload_fidelity_gaps` compares the copy against its source, and the copy
     deliberately omits these. Two separate constants would let the copy drop
     something the comparison still demands, which refuses every provision.
+
+    The set is pinned EXACTLY, so widening it is a deliberate act: each entry
+    is a directory the build carries but does not consist of, and anything
+    else dropped here stops being graded at all. What each one is and why it
+    is dropped is recorded beside the constant; the lease directory's own
+    cases are in `test_payload_lease_files_are_not_release_content.py`.
     """
     grading = _import(name="_payload_grading")
 
-    assert grading.IGNORED_NAMES == ("__pycache__",)
+    assert grading.IGNORED_NAMES == ("__pycache__", ".in_use")
 
     source = Path(_BIN_DIR).parent.parent
     assert source.is_dir(), "fixture: the plugin root did not resolve"

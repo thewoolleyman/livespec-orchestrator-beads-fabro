@@ -371,7 +371,33 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   re-exports. It asserts the module stays cut, that the names which had
   to become PUBLIC to cross the boundary are public while the private
   spellings are gone, and that `IGNORED_NAMES` is one shared constant
-  rather than two that could drift.
+  rather than two that could drift. It also pins that constant EXACTLY, so
+  widening the drop set is a deliberate act rather than a side effect —
+  anything added there stops being graded at all.
+- `test_payload_lease_files_are_not_release_content.py` — the plugin
+  cache's `.in_use` LEASE directory is per-session state, not release
+  content, so the pre-copy inventory must not grade it. It holds one file
+  per session bound to the build, named by the holding pid
+  (`.ai/plugin-cache-lease-and-rebind.md` records it as the binding
+  instrument), and the harness and OTHER sessions create and remove those
+  files at any moment — so it is the one part of the tree guaranteed not to
+  hold still across a copy, and nothing in a payload ever reads it.
+  Measured 2026-10-19 on cache build 29d454be7a46 with ten seats
+  restarting at once: a fidelity refusal naming `.in_use/661440`, whose
+  pid was already gone, with an immediate retry of the identical command
+  succeeding. Both directions of the race are cases here, through the same
+  depth-counted `copytree` seam `test_payload_source_copy_coherence.py`
+  uses and for the same reason — a lease RELEASED between the inventory and
+  the copy reads as a member the copy lost, and one TAKEN while
+  provisioning is under way reads as a member the copy omitted. Its copy
+  side is `missing_ok`, deliberately: whether the copy carries the lease at
+  all is what the change decides, and a fixture insisting on removing it
+  would raise inside `copytree` and be reported as a failed copy — a
+  refusal the fixture invented. Scope is the LEASE DIRECTORY and nothing
+  else; the third case is the control that holds it there, requiring a
+  release member missing from or divergent in the copy to still refuse and
+  still name itself, so the file cannot be satisfied by a launcher that
+  stopped grading copies at all.
 - `test_host_side_self_contained_import.py` — the end-to-end
   counterpart of `test_bootstrap.py`: it spawns a `-S` (no-site)
   subprocess that runs the real bootstrap and imports the host-side
