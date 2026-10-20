@@ -806,7 +806,7 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   budget below it, and the per-assertion inline allowance a capture agent plans
   its proof recipe against. Three properties an editor must not invert. The
   ceiling is a MEASUREMENT with its provenance recorded beside it
-  (`plan/definition-and-proof-of-done/research/005-forge-comment-ceiling-measurement-2026-10-07.md`),
+  (`plan/archive/definition-and-proof-of-done/research/005-forge-comment-ceiling-measurement-2026-10-07.md`),
   and it is NOT 65536 — that figure is what the forge's own rejection message
   says, and that message is wrong in both its number (the enforced ceiling is
   four times it) and its unit. Every measurement is in UTF-8 BYTES and never
