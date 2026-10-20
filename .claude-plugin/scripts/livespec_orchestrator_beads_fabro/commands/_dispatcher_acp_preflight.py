@@ -81,13 +81,17 @@ could not be proven to agree with the first.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro.commands._acp_availability_confirmation import (
+    AcpAvailabilityConfirmation,
+    confirmations_for_successes,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_availability_wait import (
     AvailabilityWait,
     availability_wait,
@@ -154,6 +158,14 @@ class JournalWriter(Protocol):
         ...
 
 
+@dataclass(frozen=True, kw_only=True)
+class _HostWideLedger:
+    """The hold ledger plus confirmation evidence from the same factory read."""
+
+    ledger: AcpHoldLedger
+    confirmations: tuple[AcpAvailabilityConfirmation, ...] = ()
+
+
 def resolve_acp_preflight(
     *,
     repo: Path,
@@ -209,9 +221,10 @@ def resolve_acp_preflight(
     # ONE ledger read for one evaluation: the verdict's unobservable set and the
     # filter's live records must come from the same walk, or a record retiring
     # between two reads would be surfaced by one half and acted on by the other.
-    ledger = _host_wide_ledger(
+    host_wide = _host_wide_ledger(
         repo=repo, journal_path=journal_path, now_iso=now_iso, factory_runs=factory_runs
     )
+    ledger = host_wide.ledger
     return build_acp_preflight_verdict(
         chains=chains,
         graph_text=graph_text,
@@ -224,6 +237,7 @@ def resolve_acp_preflight(
             probe=probe,
             headroom=headroom,
             unconfirmed_keys=ledger.unconfirmed_keys,
+            confirmations=host_wide.confirmations,
         ),
     )
 
@@ -420,7 +434,7 @@ def _host_wide_ledger(
     journal_path: Path | None,
     now_iso: str,
     factory_runs: FactoryRunReader | None,
-) -> AcpHoldLedger:
+) -> _HostWideLedger:
     """The repository's own records UNIONED with every declared factory's.
 
     The journal half is read first and kept whole, which is what makes this
@@ -441,10 +455,17 @@ def _host_wide_ledger(
     """
     ledger = read_acp_hold_ledger(journal_path=journal_path, now_iso=now_iso)
     if factory_runs is None:
-        return ledger
-    return _unioned(
-        ledger=ledger,
-        evidence=factory_hold_evidence(repo=repo, reader=factory_runs, now_iso=now_iso),
+        return _HostWideLedger(ledger=ledger)
+    evidence = factory_hold_evidence(repo=repo, reader=factory_runs, now_iso=now_iso)
+    return _HostWideLedger(
+        ledger=_unioned(
+            ledger=ledger,
+            evidence=evidence,
+        ),
+        confirmations=confirmations_for_successes(
+            expired_holds=ledger.expired_holds,
+            successes=evidence.successes,
+        ),
     )
 
 
