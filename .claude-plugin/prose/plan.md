@@ -263,6 +263,16 @@ ALWAYS surface every entry in `findings`, in both modes. `plan-definition-of-don
 
 `plan-progress-tracking: missing` names an epic whose pointer predates the tracking fields, or whose authority chain was never established; these writers never create one, so the remedy the finding names is `migrate-plan-records`, the sanctioned write that supplies the fields. Expired and unobservable obligations report the same way, each with its authorized action. The finding is reported either way: reported and acted on are different things.
 
+#### Relays to another track
+
+A relay is work handed to someone else — a peer session, another repository's lane, a person — and it stays YOUR obligation until the thing you asked for has happened. Record one with `record_relay(...)`, passing a `RelayRequest` carrying a stable `relay_id`, a stable `operation_id`, the `sender` that owes it, a typed `required_result`, an absolute UTC `deadline`, and a `RelayAcknowledgements` holding whatever transport receipts you have. It observes that result through the same authoritative reader every deadline uses and appends one `plan-relay-event` record to the epic; an untyped expected result or a blank identity field is refused unwritten.
+
+DELIVERY IS A TARGET EFFECT, NOT A REPLY. `delivered` is written from one input — a `satisfied` reading taken in that call — and from nothing you supply, which is why you may fill `receipt_ack` and `peer_recorded` and may NOT fill the third leg: the queue took it, the peer answered, the peer wrote it down, and none of those is the thing you asked for. A pane-only acknowledgment is the sharpest case, someone replying while no ledger moved. An `unsatisfied` or `unobservable` reading records an UNDELIVERED relay with the observation it took, and you still owe it; ownership transfers or the obligation closes only once all three legs are present, which `RelayRecord.ownership_transferable` answers.
+
+THE DEADLINE IS THE RELAY'S, NOT THE REQUEST'S. Every later observation of one relay id re-renders the deadline its FIRST recording established, so passing a longer one moves nothing. Retrying the same `operation_id` returns the observation that act recorded — no second record, no second read, and the original reading even if the target has since moved; a DISTINCT `operation_id` is a recheck, which observes again under that same original deadline, and subsequent target evidence discharges the relay. Expiry transfers nothing: the sender keeps the relay and the original deadline while the independent consumer performs bounded recovery, and an owner that disappears is taken over explicitly rather than discharged silently.
+
+A CONFLICTING TARGET TAKES AN EXPLICIT SUPERSESSION. Reusing a relay id against a different expected result is refused: pass `supersedes=RelaySupersession(relay_id=..., reason=...)` naming the DISPLACED relay, under a NEW relay id of your own, and the new record carries the old obligation's disposition forward. A supersession naming its own id, naming no recorded relay, stating no cause, or naming an unchanged target is refused — the last of those is what keeps a fresh relay id from being a route to a fresh deadline on the same obligation.
+
 ### Step 4 - Handoff Timeline And Exit Audit
 
 A handoff entry is ready only when a fresh session can continue from the ledger timeline without chat history:

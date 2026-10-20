@@ -1544,9 +1544,8 @@
     "heading": "## Scenario 149 \u2014 Acknowledgment cannot discharge a target-effect relay",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "A real integration-tier test is owed for this new behavior; the named work item owns landing it, with released host capture and independent replay additionally owed where the scenario requires them.",
-    "work_item": "bd-ib-t3znvw"
+    "test": "tests.integration.test_plan_relay_delivery_scenario149.test_acknowledged_transport_leaves_an_unchanged_target_undelivered",
+    "reason": "Integration-tier acceptance for the relay-delivery primitive (livespec_orchestrator_beads_fabro.commands.plan.record_relay), exercised through the real store/client seam against the in-memory FakeBeadsClient and one recording CommandRunner; the reference parse, the repository resolution, the shared authoritative result reader and the ledger adapter beneath it are all production code, so a relay that reads as delivered there read a real tenant row. The bound node id is the heading's first outline: queue delivery, peer receipt and consumption acknowledged while the target is unchanged, leaving the relay unfulfilled with its sender and original deadline retained. Its sibling cases in the same module carry the rest of that outline - the satisfied negative control that the same primitive against the same surface does record delivery with its target evidence, the unobservable forge read that establishes nothing, the durable plan-relay-event record read back through the production parse, and the refusals for an untyped expected result and for each missing identity field. The heading's second outline is bound by tests.livespec_orchestrator_beads_fabro.commands.test_plan_relay_retry (one operation identity returns its own recorded observation, spends no second read and appends no second record, while a distinct recheck observes again) and by ...test_plan_relay_delivery (the original deadline surviving every recheck, and the explicit causal supersession a conflicting target requires)."
   },
   {
     "heading": "## Scenario 150 \u2014 Plan attention names missing results despite busy repair work",
