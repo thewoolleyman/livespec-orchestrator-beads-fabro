@@ -212,6 +212,7 @@ def resolve_acp_preflight(
         ledger=ledger,
         inputs=PreflightInputs(
             holds=ledger.holds,
+            expired_holds=ledger.expired_holds,
             legacy_providers=_legacy_providers(journal_path=journal_path, now_iso=now_iso),
             builtin_pairs=builtin_pairs,
             probe=probe,
