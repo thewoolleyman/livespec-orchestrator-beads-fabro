@@ -786,6 +786,14 @@ def test_plural_attempt_boundary_scopes_executor_records_to_each_authorized_atte
         ).dispatch_id
         == _DISPATCH_ID
     )
+    assert (
+        execution_records(
+            records=records,
+            work_item_id=_TARGET_ID,
+            attempt_id="attempt-never-dispatched",
+        )
+        == ExecutionRecords()
+    )
 
 
 def test_impl_recovery_attempt_ids_deduplicate_matching_epics(

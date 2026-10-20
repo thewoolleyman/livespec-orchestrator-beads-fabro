@@ -48,6 +48,7 @@ __all__: list[str] = [
     "ReceiptRefusal",
     "ReceiptSet",
     "RecordedAttempt",
+    "attempt_boundary_record",
     "dispatched_subject",
     "execution_records",
     "receipt_set",
@@ -74,8 +75,10 @@ RECORDED_NOT_EXECUTED = "recorded-but-not-executed"
 # plan-side import of one would couple the plan authority to the engine.
 _DISPATCH_ID_STAGE = "dispatch-id"
 _OUTCOME_STAGE = "outcome"
+_CAUSAL_RECOVERY_ATTEMPT_STAGE = "causal-recovery-attempt"
 _STAGE_FIELD = "stage"
 _WORK_ITEM_FIELD = "work_item_id"
+_ATTEMPT_IDS_FIELD = "attempt_ids"
 _DISPATCH_ID_FIELD = "dispatch_id"
 _OUTCOME_FIELD = "outcome"
 _STATUS_FIELD = "status"
@@ -154,10 +157,29 @@ def dispatched_subject(*, next_operation: str) -> str | None:
     return next_operation.removeprefix(_IMPL_OPERATION_PREFIX)
 
 
+def attempt_boundary_record(*, work_item_id: str, attempt_ids: Iterable[str]) -> dict[str, object]:
+    """Render the executor record that binds one dispatch to its authorized attempts.
+
+    The marker is appended BEFORE the dispatcher starts, so the records following
+    it are evidence of this invocation rather than merely later rows for the
+    same work item.  An empty boundary is refused here: it would look like a
+    durable executor record while naming no authority that may receive it.
+    """
+    ids = tuple(dict.fromkeys(attempt_id for attempt_id in attempt_ids if attempt_id.strip()))
+    if not ids:
+        raise ValueError
+    return {
+        _STAGE_FIELD: _CAUSAL_RECOVERY_ATTEMPT_STAGE,
+        _WORK_ITEM_FIELD: work_item_id,
+        _ATTEMPT_IDS_FIELD: list(ids),
+    }
+
+
 def execution_records(
     *,
     records: Iterable[Mapping[str, object]],
     work_item_id: str,
+    attempt_id: str | None = None,
 ) -> ExecutionRecords:
     """Read what the dispatch journal records about one work-item's dispatches.
 
@@ -168,26 +190,84 @@ def execution_records(
     calls this item's newest.
     """
     ordered = tuple(records)
+    scoped = _attempt_records(
+        records=ordered,
+        work_item_id=work_item_id,
+        attempt_id=attempt_id,
+    )
     dispatch_ids = tuple(
         found
-        for record in ordered
+        for record in scoped
         if record.get(_STAGE_FIELD) == _DISPATCH_ID_STAGE
         and record.get(_WORK_ITEM_FIELD) == work_item_id
         and (found := _text(value=record.get(_DISPATCH_ID_FIELD))) is not None
     )
     outcomes = tuple(
         found
-        for record in ordered
+        for record in scoped
         if (found := _outcome_object(record=record, work_item_id=work_item_id)) is not None
     )
     outcome = outcomes[-1] if outcomes else {}
     return ExecutionRecords(
         dispatch_id=dispatch_ids[-1] if dispatch_ids else None,
-        run_id=newest_journaled_run_id(records=ordered, work_item_id=work_item_id),
+        run_id=newest_journaled_run_id(records=scoped, work_item_id=work_item_id),
         outcome_status=_text(value=outcome.get(_STATUS_FIELD)),
         outcome_stage=_text(value=outcome.get(_STAGE_FIELD)),
         pr_number=_pr_number(value=outcome.get(_PR_NUMBER_FIELD)),
     )
+
+
+def _attempt_records(
+    *,
+    records: tuple[Mapping[str, object], ...],
+    work_item_id: str,
+    attempt_id: str | None,
+) -> tuple[Mapping[str, object], ...]:
+    """The journal segment owned by one attempt, or all rows for an unscoped read.
+
+    The next attempt boundary closes the segment even when it names another
+    attempt for the same item.  Thus an attempt recorded after an earlier run is
+    deliberately left with an empty segment until its own dispatcher invocation
+    produces durable records; historical evidence cannot flow across that line.
+    """
+    if attempt_id is None:
+        return records
+    start: int | None = None
+    for index, record in enumerate(records):
+        boundary = _attempt_boundary_ids(record=record, work_item_id=work_item_id)
+        if boundary is None:
+            continue
+        if start is not None:
+            return records[start:index]
+        if attempt_id in boundary:
+            start = index + 1
+    return records[start:] if start is not None else ()
+
+
+def _attempt_boundary_ids(
+    *, record: Mapping[str, object], work_item_id: str
+) -> tuple[str, ...] | None:
+    """The attempt ids one boundary names, with the original singular spelling read too.
+
+    The singular form was emitted by the first recovery-receipt implementation;
+    accepting it preserves its already durable records while the plural form lets
+    one executor invocation bind every current plan attempt that authorized it.
+    """
+    if (
+        record.get(_STAGE_FIELD) != _CAUSAL_RECOVERY_ATTEMPT_STAGE
+        or record.get(_WORK_ITEM_FIELD) != work_item_id
+    ):
+        return None
+    plural = record.get(_ATTEMPT_IDS_FIELD)
+    if isinstance(plural, list):
+        ids = tuple(
+            text
+            for value in cast("list[object]", plural)
+            if (text := _text(value=value)) is not None
+        )
+        return ids or None
+    singular = _text(value=record.get(_ATTEMPT_ID_FIELD))
+    return (singular,) if singular is not None else None
 
 
 def receipt_set(*, records: ExecutionRecords) -> ReceiptSet:

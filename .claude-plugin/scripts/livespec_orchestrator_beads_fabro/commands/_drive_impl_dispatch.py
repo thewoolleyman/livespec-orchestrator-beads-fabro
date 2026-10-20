@@ -25,8 +25,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     INVOKER_FLAG,
     InvokerIdentity,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file import JournalFile
 from livespec_orchestrator_beads_fabro.commands._plan_recovery_receipt_write import (
+    impl_recovery_attempt_ids,
     record_impl_recovery_receipts,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_recovery_receipts import (
+    attempt_boundary_record,
 )
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
@@ -76,6 +81,11 @@ def run_impl_dispatch(  # noqa: PLR0913 — kw-only transport; `workflow_name` i
         workflow_name=workflow_name,
         identity=identity,
     )
+    _record_recovery_attempt_boundary(
+        repo=repo,
+        work_item_ref=work_item_ref,
+        identity=identity,
+    )
     result = resolved_runner(argv=argv, cwd=repo)
     _record_recovery_receipts(
         repo=repo,
@@ -97,6 +107,35 @@ def run_impl_dispatch(  # noqa: PLR0913 — kw-only transport; `workflow_name` i
         },
         "summary": _dispatch_summary(status=status, work_item_ref=work_item_ref),
     }
+
+
+def _record_recovery_attempt_boundary(
+    *, repo: Path, work_item_ref: str, identity: InvokerIdentity | None
+) -> None:
+    """Bind the imminent dispatcher invocation to the attempts that authorized it.
+
+    This is deliberately before the subprocess: a record written afterwards
+    would delimit historical evidence rather than the executor records the
+    command is about to create.  The journal append owns the timestamp and
+    invoker stamp, so neither is caller-supplied receipt material.
+    """
+    if not (repo / _BEADS_CONFIG_RELATIVE_PATH).is_file():
+        return
+    config = resolve_store_config(cwd=repo, work_items_arg=None)
+    attempt_ids = impl_recovery_attempt_ids(config=config, work_item_id=work_item_ref)
+    if not attempt_ids:
+        return
+    journal = (
+        JournalFile(path=repo / _JOURNAL_RELATIVE_PATH, identity=identity)
+        if identity is not None
+        else JournalFile(path=repo / _JOURNAL_RELATIVE_PATH)
+    )
+    journal.append(
+        record=attempt_boundary_record(
+            work_item_id=work_item_ref,
+            attempt_ids=attempt_ids,
+        )
+    )
 
 
 def _record_recovery_receipts(

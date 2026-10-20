@@ -64,6 +64,7 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "RecoveryReceiptRequest",
     "RecoveryReceiptWrite",
+    "impl_recovery_attempt_ids",
     "receipt_operation_id",
     "record_impl_recovery_receipts",
     "record_recovery_receipts",
@@ -200,6 +201,23 @@ def record_impl_recovery_receipts(
     )
 
 
+def impl_recovery_attempt_ids(*, config: StoreConfig, work_item_id: str) -> tuple[str, ...]:
+    """The current attempts whose authorization the drive executor is about to use.
+
+    The executor writes these ids into its journal before dispatch.  Receipt
+    selection later reads that boundary, so this lookup is not caller evidence:
+    it merely tells the executor which authority records authorized its own
+    command.
+    """
+    operation = f"impl:{work_item_id}"
+    return tuple(
+        dict.fromkeys(
+            attempt_id
+            for _, attempt_id in _matching_impl_attempts(config=config, operation=operation)
+        )
+    )
+
+
 def _matching_impl_attempts(*, config: StoreConfig, operation: str) -> tuple[tuple[str, str], ...]:
     """The current plan attempts that authorize exactly one impl operation."""
     client = make_beads_client(config=config)
@@ -234,6 +252,7 @@ def _observed_receipts(
         records=execution_records(
             records=journal_records(journal_path=request.journal_path),
             work_item_id=subject,
+            attempt_id=recorded.attempt_id,
         )
     )
 
