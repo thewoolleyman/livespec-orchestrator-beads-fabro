@@ -111,6 +111,43 @@ def _hermetic_claude_credential_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_dod_judgement_judge(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """Keep the pre-admission Definition-of-Done judgement off every host's judge.
+
+    `run_dod_judgement` defaults to a real `ShellCommandRunner` when no runner
+    is injected, and `resolve_judge_path` resolves the documented override, then
+    `PATH`, then the conventional `~/.local/bin/claude` install. So on a host
+    that carries a `claude` executable — the vps operator host does — every
+    filing this suite performs takes a LIVE model judgement and spends real
+    tokens, while continuous integration, the delegated cluster gate and every
+    factory sandbox carry none and stay green. Measured on vps at master
+    f7ce3eea: `test_factory_size_justification_gate_scenario153.py` filed its
+    fixture item at `pending-approval` rather than `ready`, because the live
+    judge declined its placeholder assertions — so a red `just check` blocked
+    every local commit staging a `.py` there (work-item bd-ib-7xkeko).
+
+    Pointing the OVERRIDE at a path that does not exist is the whole fixture.
+    The runner then fails to exec it and maps that to exit 127, which the
+    judgement reports as `no-eligible-model` — byte for byte what it reports
+    where no judge exists at all, so no case's expected routing changes. The
+    override is also the only layer a test process can occupy without
+    repointing `PATH` or `HOME`, each of which would change answers this defect
+    has nothing to do with.
+
+    Tests that exercise the judge name their own executable through this same
+    override after this fixture runs, which is the precedent the two Scenario
+    174 modules and `test_groom_variant_dod_judgement.py` already set; tests of
+    the resolver itself hand it an explicit `environ` and are untouched.
+    """
+    monkeypatch.setenv(
+        "LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH",
+        str(tmp_path_factory.mktemp("dod-judgement") / "no-such-judge"),
+    )
+
+
 def _fresh_codex_auth_json() -> str:
     """A host Codex `auth.json` whose access-token JWT `exp` is a century out.
 

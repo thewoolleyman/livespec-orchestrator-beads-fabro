@@ -10,10 +10,11 @@ hosts that share nothing but that server (`.ai/ledger-writers-are-multi-host.md`
 maintainer ruling 2026-10-12).
 
 THE ORDER OF THE SEQUENCE IS THE CLAUSE'S AND IS LOAD-BEARING AT EVERY STEP.
-"After expiry, same-obligation continuation MUST be refused BEFORE appending a
-handoff or updating the pointer", so the prior obligation is read and the
-decision taken before any mutation. The chain transition then commits, and only
-a transition that actually committed appends the comment and writes the pointer —
+A committed operation identity is recognised FIRST, then the prior obligation is
+read and the decision taken, and both happen before any mutation — "After
+expiry, same-obligation continuation MUST be refused BEFORE appending a handoff
+or updating the pointer". The chain transition then commits, and only a
+transition that actually committed appends the comment and writes the pointer —
 which is what makes both of those PROJECTIONS of the chain rather than
 independent records that could disagree with it.
 
@@ -24,6 +25,20 @@ payload; appending the comment again would duplicate the handoff the clause
 forbids, and re-writing the pointer would re-render a projection that is already
 correct. So a recovered commit returns the original epoch and consumed count
 with `idempotent=True` and performs no write at all.
+
+AND WHY THE RECOGNITION RUNS AHEAD OF THE DECISION RATHER THAN INSIDE THE
+COMMIT. `commit_transition` carries its own retry guard, which is the chain's
+last word and stays exactly where it is — but a write refused before it is
+reached never gets the recovery the clause owes. The decision's expiry ladder
+reads the OBSERVED head, so the retry of the handoff that consumed the final
+`max_handoffs` unit is read as an expired continuation and refused, although the
+write it is retrying succeeded: the caller is told to register a causal recovery
+for an obligation it had just met. The identity question is therefore asked
+first, where it cannot be pre-empted by any refusal the ladder grows later, and
+a recognised retry short-circuits the whole sequence. `recover_committed_
+operation` performs no write, so asking early costs one comment read and can
+change nothing; a twin that commits in the window between that scan and the
+chain's own is still answered as a recovery, by the chain's guard.
 
 WHY AN EPIC WITH NO CHAIN IS WRITTEN ON THE LEGACY PATH RATHER THAN REFUSED.
 Research note 007 and this item's brief are explicit: these writers MUST NEVER
@@ -61,6 +76,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain import (
     TransitionRequest,
     commit_transition,
     read_chain_head,
+    recover_committed_operation,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import (
     MISSING_TRACKING,
@@ -207,7 +223,23 @@ def _tracked_write(
     request: TrackedWriteRequest,
     head: ChainHead,
 ) -> TrackedWrite | NextActionRefusal:
-    """Decide against the observed head, then commit and project the result."""
+    """Recover a retry, else decide against the observed head and commit.
+
+    The recovery runs BEFORE the decision, for the reason this module's
+    docstring records: the decision's expiry ladder would otherwise refuse the
+    retry of the very handoff that exhausted the budget.
+    """
+    operation_id = request.operation_id or derived_operation_id(request=request)
+    recovered = recover_committed_operation(
+        config=request.config,
+        epic_id=request.epic_id,
+        operation_id=operation_id,
+        observed_head=head,
+    )
+    if isinstance(recovered, ChainFinding):
+        return NextActionRefusal(detail=f"{recovered.code}: {recovered.detail}")
+    if recovered is not None:
+        return _recovered_write(request=request, committed=recovered)
     decision = decide_tracked_write(
         epic_id=request.epic_id,
         head=head,
@@ -219,7 +251,6 @@ def _tracked_write(
     )
     if isinstance(decision, TrackedRefusal):
         return NextActionRefusal(detail=decision.detail)
-    operation_id = request.operation_id or derived_operation_id(request=request)
     committed = commit_transition(
         config=request.config,
         epic_id=request.epic_id,
@@ -254,23 +285,61 @@ def _persist(
 
     A RECOVERED transition projects nothing: its original call already wrote
     both, so appending again would duplicate the handoff the retry clause
-    forbids.
+    forbids. The arm survives the pre-decision scan above because the chain's
+    own guard sees a window that scan cannot — a twin of this call committing
+    between the two readings.
     """
+    if committed.source != COMMITTED:
+        return _recovered_write(request=request, committed=committed)
     authority = committed.payload.authority
     action = projected_action(
         action=decision.action,
         authority=authority,
         epoch=committed.payload.new_epoch,
     )
-    obligation = obligation_of(authority=authority)
-    if committed.source != COMMITTED:
-        return TrackedWrite(
-            action=action,
+    _project_write(request=request, action=action)
+    return TrackedWrite(
+        action=action,
+        epoch=committed.payload.new_epoch,
+        consumed_handoffs=authority.consumed_handoffs,
+        idempotent=False,
+        tracked=obligation_of(authority=authority) is not None,
+    )
+
+
+def _recovered_write(
+    *,
+    request: TrackedWriteRequest,
+    committed: CommittedTransition,
+) -> TrackedWrite:
+    """Hand back the transition this operation already committed, writing nothing.
+
+    The pointer is projected from the REQUEST's action rather than from any
+    decision, because no decision was taken: the projection overlays the
+    committed authority onto whatever tracking the action carries, so the two
+    agree wherever a decision exists and the recovery needs none.
+    """
+    authority = committed.payload.authority
+    return TrackedWrite(
+        action=projected_action(
+            action=request.action,
+            authority=authority,
             epoch=committed.payload.new_epoch,
-            consumed_handoffs=authority.consumed_handoffs,
-            idempotent=True,
-            tracked=obligation is not None,
-        )
+        ),
+        epoch=committed.payload.new_epoch,
+        consumed_handoffs=authority.consumed_handoffs,
+        idempotent=True,
+        tracked=obligation_of(authority=authority) is not None,
+    )
+
+
+def _project_write(*, request: TrackedWriteRequest, action: NextAction) -> None:
+    """Append the handoff entry, if any, and store the pointer one write lands.
+
+    Shared by the chain-committed arm and the legacy arm because both land the
+    SAME two records against the same epic; a second copy is how the two paths
+    come to write pointers that differ in a field nobody compared.
+    """
     client = make_beads_client(config=request.config)
     if request.is_handoff:
         client.add_comment(
@@ -291,13 +360,6 @@ def _persist(
             session=request.author,
             now=request.now,
         ),
-    )
-    return TrackedWrite(
-        action=action,
-        epoch=committed.payload.new_epoch,
-        consumed_handoffs=authority.consumed_handoffs,
-        idempotent=False,
-        tracked=obligation is not None,
     )
 
 
@@ -308,27 +370,7 @@ def _legacy_write(*, request: TrackedWriteRequest) -> TrackedWrite:
     pointer acquires its five-field shape, and every reader keeps reporting
     missing tracking until the sanctioned migration establishes the chain.
     """
-    client = make_beads_client(config=request.config)
-    if request.is_handoff:
-        client.add_comment(
-            issue_id=request.epic_id,
-            body=plan_comment_body(
-                prefix=PLAN_HANDOFF_PREFIX,
-                author=request.author,
-                now=request.now,
-                body=request.body or "",
-            ),
-        )
-    record = client.show_issue(issue_id=request.epic_id)
-    client.update_issue(
-        issue_id=request.epic_id,
-        metadata=next_action_metadata(
-            existing_metadata=plan_record_metadata(record=record),
-            action=request.action,
-            session=request.author,
-            now=request.now,
-        ),
-    )
+    _project_write(request=request, action=request.action)
     return TrackedWrite(
         action=request.action,
         epoch=0,

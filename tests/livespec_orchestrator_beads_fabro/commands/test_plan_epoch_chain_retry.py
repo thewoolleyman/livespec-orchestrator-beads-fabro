@@ -33,6 +33,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain import (
     TransitionRequest,
     commit_transition,
     read_chain_head,
+    recover_committed_operation,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import (
     RECEIPT_WITHOUT_EVENT,
@@ -242,6 +243,49 @@ def test_a_retry_never_moves_the_original_deadline_or_the_consumed_count() -> No
     settled = _head()
     assert settled.authority.original_deadline == _DEADLINE
     assert settled.authority.consumed_handoffs == 1
+
+
+def test_the_public_scan_answers_the_retry_question_without_transitioning() -> None:
+    """A caller has to be able to ask BEFORE it decides what to commit.
+
+    `commit_transition`'s own guard is the chain's last word, but a caller that
+    refuses the write before reaching it never gets the recovery the clause
+    owes — which is how the retry of a budget-exhausting handoff came to be
+    refused as expired. Both answers are asserted from one chain: `None` before
+    the operation has committed is what makes the recovery afterwards evidence
+    about the operation rather than about the function always answering.
+    """
+    _seed_chain()
+    head = _head()
+
+    assert (
+        recover_committed_operation(
+            config=_config(),
+            epic_id=_EPIC_ID,
+            operation_id="op-asked",
+            observed_head=head,
+        )
+        is None
+    )
+    first = _commit(operation_id="op-asked", head=head)
+    assert isinstance(first, CommittedTransition)
+    live_before = _fake().no_history_issue_ids()
+
+    recovered = recover_committed_operation(
+        config=_config(),
+        epic_id=_EPIC_ID,
+        operation_id="op-asked",
+        observed_head=_head(),
+    )
+
+    assert isinstance(recovered, CommittedTransition)
+    assert recovered.payload == first.payload
+    assert recovered.source == _RECOVERED_FROM_RING
+    # Asking changes nothing: the epoch, the live token set and the event count
+    # are all exactly as the one commit left them.
+    assert _head().epoch == 1
+    assert _fake().no_history_issue_ids() == live_before
+    assert len(read_progress_events(client=_fake(), epic_id=_EPIC_ID)) == 1
 
 
 def test_a_receipt_whose_event_cannot_be_read_is_reported_not_reinvented(

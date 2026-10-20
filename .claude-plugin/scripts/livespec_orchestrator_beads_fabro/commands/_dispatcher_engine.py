@@ -104,6 +104,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_successful_terminal 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_publication import (
     reconcile_terminal_publication,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_worker_exit_log_cause import (
+    worker_exit_engine_failure_outcome,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
 
 __all__: list[str] = [
@@ -242,6 +245,20 @@ def run_dispatch(
         inspect=inspect,
         exit_code=fabro.exit_code,
         stderr=fabro.stderr,
+    )
+    # AND WHERE THE SAME CONCLUSION HID A FAILURE, THE ENGINE'S OWN VERDICT IS
+    # RECOVERED FROM THE RUN'S EXPORTED LOG. The worker-exit sentence names no
+    # fault, so a run that really did fail was reported as terminated with no
+    # cause while its log still carried the deterministic failure cycle the
+    # engine had decided. This passes every other ending straight through, and
+    # spends its export only on that one conclusion.
+    terminal = worker_exit_engine_failure_outcome(
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        run_id=run_id,
+        inspect=inspect,
+        terminal=terminal,
     )
     # A STRUCTURED SUCCESSFUL CHECKPOINT OUTRANKS THE ENGINE'S OWN CONCLUSION,
     # and only for the one conclusion that admits it cannot answer: a worker

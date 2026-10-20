@@ -46,6 +46,15 @@ second half of that check and it is the FAIL-CLOSED half: when the ring names
 an operation whose event cannot be read, the retry is REPORTED rather than
 committed afresh, because the ring is proof the transition happened and a
 fresh commit would duplicate the handoff it accounts for.
+
+THAT SCAN IS ALSO PUBLIC, as `recover_committed_operation`, because a caller
+has to be able to ask the question BEFORE it decides what to commit. Inside
+`commit_transition` the scan is the chain's own last guard, and a caller that
+refuses the write before reaching it — a plan writer whose obligation budget is
+exhausted, say — never gets the recovery the clause owes it, however correct
+the guard is. The public form answers the same question from the same two
+sources and performs no write at all, so asking early costs one comment read
+and can change nothing.
 """
 
 from __future__ import annotations
@@ -98,6 +107,7 @@ __all__: list[str] = [
     "TransitionRequest",
     "commit_transition",
     "read_chain_head",
+    "recover_committed_operation",
 ]
 
 # How a returned transition came to be. The three are kept apart because a
@@ -163,7 +173,12 @@ def commit_transition(
 ) -> CommittedTransition | StaleEpochRefusal | ChainFinding:
     """Commit one authority transition, recover a retry, or refuse as stale."""
     client = make_beads_client(config=config)
-    already = _already_committed(client=client, epic_id=epic_id, request=request)
+    already = _already_committed(
+        client=client,
+        epic_id=epic_id,
+        operation_id=request.operation_id,
+        observed_head=request.observed_head,
+    )
     if already is not None:
         return already
     observed = request.observed_head.current_token_id
@@ -249,11 +264,36 @@ def _close_and_project(
     return CommittedTransition(payload=payload, source=COMMITTED)
 
 
+def recover_committed_operation(
+    *,
+    config: StoreConfig,
+    epic_id: str,
+    operation_id: str,
+    observed_head: ChainHead,
+) -> CommittedTransition | ChainFinding | None:
+    """What the chain already holds for one operation id, asked WITHOUT writing.
+
+    `None` means the chain holds nothing for this operation, which is the only
+    answer under which a caller may go on to decide a fresh transition. The
+    reading is the same one `commit_transition` takes as its own guard, and it
+    is deliberately not shared state: a caller that asks early and then commits
+    is scanned twice, because the chain's guard is the one the exclusion depends
+    on and a guard a caller could satisfy on its behalf is no guard.
+    """
+    return _already_committed(
+        client=make_beads_client(config=config),
+        epic_id=epic_id,
+        operation_id=operation_id,
+        observed_head=observed_head,
+    )
+
+
 def _already_committed(
     *,
     client: BeadsClient,
     epic_id: str,
-    request: TransitionRequest,
+    operation_id: str,
+    observed_head: ChainHead,
 ) -> CommittedTransition | ChainFinding | None:
     """Return what the chain already holds for this operation id, else None.
 
@@ -264,9 +304,8 @@ def _already_committed(
     work. The cost is one comment read per transition, which is the price of
     the only record that carries the transition itself.
     """
-    operation_id = request.operation_id
     named_by_ring = any(
-        receipt.operation_id == operation_id for receipt in request.observed_head.authority.receipts
+        receipt.operation_id == operation_id for receipt in observed_head.authority.receipts
     )
     for event in read_progress_events(client=client, epic_id=epic_id):
         if event.operation_id != operation_id:
