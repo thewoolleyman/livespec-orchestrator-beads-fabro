@@ -371,6 +371,42 @@ def test_impl_dispatch_records_recovery_receipts_from_its_durable_journal(
     ]
 
 
+def test_impl_dispatch_marks_the_authorized_attempt_before_the_dispatcher_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The durable executor journal, not a caller, binds evidence to the attempt."""
+    repo = tmp_path / "repo"
+    (repo / ".beads").mkdir(parents=True)
+    _ = (repo / ".beads" / "config.yaml").write_text("tenant: test\n", encoding="utf-8")
+    config = _store_config()
+
+    monkeypatch.setattr(
+        impl_dispatch,
+        "resolve_store_config",
+        lambda **_: config,
+    )
+    monkeypatch.setattr(
+        impl_dispatch,
+        "record_impl_recovery_receipts",
+        lambda **_: (),
+    )
+    monkeypatch.setattr(
+        impl_dispatch,
+        "impl_recovery_attempt_ids",
+        lambda **_: ("attempt-0001",),
+        raising=False,
+    )
+    runner = _Runner(results=[_run(stdout=json.dumps([{"status": "green"}]))])
+
+    _ = drive.run_action(repo=repo, action_id="impl:bd-ib-123", runner=runner)
+
+    journal = repo / "tmp" / "fabro-dispatch-journal.jsonl"
+    records = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
+    assert records[0]["stage"] == "causal-recovery-attempt"
+    assert records[0]["work_item_id"] == "bd-ib-123"
+    assert records[0]["attempt_ids"] == ["attempt-0001"]
+
+
 def test_main_missing_repo_returns_precondition(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
