@@ -436,20 +436,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 162 \u2014 Receipt is distinct from consumed recovery and fulfilled work",
-    "work_item": "bd-ib-dle6l3",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 163 \u2014 Duplicate and stale recovery reconcile safely",
-    "work_item": "bd-ib-dle6l3",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 164 \u2014 Human HOLD and commit safety barriers retain recovery obligations",
     "work_item": "bd-ib-jy23vh",
     "first_seen": "2026-10-08"

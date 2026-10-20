@@ -1339,6 +1339,38 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   attempt of the turn it guards and would read as correct. The prompt half of
   the clause is `tests/prompts/test_implement_completion_field.py`.
 
+- `test_session_recovery_receipt_scenario162.py` and
+  `test_session_recovery_reconciliation_scenario163.py` — bind
+  `SPECIFICATION/scenarios.md` Scenarios 162 and 163 and the consumed-recovery
+  half of `SPECIFICATION/contracts.md` §"Launch obligations and consumed
+  recovery". Both drive the PUBLIC consumer pass — `consume_recovery_obligation`
+  over a real on-disk attempt store — rather than the grades in isolation,
+  because every claim here is about what a real pass LEAVES BEHIND and a
+  hand-built record satisfies each assertion while establishing nothing about
+  the path a daemon takes. Nothing is stood in but the two seams the product
+  publishes for it: the sanctioned command and the durable-effect lookup.
+  Four pairings must not be split. 162's unconsumed leg is a REAL deferred pass
+  behind a valid HOLD and its executed leg CONTINUES THE SAME ATTEMPT, so
+  consumption becoming observable is attributable to the execution rather than
+  to a second fixture — a separate attempt for the executed leg agrees with a
+  build that marks every claimed recovery consumed. 163's convergence case
+  shares ONE command object across a first pass, a duplicate and a replacement
+  consumer at a new generation, so "one effect" is a count of real invocations
+  rather than an inspection of three returned values. Its gate control is the
+  identical evidence with the gate SUCCEEDING, asserting the same operation,
+  because the failed-gate case alone is equally consistent with a build that
+  redispatches on any gate failure and happened to be handed a merge — the
+  fixture is the measured 2026-10-09 case, where a gate reported FAILED at
+  05:19:06Z for a pull request that merged at 05:18:03Z. And the ambiguous leg
+  asserts the lookup was CONSULTED and the command was NOT, across both the
+  unobservable round and the recovering one, since `uncertain` twice over is
+  equally consistent with a pass that never asked. The ambiguous leg uses its
+  own attempt, because a recorded effect short-circuits the very lookup it
+  exists to exercise. 162 asserts fulfillment as an ABSENCE OF VOCABULARY — the
+  consumption grade's state set cannot express it and the required-result
+  identity survives untouched — which is what leaves that question with the
+  relay authority that owns it.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

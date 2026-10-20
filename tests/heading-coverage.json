@@ -1655,16 +1655,16 @@
     "heading": "## Scenario 162 \u2014 Receipt is distinct from consumed recovery and fulfilled work",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "A real integration-tier test is owed.",
+    "test": "tests.integration.test_session_recovery_receipt_scenario162.test_scenario_162_receipt_and_claim_leave_the_result_outstanding_until_execution",
+    "reason": "Integration-tier acceptance delivered by bd-ib-dle6l3 drives the public recovery consumer pass over a real on-disk attempt store: a produced notification, an acknowledged receipt and a claimed recovery deferred behind a valid human HOLD leave the attempt unconsumed with its required result outstanding, the SAME attempt continued past the released hold makes execution consumption separately observable with its measured latency, every transition stays its own durable observation, the original deadline and epoch are preserved across both legs, and the consumption vocabulary carries no word for the relay-owned target fulfillment.",
     "work_item": "bd-ib-dle6l3"
   },
   {
     "heading": "## Scenario 163 \u2014 Duplicate and stale recovery reconcile safely",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "A real integration-tier test is owed.",
+    "test": "tests.integration.test_session_recovery_reconciliation_scenario163.test_scenario_163_duplicate_and_replacement_consumers_yield_one_command_effect",
+    "reason": "Integration-tier acceptance delivered by bd-ib-dle6l3 drives the public recovery consumer pass over a real on-disk attempt store with ONE shared sanctioned command: a first pass, a duplicate trigger and a replacement consumer at a new fencing generation converge on one observed command effect while the displaced generation is fenced; the measured 2026-10-09 case (a local gate reporting FAILED after its pull request had merged, behind a pointer naming an already-completed diagnostic) selects the per-item reconcile-merged, with the identical evidence under a green gate as the control that no blind redispatch follows the gate failure; and an ambiguous execution receipt is resolved by the durable-effect lookup, an unobservable lookup retaining uncertainty rather than running the command twice. The ambiguous and gate-control legs are the sibling cases of the same module.",
     "work_item": "bd-ib-dle6l3"
   },
   {
