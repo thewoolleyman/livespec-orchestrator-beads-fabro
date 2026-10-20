@@ -96,11 +96,34 @@ trap 'rm -f "$judgement_input" "$judgement_input.last"' EXIT
   printf '\n\nYou are running on the HOST as a pre-dispatch check, not inside a sandbox, so /etc/livespec/sandbox-capabilities is absent: use the committed mirror. Read files only. End with the JSON failure line on any finding, or with the single word PASS alone on the last line.\n'
 } > "$judgement_input"
 
+# The claude leg authenticates as the account a dispatch would, through the
+# Dispatcher's own selector, not as whatever bare CLAUDE_CODE_OAUTH_TOKEN the
+# wrapper injected. Measured 2026-10-20: the bare token was the account at its
+# weekly limit while caam had selected another, so every claude leg exited 2
+# for a factory that was not exhausted (coordinator R324).
+claude_credential_env=$(python3 - "$install_root" <<'PY'
+import os, sys
+from pathlib import Path
+sys.path.insert(0, f"{sys.argv[1]}/scripts")
+sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
+    select_factory_credential,
+)
+choice = select_factory_credential(
+    environ=os.environ, home=Path.home(), warn=lambda line: print(f"dod-preflight: {line}", file=sys.stderr)
+)
+print(choice.env_name)
+PY
+) || exit 2
+
 status=0
 while read -r agent model effort; do
   echo "=== dod-preflight candidate: $agent $model $effort"
   if [ "$agent" = claude-acp ]; then
-    verdict=$(claude -p --model "$model" --effort "$effort" --allowedTools "Read,Grep,Glob" < "$judgement_input") || exit 2
+    echo "dod-preflight: claude leg credential: $claude_credential_env"
+    [ -n "${!claude_credential_env:-}" ] || { echo "dod-preflight: $claude_credential_env is not set" >&2; exit 2; }
+    verdict=$(CLAUDE_CODE_OAUTH_TOKEN="${!claude_credential_env}" \
+      claude -p --model "$model" --effort "$effort" --allowedTools "Read,Grep,Glob" < "$judgement_input") || exit 2
   else
     codex exec -m "$model" -c "model_reasoning_effort=$effort" -s read-only --skip-git-repo-check \
       -o "$judgement_input.last" < "$judgement_input" > /dev/null 2>&1 || exit 2
