@@ -3432,7 +3432,7 @@ any path operand rejected or not naming such a file, makes the decision
 
 **The decision.** The decision MUST be `carried_forward` only when all of the
 following hold: every step of the verified record is inside the direct-read
-grammar; every incoming path is beneath an inert class; no incoming path is in
+grammar; every incoming path is beneath an inert class, or this run has already re-proved after one changed-head `pr_refresh` and the verified record is that re-proof's own record; no incoming path is in
 the observation scope or among the item paths; the patch identity of `<new
 base>..<new head>` equals the patch identity of `<verified base>..<verified
 head>`; and every path in the observation scope and every item path has the
@@ -3477,7 +3477,7 @@ name the failed post. The verified head of a later carry-forward in the same
 run is still the head of the verified record, so a chain of carry-forwards is
 always measured against the diff that was actually verified. A carry-forward
 consumes no review-fix round and leaves the three-refresh non-convergence bound
-unchanged. Scenario 178 in `scenarios.md` exercises these three paragraphs.
+unchanged. Scenario 178 in `scenarios.md` exercises these three paragraphs. A run re-proves after a changed-head `pr_refresh` at most once on the second condition's account. A refresh whose incoming paths overlap the item paths or the observation scope, or whose rebase conflicts in any path that is not a declared record file, MUST still take the re-proof or refresh-repair route this section already requires. A `carried_forward` record written under the second condition MUST say that the incoming paths were not all inert and that the run's one re-proof covered them. Scenario 229 in `scenarios.md` exercises these sentences.
 
 `pr` MUST query the exact pull request for the recorded branch, verify its
 current head against the head named by the latest record of this run that is
@@ -4406,7 +4406,8 @@ commit sha that record names (§"Proof of Done record" → "The record").
 When no proof record on the pull request carries the identifier of the
 item's latest journaled dispatch, and that dispatch's journal carries a
 `watchdog-stall-cancel` record or a `run-wall-budget-exceeded` record
-(§"Dispatcher progress watchdog") naming a published head, that cancel
+(§"Dispatcher progress watchdog"), or a `credential-use-deadline-reached` record
+(§"Worker credential projection"), naming a published head, that cancel
 record anchors the resume instead, under every restriction below. A proof
 record that carries the dispatch's identifier always takes precedence over
 a cancel record. The cancel record anchors only when its stage is
@@ -9124,15 +9125,21 @@ run budget. When the freshness gate cannot be satisfied, the Dispatcher MUST ref
 the dispatch and MUST surface that the host credential requires renewal, rather
 than projecting a credential that MAY expire mid-run.
 
+The worker's maximum run budget is the smaller of two figures. The first is the execution allowance the Dispatcher derives from the resolved workflow graph. The second is the bounded credential-use window, which is the resolved `dispatcher.credential_queue_allowance_seconds` plus the whole-run wall budget resolved for the same dispatch (§"ACP node timeouts", "Whole-run wall budget key"). The worker's credential-use deadline MUST be the projection instant plus that same figure, and the in-sandbox guard MUST stop coding-agent execution at that deadline, so the host gate and the in-sandbox guard use one figure. The freshness gate MUST require that figure plus the documented margin. The bound on credential use is the guard deadline, not the progress watchdog. The whole-run wall budget is not itself a hard bound: queue time is excluded from it, a held or unmeasured budget lets a run continue past it, and it is enforced only while the watchdog polls. A run first launched within the credential queue allowance is never stopped by the deadline before the whole-run wall budget's worth of running time has elapsed. At the run's first coding-agent launch, the in-sandbox start check MUST refuse the launch when the time remaining before the credential-use deadline is less than the resolved whole-run wall budget, naming the deadline, the remaining time and the budget. This is the queue-exceeded refusal. It is a different measurement from the start check's comparison of the credential's remaining life against the freshness requirement, and both MUST be made. A run that queued past the credential queue allowance is therefore refused before any coding-agent turn starts, and is never stopped by the guard in the middle of a turn on its queue's account. `dispatcher.credential_queue_allowance_seconds` is a committed-only positive integer of seconds, default **86400**. A non-positive or non-integer value MUST be rejected before any run exists, naming the key. Its resolution and journaling follow the whole-run wall budget key. The status and manual-renewal surfaces MUST report the same figure and name which of the two figures governed. For a dispatch in flight they MUST also report the queue time consumed against the credential queue allowance. Scenario 228 in `scenarios.md` exercises this paragraph.
+
+**A run ended by its credential-use deadline.** When the in-sandbox guard stops a coding agent at the credential-use deadline in the middle of a node, or refuses an agent launch because the deadline has passed, the Dispatcher MUST end the run under the export-then-terminate precondition of §"A factory run never awaits a human". It exports the run's record and writes and reads back the preserve-by-reference pointer, which names the run's published pull request and publish branch head when they exist, before the run is ended. It MUST journal exactly one `credential-use-deadline-reached` record carrying the run id, the factory, the node, the projection instant, the credential-use deadline, the queue time consumed, the governing figure, the preserve-by-reference pointer, and the cause. The cause is `queue-exceeded` for the start check's queue-exceeded refusal, `launch-refused` for a later agent launch refused because the deadline has passed, and `killed-mid-node` for an agent stopped at the deadline. The same disposition applies to all three. It MUST rest the item at `blocked` with `blocked_reason` `needs-human`, with a ledger comment naming the run, the node, the deadline, the cause and the pointer. The record anchors resume under §"Resume from a published pull request (`resume --item`)" exactly as a `run-wall-budget-exceeded` record does. The same published-head, stage and proof-record-precedence restrictions apply. A deadline record without those prerequisites preserves the recovery reference but does not itself authorize `resume --item`. Such an ending MUST NOT be reported as a plain failed run, MUST NOT be left without a journal record, and MUST NOT count toward any non-convergence or rework bound. Scenario 228 in `scenarios.md` exercises this paragraph.
+
 The orchestrator **host** MUST be the sole owner and refresher of each long-lived
 provider refresh credential; worker sandboxes MUST be read-only consumers of the
 projected snapshots.
 
 The projection mechanism — the per-provider projection shape, which projected
-credentials the freshness gate covers, the credential file or field layout, the
-encoding that renders the snapshot non-rotatable, and the numeric freshness
-threshold — is implementation-owned and MUST NOT be fixed by this contract. The
-behavior is exercised by Scenario 18 and Scenario 19 in `scenarios.md`.
+credentials the freshness gate covers, the credential file or field layout, and
+the encoding that renders the snapshot non-rotatable — is implementation-owned
+and MUST NOT be fixed by this contract. The maximum run budget, credential-use
+deadline and freshness requirement follow the rules above; the documented
+margin remains implementation-owned. The behavior is exercised by Scenario 18,
+Scenario 19 and Scenario 228 in `scenarios.md`.
 
 ## Proof credential projection
 
