@@ -181,6 +181,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     fabro_failure_detail_from_payload,
     fabro_status_kind_from_payload,
 )
+from livespec_orchestrator_beads_fabro.commands._heading_gaps import live_headings
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     default_node_timeouts,
     derive_fabro_timeout_seconds,
@@ -195,7 +196,6 @@ from livespec_orchestrator_beads_fabro.commands._otel_scrub import (
     ATTRIBUTE_ALLOWLIST,
     is_allowed_attr,
 )
-from livespec_orchestrator_beads_fabro.commands.detect_impl_gaps import detect_rules
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.errors import BeadsCommandError
 from livespec_orchestrator_beads_fabro.store import (
@@ -860,7 +860,7 @@ def _revision(*, decision: str) -> str:
 
 
 def _spec_tree(*, tmp_path: Path) -> Path:
-    """Build a SPECIFICATION tree with one live MUST rule + a rich history walk."""
+    """Build a SPECIFICATION tree with one live H2 heading + a rich history walk."""
     spec = tmp_path / "SPECIFICATION"
     v1 = spec / "history" / "v001" / "proposed_changes"
     v1.mkdir(parents=True)
@@ -985,7 +985,12 @@ def test_spec_checks_flag_stalled_epics() -> None:
         ),
         _item(id="epic-rolling", type="epic", status="active", depends_on=("dep-1",)),
     ]
-    findings = run_spec_checks(items=items, spec_root=Path("/nonexistent"), manifest=_manifest())
+    findings = run_spec_checks(
+        items=items,
+        spec_root=Path("/nonexistent"),
+        project_root=Path("/nonexistent"),
+        manifest=_manifest(),
+    )
     stalled = [finding for finding in findings if finding.check == "no-stalled-epic"]
     assert [(finding.item_id, finding.severity) for finding in stalled] == [
         ("epic-rolling", "fail"),
@@ -1012,12 +1017,22 @@ def test_spec_checks_epic_not_stalled_when_any_dep_unresolved_or_open() -> None:
         _item(id="epic-closed", type="epic", status="done", depends_on=("dep-closed",)),
         _item(id="task-done-deps", depends_on=("dep-closed",)),
     ]
-    findings = run_spec_checks(items=items, spec_root=Path("/nonexistent"), manifest=_manifest())
+    findings = run_spec_checks(
+        items=items,
+        spec_root=Path("/nonexistent"),
+        project_root=Path("/nonexistent"),
+        manifest=_manifest(),
+    )
     assert [finding for finding in findings if finding.check == "no-stalled-epic"] == []
 
 
 def test_spec_checks_skip_spec_tree_checks_without_spec_root(tmp_path: Path) -> None:
-    findings = run_spec_checks(items=[], spec_root=tmp_path / "missing", manifest=_manifest())
+    findings = run_spec_checks(
+        items=[],
+        spec_root=tmp_path / "missing",
+        project_root=tmp_path,
+        manifest=_manifest(),
+    )
     assert [(finding.check, finding.severity) for finding in findings] == [
         ("no-stale-gap-tied", "skipped"),
         ("unresolved-spec-commitment", "skipped"),
@@ -1027,7 +1042,7 @@ def test_spec_checks_skip_spec_tree_checks_without_spec_root(tmp_path: Path) -> 
 
 def test_spec_checks_warn_only_for_stale_gap_tied_items(tmp_path: Path) -> None:
     spec = _spec_tree(tmp_path=tmp_path)
-    fresh_gap = detect_rules(spec_root=spec)[0].gap_id
+    fresh_gap = live_headings(spec_root=spec, project_root=tmp_path)[0].gap_id
     items = [
         _item(id="g-fresh", origin="gap-tied", gap_id=fresh_gap),
         _item(id="g-stale", origin="gap-tied", gap_id="gap-gone1234", status="active"),
@@ -1035,7 +1050,9 @@ def test_spec_checks_warn_only_for_stale_gap_tied_items(tmp_path: Path) -> None:
         _item(id="g-none", origin="gap-tied", gap_id=None),
         _item(id="f-free", gap_id="gap-gone1234"),
     ]
-    findings = run_spec_checks(items=items, spec_root=spec, manifest=_manifest())
+    findings = run_spec_checks(
+        items=items, spec_root=spec, project_root=tmp_path, manifest=_manifest()
+    )
     stale = [finding for finding in findings if finding.check == "no-stale-gap-tied"]
     assert [(finding.item_id, finding.severity) for finding in stale] == [("g-stale", "warn")]
     assert "gap-gone1234" in stale[0].message
@@ -1044,7 +1061,9 @@ def test_spec_checks_warn_only_for_stale_gap_tied_items(tmp_path: Path) -> None:
 
 def test_spec_checks_no_gap_findings_without_open_gap_tied_items(tmp_path: Path) -> None:
     spec = _spec_tree(tmp_path=tmp_path)
-    findings = run_spec_checks(items=[_item()], spec_root=spec, manifest=_manifest())
+    findings = run_spec_checks(
+        items=[_item()], spec_root=spec, project_root=tmp_path, manifest=_manifest()
+    )
     assert [finding for finding in findings if finding.check == "no-stale-gap-tied"] == []
 
 
@@ -1054,7 +1073,9 @@ def test_spec_checks_flag_unresolved_commitments(tmp_path: Path) -> None:
         _item(id="filed-1", spec_commitment_hint="hint-filed"),
         _item(id="empty-hint", spec_commitment_hint=""),
     ]
-    findings = run_spec_checks(items=items, spec_root=spec, manifest=_manifest())
+    findings = run_spec_checks(
+        items=items, spec_root=spec, project_root=tmp_path, manifest=_manifest()
+    )
     unresolved = [finding for finding in findings if finding.check == "unresolved-spec-commitment"]
     assert [(finding.item_id, finding.severity) for finding in unresolved] == [
         ("hint-unfiled", "fail")
