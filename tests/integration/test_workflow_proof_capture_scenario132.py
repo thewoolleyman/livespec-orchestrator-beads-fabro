@@ -232,18 +232,33 @@ def test_proof_capture_is_an_acp_node_on_its_own_adapter_input() -> None:
     assert (_BUNDLE / "prompts" / "proof-capture.md").is_file()
 
 
-def test_proof_capture_is_entered_only_from_publish_draft() -> None:
-    """Nothing but `publish_draft` reaches the capture node.
+def test_proof_capture_is_entered_only_from_a_published_draft_or_a_recapture() -> None:
+    """Every entry into the capture node is one the contract names, and no other.
 
-    The contract says "entered only from `publish_draft`", and the reason is the
-    pull request: a capture entered from anywhere else could run before any draft
-    existed and would have nowhere to post its record.
+    The reason the set is closed at all is the pull request: a capture entered
+    from somewhere that had not published could run before any draft existed and
+    would have nowhere to post its record. The THREE sources the ratified text
+    names are `publish_draft`, a changed-head `pr_refresh` whose decision is
+    `reproof_required` (the `pr_refresh_head` breaker), and — since v175's
+    proof-record paragraph, work-item bd-ib-j56cur — a `recapture` review verdict
+    through `recapture_route`. Each of the three runs after a publish, which is
+    what keeps the closure's PURPOSE intact while its membership grew.
+
+    READ STRUCTURALLY RATHER THAN BY LINE SUFFIX, which is the correction this
+    case needed. The retired form matched `edge.endswith("-> proof_capture")`, so
+    an edge carrying any attribute block could not match it — and
+    `pr_refresh_head -> proof_capture [label=...]` has carried one since v121, so
+    the assertion read as a closed set of ONE while the graph already had two
+    entries. An instrument that cannot see an entry cannot establish that no
+    other entry exists.
     """
-    edges = _edges(text=_dot(payload=_BUNDLE))
+    parsed = parse_workflow_graph(text=_dot(payload=_BUNDLE))
 
-    assert [edge for edge in edges if edge.endswith(f"-> {_CAPTURE}")] == [
-        f"{_PUBLISH} -> {_CAPTURE}"
-    ]
+    assert set(parsed.predecessors(node=_CAPTURE)) == {
+        _PUBLISH,
+        "pr_refresh_head",
+        "recapture_route",
+    }
 
 
 def test_proof_capture_routes_a_defect_to_fix_and_a_failure_to_needs_human() -> None:

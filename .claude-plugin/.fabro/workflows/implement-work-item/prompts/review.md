@@ -58,8 +58,8 @@ Judge the record on three things, in the work-item's own scope:
   is correct. A suite run proves a test passed; it is silent on whether the
   delivered artifact does the thing the assertion claims, so a `verified`
   verdict replayed from it certifies nothing. A blocking finding is what
-  sends the run back: it **re-enters `proof_capture`** through the review-fix
-  route and exercises the behaviour before any replay. A suite run attached **beside a real exercise is not a
+  sends the run back: it **re-enters `proof_capture`** — directly, through the
+  recapture route below — and exercises the behaviour before any replay. A suite run attached **beside a real exercise is not a
   finding** — that is the supporting evidence the capture prompt permits, and
   blocking it would punish a stronger record than the rule requires. Nor is
   this a finding where the assertion's own subject IS a test, a check or a
@@ -83,7 +83,7 @@ proof record** and is `[BLOCKING]`. It is **blocking even when every
 host-captured assertion is correctly listed as pending** the host leg, and
 even when the code is perfect. Name each uncaptured `factory_captured`
 assertion; a blocking finding **re-enters `proof_capture`** through the
-review-fix route, which is where the missing capture is owed.
+recapture route below, which is where the missing capture is owed.
 
 Make that comparison a **REQUIRED, SHOWN enumeration** — not a check you
 run in your head. Build it from the `## Definition of Done` section's own
@@ -108,16 +108,137 @@ pending. If the Definition of Done is unreadable and you cannot build the
 enumeration at all, say THAT as a `[BLOCKING]` finding — never an
 `approve` without it.
 
-### A record older than the tree is `[BLOCKING]`
+### A record that is not CURRENT for the tree is `[BLOCKING]` — compare TREES
 
-If the latest captured record was posted BEFORE the tree you are reviewing —
-or if no captured record exists on the pull request at all — that is a
+If no captured record exists on the pull request at all, that is a
 `[BLOCKING]` finding, not an advisory one, and it is blocking even when the
 code itself is perfect. The whole point of capturing before review is that
-the record and the tree stay in lockstep; a record older than the tree means
-the proof the replay is about to reproduce describes code nobody shipped.
-Compare the record's own timestamp and run id against the branch's commit
-timestamps, and say which you compared in the finding.
+the record and the tree stay in lockstep; a record describing a different
+tree means the proof the replay is about to reproduce describes code nobody
+shipped.
+
+A record is **CURRENT** for the head you are reviewing when **the TREE of the
+commit the record names equals the TREE of that head**. Read the sha off the
+record's own second line — `Publish-branch head: <40-character sha>` — and
+compare the two trees:
+
+    git fetch --quiet origin <the publish branch>
+    git diff --quiet <the record's sha> <the head under review> && echo current
+
+Exit status 0 means the two commits carry the same tree, so the record is
+CURRENT and **no proof-record finding is owed for its head**. Only a
+non-zero status is the finding, and the finding must say which two shas you
+compared and that you compared their trees.
+
+**Do NOT judge currency by timestamp, by sha equality, or by commit order,
+and never require the record to POSTDATE the head.** The engine commits a
+CHECKPOINT after every node, and `proof_capture`'s own checkpoint lands
+AFTER the record is posted — so the head you review is routinely a commit
+or two above the sha the record names, seconds later, with an identical
+tree. Measured 2026-10-20 on two runs: `01M5CE38SZJW` posted its record at
+14:33:47Z for head `ddb5523d` while the reviewed head `90b906e8` was
+committed at 14:33:52Z, and `01M5CDH2FZSE` posted at 16:54:22Z for
+`67f31db` against a reviewed head committed at 16:54:29Z. Both records were
+current — the checkpoints changed no file — and both were rejected round
+after round as "proof predates the reviewed head" until the review-fix
+firing budget ran out. A commit that changes no tree MUST NOT make a record
+stale.
+
+If the record declares NO head at all — the capture prompt tells it to omit
+the label and say so in prose when its clone carried changes the pull
+request did not — that absence is itself the finding, because then nothing
+anchors the proof.
+
+### Classify every blocking finding: is its subject the RECORD or the TREE?
+
+A finding whose subject is the latest captured RECORD rather than the tree is
+a **PROOF-RECORD finding**. Exactly these four are proof-record findings:
+
+1. The record is **not current** for the head under review, per the tree
+   comparison above — or there is no record at all.
+2. A behavioural assertion whose proof is **test-suite output alone**.
+3. A step that runs a **program the record is required to contain and does
+   not contain** — the capture prompt's self-contained rule covers every
+   program that is neither tracked in the repository at the commit the record
+   names nor an installed tool invoked by its name, so an untracked helper or
+   a heredoc program whose source is absent is this finding; a tracked script
+   invoked by its path and an installed tool invoked by its name are NOT.
+4. An assertion whose proof **prints the claimed conclusion** instead of
+   showing the observed output of the behaviour.
+
+Everything else blocking — a bug in the diff, a security defect, detector
+evasion, a design defect, a missing test, an incomplete factory proof
+enumeration you cannot build because the Definition of Done is unreadable —
+is a finding about the TREE.
+
+**Mark the classification on the line, do not make it in your head.** Every
+`[BLOCKING]` line carries a trailing ` (proof-record)` or ` (tree)` tag. The
+two verdicts route to different stages and nothing downstream can re-derive
+which you meant, so an unmarked blocking line is an unreviewable verdict.
+
+Why the split exists, measured rather than argued: `review_fix` is a
+CODE-fix node and **cannot repair a proof record**. Two runs on 2026-10-20
+spent every review-fix round with `just check` green and the code fine,
+because from review visit 2 on every blocking finding was about the record;
+the fix node changed nothing a reviewer had objected to, `proof_capture` was
+re-entered knowing nothing about why its record had been rejected, and the
+run died on the firing budget after 390 minutes in one case. A record defect
+owes a RE-CAPTURE and a tree defect owes a FIX, and you are the only stage
+that can tell them apart.
+
+### Publish your findings as a review record on the pull request
+
+Whenever you list at least one `[BLOCKING]` finding, post **exactly one NEW
+comment** on the same draft pull request you read the captured record from,
+and do it BEFORE you emit your routing JSON:
+
+    gh pr comment <number> --body-file <file>
+
+Its FIRST LINE must be exactly:
+
+    Review findings — run <run-id> — <UTC timestamp>
+
+followed by your complete finding lines — every `[BLOCKING]` and
+`[ADVISORY]` line, with its classification tag, verbatim and in the order
+you listed them. Resolve `<run-id>` the way the capture record does, from
+this run's own id. Never edit an earlier review record and never delete one;
+post a new comment per round.
+
+This record is the DURABLE second route to `proof_capture`. The engine
+preamble carries your response to the next stage, but a preamble is a
+summary and can arrive carrying no finding at all — and a fix round reaches
+`proof_capture` several stages later, by which point your response is far
+behind. The comment on the pull request survives both, which is why
+`proof_capture` is required to read it when its preamble is empty. Post it
+on a `recapture` verdict AND on a `fix` verdict: a mixed verdict's
+proof-record findings are owed to the `proof_capture` visit its fix round
+reaches, and this comment is how they get there.
+
+### Which verdict a blocking round earns
+
+- **No blocking finding at all** → `approve`. Unchanged, and a clean review
+  keeps the approval route however many proof-record findings an earlier
+  round had.
+- **At least one blocking finding, and EVERY one of them tagged
+  `(proof-record)`** → `recapture`. The run re-enters `proof_capture`
+  directly with your findings and reaches neither `disposition` nor
+  `review_fix`, so the verdict consumes no disposition visit, no review_fix
+  visit and no review-fix round. A run gets two such laps; the third
+  recapture verdict ends the run at the non-convergence terminal, and that
+  bound is enforced for you — do not try to count laps yourself, and do not
+  downgrade a genuine record defect to an advisory to avoid one.
+- **At least one blocking finding tagged `(tree)`** → `fix`, exactly as
+  before, whatever proof-record findings ride along beside it. The tree is
+  fixed first, the disposition stage adjudicates, the review-fix budget and
+  the review cap apply unchanged, and the proof-record findings reach the
+  `proof_capture` visit that fix round re-enters through the review record
+  you posted above.
+
+An exhausted review-fix budget does NOT pre-empt a `recapture` verdict, and
+neither the review cap's needs-human rest nor its `merge_on_review_cap` ship
+edge applies to one: a verdict about the record never enters the loop those
+bound. So do not withhold `recapture` on the grounds that the fix rounds are
+spent.
 
 ## The lens — what a senior engineer weighs
 
@@ -236,12 +357,15 @@ leg here is the correct and complete state for that assertion — neither is
 a finding on its own, and grading one as a missing capture would send a
 correct run back through a capture no sandbox can perform.
 
-THEN list each finding on its own line:
+THEN list each finding on its own line, every blocking one carrying its
+classification tag per the classification section above:
 
-    [BLOCKING] <file:line> — <defect + why it matters>
+    [BLOCKING] <file:line> — <defect + why it matters> (tree)
+    [BLOCKING] <the record> — <defect + why it matters> (proof-record)
     [ADVISORY] <file:line> — <suggestion>
 
-When at least one `[BLOCKING]` finding is present, also persist the
+When at least one `[BLOCKING]` finding is present, post those lines as the
+review record on the pull request per the section above, and also persist the
 complete findings text for this review round in workflow context:
 
 1. Determine the round number N for the context key: count prior visible `review_findings_r*`
@@ -258,9 +382,13 @@ complete findings text for this review round in workflow context:
 Then end your reply with a single JSON object on the LAST line:
 
 - correct & in-scope (no blocking findings): `{"preferred_next_label": "approve"}`
-- at least one BLOCKING finding:             `{"preferred_next_label": "fix", "context_updates": {"review_findings_r<N>": "<the exact finding lines>"}}`
+- at least one BLOCKING finding tagged `(tree)`: `{"preferred_next_label": "fix", "context_updates": {"review_findings_r<N>": "<the exact finding lines>"}}`
+- at least one BLOCKING finding and EVERY blocking finding tagged `(proof-record)`: `{"preferred_next_label": "recapture", "context_updates": {"review_findings_r<N>": "<the exact finding lines>"}}`
 
-Use those exact lowercase tokens. An empty blocking list ⇒ approve — but
+Use those exact lowercase tokens. `recapture` is a real routing label of this
+graph, not a description: it selects the `review -> recapture_route` edge, and
+spelling it `fix` instead sends a record defect to a code-fix node that cannot
+repair one. An empty blocking list ⇒ approve — but
 only beside a coverage enumeration that is PRESENT and on which every
 `factory_captured` assertion reads `captured: yes`. An empty blocking list
 with no enumeration is the unreviewed record this prompt's proof section

@@ -555,10 +555,20 @@ def test_the_review_prompt_treats_a_record_older_than_the_tree_as_blocking() -> 
     times for a dozen unrelated conditions, so a nearby hit says nothing about
     THIS clause and the probe can pass against a prompt that files a stale record
     as advisory.
+
+    THE CONDITION'S OWN WORDING MOVED AT v175 and the severity did not. "Older
+    than the tree" became "not CURRENT for the tree", because the ratified test
+    is now whether the TREE of the commit the record names equals the tree of the
+    head under review — an engine checkpoint commit makes a record OLDER while
+    leaving it current, which under the retired wording was a blocking finding
+    every round (work-item bd-ib-j56cur). What this case asserts is unchanged:
+    the condition and the `[BLOCKING]` label are joined in one literal. The
+    currency rule itself is bound in
+    `test_proof_record_recapture_route_scenario137`.
     """
     prompt = _prompt(name="review.md")
 
-    assert "A record older than the tree is `[BLOCKING]`" in prompt
+    assert "A record that is not CURRENT for the tree is `[BLOCKING]`" in prompt
     assert "no captured record exists" in prompt
     assert "`[BLOCKING]` finding, not an advisory one" in prompt
 
