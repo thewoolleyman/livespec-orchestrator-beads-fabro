@@ -3550,7 +3550,21 @@ missing capability. Where an assertion is governed by a referenced
 scenario heading, the reproduction steps SHOULD follow one of that
 heading's scenarios step for step, and the record MUST name, per
 assertion, the referenced heading and the scenario title the steps
-exercise, or state that no scenario governs it. It MUST NOT modify the
+exercise, or state that no scenario governs it. Every program a
+reproduction step executes that is neither tracked in the repository at
+the commit the record names nor an installed tool invoked by its name
+MUST be written into the record itself, inline or as an asset the record
+names through the proof asset store, so that each step can be replayed
+from the record, that commit and the sandbox's installed tools alone; a
+step MAY invoke a program the repository tracks at that commit by its
+path, and an installed tool by its name, without copying it into the
+record. The record MUST state the commit sha its steps ran against, which
+MUST be the publish branch head at the moment of capture. A record is
+CURRENT for a head under review when the tree of the commit the record
+names equals the tree of that head. A commit that changes no tree, such
+as an engine checkpoint commit that lands after `proof_capture` publishes,
+MUST NOT make a record stale, and no rule MAY require a record to
+postdate a commit that changes no tree. It MUST NOT modify the
 tree; a capture that requires a code change is an implementation defect
 and the node MUST end succeeded with `preferred_label=fix`, which routes
 to `fix`, after publishing a record whose first-line verdict is
@@ -3562,11 +3576,42 @@ ACP node's does. It MUST state, in the record, which assertions are
 `host_captured` or `human_attested` and therefore not captured. `review` MUST review the
 latest captured record alongside the code; because `review_fix`
 re-enters `janitor`, every accepted fix round re-enters `publish_draft`
-and `proof_capture` before `review`, and a captured record older than the
-tree under review is a blocking review finding. A captured record whose
-proof of a behavioural assertion is test-suite output alone is likewise
-a blocking review finding, so the run re-enters `proof_capture` through
-that same route rather than replaying a proof that exercised nothing.
+and `proof_capture` before `review`, so the record `review` reads is
+normally current.
+
+A blocking review finding whose subject is the latest captured record
+rather than the tree is a PROOF-RECORD finding. Each of these is one: a
+record that is not current for the head under review; a behavioural
+assertion whose proof is test-suite output alone; a step that runs a
+program the rule above requires the record to contain and that the record
+does not contain; and an assertion whose proof is a printed conclusion
+rather than the observed output. A review verdict is a RECAPTURE verdict
+when it carries at least one blocking finding and every blocking finding
+it carries is a proof-record finding. A recapture verdict MUST end
+`review` with `preferred_label=recapture`, which MUST route to
+`proof_capture` and MUST NOT route to `disposition` or `review_fix`, so
+the verdict consumes no `disposition` visit, no `review_fix` visit and no
+review-fix round. That holds for the first and second recapture verdicts
+of a run; the third recapture verdict in one run MUST route to the
+existing `non_converged` terminal without entering `proof_capture`.
+Recapture verdicts are governed by that bound alone: an exhausted
+review-fix budget MUST NOT pre-empt a recapture verdict, and neither the
+review cap's needs-human rest nor its `merge_on_review_cap` ship edge
+applies to one. A `review` visit entered after a recapture consumes no
+review-fix round, and the engine visit limit of `review` MUST admit the
+review-fix budget's visits plus the two recapture laps. A verdict with no
+blocking finding keeps the approval route unchanged. `proof_capture`
+entered on a recapture verdict MUST receive the verdict's findings by two
+routes, the engine's preamble of preceding stage output and the review
+record on the pull request, MUST read that review record when the
+preamble carries no finding, and MUST publish a new captured record,
+current for the publish head, that addresses each finding. A verdict that
+carries at least one blocking finding about the tree is a fix verdict: it
+routes through `disposition` and `review_fix` and is bounded by the
+review-fix budget and the review cap exactly as before, and when its fix
+round reaches `proof_capture` through `janitor` and `publish_draft`, that
+`proof_capture` visit MUST also receive the verdict's proof-record
+findings by the same two routes.
 
 **`proof_verify`.** The node MUST run on an adapter distinct from the
 implementer's, MUST replay the published reproduction steps verbatim on
