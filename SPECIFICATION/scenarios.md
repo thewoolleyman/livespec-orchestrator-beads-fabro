@@ -8297,3 +8297,23 @@ Feature: A run stops chasing an advancing default branch once it has re-proved
     Then the pull request carries one reproof_required record naming that path
     And the run enters proof_capture for head N
 ```
+
+## Scenario 232 — needs-attention surfaces an item labelled approval:workflow-edit
+
+```gherkin
+Feature: The workflow-edit approval label is the maintainer's notice
+  As the maintainer authorizing an edit to .github/workflows/
+  I want every open item carrying approval:workflow-edit to appear in needs-attention
+  So that the advisory workflow-edit control has a surface where it is noticed
+
+  Scenario: An open labelled item is surfaced
+    Given an open work-item carrying the approval:workflow-edit label
+    When the needs-attention snapshot is composed
+    Then it carries hygiene:workflow-edit-approval:<work-item-id> naming the item, its status and its title
+    And its handoff opens the item for review
+
+  Scenario: A closed or unlabelled item is not surfaced
+    Given a closed work-item carrying the label and an open work-item without it
+    When the needs-attention snapshot is composed
+    Then neither item yields a workflow-edit-approval fact
+```
