@@ -2106,5 +2106,21 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal plan-identity-fields-on-the-read-projections, and the owning work-item bd-ib-wi5b publishes plan_slug, next_action and last_session on the list-work-items --json projection and last_session on the context envelope together with the test that binds this entry.",
     "work_item": "bd-ib-wi5b"
+  },
+  {
+    "heading": "## Scenario 213 \u2014 The plan timeline reports the record kinds it does not return",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal plan-resume-surfaces-rulings-and-timeline-omissions, and the owning work-item bd-ib-p38r makes the timeline read path report each skipped plan record kind with its count, together with the test that binds this entry.",
+    "work_item": "bd-ib-p38r"
+  },
+  {
+    "heading": "## Scenario 214 \u2014 A plan resume returns the epic's rulings beside the typed next action",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal plan-resume-surfaces-rulings-and-timeline-omissions, and the owning work-item bd-ib-ghijrt makes resume_directive return the epic's non-carrier-map scope events and the plan operation surface them before acting, together with the test that binds this entry.",
+    "work_item": "bd-ib-ghijrt"
   }
 ]
