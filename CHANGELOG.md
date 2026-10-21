@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.230.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.10...v0.230.0) (2026-10-21)
+
+
+### Features
+
+* gate the ACP clearance factory-native write behind every valve refusal ([09abef6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/09abef60be4a74f27d8b6ca43a2440cf2104af96))
+* let a recorded clearance lift the wait the previous evaluation scheduled ([3f97d78](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3f97d78590c8c404c9509dcd865d0f8081ecf616))
+* read an operator clearance back off the factory record that carries it ([51cd344](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/51cd344f764f0f9e466b3ecadda6f29fe8bdd143))
+* report the observations an operator clearance retired on the factory ([358bfd2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/358bfd26b51a737996d2b23810e09d67de8d2f91))
+
 ## [0.229.10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.9...v0.229.10) (2026-10-21)
 
 
