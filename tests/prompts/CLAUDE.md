@@ -56,6 +56,42 @@ instead.
   caller: a HEAD-anchored step passes capture and surfaces one stage later as
   a `not_reproduced` verdict against a correct implementation.
 
+- `test_review_proof_record_currency.py` — bd-ib-qnokup: the review prompt
+  judges a captured record's currency by comparing TREES — a record is CURRENT
+  when the tree of the commit it names equals the tree of the head under review
+  — and it forbids the timestamp, sha-equality and commit-order readings
+  outright, carries the moving-HEAD reason in the rule, keeps an absent record
+  and an absent head declaration blocking, and routes its finding through this
+  graph's `fix` label. A prompt test because the judgement is made by the
+  `review` agent out of this prose and is rendered by no Python caller: a
+  reviewer comparing timestamps emits a well-formed blocking finding, the run
+  re-enters capture, and the defect surfaces only as a run that spends its whole
+  firing budget rejecting correct records (measured 2026-10-20 on runs
+  `01M5CE38SZJW` and `01M5CDH2FZSE`). The needles are scoped to the currency
+  SECTION, since the prompt says `[BLOCKING]` a dozen times for a dozen
+  unrelated conditions and separately tells the capture prompt where to read its
+  head. The routing case is POSITIVE rather than a probe for the absence of
+  v175's reverted `recapture` label: it enumerates the labels the prompt offers
+  and requires exactly the two the shipped graph has, because an absence probe
+  could never return a hit. The SEVERITY end of the same section stays bound in
+  `tests/integration/test_workflow_proof_verify_scenario132.py`.
+
+- `test_proof_record_self_contained_programs.py` — bd-ib-qnokup: the
+  proof-capture prompt's `Self-contained` bullet scopes the publish-the-source
+  duty by what the REPLAYER has — every program a step executes that is neither
+  tracked in the repository at the commit the record names nor an installed tool
+  invoked by its name goes into the record, inline or as a named proof asset —
+  and it states both exemptions and the scratch directory that is untracked by
+  construction. A prompt test for the reason its sibling modules record: the
+  steps are authored out of this prose and rendered by no Python caller, so a
+  record whose step runs an untracked helper publishes cleanly and surfaces one
+  stage later as a `not_reproduced` verdict against a correct implementation.
+  The needles are scoped to that BULLET, because the prompt's Step 5 body list
+  separately requires the `COMPLETE SOURCE of any program it runs` and would
+  satisfy a whole-file probe over a bullet that scoped nothing. The
+  OUTPUT-IS-NOT-SOURCE clause and the round trip it pairs with stay bound in
+  `tests/integration/test_proof_finding_work_order_scenario138.py`.
+
 - `test_implement_coverage_before_green.py` — bd-ib-z6fmp: the implement-stage
   prompt requires the repository's per-file coverage check to be run over the
   FULL suite, with every gap closed, BEFORE any Green commit or amend — the hook

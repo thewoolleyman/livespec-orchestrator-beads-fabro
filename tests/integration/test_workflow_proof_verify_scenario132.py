@@ -537,11 +537,11 @@ def test_the_review_prompt_reviews_the_latest_captured_record_alongside_the_code
     assert "proof_capture" in prompt
 
 
-def test_the_review_prompt_treats_a_record_older_than_the_tree_as_blocking() -> None:
-    """A stale record is a BLOCKING finding, named as such.
+def test_the_review_prompt_treats_a_record_that_is_not_current_as_blocking() -> None:
+    """A record that is not CURRENT for the tree is a BLOCKING finding, named as such.
 
     Severity is the whole of this clause. The review prompt defaults every
-    observation to ADVISORY, so a stale-record instruction that did not say
+    observation to ADVISORY, so a not-current instruction that did not say
     `[BLOCKING]` would be recorded and then shipped — and the run would reach the
     replay with a record describing a tree that no longer exists, which is the
     one state the capture-before-review ordering exists to prevent.
@@ -553,12 +553,20 @@ def test_the_review_prompt_treats_a_record_older_than_the_tree_as_blocking() -> 
     rather than as two needles in a window. A window probe is the wrong
     instrument here and it fails silently: this prompt says `[BLOCKING]` a dozen
     times for a dozen unrelated conditions, so a nearby hit says nothing about
-    THIS clause and the probe can pass against a prompt that files a stale record
-    as advisory.
+    THIS clause and the probe can pass against a prompt that files a non-current
+    record as advisory.
+
+    The heading needle moved with v175's currency rule (work-item bd-ib-qnokup),
+    which replaced "older than the tree" with the TREE comparison the ratified
+    contract states — a record older than a tree-identical checkpoint commit is
+    CURRENT, so the retired wording made this clause fire on correct records.
+    What the rule narrows and what it leaves standing is
+    `tests/prompts/test_review_proof_record_currency.py`; this case keeps holding
+    the SEVERITY end, which that module does not assert.
     """
     prompt = _prompt(name="review.md")
 
-    assert "A record older than the tree is `[BLOCKING]`" in prompt
+    assert "A record that is not CURRENT for the tree is `[BLOCKING]`" in prompt
     assert "no captured record exists" in prompt
     assert "`[BLOCKING]` finding, not an advisory one" in prompt
 
