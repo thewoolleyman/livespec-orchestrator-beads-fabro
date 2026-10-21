@@ -2082,5 +2082,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal oom-kill-named-on-stalled-outcome, and the owning work-item bd-ib-7rnipp lands the OOM-kill naming on the stalled-no-progress outcome together with the test that binds this entry.",
     "work_item": "bd-ib-7rnipp"
+  },
+  {
+    "heading": "## Scenario 231 \u2014 Admission skips a Claude candidate whose seven-day allowance is exhausted",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal session-headroom-reads-the-seven-day-allowance, and the owning work-item bd-ib-u3jq5r lands the seven-day reading and skip in the session-headroom admission filter together with the test that binds this entry.",
+    "work_item": "bd-ib-u3jq5r"
   }
 ]
