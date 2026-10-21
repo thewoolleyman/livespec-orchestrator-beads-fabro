@@ -8108,8 +8108,6 @@ Feature: The Dispatcher's Fabro event reads cannot become unbounded factory load
     Examples:
       | caller                |
       | progress watchdog     |
-      | ACP projection        |
-      | ACP reconcile replay  |
       | review-gate reader    |
       | cost reader           |
 
@@ -8157,17 +8155,11 @@ Feature: The Dispatcher's Fabro event reads cannot become unbounded factory load
     Then the new failure has consecutive attempt number 1
     And its backoff is at least 60 seconds
 
-  Scenario: Repeated projection read failures are exhausted durably
-    Given the ACP projection's read of a run has failed on four consecutive attempts
-    When its fifth consecutive attempt fails
-    Then reconcile-runs journals exactly one acp-projection-exhausted record
-    And the record names the work-item, run id, factory, attempt count 5 and last failure reason
-    And the projection failure remains visible as exhausted
-    When later reconcile-runs passes run
-    Then none reads that run's events
-    And none duplicates the exhaustion record or clears the failure
-    When a new dispatch creates a new run for the same work-item
-    Then the earlier run's exhaustion does not prevent reading the new run
+  Scenario: No reconciliation surface replays the retired ACP projection
+    Given a dispatch journal holding acp-projection-failure records for a run
+    When the loop tick, the dispatch preamble or the standalone reconcile-runs sweep reconciles that run's factory
+    Then it issues no fabro events read of that run to project agent.acp.failover events
+    And the existing acp-projection-failure records still parse
 
   Scenario: A reconcile pass deduplicates reads of one run
     Given multiple reconciliation paths require events from the same run
