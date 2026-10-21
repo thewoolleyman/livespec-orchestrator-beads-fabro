@@ -691,11 +691,12 @@ Scenario: set-admission edits the policy without touching the status
   And the item's status is unchanged
   And the journal records the actor
 
-Scenario: a manual → auto flip on a pending-approval item does not approve it
-  Given a `pending-approval` item whose stored admission_policy is manual
+Scenario: a manual → auto flip on a pending-approval item does not approve it by itself
+  Given the repository configuration does not commit dispatcher.auto_approve_ready
+  And a `pending-approval` item whose stored admission_policy is manual
   When the operator invokes `drive --action set-admission:<work-item-id>:auto`
-  Then the item remains at `pending-approval`
-  And moving it to `ready` still requires an explicit `approve:<work-item-id>`
+  Then the valve does not move the item, which remains at `pending-approval` when the command returns
+  And it moves to `ready` only through an explicit `approve:<work-item-id>` or a later Dispatcher pass that finds its effective admission_policy auto
 ```
 
 ## Scenario 32 — Adopter-target dispatch compatibility
@@ -725,31 +726,57 @@ Scenario: Pull-primary resolves the target's default branch
   And it never hardcodes master
 ```
 
-## Scenario 33 — auto_approve_ready governs admission and a per-item label wins
+## Scenario 33 — auto_approve_ready governs admission, and a committed setting wins over a per-item label
 
 ```gherkin
-Feature: The auto_approve_ready global default and its per-item override
-  As an operator delegating routine approval
-  I want an unlabeled routine item auto-approved while a per-item manual label still holds it
-  So that admission delegation is granular and never reaches design-human-gated work
+Feature: The auto_approve_ready setting and its precedence over a per-item admission label
+  As an operator delegating routine approval through committed configuration
+  I want a committed auto_approve_ready to decide every item's admission, with a per-item label governing only where the setting is not committed
+  So that the committed configuration is respected, deliberate holds use the blocked status, and design-human-gated work is never auto-approved
 
-  Background:
-    Given dispatcher.auto_approve_ready is true
-
-  Scenario: An unlabeled routine item inherits the global and is auto-approved
-    Given a routine `pending-approval` item that carries no explicit admission_policy label
+  Scenario: An unlabeled routine item follows a committed permissive setting and is auto-approved
+    Given dispatcher.auto_approve_ready is committed as true in the repository configuration
+    And a routine `pending-approval` item that carries no explicit admission_policy label
     When the Dispatcher reaches it
     Then its effective admission_policy is auto and it is approved into `ready` without a human
-    And the auto-approval is journaled with the item id and the setting that governed it
+    And the auto-approval is journaled with the item id and the committed setting that governed it
 
-  Scenario: A per-item manual label beats the permissive global
-    Given a `pending-approval` item carrying an explicit admission_policy label of manual
+  Scenario: A committed permissive setting beats a stored per-item manual label
+    Given dispatcher.auto_approve_ready is committed as true in the repository configuration
+    And a routine `pending-approval` item carrying an explicit admission_policy label of manual
+    When the Dispatcher reaches it
+    Then its effective admission_policy is auto and it is approved into `ready` without a human
+    And the auto-approval is journaled with the item id and the committed setting that governed it
+
+  Scenario: A committed restrictive setting beats a stored per-item auto label
+    Given dispatcher.auto_approve_ready is committed as false in the repository configuration
+    And a `pending-approval` item carrying an explicit admission_policy label of auto
     When the Dispatcher reaches it
     Then it does not transition the item to `ready`
     And the item rests at `pending-approval` awaiting the human's explicit `approve`
 
+  Scenario: A per-item label governs where the setting is not committed
+    Given the repository configuration does not commit dispatcher.auto_approve_ready
+    And a routine `pending-approval` item carrying an explicit admission_policy label of auto
+    When the Dispatcher reaches it
+    Then its effective admission_policy is auto and it is approved into `ready` without a human
+
+  Scenario: An unlabeled item inherits the shipped default where the setting is not committed
+    Given the repository configuration does not commit dispatcher.auto_approve_ready
+    And a `pending-approval` item that carries no explicit admission_policy label
+    When the Dispatcher reaches it
+    Then its effective admission_policy is manual
+    And the item rests at `pending-approval` awaiting the human's explicit `approve`
+
+  Scenario: set-admission reports that a committed setting decides admission
+    Given dispatcher.auto_approve_ready is committed as true in the repository configuration
+    When the operator invokes `drive --action set-admission:<work-item-id>:manual`
+    Then the label is written and the item's status is unchanged
+    And the result states that the committed setting, named with its value, decides the item's admission while it stands
+
   Scenario: A spec-change-tier item is never auto-approved
-    Given a design-human-gated (spec-change-tier) `pending-approval` item
+    Given dispatcher.auto_approve_ready is committed as true in the repository configuration
+    And a design-human-gated (spec-change-tier) `pending-approval` item
     When the Dispatcher reaches it
     Then it does not auto-approve the item, regardless of the setting or of any per-item label
     And the item stays escalated to a human
