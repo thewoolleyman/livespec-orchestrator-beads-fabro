@@ -139,6 +139,32 @@ and 844275 shipped, so the BOUND DOES NOT MOVE and the headroom narrows from
 37420 to 35725 seconds. The warning stands for the node after this one — a new
 node on a cycle, or one whose work is a turn rather than a read, has nowhere
 left to be absorbed.
+
+v175's RECAPTURE ROUTE WAS THAT NODE, IT CROSSED A CEILING NO CASE HERE HELD,
+AND THAT IS WHY A THIRD FIGURE IS PINNED BELOW (work-item bd-ib-qnokup, which
+re-lands the prompt-only half of the reverted change). The route added
+`review -> recapture_route -> proof_capture -> review`, a third cycle through
+the proof loop, and the derivation billed `proof_capture`, `review`,
+`proof_verify` and `proof_grade` one more visit each per lap it admitted:
+906555 seconds shipped. Every case in this module still passed, because the one
+inequality they assert is against a BOUND this repository chooses, and the
+remedy for crossing a bound is to move it -- which is what that change did,
+to 940000. What it actually crossed is a ceiling this repository does NOT
+choose: 864000 seconds, the lifetime of a FRESH Codex credential, so under
+that graph the freshness gate could refuse a dispatch holding a
+just-renewed token and no raised bound could ever buy it back. The change was
+reverted in full (PR 3416, released v0.229.3) and the bound is back at 880000.
+
+So the relation that matters is pinned on its own below, EXACTLY and against
+the credential rather than against a bound: the shipped payload resolves
+844275 seconds and a fresh 864000-second credential satisfies it, with 19725
+seconds to spare. An exact pin is deliberate here, and it is the opposite
+choice from the loose bound the comment beside it explains: a loose comparand
+is precisely what let 906555 pass unremarked, and the next edit that moves this
+figure MUST be made to re-measure it against the credential before it chooses a
+bound. The prompt-only re-land this paragraph ships adds no node, no edge and
+no visit, so the figure is unmoved.
+
 This repository routes NO factory node to Codex (`.livespec.jsonc`'s `acp_nodes`
 put every node on a Claude adapter), so nothing here is refused by it; a
 repository that does route one and raises its node timeouts should expect that
@@ -170,6 +196,16 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # the thing being moved away from and a drifting comparand would hide the move.
 _FRESHNESS_BOUND_SECONDS = 880_000
 _FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_314_075
+
+# The figure the SHIPPED payload resolves, and the lifetime of a FRESH Codex
+# credential. Unlike the bound above, neither of these is this repository's to
+# choose: the first is what the graph in this tree costs, and the second is what
+# the host mints at renewal, so their relation is a fact about whether a dispatch
+# can run at all rather than a threshold anyone may move. Pinned EXACTLY for the
+# reason the docstring gives -- a loose comparand is what let v175's 906555 cross
+# the credential ceiling while every case here still passed.
+_SHIPPED_FRESHNESS_REQUIREMENT_SECONDS = 844_275
+_FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS = 864_000
 
 
 def _checkpoint() -> dict[str, Any]:
@@ -258,3 +294,45 @@ def test_the_checkpoint_budget_holds_the_credential_freshness_floor_under_the_bo
     assert hasattr(retired, "required_seconds"), retired
     assert retired.required_seconds == _FRESHNESS_AT_THE_RETIRED_FIFTEEN_MINUTES
     assert retired.required_seconds > _FRESHNESS_BOUND_SECONDS
+
+
+def test_the_shipped_freshness_requirement_fits_a_fresh_codex_credential() -> None:
+    """The shipped payload asks 844275 seconds; a fresh Codex credential carries 864000.
+
+    This is the case the module was missing when v175 widened the graph, and it
+    is the one the docstring's re-land paragraph exists for. Every other case
+    here compares the resolved figure against `_FRESHNESS_BOUND_SECONDS`, a
+    threshold this repository chooses -- so a graph that costs more than a
+    credential can ever hold still passes them all, and the honest-looking
+    remedy is to raise the bound, which is exactly what the reverted change
+    did on its way past 864000.
+
+    So the comparand here is the CREDENTIAL, not a bound. A fresh Codex access
+    token is minted with a ten-day life, and the freshness gate demands the
+    resolved requirement of a token's REMAINING life; a graph asking more than
+    864000 seconds is therefore refusable on a token minted moments earlier,
+    and no configuration in this repository can buy that back.
+
+    Both halves are asserted, and the first is why the second is evidence. The
+    EXACT figure pins what this tree costs, so an edit that moves the
+    derivation fails here and has to re-measure rather than discover the move
+    as a refused dispatch; the inequality then states the relation that figure
+    has to keep. An inequality alone would pass for any graph under the
+    ceiling, including one that had silently consumed the whole margin.
+    """
+    resolved = resolve_credential_lifetime_requirement(repo=_REPO_ROOT)
+
+    assert hasattr(resolved, "required_seconds"), resolved
+    assert resolved.required_seconds == _SHIPPED_FRESHNESS_REQUIREMENT_SECONDS, (
+        f"the shipped payload resolves {resolved.required_seconds} seconds, not the pinned "
+        f"{_SHIPPED_FRESHNESS_REQUIREMENT_SECONDS}: re-measure the derivation against this "
+        f"tree, record the move in this module's docstring, and check the new figure against "
+        f"the {_FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS}-second fresh-credential lifetime "
+        f"before choosing any bound"
+    )
+    assert resolved.required_seconds <= _FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS, (
+        f"the shipped payload asks {resolved.required_seconds} seconds of usable credential "
+        f"lifetime, more than the {_FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS} a freshly minted "
+        f"Codex credential carries, so the freshness gate can refuse a dispatch holding a "
+        f"just-renewed token and no bound in this repository can admit it"
+    )
