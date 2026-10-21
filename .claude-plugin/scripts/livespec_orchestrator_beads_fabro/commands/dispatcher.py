@@ -24,6 +24,7 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
   dispatcher.py spec-check [--project-root <path>] [--spec-root <path>] [--json]
   dispatcher.py janitor-check [--repo <path>] [--json]
   dispatcher.py idle-slot-audit [--repo <path>] [--json]
+  dispatcher.py sandbox-images --factory <name> [--repo <path>]... [--json]
   dispatcher.py reconcile-runs [--repo <path>] [--factory <name>]
                                 [--fabro-bin <path>] [--journal <path>]
                                 [--invoker <id>] [--dry-run] [--json]
@@ -398,6 +399,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands import (
     run_dispatch_command,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_images_command import (
+    add_sandbox_images_arguments,
+    run_sandbox_images_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_subcommand_args import (
     add_claude_cred_status_arguments,
     add_codex_cred_refresh_arguments,
@@ -455,6 +460,7 @@ __all__: list[str] = [
     "run_probe_command",
     "run_reconcile_merged_command",
     "run_reconcile_runs_command",
+    "run_sandbox_images_command",
     "run_spec_check",
     "warn_item_sizing",
 ]
@@ -479,6 +485,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "reconcile-merged": run_reconcile_merged_command,
     "reconcile-runs": run_reconcile_runs_command,
     "resume": run_resume_command,
+    "sandbox-images": run_sandbox_images_command,
     "spec-check": run_spec_check,
 }
 
@@ -510,6 +517,7 @@ def _build_parser() -> argparse.ArgumentParser:
     add_spec_check_arguments(parser=subparsers.add_parser("spec-check"))
     add_janitor_check_arguments(parser=subparsers.add_parser("janitor-check"))
     add_idle_slot_audit_arguments(parser=subparsers.add_parser("idle-slot-audit"))
+    add_sandbox_images_arguments(parser=subparsers.add_parser("sandbox-images"))
     add_reconcile_runs_arguments(parser=subparsers.add_parser("reconcile-runs"))
     add_reconcile_merged_arguments(parser=subparsers.add_parser("reconcile-merged"))
     add_post_host_record_arguments(parser=subparsers.add_parser("post-host-record"))

@@ -1388,6 +1388,21 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   so without the ceiling the inspection-failure control walked out of its fixture
   and answered confidently for the suite's own repository.
 
+- `test_sandbox_images_scenario212.py` — the read-only sandbox-image enumeration,
+  driven through the production `dispatcher.py` parser and handler table over
+  REAL host state in a scratch HOME: a real `installed_plugins.json`, real
+  repository checkouts, real plugin-cache builds, real `.in_use` lease files and
+  real processes. Two claims put it here rather than at the unit tier. The join
+  between the three layers — registry to repositories, lease and process scan to
+  builds, resolver to entries — so a respelling at any seam leaves each unit
+  module self-consistent while the command reports the wrong array; and the
+  CHANGE-NOTHING claim, which is about the whole host tree before and after and
+  so is measured as a recursive snapshot of every path the command could have
+  written. Its stale-lease fixture WAITS on the child rather than merely killing
+  it: an unreaped child is a zombie whose `/proc/<pid>` entry still exists, so a
+  signalling-only fixture reports every stale lease as live and the case passes
+  against an implementation that never asked.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
