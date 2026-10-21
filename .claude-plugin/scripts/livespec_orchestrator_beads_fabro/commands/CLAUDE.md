@@ -1332,6 +1332,20 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   confirmation arm is and for the same reason — a clearance recorded longer ago
   than `HOLD_INTERVAL` can only retire a record that has already expired on its
   own — so a clearance row outside that window costs no per-run read at all.
+  AT THE UNION (`_dispatcher_acp_preflight._unioned`) the two clearance SOURCES
+  are UNIONED rather than preferred between: a clearance this repository's own
+  operator performed is a line in its journal and one a PEER's operator
+  performed is a record on the factory, both name observation ids, and an id is
+  a digest of the evidence plus the scope it lands on — so an id either side
+  names is naming the same record, and a repository that cleared one hold
+  locally while a peer cleared another must see both retired rather than
+  whichever source it happened to read. The merged set is carried ON the ledger
+  value and not merely consumed, so a later reader of
+  `retired_observation_ids` cannot answer a different question from the filter
+  above it. What this delivers at the wave is the clause's own scheduling rule:
+  the next loop-wave evaluation re-derives the chain, finds the cleared record
+  retired, and proceeds — instead of parking again for the instant the previous
+  evaluation scheduled, however long ago the operator cleared the outage.
 - The ADMISSION SESSION-HEADROOM FILTER of `contracts.md`'s "Admission filters
   candidates by projected Claude session headroom" paragraph (`bd-ib-jwuxs4`,
   Scenario 60) lives in SEVEN cohesive modules, split pure-from-impure the usual
