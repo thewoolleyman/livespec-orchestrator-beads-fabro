@@ -392,6 +392,59 @@ def test_reconcile_merged_refusal_names_the_branch_state_and_the_item_id_search(
     ]
 
 
+def test_a_merged_branch_pr_resolves_without_running_the_item_id_search(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CONTROL for the two fall-through cases above, and it earns them both.
+
+    Each of those asserts that an UNMERGED branch read reaches the item-id
+    search. Neither can distinguish "falls through when the branch read is not a
+    merge" from "searches on every invocation", and the second would spend a
+    forge round trip per reconcile and — worse — could resolve a DIFFERENT pull
+    request than the branch read already named, with nothing in the journal
+    saying which answered. So this case pins the short-circuit: the branch read's
+    own number and merge sha are what the item closes against, no `gh pr list`
+    ran at all, and the search stage is absent from the journal.
+
+    It is a control rather than behaviour of its own: the short-circuit held
+    before `bd-ib-sz2eal` and holds after it, so this case could not fail against
+    the build the two cases above were written against, and it is committed on the
+    suite-green leg rather than through a Red it cannot produce.
+    """
+    _assert_reconcile_command_registered(capsys=capsys)
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(status="active")
+    append_work_item(path=_config(), item=item)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            _ok(stdout=_pr_json(number=2705, state="MERGED", sha="7253f79c")),
+            _ok(),
+            *_venue_resolution(),
+            *[_ok() for _ in range(8)],
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        lambda **_: _AcceptancePass(verdict="PASS"),
+    )
+
+    exit_code = main(argv=["reconcile-merged", "--repo", str(repo), "--item", item.id])
+
+    assert exit_code == 0
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert stored.audit is not None
+    assert (stored.audit.pr_number, stored.audit.merge_sha) == (2705, "7253f79c")
+    assert not [argv for argv, _ in runner.calls if argv[:3] == ["gh", "pr", "list"]]
+    assert "reconcile-pr-list-merged" not in [
+        record["stage"] for record in _journal_records(repo=repo)
+    ]
+
+
 @pytest.mark.parametrize("status", ["backlog", "ready", "blocked"])
 def test_reconcile_merged_accepts_merge_verified_parked_items(
     status: str,
