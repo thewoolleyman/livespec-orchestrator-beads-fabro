@@ -451,10 +451,17 @@ policy label, the `merge-on-review-cap:` / `review-fix-cap:` /
 through the store seam) and MUST NOT
 change the item's status. A policy edit NEVER moves an item between
 states: flipping an item's `admission_policy` from `manual` to `auto`
-while it rests at `pending-approval` MUST NOT approve it into `ready` —
-the automatic GO fires only once, at capture/groom time; after a later
-policy flip, moving the item still requires an explicit
-`approve:<work-item-id>`. Symmetrically, flipping `auto` to `manual` on
+while it rests at `pending-approval` MUST NOT, by itself, approve it into
+`ready` — automatic approval happens only where the Dispatcher approves, at
+capture/groom time or on a later Dispatcher pass over an item resting at
+`pending-approval` whose effective `admission_policy` is `auto`
+(§"Admission valve (`ready → active`)"); short of such a pass, moving the
+item requires an explicit `approve:<work-item-id>`. When this repository
+commits `dispatcher.auto_approve_ready`, `set-admission` still writes the
+label, and its result MUST state that the committed setting decides the
+item's effective admission while it stands, naming that setting and its
+value; it MUST NOT report the write as changing the item's admission.
+Symmetrically, flipping `auto` to `manual` on
 an item already at `ready` MUST NOT demote it — it was already approved;
 a policy flip never demotes an item out of `ready` — that takes an
 explicit operator act (the `defer` un-approval, or a guarded `move`). A
@@ -4687,13 +4694,14 @@ mechanical — capacity, dependencies, a resolvable assignee, and factory-safety
 
 - **Permission** was settled upstream at the `pending-approval → ready`
   (`approve`) transition, governed by the item's effective
-  `admission_policy` (`item.admission_policy`, with `None` inheriting the
-  global `dispatcher.auto_approve_ready` default, §"Dispatcher policy
-  settings"): `auto` auto-approves into `ready` — at capture/groom time, or on
-  a subsequent Dispatcher pass for an item resting at `pending-approval`;
-  `manual` (whether stored on the item or inherited from a `false` global
-  `auto_approve_ready`) rests at `pending-approval` until a human's explicit
-  `approve`. The
+  `admission_policy` (resolved per §"The five policy settings" →
+  `dispatcher.auto_approve_ready`: a committed setting wins over a stored
+  label; otherwise the stored label governs and `None` inherits the shipped
+  default): `auto` auto-approves into `ready` — at capture/groom time, or on
+  a subsequent Dispatcher pass for an item resting at `pending-approval`; an
+  effective `manual` (from a committed `false` setting, from a stored label
+  where the setting is not committed, or from the shipped default) rests at
+  `pending-approval` until a human's explicit `approve`. The
   `admission_policy` field is the first-class realization that
   **replaces the prior `human-gated` text marker** — risky / irreversible
   work is held at the `approve` gate (resting at `pending-approval`), never
@@ -6694,7 +6702,11 @@ The Dispatcher's routine dispositions are governed by orchestrator-wide
 keys). Each setting is a **global default**; a **per-item ledger label
 overrides the global default for that one work-item** — the per-item label
 WINS over the global, and an item that carries no such label inherits the
-global. The settings are **independent**: no setting implies another, and
+global. Admission is the one exception to that precedence: when the
+repository commits `dispatcher.auto_approve_ready`, the committed value
+decides every item's effective `admission_policy` and a stored per-item
+`admission_policy` label does not override it (§"The five policy settings").
+The settings are **independent**: no setting implies another, and
 there is no master switch. This section composes — never contradicts —
 §"Admission valve (`ready → active`)", §"Post-merge acceptance (`acceptance →
 done`)", §"Dispatcher grooming behavior", and §"Store-write consent
@@ -6708,7 +6720,14 @@ every setting independently. Design record: repo `thewoolleyman/livespec`,
 (THE RE-LOCKED DESIGN), together with its "CORRECTION / ADDENDUM" section, which
 records the maintainer's ruling that every setting is per-item overridable
 EXCEPT `wip_cap`, whose rationale is that a concurrency ceiling is not a
-per-item property. `dispatcher.require_invoker` (§"Journal invoker
+per-item property. Admission departs from that record deliberately: the
+maintainer's later ruling of 2026-08-21, "the config file setting should
+always be respected", makes a committed `dispatcher.auto_approve_ready` win
+over every per-item admission label, because a stale `admission:manual` label
+otherwise holds an item at `pending-approval` in a repository whose committed
+configuration says to auto-approve; a deliberate per-item hold is expressed as
+status `blocked` with its reason recorded on the item, never as an admission
+label. `dispatcher.require_invoker` (§"Journal invoker
 attribution") is a committed attribution-integrity dial, not a policy
 setting of this section: it has no per-item override and is deliberately
 not API-configurable.
@@ -6726,16 +6745,22 @@ across-dispatch progress clauses. Existing within-run caps remain intact.
 
 ### The five policy settings
 
-Each is a global default with a per-item label override, and each defaults to
-its SAFE value:
+Each is a global default with a per-item label override (for
+`dispatcher.auto_approve_ready`, only while the setting is not committed), and
+each defaults to its SAFE value:
 
 - **`dispatcher.auto_approve_ready`** (boolean, default **`false`**) — the
-  global default for an item's effective `admission_policy` when the item
-  carries no explicit `admission_policy` label: `true` ⇒ `auto` (auto-approve
-  `pending-approval → ready` without a human); `false` ⇒ `manual` (rest at
-  `pending-approval` for the human's explicit `approve`). Per-item override:
-  the existing `admission_policy` label — a stored `manual` label holds the
-  item at `pending-approval` even when the global is `true`. The Dispatcher
+  repository setting for an item's effective `admission_policy`: `true` ⇒
+  `auto` (auto-approve `pending-approval → ready` without a human); `false` ⇒
+  `manual` (rest at `pending-approval` for the human's explicit `approve`).
+  Precedence: when this repository's `.livespec.jsonc` commits
+  `dispatcher.auto_approve_ready`, the committed value decides the item's
+  effective `admission_policy` and a stored per-item `admission_policy` label
+  MUST NOT override it. When the key is not committed, the stored per-item
+  label governs, and an item carrying no label inherits the shipped default
+  (`false` ⇒ `manual`). An admission label is not a hold mechanism: a
+  deliberate per-item hold MUST be expressed as status `blocked` with its
+  reason recorded on the item. The Dispatcher
   MUST NOT auto-approve a **design-human-gated (spec-change-tier) item**
   regardless of this setting or of any label (§"Grooming and slice-size
   calibration"; `spec.md` §"Terminology"); such an item stays escalated.

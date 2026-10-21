@@ -216,7 +216,10 @@ by independent `dispatcher.*` policy settings. Each setting is a GLOBAL
 DEFAULT for the repo, and (except for the per-repo concurrency ceiling
 `wip_cap`) each is OVERRIDABLE PER WORK-ITEM by a ledger label: the per-item
 label wins over the global default, and an item carrying no label inherits
-the global. The settings are independent — no setting implies another, and
+the global. Admission is the one exception to that precedence: when the repo
+COMMITS `auto_approve_ready`, the committed value decides every item's
+admission and a per-item admission label does not override it; a deliberate
+per-item hold is the `blocked` status with its reason recorded. The settings are independent — no setting implies another, and
 there is no master switch. Every setting is settable through the orchestrator
 API and, through it, the Control-Plane console; the orchestrator owns the
 setting state, and the console only commands and observes.

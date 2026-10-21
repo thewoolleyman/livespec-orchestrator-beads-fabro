@@ -520,8 +520,8 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 33 \u2014 auto_approve_ready governs admission and a per-item label wins",
-    "work_item": "bd-ib-heat",
+    "heading": "## Scenario 33 \u2014 auto_approve_ready governs admission, and a committed setting wins over a per-item label",
+    "work_item": "bd-ib-pz7x",
     "first_seen": "2026-07-13"
   },
   {
