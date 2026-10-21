@@ -2098,5 +2098,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal tracks-edge-is-an-epic-linkage, and the owning work-item bd-ib-rrhbmm makes the list-work-items parent projection, context children, plan child enumeration and plan-progress attribution honour tracks edges together with the test that binds this entry.",
     "work_item": "bd-ib-rrhbmm"
+  },
+  {
+    "heading": "## Scenario 216 \u2014 The read projections publish a plan epic's identity keys",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal plan-identity-fields-on-the-read-projections, and the owning work-item bd-ib-wi5b publishes plan_slug, next_action and last_session on the list-work-items --json projection and last_session on the context envelope together with the test that binds this entry.",
+    "work_item": "bd-ib-wi5b"
   }
 ]

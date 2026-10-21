@@ -8437,3 +8437,23 @@ Feature: Epic linkage reads the same on every surface
     When the no-result-window fact is evaluated for that window
     Then the record's closure counts as a new closed child of the plan in that window
 ```
+
+## Scenario 216 — The read projections publish a plan epic's identity keys
+
+```gherkin
+Feature: A plan roster can be built from the read surfaces alone
+  As a consumer that never derives plan facts locally
+  I want the read projections to carry a plan epic's identity keys
+  So that a plan record renders without reading raw metadata
+
+  Scenario: An epic carries its plan keys and other records carry nulls
+    Given a plan epic carrying plan_slug, next_action and last_session, and one non-epic work-item
+    When list-work-items --json runs
+    Then the epic's record carries all three keys with their stored values
+    And the non-epic record carries null for all three
+
+  Scenario: The context envelope carries last_session
+    Given the same plan epic
+    When context runs for its plan_slug with --json
+    Then the envelope carries last_session beside next_action
+```
