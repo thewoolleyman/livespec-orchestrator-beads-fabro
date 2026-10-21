@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.230.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.230.1...v0.230.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* **dispatcher:** re-enter the plugin-cache gate inside every agent session ([26c205a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/26c205a10a495b91573d2d8997da0105ab906740))
+
 ## [0.230.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.230.0...v0.230.1) (2026-10-21)
 
 
