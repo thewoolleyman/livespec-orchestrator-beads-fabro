@@ -3325,7 +3325,17 @@ naming the new head — a `verified` record taken on it, or a `carried_forward`
 record carrying an earlier `verified` record to it — can reach final
 publication. Repeated default-branch movement is bounded to three refreshes per
 run, after which the run terminates with an explicit non-convergence cause and
-preserved work. An unchanged head proceeds to `pr`. All touched nodes MUST
+preserved work. An unchanged head proceeds to `pr`, except that when the
+default branch is already contained in the published head and that head
+carries any of the run's own empty commits (commits the run itself created
+that change no tree, such as engine checkpoint commits), `pr_refresh` MUST
+republish the head without them, under the explicit lease against the
+recorded remote head of the run's publish branch that this paragraph
+requires. A rewrite whose only change is dropping empty commits, over a
+tree identical to the proof-verified tree, MUST take the `carried_forward`
+decision of "Proof carry-forward across a refresh" and MUST NOT re-prove. A
+head carrying none of the run's empty commits MUST NOT be republished.
+Scenario 226 in `scenarios.md` exercises this sentence. All touched nodes MUST
 retain an unconditional outgoing edge accepted by the supported engine, and
 command nonzero exits MUST take their failure edge.
 
