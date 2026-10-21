@@ -268,9 +268,16 @@ def _reconcile_one_factory(
     # re-read each unresolved projection-failure fact's run through
     # `fabro events`; v127 retired both the fact and the projection, so there
     # is nothing left to replay and nothing a replay could learn. What v127
-    # does require replaying idempotently -- selection-to-execution observation
-    # keyed by factory, run, node attempt and selection identity -- is the
-    # provider-limit release leg, which `reconcile_one_run` below performs.
+    # SEPARATELY requires -- replaying selection-to-execution observation
+    # idempotently, keyed by factory, run, node attempt and selection identity
+    # -- is NOT discharged here, and nothing this survey calls performs it. The
+    # orphan disposal below names no selection, fallback or release at all, and
+    # the provider-limit release leg is reached only from
+    # `_dispatcher_terminal_routing`, on the DISPATCH terminal path this survey
+    # never enters. Re-sourcing that replay from the authoritative
+    # `acp-node-selection` and `provider-limit-release` records is the
+    # follow-on item `bd-ib-augqc2`, the other half of the same v127 proposal.
+    # Do NOT read this deletion as evidence the obligation is met.
     for orphan in classify_orphans(inventory=inventory, grace=grace):
         if inputs.only_work_item_id is not None and orphan.work_item_id != inputs.only_work_item_id:
             continue
