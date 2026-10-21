@@ -46,8 +46,17 @@ def resolve_merged_pr(
         stage="reconcile-pr-view-branch",
         command=(_pr_view_branch_argv(plan=plan), plan.repo, _GH_TIMEOUT_SECONDS, None),
     )
+    # A branch read that resolves a MERGED pull request IS the answer; every other
+    # reading falls through to the item-id search below, including a successful read
+    # of a pull request that is open or closed. This arm used to be terminal
+    # whenever `gh` exited 0, which made the search unreachable for the one case it
+    # exists to serve: an item landed by a host route on a DIFFERENT branch, while
+    # its factory branch carries an unmerged pull request of its own. The merge was
+    # one search away and the valve reported that none existed.
     if viewed.exit_code == 0:
-        return _merged_pr_view(stdout=viewed.stdout)
+        merged_view = _merged_pr_view(stdout=viewed.stdout)
+        if merged_view is not None:
+            return merged_view
     # The base branch is read off the plan's ONE resolved contract. Pinning the
     # search to a branch name this fleet happens to use searched an adopter's
     # forge for merges onto a branch they do not have -- a clean, plausible,
@@ -159,9 +168,16 @@ def _pr_view_branch_argv(*, plan: DispatchPlan) -> list[str]:
 
 
 def _merged_pr_view(*, stdout: str) -> PrView | None:
+    """The branch read's merged pull request, or `None` when it resolved none.
+
+    `None` is a REACHABLE reading rather than a defensive one -- a factory branch
+    routinely carries an open or closed pull request -- and it carried a
+    `no cover` pragma until `bd-ib-sz2eal`, which labelled the live path as
+    unreachable and hid the fall-through this arm now takes.
+    """
     view = parse_pr_view(stdout=stdout)
     if view is None or view.state != "MERGED" or view.merge_sha is None:
-        return None  # pragma: no cover - defensive malformed gh JSON
+        return None
     return view
 
 

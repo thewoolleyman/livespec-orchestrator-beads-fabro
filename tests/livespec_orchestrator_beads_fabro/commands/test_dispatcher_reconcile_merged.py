@@ -267,6 +267,60 @@ def test_reconcile_merged_resolves_a_hand_carried_pr_by_body_search(
     assert any("body" in argument for argument in runner.calls[2][0])
 
 
+def test_reconcile_merged_searches_by_item_id_when_the_branch_pr_is_not_merged(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A factory branch carrying an UNMERGED pull request is not an answer.
+
+    The branch read used to be terminal whenever `gh` exited 0, so a pull request
+    on the factory branch that was open or closed resolved to "no merged PR found"
+    and the item-id search that would have found the real merge never ran at all.
+    The live instance was `livespec-dev-tooling-vxkmab`, landed by a host route as
+    #2705 (`7253f79c`) while its factory pull request #2679 sat CLOSED: the search
+    reaches the merge, the branch read cannot, and the refusal named neither.
+
+    The fixture is the exact shape that produced it — a CLOSED branch pull request
+    whose own `mergeCommit` is absent, beside a DIFFERENT merged pull request whose
+    title names the item — so the resolved number and merge sha are evidence about
+    WHICH read answered rather than merely that one did.
+    """
+    _assert_reconcile_command_registered(capsys=capsys)
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(status="active")
+    append_work_item(path=_config(), item=item)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            _ok(stdout=_pr_json(number=2679, state="CLOSED", sha=None)),
+            _ok(stdout=json.dumps([_list_pr(number=2705, title=f"fix {item.id}", sha="7253f79c")])),
+            _ok(),
+            *_venue_resolution(),
+            *[_ok() for _ in range(8)],
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        lambda **_: _AcceptancePass(verdict="PASS"),
+    )
+
+    exit_code = main(argv=["reconcile-merged", "--repo", str(repo), "--item", item.id])
+
+    assert exit_code == 0
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert stored.audit is not None
+    assert (stored.audit.pr_number, stored.audit.merge_sha) == (2705, "7253f79c")
+    stages = [record["stage"] for record in _journal_records(repo=repo)]
+    assert stages[:3] == [
+        "reconcile-merged-invocation",
+        "reconcile-pr-view-branch",
+        "reconcile-pr-list-merged",
+    ]
+
+
 @pytest.mark.parametrize("status", ["backlog", "ready", "blocked"])
 def test_reconcile_merged_accepts_merge_verified_parked_items(
     status: str,
