@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.229.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.8...v0.229.9) (2026-10-21)
+
+
+### Bug Fixes
+
+* **dispatcher:** re-enter the plugin-cache gate before every declared check suite ([18d1534](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/18d153481e497d340a0f3dc807903ac04360fe75))
+
 ## [0.229.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.7...v0.229.8) (2026-10-21)
 
 
