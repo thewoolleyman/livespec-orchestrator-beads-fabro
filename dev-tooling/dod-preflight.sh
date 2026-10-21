@@ -94,6 +94,13 @@ trap 'rm -f "$judgement_input" "$judgement_input.last"' EXIT
   printf 'Goal: %s\n\n\n' "$goal"
   cat "$prompt_file"
   printf '\n\nYou are running on the HOST as a pre-dispatch check, not inside a sandbox, so /etc/livespec/sandbox-capabilities is absent: use the committed mirror. Read files only. End with the JSON failure line on any finding, or with the single word PASS alone on the last line.\n'
+  # Measured 2026-10-20: two items passed check 5 on wording while their proof
+  # needed a surface no sandbox capability provides. bd-ib-qnokup (R351) named
+  # rules of stage prompts the item itself changes and failed at dod_gate.
+  # livespec-dev-tooling-cmgqnz (R353) named a Job on the k3s gates cluster; it
+  # passed dod_gate too and was refused only at proof_capture, after a 74 m
+  # implement. So the host leg is told to name the surface, not grade wording.
+  printf '\nFor check 5, name the SURFACE each factory_captured assertion'\''s proof needs, concretely, before judging it, and do not grade the wording alone. A surface no sandbox capability provides makes the assertion a check 5 finding, even when the assertion reads as a plain command. These surfaces include: an external cluster or service (for example a Kubernetes gates cluster or a Job that exists only after a real submit); a credential or kubeconfig the sandbox is not given; a host service or operator-host state; and any effect of a released build. The last class includes behaviour that a stage prompt or workflow file under .claude-plugin/.fabro/ produces when this item changes that file. The run carrying the change cannot exercise it, because such a change takes effect only in a later run on the released build (contracts.md "Self-contained plugin dispatch", Scenario 54), and Scenario 137 forbids a fixture substitute. Give the host_captured remedy with a Reason line naming the host surface or the first post-release run that exercises it.\n'
 } > "$judgement_input"
 
 # The claude leg authenticates as the account a dispatch would, through the
