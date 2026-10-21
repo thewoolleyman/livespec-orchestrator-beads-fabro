@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.229.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.3...v0.229.4) (2026-10-21)
+
+
+### Bug Fixes
+
+* **proof-capture:** scope the program-text duty by what the replayer has ([4afda6c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4afda6c4bf840ba5ce75513e396d98e11dd9a2c8))
+* **review:** judge a captured record's currency by comparing trees ([102b029](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/102b0299a8c041c8f98010273c55cbdc825aeeab))
+
 ## [0.229.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.2...v0.229.3) (2026-10-20)
 
 
