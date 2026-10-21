@@ -66,7 +66,7 @@ def run_sandbox_images_command(*, args: argparse.Namespace) -> int:
     records = plugin_install_records(install_record=default_plugin_install_registry())
     repositories = _repositories(args=args, records=records)
     builds = executing_builds(
-        install_paths=_registered_builds(repositories=repositories, records=records),
+        install_paths=_registered_builds(records=records),
         roots=default_build_discovery_roots(),
     )
     entries = tuple(
@@ -94,22 +94,15 @@ def _repositories(
     return tuple(record.project_path for record in records)
 
 
-def _registered_builds(
-    *, repositories: tuple[Path, ...], records: tuple[PluginInstallRecord, ...]
-) -> tuple[Path, ...]:
-    """The build each enumerated repository's own install record names.
+def _registered_builds(*, records: tuple[PluginInstallRecord, ...]) -> tuple[Path, ...]:
+    """Every host-registered build, whether or not `--repo` selected its project.
 
-    Keyed on the RESOLVED project path, because the registry stores whatever path
-    the install was performed from while a `--repo` argument is whatever the
-    operator typed; comparing them as written makes a symlinked or
-    trailing-slash spelling of one repository miss its own registered build.
+    Repository selection changes only the repositories whose resolutions are
+    printed. A dispatch to any selected repository can execute from any build a
+    host registration currently reaches, so narrowing this route to matching
+    projects would hide bundled configs that remain resolvable now.
     """
-    by_project = {record.project_path.resolve(): record.install_path for record in records}
-    return tuple(
-        build
-        for build in (by_project.get(repository.resolve()) for repository in repositories)
-        if build is not None
-    )
+    return tuple(record.install_path for record in records)
 
 
 def _emit(*, entries: tuple[SandboxImageEntry, ...], as_json: bool) -> None:
