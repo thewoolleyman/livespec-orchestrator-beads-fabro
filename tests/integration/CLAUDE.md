@@ -1388,6 +1388,25 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   so without the ceiling the inspection-failure control walked out of its fixture
   and answered confidently for the suite's own repository.
 
+- `test_check_suite_plugin_gate_reentry.py` — every graph node that runs the
+  declared check suite re-enters the materialized plugin-cache gate BEFORE the
+  suite (work-item bd-ib-3f79, the recurrence of bd-ib-cewr.3). Its docstring
+  carries the MEASURED CAUSE the two earlier readings never established, taken
+  from this repository's own live Fabro sandbox: the Claude Agent SDK's session
+  start is a registry SYNC and not an installer, so it writes a record whose
+  `installPath` is a COMPUTED cache location and leaves materialization to the
+  loader — which rules the atomic-install fix shape out, since the write happens
+  inside the closed-source engine. The janitor cases EXECUTE the shipped node
+  bytes against a prepared plugins root under `tmp_path`, never the enclosing
+  run's own; the unrepairable case asserts the stand-in suite's marker is ABSENT,
+  which is the ordering proof and the one assertion the pre-repair bytes could
+  not satisfy. One case isolates cache completeness from pin enforcement by
+  pinning the build first and breaking its cache afterwards, and asserts the
+  advanced-build marker is absent so the drop is attributable to the
+  `required_paths` reading alone. `publish_draft` carries no re-entry of its own
+  and the last case measures WHY — `janitor` is its only in-edge — rather than
+  trusting it.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
