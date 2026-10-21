@@ -7,8 +7,10 @@ belongs to this stranded work-item — and owns the two `gh` shapes and the
 parsing that answer needs.
 
 The answer is deliberately three-valued: a `PrView` when exactly one merged PR
-matches, a refusal STRING when several do (reconciling against the wrong merge
-is worse than not reconciling), and `None` when none does.
+matches, a refusal STRING when none does and the reason can be stated — several
+candidates, so reconciling would pick one (reconciling against the wrong merge
+is worse than not reconciling), or a factory branch carrying a pull request that
+is not a merge — and `None` when the forge said only that it found nothing.
 """
 
 from __future__ import annotations
@@ -53,10 +55,12 @@ def resolve_merged_pr(
     # exists to serve: an item landed by a host route on a DIFFERENT branch, while
     # its factory branch carries an unmerged pull request of its own. The merge was
     # one search away and the valve reported that none existed.
+    unmerged_state: str | None = None
     if viewed.exit_code == 0:
-        merged_view = _merged_pr_view(stdout=viewed.stdout)
-        if merged_view is not None:
-            return merged_view
+        branch_reading = _branch_pr_view(stdout=viewed.stdout)
+        if isinstance(branch_reading, PrView):
+            return branch_reading
+        unmerged_state = branch_reading
     # The base branch is read off the plan's ONE resolved contract. Pinning the
     # search to a branch name this fleet happens to use searched an adopter's
     # forge for merges onto a branch they do not have -- a clean, plausible,
@@ -84,6 +88,10 @@ def resolve_merged_pr(
         return candidates[0]
     if len(candidates) > 1:
         return _ambiguous_pr_detail(candidates=candidates)
+    if unmerged_state is not None:
+        return _unmerged_branch_detail(
+            item=item, branch=plan.branch, state=unmerged_state, default_branch=default_branch
+        )
     return None
 
 
@@ -167,18 +175,46 @@ def _pr_view_branch_argv(*, plan: DispatchPlan) -> list[str]:
     ]
 
 
-def _merged_pr_view(*, stdout: str) -> PrView | None:
-    """The branch read's merged pull request, or `None` when it resolved none.
+def _branch_pr_view(*, stdout: str) -> PrView | str:
+    """The branch read's merged pull request, or the STATE that is not one.
 
-    `None` is a REACHABLE reading rather than a defensive one -- a factory branch
-    routinely carries an open or closed pull request -- and it carried a
-    `no cover` pragma until `bd-ib-sz2eal`, which labelled the live path as
-    unreachable and hid the fall-through this arm now takes.
+    Every string arm is a REACHABLE reading rather than a defensive one -- a
+    factory branch routinely carries an open or closed pull request -- and the
+    whole set carried a single `no cover` pragma until `bd-ib-sz2eal`, which
+    labelled the live path as unreachable and hid the fall-through it now takes.
+
+    The four readings are NAMED rather than collapsed into one word, because the
+    refusal downstream is the only thing that tells an operator which situation
+    they are in and the four have different remedies. `gh` output nobody can
+    parse is a diagnostic about the forge CALL rather than about the pull
+    request, and a `MERGED` pull request carrying no merge commit is a reading no
+    acceptance may be keyed on -- so neither may read as a plain state word, and
+    neither may read as the other.
     """
     view = parse_pr_view(stdout=stdout)
-    if view is None or view.state != "MERGED" or view.merge_sha is None:
-        return None
+    if view is None:
+        return "unreadable JSON"
+    if view.state != "MERGED":
+        return view.state
+    if view.merge_sha is None:
+        return "MERGED with no merge commit"
     return view
+
+
+def _unmerged_branch_detail(*, item: WorkItem, branch: str, state: str, default_branch: str) -> str:
+    """Refuse an item whose branch pull request is not a merge and whose id matches none.
+
+    The SEARCH is named by the argv that was actually run rather than by a
+    sentence claiming one happened: an absence asserted over an unstated
+    population is a claim no reader can re-run, and this valve exists to
+    establish a merge from the forge rather than to be told about one.
+    """
+    searched = " ".join(merged_pr_list_argv(item=item, default_branch=default_branch))
+    return (
+        f"ERROR: no merged PR found for work-item {item.id}: the pull request on "
+        f"{branch} reads {state}, and the item-id search over merges onto "
+        f"{default_branch} named none. Searched: {searched}\n"
+    )
 
 
 def _pr_view_from_list_entry(
