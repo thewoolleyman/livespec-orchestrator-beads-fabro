@@ -91,6 +91,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
+from livespec_orchestrator_beads_fabro.commands._acp_clearance_records import is_clearance_run
+from livespec_orchestrator_beads_fabro.commands._acp_factory_clearance_evidence import (
+    recorded_clearance,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_factory_hold_records import (
     PROVIDER_LIMIT_CAUSE,
     FactoryHoldObservation,
@@ -178,12 +182,21 @@ class FactoryHoldEvidence:
     field rather than something a consumer derives from `unobservable`: the
     entry's shape belongs to this read, and a candidate filter interpreting one
     would be a second reader of a record it never produced.
+
+    `retired_observation_ids` is what the OPERATOR-CLEARANCE arm found, and it
+    is reported rather than applied for the same reason the two halves of the
+    retirement routes are applied at the union: a clearance recorded on the
+    factory may name an observation this read derived, one the reading
+    repository's own journal carries, or one neither holds any more, and only
+    the union has all of them in hand. Reporting it here is what makes a
+    clearance recorded by ANOTHER repository visible to this one at all.
     """
 
     observations: tuple[FactoryHoldObservation, ...] = ()
     successes: tuple[FactorySuccessObservation, ...] = ()
     unobservable: tuple[Mapping[str, object], ...] = ()
     unconfirmed_keys: frozenset[str] = frozenset()
+    retired_observation_ids: frozenset[str] = frozenset()
 
     @property
     def holds(self) -> tuple[AcpAvailabilityHold, ...]:
@@ -246,6 +259,9 @@ def _merged(*, reads: tuple[FactoryHoldEvidence, ...]) -> FactoryHoldEvidence:
         successes=tuple(success for read in reads for success in read.successes),
         unobservable=tuple(entry for read in reads for entry in read.unobservable),
         unconfirmed_keys=frozenset(key for read in reads for key in read.unconfirmed_keys),
+        retired_observation_ids=frozenset(
+            identifier for read in reads for identifier in read.retired_observation_ids
+        ),
     )
 
 
@@ -308,8 +324,33 @@ def _read_evidence(
         )
     )
     return FactoryHoldEvidence(
-        observations=() if observation is None else (observation,), successes=successes
+        observations=() if observation is None else (observation,),
+        successes=successes,
+        retired_observation_ids=_cleared_ids(row=row, payload=payload, began_at=began_at),
     )
+
+
+def _cleared_ids(
+    *, row: FabroRunSummary, payload: object, began_at: datetime | None
+) -> frozenset[str]:
+    """The observations one OPERATOR-CLEARANCE run's record names as cleared.
+
+    Bounded by the run's START, exactly as the confirmation arm is and for the
+    same reason: a clearance recorded longer ago than `HOLD_INTERVAL` can only
+    retire a record that has already expired on its own, so reading one would
+    cost a round trip per historical clearance on every admission evaluation.
+
+    Empty is what EVERY non-clearance row answers, and also what a clearance
+    run whose record states nothing readable answers. The two are deliberately
+    not distinguished: retirement is the destructive direction, so a record
+    this read could not recover simply leaves the observation standing.
+    """
+    if began_at is None or not is_clearance_run(labels=row.labels):
+        return frozenset()
+    clearance = recorded_clearance(payload=payload)
+    if clearance is None:
+        return frozenset()
+    return frozenset(clearance.observation_ids)
 
 
 def _observation_instant(*, row: FabroRunSummary, now_iso: str) -> datetime | None:
