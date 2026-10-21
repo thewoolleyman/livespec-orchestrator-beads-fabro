@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.229.10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.9...v0.229.10) (2026-10-21)
+
+
+### Bug Fixes
+
+* confirm merged pull requests without check rollups ([3c5aa08](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3c5aa08e87db53befc7a15ba3ea0ef985c780ca3))
+* distinguish unreadable pull-request views ([d5e05b7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d5e05b76350cc4b9e19d3c7efbb841cef45248bc))
+* preserve merge-poll status checks ([f3deec7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f3deec7986c13598ec84b6638cef24560cbd20f7))
+
 ## [0.229.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.8...v0.229.9) (2026-10-21)
 
 
