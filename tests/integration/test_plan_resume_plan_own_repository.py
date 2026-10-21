@@ -36,13 +36,22 @@ carries one too, with the obligation recorded as the chain's own authority.
 
 WHY THE TENANT DISCRIMINATION RIDES ON THE ARCHIVE LEG'S STATUS AND NOT ON THE
 PROOF LEG'S MARKER. A committed chain transition writes a `plan-progress-event`
-comment on the epic whose payload embeds the obligation verbatim — marker
-included — so an `item_comment` obligation naming the epic is satisfied by the
-very event that recorded it, whichever tenant answers. That makes the marker
-shape unable to tell a right tenant from a wrong one. The archive leg's
-`item_status` on the epic is immune: a status is a field of the record rather
-than text in a comment, so `active` and `closed` are readings of the plan's own
-tenant and nothing else.
+comment on the epic whose payload embeds the obligation verbatim, marker
+included. While `observe_item_comment` scanned whole comment bodies, that made
+an `item_comment` obligation naming the epic satisfied by the very event that
+recorded it, whichever tenant answered — so the marker shape could not tell a
+right tenant from a wrong one. The archive leg's `item_status` on the epic was
+immune and still is: a status is a field of the record rather than text in a
+comment, so `active` and `closed` are readings of the plan's own tenant and
+nothing else.
+
+THAT ECHO NO LONGER SATISFIES ANYTHING, as of `bd-ib-5yskzv`: a marker is now
+found only where a comment's FIRST LINE opens with it, which is where every
+record of a marker's kind opens and is nowhere a payload or a prose mention can
+reach. The archive leg keeps the discrimination here, because an `item_status`
+read needs no record to have been posted at all and so stays the cheapest
+positive control this module can carry; the last case below is the one that
+asserts the echo's new reading directly.
 
 WHY A THIRD CASE IS OWED ON A LEG THAT DOES DERIVE A SUCCESSOR. That same
 archive leg is the ONE leg `_plan_resume_advance._plan_level_action` derives no
@@ -55,6 +64,17 @@ pointer, but answering with no further step at all, which under an unattended
 resume is silence. So the third case is the measured plan's own leg — a `proof`
 leg, whose successor the advance does derive — and it asserts the derived step
 and the pointer that step's obligation landed in.
+
+WHY A FOURTH CASE SITS ON THE SAME FIXTURES, under `bd-ib-5yskzv`. The third
+case's epic carries a real proof record BESIDE the echo, so it cannot say which
+of the two the reading answered on: both satisfied the obligation on the build
+it was written against. The fourth case is that epic with the record WITHHELD —
+the state a plan is actually in when its proof pointer has just been written —
+and it asserts the resume keeps the proof step pending rather than deriving the
+review. Measured 2026-10-20 on `bd-ib-fyozyd` and 2026-10-21 on
+`livespec-dev-tooling-mvalxq`: the proof pointer self-satisfied on the next
+resume, the derived review pointer self-satisfied in its turn, and both plans
+skipped proof and review with no surface reporting anything amiss.
 """
 
 from __future__ import annotations
@@ -368,18 +388,17 @@ def test_the_replacement_pointer_lands_when_the_prior_obligation_names_the_epic_
     step's own obligation under the plan's own repository.
 
     THE SATISFIED READING IS NOT THIS CASE'S DISCRIMINATOR, and saying so is
-    what keeps it honest. A committed chain transition writes a
-    `plan-progress-event` comment on the epic whose payload embeds the obligation
-    verbatim — marker included — so ANY `item_comment` obligation naming the epic
-    is satisfied by the event that recorded it, in whichever tenant answers; the
-    epic's real proof record is seeded beside it so the fixture is a plan whose
-    proof leg genuinely landed rather than one resting on that echo, but the echo
-    is the earlier comment and is what the reading cites. What discriminates here
-    is therefore the OTHER answer: the stranger repository resolves a clone and
-    no tenant, so every read aimed at it is `unobservable`, which is exactly the
-    reading that refuses the replacement write. The case above is the one that
-    separates the plan's own tenant from any other, and it carries that claim for
-    both.
+    what keeps it honest. The epic's real proof record is seeded beside the
+    `plan-progress-event` the chain transition wrote, so this fixture is a plan
+    whose proof leg genuinely landed — but on the build this case was written
+    against, the event's payload embedded the obligation verbatim and satisfied
+    the obligation on its own, so the two were indistinguishable here. What
+    discriminates in this case is therefore the OTHER answer: the stranger
+    repository resolves a clone and no tenant, so every read aimed at it is
+    `unobservable`, which is exactly the reading that refuses the replacement
+    write. The case above is the one that separates the plan's own tenant from
+    any other, and the case below is the one that separates the record from the
+    echo.
     """
     repo = _governed_project(tmp_path=tmp_path)
     monkeypatch.chdir(repo)
@@ -409,4 +428,62 @@ def test_the_replacement_pointer_lands_when_the_prior_obligation_names_the_epic_
     assert _pointer(repo=repo, epic_id="bd-ib-proofleg")["required_result"] == {
         "repo": _OWN,
         "item_comment": {"item_id": "bd-ib-proofleg", "marker": _REVIEW_MARKER},
+    }
+
+
+def test_a_proof_pointer_whose_record_is_absent_keeps_the_proof_step_pending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plan whose proof leg has NOT landed must still owe its proof leg.
+
+    The case above with the proof record WITHHELD, which is the state every plan
+    is in the moment its proof pointer is written: the pointer write itself
+    appends a `plan-progress-event` whose payload serializes the obligation
+    verbatim, marker included, so a reader scanning whole comment bodies
+    satisfies the obligation on its own bookkeeping and the next resume derives
+    the review step for a proof nobody captured. The review pointer then does the
+    same, and the plan reaches `archive` having skipped both legs — refused there
+    only by `archive_thread`'s own gates, which is the first surface that says
+    anything is wrong.
+
+    The epic is seeded in the PLAN'S OWN repository rather than the stranger,
+    because an unobservable reading would also deny the advance and would do it
+    for the wrong reason: this case's claim is that an OBSERVABLE read of the
+    right tenant reports the obligation unsatisfied. The first assertion is the
+    control that makes that claim legible — the epic's timeline does carry the
+    marker, in the event the seeding wrote, so the unsatisfied reading is a
+    judgement about where a marker counts rather than a fixture with nothing in
+    it.
+    """
+    repo = _governed_project(tmp_path=tmp_path)
+    monkeypatch.chdir(repo)
+    _seed_epic(
+        repo=repo,
+        epic_id="bd-ib-uncaptured",
+        kind="proof",
+        ref="capture:bd-ib-uncaptured",
+        required_result={
+            "repo": _OWN,
+            "item_comment": {"item_id": "bd-ib-uncaptured", "marker": _PROOF_MARKER},
+        },
+    )
+    echoes = [
+        comment
+        for comment in _fake(repo=repo).list_comments(issue_id="bd-ib-uncaptured")
+        if _PROOF_MARKER in str(comment["text"])
+    ]
+    assert echoes, "the seeded pointer write must leave the marker on the epic"
+    assert not any(str(comment["text"]).startswith(_PROOF_MARKER) for comment in echoes)
+
+    directive = resume_directive(
+        config=_config(repo=repo), epic_id="bd-ib-uncaptured", unattended=True
+    )
+
+    assert directive.observation is not None
+    assert directive.observation.status == "unsatisfied"
+    assert directive.observation.repo == _OWN
+    assert directive.next_action == "proof:capture:bd-ib-uncaptured"
+    assert _pointer(repo=repo, epic_id="bd-ib-uncaptured")["required_result"] == {
+        "repo": _OWN,
+        "item_comment": {"item_id": "bd-ib-uncaptured", "marker": _PROOF_MARKER},
     }
