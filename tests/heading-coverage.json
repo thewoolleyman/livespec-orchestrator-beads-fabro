@@ -2074,5 +2074,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal cross-provider-override-replaces-env, and the owning work-item bd-ib-5j4b lands the changed-command env reset in ACP node resolution together with the test that binds this entry.",
     "work_item": "bd-ib-5j4b"
+  },
+  {
+    "heading": "## Scenario 234 \u2014 A stalled run whose sandbox was OOM-killed names the kill and the memory limit",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal oom-kill-named-on-stalled-outcome, and the owning work-item bd-ib-7rnipp lands the OOM-kill naming on the stalled-no-progress outcome together with the test that binds this entry.",
+    "work_item": "bd-ib-7rnipp"
   }
 ]

@@ -8360,3 +8360,28 @@ Feature: A cross-adapter override renders one model
     When the Dispatcher resolves the node's adapter
     Then the rendered adapter carries ANTHROPIC_MODEL and no inherited CLAUDE_CODE_EFFORT_LEVEL
 ```
+
+## Scenario 234 — A stalled run whose sandbox was OOM-killed names the kill and the memory limit
+
+```gherkin
+Feature: Memory exhaustion is named, not hidden behind a stall
+  As an operator triaging a stalled factory run
+  I want the dispatch to say when the factory reported the sandbox OOM-killed
+  So that I fix the memory limit instead of investigating the work
+
+  Scenario: A reported OOM kill is named on the stalled outcome
+    Given a dispatched run whose sandbox container the factory reports OOM-killed with a memory limit
+    When the progress watchdog cancels the run as stalled-no-progress
+    Then the watchdog-stall-cancel record, the dispatch result and the item's ledger comment name the OOM kill, the run id and the memory limit
+    And the item is not bounced to backlog and no non-convergence observation is recorded
+
+  Scenario: An unreported memory limit is recorded as unobservable
+    Given a dispatched run whose sandbox the factory reports OOM-killed without a memory limit
+    When the progress watchdog cancels the run as stalled-no-progress
+    Then the watchdog-stall-cancel record names the OOM kill and records the memory limit as unobservable
+
+  Scenario: No OOM kill is inferred when the factory reports none
+    Given a dispatched run that stalls and whose factory reports no OOM kill
+    When the progress watchdog cancels the run as stalled-no-progress
+    Then no record, result or comment names an OOM kill
+```
