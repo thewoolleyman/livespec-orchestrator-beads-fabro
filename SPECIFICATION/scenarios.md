@@ -8767,3 +8767,28 @@ Feature: An attention handoff never re-queues merged work
     When needs-attention composes its capacity handoff
     Then the handoff advertises no status move and names the failed forge read
 ```
+
+## Scenario 235 — A captured comment that does not parse as a record is a proof-record finding
+
+```gherkin
+Feature: A capture that names no run is re-captured instead of stranding the run
+  As the maintainer of a repository dispatched to the factory
+  I want a captured comment that does not parse as a record to be re-captured within the bounded cycle
+  So that a run whose proof was replayed and verified does not end at needs_human on the capture's malformed header
+
+  Scenario: A non-record capture routes to proof_capture
+    Given a pull request whose newest captured Proof of Done comment has a header whose run id is empty
+    And that defect is the review verdict's only blocking finding
+    And the run has issued fewer than two recapture verdicts
+    When the review node ends
+    Then the review record names that comment and states that its header carries no run id
+    And the run routes to proof_capture with preferred_label recapture
+    And no disposition visit, no review_fix visit and no review-fix round is consumed
+    And proof_capture publishes a new captured record that parses as a record and is current for the publish head
+
+  Scenario: A non-record capture on the third recapture verdict does not re-enter proof_capture
+    Given a pull request whose newest captured Proof of Done comment does not parse as a record
+    And the run has already issued two recapture verdicts
+    When the review node ends with that defect as its only blocking finding
+    Then the run routes to non_converged without entering proof_capture
+```
