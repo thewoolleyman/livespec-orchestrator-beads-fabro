@@ -6142,8 +6142,9 @@ exercise without a human; an agent session captures it on an operator
 host and a different session replays it (§"Proof of Done record" → "The
 host leg"). `host_captured` is a property of the assertion, independent
 of `factory_safety`: a host-routed item's assertions keep their declared
-modes, and its `factory_captured` assertions are captured and verified
-by the host-routed run.
+modes, but no factory run executes a host-routed item, so a
+`factory_captured` assertion on one cannot be evidenced and is governed by
+"The deliverable policy" below.
 `human_attested` means no agent session — in a sandbox or on an operator
 host — can exercise the assertion's proof (for example a physical
 device, or a console that admits only an interactive human login), so a
@@ -6190,7 +6191,20 @@ paragraph still apply on the gate's judgement of the deliverable, and
 only the missing-capability finding is withheld. A proof that requires a write-scoped or production credential is
 NOT a reason to declare `human_attested`: such an item carries
 `factory_safety: needs-host-secrets` and is host-routed, where its proof
-is still captured mechanically.
+is still captured mechanically. More generally, an item whose
+`factory_safety` is non-null is host-routed
+(§"Admission valve (`ready → active`)") and no factory run executes it, so
+no sandbox capability can prove any of its assertions. For such an item the first mode that can prove
+an assertion is `host_captured`, or `human_attested` where no agent session
+on an operator host can exercise it, and the sandbox-capability refusal
+above MUST NOT be applied to it. A `factory_captured` assertion on such an
+item MUST be reported by the host-side wall as an ADVISORY
+Definition-of-Done finding naming the assertion, the item's
+`factory_safety` reason and the remedy of moving the assertion under a
+`### Host-captured` sub-heading with a `Reason:` line. The finding MUST NOT
+withhold `ready`. The binding of a `factory_captured` record to the merging
+dispatch's run identifier is unchanged. Scenario 217 in `scenarios.md`
+exercises these sentences.
 
 **Derived routing, never stored.** No field, label or metadata key MAY
 store an item-level proof mode. The item-level consequence is computed by

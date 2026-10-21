@@ -2122,5 +2122,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal plan-resume-surfaces-rulings-and-timeline-omissions, and the owning work-item bd-ib-ghijrt makes resume_directive return the epic's non-carrier-map scope events and the plan operation surface them before acting, together with the test that binds this entry.",
     "work_item": "bd-ib-ghijrt"
+  },
+  {
+    "heading": "## Scenario 217 \u2014 A host-routed item's factory_captured assertion is an advisory finding",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal host-routed-assertions-are-host-captured, and the owning work-item bd-ib-rowuou makes the host-side wall report a factory_captured assertion on a host-routed item as an advisory finding and exempts such an item from the sandbox-capability refusal, together with the test that binds this entry.",
+    "work_item": "bd-ib-rowuou"
   }
 ]

@@ -992,5 +992,12 @@
     "heading": "## Scenario 214 \u2014 A plan resume returns the epic's rulings beside the typed next action",
     "work_item": "bd-ib-ghijrt",
     "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 217 \u2014 A host-routed item's factory_captured assertion is an advisory finding",
+    "work_item": "bd-ib-rowuou",
+    "first_seen": "2026-10-21"
   }
 ]
