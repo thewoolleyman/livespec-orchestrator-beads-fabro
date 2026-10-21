@@ -2940,6 +2940,7 @@ Feature: Run-inventory reconciliation
   Scenario: An item superseded by a newer dispatch
     Given two non-terminal runs attributed to one active work-item
     And the ledger's newest journaled run id names the second run
+    And the item's claim carries a run stamp naming the second run, not a pending stamp
     When reconciliation runs
     Then the first run is reconciled with orphan reason superseded-run
     And the second run is left alone
@@ -8526,4 +8527,25 @@ Feature: A host-routed item never carries a proof mode it can never satisfy
     And its Host-captured assertion names behaviour a published sandbox capability could exercise
     When the gate grades it
     Then the gate refuses the Host-captured declaration naming that sandbox capability
+```
+
+## Scenario 223 — A run attributed to an item under a pending stamp is not an orphan
+
+```gherkin
+Feature: A sibling sweep never cancels a run its own dispatch just created
+  As an operator running two dispatcher engines on one host
+  I want a just-launched run protected until its stamp lands
+  So that a sibling's reconcile pass does not cancel live work
+
+  Scenario: A pending stamp protects a fresh run
+    Given an item admitted with a pending stamp and a previous journaled run id from an earlier dispatch
+    And a non-terminal run attributed to that item whose run stamp has not been written yet
+    When another Dispatcher's reconcile-runs pass runs
+    Then the run is not classified an orphan and is not terminated
+
+  Scenario: A run superseded by a stamped run is still an orphan
+    Given an item that is active under a claim whose run stamp names run B
+    And a non-terminal run A attributed to the same item
+    When a reconcile-runs pass runs
+    Then run A is classified an orphan with reason superseded-run
 ```

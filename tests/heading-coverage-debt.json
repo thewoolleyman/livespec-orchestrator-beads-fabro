@@ -999,5 +999,12 @@
     "heading": "## Scenario 217 \u2014 A host-routed item's factory_captured assertion is an advisory finding",
     "work_item": "bd-ib-rowuou",
     "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 223 \u2014 A run attributed to an item under a pending stamp is not an orphan",
+    "work_item": "bd-ib-m1av",
+    "first_seen": "2026-10-21"
   }
 ]
