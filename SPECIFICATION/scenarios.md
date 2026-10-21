@@ -8701,3 +8701,77 @@ Feature: An author sees what recorded evidence costs the brief
     When the Dispatcher renders any goal
     Then no goal-size finding is reported
 ```
+
+## Scenario 221 — A resume refusal on an active item names a remedy that changes it
+
+```gherkin
+Feature: A refusal never sends the operator to a valve that does nothing
+  As an operator resuming an item
+  I want the refusal's remedy to act on the item as it stands
+  So that following the remedy releases the item
+
+  Scenario: An active item with a succeeded run and an unmerged pull request
+    Given an item at active with assignee fabro whose run succeeded and is terminal
+    And no live process holds the item's ownership lock
+    And the forge reports its pull request open
+    When dispatcher resume is invoked for it
+    Then the refusal names move:<id>:ready and does not name reconcile-runs
+
+  Scenario: An active item with a succeeded run whose pull request merged
+    Given an item at active with assignee fabro whose run succeeded and is terminal
+    And no live process holds the item's ownership lock
+    And the forge reports its pull request merged
+    When dispatcher resume is invoked for it
+    Then the refusal names reconcile-merged
+
+  Scenario: A live ownership lock withholds every status move
+    Given an item at active with assignee fabro whose run succeeded and is terminal
+    And a live process holds the item's ownership lock
+    And the forge reports its pull request merged
+    When dispatcher resume is invoked for it
+    Then the refusal names the live ownership lock and no status move
+
+  Scenario: A merge-held item is not offered the recovery move
+    Given an item at active with assignee fabro whose run succeeded and is terminal
+    And the item carries a merge-hold label
+    And no live process holds the item's ownership lock
+    And the forge reports its pull request open
+    When dispatcher resume is invoked for it
+    Then the refusal does not name move:<id>:ready
+
+  Scenario: An active item with a succeeded run and an unreadable forge
+    Given an item at active with assignee fabro whose run succeeded and is terminal
+    And no live process holds the item's ownership lock
+    And the forge read fails
+    When dispatcher resume is invoked for it
+    Then the refusal names the failed forge read and no status move
+```
+
+## Scenario 222 — A capacity handoff for a claim with no recorded pull request reads the forge first
+
+```gherkin
+Feature: An attention handoff never re-queues merged work
+  As an operator following a needs-attention handoff
+  I want a merged pull request found on the forge to route to reconcile-merged
+  So that a dispatch that died before recording its pull request is not rebuilt
+
+  Scenario: A merged pull request found only on the forge
+    Given a stranded claim whose dispatch evidence names no pull request
+    And the forge reports a merged pull request on the item's publish branch
+    And no live process holds the item's ownership lock
+    When needs-attention composes its capacity handoff
+    Then the handoff advertises reconcile-merged and no status move
+
+  Scenario: A live ownership lock blocks the reconcile handoff
+    Given a stranded claim whose dispatch evidence names no pull request
+    And the forge reports a merged pull request on the item's publish branch
+    And a live process holds the item's ownership lock
+    When needs-attention composes its capacity handoff
+    Then the handoff advertises no status move and names the live ownership lock
+
+  Scenario: An unreadable forge advertises no status move
+    Given a stranded claim whose dispatch evidence names no pull request
+    And the forge read fails
+    When needs-attention composes its capacity handoff
+    Then the handoff advertises no status move and names the failed forge read
+```

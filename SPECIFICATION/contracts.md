@@ -1055,9 +1055,18 @@ re-dispatch" → "Stranded-state discrimination" already composes under its
 own kind and stable id with its own owner; one work-item MUST NOT produce
 two ids of two kinds for the same underlying fact. No capacity handoff
 MAY advertise a status-move action against a claim whose dispatch
-evidence shows a merged pull request — the ratified reconciliation route
-is `reconcile-merged`, and a move-to-`ready` handoff would re-queue
-merged work.
+evidence, or the forge, shows a merged pull request — the ratified
+reconciliation route is `reconcile-merged`, and a move-to-`ready` handoff
+would re-queue merged work. When the dispatch evidence names no pull
+request, the handoff MUST read the forge for the item's publish branch
+before it advertises any status move. When the forge reports a merged pull
+request there, the handoff MUST advertise `reconcile-merged` only when that
+command's own preconditions hold for the item, including no live ownership
+lock, so that the handoff stays executable as advertised; otherwise it MUST
+advertise no status move and name the condition that blocks
+reconciliation. A forge read that fails MUST NOT be read as no pull
+request: the handoff MUST then advertise no status move and name the failed
+read. Scenario 222 in `scenarios.md` exercises this sentence.
 
 **The accounting's exposed classes, and the rework ordering
 dependency.** The accounting today exposes THREE hold-and-exclusion
@@ -3973,7 +3982,7 @@ and every transition is attributable in the journal.
 | `backlog` | groom (every backlog item, uniformly); move→ready (admission); move→blocked; set-admission; set-acceptance; merge-on-review-cap; review-fix-cap; acceptance-rework-cap |
 | `pending-approval` | approve (the single door toward `ready`); reject (rework \| regroom); set-admission; move→backlog (withdraw); move→blocked (park); set-acceptance; review caps per the dial-window rule |
 | `ready` | move→backlog (withdraw); move→blocked (park); driver-dispatch (host-only-refused items only); set-acceptance; set-workflow-scope-override (declared-workflow-edit refusals only); acceptance-rework-cap; merge-on-review-cap; review-fix-cap |
-| `active` | observe only — no operator verbs beyond set-acceptance / acceptance-rework-cap per the dial-window rule; for an item carrying `rework:pending`, `dispatch --item` (the `drive` `impl:<work-item-id>` action) drives the pending rework |
+| `active` | observe only — no operator verbs beyond set-acceptance / acceptance-rework-cap per the dial-window rule; for an item carrying `rework:pending`, `dispatch --item` (the `drive` `impl:<work-item-id>` action) drives the pending rework; and the terminal-claim recovery `move→ready`, valid only for an `active` item whose run is terminal, that carries neither `rework:pending` nor a `merge-hold:` label, whose dispatch-scoped ownership lock no live process holds, which §"Stranded claim release" does not reconcile, and for which the forge was read and reports no merged pull request |
 | `acceptance` | accept (the single door into `done`); reject (rework \| regroom); move→backlog (de-scope); move→blocked (park) |
 | `blocked` | move→ready (unblock); move→backlog (an item needing decomposition routes here first — groom is `backlog`-only) |
 | `done` | nothing (but see "Status-independent verbs" below) |
@@ -3990,8 +3999,10 @@ below.
 
 #### Door rules — every transition has exactly one journaled owner
 
-- `ready` is entered by `approve` (from `pending-approval`) or by an
-  operator move from `backlog`/`blocked`. The move from
+- `ready` is entered by `approve` (from `pending-approval`), by an
+  operator move from `backlog`/`blocked`, or by the terminal-claim recovery
+  move from `active` that the `active` row above admits; each is journaled
+  with its actor. The move from
   `pending-approval` to `ready` is REMOVED: it is an unjournaled
   duplicate of the `approve` valve, so the ledger cannot attribute the
   transition.
@@ -4568,8 +4579,23 @@ remedy, when:
 
 - the item is not `ready`, naming its status (remedy:
   `resolve-blocked:<id>:ready` for an item resting at `blocked /
-  needs-human`, or `reconcile-runs` for a stranded claim) — a resume never
-  steps around the ledger's human decision. For a resume the Dispatcher routes
+  needs-human`; `reconcile-runs` for a stranded claim that §"Stranded claim
+  release" reconciles; and, for an `active` item whose run is terminal,
+  which that release does not reconcile, and which carries neither
+  `rework:pending` nor a `merge-hold:` label (those keep their own routes,
+  §"Rework-pending re-dispatch" and §"Dispatcher policy settings" → "The
+  per-item merge hold"): no status move, naming the condition, when a live
+  process holds the item's dispatch-scoped ownership lock or that lock
+  cannot be read; otherwise, when the forge reports the item's pull request
+  merged, `reconcile-merged` if that command's own preconditions hold for
+  the item and, if one does not, no status move, naming the failing
+  precondition; `move:<id>:ready` when the forge was read and reports no
+  merged pull request; and no status move, naming the failed read, when the
+  forge cannot be read) — a resume never steps
+  around the ledger's human decision. The named remedy MUST be one that
+  changes that item's state; a refusal MUST NOT name a remedy that would
+  leave the item unchanged. Scenario 221 in `scenarios.md` exercises the
+  remedy rule. For a resume the Dispatcher routes
   itself, this bullet is graded at recovery routing, before admission, and not
   again after the claim;
 - the item's publish branch carries no open pull request, or no proof
@@ -4596,7 +4622,10 @@ remedy, when:
   alive, naming the lock age, as `reconcile-merged` refuses;
 - the pull request is closed or merged, naming the state. For a merged
   pull request the remedy is `reconcile-merged --item`, which requires a
-  real merge and stays the only valve for one;
+  real merge and stays the only valve for one, and the refusal names it
+  only when that command's own preconditions hold for the item; while one
+  does not hold (a live or unreadable ownership lock among them), the
+  refusal names that condition in place of the remedy;
 - the pull request has already anchored two resumes, naming them (remedy:
   a plain dispatch).
 
@@ -7048,7 +7077,7 @@ Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
   5. `run-live`: the run is non-terminal.
   6. `liveness-unobservable`: an ownership lock location could not be read.
   7. `dispatch-live`: a live process holds the item's ownership lock.
-  8. `run-succeeded`: the run is terminal and succeeded. The recovery is `reconcile-merged`.
+  8. `run-succeeded`: the run is terminal and succeeded. The recovery, when the forge reports the item's pull request merged, is `reconcile-merged` if that command's own preconditions hold for the item, and otherwise no status move, the held entry naming the failing precondition; it is the terminal-claim recovery `move:<id>:ready` of §"Per-lane valid operator verb sets" when the forge was read and reports no merged pull request; and, when the forge cannot be read, no status move, the held entry naming the failed read.
   9. `forge-unobservable`: for an absent run, the forge could not be asked whether a merged pull request exists.
   10. `merged-pr`: for an absent run, the forge reports a merged pull request for the item. The recovery is `reconcile-merged`.
   11. `history-unavailable`: for an absent run, the preceding dispatch's outcome could not be established.
@@ -7057,7 +7086,7 @@ Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
   14. `effect-unobservable`: as defined above.
 
   Stranded-claim holds join `held` beside the parked runs the blocked-run grace already lists there. A held claim is observed again on the next pass.
-- **Status changes.** The absent-run release, the `run-absent-repeated` rest, and the terminal-run completions are the only item status changes any reconciliation surface makes. A stale assignee clearance changes no status. The bullet of §"A factory run never awaits a human" that forbids reconciling or terminating a run from changing an item's status continues to govern runs, and does not govern these. The `already claimed by a dispatch` refusal, and the resume refusal of §"Resume from a published pull request (`resume --item`)", name `reconcile-runs` as the remedy for a stranded claim; this subsection is what makes that remedy work.
+- **Status changes.** The absent-run release, the `run-absent-repeated` rest, and the terminal-run completions are the only item status changes any reconciliation surface makes. A stale assignee clearance changes no status. The bullet of §"A factory run never awaits a human" that forbids reconciling or terminating a run from changing an item's status continues to govern runs, and does not govern these. The `already claimed by a dispatch` refusal, and the resume refusal of §"Resume from a published pull request (`resume --item`)", name `reconcile-runs` as the remedy for a stranded claim this subsection reconciles, and this subsection is what makes that remedy work; for an `active` item whose run is terminal and which this subsection does not reconcile, the resume refusal names the remedy of §"Resume from a published pull request (`resume --item`)" instead.
 
 Scenarios 196 and 210 in `scenarios.md` exercise this section.
 

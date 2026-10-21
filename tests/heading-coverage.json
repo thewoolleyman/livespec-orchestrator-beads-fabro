@@ -2186,5 +2186,21 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal rendered-goal-reach-and-size-advisories, and the owning work-item bd-ib-40vz reports an advisory finding when the rendered goal exceeds a committed dispatcher.goal_size_warning_bytes, on the filing displays, the Dispatcher stderr and journal, and needs-attention, together with the test that binds this entry.",
     "work_item": "bd-ib-40vz"
+  },
+  {
+    "heading": "## Scenario 221 \u2014 A resume refusal on an active item names a remedy that changes it",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal terminal-claim-remedies-read-the-forge, and the owning work-item bd-ib-mzyhn2 makes the resume refusal for an active item with a terminal run name a remedy that changes the item (reconcile-merged, move:<id>:ready, or the blocking condition), together with the test that binds this entry.",
+    "work_item": "bd-ib-mzyhn2"
+  },
+  {
+    "heading": "## Scenario 222 \u2014 A capacity handoff for a claim with no recorded pull request reads the forge first",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal terminal-claim-remedies-read-the-forge, and the owning work-item bd-ib-dbmoeh makes a capacity handoff read the forge for the publish branch before advertising any status move, together with the test that binds this entry.",
+    "work_item": "bd-ib-dbmoeh"
   }
 ]
