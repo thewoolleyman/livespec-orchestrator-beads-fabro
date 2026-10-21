@@ -345,6 +345,29 @@ Tests for the thin-transport command modules under
   measurement behind the change, and a build that had stopped reading bodies
   satisfies the negative alone.
 
+- The four `test_dispatcher_sandbox_image*` modules cover the read-only
+  sandbox-image enumeration (`bd-ib-nqmltq`). Scenario 212 is bound at the
+  integration tier by `tests/integration/test_sandbox_images_scenario212.py`;
+  these cover what that tier cannot observe, and the split follows the one in
+  the product tree. Three of them are worth knowing about before editing.
+  `..._images_unreadable` produces a read failure with INVALID UTF-8 rather
+  than a mode bit, because this suite runs as root in the factory sandbox and
+  root bypasses permission bits -- a `chmod 000` fixture reads successfully and
+  the case passes against an implementation with no read-failure arm at all;
+  its one parseable-but-pinless case is the control that keeps "was read and
+  declares nothing" from collapsing onto "could not be read". `..._image_builds`
+  spawns REAL processes against the REAL `/proc`, since a fake proc tree cannot
+  make a live lease and a stale one differ for the right reason, and it makes a
+  pid stale by WAITING on the child: an unreaped child is a zombie whose
+  `/proc/<pid>` entry still exists. Its running-Dispatcher fixture is
+  deliberately NOT a Python child -- `check-tests-no-subprocess-spawn` asks
+  tests not to spawn one, and the argv is the whole of what the reader observes.
+  And `..._images_command` gives every repository fixture a CATALOG or
+  CONFIGURED image, so no assertion depends on the host's executing-build set:
+  a factory host that happened to be running a Dispatcher would otherwise change
+  how many entries a workflow-arm repository contributes, and the assertion
+  would be about that host rather than about the command.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr

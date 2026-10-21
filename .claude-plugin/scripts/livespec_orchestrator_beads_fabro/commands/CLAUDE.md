@@ -2113,6 +2113,49 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   and the condition hardest to reconstruct afterwards is exactly the one a
   silent refusal would leave no artifact for.
 
+- The READ-ONLY SANDBOX-IMAGE ENUMERATION of `contracts.md`'s "Sandbox image
+  enumeration" subsection (`bd-ib-nqmltq`, Scenario 212) — the answer to "which
+  sandbox image would a dispatch to this factory pull RIGHT NOW", which the
+  host's image-warm timer needs before the first run that needs the tag. FOUR
+  cohesive modules, and the dependency direction reads bottom-up:
+  `_dispatcher_plugin_install_registry` (the ONE read of
+  `~/.claude/plugins/installed_plugins.json`: which repositories this plugin is
+  registered for, and at which build) and `_dispatcher_sandbox_images` (ONE
+  repository's ordered entries) -> `_dispatcher_sandbox_image_builds` (which
+  builds are executing host-wide) -> `_dispatcher_sandbox_images_command` (the
+  scope, the one JSON array and the exit code).
+  Six properties an editor must not invert. EVERY ENTRY IS DECIDED BY THE
+  FUNCTIONS A DISPATCH CALLS -- `has_fabro_factory`, `resolve_fabro_factory`
+  plus `factory_environment_id`, `resolve_fabro_sandbox_image`,
+  `sandbox_image_source` and `workflow_toml` -- never by a copy of their
+  ladders, because the whole point of the enumeration is that the warm timer
+  and a real dispatch cannot disagree about the tag, and a second derivation
+  produces a well-formed answer on each side with nothing announcing the
+  divergence. The dispatch journal could not answer this: on the
+  `committed_run_config` arm it writes `sandbox_image` null, deliberately.
+  The COMMITTED-versus-BUNDLED choice is read off `workflow_toml`'s own answer
+  -- asked once per build, with the new `payload_root` keyword, and tested for
+  whether the path it returned sits under that build -- rather than re-decided,
+  which is what makes a target-local copy yield exactly ONE entry however many
+  builds execute. An UNREADABLE source moves the EXIT CODE and nothing else:
+  stopping at the first one would report a partial enumeration as a complete
+  one, and reporting every entry at exit zero would hand the warm timer a tag
+  list with a silent hole in it; a run config that was READ and declares no pin
+  is image-less rather than unreadable, which is why `_WorkflowUnreadable` is
+  its own type and not a None. LEASE LIVENESS is the existence of the recorded
+  pid's `/proc` entry and never a comparison against the start time the lease
+  also records -- that file's encoding is Claude Code's, not a contract this
+  read may assume -- and the weaker reading errs in the harmless direction,
+  since a recycled pid can only warm one extra tag. The EXECUTING-BUILD set is
+  keyed on a running Dispatcher's own ARGV rather than on
+  `LIVESPEC_RETAINED_PAYLOAD_ROOT`, because the launcher exports that variable
+  only when it has copied a release aside, so an environ scan reports a host
+  with no running Dispatcher while several are executing. And the command
+  CHANGES NOTHING, which holds structurally rather than carefully: `rglob`,
+  `iterdir`, `read_bytes` and `read_text` are the whole host surface, and
+  nothing in the four modules reaches the ledger, the dispatch journal or a
+  factory.
+
 Rules an agent editing this tree must follow:
 
 - `main()` is the only place `sys.stdout.write` / `sys.stderr.write`
