@@ -172,6 +172,29 @@ def test_await_merge_fails_fast_on_terminal_required_check(tmp_path: Path) -> No
     assert (outcome.status, outcome.stage) == ("failed", "merge-poll")
     assert "check-coverage" in outcome.detail
     assert "docs" not in outcome.detail
+    assert "statusCheckRollup" in runner.calls[0][0][-1]
+
+
+def test_await_merge_does_not_treat_an_open_fallback_as_merged(tmp_path: Path) -> None:
+    runner = Runner(
+        queue=[
+            _err(stderr="GraphQL: Resource not accessible by integration"),
+            _ok(stdout=_pr_json(state="OPEN")),
+        ]
+    )
+
+    merged = await_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path),
+        runner=runner,
+        journal=Journal(),
+        sleep=lambda _: None,
+        poll=PollPolicy(attempts=1, interval_seconds=0.5),
+    )
+
+    assert merged is None
+    assert "statusCheckRollup" in runner.calls[0][0][-1]
+    assert "statusCheckRollup" not in runner.calls[1][0][-1]
 
 
 def test_post_merge_runs_janitor_in_fresh_checkout(tmp_path: Path) -> None:

@@ -2880,12 +2880,9 @@ def test_engine_merges_without_reading_an_unavailable_status_rollup(tmp_path: Pa
     assert (outcome.status, outcome.stage) == ("green", "done")
     assert (outcome.pr_number, outcome.merge_sha) == (7, "cafe10")
     assert "janitor-post-merge" in [record["stage"] for record in journal.records]
-    rejected = runner.run(
-        argv=["gh", "pr", "view", "feat/x", "--json", "number,statusCheckRollup"],
-        cwd=tmp_path,
-        timeout_seconds=1.0,
-    )
-    assert rejected.stderr == "GraphQL: Resource not accessible by integration"
+    pr_view_calls = [argv for argv, _cwd in runner.calls if argv[:3] == ["gh", "pr", "view"]]
+    assert any("statusCheckRollup" in argv[-1] for argv in pr_view_calls)
+    assert pr_view_calls[-1][-1].split(",").count("statusCheckRollup") == 0
 
 
 def test_engine_fails_when_review_after_arming_fails(tmp_path: Path) -> None:
