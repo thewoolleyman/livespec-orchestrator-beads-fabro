@@ -943,5 +943,12 @@
     "heading": "## Scenario 230 \u2014 An item whose input exists only on the host is host-routed",
     "work_item": "bd-ib-fv4w",
     "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 233 \u2014 A node routed to a different adapter does not inherit the replaced adapter's env",
+    "work_item": "bd-ib-5j4b",
+    "first_seen": "2026-10-21"
   }
 ]

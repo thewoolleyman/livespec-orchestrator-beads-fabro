@@ -8333,3 +8333,30 @@ Feature: Host-only input is an honest factory_safety reason
     Then the item's factory_safety is needs-host-only-input and its lifecycle status is unchanged
     And the Dispatcher refuses to dispatch it to a factory and names the reason
 ```
+
+## Scenario 233 — A node routed to a different adapter does not inherit the replaced adapter's env
+
+```gherkin
+Feature: A cross-adapter override renders one model
+  As an operator reading which model a factory node ran
+  I want a node routed to a different adapter to carry only that adapter's env
+  So that the rendered adapter names exactly one model
+
+  Scenario: A changed command discards the inherited env
+    Given a node whose workflow default renders the claude-acp command with ANTHROPIC_MODEL in its env
+    And dispatcher.acp_nodes sets that node to the codex-acp command with its own env
+    When the Dispatcher resolves the node's adapter
+    Then the rendered adapter carries no ANTHROPIC_MODEL and names only the Codex model
+
+  Scenario: An override that keeps the command still merges env
+    Given a node whose workflow default renders the claude-acp command with ANTHROPIC_MODEL and CLAUDE_CODE_EFFORT_LEVEL in its env
+    And dispatcher.acp_nodes sets only ANTHROPIC_MODEL for that node and no command
+    When the Dispatcher resolves the node's adapter
+    Then the rendered adapter carries the override's ANTHROPIC_MODEL and the inherited CLAUDE_CODE_EFFORT_LEVEL
+
+  Scenario: A changed command for the same adapter restates its env
+    Given a node whose workflow default renders the claude-acp command with CLAUDE_CODE_EFFORT_LEVEL in its env
+    And dispatcher.acp_nodes sets that node to a differently pinned claude-acp command with only ANTHROPIC_MODEL in its env
+    When the Dispatcher resolves the node's adapter
+    Then the rendered adapter carries ANTHROPIC_MODEL and no inherited CLAUDE_CODE_EFFORT_LEVEL
+```
