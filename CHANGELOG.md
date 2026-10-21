@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.229.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.4...v0.229.5) (2026-10-21)
+
+
+### Bug Fixes
+
+* **reconcile-merged:** name the branch state and the search in the refusal ([ade83a8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ade83a8c4cf288ab9a9a7266bf1073db05c37f3e))
+* **reconcile-merged:** search by item id when the branch pull request is unmerged ([d3b3bae](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d3b3bae6fecbaec784ead3683e3457b46c1fb84e))
+
 ## [0.229.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.3...v0.229.4) (2026-10-21)
 
 
