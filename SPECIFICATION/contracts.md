@@ -6063,7 +6063,26 @@ malformed — withholds `ready`: an item filed with one outstanding MUST
 NOT be routed to `ready` by intake. A test-existence or
 scenario-reference finding the wall recognises is ADVISORY: it MUST be
 displayed and MUST NOT withhold `ready`, because only the gate can judge
-it. Either kind MUST be recorded on the filed item as a ledger comment,
+it. The rendered goal is assembled from the dispatched item's own fields
+and ledger comments, and the sandbox has no ledger access. So a
+description, Definition of Done or comment that names another work-item as
+holding this item's evidence directs the implementer to text it cannot
+read. The wall MUST report such a reference as an ADVISORY finding naming
+the referenced work-item, with the remedy of copying the evidence onto this
+item before dispatch. An item the wall does not flag MUST NOT be reported
+as clear of such references. Scenario 218 in `scenarios.md` exercises this
+sentence. When the committed Dispatcher policy setting
+`dispatcher.goal_size_warning_bytes`, a positive integer with no default, is
+set, an item whose rendered goal exceeds it MUST carry an ADVISORY finding
+naming the item and the rendered goal's size in bytes. The rendered goal
+here means title, description, criteria, notes, lessons and every ledger
+comment. The finding MUST be shown by the filing displays and by the
+Dispatcher's stderr and dispatch journal when it renders that goal, and
+MUST be among the `needs-attention` hygiene facts for a `ready` item. It
+MUST NOT refuse or delay a dispatch. When the key is unset, the finding
+MUST NOT be evaluated, and an invalid value MUST be reported as a
+configuration finding. Scenario 219 in `scenarios.md` exercises these
+sentences. Either kind MUST be recorded on the filed item as a ledger comment,
 so it is repaired where it was made. For a child of a plan, which plan
 assertions the child carries is recorded ONLY in the epic's carrier-map
 event (§"Plan Definition of Done and Proof of Done" → "The carrier

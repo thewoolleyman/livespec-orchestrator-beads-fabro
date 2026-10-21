@@ -8638,3 +8638,39 @@ Feature: A succeeded run never strands its claim while its pull request waits
     Then it proceeds exactly as for a merge observed within the budget
 ```
 
+## Scenario 218 — A brief pointing at another work-item's evidence carries an advisory finding
+
+```gherkin
+Feature: The implementer is never sent to evidence it cannot read
+  As a filer writing a successor item
+  I want the wall to flag a pointer to another item's comments
+  So that the evidence travels with the item the factory runs
+
+  Scenario: A pointer to a predecessor's comments is flagged
+    Given a work-item whose description says its evidence is in the comments of work-item bd-ib-example
+    When its filing is displayed
+    Then an advisory Definition-of-Done finding names bd-ib-example
+    And the finding names the remedy of copying that evidence onto this item
+    And the finding does not withhold ready
+```
+
+## Scenario 219 — A rendered goal larger than the configured bound carries an advisory finding
+
+```gherkin
+Feature: An author sees what recorded evidence costs the brief
+  As an operator recording measurements on a work-item
+  I want an oversized rendered goal flagged
+  So that the item does not silently become too large to finish unattended
+
+  Scenario: A goal over the bound is flagged without refusing
+    Given dispatcher.goal_size_warning_bytes is committed as 8000
+    And a ready work-item whose rendered goal, comments included, is 10862 bytes
+    When the Dispatcher renders its goal
+    Then an advisory finding names the item and 10862 bytes on stderr and in the dispatch journal
+    And the dispatch proceeds
+
+  Scenario: No bound means no finding
+    Given dispatcher.goal_size_warning_bytes is not set
+    When the Dispatcher renders any goal
+    Then no goal-size finding is reported
+```
