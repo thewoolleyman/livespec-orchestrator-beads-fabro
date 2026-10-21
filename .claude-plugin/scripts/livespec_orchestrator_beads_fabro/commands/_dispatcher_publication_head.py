@@ -59,6 +59,18 @@ EVERY ARM FAILS CLOSED, and each says which measurement stopped it, because
 "the records do not agree", "a newer record supersedes the verification" and
 "the records could not be read" have three different remedies and a shared exit
 would make them one finding.
+
+AND ONE OF THOSE ARMS NAMES A SINGLE COMMENT, which is the one the record reader
+cannot: a header whose publishing identity field carries no run id is not a
+record, so the reader drops the comment and every count taken over records
+reports it as absent. Measured on `livespec-dev-tooling` pull request 2712
+(`bd-ib-oa67lv`, run 01M5E8H65Z04): a capture that expanded an unset
+`$FABRO_RUN_ID` posted the bare `run` introducer, capture, review and replay all
+passed, and this program reported "pull request #2712 carries no captured Proof
+of Done record" -- naming the one stage that had demonstrably run, while the
+comment an operator had to read went unnamed. The reading is of the newest
+COMMENT of each required verdict rather than of the newest parsing RECORD,
+because the superseding case is fail-open in the other direction.
 """
 
 from __future__ import annotations
@@ -145,7 +157,13 @@ def fail(message):
     raise SystemExit(1)
 
 
-def comment_bodies(number):
+def pull_request_comments(number):
+    """Each comment on one pull request as (body, url), in the forge's own order.
+
+    The URL rides along because a refusal about ONE comment has to name it, and
+    a position is the only other identifier available -- which an operator
+    cannot click.
+    """
     result = subprocess.run(
         ["gh", "pr", "view", number, "--json", "comments"],
         capture_output=True, text=True, check=False,
@@ -162,7 +180,36 @@ def comment_bodies(number):
     if not isinstance(comments, list):
         fail("the forge's comment payload for pull request #" + number
              + " carries no comments array, so no record could be read")
-    return [one.get("body") or "" for one in comments if isinstance(one, dict)]
+    return [(one.get("body") or "", one.get("url") or "")
+            for one in comments if isinstance(one, dict)]
+
+
+def comment_name(index, url):
+    """How a refusal NAMES one comment: its link, or its position when it has none.
+
+    A degraded forge payload carries no `url`, and a parenthetical naming an
+    empty string would point an operator at no comment at all.
+    """
+    return url if url else "the comment at position " + str(index)
+
+
+def named_comments(comments):
+    """Each comment whose header NAMES a verdict, whether or not it is a record.
+
+    Wider than `factory_records` deliberately. A header whose publishing
+    identity field carries no run id is not a record, so `record_verdict` drops
+    the comment -- and the refusal below is the only surface that can say so.
+    """
+    named = []
+    for index, (body, url) in enumerate(comments):
+        verdict = header_verdict(body)
+        if verdict is None:
+            continue
+        named.append({"verdict": verdict,
+                      "record": record_verdict(body) is not None,
+                      "identity": header_identity_field(body),
+                      "name": comment_name(index, url)})
+    return named
 
 
 def required_verdicts(argv):
@@ -179,6 +226,28 @@ def factory_records(bodies):
         if verdict is not None:
             records.append((index, verdict, published_head(body)))
     return records
+
+
+def refuse_unattributable(number, named, required):
+    """Refuse when the NEWEST comment of a required verdict names no run id.
+
+    Read off the newest COMMENT of that verdict rather than the newest parsing
+    record, because an unattributable capture that supersedes a well-formed one
+    is the fail-OPEN case: with it invisible the older record still answers the
+    requirement, its head still agrees with the replay's, and the stage
+    publishes against a tree the latest capture never claimed to have proved.
+    """
+    for verdict in required:
+        matching = [one for one in named if one["verdict"] == verdict]
+        if not matching or matching[-1]["record"]:
+            continue
+        latest = matching[-1]
+        fail("the newest " + verdict + " Proof of Done comment on pull request #"
+             + number + " (" + latest["name"] + ") carries no run id in its"
+             + " header: its publishing identity field reads '"
+             + latest["identity"] + "', so the comment does not parse as a Proof"
+             + " of Done record and the tree it proved cannot be established;"
+             + " a fresh capture is owed")
 
 
 def agreed_head(number, records, required):
@@ -242,11 +311,15 @@ def refuse_superseded_anchor(number, records, anchor_index):
 def main(argv):
     """Establish the head to publish against, or fail closed naming the measurement.
 
-    The REQUIRED agreement is graded first and the ANCHOR second, and the order
-    is load-bearing rather than tidy: a pull request carrying no records at all
-    must report the missing capture, which is the first thing a run publishes
-    and the first thing an operator would look for, rather than reporting an
-    absent carry-forward decision that nothing in an ordinary run ever writes.
+    The UNATTRIBUTABLE refusal is graded first, then the REQUIRED agreement,
+    then the ANCHOR, and the order is load-bearing rather than tidy. A comment
+    whose header carries no run id is invisible to `factory_records`, so the
+    agreement arm would report the pull request as carrying no record of that
+    verdict at all -- a different finding, with a different remedy, naming a
+    stage that ran. And a pull request carrying no records whatsoever must
+    report the missing capture, which is the first thing a run publishes and the
+    first thing an operator would look for, rather than reporting an absent
+    carry-forward decision that nothing in an ordinary run ever writes.
     """
     if len(argv) < 2 or argv[0] != "--pull-request":
         fail("usage: --pull-request <number> [--require <verdict> ...]")
@@ -254,7 +327,9 @@ def main(argv):
     required = required_verdicts(argv)
     if not required:
         fail("no --require <verdict> was named, so nothing would be established")
-    records = factory_records(comment_bodies(number))
+    comments = pull_request_comments(number)
+    refuse_unattributable(number, named_comments(comments), required)
+    records = factory_records([body for body, _ in comments])
     agreed_head(number, records, required)
     anchor_index, _, head = anchoring_record(number, records)
     refuse_superseded_anchor(number, records, anchor_index)
