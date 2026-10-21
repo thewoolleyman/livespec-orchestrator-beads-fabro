@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.229.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.6...v0.229.7) (2026-10-21)
+
+
+### Bug Fixes
+
+* **dod-gate:** name the nested heading a check-4 finding is about ([15ab516](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/15ab5167fc197917cd37cbf00f94ab21f2f2302c))
+* **dod-gate:** read a referenced heading as its whole nested section ([aceb4d3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/aceb4d30adb606b26f3fe68c7a3084ca52fe77a7))
+
 ## [0.229.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.5...v0.229.6) (2026-10-21)
 
 
