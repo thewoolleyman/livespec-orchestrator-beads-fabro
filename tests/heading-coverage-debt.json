@@ -1013,5 +1013,12 @@
     "heading": "## Scenario 224 \u2014 A refused publish_draft push names the cause that refused it",
     "work_item": "bd-ib-35kfra",
     "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 225 \u2014 The publish-branch reclaim finds an earlier dispatch journaled in another worktree",
+    "work_item": "bd-ib-ewdqub",
+    "first_seen": "2026-10-21"
   }
 ]

@@ -4896,7 +4896,8 @@ Feature: A dead run's publish branch does not block the item's next dispatch, an
     When the reclaim runs again for that head
     Then the preservation ref is unchanged and the reclaim completes
   Scenario: A first dispatch asks origin nothing
-    Given an item for which this checkout's dispatch journal records no dispatch with a run id or a declared dispatch id
+    Given an item for which no dispatch journal of any worktree sharing the repository's git common directory records a dispatch with a run id or a declared dispatch id
+    And every such journal can be read
     When the item is dispatched
     Then no query to origin for a surviving publish branch is made
   Scenario: A live earlier run holds the reclaim
@@ -8573,4 +8574,24 @@ Feature: A publication refusal sends triage to the right remedy
     Given a publish_draft push that cannot reach origin
     When publish_draft reports the failure
     Then its output names the unreachable origin as the cause
+```
+
+## Scenario 225 — The publish-branch reclaim finds an earlier dispatch journaled in another worktree
+
+```gherkin
+Feature: A re-dispatch from a secondary worktree reclaims the surviving branch
+  As an operator re-dispatching from a canary worktree
+  I want the reclaim to see a dispatch journaled in the primary checkout
+  So that publish_draft does not refuse on a branch the reclaim exists to clear
+
+  Scenario: An earlier dispatch in the primary is found from a worktree
+    Given an item whose earlier dispatch is journaled only in the repository's primary checkout
+    And its publish branch survives on origin with no live run
+    When the item is re-dispatched from a secondary worktree of the same repository
+    Then the reclaim preserves the branch to its preserved-publish ref and deletes it from origin
+
+  Scenario: An unreadable worktree journal holds
+    Given a worktree of the repository whose dispatch journal cannot be read
+    When the reclaim looks for an earlier dispatch
+    Then it journals publish-branch-reclaim-held with reason journal-unobservable naming that path
 ```
