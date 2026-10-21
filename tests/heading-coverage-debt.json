@@ -1034,5 +1034,19 @@
     "heading": "## Scenario 220 \u2014 An exhausted merge-poll budget on an open pull request rests the item for resume",
     "work_item": "bd-ib-l6rleb",
     "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 218 \u2014 A brief pointing at another work-item's evidence carries an advisory finding",
+    "work_item": "bd-ib-n1kn",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 219 \u2014 A rendered goal larger than the configured bound carries an advisory finding",
+    "work_item": "bd-ib-40vz",
+    "first_seen": "2026-10-21"
   }
 ]

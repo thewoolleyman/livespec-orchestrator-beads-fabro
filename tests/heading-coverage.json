@@ -2170,5 +2170,21 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal merge-poll-exhaustion-rests-for-resume, and the owning work-item bd-ib-l6rleb makes an exhausted merge-poll budget re-read the pull request, proceed on MERGED and otherwise rest the item at blocked with cause merge-poll-budget-exhausted, together with the test that binds this entry.",
     "work_item": "bd-ib-l6rleb"
+  },
+  {
+    "heading": "## Scenario 218 \u2014 A brief pointing at another work-item's evidence carries an advisory finding",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal rendered-goal-reach-and-size-advisories, and the owning work-item bd-ib-n1kn makes the host-side wall report an advisory finding naming a referenced work-item that holds this item's evidence, together with the test that binds this entry.",
+    "work_item": "bd-ib-n1kn"
+  },
+  {
+    "heading": "## Scenario 219 \u2014 A rendered goal larger than the configured bound carries an advisory finding",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal rendered-goal-reach-and-size-advisories, and the owning work-item bd-ib-40vz reports an advisory finding when the rendered goal exceeds a committed dispatcher.goal_size_warning_bytes, on the filing displays, the Dispatcher stderr and journal, and needs-attention, together with the test that binds this entry.",
+    "work_item": "bd-ib-40vz"
   }
 ]
