@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.229.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.5...v0.229.6) (2026-10-21)
+
+
+### Bug Fixes
+
+* **proof-grade:** refuse a pull request whose capture parses as no record ([98aed49](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/98aed499782a9397a5489131fa198592030fece0))
+* **publication-head:** name the comment whose header carries no run id ([69e50f0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/69e50f05e6b684fe5d50032d9daf6298253563ec))
+
 ## [0.229.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.4...v0.229.5) (2026-10-21)
 
 
