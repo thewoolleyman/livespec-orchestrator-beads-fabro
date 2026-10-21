@@ -3258,7 +3258,14 @@ exists, open one as a DRAFT; it MUST be idempotent across janitor re-entries
 and MUST fail closed to `needs_human` when origin cannot be reached; a refresh
 that conflicts, or a refreshed head that the repository's gate rejects, MUST
 instead take the refresh-repair route of "Refresh repair" below while that
-route's budget lasts. It MUST also carry the command node `proof_grade`, entered
+route's budget lasts. When the `publish_draft` push is refused, its failure
+output MUST name which cause refused it. A pre-push hook refusal MUST name
+the hook's failed targets, by the structured-summary rule of
+§"Failed post-merge janitor target attribution". A non-fast-forward rejection MUST
+direct the operator to reconcile the stale publish branch. An origin that
+cannot be reached MUST be named as such. In every case the node still fails
+closed before `proof_capture`. Scenario 224 in `scenarios.md` exercises
+these sentences. It MUST also carry the command node `proof_grade`, entered
 only from a `verified` outcome of `proof_verify`. `proof_grade` MUST read the
 newest `verified` record on the pull request whose run identifier the Dispatcher
 attributes to this dispatch, using the same record reader the acceptance pass
