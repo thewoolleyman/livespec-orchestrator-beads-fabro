@@ -1048,5 +1048,19 @@
     "heading": "## Scenario 219 \u2014 A rendered goal larger than the configured bound carries an advisory finding",
     "work_item": "bd-ib-40vz",
     "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 221 \u2014 A resume refusal on an active item names a remedy that changes it",
+    "work_item": "bd-ib-mzyhn2",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 222 \u2014 A capacity handoff for a claim with no recorded pull request reads the forge first",
+    "work_item": "bd-ib-dbmoeh",
+    "first_seen": "2026-10-21"
   }
 ]
