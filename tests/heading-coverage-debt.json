@@ -1027,5 +1027,12 @@
     "heading": "## Scenario 226 \u2014 An unchanged refresh strips the run's empty commits and carries the proof forward",
     "work_item": "bd-ib-reapbq",
     "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 220 \u2014 An exhausted merge-poll budget on an open pull request rests the item for resume",
+    "work_item": "bd-ib-l6rleb",
+    "first_seen": "2026-10-21"
   }
 ]
