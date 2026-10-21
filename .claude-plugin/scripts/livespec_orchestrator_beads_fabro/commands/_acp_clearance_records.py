@@ -42,6 +42,14 @@ multi-line payload would have to be reassembled from whatever the engine chose
 to keep; sorted keys because two Dispatchers rendering one clearance must
 produce byte-identical text, which is what lets a reader compare a record
 against the clearance it claims to be rather than merely parse it.
+
+THE PARSE LIVES BESIDE THE RENDER, so one record format cannot drift across two
+files -- the same reason `_plan_completeness_evidence` keeps its own pair
+together. And it is STRICT in the destructive direction: a line missing the
+marker, or carrying a field of the wrong type, reads back as NOTHING rather
+than as a clearance assembled out of whichever fields happened to parse. A
+retirement is the one direction that cannot be undone, so a half-read record
+would retire an observation nobody cleared.
 """
 
 from __future__ import annotations
@@ -49,6 +57,9 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any, cast
+
+from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
     "CLEARANCE_LABEL_KEY",
@@ -56,8 +67,10 @@ __all__: list[str] = [
     "CLEARANCE_MARKER_KEY",
     "CLEARANCE_MARKER_VALUE",
     "AcpHoldClearance",
+    "clearance_from_outcome",
     "clearance_outcome_text",
     "clearance_run_labels",
+    "is_clearance_run",
 ]
 
 # The ONE label that marks a run as a clearance record. Dotted and
@@ -117,6 +130,16 @@ def clearance_run_labels() -> tuple[str, ...]:
     return (f"{CLEARANCE_LABEL_KEY}={CLEARANCE_LABEL_VALUE}",)
 
 
+def is_clearance_run(*, labels: Mapping[str, str]) -> bool:
+    """Whether one listing row's labels mark it as a clearance record.
+
+    Read off the LISTING, before any per-run read is spent, which is the same
+    bound `_acp_factory_hold_evidence` applies to its own two arms: a factory
+    serving this fleet listed 1626 rows, and a clearance record is rare.
+    """
+    return labels.get(CLEARANCE_LABEL_KEY) == CLEARANCE_LABEL_VALUE
+
+
 def clearance_outcome_text(*, clearance: AcpHoldClearance) -> str:
     """The one line this clearance's recorded outcome carries.
 
@@ -125,6 +148,79 @@ def clearance_outcome_text(*, clearance: AcpHoldClearance) -> str:
     Dispatchers must render one clearance identically.
     """
     return json.dumps(_payload(clearance=clearance), sort_keys=True)
+
+
+def clearance_from_outcome(*, text: str) -> AcpHoldClearance | None:
+    """The clearance one recorded outcome states, or `None` when it states none.
+
+    Every LINE is tried rather than the text as a whole, because an engine may
+    record a trailing newline or a leading progress line around a script
+    node's own output, and a whole-text parse would lose a perfectly good
+    record to one byte it did not put there.
+    """
+    for line in text.splitlines():
+        parsed = parse_json(text=line)
+        if isinstance(parsed, JsonParseFailure) or not isinstance(parsed, dict):
+            continue
+        clearance = _parsed(payload=cast("dict[str, Any]", parsed))
+        if clearance is not None:
+            return clearance
+    return None
+
+
+def _parsed(*, payload: Mapping[str, Any]) -> AcpHoldClearance | None:
+    """One decoded line as a clearance, or `None` for anything else.
+
+    The MARKER is tested first, so no later field is ever read on a mapping
+    this record format does not own -- the same ordering `parse_hold_record`
+    keeps for its own version check, and for the same reason.
+    """
+    if payload.get(CLEARANCE_MARKER_KEY) != CLEARANCE_MARKER_VALUE:
+        return None
+    ids = _observation_ids(raw=payload.get("observation_ids"))
+    candidate_key = payload.get("candidate_key")
+    if ids is None or (candidate_key is not None and not isinstance(candidate_key, str)):
+        return None
+    texts = _required_text(payload=payload, names=("scope", "hold_key", "actor", "cleared_at"))
+    reason = payload.get("reason")
+    if texts is None or not isinstance(reason, str):
+        return None
+    return AcpHoldClearance(
+        scope=texts[0],
+        hold_key=texts[1],
+        candidate_key=candidate_key,
+        observation_ids=ids,
+        actor=texts[2],
+        cleared_at=texts[3],
+        reason=reason,
+    )
+
+
+def _observation_ids(*, raw: object) -> tuple[str, ...] | None:
+    """The recorded ids as text, or `None` when any element is not text.
+
+    A single non-text element rejects the WHOLE record rather than being
+    dropped, because the ids are what makes the retirement exact: a clearance
+    read back carrying fewer ids than it was written with would leave an
+    observation standing that its operator did clear, with nothing to say so.
+    """
+    if not isinstance(raw, list):
+        return None
+    ids = cast("list[object]", raw)
+    if not all(isinstance(one, str) for one in ids):
+        return None
+    return tuple(cast("list[str]", ids))
+
+
+def _required_text(*, payload: Mapping[str, Any], names: tuple[str, ...]) -> tuple[str, ...] | None:
+    """Every named field as non-blank text, or `None` when one is missing."""
+    values: list[str] = []
+    for name in names:
+        value = payload.get(name)
+        if not isinstance(value, str) or value.strip() == "":
+            return None
+        values.append(value)
+    return tuple(values)
 
 
 def _payload(*, clearance: AcpHoldClearance) -> Mapping[str, object]:
