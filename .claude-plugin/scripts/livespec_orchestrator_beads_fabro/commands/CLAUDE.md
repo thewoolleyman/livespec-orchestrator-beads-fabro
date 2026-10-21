@@ -1290,8 +1290,13 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   deterministic single-script-node run, launched through the existing
   `FabroPort` facade) and `_acp_factory_clearance_evidence` (the read: where in
   a run's own `inspect` record that line is found). `_acp_hold_clear` is the
-  write's one caller.
-  Seven properties an editor must not invert. The FACTORY record is the
+  write's one caller; `_acp_factory_hold_evidence`'s clearance arm is the
+  read's, and it REPORTS the ids rather than applying them, because a clearance
+  may name an observation this read derived, one the reading repository's own
+  journal carries, or one neither holds any more — and only the union has all
+  of them in hand, which is the same reason the other two retirement routes are
+  applied there.
+  Eight properties an editor must not invert. The FACTORY record is the
   AUTHORITY and the journal line is its AUDIT REFERENCE — the
   provider-exhaustion clause says so in as many words — so the valve writes the
   journal only once the factory write has succeeded, and a repository that
@@ -1323,6 +1328,10 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   record carries at most one clearance line and that line carries its own
   marker; reading one map only answers `None` on the other engine, which at the
   evidence surface is indistinguishable from a run that recorded no clearance.
+  And the clearance ARM is bounded by the run's START, exactly as the
+  confirmation arm is and for the same reason — a clearance recorded longer ago
+  than `HOLD_INTERVAL` can only retire a record that has already expired on its
+  own — so a clearance row outside that window costs no per-run read at all.
 - The ADMISSION SESSION-HEADROOM FILTER of `contracts.md`'s "Admission filters
   candidates by projected Claude session headroom" paragraph (`bd-ib-jwuxs4`,
   Scenario 60) lives in SEVEN cohesive modules, split pure-from-impure the usual
