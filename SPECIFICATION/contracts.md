@@ -4344,12 +4344,16 @@ terminal when the reclaim asks; the live-run hold below covers the run
 reconciliation could not or did not terminate.
 
 - **Only a re-dispatch asks.** An *earlier dispatch* of an item is a
-  record in THIS checkout's dispatch journal that names a run id or a
-  declared dispatch id for the item; a dry-run plan and a pre-run refusal
-  are not earlier dispatches, and a dispatch journaled only in another
-  checkout's journal is invisible here, in which case the reclaim does not
-  run and `publish_draft` refuses exactly as it did before the reclaim
-  existed. For an item with no earlier dispatch the Dispatcher MUST NOT
+  record that names a run id or a declared dispatch id for the item in the
+  dispatch journal of ANY worktree of this repository, meaning every
+  checkout that shares its git common directory; a dry-run plan and a
+  pre-run refusal are not earlier dispatches. A dispatch journaled only on
+  another host is invisible here, in which case the reclaim does not run
+  and `publish_draft` refuses exactly as it did before the reclaim existed.
+  A worktree journal that cannot be read MUST be journaled as
+  `publish-branch-reclaim-held` with the reason `journal-unobservable`,
+  naming the path, rather than read as no earlier dispatch. Scenario 225 in
+  `scenarios.md` exercises this bullet. For an item with no earlier dispatch the Dispatcher MUST NOT
   query origin for a surviving publish branch: a first dispatch has no
   possible yes, and a remote probe on that path would put a forge outage
   on the critical path of every dispatch. For any other item it MUST ask
@@ -4389,8 +4393,9 @@ reconciliation could not or did not terminate.
   a live run for the item, or when the preserve or the delete fails, the
   Dispatcher MUST leave the branch exactly as it stands and MUST journal
   one `publish-branch-reclaim-held` record naming the reason (one of
-  `origin-unobservable`, `factory-unobservable`, `live-run`, or the failed
-  ref operation), the branch and head where established, and the live run
+  `journal-unobservable`, `origin-unobservable`, `factory-unobservable`,
+  `live-run`, or the failed ref operation), the branch and head where
+  established, and the live run
   ids on the live-run arm. A hold MUST NOT refuse the dispatch: the
   dispatch proceeds and `publish_draft` refuses the non-fast-forward push
   exactly as it did before the reclaim existed, so the worst outcome of

@@ -2146,5 +2146,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal publish-push-refusal-names-its-cause, and the owning work-item bd-ib-35kfra makes a refused publish_draft push name its cause (pre-push hook failed targets, non-fast-forward, unreachable origin), together with the test that binds this entry.",
     "work_item": "bd-ib-35kfra"
+  },
+  {
+    "heading": "## Scenario 225 \u2014 The publish-branch reclaim finds an earlier dispatch journaled in another worktree",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal reclaim-reads-every-worktree-journal, and the owning work-item bd-ib-ewdqub makes the publish-branch reclaim read the dispatch journal of every worktree of the repository and hold journal-unobservable on an unreadable one, together with the test that binds this entry.",
+    "work_item": "bd-ib-ewdqub"
   }
 ]
