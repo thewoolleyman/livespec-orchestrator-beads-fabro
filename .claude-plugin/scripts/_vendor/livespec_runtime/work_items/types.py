@@ -21,8 +21,7 @@ legacy records lacking them read back as `None`, with no in-place
 migration. `awaits_scope_override: bool = False` is the tenth
 optional-on-read field, a materialized current-state signal backed
 by the `awaits-scope-override` beads label; legacy records lacking it
-read back as `False`. `rework_pending: bool = False` is the eleventh,
-the same shape backed by the `rework:pending` beads label.
+read back as `False`.
 
 Transitive type closure: the only non-primitive type reachable from
 `WorkItem` is `AuditRecord` (via the `audit` field). `AuditRecord`'s
@@ -173,13 +172,6 @@ class WorkItem:
     `awaits_scope_override` is a materialized current-state signal,
     backed by the `awaits-scope-override` beads label in the beads
     substrate. `False` is the legacy/default value.
-
-    `rework_pending` is the same shape, backed by the `rework:pending`
-    beads label: `True` exactly while the item is parked awaiting the
-    fix-forward rework re-dispatch the two ratified rework entries
-    promised. It is a materialized field rather than a raw-label read so
-    the selection, accounting, and stranded-state discrimination that key
-    on it all read one authority. `False` is the legacy/default value.
     """
 
     id: str
@@ -207,4 +199,3 @@ class WorkItem:
     factory_safety: FactorySafety | None = None
     review_requirement: ReviewRequirement | None = None
     awaits_scope_override: bool = False
-    rework_pending: bool = False
