@@ -23,6 +23,24 @@ later or trailing section's verdict is the FAIL-OPEN direction. So the record wa
 ungradeable, the prompt already asked for the verdict per assertion, the agent
 deviated, and nothing graded the record before the run advanced to merge.
 
+AND WHY THE CAPTURE IS GRADED TOO, not only the replay. `proof_verify` replays
+whatever body it can see, so a capture whose header this reader treats as a
+NON-RECORD is still replayed and still earns a `verified` verdict -- which is a
+false green INSIDE the graph, and the more serious half of the defect
+(`bd-ib-oa67lv`, coordinator ruling R382). Measured on `livespec-dev-tooling-
+r6kagr`, run 01M5E8H65Z04: `proof_capture` expanded an unset `$FABRO_RUN_ID`
+into its header, so the comment's publishing identity field read `run` with
+nothing after it; capture, review and replay all passed, and only
+`publication-head` refused -- after three stages had been spent. A resume
+restarts at the FAILED stage and never re-runs `proof_capture`, so the run was
+unrecoverable by any route. The grade therefore refuses when no `captured`
+record parses, through the same reader, BEFORE it reads any verified record, and
+it refuses along the node's EXISTING failure edge: `proof_grade_route` re-enters
+`proof_verify` under its own counter and the third failure ends at
+`non_converged`. No graph edge is added, which is deliberate -- a new route back
+to `proof_capture` is a new cycle, and `_dispatcher_execution_budget` refuses an
+uncut one.
+
 WHY THE READER IS THE SHIPPED BYTES AND NOT A FRAGMENT. Every other materialized
 program here composes a hand-written fragment of the record format, held equal to
 the host reader by a test (`_dispatcher_carry_forward_record` records what a
@@ -164,6 +182,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                READER_DIRECTORY))
 
 from _dispatcher_proof_record import (  # noqa: E402
+    VERDICT_CAPTURED,
     VERDICT_VERIFIED,
     latest_proof_record,
     proof_records,
@@ -273,13 +292,31 @@ def pull_request_comments(number):
     return comments if isinstance(comments, list) else None
 
 
+def parsed_records(comments):
+    """Every Proof of Done record on the pull request, through the shipped reader."""
+    return proof_records(comments=[one for one in comments if isinstance(one, dict)])
+
+
 def attributed_verified_record(comments, run_ids):
     """The newest `verified` record this dispatch answers for, or None."""
     return latest_proof_record(
-        records=proof_records(comments=[one for one in comments if isinstance(one, dict)]),
+        records=parsed_records(comments),
         verdict=VERDICT_VERIFIED,
         run_ids=tuple(run_ids),
     )
+
+
+def captured_record(comments):
+    """The newest `captured` record that PARSES, or None when none does.
+
+    UNATTRIBUTED, exactly as the publication-head program reads the capture
+    requirement: the question is whether the capture leg published a record at
+    all, and a header this reader cannot attribute is not a record under it
+    either. Reading it through the SAME reader is the whole of the check -- a
+    second account of the format would answer this question differently from the
+    one the acceptance pass asks, which is how the false green arose.
+    """
+    return latest_proof_record(records=parsed_records(comments), verdict=VERDICT_CAPTURED)
 
 
 def ungraded_assertions(record, assertions):
@@ -295,7 +332,14 @@ def ungraded_assertions(record, assertions):
 
 
 def grade(number):
-    """The whole grade, as (exit code, the one line the stage record carries)."""
+    """The whole grade, as (exit code, the one line the stage record carries).
+
+    THE CAPTURE IS GRADED BEFORE THE REPLAY, and the order is the repair rather
+    than tidiness: a `verified` verdict published against a capture this reader
+    treats as a non-record says nothing, so reading the verified record first
+    would grade the replay of an unreadable capture and advance on it. That is
+    the false green the module docstring records.
+    """
     assertions = declared_assertions()
     if assertions is None:
         return 1, ("LIVESPEC_PROOF_GRADE_ASSERTIONS_UNREADABLE: the Dispatcher "
@@ -313,6 +357,14 @@ def grade(number):
         return 1, ("LIVESPEC_PROOF_GRADE_COMMENTS_UNREADABLE: the comments of pull "
                    "request #" + number + " could not be read, so the record cannot be "
                    "graded")
+    if captured_record(comments) is None:
+        return 1, ("LIVESPEC_PROOF_GRADE_NO_CAPTURED_RECORD: no captured Proof of "
+                   "Done record on pull request #" + number + " parses as a record "
+                   "through this reader, so nothing the capture leg published can be "
+                   "replayed or graded; failing closed WITHOUT grading any verified "
+                   "record, because a verified verdict about a capture nothing can "
+                   "read is not evidence. A header whose publishing identity field "
+                   "carries no run id is the measured cause; a fresh capture is owed")
     record = attributed_verified_record(comments, run_ids)
     if record is None:
         return 1, ("LIVESPEC_PROOF_GRADE_NO_RECORD: pull request #" + number + " carries "
