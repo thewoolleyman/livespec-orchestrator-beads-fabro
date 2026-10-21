@@ -152,6 +152,7 @@ def _arm_fallback(
         runner=runner,
         journal=journal,
         include_publication=include_publication,
+        include_status_checks=False,
     )
 
 
@@ -190,6 +191,7 @@ def _disarm_held(
         runner=runner,
         journal=journal,
         include_publication=include_publication,
+        include_status_checks=False,
     )
 
 

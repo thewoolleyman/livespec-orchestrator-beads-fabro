@@ -58,11 +58,24 @@ def await_merge(
             plan=plan,
             runner=runner,
             journal=journal,
-            include_status_checks=False,
         )
         view = reading.view if reading.error is None else None
         if view is not None and view.state == "MERGED":
             return view
+        if _is_integration_access_denied(error=reading.error):
+            # Polling an OPEN PR must keep its rollup: terminal required-check
+            # failures are a fast failure, not a poll timeout. A credential may
+            # nevertheless be unable to read that rollup AFTER GitHub merged the
+            # PR, so use the confirmation-shaped read only to establish MERGED.
+            merged_reading = view_pr(
+                plan=plan,
+                runner=runner,
+                journal=journal,
+                include_status_checks=False,
+            )
+            merged_view = merged_reading.view
+            if merged_view is not None and merged_view.state == "MERGED":
+                return merged_view
         if view is not None and _reports_overtaken_arming(view=view):
             conflicting_reports += 1
             if conflicting_reports >= CONSECUTIVE_CONFLICTING_REPORTS:
@@ -157,3 +170,8 @@ def _reports_overtaken_arming(*, view: PrView) -> bool:
         auto_merge_armed=view.auto_merge_armed,
         merge_state_status=view.merge_state_status,
     )
+
+
+def _is_integration_access_denied(*, error: str | None) -> bool:
+    """Recognize GitHub App authorization denial without retrying transient reads."""
+    return error is not None and "resource not accessible by integration" in error.lower()
