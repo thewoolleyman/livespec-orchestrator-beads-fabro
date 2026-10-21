@@ -172,6 +172,54 @@ def test_explicit_repositories_replace_registry_discovery(
     assert [entry["repository"] for entry in payload] == [str(named)]
 
 
+def test_explicit_repositories_still_use_every_host_registered_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--repo` scopes repositories, not the builds a dispatch can execute from."""
+    named = tmp_path / "named"
+    named.mkdir()
+    _ = (named / _CONFIG).write_text(
+        json.dumps(
+            {"livespec-orchestrator-beads-fabro": {"dispatcher": {"factories": {_FACTORY: {}}}}}
+        ),
+        encoding="utf-8",
+    )
+    registered = _catalog_repo(tmp_path=tmp_path, name="registered")
+    install = tmp_path / "build"
+    workflow = install / ".fabro" / "workflows" / "implement-work-item" / "workflow.toml"
+    workflow.parent.mkdir(parents=True)
+    _ = workflow.write_text(
+        "[run.environment]\n"
+        'id = "livespec-ci"\n\n'
+        "[environments.livespec-ci]\n"
+        'provider = "docker"\n\n'
+        "[environments.livespec-ci.image]\n"
+        'docker = "ghcr.io/example/sandbox:registered"\n',
+        encoding="utf-8",
+    )
+    _ = _home_with_registry(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        plugins={_PLUGIN_KEY: _records(repos=(registered,), install=install)},
+    )
+
+    exit_code = run_sandbox_images_command(args=_args(repos=[str(named)], as_json=True))
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload == [
+        {
+            "repository": str(named),
+            "source": "bundled_run_config",
+            "environment_id": None,
+            "image": "ghcr.io/example/sandbox:registered",
+            "path": str(workflow),
+            "build": "build",
+            "variant": None,
+        }
+    ]
+
+
 def test_an_undeclared_factory_is_reported_and_exits_zero(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
