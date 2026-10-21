@@ -950,5 +950,12 @@
     "heading": "## Scenario 233 \u2014 A node routed to a different adapter does not inherit the replaced adapter's env",
     "work_item": "bd-ib-5j4b",
     "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 234 \u2014 A stalled run whose sandbox was OOM-killed names the kill and the memory limit",
+    "work_item": "bd-ib-7rnipp",
+    "first_seen": "2026-10-21"
   }
 ]

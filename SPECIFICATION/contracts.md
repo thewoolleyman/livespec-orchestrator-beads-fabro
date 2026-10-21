@@ -1688,6 +1688,17 @@ bounce the item to `backlog` for it and MUST NOT journal a
 NOT count it as a non-convergence observation, while a fix-loop-cap
 non-convergence still counts.
 
+**An OOM kill is named.** When the factory reports that the run's sandbox
+container was killed for exceeding its memory limit, the `watchdog-stall-cancel`
+record, the dispatch result, and the ledger comment of whichever stall
+disposition below applies MUST name the OOM kill, the run id, and the container
+memory limit the factory reports. A limit the factory does not report MUST be
+recorded as unobservable, never omitted or guessed. The Dispatcher MUST NOT
+infer an OOM kill the factory does not report. The outcome otherwise remains
+`stalled-no-progress` for every rule of this section, including the release and
+rest dispositions below. Scenario 234 in `scenarios.md` exercises this
+paragraph.
+
 **A first stall cancel is released and recovered.** When the item's
 immediately preceding dispatch did not also end `stalled-no-progress`, the
 Dispatcher MUST, without a human:
