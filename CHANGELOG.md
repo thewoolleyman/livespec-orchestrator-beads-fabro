@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.230.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.230.0...v0.230.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **plan:** a plan event echoing a marker is not the record ([87af07c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/87af07cf45d8e46c44eabe4d95baf8e027547351))
+
 ## [0.230.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.10...v0.230.0) (2026-10-21)
 
 
