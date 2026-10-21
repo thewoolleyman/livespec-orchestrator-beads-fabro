@@ -2202,5 +2202,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal terminal-claim-remedies-read-the-forge, and the owning work-item bd-ib-dbmoeh makes a capacity handoff read the forge for the publish branch before advertising any status move, together with the test that binds this entry.",
     "work_item": "bd-ib-dbmoeh"
+  },
+  {
+    "heading": "## Scenario 235 \u2014 A captured comment that does not parse as a record is a proof-record finding",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal non-record-capture-is-a-proof-record-finding, and the owning work-item bd-ib-f7lrks makes review treat a newest captured Proof of Done comment that does not parse as a record as a blocking proof-record finding routed through recapture_route, together with the test that binds this entry.",
+    "work_item": "bd-ib-f7lrks"
   }
 ]
