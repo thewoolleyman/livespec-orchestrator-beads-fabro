@@ -1280,6 +1280,36 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   such a record covers only a candidate whose own key the engine would have
   recorded the same way, and broadening it would name an entitlement nobody
   declared.
+- The FACTORY-NATIVE OPERATOR CLEARANCE of the same paragraph's "an operator
+  clearance by a minimal factory-native record whose recorded outcome carries
+  the clearance's exact identity, actor, time, and reason" (`bd-ib-dtfv2p`,
+  Scenarios 116 and 127) is split pure-from-impure the usual way:
+  `_acp_clearance_records` (PURE: what one clearance IS, the one label a reader
+  recognises its run by, and the single line its recorded outcome carries) →
+  `_acp_clearance_factory_record` (the write: one deterministic
+  single-script-node run, launched through the existing `FabroPort` facade).
+  `_acp_hold_clear` is the one caller.
+  Five properties an editor must not invert. The FACTORY record is the
+  AUTHORITY and the journal line is its AUDIT REFERENCE — the
+  provider-exhaustion clause says so in as many words — so the valve writes the
+  journal only once the factory write has succeeded, and a repository that
+  cannot record on a participating factory is REFUSED rather than falling back
+  to its own journal: a journal-only retirement clears the hold for that
+  checkout while every peer, which has no access to that journal by
+  construction, keeps dispatching into a record its operator believes is gone.
+  Every pre-existing refusal returns BEFORE the write, which is what keeps a
+  record a peer reads as a clearance from describing a clearance the valve went
+  on to reject. The LABEL carries nothing a reader decides on, because an
+  `availability_key` is opaque by contract and a `--reason` is operator prose,
+  so neither fits the engine's label alphabet — the label says which rows are
+  worth a per-run read and the OUTCOME carries the clearance. The engine
+  version is MEASURED rather than assumed, because the two engine generations
+  take their workflow argument differently and a Petri-era engine refuses a
+  config file before any run exists. And the payload rides the script through
+  TWO deterministic encodings in one order only — shell-quote the line, then
+  DOT-escape the result — so the recorded outcome is the line itself, plainly
+  readable by an operator looking at the run, rather than an encoded form only
+  this package can decode.
 - The ADMISSION SESSION-HEADROOM FILTER of `contracts.md`'s "Admission filters
   candidates by projected Claude session headroom" paragraph (`bd-ib-jwuxs4`,
   Scenario 60) lives in SEVEN cohesive modules, split pure-from-impure the usual

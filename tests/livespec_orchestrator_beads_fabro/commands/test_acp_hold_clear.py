@@ -114,10 +114,25 @@ def _argv(*, path: Path, **overrides: str) -> list[str]:
 
 
 def _run(*, argv: list[str], monkeypatch: pytest.MonkeyPatch) -> int:
-    """Drive the subcommand through the dispatcher CLI on a pinned clock."""
+    """Drive the subcommand through the dispatcher CLI on a pinned clock.
+
+    The factory-native write is STUBBED here rather than exercised, because
+    every claim this file makes is about the valve's own decisions and its
+    journal line; `test_acp_clearance_factory_record.py` owns the write, its
+    gating and its refusals.
+    """
     monkeypatch.setattr(_module(), "utc_now_iso", lambda: _NOW)
+    monkeypatch.setattr(_module(), "record_factory_clearance", _stub_recorder)
     dispatcher = importlib.import_module(f"{_PACKAGE}.dispatcher")
     return dispatcher.main(argv=argv)
+
+
+def _stub_recorder(*, repo: Path, clearance: Any) -> Any:
+    """Stand in for the participating factory this hermetic journal has none of."""
+    writer = importlib.import_module(f"{_PACKAGE}._acp_clearance_factory_record")
+    assert repo.is_dir()
+    assert clearance.observation_ids
+    return writer.FactoryClearanceRecord(factory="hp", run_id="01MCLEARANCE")
 
 
 def _lines(*, path: Path) -> list[dict[str, Any]]:
