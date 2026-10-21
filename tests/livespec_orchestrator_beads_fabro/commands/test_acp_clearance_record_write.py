@@ -187,6 +187,35 @@ def test_the_rendered_graph_prints_the_clearance_line_through_both_encodings() -
     assert json.loads(printed)["reason"] == 'the operator\'s "reset" landed'
 
 
+def test_a_marked_line_whose_fields_are_malformed_reads_back_as_nothing() -> None:
+    """The parse's strict half, on lines that DO carry the record's own marker.
+
+    Every payload below would be rejected by the marker test if it lacked one,
+    so each one carries it: these cases are about a line this format OWNS whose
+    fields are nonetheless unusable, which is the only shape under which a
+    lenient parse could assemble a clearance out of the parts that happened to
+    read. A retirement cannot be undone, so each one must read back as nothing.
+    """
+    records = _records()
+    sound = json.loads(records.clearance_outcome_text(clearance=_clearance()))
+    malformed: tuple[dict[str, Any], ...] = (
+        {**sound, "observation_ids": "acpobs-aaaa"},
+        {**sound, "observation_ids": ["acpobs-aaaa", 7]},
+        {**sound, "candidate_key": 7},
+        {**sound, "actor": "   "},
+        {**sound, "cleared_at": None},
+        {**sound, "reason": None},
+    )
+
+    for payload in malformed:
+        assert (
+            records.clearance_from_outcome(text=json.dumps(payload, sort_keys=True)) is None
+        ), payload
+    # The CONTROL: the same assembly, unmodified, does read back -- without it
+    # a parse that refused everything would satisfy every case above.
+    assert records.clearance_from_outcome(text=json.dumps(sound, sort_keys=True)) == _clearance()
+
+
 def test_the_recorded_outcome_carries_the_identity_actor_time_and_reason() -> None:
     """The four things the clause requires the outcome to carry, plus the target."""
     records = _records()

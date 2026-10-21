@@ -1285,11 +1285,13 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   the clearance's exact identity, actor, time, and reason" (`bd-ib-dtfv2p`,
   Scenarios 116 and 127) is split pure-from-impure the usual way:
   `_acp_clearance_records` (PURE: what one clearance IS, the one label a reader
-  recognises its run by, and the single line its recorded outcome carries) →
-  `_acp_clearance_factory_record` (the write: one deterministic
-  single-script-node run, launched through the existing `FabroPort` facade).
-  `_acp_hold_clear` is the one caller.
-  Five properties an editor must not invert. The FACTORY record is the
+  recognises its run by, the single line its recorded outcome carries, and the
+  parse of that line) → `_acp_clearance_factory_record` (the write: one
+  deterministic single-script-node run, launched through the existing
+  `FabroPort` facade) and `_acp_factory_clearance_evidence` (the read: where in
+  a run's own `inspect` record that line is found). `_acp_hold_clear` is the
+  write's one caller.
+  Seven properties an editor must not invert. The FACTORY record is the
   AUTHORITY and the journal line is its AUDIT REFERENCE — the
   provider-exhaustion clause says so in as many words — so the valve writes the
   journal only once the factory write has succeeded, and a repository that
@@ -1309,7 +1311,18 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   TWO deterministic encodings in one order only — shell-quote the line, then
   DOT-escape the result — so the recorded outcome is the line itself, plainly
   readable by an operator looking at the run, rather than an encoded form only
-  this package can decode.
+  this package can decode. The PARSE lives beside the RENDER so one record
+  format cannot drift across two files, and it is STRICT in the destructive
+  direction: a line missing the marker, or carrying a field of the wrong type,
+  reads back as NOTHING rather than as a clearance assembled out of whichever
+  fields happened to parse — a retirement cannot be undone, so a half-read
+  record would retire an observation nobody cleared. And the read scans BOTH
+  engines' outcome maps (the Petri-era `stages` map and the pinned
+  checkpoint's `node_outcomes`) without consulting the node id, because the two
+  spell that id differently — `record` against `002-record@1` — while the
+  record carries at most one clearance line and that line carries its own
+  marker; reading one map only answers `None` on the other engine, which at the
+  evidence surface is indistinguishable from a run that recorded no clearance.
 - The ADMISSION SESSION-HEADROOM FILTER of `contracts.md`'s "Admission filters
   candidates by projected Claude session headroom" paragraph (`bd-ib-jwuxs4`,
   Scenario 60) lives in SEVEN cohesive modules, split pure-from-impure the usual
