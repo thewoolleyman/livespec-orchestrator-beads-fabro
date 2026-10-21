@@ -41,24 +41,39 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source
     COMMITTED_RUN_CONFIG_SOURCE,
     sandbox_image_source,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_toml_read import toml_section_string
+from livespec_orchestrator_beads_fabro.commands._dispatcher_toml_read import (
+    TomlDocumentUnparseable,
+    toml_section_string,
+    toml_section_string_declaration,
+)
 from livespec_orchestrator_beads_fabro.commands._workflow_variants import workflow_registry
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
+from livespec_orchestrator_beads_fabro.errors import LivespecConfigUnreadableError
 
 __all__: list[str] = [
     "BUNDLED_RUN_CONFIG_SOURCE",
     "FACTORY_UNDECLARED_SOURCE",
     "NAMED_VARIANT_SOURCE",
+    "UNREADABLE_SOURCE",
     "BuildRoot",
     "SandboxImageEntry",
     "sandbox_images",
 ]
 
-# The three sources this module NAMES itself, beside the three
+# The four sources this module NAMES itself, beside the three
 # `_dispatcher_sandbox_image_source` already owns. Each names what it IS rather
 # than ranking it, exactly as the three over there do.
 FACTORY_UNDECLARED_SOURCE = "factory_undeclared"
 NAMED_VARIANT_SOURCE = "named_variant"
 BUNDLED_RUN_CONFIG_SOURCE = "bundled_run_config"
+UNREADABLE_SOURCE = "unreadable"
+
+# The governed repository's own configuration file, spelled here because
+# `_config` keeps its literal private. It is reported as the FAILED PATH of an
+# unreadable repository, which is the one thing a refusal about it has to name:
+# the remedy is to fix that file, and a report naming only the repository sends
+# an operator looking for which of its files could not be read.
+_LIVESPEC_CONFIG = ".livespec.jsonc"
 
 # Where a run config declares the environment whose image table carries the
 # docker pin. Read in two steps because the second section NAMES the first's
@@ -70,6 +85,20 @@ _RUN_ENVIRONMENT_SECTION = "run.environment"
 _ENVIRONMENT_ID_KEY = "id"
 _IMAGE_SECTION_TEMPLATE = "environments.{environment}.image"
 _DOCKER_KEY = "docker"
+
+
+@dataclass(frozen=True, kw_only=True)
+class _WorkflowUnreadable:
+    """A run config about which NOTHING is known, including whether it pins an image.
+
+    Its own type rather than a None, because None is already the answer for a
+    run config that was read and declares no pin — and those two need opposite
+    reports: one is an ordinary image-less entry, the other is the refusal that
+    makes the command exit non-zero.
+    """
+
+
+_WORKFLOW_UNREADABLE = _WorkflowUnreadable()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -111,6 +140,13 @@ def sandbox_images(
     `committed_run_config` arm the per-workflow entries, which is the one arm
     where WHICH run config a dispatch reads decides the image.
     """
+    config = repo / _LIVESPEC_CONFIG
+    readable = attempt(
+        action=lambda: dispatcher_block(cwd=repo),
+        exceptions=(LivespecConfigUnreadableError, OSError, ValueError),
+    )
+    if isinstance(readable, AttemptFailure):
+        return (SandboxImageEntry(repository=repo, source=UNREADABLE_SOURCE, path=config),)
     if not has_fabro_factory(cwd=repo, factory=factory):
         return (SandboxImageEntry(repository=repo, source=FACTORY_UNDECLARED_SOURCE),)
     source = sandbox_image_source(
@@ -150,13 +186,11 @@ def _workflow_entries(
 
 
 def _variant_entry(*, repo: Path, variant: str, directory: str) -> SandboxImageEntry:
-    path = workflow_toml(args=_resolution_args(repo=repo), variant_directory=directory)
-    return SandboxImageEntry(
-        repository=repo,
+    return _image_entry(
+        repo=repo,
+        path=workflow_toml(args=_resolution_args(repo=repo), variant_directory=directory),
         source=NAMED_VARIANT_SOURCE,
         variant=variant,
-        image=_declared_image(path=path),
-        path=path,
     )
 
 
@@ -178,21 +212,13 @@ def _reserved_entries(
     )
     committed = tuple(path for build, path in resolved if not path.is_relative_to(build.root))
     if committed:
-        return (
-            SandboxImageEntry(
-                repository=repo,
-                source=COMMITTED_RUN_CONFIG_SOURCE,
-                image=_declared_image(path=committed[0]),
-                path=committed[0],
-            ),
-        )
+        return (_image_entry(repo=repo, path=committed[0], source=COMMITTED_RUN_CONFIG_SOURCE),)
     return tuple(
-        SandboxImageEntry(
-            repository=repo,
+        _image_entry(
+            repo=repo,
+            path=path,
             source=BUNDLED_RUN_CONFIG_SOURCE,
             build=build.identity,
-            image=_declared_image(path=path),
-            path=path,
         )
         for build, path in resolved
     )
@@ -209,11 +235,66 @@ def _resolution_args(*, repo: Path) -> argparse.Namespace:
     return argparse.Namespace(workflow=None, repo=str(repo))
 
 
-def _declared_image(*, path: Path) -> str | None:
-    text = path.read_text(encoding="utf-8")
-    environment = toml_section_string(
+def _image_entry(
+    *,
+    repo: Path,
+    path: Path,
+    source: str,
+    variant: str | None = None,
+    build: str | None = None,
+) -> SandboxImageEntry:
+    """One workflow-derived entry, or the unreadable report that replaces it.
+
+    The unreadable entry KEEPS the `variant` and `build` of the entry it stands
+    in for. The clause requires it to name the path and the repository, and
+    those two are what it requires; carrying the other two as well is what lets
+    an operator reading a multi-build array see WHICH enumerated entry failed
+    rather than only which file did — one path can be reached by one route only,
+    but a reader scanning an array for its own build should not have to derive
+    that.
+    """
+    image = _image_reading(path=path)
+    if isinstance(image, _WorkflowUnreadable):
+        return SandboxImageEntry(
+            repository=repo,
+            source=UNREADABLE_SOURCE,
+            path=path,
+            variant=variant,
+            build=build,
+        )
+    return SandboxImageEntry(
+        repository=repo,
+        source=source,
+        image=image,
+        path=path,
+        variant=variant,
+        build=build,
+    )
+
+
+def _image_reading(*, path: Path) -> str | None | _WorkflowUnreadable:
+    """The docker pin a run config declares, or the fact that it could not be read.
+
+    An absent or non-string environment id is NOT unreadable: a parseable run
+    config that declares no environment pins no image through this path, which
+    is a complete answer and the same one `toml_section_string` has always
+    collapsed such a declaration to. Only bytes that cannot be decoded or read,
+    and a document that is not TOML at all, are the unreadable report — the two
+    conditions under which nothing about the file is known, INCLUDING whether it
+    declares a pin.
+    """
+    text = attempt(
+        action=lambda: path.read_text(encoding="utf-8"), exceptions=(OSError, ValueError)
+    )
+    if isinstance(text, AttemptFailure):
+        return _WORKFLOW_UNREADABLE
+    environment = toml_section_string_declaration(
         text=text, section=_RUN_ENVIRONMENT_SECTION, key=_ENVIRONMENT_ID_KEY
     )
+    if isinstance(environment, TomlDocumentUnparseable):
+        return _WORKFLOW_UNREADABLE
+    if not isinstance(environment, str):
+        return None
     return toml_section_string(
         text=text,
         section=_IMAGE_SECTION_TEMPLATE.format(environment=environment),
