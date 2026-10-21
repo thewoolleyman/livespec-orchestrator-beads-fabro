@@ -2344,6 +2344,15 @@ handoff entry; it is the typed `next_action` metadata defined in
 names a next step in prose MUST ALSO be written with a matching
 `next_action` update by the same primitive call. Scope events (rulings,
 deferrals) remain comments, because they are the part a human reads back.
+The timeline read path MUST return every handoff entry and every scope
+event of the epic, oldest first, each labelled with its kind. For every
+other plan record kind present on the epic, meaning a comment whose first
+line is a `plan-` record prefix such as `plan-child-disposition`,
+`plan-decision-record`, `plan-completeness-review-evidence`,
+`plan-progress-event` or `plan-relay-event`, it MUST report that kind's
+prefix and the count of such comments beside the entries it returns, and
+MUST NOT report them as absent. Scenario 213 in `scenarios.md` exercises
+this rule.
 Checklist items in planning artifacts are
 session-local steps or pointers to real ledger ids, never a parallel
 work queue that shadows the ledger.
@@ -2437,7 +2446,13 @@ non-empty `ref` and the required-result checks permit continuation, the
 resume MUST take the pointer without presenting the picker and MUST report
 the ruling it acted under; `human` and `none` MUST raise the picker in every
 case, and `resume_directive` MUST return the ruling's identity in its
-`reason` whenever it acts under one. A prose marker line (`next action:`) MAY continue to appear in a
+`reason` whenever it acts under one. Every resume, attended or unattended
+and whether or not it asks, MUST ALSO return every scope event on the epic
+that is not a carrier-map event (its rulings and deferrals, continuation
+rulings included), oldest first, beside the typed `next_action`, and the
+`plan` operation MUST surface them to the resuming session before it acts
+on `next_action`. An epic with no such scope event MUST return an empty
+list. Scenario 214 in `scenarios.md` exercises this sentence. A prose marker line (`next action:`) MAY continue to appear in a
 handoff comment for a human reader, but it carries no authority: when the
 two disagree, the metadata wins, and the conformance checks in
 §"Plan-record conformance checks" report the disagreement. This retires

@@ -8457,3 +8457,44 @@ Feature: A plan roster can be built from the read surfaces alone
     When context runs for its plan_slug with --json
     Then the envelope carries last_session beside next_action
 ```
+
+## Scenario 213 — The plan timeline reports the record kinds it does not return
+
+```gherkin
+Feature: A narrow timeline reader never manufactures an absence
+  As a session verifying that a plan record was written
+  I want the timeline to say which record kinds it left out
+  So that an omitted kind is never mistaken for a lost write
+
+  Scenario: Skipped record kinds are counted
+    Given a plan epic holding handoff entries, scope events and two plan-child-disposition comments
+    When the timeline is read
+    Then the handoff entries and scope events are returned oldest first, each labelled with its kind
+    And the result reports plan-child-disposition with a count of 2
+
+  Scenario: An epic holding only returned kinds reports no omissions
+    Given a plan epic holding only handoff entries and scope events
+    When the timeline is read
+    Then the result reports no omitted record kinds
+```
+
+## Scenario 214 — A plan resume returns the epic's rulings beside the typed next action
+
+```gherkin
+Feature: A resuming session reads the binding rulings before it acts
+  As the maintainer whose rulings are recorded as scope events
+  I want every resume to return them with the next action
+  So that a session cannot act on the pointer while a ruling it never read binds it
+
+  Scenario: Rulings are returned oldest first
+    Given a plan epic carrying two maintainer-ruling scope events and one carrier-map event
+    When resume_directive runs
+    Then it returns the two ruling scope events oldest first beside the typed next_action
+    And it does not return the carrier-map event among them
+
+  Scenario: An epic without rulings resumes as before
+    Given a plan epic carrying no scope event other than carrier-map events
+    When resume_directive runs
+    Then it returns an empty rulings list
+    And its ask, next_action and reason are the same as they would be without the rulings list
+```
