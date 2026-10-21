@@ -20,9 +20,10 @@ import json
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_sandbox_images, dispatcher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
     CATALOG_ENVIRONMENT_SOURCE,
+    SandboxImageSource,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_images import (
     FACTORY_UNDECLARED_SOURCE,
@@ -184,6 +185,48 @@ def test_an_undeclared_factory_is_reported_and_exits_zero(
     assert exit_code == 0
     assert [entry["source"] for entry in payload] == [FACTORY_UNDECLARED_SOURCE]
     assert payload[0]["image"] is None
+
+
+def test_the_commands_output_follows_the_dispatch_image_source_function(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Changing what `sandbox_image_source` returns changes THIS command's output identically.
+
+    The resolver's own module asserts the same seam one layer down. This case is
+    the clause's literal claim — that the COMMAND's output follows that function
+    — and it is the one a parallel copy of the source ladder would defeat while
+    leaving the resolver's unit assertion green.
+    """
+    repo = _catalog_repo(tmp_path=tmp_path, name="seam")
+    _ = _home_with_registry(tmp_path=tmp_path, monkeypatch=monkeypatch, plugins={})
+
+    def patched(
+        *, factory_environment: str | None, configured_image: str | None
+    ) -> SandboxImageSource:
+        _ = (factory_environment, configured_image)
+        return SandboxImageSource(
+            source="patched_source",
+            environment_id="patched-env",
+            overlay_image="patched-image",
+        )
+
+    monkeypatch.setattr(_dispatcher_sandbox_images, "sandbox_image_source", patched)
+
+    exit_code = run_sandbox_images_command(args=_args(repos=[str(repo)], as_json=True))
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload == [
+        {
+            "repository": str(repo),
+            "source": "patched_source",
+            "environment_id": "patched-env",
+            "image": "patched-image",
+            "path": None,
+            "build": None,
+            "variant": None,
+        }
+    ]
 
 
 def test_the_human_rendering_names_every_entrys_repository_and_source(
