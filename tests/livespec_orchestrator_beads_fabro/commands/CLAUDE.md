@@ -362,6 +362,20 @@ Tests for the thin-transport command modules under
   `/proc/<pid>` entry still exists. Its running-Dispatcher fixture is
   deliberately NOT a Python child -- `check-tests-no-subprocess-spawn` asks
   tests not to spawn one, and the argv is the whole of what the reader observes.
+  Every one of its assertions is nonetheless SCOPED to builds the fixture itself
+  created, and only the case whose claim needs a liveness reading is handed the
+  real `/proc` at all -- `_roots` defaults NEITHER tree, because a default is how
+  a later case comes to read the real host without saying so. The scan is
+  host-wide and keys a running Dispatcher on its own argv, which is exactly the
+  argv this repository's dispatches and its ten-minutely `reconcile-runs` timer
+  carry, so an unrelated dispatch on the machine running the suite genuinely adds
+  a build: measured 2026-10-21, one such process reds the unscoped union and
+  identity cases while the implementation is correct, which makes `just check` red
+  on the operator host for concurrent activity it does not own while CI, where no
+  Dispatcher runs, stays green -- the hardest flake shape to attribute. The
+  scoping is not vacuous and must stay mutation-checked: retiring the stale-lease
+  rule or the running-Dispatcher route reds the union case, and ignoring the
+  manifest version reds the identity case.
   And `..._images_command` gives every repository fixture a CATALOG or
   CONFIGURED image, so no assertion depends on the host's executing-build set:
   a factory host that happened to be running a Dispatcher would otherwise change

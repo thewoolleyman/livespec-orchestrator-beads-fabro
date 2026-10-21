@@ -1401,7 +1401,20 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   written. Its stale-lease fixture WAITS on the child rather than merely killing
   it: an unreaped child is a zombie whose `/proc/<pid>` entry still exists, so a
   signalling-only fixture reports every stale lease as live and the case passes
-  against an implementation that never asked.
+  against an implementation that never asked. THE ARRAY IS ASSERTED OVER THE
+  ENTRIES THAT FIXTURE'S OWN STATE PRODUCES, scoped on the enumerated path, and
+  the exit code as the array's own consequence — non-zero exactly when some entry
+  is unreadable, which is the clause's wording, with the sibling undeclared /
+  unreadable case pinning both codes against state it builds entirely. That
+  scoping is a requirement rather than a convenience: the command resolves its
+  builds through `default_build_discovery_roots`, whose `/proc` is the real one
+  and has no seam to inject — standing one in would retire the liveness claim the
+  module exists to make — while the scan keys a running Dispatcher on its own
+  argv, the argv every dispatch of this repository and its ten-minutely
+  `reconcile-runs` timer carries. Measured 2026-10-21, one unrelated such process
+  reds the unscoped case at its exit code while the implementation is correct.
+  Both build-route mutations above still red this case, so the scoping did not
+  make it vacuous.
 
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small

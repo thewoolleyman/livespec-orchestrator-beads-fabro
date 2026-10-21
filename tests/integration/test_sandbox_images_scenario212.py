@@ -28,6 +28,25 @@ WAITING on the child and not merely by signalling it: an unreaped child is a
 zombie whose `/proc/<pid>` entry still exists, so a fixture that only killed it
 would report every stale lease as live and the case would pass against an
 implementation that never asked.
+
+THE ARRAY IS ASSERTED OVER THE ENTRIES THIS FIXTURE'S OWN STATE PRODUCES, and
+that scoping is a requirement rather than a convenience. The command resolves
+its builds through `default_build_discovery_roots`, whose `/proc` is the real
+one — there is no seam to inject here, and standing one in would retire the
+liveness claim this module exists to make — while the build scan keys a running
+Dispatcher on its own argv, which is the argv every dispatch of this repository
+and its ten-minutely `reconcile-runs` timer carries. An unrelated dispatch on
+the machine running this suite therefore adds a real build, and with it one more
+`bundled_run_config` or `unreadable` entry per workflow-arm repository.
+Measured 2026-10-21: with one unrelated process carrying that argv the unscoped
+case failed at its exit code while the implementation was correct, so `just
+check` went red on the operator host for concurrent activity it does not own
+while CI, where no Dispatcher runs, stayed green. Every entry this fixture can
+produce either names NO path (the catalog arm) or names one under its own
+scratch root, so the path is the scope; and the exit code is asserted as the
+array's OWN consequence — non-zero exactly when some entry is unreadable, which
+is the clause's wording — with the sibling case below pinning both codes
+against state it builds entirely.
 """
 
 from __future__ import annotations
@@ -98,6 +117,23 @@ def _stopped(*, processes: Iterator[subprocess.Popen[bytes]]) -> None:
     for process in processes:
         process.kill()
         _ = process.wait()
+
+
+def _fixture_entries(
+    *, payload: list[dict[str, str | None]], root: Path
+) -> list[dict[str, str | None]]:
+    """The entries this fixture's own repositories and builds produced, in order.
+
+    Keyed on the enumerated PATH, which every arm but the catalog one carries:
+    a path under the scratch root is a run config this fixture wrote, and a path
+    anywhere else belongs to a build the host contributed. Filtering preserves
+    order, so the assertion still reads the array as the command printed it.
+    """
+    return [
+        entry
+        for entry in payload
+        if entry["path"] is None or str(entry["path"]).startswith(f"{root}/")
+    ]
 
 
 def _snapshot(*, roots: tuple[Path, ...]) -> dict[str, bytes | None]:
@@ -177,9 +213,9 @@ def test_scenario212_sandbox_images_enumerates_every_source_and_changes_nothing(
     finally:
         _stopped(processes=iter((live, *payloads)))
 
-    assert exit_code == 0
+    assert exit_code == (1 if any(entry["source"] == "unreadable" for entry in payload) else 0)
     assert after == before
-    assert payload == [
+    assert _fixture_entries(payload=payload, root=tmp_path) == [
         {
             "repository": str(catalog),
             "source": "catalog_environment",
