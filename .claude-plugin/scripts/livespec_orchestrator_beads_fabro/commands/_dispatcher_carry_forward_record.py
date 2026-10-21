@@ -19,6 +19,18 @@ returned NOTHING on both committed real payloads. So `record_reader_fragment` is
 the one text, both programs compose it, and both stay held equal to the
 host-side `published_head` by that module's own equality test.
 
+WHY THE HEADER PARSE AND THE IDENTITY TEST ARE SEPARATE READINGS. A header is
+record-SHAPED once its title and verdict are the ratified ones; whether its
+third field carries a readable publishing identity is a different question, and
+a reader that answered only "record / not a record" could not tell a comment
+that is not a record from one that is not a header at all. The cost of
+collapsing them is measured: a capture that expanded an unset `$FABRO_RUN_ID`
+into `printf '... run %s ...'` posted the bare introducer, the reader correctly
+dropped the comment, and the publication-head program then reported pull request
+2712 of `livespec-dev-tooling` as carrying no captured record -- naming the one
+stage that had demonstrably run, while the comment an operator had to read went
+unnamed (`bd-ib-oa67lv`, run 01M5E8H65Z04).
+
 WHY A STEP'S COMMAND IS ITS INLINE CODE SPAN. The clause says each step "MUST
 carry exactly one command", and both capture prompts write every command as a
 Markdown code span -- `` `git rev-parse HEAD` `` -- because the record is prose a
@@ -116,13 +128,52 @@ def published_head(body):
     return found.pop() if len(found) == 1 else None
 
 
-def record_verdict(body):
-    """The verdict one canonical factory-record header declares, else None."""
+def header_fields(body):
+    """One comment's record-header fields, or None when it is not header-shaped.
+
+    The SHARED parse the three readings below sit on. A header is "shaped" once
+    its title and verdict are the ratified ones; whether its PUBLISHING IDENTITY
+    is readable is a separate question, and keeping the two apart is what lets a
+    refusal say which half of the header failed.
+    """
     lines = body.splitlines()
     if not lines:
         return None
     fields = [part.strip() for part in lines[0].split(HEADER_SEPARATOR)]
     if len(fields) < 3 or fields[0] != "Proof of Done" or fields[1] not in VERDICTS:
+        return None
+    return fields
+
+
+def header_verdict(body):
+    """The verdict a record-SHAPED header names, whatever identity it carries.
+
+    WIDER than `record_verdict` on purpose, and the width is the whole point: a
+    header whose identity field carries no run id is not a record, so
+    `record_verdict` drops the comment -- and a reader that only ever saw records
+    reported that drop as a pull request carrying no record of that verdict at
+    all, which names a stage that had demonstrably run.
+    """
+    fields = header_fields(body)
+    return None if fields is None else fields[1]
+
+
+def header_identity_field(body):
+    """The PUBLISHING IDENTITY field of a record-shaped header, else None.
+
+    Returned RAW, because a refusal about it has to quote what the header
+    actually says: `run` with nothing after it and `run-1` with no introducer at
+    all are two ways to carry no run id, and an operator reading the diagnostic
+    needs to see which one was published.
+    """
+    fields = header_fields(body)
+    return None if fields is None else fields[2]
+
+
+def record_verdict(body):
+    """The verdict one canonical factory-record header declares, else None."""
+    fields = header_fields(body)
+    if fields is None:
         return None
     if not any(fields[2].startswith(prefix) for prefix in IDENTITY_PREFIXES):
         return None
