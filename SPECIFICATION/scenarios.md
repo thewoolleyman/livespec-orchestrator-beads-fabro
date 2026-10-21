@@ -8385,3 +8385,34 @@ Feature: Memory exhaustion is named, not hidden behind a stall
     When the progress watchdog cancels the run as stalled-no-progress
     Then no record, result or comment names an OOM kill
 ```
+
+## Scenario 231 — Admission skips a Claude candidate whose seven-day allowance is exhausted
+
+```gherkin
+Feature: A weekly-exhausted account is never dispatched into a refusal
+  As an operator running Claude-routed factory nodes
+  I want admission to read the seven-day allowance beside the five-hour one
+  So that a run is not launched on an account the provider will refuse
+
+  Scenario: A seven-day exhaustion skips the candidate
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered claude-acp candidate whose five-hour remaining headroom is above the floor
+    And the same provider response reports the seven-day status as rejected
+    When admission assesses the candidate
+    Then the candidate is skipped by a seven-day skip and per-node selection continues to the next eligible candidate
+    And the journal records the seven-day utilization and status beside the five-hour figures
+
+  Scenario: A warning or absent seven-day reading skips nothing
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered claude-acp candidate whose five-hour remaining headroom is above the floor
+    And the provider response reports the seven-day status as a warning, or carries no seven-day reading
+    When admission assesses the candidate
+    Then the candidate is not skipped by a seven-day skip
+    And the journal records the seven-day reading, or records it as unobservable when it is absent
+
+  Scenario: A floor of 0 disables the seven-day skip
+    Given dispatcher.session_headroom_floor_percent is 0
+    And the provider response reports the seven-day status as rejected for a covered candidate
+    When admission assesses the candidate
+    Then no seven-day skip applies and the reading is still journaled
+```
