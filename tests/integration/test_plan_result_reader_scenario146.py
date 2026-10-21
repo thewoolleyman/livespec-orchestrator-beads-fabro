@@ -424,7 +424,10 @@ def _unmet_references() -> dict[str, dict[str, object]]:
 def _seeded_project(*, tmp_path: Path) -> Path:
     repo = _project(tmp_path=tmp_path)
     _seed_item(repo=repo, issue_id=_ITEM_ID, status="ready")
-    _seed_comment(repo=repo, issue_id=_ITEM_ID, text=f"handoff\n\n{_MARKER}\n")
+    # The marker OPENS the comment, which is what makes it a record of the
+    # requested kind: a comment that merely mentions a marker is not one, so a
+    # fulfilled example has to be shaped the way every real record is shaped.
+    _seed_comment(repo=repo, issue_id=_ITEM_ID, text=f"{_MARKER}\n\nthe relay's own prose.\n")
     _seed_item(
         repo=repo,
         issue_id=_SUBJECT_ID,
