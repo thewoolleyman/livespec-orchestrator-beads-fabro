@@ -442,18 +442,18 @@ SEED_DESC
   printf 'embedded ledger ready items: %s\n' "$ready_count"
   [ "$ready_count" = "1" ] || fail "expected exactly 1 ready item in the embedded ledger (got $ready_count)"
 
-  log "padding git history (>10 commits so the depth-10 sandbox clone is shallow)"
+  log "pushing master and recording origin/master"
   (
     cd "$clone"
-    # Pad the history past Fabro's hardcoded GIT_CLONE_DEPTH=10 so the workflow's
-    # `git fetch --unshallow` prepare step succeeds in-sandbox (a depth-10 clone
-    # of a <=10-commit repo is COMPLETE, and --unshallow then errors).
-    local i
-    for i in $(seq 1 12); do
-      printf 'history line %s\n' "$i" >>HISTORY.txt
-      git add HISTORY.txt
-      git commit -q -m "chore: history padding ${i}/12 (depth-10 unshallow headroom)"
-    done
+    # NO HISTORY PADDING, deliberately (work-item bd-ib-ukht2p). This block used
+    # to append twelve throwaway commits for one reason only: to push the seed
+    # history past Fabro's hardcoded GIT_CLONE_DEPTH=10 so that the workflow's
+    # then-UNCONDITIONAL `git fetch --unshallow` prepare step would not refuse a
+    # COMPLETE depth-10 clone. That step now inspects
+    # `git rev-parse --is-shallow-repository` and deepens only a shallow clone, so
+    # the pad evaded an assumption that no longer exists. Removing it is not mere
+    # cleanup: this fixture's short seed history is the only live exercise of the
+    # complete-clone path, which the pad was hiding.
     printf 'commit count: %s\n' "$(git rev-list --count HEAD)"
     # Push master and SET it as the default branch (the PR stage targets master
     # and ranges origin/master..HEAD). Token only on this argv; nothing echoed.

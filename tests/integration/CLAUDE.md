@@ -1371,6 +1371,23 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   identity survives untouched — which is what leaves that question with the
   relay authority that owns it.
 
+- `test_sandbox_history_preparation.py` — the FIRST `[[run.prepare.steps]]` entry
+  of the shipped implement-work-item run config, EXECUTED under `/bin/sh` against
+  real complete and shallow clones (work-item bd-ib-ukht2p). It executes rather
+  than matching the command line because the assertion is what the step does to a
+  clone, and a conditional that inspects the wrong thing — or swallows a failure
+  behind a successful fallback — reads as correct and is not. Three things carry
+  the module. The measured failure is its own case: the retired unconditional
+  `git fetch --unshallow --quiet` must still be refused by the SAME complete
+  fixture, so the positive reading is evidence of the repair rather than of a
+  fixture that was shallow all along. The two fail-closed controls are separate
+  cases, one per command that can fail, each reading the recorded `git` argv to
+  say WHICH command was reached, since one exit code cannot distinguish them. And
+  `GIT_CEILING_DIRECTORIES` is pinned at the fixture root: this suite's pytest
+  basetemp carries a `.git` of its own, which is an ANCESTOR of every `tmp_path`,
+  so without the ceiling the inspection-failure control walked out of its fixture
+  and answered confidently for the suite's own repository.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
