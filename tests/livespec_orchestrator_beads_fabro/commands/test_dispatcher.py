@@ -2813,6 +2813,16 @@ def test_engine_fails_when_no_pr_found(tmp_path: Path) -> None:
     assert (outcome.status, outcome.stage) == ("failed", "pr-view")
 
 
+def test_engine_names_an_unobservable_pr_read_instead_of_claiming_no_pr(tmp_path: Path) -> None:
+    error = "GraphQL: Resource not accessible by integration"
+    runner = _FakeRunner(queue=[_ok(), _err(stderr=error)])
+
+    outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
+
+    assert (outcome.status, outcome.stage) == ("failed", "pr-view")
+    assert outcome.detail == f"pull-request read unobservable: {error}"
+
+
 def test_engine_arms_auto_merge_as_fallback(tmp_path: Path) -> None:
     runner = _FakeRunner(
         queue=[

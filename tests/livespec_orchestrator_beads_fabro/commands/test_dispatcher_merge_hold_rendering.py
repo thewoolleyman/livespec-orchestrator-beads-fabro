@@ -355,7 +355,7 @@ def test_the_fallback_arming_never_fires_for_a_held_pull_request(tmp_path: Path)
             # overtaken-arming record, which names the head that was armed and
             # the default-branch tip that overtook it (`bd-ib-3hpdvm`).
             "number,state,autoMergeRequest,mergeStateStatus,mergeCommit,"
-            "statusCheckRollup,additions,deletions,headRefOid,baseRefOid",
+            "additions,deletions,headRefOid,baseRefOid",
         ]
     ]
     assert [record["stage"] for record in journal.records] == ["pr-view"]

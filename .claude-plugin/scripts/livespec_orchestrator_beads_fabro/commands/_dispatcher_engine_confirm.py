@@ -22,6 +22,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_view import (
     GH_TIMEOUT_SECONDS,
+    PrViewReading,
     view_pr,
 )
 
@@ -34,7 +35,7 @@ if TYPE_CHECKING:
         JournalWriter,
     )
 
-__all__: list[str] = ["confirm_pr"]
+__all__: list[str] = ["confirm_pr", "confirm_pr_reading"]
 
 
 def confirm_pr(
@@ -45,6 +46,24 @@ def confirm_pr(
     hold: CurrentMergeHold,
     expected_publication: PrView | None = None,
 ) -> PrView | None:
+    """Confirm a pull request for callers that need only its observed view."""
+    return confirm_pr_reading(
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        hold=hold,
+        expected_publication=expected_publication,
+    ).view
+
+
+def confirm_pr_reading(
+    *,
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    journal: JournalWriter,
+    hold: CurrentMergeHold,
+    expected_publication: PrView | None = None,
+) -> PrViewReading:
     """Confirm the publish branch's pull request, arming auto-merge only if it may.
 
     `hold` is the CURRENT merge hold, read once at this boundary from the ledger
@@ -58,19 +77,20 @@ def confirm_pr(
     consulted at all: the ratified valve refuses a hold on a merged item as a no-op
     naming the merge, so there is nothing here to hold and nothing to arm.
     """
-    view = view_pr(
+    reading = view_pr(
         plan=plan,
         runner=runner,
         journal=journal,
         include_publication=expected_publication is not None,
+        include_status_checks=False,
     )
-    if view is None or not _matches_expected_publication(
-        view=view,
-        expected=expected_publication,
-    ):
-        return None
+    view = reading.view
+    if view is None:
+        return reading
+    if not _matches_expected_publication(view=view, expected=expected_publication):
+        return PrViewReading(view=None, error=reading.error)
     if view.state == "MERGED":
-        return view
+        return reading
     if hold == "unheld":
         confirmed = _arm_fallback(
             plan=plan,
@@ -93,12 +113,13 @@ def confirm_pr(
         # state -- it is this host declining to answer for a ledger it could not ask, so
         # it makes no forge write in EITHER direction: arming would reverse a hold it
         # cannot see, and disarming would reverse an arming it cannot justify.
-        confirmed = view
+        confirmed = PrViewReading(view=view, error=None)
+    confirmed_view = confirmed.view
     return (
         confirmed
-        if confirmed is not None
-        and _matches_expected_publication(view=confirmed, expected=expected_publication)
-        else None
+        if confirmed_view is not None
+        and _matches_expected_publication(view=confirmed_view, expected=expected_publication)
+        else PrViewReading(view=None, error=confirmed.error)
     )
 
 
@@ -109,17 +130,17 @@ def _arm_fallback(
     journal: JournalWriter,
     view: PrView,
     include_publication: bool,
-) -> PrView | None:
+) -> PrViewReading:
     """Arm auto-merge for an unheld pull request that is not armed already."""
     if view.auto_merge_armed:
-        return view
+        return PrViewReading(view=view, error=None)
     argv = pr_arm_argv(plan=plan, number=view.number)
     # An EMPTY argv is the LAUNCH snapshot's own hold saying there is no forge write
     # to make. It still stands with the ledger reading unheld: a hold released
     # mid-run is armed by the release valve itself, from the merge method the
     # dispatch journaled, and this seam has no business re-arming behind it.
     if not argv:
-        return view
+        return PrViewReading(view=view, error=None)
     arm = runner.run(
         argv=argv,
         cwd=plan.repo,
@@ -141,7 +162,7 @@ def _disarm_held(
     journal: JournalWriter,
     view: PrView,
     include_publication: bool,
-) -> PrView | None:
+) -> PrViewReading:
     """Remove an auto-merge request from a pull request the ledger now holds.
 
     Leaving it armed would honour the hold's letter -- this confirmation armed

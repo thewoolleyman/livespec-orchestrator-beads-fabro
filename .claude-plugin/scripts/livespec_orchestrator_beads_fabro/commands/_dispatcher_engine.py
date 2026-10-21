@@ -284,12 +284,20 @@ def run_dispatch(
         # where the ending is attributed to it.
         return replace(publication.refusal, hook_over_limit=hook_over_limit)
     hold, view = publication.hold, publication.view
+    if publication.pr_view_error is not None:
+        return failed_outcome(
+            outcome_type=DispatchOutcome,
+            plan=plan,
+            stage="pr-view",
+            detail=f"pull-request read unobservable: {publication.pr_view_error}",
+            fabro_run_id=run_id,
+        )
     if view is None:
         return failed_outcome(
             outcome_type=DispatchOutcome,
             plan=plan,
             stage="pr-view",
-            detail="no PR found for branch",
+            detail="no pull request exists for branch",
             fabro_run_id=run_id,
         )
     # The branch-versus-base size, recorded HERE and not at the terminal (plan
