@@ -562,7 +562,14 @@ keys — **`lane`** (the rendered lane, one of `backlog` /
 directly and never re-derives a lane from the raw status). The new
 `WorkItem` fields (`rank`, `admission_policy`, `acceptance_policy`,
 `blocked_reason`, the 7-state `status`, `assignee`) emit via the existing
-flat serializer; only `lane`/`lane_reason` are computed additions.
+flat serializer; `lane`/`lane_reason` are the only computed additions, and
+the three plan-identity keys below are read from metadata, never computed.
+Each item whose type is `epic` MUST ALSO carry `plan_slug` (a string, or
+`null` when the epic has none), `next_action` (the typed object of
+§"Typed `next_action` and `last_session`" exactly as stored, or `null`) and
+`last_session` (a string, or `null`), read from the epic's metadata; every
+other item MUST carry `null` for all three. Scenario 216 in `scenarios.md`
+exercises this sentence.
 
 #### `list-plans`
 
@@ -909,7 +916,8 @@ it deterministically assembles one structured envelope for that item and, with
 resolved epic or work-item record; its comments; its children — unioned across
 the dotted-id hierarchy AND every epic-linkage edge of §"Work-item beads-issue
 mapping" (`parent-child` or `tracks`), so that no linkage is dropped (per §"Work-item beads-issue mapping" child
-enumeration); its dependency edges; its typed `next_action`; the linked
+enumeration); its dependency edges; its typed `next_action` and its
+`last_session`; the linked
 research directory path when an `associated_work_item_id` anchor resolves one;
 and the spec clauses the item cites. Resolution MUST be order-independent and
 side-effect-free: two `context --json` invocations against an unchanged store
