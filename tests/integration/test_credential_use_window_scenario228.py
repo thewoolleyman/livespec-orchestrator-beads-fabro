@@ -37,14 +37,19 @@ _COMMANDS = (
     / "livespec_orchestrator_beads_fabro"
     / "commands"
 )
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 _WINDOW_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_credential_window"
 _QUEUE_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_credential_queue_allowance"
+_PAYLOAD_MODULE = (
+    "livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement_payload"
+)
 
 # Scenario 228's own figures, kept as named constants so a reader can check each
 # against the Gherkin rather than against an arithmetic expression.
 _EXECUTION_ALLOWANCE_SECONDS = 902_955
 _QUEUE_ALLOWANCE_SECONDS = 86_400
 _RUN_WALL_BUDGET_SECONDS = 21_600
+_CREDENTIAL_USE_WINDOW_SECONDS = _QUEUE_ALLOWANCE_SECONDS + _RUN_WALL_BUDGET_SECONDS
 _MARGIN_SECONDS = 3_600
 _REQUIRED_LIFETIME_SECONDS = 111_600
 _FRESH_CREDENTIAL_LIFETIME_SECONDS = 864_000
@@ -121,3 +126,85 @@ def test_scenario228_the_queue_allowance_defaults_to_one_day() -> None:
     resolved = queue_module.credential_queue_allowance_from_block(block={})
     assert resolved.seconds == _QUEUE_ALLOWANCE_SECONDS
     assert resolved.seconds == queue_module.DEFAULT_CREDENTIAL_QUEUE_ALLOWANCE_SECONDS
+
+
+def test_scenario228_the_resolved_requirement_is_bounded_by_the_window() -> None:
+    """THIS repository's own shipped graph resolves 111600, not its raw allowance.
+
+    The subject is the repository's own committed workflow and `.livespec.jsonc`
+    rather than a fixture, which is the whole point: the defect was that the
+    SHIPPED graph's allowance crossed a credential ceiling, so a fixture graph
+    would grade an allowance no dispatch ever derives. Both figures are read off
+    the one resolution, because the requirement has to carry the allowance it
+    did NOT use as well as the figure it did — an operator comparing a refusal
+    against a status reading needs to see which of the two moved.
+    """
+    requirement = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement"
+    ).resolve_credential_lifetime_requirement(repo=_REPO_ROOT)
+
+    assert hasattr(requirement, "governing_figure"), (
+        "the resolved requirement names no governing figure, so the freshness "
+        "gate is still demanding the raw execution allowance"
+    )
+    assert requirement.credential_use_window_seconds == _CREDENTIAL_USE_WINDOW_SECONDS
+    assert requirement.execution_allowance_seconds > _CREDENTIAL_USE_WINDOW_SECONDS
+    assert requirement.allowance_seconds == _CREDENTIAL_USE_WINDOW_SECONDS
+    assert requirement.required_seconds == _REQUIRED_LIFETIME_SECONDS
+    window_module = importlib.import_module(_WINDOW_MODULE)
+    assert requirement.governing_figure == window_module.CREDENTIAL_USE_WINDOW_FIGURE
+
+
+def test_scenario228_both_surfaces_report_the_same_figure_and_name_what_governed() -> None:
+    """ONE renderer, so the status and manual-renewal surfaces cannot drift apart.
+
+    Asserted as EQUALITY of the two rendered objects rather than needle by
+    needle: the clause's requirement is that the two surfaces report the SAME
+    figure, and two independently drifting renderers that each mention a
+    governing figure satisfy a containment check just as well.
+
+    Both branches are rendered from the same pair of requirements, because a
+    renderer that hard-coded either name would satisfy one case alone — and the
+    execution-allowance branch is the one that bounds a repository whose graph
+    is short, which is every adopter's first dispatch.
+    """
+    assert (_COMMANDS / "_dispatcher_credential_requirement_payload.py").is_file(), (
+        "no shared renderer projects the requirement, so the status and "
+        "manual-renewal surfaces report no governing figure at all"
+    )
+    payload_module = importlib.import_module(_PAYLOAD_MODULE)
+    window_module = importlib.import_module(_WINDOW_MODULE)
+
+    bounded = _requirement(execution_allowance_seconds=_EXECUTION_ALLOWANCE_SECONDS)
+    shorter = _requirement(execution_allowance_seconds=60_000)
+
+    assert payload_module.credential_requirement_payload(requirement=bounded) == {
+        "governing_budget_seconds": _CREDENTIAL_USE_WINDOW_SECONDS,
+        "governing_figure": window_module.CREDENTIAL_USE_WINDOW_FIGURE,
+        "required_remaining_seconds": _REQUIRED_LIFETIME_SECONDS,
+        "execution_allowance_seconds": _EXECUTION_ALLOWANCE_SECONDS,
+        "credential_use_window_seconds": _CREDENTIAL_USE_WINDOW_SECONDS,
+        "credential_queue_allowance_seconds": _QUEUE_ALLOWANCE_SECONDS,
+    }
+    assert payload_module.credential_requirement_payload(requirement=shorter) == {
+        "governing_budget_seconds": 60_000,
+        "governing_figure": window_module.EXECUTION_ALLOWANCE_FIGURE,
+        "required_remaining_seconds": 63_600,
+        "execution_allowance_seconds": 60_000,
+        "credential_use_window_seconds": _CREDENTIAL_USE_WINDOW_SECONDS,
+        "credential_queue_allowance_seconds": _QUEUE_ALLOWANCE_SECONDS,
+    }
+
+
+def _requirement(*, execution_allowance_seconds: int) -> object:
+    """One requirement carrying Scenario 228's window and a chosen allowance."""
+    deadline_module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_credential_deadline"
+    )
+    return deadline_module.CredentialLifetimeRequirement(
+        execution_allowance_seconds=execution_allowance_seconds,
+        credential_use_window_seconds=_CREDENTIAL_USE_WINDOW_SECONDS,
+        credential_queue_allowance_seconds=_QUEUE_ALLOWANCE_SECONDS,
+        margin_seconds=_MARGIN_SECONDS,
+        detail="",
+    )
