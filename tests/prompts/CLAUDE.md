@@ -109,6 +109,25 @@ instead.
   OUTPUT-IS-NOT-SOURCE clause and the round trip it pairs with stay bound in
   `tests/integration/test_proof_finding_work_order_scenario138.py`.
 
+- `test_dod_gate_nested_heading_scope.py` — bd-ib-uwhvdv: check 4 of the
+  Definition-of-Done gate prompt reads a referenced heading as its WHOLE
+  section — the named H2 plus every nested heading, to the next H2 — states
+  that governing text found in such a nested section governs the assertion
+  rather than being a finding, and requires a finding about such a reference
+  to name the nested heading as well as the H2, in a written form. A prompt
+  test because the judgement is made by the `dod_gate` agent out of this prose
+  and is rendered by no Python caller: `_dispatcher_dod_judgement`'s
+  `_section_of` already carries the whole H2 section to both the in-run gate
+  and the host preflight, so nothing mechanical can observe that the judge was
+  told to read less than it was handed, and a judge that read only the lead
+  text refused four items in one week with an unfixable remedy (check 2 admits
+  an H2 and nothing deeper, so no permitted reference names the H3). The
+  needles are scoped to check 4's own numbered item, because checks 2 and 6
+  both discuss headings and reference lines at length and would satisfy a
+  whole-file probe over a check 4 that said nothing about nesting; the control
+  pins the slice both ways, naming a sentence only check 4 carries and one
+  each from checks 3, 5 and 6 that it must not.
+
 - `test_implement_coverage_before_green.py` — bd-ib-z6fmp: the implement-stage
   prompt requires the repository's per-file coverage check to be run over the
   FULL suite, with every gap closed, BEFORE any Green commit or amend — the hook

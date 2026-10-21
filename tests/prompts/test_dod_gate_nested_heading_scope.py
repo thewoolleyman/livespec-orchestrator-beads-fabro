@@ -55,6 +55,11 @@ _NESTED_TEXT_GOVERNS = (
     "is governed by it, is coherent",
     "from, the referenced heading's whole section, its nested headings",
 )
+_FINDING_NAMES_THE_NESTED_HEADING = (
+    "When an assertion's governing text lies in a nested section of a",
+    "NAMES THE NESTED HEADING AS WELL AS THE H2",
+    "`## <the H2> → ### <the nested heading>`",
+)
 
 
 def _dod_gate_prompt() -> Path:
@@ -111,4 +116,19 @@ def test_check_four_says_text_in_a_nested_section_governs_the_assertion() -> Non
     check_four = _check_four()
 
     for needle in _NESTED_TEXT_GOVERNS:
+        assert needle in check_four, needle
+
+
+def test_check_four_requires_a_finding_to_name_the_nested_heading_and_the_h2() -> None:
+    """A finding about a nested-governed reference names the nested heading too.
+
+    The remedy a finding prescribes is read at the level it names, so a finding
+    that names only the H2 sends the human to the lead text the governing text
+    is not in — which is how the four refused items were read in the first
+    place. The needle set includes the written FORM, because "name the nested
+    heading" without one leaves each judge to invent its own.
+    """
+    check_four = _check_four()
+
+    for needle in _FINDING_NAMES_THE_NESTED_HEADING:
         assert needle in check_four, needle
