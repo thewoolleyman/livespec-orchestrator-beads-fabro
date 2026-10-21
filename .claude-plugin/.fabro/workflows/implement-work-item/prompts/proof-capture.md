@@ -111,19 +111,33 @@ concrete, copy-pasteable action or command. The steps must be:
   asset ordinal it produces, e.g. "produces proof 01". The replay leg
   compares its `verify` asset to the `capture` asset of the SAME ordinal,
   so a step that names no ordinal makes its own proof uncomparable.
-- **Self-contained in its PROGRAM TEXT.** When a step runs a program rather
-  than a bare command — a heredoc into an interpreter (`python -`, `sh -s`),
-  a script you authored in the scratch directory, a `-c` one-liner, a patch
-  or a mutation applied to a file — the record MUST publish that program's
-  COMPLETE SOURCE in a fenced block, as part of the step or beside its
-  proof. Publishing only the invocation line and the program's OUTPUT does
-  not satisfy this: the replayer is a stranger who may not reconstruct a
-  program from its stdout, and may not infer one from the surrounding prose,
-  so a step whose program is absent is UNREPLAYABLE and the assertion it
-  carries is graded `not_reproduced` however correct the implementation is.
-  A phrase such as "with the program shown in the capture" is a PROMISE this
-  bullet makes binding — before you publish, re-read each such step and
-  confirm the source it points at is really there.
+- **Self-contained in its PROGRAM TEXT.** Every program a step executes that
+  is NEITHER tracked in the repository at the commit this record names NOR an
+  installed tool invoked by its name MUST be written into the record itself —
+  its COMPLETE SOURCE in a fenced block, as part of the step or beside its
+  proof — or into a proof asset the record names through the proof asset
+  store. The test is replayability from three things alone: this record, that
+  commit, and the sandbox's installed tools.
+  - **These two are exempt, and naming them is enough.** A program the
+    repository TRACKS at that commit may be invoked by its path, and an
+    INSTALLED tool may be invoked by its name; neither has to be copied into
+    the record, because the replayer has both.
+  - **Everything else is not.** A heredoc into an interpreter (`python -`,
+    `sh -s`), a script you authored in the scratch directory — anything under
+    `"${TMPDIR:-/tmp}/proof-capture"` is untracked by construction — a `-c`
+    one-liner, a patch or a mutation applied to a file: publish the source.
+    Publishing only the invocation line and the program's OUTPUT does not
+    satisfy this: the replayer is a stranger who may not reconstruct a
+    program from its stdout, and may not infer one from the surrounding
+    prose, so a step whose program is absent is UNREPLAYABLE, it is a
+    blocking finding at review, and the assertion it carries is graded
+    `not_reproduced` however correct the implementation is. Measured
+    2026-10-20: records whose steps ran untracked `/tmp/proof-capture/*.py`
+    programs the record never contained were rejected round after round
+    until the run died on its firing budget.
+  - A phrase such as "with the program shown in the capture" is a PROMISE
+    this bullet makes binding — before you publish, re-read each such step
+    and confirm the source it points at is really there.
 
 ## Step 3 — execute the steps verbatim
 
