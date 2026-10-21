@@ -907,8 +907,8 @@ and `needs-attention`: it MUST NOT mutate the work-items store. Given a
 it deterministically assembles one structured envelope for that item and, with
 `--json`, emits it as a single JSON object. The envelope MUST carry: the
 resolved epic or work-item record; its comments; its children — unioned across
-BOTH the dotted-id hierarchy AND the `parent-child` dependency edge, so that
-neither linkage is dropped (per §"Work-item beads-issue mapping" child
+the dotted-id hierarchy AND every epic-linkage edge of §"Work-item beads-issue
+mapping" (`parent-child` or `tracks`), so that no linkage is dropped (per §"Work-item beads-issue mapping" child
 enumeration); its dependency edges; its typed `next_action`; the linked
 research directory path when an `associated_work_item_id` anchor resolves one;
 and the spec clauses the item cites. Resolution MUST be order-independent and
@@ -2518,7 +2518,7 @@ The plan primitive recording a relay MUST accept a stable relay id, typed expect
 
 needs-attention MUST include an overdue-result fact for every open live plan whose declared required result remains unsatisfied after either budget limit. The fact MUST identify the epic, target, deadline/count, last observation and recovery action. New ancillary PRs, handoffs or closed repair children MUST NOT clear this fact while its declared result remains absent.
 
-A report-only no-result-window fact MUST also identify open live plans with at least the configured `dispatcher.plan_progress_handoff_threshold` handoffs during `dispatcher.plan_progress_window_seconds` and no new attributable merged PR, closed child or verified proof record in that window. Both values MUST be positive committed dispatcher configuration; absence or invalid values MUST surface a configuration finding rather than an invented numerical policy. The fact MUST include UTC window bounds, entry count, last required result (or explicit legacy-missing marker), and last observed result time. A source that cannot be read MUST produce an unobservable-source finding, not a confident no-result fact. Attribution MUST use the union of explicit parent-child and implicit dotted-id children, the existing item-to-PR provenance, and typed proof records. Events before the window MUST NOT count as new progress. Window/count boundaries MUST be deterministic with an injected current time. Existing activity detectors and record-rate warnings remain independent; this fact is report-only and does not itself stop another agent.
+A report-only no-result-window fact MUST also identify open live plans with at least the configured `dispatcher.plan_progress_handoff_threshold` handoffs during `dispatcher.plan_progress_window_seconds` and no new attributable merged PR, closed child or verified proof record in that window. Both values MUST be positive committed dispatcher configuration; absence or invalid values MUST surface a configuration finding rather than an invented numerical policy. The fact MUST include UTC window bounds, entry count, last required result (or explicit legacy-missing marker), and last observed result time. A source that cannot be read MUST produce an unobservable-source finding, not a confident no-result fact. Attribution MUST use the union of every epic-linkage edge of §"Work-item beads-issue mapping" (`parent-child` or `tracks`) and implicit dotted-id children, the existing item-to-PR provenance, and typed proof records. Events before the window MUST NOT count as new progress. Window/count boundaries MUST be deterministic with an injected current time. Existing activity detectors and record-rate warnings remain independent; this fact is report-only and does not itself stop another agent.
 
 These facts MUST compose through the existing attention machine envelope and runtime-owned hygiene vocabulary, without plugin-local additions to its fields or grammar. Their summary/source/handoff MUST identify the observation and an executable sanctioned recovery or inspection action; a blocked dispatch MUST NOT be advertised as executable. The independent consumer reads canonical obligation records, not an alert as a substitute for result authority.
 
@@ -8799,8 +8799,16 @@ Logical field → beads home:
 - `superseded_by` — beads `supersedes` dependency edge (`bd dep add
   <superseding> <this> --type supersedes`). Present iff non-null.
 - epic linkage — beads native `parent-child` (`bd create … --parent
-  <epic>` / `bd update <child> --parent <epic>`). An epic is a
-  `type: epic` issue whose members are its beads children.
+  <epic>` / `bd update <child> --parent <epic>`), or a `tracks` dependency
+  edge from the record to the epic. An epic is a `type: epic` issue whose
+  members are its beads children. Every surface that reports a record's
+  parent or enumerates an epic's children, including the plan
+  child-enumeration union, the `context` envelope's children, the
+  `list-work-items --json` projection's `parent`, the plan-progress
+  attribution of §"Attention without confusing activity with results" and
+  the epic-close check of the merge-evidence exemption, MUST
+  honour both edge types, so that no two surfaces disagree on what an epic
+  linkage is. Scenario 215 in `scenarios.md` exercises this bullet.
 - `captured_at` — beads `created_at`. On live create the value is read
   back from the server; on import the supplied timestamp is preserved.
 - `resolution` (typed enum) — beads label `resolution:<enum>`, one of:
@@ -8883,7 +8891,8 @@ For each work-item with `status == "closed"`:
 
 Work-items with `type == "epic"` are EXEMPT from the merge-evidence
 requirement. Epics close when their child work-items (beads
-parent-child members) are all closed; the check INSTEAD requires that
+epic-linkage members, `parent-child` or `tracks`, per §"Work-item
+beads-issue mapping") are all closed; the check INSTEAD requires that
 every child resolves to a closed work-item.
 
 All operations are local `git` invocations (`cat-file`, `merge-base`);

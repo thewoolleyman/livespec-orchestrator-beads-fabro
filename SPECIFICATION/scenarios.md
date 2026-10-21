@@ -8416,3 +8416,24 @@ Feature: A weekly-exhausted account is never dispatched into a refusal
     When admission assesses the candidate
     Then no seven-day skip applies and the reading is still journaled
 ```
+
+## Scenario 215 — A tracks edge links a record to its epic on every surface
+
+```gherkin
+Feature: Epic linkage reads the same on every surface
+  As an operator reading an epic's children
+  I want every surface to agree on which records belong to it
+  So that a linkage mechanism one surface models never vanishes from another
+
+  Scenario: A tracks-linked record is a child everywhere
+    Given a record linked to an epic only by a tracks dependency edge
+    When the epic is read through list-work-items --json, context and the plan child enumeration
+    Then list-work-items reports the epic as the record's parent
+    And context and the plan child enumeration both list the record among the epic's children
+
+  Scenario: A tracks-linked child closed inside the window is attributed to its plan
+    Given an open live plan epic and a record linked to it only by a tracks dependency edge
+    And the record was closed inside the plan-progress observation window
+    When the no-result-window fact is evaluated for that window
+    Then the record's closure counts as a new closed child of the plan in that window
+```
