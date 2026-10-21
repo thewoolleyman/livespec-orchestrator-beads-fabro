@@ -33,17 +33,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_install_registry import (
+    plugin_install_records,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_core_roots import version_key
 from livespec_orchestrator_beads_fabro.commands._needs_attention_release_adoption import (
     read_build_version,
-)
-from livespec_orchestrator_beads_fabro.effects import (
-    AttemptFailure,
-    JsonParseFailure,
-    attempt,
-    parse_json,
 )
 
 __all__: list[str] = [
@@ -126,42 +122,17 @@ def _undetermined(*, reason: str) -> RegisteredInstallVerdict:
 
 
 def _registered_install_path(*, repo: Path, install_record: Path) -> Path | None:
-    """The install path the registry records for `repo`, or None when none can be read."""
-    plugins = _parsed_object(path=install_record).get("plugins")
-    if not isinstance(plugins, dict):
-        return None
+    """The install path the registry records for `repo`, or None when none can be read.
+
+    The registry traversal itself lives in `_dispatcher_plugin_install_registry`,
+    which is the one reader of that file: this function is the narrower question
+    asked of its records. A second traversal here would be a second set of
+    tolerances for one harness-written file, and a shape one side dropped while
+    the other kept it would make this currency finding and the host-wide
+    sandbox-image enumeration disagree about which repositories exist.
+    """
     target = repo.resolve()
-    for key, entries in cast("dict[str, Any]", plugins).items():
-        if key.split("@", maxsplit=1)[0] != _PLUGIN_NAME or not isinstance(entries, list):
-            continue
-        for entry in cast("list[Any]", entries):
-            install_path = _install_path_for(entry=entry, target=target)
-            if install_path is not None:
-                return install_path
+    for record in plugin_install_records(install_record=install_record):
+        if record.project_path.resolve() == target:
+            return record.install_path
     return None
-
-
-def _install_path_for(*, entry: object, target: Path) -> Path | None:
-    record = cast("dict[str, Any]", entry) if isinstance(entry, dict) else {}
-    project_path = record.get("projectPath")
-    install_path = record.get("installPath")
-    if not isinstance(project_path, str) or not isinstance(install_path, str):
-        return None
-    if project_path == "" or Path(project_path).resolve() != target:
-        return None
-    return Path(install_path)
-
-
-def _parsed_object(*, path: Path) -> dict[str, Any]:
-    """The JSON object at `path`, or an empty mapping for any read or parse failure."""
-    if not path.is_file():
-        return {}
-    text = attempt(
-        action=lambda: path.read_text(encoding="utf-8"), exceptions=(OSError, ValueError)
-    )
-    if isinstance(text, AttemptFailure):
-        return {}
-    parsed = parse_json(text=text)
-    if isinstance(parsed, JsonParseFailure) or not isinstance(parsed, dict):
-        return {}
-    return cast("dict[str, Any]", parsed)

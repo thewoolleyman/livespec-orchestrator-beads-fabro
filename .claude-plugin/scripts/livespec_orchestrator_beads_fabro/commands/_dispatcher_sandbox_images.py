@@ -128,6 +128,25 @@ class SandboxImageEntry:
     build: str | None = None
     variant: str | None = None
 
+    def record(self) -> dict[str, str | None]:
+        """The JSON form, with EVERY key written and nulls where an arm has nothing.
+
+        Dense rather than sparse for the reason the dispatch record's own image
+        keys are: an omitted key is indistinguishable from a key a build
+        predating this enumeration never wrote, so a consumer joining on
+        `image` could not tell "this entry declares none" from "this entry was
+        never asked".
+        """
+        return {
+            "repository": str(self.repository),
+            "source": self.source,
+            "environment_id": self.environment_id,
+            "image": self.image,
+            "path": None if self.path is None else str(self.path),
+            "build": self.build,
+            "variant": self.variant,
+        }
+
 
 def sandbox_images(
     *, factory: str, repo: Path, builds: tuple[BuildRoot, ...]
