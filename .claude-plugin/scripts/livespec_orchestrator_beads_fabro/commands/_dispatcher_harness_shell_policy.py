@@ -11,6 +11,17 @@ declared one ceiling in the environment and another in a settings file would
 have no way to say which the harness obeyed, and splitting them across modules
 is how two of them come to name different values.
 
+IT ALSO INSTALLS THE PLUGIN-CACHE GATE'S IN-SESSION RE-ENTRY, which is a second
+concern in one file and is deliberate: this module is the ONE WRITER of
+`settings.local.json`, and the harness rewrites that same file while the run is
+driving (the live sandbox measured on 2026-10-16 held 29 `permissions.allow`
+entries it had written itself). A second prepare step merging into it would be a
+second authority on a document both have to preserve. The hook DECLARATION
+therefore stays where its program and its markers are, in
+`_dispatcher_plugin_cache_gate`, and only the install lives here -- so what this
+module owns is still one thing, the sandbox-local settings source, rather than
+two policies.
+
 WHY A FILE, when the env table already projects the same keys into the sandbox
 PROCESS environment and they demonstrably arrive. The sandbox agent is
 `@agentclientprotocol/claude-agent-acp`, which starts the Claude harness with
@@ -74,6 +85,9 @@ from __future__ import annotations
 
 import json
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
+    plugin_gate_session_hook_declaration,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_exclude import (
     worktree_exclude_script,
 )
@@ -145,6 +159,7 @@ SANDBOX_HARNESS_SETTINGS_PATH_EXPRESSION = (
 HARNESS_SETTINGS_MARKER = "livespec-sandbox-harness-settings"
 
 _ENV_PLACEHOLDER = "LIVESPEC_HARNESS_SETTINGS_ENV_DECLARATION"
+_HOOKS_PLACEHOLDER = "LIVESPEC_HARNESS_SETTINGS_HOOKS_DECLARATION"
 _MARKER_PLACEHOLDER = "LIVESPEC_HARNESS_SETTINGS_MARKER_DECLARATION"
 
 # The stdlib-only merge program, substituted host-side and run by the prepare
@@ -157,7 +172,51 @@ import pathlib
 import sys
 
 ENV = LIVESPEC_HARNESS_SETTINGS_ENV_DECLARATION
+HOOKS = LIVESPEC_HARNESS_SETTINGS_HOOKS_DECLARATION
 MARKER = LIVESPEC_HARNESS_SETTINGS_MARKER_DECLARATION
+
+# Which matcher groups of an event's list are THIS projection's own, derived
+# from the declaration above rather than named a second time: a dropped record
+# would make the install append beside its own previous entry, and a record
+# naming more than it installed would discard a governed repository's hook.
+OWN_COMMANDS = {
+    str(one.get("command"))
+    for groups in HOOKS.values()
+    for group in groups
+    for one in group.get("hooks", [])
+    if isinstance(one, dict)
+}
+
+
+# Whether one matcher group carries a command this projection installs.
+def is_own_group(group):
+    if not isinstance(group, dict):
+        return False
+    entries = group.get("hooks")
+    if not isinstance(entries, list):
+        return False
+    return any(isinstance(one, dict) and str(one.get("command")) in OWN_COMMANDS
+               for one in entries)
+
+
+# The hook table with this projection's groups REPLACED, never appended to.
+#
+# Additive and idempotent are two different failures of one write, and the
+# obvious implementation of either defeats the other. The harness rewrites this
+# file while the run is driving and a governed repository may declare hooks of
+# its own, so replacing an event's whole group list would discard them; a bare
+# append would instead stack a duplicate of this projection's own group every
+# time the prepare pass runs. So every FOREIGN group of the event is kept, every
+# group this projection recognises as its own is dropped, and the current
+# declaration is appended once.
+def merged_hooks(inherited):
+    merged = dict(inherited) if isinstance(inherited, dict) else {}
+    for event in HOOKS:
+        existing = merged.get(event)
+        kept = [one for one in existing if not is_own_group(one)]\\
+            if isinstance(existing, list) else []
+        merged[event] = kept + list(HOOKS[event])
+    return merged
 
 path = pathlib.Path(sys.argv[1])
 document = {}
@@ -178,6 +237,7 @@ inherited = document.get("env")
 merged = dict(inherited) if isinstance(inherited, dict) else {}
 merged.update(ENV)
 document["env"] = merged
+document["hooks"] = merged_hooks(document.get("hooks"))
 path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(json.dumps(document, indent=2) + "\\n", encoding="utf-8")
 sys.stdout.write(MARKER + ": " + str(path) + "\\n")
@@ -211,9 +271,11 @@ def harness_settings_merge_program() -> str:
     substituted text cannot close the heredoc or the TOML string that carry it.
     """
     declared = json.dumps(dict(_HARNESS_SHELL_ENV), indent=4)
-    return _MERGE_PROGRAM.replace(_ENV_PLACEHOLDER, declared).replace(
-        _MARKER_PLACEHOLDER,
-        json.dumps(HARNESS_SETTINGS_MARKER),
+    hooks = json.dumps(plugin_gate_session_hook_declaration(), indent=4)
+    return (
+        _MERGE_PROGRAM.replace(_ENV_PLACEHOLDER, declared)
+        .replace(_HOOKS_PLACEHOLDER, hooks)
+        .replace(_MARKER_PLACEHOLDER, json.dumps(HARNESS_SETTINGS_MARKER))
     )
 
 
