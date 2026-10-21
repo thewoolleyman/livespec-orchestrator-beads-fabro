@@ -1189,10 +1189,10 @@ Feature: A ready work-item whose `factory_safety` is non-null is refused at
     Then the item's `factory_safety` is set to `mutates-host-machinery`
     And the item's lifecycle status remains `acceptance`
 
-  Scenario: set-factory-safety requires one of the three canonical factory_safety reasons
+  Scenario: set-factory-safety requires one of the four canonical factory_safety reasons
     Given a `ready` work-item whose `factory_safety` is null
     When the operator attempts `set-factory-safety:<work-item-id>:not-a-real-reason` with a reason outside the factory_safety enum
-    Then the action is refused because the reason is not one of `needs-host-secrets`, `mutates-host-machinery`, or `needs-privileged-host`
+    Then the action is refused because the reason is not one of `needs-host-secrets`, `mutates-host-machinery`, `needs-privileged-host`, or `needs-host-only-input`
     And the item's `factory_safety` remains null
 
   Scenario: A ready item editing .github/actions/ is NOT refused
@@ -8316,4 +8316,20 @@ Feature: The workflow-edit approval label is the maintainer's notice
     Given a closed work-item carrying the label and an open work-item without it
     When the needs-attention snapshot is composed
     Then neither item yields a workflow-edit-approval fact
+```
+
+## Scenario 230 — An item whose input exists only on the host is host-routed
+
+```gherkin
+Feature: Host-only input is an honest factory_safety reason
+  As an operator filing work whose authoritative input lives only on the host
+  I want a factory_safety reason that says so
+  So that the item is host-routed instead of dispatched into a sandbox that cannot read its input
+
+  Scenario: needs-host-only-input host-routes the item
+    Given a ready work-item whose authoritative input is a non-secret review verdict held only in a gitignored host file
+    And that input cannot be committed to the repository or fetched into the sandbox
+    When the operator invokes set-factory-safety:<work-item-id>:needs-host-only-input
+    Then the item's factory_safety is needs-host-only-input and its lifecycle status is unchanged
+    And the Dispatcher refuses to dispatch it to a factory and names the reason
 ```

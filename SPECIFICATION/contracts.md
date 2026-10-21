@@ -427,7 +427,7 @@ source state), the two policy-edit actions
 `set-admission:<work-item-id>:auto|manual` and
 `set-acceptance:<work-item-id>:ai-only|human-only|ai-then-human`, the
 status-independent factory-safety opt-out assertion
-`set-factory-safety:<work-item-id>:needs-host-secrets|mutates-host-machinery|needs-privileged-host`
+`set-factory-safety:<work-item-id>:needs-host-secrets|mutates-host-machinery|needs-privileged-host|needs-host-only-input`
 (sets the intrinsic `factory_safety` field with a journaled reason;
 §"Per-state operator verb vocabulary"), the
 workflow-scope assertion
@@ -3921,7 +3921,7 @@ and every transition is attributable in the journal.
 | `done` | nothing (but see "Status-independent verbs" below) |
 
 **Status-independent verbs.**
-`set-factory-safety:<id>:<needs-host-secrets|mutates-host-machinery|needs-privileged-host>`
+`set-factory-safety:<id>:<needs-host-secrets|mutates-host-machinery|needs-privileged-host|needs-host-only-input>`
 is NOT lifecycle-gated and is therefore intentionally not enumerated per-row
 above (including the `done` row): it
 sets the intrinsic `factory_safety` runnability axis (orthogonal to both status
@@ -4028,13 +4028,13 @@ required. That scope is load-bearing, not incidental: widening
 `driver-dispatch` to any `ready` item WOULD require a claim mechanism,
 and MUST NOT be done without one.
 
-#### `set-factory-safety:<id>:<needs-host-secrets|mutates-host-machinery|needs-privileged-host>`
+#### `set-factory-safety:<id>:<needs-host-secrets|mutates-host-machinery|needs-privileged-host|needs-host-only-input>`
 
 A status-independent operator verb that SETS the target work-item's
 `factory_safety` field to the supplied host-only reason. The reason MUST be one
-of the three canonical `factory_safety` values —
-`needs-host-secrets`, `mutates-host-machinery`, or `needs-privileged-host`
-(§"Work-item beads-issue mapping") — exactly as the field's own closed enum
+of the four canonical `factory_safety` values —
+`needs-host-secrets`, `mutates-host-machinery`, `needs-privileged-host`, or
+`needs-host-only-input` (§"Work-item beads-issue mapping") — exactly as the field's own closed enum
 defines them; an out-of-enum or empty reason is refused. A null `factory_safety`
 — the default — remains factory-eligible;
 opting an item out of factory eligibility MUST go through this verb, so the
@@ -8732,9 +8732,9 @@ Logical field → beads home:
   policy/reason label reads back `None` (inherit / the system safe
   default — the blessed optional-on-read pattern).
 - `factory_safety` — beads label
-  `factory-safety:<needs-host-secrets|mutates-host-machinery|needs-privileged-host>`.
+  `factory-safety:<needs-host-secrets|mutates-host-machinery|needs-privileged-host|needs-host-only-input>`.
   An absent label reads back `None`, meaning FACTORY-SAFE — the fleet is
-  factory-safe BY DEFAULT and only an explicit reason opts out. The three
+  factory-safe BY DEFAULT and only an explicit reason opts out. The four
   reasons name work that genuinely cannot run in a sandbox executing
   agent-written code: `needs-host-secrets` (verification requires real
   secrets that must never enter such a sandbox), `mutates-host-machinery`
@@ -8742,9 +8742,15 @@ Logical field → beads home:
   timers, credential wrappers, the plugin cache, and Fabro servers — or
   changes external merge-gate machinery under `.github/workflows/`), and
   `needs-privileged-host` (privileged provisioning — a Dolt server, a
-  1Password environment, a per-tenant Fabro server). The sharp line:
-  writing CODE for any of these (including the Dispatcher's own code) is
-  factory-safe; APPLYING host or external factory-gate state is host-only.
+  1Password environment, a per-tenant Fabro server), and
+  `needs-host-only-input` (the item's authoritative input — a file, verdict
+  or state it must read — exists only on the host and cannot be committed to
+  the repository or fetched into the sandbox; an input that CAN be committed
+  is not this reason, and committing it is the remedy; an input that is
+  itself a secret is `needs-host-secrets`, which takes precedence). The
+  sharp line for the first three: writing CODE for any of these (including
+  the Dispatcher's own code) is factory-safe; APPLYING host or external
+  factory-gate state is host-only.
   Editing `.github/workflows/` remains host-routed even while ordinary CI
   runs on GitHub-hosted capacity, because those files are the factory's own
   executable merge gates and an agent must not rewrite its own examiner.
