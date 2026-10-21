@@ -929,5 +929,12 @@
     "heading": "## Scenario 229 \u2014 A non-overlapping refresh after one re-proof carries the proof forward",
     "work_item": "bd-ib-2oxr6v",
     "first_seen": "2026-10-20"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 232 \u2014 needs-attention surfaces an item labelled approval:workflow-edit",
+    "work_item": "bd-ib-qr4c7h",
+    "first_seen": "2026-10-21"
   }
 ]
