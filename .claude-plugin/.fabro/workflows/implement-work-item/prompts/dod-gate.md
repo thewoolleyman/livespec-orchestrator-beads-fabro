@@ -158,6 +158,12 @@ question of fact — the spec tree above all.
    an H3 has no reference line they could have written instead, and a finding
    against them prescribes an edit that does not exist.
 
+   When an assertion's governing text lies in a nested section of a
+   referenced H2, any finding you raise about that reference
+   NAMES THE NESTED HEADING AS WELL AS THE H2 — write both, in the form
+   `## <the H2> → ### <the nested heading>`, so the human reads the finding
+   at the level the governing text actually sits at.
+
    Concretely, treat these as incoherent:
    - An assertion whose subject does not appear in, and cannot be derived
      from, the referenced heading's whole section, its nested headings
