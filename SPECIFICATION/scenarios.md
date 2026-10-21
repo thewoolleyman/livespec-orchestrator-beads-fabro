@@ -8595,3 +8595,23 @@ Feature: A re-dispatch from a secondary worktree reclaims the surviving branch
     When the reclaim looks for an earlier dispatch
     Then it journals publish-branch-reclaim-held with reason journal-unobservable naming that path
 ```
+
+## Scenario 226 — An unchanged refresh strips the run's empty commits and carries the proof forward
+
+```gherkin
+Feature: Engine checkpoint commits never reach the merged history
+  As a maintainer reading merged history
+  I want a run's empty checkpoint commits dropped before publication
+  So that only the work reaches the default branch
+
+  Scenario: Empty commits are stripped under lease and the proof carries forward
+    Given a published head that already contains the default branch and carries two of the run's empty commits
+    When pr_refresh runs
+    Then it republishes the head without the empty commits under an explicit lease on the run's publish branch
+    And the proof decision is carried_forward because the tree is unchanged
+
+  Scenario: A head with no empty commits is left alone
+    Given a published head that already contains the default branch and carries none of the run's empty commits
+    When pr_refresh runs
+    Then it republishes nothing and the head proceeds to pr
+```

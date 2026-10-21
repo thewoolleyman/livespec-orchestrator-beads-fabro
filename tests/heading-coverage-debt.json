@@ -1020,5 +1020,12 @@
     "heading": "## Scenario 225 \u2014 The publish-branch reclaim finds an earlier dispatch journaled in another worktree",
     "work_item": "bd-ib-ewdqub",
     "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 226 \u2014 An unchanged refresh strips the run's empty commits and carries the proof forward",
+    "work_item": "bd-ib-reapbq",
+    "first_seen": "2026-10-21"
   }
 ]
