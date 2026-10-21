@@ -7511,7 +7511,16 @@ value MAY be either form — a legacy adapter string (the manual form) or a JSON
 object in the structured form — under the same refusal rules before claim.
 Resolution is per node and per FIELD: a more specific layer that sets
 `command` or `args` REPLACES that field; `env` MERGES with the more specific
-layer's keys winning. A layer that names a node not present in the workflow
+layer's keys winning, EXCEPT that when a more specific layer sets a `command`
+that differs from the `command` the less specific layers resolve to, the less
+specific layers' `env` is DISCARDED and only that layer's `env` applies. The
+comparison is of the rendered `command` field alone, so it holds for both
+forms without inferring identity from command text: a structured entry for
+the same agent renders the same `command` and keeps merging, while routing a
+node to a different adapter drops every inherited model, effort and endpoint
+key of the adapter it replaced. A layer that changes `command` for the same
+adapter (a different install path or package pin, say) MUST therefore restate
+any `env` it needs. Scenario 233 in `scenarios.md` exercises this rule. A layer that names a node not present in the workflow
 MUST refuse the dispatch before any run exists, naming the node.
 
 **`dispatcher.codex_models` is retired.** No shorthand expands into this layer.
