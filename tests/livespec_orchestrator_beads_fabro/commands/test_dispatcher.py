@@ -510,6 +510,7 @@ class _FakeRunner:
     calls: list[tuple[list[str], Path]] = field(default_factory=list)
     timeouts: list[float] = field(default_factory=list)
     envs: list[dict[str, str] | None] = field(default_factory=list)
+    reject_status_rollup: bool = False
 
     def run(
         self,
@@ -525,6 +526,12 @@ class _FakeRunner:
         self.calls.append((argv, cwd))
         self.timeouts.append(timeout_seconds)
         self.envs.append(env)
+        if (
+            self.reject_status_rollup
+            and argv[:3] == ["gh", "pr", "view"]
+            and "statusCheckRollup" in argv[-1]
+        ):
+            return _err(stderr="GraphQL: Resource not accessible by integration")
         return self.queue.pop(0)
 
 
@@ -2854,6 +2861,31 @@ def test_engine_skips_arming_when_pr_already_merged(tmp_path: Path) -> None:
     outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
     assert outcome.status == "green"
     assert all(call[0][:3] != ["gh", "pr", "merge"] for call in runner.calls)
+
+
+def test_engine_merges_without_reading_an_unavailable_status_rollup(tmp_path: Path) -> None:
+    runner = _FakeRunner(
+        queue=[
+            _ok(),
+            _ok(stdout=_pr_json(armed=True)),
+            _ok(stdout=_pr_json(state="MERGED", sha="cafe10")),
+            _pr_association(),
+            *_post_merge_green_tail(),
+        ],
+        reject_status_rollup=True,
+    )
+
+    outcome, journal, _ = _dispatch(runner=runner, repo=tmp_path, attempts=1)
+
+    assert (outcome.status, outcome.stage) == ("green", "done")
+    assert (outcome.pr_number, outcome.merge_sha) == (7, "cafe10")
+    assert "janitor-post-merge" in [record["stage"] for record in journal.records]
+    rejected = runner.run(
+        argv=["gh", "pr", "view", "feat/x", "--json", "number,statusCheckRollup"],
+        cwd=tmp_path,
+        timeout_seconds=1.0,
+    )
+    assert rejected.stderr == "GraphQL: Resource not accessible by integration"
 
 
 def test_engine_fails_when_review_after_arming_fails(tmp_path: Path) -> None:

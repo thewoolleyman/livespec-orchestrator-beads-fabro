@@ -54,7 +54,12 @@ def await_merge(
     # report in either direction.
     conflicting_reports = 0
     for attempt in range(poll.attempts):
-        reading = view_pr(plan=plan, runner=runner, journal=journal)
+        reading = view_pr(
+            plan=plan,
+            runner=runner,
+            journal=journal,
+            include_status_checks=False,
+        )
         view = reading.view if reading.error is None else None
         if view is not None and view.state == "MERGED":
             return view
