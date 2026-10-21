@@ -43,6 +43,23 @@ instead.
   the line reports a correct observation while permanently retiring the
   carry-forward route.
 
+- `test_proof_capture_record_run_id.py` — bd-ib-oa67lv: every record header the
+  proof-capture prompt publishes — the `captured` record and the `not_captured`
+  finding — resolves its run id from `livespec.factoryRunId` INSIDE the command
+  that writes the header, and the capture stops with the needs-human protocol
+  rather than posting a header with an empty one. The needles are scoped to the
+  indented COMMAND BLOCK each `printf` sits in, because the defect was not a
+  missing source: Step 4 already named `livespec.factoryRunId` correctly as its
+  second source, and the posting command — a later and separate tool call —
+  expanded the hook-only `$FABRO_RUN_ID`, which no agent shell holds. A
+  whole-file probe reads that shape as satisfied. The hook-only variable is
+  pinned by ORDER rather than by absence, so the prohibition explaining the
+  hazard is still allowed to name it. A prompt test because the header is
+  authored out of this prose and rendered by no Python caller, and because both
+  mechanical halves that CAN observe the fault — the publication-head refusal
+  and `proof_grade`'s — fire only after the capture has posted a comment that
+  cannot be edited.
+
 - `test_proof_capture_git_history_anchoring.py` — bd-ib-ltjrn: the proof-capture
   prompt's `Deterministic` bullet requires a reproduction step that reads git
   history to name a fixed commit sha or use a depth-independent predicate,
