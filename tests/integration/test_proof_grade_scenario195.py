@@ -346,11 +346,41 @@ def _materialized_sandbox(*, tmp_path: Path, comments: list[dict[str, str]]) -> 
     return repo
 
 
+def _capture_comment() -> dict[str, str]:
+    """A conforming `captured` record, which every real pull request carries here.
+
+    `proof_capture` is the only route into `proof_verify`, so by the time the
+    grade runs the pull request carries a capture — and the grade now refuses
+    when none PARSES, because a `verified` verdict posted against a non-record
+    capture is a false green the graph could not otherwise see. Every case below
+    therefore starts from the ordinary state rather than from a pull request no
+    conforming run produces.
+    """
+    return {
+        "body": _record(
+            run_id=_SANDBOX_RUN_ID,
+            verdict="captured",
+            sections="## Assertion 1 — alpha holds.\n\nProof mode: `factory_captured`\n",
+        ),
+        "url": "https://forge/comment/captured",
+    }
+
+
 def _graded(
-    *, tmp_path: Path, comments: list[dict[str, str]], assertions: list[str]
+    *,
+    tmp_path: Path,
+    comments: list[dict[str, str]],
+    assertions: list[str],
+    captured: bool = True,
 ) -> subprocess.CompletedProcess[str]:
-    """Drive the committed `proof_grade` node end to end in a materialized sandbox."""
-    repo = _materialized_sandbox(tmp_path=tmp_path, comments=comments)
+    """Drive the committed `proof_grade` node end to end in a materialized sandbox.
+
+    `captured` is the ordinary state and is prepended rather than written into
+    each fixture, so the one case that needs a pull request whose capture does
+    NOT parse says so by dropping it.
+    """
+    preamble = [_capture_comment()] if captured else []
+    repo = _materialized_sandbox(tmp_path=tmp_path, comments=preamble + comments)
     parsed = parse_dot_graph(text=_graph_text())
     assert not isinstance(parsed, str), parsed
     payload = base64.b64encode(json.dumps(assertions).encode("utf-8")).decode("ascii")
@@ -701,3 +731,69 @@ def test_an_earlier_conforming_record_does_not_rescue_a_later_ungradeable_one(
     assert "alpha holds." in result.stderr
     assert "beta holds." in result.stderr
     assert _failures(tmp_path=tmp_path)[0] == "1"
+
+
+def test_a_capture_that_parses_as_no_record_fails_the_grade_not_the_publication(
+    tmp_path: Path,
+) -> None:
+    """The FALSE GREEN the grade closes: `verified` posted against a non-record capture.
+
+    Measured on `livespec-dev-tooling-r6kagr`, run 01M5E8H65Z04 (`bd-ib-oa67lv`).
+    `proof_capture` expanded an unset `$FABRO_RUN_ID` into its header, so the
+    comment's publishing identity field read `run` with nothing after it and the
+    record reader — the SAME reader the acceptance pass grades with — treated the
+    comment as no record at all. `proof_verify` nonetheless replayed the body it
+    could see and published `verified`, review approved, and the fault surfaced
+    only at `publication-head`, after capture, review and replay had each spent a
+    stage. A resume restarts at the FAILED stage and never re-runs
+    `proof_capture`, so the whole run was unrecoverable.
+
+    So the grade asks the question the chain had nobody asking: does a `captured`
+    record PARSE at all. It refuses before reading any `verified` record, which is
+    the point — a verified verdict about a capture nothing can read is not
+    evidence, and grading it would publish the same false green one node later.
+    The refusal routes along the node's EXISTING failure edge, so no graph change
+    is involved: `proof_grade_route` re-enters `proof_verify` under its own
+    counter and the third failure ends at `non_converged`.
+
+    `test_a_record_verdicting_every_assertion_in_prose_advances` is the control:
+    it carries the same conforming capture every other case here does, so a grade
+    that refused every pull request would satisfy this case equally well.
+    """
+    result = _graded(
+        tmp_path=tmp_path,
+        comments=[
+            {
+                "body": (
+                    f"Proof of Done {_EM_DASH} captured {_EM_DASH} run  "
+                    f"{_EM_DASH} 2026-10-21T04:34:04Z\n"
+                    f"\n"
+                    f"Publish-branch head: {'a' * 40}\n"
+                    f"\n"
+                    f"## Assertion 1 {_EM_DASH} alpha holds.\n\nProof mode: `factory_captured`\n"
+                ),
+                "url": "https://forge/comment/1",
+            },
+            {
+                "body": _record(
+                    run_id=_SANDBOX_RUN_ID,
+                    sections="## Assertion 1 — alpha holds.\n\nReproduced: yes.\n",
+                ),
+                "url": "https://forge/comment/2",
+            },
+        ],
+        assertions=["alpha holds."],
+        captured=False,
+    )
+
+    assert result.returncode != 0, result.stderr
+    assert "LIVESPEC_PROOF_GRADE_NO_CAPTURED_RECORD" in result.stderr
+    assert _PULL_REQUEST in result.stderr
+    assert "no captured" in result.stderr
+    # Graded NOTHING: the verified record on the same pull request states the one
+    # assertion as reproduced in prose, so a grade that had read it would advance
+    # and say so. The absence is therefore falsifiable rather than vacuous.
+    assert "LIVESPEC_PROOF_GRADE_GRADED" not in result.stderr
+    count, finding = _failures(tmp_path=tmp_path)
+    assert count == "1"
+    assert "LIVESPEC_PROOF_GRADE_NO_CAPTURED_RECORD" in finding
