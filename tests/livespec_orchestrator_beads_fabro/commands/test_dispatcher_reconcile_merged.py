@@ -321,6 +321,77 @@ def test_reconcile_merged_searches_by_item_id_when_the_branch_pr_is_not_merged(
     ]
 
 
+@pytest.mark.parametrize(
+    ("branch_view_stdout", "named_state"),
+    [
+        (json.dumps({"number": 2679, "state": "CLOSED", "mergeCommit": None}), "CLOSED"),
+        (json.dumps({"number": 2679, "state": "OPEN", "mergeCommit": None}), "OPEN"),
+        ("gh printed no JSON at all", "unreadable JSON"),
+        (
+            json.dumps({"number": 2679, "state": "MERGED", "mergeCommit": None}),
+            "MERGED with no merge commit",
+        ),
+    ],
+)
+def test_reconcile_merged_refusal_names_the_branch_state_and_the_item_id_search(
+    branch_view_stdout: str,
+    named_state: str,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The refusal reports BOTH readings, because each one has its own remedy.
+
+    An operator reading "no merged PR found" cannot tell which of two situations
+    they are in: the item genuinely has no merge, or its factory branch carries a
+    pull request this valve could not use. Those differ in what to do next —
+    nothing versus land or locate the real merge — and the branch state is the
+    only thing that says which. Naming the search alongside it is what makes the
+    absence assertable: a refusal that states no scope searched is a claim no
+    reader can re-run, and this valve's whole job is to establish a merge from
+    the forge rather than to be told about one.
+
+    The four readings are the four ways the branch read fails to be a merge, and
+    each is NAMED rather than collapsed: `OPEN` and `CLOSED` are the live
+    operator situations, `gh` output nobody can parse is a diagnostic about the
+    forge call rather than about the pull request, and a `MERGED` pull request
+    carrying no merge commit is a reading this valve must not key an acceptance
+    on. Collapsing any of them into one word would report a condition whose
+    remedy is not the one the operator needs.
+    """
+    _assert_reconcile_command_registered(capsys=capsys)
+    module = _reconcile_module()
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(status="active")
+    append_work_item(path=_config(), item=item)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            _ok(stdout=branch_view_stdout),
+            _ok(stdout="[]"),
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+
+    exit_code = main(argv=["reconcile-merged", "--repo", str(repo), "--item", item.id])
+
+    assert exit_code == 3
+    err = capsys.readouterr().err
+    assert named_state in err
+    assert f"feat/{item.id}" in err
+    # The SEARCH is named by the argv the valve actually ran, read off the shipped
+    # builder rather than restated here: a sentence claiming a search was run is
+    # not the search, and a restated one could drift from what was spent.
+    assert " ".join(module.merged_pr_list_argv(item=item, default_branch="master")) in err
+    # Both reads happened, in order, and nothing past them: the search is what the
+    # refusal claims to have run, and no janitor or acceptance work followed it.
+    assert [record["stage"] for record in _journal_records(repo=repo)] == [
+        "reconcile-merged-invocation",
+        "reconcile-pr-view-branch",
+        "reconcile-pr-list-merged",
+    ]
+
+
 @pytest.mark.parametrize("status", ["backlog", "ready", "blocked"])
 def test_reconcile_merged_accepts_merge_verified_parked_items(
     status: str,
