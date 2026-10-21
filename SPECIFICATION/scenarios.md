@@ -8549,3 +8549,28 @@ Feature: A sibling sweep never cancels a run its own dispatch just created
     When a reconcile-runs pass runs
     Then run A is classified an orphan with reason superseded-run
 ```
+
+## Scenario 224 — A refused publish_draft push names the cause that refused it
+
+```gherkin
+Feature: A publication refusal sends triage to the right remedy
+  As an operator triaging a run that could not publish
+  I want the refusal to say what refused the push
+  So that a hook failure is never mistaken for a stale publish branch
+
+  Scenario: A pre-push hook refusal names its failed targets
+    Given a publish_draft push the repository pre-push hook refuses with a Failed targets summary naming lint and format
+    When publish_draft reports the failure
+    Then its output names the pre-push hook as the cause and names lint and format
+    And the run fails closed before proof capture
+
+  Scenario: A non-fast-forward rejection points at the stale branch
+    Given a publish_draft push origin rejects as non-fast-forward
+    When publish_draft reports the failure
+    Then its output names the non-fast-forward rejection and directs reconciling the stale publish branch
+
+  Scenario: An unreachable origin is named
+    Given a publish_draft push that cannot reach origin
+    When publish_draft reports the failure
+    Then its output names the unreachable origin as the cause
+```
