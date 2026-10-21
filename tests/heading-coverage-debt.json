@@ -936,5 +936,12 @@
     "heading": "## Scenario 232 \u2014 needs-attention surfaces an item labelled approval:workflow-edit",
     "work_item": "bd-ib-qr4c7h",
     "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 230 \u2014 An item whose input exists only on the host is host-routed",
+    "work_item": "bd-ib-fv4w",
+    "first_seen": "2026-10-21"
   }
 ]
