@@ -8498,3 +8498,32 @@ Feature: A resuming session reads the binding rulings before it acts
     Then it returns an empty rulings list
     And its ask, next_action and reason are the same as they would be without the rulings list
 ```
+
+## Scenario 217 — A host-routed item's factory_captured assertion is an advisory finding
+
+```gherkin
+Feature: A host-routed item never carries a proof mode it can never satisfy
+  As an operator filing work that only a host can run
+  I want the wall to flag a factory_captured assertion on it
+  So that the item does not park at acceptance waiting for a factory run that never comes
+
+  Scenario: A factory_captured assertion on a host-routed item is flagged
+    Given a work-item whose factory_safety is mutates-host-machinery
+    And its Definition of Done carries a factory_captured assertion
+    When its filing is displayed
+    Then an advisory Definition-of-Done finding names that assertion and the factory_safety reason
+    And the finding names the remedy of moving it under a Host-captured sub-heading with a Reason line
+    And the finding does not withhold ready
+
+  Scenario: A host-routed item may declare a sandbox-exercisable assertion host-captured
+    Given a work-item whose factory_safety is non-null
+    And its Host-captured assertion names behaviour a published sandbox capability could exercise
+    When its filing is displayed
+    Then no Definition-of-Done finding refuses the Host-captured declaration
+
+  Scenario: A factory-eligible item keeps the sandbox-capability refusal
+    Given a work-item whose factory_safety is null
+    And its Host-captured assertion names behaviour a published sandbox capability could exercise
+    When the gate grades it
+    Then the gate refuses the Host-captured declaration naming that sandbox capability
+```
