@@ -3667,8 +3667,15 @@ rather than the tree is a PROOF-RECORD finding. Each of these is one: a
 record that is not current for the head under review; a behavioural
 assertion whose proof is test-suite output alone; a step that runs a
 program the rule above requires the record to contain and that the record
-does not contain; and an assertion whose proof is a printed conclusion
-rather than the observed output. A review verdict is a RECAPTURE verdict
+does not contain; an assertion whose proof is a printed conclusion
+rather than the observed output; and a newest captured Proof of Done
+comment on the pull request that does not parse as a record, such as one
+whose header carries an empty run id. `review` MUST treat that last case
+as a blocking proof-record finding naming the comment and the field that
+failed to parse, so a verdict whose only blocking finding is a non-record
+capture is a recapture verdict, routes to `proof_capture` under the same
+two-lap bound, and MUST NOT reach `publication-head` on a capture that
+names no run. A review verdict is a RECAPTURE verdict
 when it carries at least one blocking finding and every blocking finding
 it carries is a proof-record finding. A recapture verdict MUST end
 `review` with `preferred_label=recapture`, which MUST route to

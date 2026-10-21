@@ -1062,5 +1062,12 @@
     "heading": "## Scenario 222 \u2014 A capacity handoff for a claim with no recorded pull request reads the forge first",
     "work_item": "bd-ib-dbmoeh",
     "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 235 \u2014 A captured comment that does not parse as a record is a proof-record finding",
+    "work_item": "bd-ib-f7lrks",
+    "first_seen": "2026-10-21"
   }
 ]
