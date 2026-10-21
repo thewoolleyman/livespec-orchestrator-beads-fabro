@@ -6906,7 +6906,12 @@ place a human decision waits. A factory run is never that place.
   read back the preserve-by-reference pointer), THEN terminate it, and
   journal one record per reconciliation naming the run id, the factory,
   the run's status kind, the item and its status, the orphan reason, and
-  the termination route. The export is the precondition, not a courtesy:
+  the termination route. An item whose claim carries a pending stamp
+  (§"Stranded claim release") is not `active` under a different journaled
+  run id: while the stamp is pending, a non-terminal run attributed to that
+  item MUST NOT be classified an orphan, so no reconciler or watchdog sweep
+  may terminate the run its own dispatch has just created. Scenario 223 in
+  `scenarios.md` exercises this sentence. The export is the precondition, not a courtesy:
   a termination whose export was not read back MUST NOT proceed.
 - Reconciliation runs on every Dispatcher loop tick and in the dispatch
   preamble, and MUST also be runnable standalone (a scheduled sweep) so
