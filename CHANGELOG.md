@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.229.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.7...v0.229.8) (2026-10-21)
+
+
+### Bug Fixes
+
+* make full-history sandbox preparation safe for complete clones ([6a9c654](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6a9c65426e59ff0d15ad4b96fb8bd0455682d76f))
+
 ## [0.229.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.229.6...v0.229.7) (2026-10-21)
 
 
