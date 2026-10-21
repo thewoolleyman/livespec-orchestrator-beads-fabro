@@ -8615,3 +8615,26 @@ Feature: Engine checkpoint commits never reach the merged history
     When pr_refresh runs
     Then it republishes nothing and the head proceeds to pr
 ```
+
+## Scenario 220 — An exhausted merge-poll budget on an open pull request rests the item for resume
+
+```gherkin
+Feature: A succeeded run never strands its claim while its pull request waits
+  As an operator whose armed pull request merges slowly
+  I want an exhausted merge wait to rest the item where resume can reach it
+  So that no claim sits active with no run behind it
+
+  Scenario: An open, non-conflicting pull request rests the item
+    Given a run that succeeded and armed auto-merge on its pull request
+    And the merge wait's poll budget is exhausted while the forge reports the pull request OPEN and not in conflict
+    When the Dispatcher records the outcome
+    Then the item rests at blocked with blocked_reason needs-human and the cause merge-poll-budget-exhausted
+    And the outcome detail names resolve-blocked then resume as the recovery chain
+
+  Scenario: A pull request merged at expiry is not rested
+    Given the poll budget is exhausted
+    And the forge reports the pull request MERGED on the final read
+    When the Dispatcher records the outcome
+    Then it proceeds exactly as for a merge observed within the budget
+```
+

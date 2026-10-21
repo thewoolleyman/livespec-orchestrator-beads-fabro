@@ -2162,5 +2162,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal refresh-strips-run-empty-commits, and the owning work-item bd-ib-reapbq makes pr_refresh republish a head carrying the run's own empty commits without them under lease and carry the proof forward, together with the test that binds this entry.",
     "work_item": "bd-ib-reapbq"
+  },
+  {
+    "heading": "## Scenario 220 \u2014 An exhausted merge-poll budget on an open pull request rests the item for resume",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal merge-poll-exhaustion-rests-for-resume, and the owning work-item bd-ib-l6rleb makes an exhausted merge-poll budget re-read the pull request, proceed on MERGED and otherwise rest the item at blocked with cause merge-poll-budget-exhausted, together with the test that binds this entry.",
+    "work_item": "bd-ib-l6rleb"
   }
 ]
