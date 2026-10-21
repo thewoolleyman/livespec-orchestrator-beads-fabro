@@ -452,16 +452,37 @@ def _unioned(*, ledger: AcpHoldLedger, evidence: FactoryHoldEvidence) -> AcpHold
     one. Appending the two halves raw was therefore two separate losses -- a
     factory-derived record no clearance could retire, and a later success no
     record could be retired BY.
+
+    THE CLEARANCE ROUTE HAS TWO SOURCES AND THE UNION IS THE ONLY PLACE BOTH
+    ARRIVE. A clearance this repository's own operator performed is a line in
+    its journal; one ANOTHER repository's operator performed is a record on the
+    factory, which is what "operator clearances MUST each be recorded as a
+    factory-native record on the participating factory whose evidence they
+    create or retire ... so retirement is reconstructible from the same source
+    as observation" requires and what makes a peer's clearance reach this
+    repository at all. The two sets are UNIONED rather than preferred between:
+    each names observation ids, an id is a digest of the evidence plus the
+    scope it lands on, so an id either side names is naming the same record --
+    and a repository that cleared a hold locally while a peer cleared another
+    must see both retired, not whichever source it happened to read.
+
+    THE RESULT IS CARRIED ON THE LEDGER rather than consumed and discarded,
+    because `retained_holds` is not the only reader: the ledger value is what
+    every consumer of this verdict sees, and a clearance applied here but
+    absent from the value would leave a later reader of `retired_observation_ids`
+    answering a different question from the filter above it.
     """
+    retired = ledger.retired_observation_ids | evidence.retired_observation_ids
     return replace(
         ledger,
         holds=retained_holds(
             holds=(*ledger.holds, *evidence.holds),
             successes=evidence.successes,
-            retired_observation_ids=ledger.retired_observation_ids,
+            retired_observation_ids=retired,
         ),
         unobservable=(*ledger.unobservable, *evidence.unobservable),
         unconfirmed_keys=evidence.unconfirmed_keys,
+        retired_observation_ids=retired,
     )
 
 
