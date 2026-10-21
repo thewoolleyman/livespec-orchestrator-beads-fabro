@@ -383,6 +383,25 @@ Tests for the thin-transport command modules under
   projection, in both directions, since a resolution answering `None` for
   everything satisfies its unresolvable case exactly as well as a correct one.
 
+- `test_dispatch_pass_replay_obligation_record.py` sits beside those three and
+  covers what the surviving DESIGN RECORD at that deletion site may claim. The
+  v127 paragraph carries TWO obligations, and the comment left in place of the
+  deleted call site asserted the second — the idempotent selection-to-execution
+  replay — was discharged by the orphan disposal below it, which names no
+  selection, fallback or release and never reaches the release leg. That is the
+  confident-wrong-answer-that-forecloses-the-action class: the comment is the
+  only design record at the site, so it is what a later v127 conformance audit
+  finds, and the live risk was closing the follow-on half (`bd-ib-augqc2`) as
+  already-covered on the strength of it. Its two prose assertions are MEANINGLESS
+  without their control, which is the measurement that made the claim false — a
+  module carrying neither word would satisfy them while saying nothing about
+  where the leg runs — and that control reads the importers through `ast` rather
+  than as text, because the one module mentioning the release symbol WITHOUT
+  importing it mentions it in a comment, which a text scan reports as a second
+  caller that does not exist. The comment block is located by the clause's own
+  words and read CONTIGUOUSLY, since a whole-file read is satisfied by a build
+  that moved the false attribution into another comment in the same module.
+
 - `test_needs_attention_model_fallback_warning_only.py` and
   `test_needs_attention_model_fallback_rows.py` — the v127 retirement of the
   `hygiene:model-fallback-projection` fact and its clearance valve
