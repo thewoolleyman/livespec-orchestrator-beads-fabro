@@ -70,7 +70,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -84,6 +84,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_allowance
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_deadline import (
     CredentialLifetimeRequirement,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_queue_allowance import (
+    credential_queue_allowance_from_block,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_window import (
+    credential_use_window_seconds,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_execution_budget import execution_budget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
@@ -102,6 +108,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
     CODEX_FRESHNESS_MARGIN_SECONDS,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget import (
+    run_wall_budget_from_block,
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import node_timeouts_from_block
 from livespec_orchestrator_beads_fabro.commands._workflow_variants import (
@@ -372,6 +381,9 @@ def _requirement_from_graph(
         return WorkflowFaultDeferral(
             message=f"credential lifetime requirement unresolved: {timeouts}"
         )
+    window = _credential_use_window(block=block)
+    if isinstance(window, WorkflowFaultDeferral):
+        return window
     commit_timeout = commit_timeout_seconds(committed_text=committed_text)
     if isinstance(commit_timeout, str):
         return commit_timeout
@@ -390,15 +402,73 @@ def _requirement_from_graph(
             f"place, because a figure this derivation could not establish is not a "
             f"bound however plausible it looks."
         )
-    return CredentialLifetimeRequirement(
-        allowance_seconds=budget.seconds,
+    requirement = CredentialLifetimeRequirement(
+        execution_allowance_seconds=budget.seconds,
+        credential_use_window_seconds=window.window_seconds,
+        credential_queue_allowance_seconds=window.queue_allowance_seconds,
         margin_seconds=CODEX_FRESHNESS_MARGIN_SECONDS,
+        detail="",
+    )
+    # The detail is rendered from the ASSEMBLED requirement rather than from the
+    # figures beside it, so the sentence an operator reads names the figure the
+    # gate will actually demand. Rendering it from `budget.seconds` was how the
+    # pre-v177 text came to describe an allowance no surface enforced.
+    return replace(
+        requirement,
         detail=requirement_detail(
             workflow_name=workflow_name,
-            allowance_seconds=budget.seconds,
+            requirement=requirement,
             overhead_seconds=overhead,
             inputs=inputs,
         ),
+    )
+
+
+@dataclass(frozen=True, kw_only=True)
+class _CredentialUseWindow:
+    """The window and the queue half of it, resolved from one read of the block.
+
+    Both halves travel together because the status surfaces report queue time
+    consumed against the queue allowance while the gate enforces the window, and
+    a reader cannot recover an addend from a sum.
+    """
+
+    window_seconds: int
+    queue_allowance_seconds: int
+
+
+def _credential_use_window(
+    *, block: dict[str, Any]
+) -> _CredentialUseWindow | WorkflowFaultDeferral:
+    """The bounded credential-use window for this dispatch, or the owning fault.
+
+    BOTH keys are resolved from the SAME block read the node timeouts came from,
+    for the reason `prepare_workflow_payload` reads them together: the two
+    figures are summed into one bound, and two reads of the same configuration
+    could produce a window neither key's refusal would describe.
+
+    A malformed value is a `WorkflowFaultDeferral` rather than a credential
+    refusal, which is the same routing `node_timeouts_from_block`'s refusal
+    takes one function up and for the same reason: the dispatch-admission stage
+    OWNS both keys, refuses them with its own diagnostic before any run exists,
+    and a credential wall answering first leaves that stage silent.
+    """
+    queue_allowance = credential_queue_allowance_from_block(block=block)
+    if isinstance(queue_allowance, str):
+        return WorkflowFaultDeferral(
+            message=f"credential lifetime requirement unresolved: {queue_allowance}"
+        )
+    wall_budget = run_wall_budget_from_block(block=block)
+    if isinstance(wall_budget, str):
+        return WorkflowFaultDeferral(
+            message=f"credential lifetime requirement unresolved: {wall_budget}"
+        )
+    return _CredentialUseWindow(
+        window_seconds=credential_use_window_seconds(
+            queue_allowance_seconds=queue_allowance.seconds,
+            run_wall_budget_seconds=int(wall_budget.seconds),
+        ),
+        queue_allowance_seconds=queue_allowance.seconds,
     )
 
 
