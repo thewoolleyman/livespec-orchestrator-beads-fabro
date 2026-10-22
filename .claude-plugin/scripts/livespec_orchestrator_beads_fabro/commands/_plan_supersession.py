@@ -39,6 +39,13 @@ identity, "which MUST resolve to that epoch's recorded transition", together wit
 "the carrier's recorded status history showing it not closed at that transition's
 recorded time".
 
+"THAT EPOCH" IS THE DERIVATION'S OWN, NOT THE CHAIN HEAD'S. The epoch the
+supersession NAMES is graded against the head below, as the ordinary staleness
+check on the write; the deriving identity then resolves at whatever epoch its own
+payload records. Requiring the two to agree is what made a retained obligation
+permanently unsupersedable — `_plan_supersession_evidence` carries the
+measurement.
+
 AND WHAT IT DELIBERATELY DOES NOT TURN ON. "A derived obligation whose step could
 legitimately be taken when it was derived is not misderived, however it was
 written or whatever its target or carriers show now" — so a carrier that was
@@ -245,7 +252,7 @@ def _misderived_refusal(
         return SupersessionRefusal(
             detail=(
                 f"the deriving operation {supersession.deriving_operation_id!r} resolves to"
-                f" no transition recorded at epoch {supersession.previous_epoch}"
+                " no recorded transition of this plan"
             )
         )
     if evidence.deriving.author not in DERIVATION_ACTORS:
