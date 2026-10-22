@@ -87,7 +87,7 @@ from livespec_orchestrator_beads_fabro.effects import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
     from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -243,6 +243,7 @@ def run_dod_judgement(
     *,
     item: WorkItem,
     cwd: Path,
+    comments: Sequence[str] = (),
     runner: CommandRunner | None = None,
     payload_root: Path | None = None,
 ) -> DodJudgement:
@@ -251,6 +252,10 @@ def run_dod_judgement(
     An unreadable prompt returns BEFORE the judge is invoked: a judgement with
     no prompt is not the judgement the clause names, and spending a model call
     on whatever is left would produce a verdict against rules nobody wrote.
+
+    `comments` is the item's ledger comment bodies, oldest first. They travel
+    into the SUBJECT rather than being read here, and the default is empty for
+    the reason `judgement_subject` records.
     """
     prompt_path = dod_gate_prompt_path(payload_root=payload_root)
     gate_prompt = attempt(
@@ -271,7 +276,8 @@ def run_dod_judgement(
         argv=judgement_argv(
             judge_path=resolve_judge_path(environ=environ),
             prompt=judgement_prompt(
-                gate_prompt=gate_prompt, subject=judgement_subject(item=item, cwd=cwd)
+                gate_prompt=gate_prompt,
+                subject=judgement_subject(item=item, cwd=cwd, comments=comments),
             ),
             model=resolve_judge_model(environ=environ),
         ),

@@ -22,6 +22,12 @@ model call per item per pass, which is the cost the rule exists to avoid. It is
 bounded by the same digest: one record per distinct criteria text, not one per
 pass.
 
+THE TWO MARKERS ARE RE-EXPORTED rather than owned here. They moved to
+`_dispatcher_dod_judgement_markers` when the subject and the goal renderer
+needed the same question, and that leaf's docstring records why; every existing
+importer still reads them from this module, which is where a reader of the
+record format looks for them.
+
 WHY A RECORD NAMING NO DIGEST IS NOT A REUSABLE VERDICT. The reuse condition is
 byte-identity with the subject the verdict was TAKEN against, so a record that
 cannot name that subject supports no comparison. Treating it as reusable would
@@ -38,6 +44,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     JUDGEMENT_UNAVAILABLE,
     DodJudgement,
     first_remedy,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
+    JUDGEMENT_COMMENT_MARKER,
+    UNAVAILABLE_COMMENT_MARKER,
+    comment_marker,
 )
 
 __all__: list[str] = [
@@ -58,11 +69,6 @@ __all__: list[str] = [
 # produced it.
 STAGE_PRE_ADMISSION = "pre-admission"
 STAGE_PRE_DISPATCH = "pre-dispatch"
-
-# The first line of each record, and the whole of how a reader tells these
-# comments from the operator riders beside them.
-JUDGEMENT_COMMENT_MARKER = "livespec-dod-judgement"
-UNAVAILABLE_COMMENT_MARKER = "livespec-dod-judgement-unavailable"
 
 _WORK_ITEM_FIELD = "work-item"
 _STAGE_FIELD = "stage"
@@ -137,7 +143,7 @@ def reusable_verdict(*, comments: Sequence[str], digest: str) -> RecordedJudgeme
     forever and the judgement would never run again.
     """
     for body in reversed(tuple(comments)):
-        if _marker_of(body=body) != JUDGEMENT_COMMENT_MARKER:
+        if comment_marker(body=body) != JUDGEMENT_COMMENT_MARKER:
             continue
         fields = _fields_of(body=body)
         recorded = fields.get(_DIGEST_FIELD)
@@ -161,15 +167,10 @@ def recorded_did_not_run_causes(*, comments: Sequence[str]) -> frozenset[str]:
     """
     causes: set[str] = set()
     for body in reversed(tuple(comments)):
-        if _marker_of(body=body) == JUDGEMENT_COMMENT_MARKER:
+        if comment_marker(body=body) == JUDGEMENT_COMMENT_MARKER:
             break
         causes.add(_fields_of(body=body).get(_CAUSE_FIELD, ""))
     return frozenset(causes - {""})
-
-
-def _marker_of(*, body: str) -> str:
-    """One comment's first non-blank line, or the empty string for a blank one."""
-    return body.strip().partition("\n")[0].strip()
 
 
 def _fields_of(*, body: str) -> dict[str, str]:
