@@ -1215,6 +1215,45 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   dispatch — every dispatch in this fleet today — pays no round trip.
   `_dispatcher_acp_nodes._resolve_chains` is where it is called, before the
   attach.
+- The SELECTION-TO-EXECUTION REPLAY of `contracts.md`'s "Factory-configurable
+  ACP fallback priority" clause (`bd-ib-augqc2`, Scenario 127) — the other half
+  of the v127 proposal whose first half retired the engine failover projection.
+  Split pure-from-impure the usual way:
+  `_acp_fallback_selection_warnings` (PURE: what one selection record plus one
+  run's node outcomes EVIDENCE — a non-primary selection the run executed is a
+  warning, a primary selection it executed successfully is the attempt that can
+  retire one) → `_dispatcher_reconcile_acp_selection` (the lane:
+  `pass_selection_replays`, which `reconcile_runs` calls after its factory loop).
+  The RULE stayed in `_acp_fallback_warning_ledger`, which imports both entry
+  points back, so the contract's four clearance conditions are stated once and
+  both sources of evidence hand the same `AcpPrimaryAttempt` to the one
+  predicate; `AcpPrimaryAttempt` therefore moved to
+  `_acp_fallback_warning_records`, since defining it in either module that reads
+  it would close an import cycle.
+  Six properties an editor must not invert. The outcome map is TRI-STATE and the
+  third state is load-bearing: `None` is a run whose outcomes could not be READ,
+  which must neither mint a warning nor clear one, while the empty tuple is a
+  selection that joins to no executed node — the clause's own "an unexecuted
+  preflight selection for a node never reached emits no fallback warning". The
+  outcome keys are VISIT-QUALIFIED and a selection's are not, so they are divided
+  through the port's own `fabro_stage_node` before matching; Petri keys its stage
+  map `<node>@<visit>` and comparing the two directly matches nothing, SILENTLY,
+  which leaves every warning unminted and the attention lane reading as a
+  repository where no fallback has ever run. The join is the immutable
+  `dispatch_id` both records carry and never journal order, which is the only key
+  that survives a same-item re-dispatch. It is a LANE of its own rather than a
+  step of the orphan path, exactly as the container sweep is: the orphan join
+  considers only NON-TERMINAL runs while this evidence belongs to runs that have
+  ENDED, so a replay folded into that loop would never see one. The SUPERSEDE
+  pass runs ONCE per reconciliation and not once per factory, because it is
+  driven by the repository's current primaries rather than by any run and a
+  per-factory call would make one replacement read as several. And a DRY RUN
+  replays nothing at all — every output of the lane is a journal append, so a
+  pass asked only to report has nothing it could legitimately do and a factory
+  read there would be a round trip taken for a decision nobody will record.
+  `primary_attempts_from_scan` is deliberately LEFT in place beside the new
+  reading: it reads the ENGINE event stream, which is how the existing fallback
+  audit records stay readable, and the clause requires exactly that.
 - `_acp_dispatch_coverage` is the DISPATCH-scoped half of the legacy
   provider-record coverage rule: `_acp_hold_coverage` answers it for one
   candidate, and this answers it for the whole set a dispatch's resolved node
