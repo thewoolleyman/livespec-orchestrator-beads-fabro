@@ -39,22 +39,35 @@ from typing import TYPE_CHECKING
 
 from livespec_runtime import spec_stated
 
-from livespec_orchestrator_beads_fabro.commands._drift_run_findings import behaviour_statement
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file import utc_now_iso
+from livespec_orchestrator_beads_fabro.commands._drift_run_findings import (
+    behaviour_statement,
+    findings_from_verdict,
+)
 from livespec_orchestrator_beads_fabro.commands._drift_run_merges import (
     merge_under_judgement,
     merges_after,
 )
+from livespec_orchestrator_beads_fabro.commands._drift_run_proposals import (
+    drift_proposal_document,
+    file_drift_proposal,
+    filed_finding_identities,
+    target_spec_files,
+)
 from livespec_orchestrator_beads_fabro.spec_reader import read_current_specification
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+    from livespec_orchestrator_beads_fabro.commands._drift_run_findings import DriftFinding
 
 __all__: list[str] = [
     "CAUSE_JUDGEMENT_UNREADABLE",
     "CAUSE_MERGES_UNREADABLE",
     "CAUSE_MERGE_UNREADABLE",
+    "DRIFT_RUN_AUTHOR",
     "DriftRunOutcome",
     "DriftRunSeams",
     "MergeOutcome",
@@ -70,6 +83,11 @@ CAUSE_MERGES_UNREADABLE = "merges-after-frontier-unreadable"
 CAUSE_MERGE_UNREADABLE = "merge-unreadable"
 CAUSE_JUDGEMENT_UNREADABLE = "judgement-unreadable"
 
+# What a proposal this pass filed records as its author when the caller names
+# nobody more specific. The pass is the author, and saying so is what keeps a
+# machine-filed proposal legible as one at the human gate.
+DRIFT_RUN_AUTHOR = "livespec-orchestrator-beads-fabro:drift-run"
+
 _SPEC_DIRNAME = "SPECIFICATION"
 
 
@@ -82,10 +100,21 @@ class DriftRunSeams:
     defaulted to a working model call would reach a provider from inside any
     test that forgot to supply one, and a pass that defaulted to a stub would
     make forgetting indistinguishable from judging.
+
+    `author` and `now` are what a filed proposal's front matter records about
+    who filed it and when. `now` is a seam rather than a direct clock read for
+    the ordinary reason: a document whose timestamp moves cannot be compared
+    byte for byte. `author` DEFAULTS to the pass itself rather than to nothing,
+    because the pass IS the author of what it files — a proposal reaching the
+    human gate under no attribution would be indistinguishable from one a
+    session wrote by hand. A caller that can name its invoker more precisely
+    passes it; the reconcile lane does.
     """
 
     runner: CommandRunner
     judge: spec_stated.ModelRunner
+    author: str = DRIFT_RUN_AUTHOR
+    now: Callable[[], str] = utc_now_iso
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -95,12 +124,20 @@ class MergeOutcome:
     `verdict` is None precisely when `failure` is populated: either the merge
     could not be read or its judgement could not be parsed, and in both cases
     the merge has not been processed.
+
+    `findings` are the `partial` or `unstated` behaviours the merge adds, and
+    `filed` the identities among them that now rest under `proposed_changes/`.
+    An identity an EARLIER pass filed is in `filed` too: the frontier rule asks
+    whether every finding of the merge IS filed, not whether this pass was the
+    one that filed it.
     """
 
     merge: str
     statement: str
     verdict: spec_stated.SpecStatedVerdict | None
     failure: str | None
+    findings: tuple[DriftFinding, ...] = ()
+    filed: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -110,11 +147,15 @@ class DriftRunOutcome:
     `unreadable` names the measurement that stopped the pass before any merge
     was judged, and is None on every pass that enumerated its scope — including
     one whose scope was empty.
+
+    `filed` is every finding identity now resting under `proposed_changes/`,
+    across every merge of the scope and in merge order.
     """
 
     merges: tuple[str, ...]
     judged: tuple[MergeOutcome, ...]
     unreadable: str | None
+    filed: tuple[str, ...] = ()
 
 
 def run_drift_pass(
@@ -124,12 +165,60 @@ def run_drift_pass(
     merges = merges_after(project_root=project_root, runner=seams.runner, since=frontier)
     if merges is None:
         return DriftRunOutcome(merges=(), judged=(), unreadable=CAUSE_MERGES_UNREADABLE)
-    spec_tree = read_current_specification(spec_root=project_root / _SPEC_DIRNAME).files
-    judged = tuple(
-        _judge_one(project_root=project_root, seams=seams, spec_tree=spec_tree, sha=sha)
-        for sha in merges
+    spec_root = project_root / _SPEC_DIRNAME
+    spec_tree = read_current_specification(spec_root=spec_root).files
+    judged: list[MergeOutcome] = []
+    for sha in merges:
+        one = _judge_one(project_root=project_root, seams=seams, spec_tree=spec_tree, sha=sha)
+        judged.append(_disposed(one=one, spec_root=spec_root, spec_tree=spec_tree, seams=seams))
+    return DriftRunOutcome(
+        merges=merges,
+        judged=tuple(judged),
+        unreadable=None,
+        filed=tuple(identity for outcome in judged for identity in outcome.filed),
     )
-    return DriftRunOutcome(merges=merges, judged=judged, unreadable=None)
+
+
+def _disposed(
+    *,
+    one: MergeOutcome,
+    spec_root: Path,
+    spec_tree: dict[str, str],
+    seams: DriftRunSeams,
+) -> MergeOutcome:
+    """One judged merge with its findings derived and filed.
+
+    The already-filed set is re-read PER MERGE rather than once for the scope,
+    because this pass files into the very directory it reads: two merges of one
+    scope can carry one identity — the same behaviour re-landed — and a set
+    taken before the loop would file it twice under one name, with the second
+    write silently replacing the first.
+    """
+    if one.verdict is None:
+        return one
+    findings = findings_from_verdict(merge=one.merge, statement=one.statement, verdict=one.verdict)
+    already = filed_finding_identities(spec_root=spec_root)
+    for finding in findings:
+        if finding.identity in already:
+            continue
+        _ = file_drift_proposal(
+            spec_root=spec_root,
+            finding=finding,
+            document=drift_proposal_document(
+                finding=finding,
+                author=seams.author,
+                now=seams.now(),
+                targets=target_spec_files(spec_tree=spec_tree, finding=finding),
+            ),
+        )
+    return MergeOutcome(
+        merge=one.merge,
+        statement=one.statement,
+        verdict=one.verdict,
+        failure=one.failure,
+        findings=findings,
+        filed=tuple(finding.identity for finding in findings),
+    )
 
 
 def _judge_one(
