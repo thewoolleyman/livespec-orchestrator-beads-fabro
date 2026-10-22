@@ -38,6 +38,14 @@ model response the shared parser refuses is foreign input that did not validate,
 so it exits 4 — the wire-shape code — naming every item it could not judge.
 Reporting those items as "no drift" would be the one answer the detector exists
 to make impossible: a clean negative over a population nobody judged.
+
+AND A JUDGE THAT COULD NOT ANSWER AT ALL TAKES THAT SAME PATH. A judge CLI
+exiting non-zero — a provider outage, an expired credential, a rate limit — is
+the routine failure, not the exotic one, so `_verdict` captures it and reports
+it as an unjudged item rather than letting it unwind past the recording below.
+An escaping error would exit through `orchestrator.main` having appended
+nothing, leaving the anchor unable to distinguish a pass that was attempted and
+failed from one that was never run.
 """
 
 from __future__ import annotations
@@ -47,7 +55,12 @@ import subprocess
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from livespec_runtime.spec_stated import ModelRunner, judge
+from livespec_runtime.spec_stated import (
+    ModelRunner,
+    SpecStatedParseError,
+    SpecStatedVerdict,
+    judge,
+)
 from returns.pipeline import is_successful
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
@@ -64,12 +77,16 @@ from livespec_orchestrator_beads_fabro.commands._ledger_intent_scan import (
     scan_population,
 )
 from livespec_orchestrator_beads_fabro.commands._orchestrator_shared import InjectedCliError
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 from livespec_orchestrator_beads_fabro.spec_reader import read_current_specification
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
+
+    from returns.result import Result
 
     from livespec_orchestrator_beads_fabro.commands._orchestrator_shared import CliContext
     from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -185,11 +202,14 @@ def _judged(
     findings: list[LedgerIntentFinding] = []
     unjudged: list[tuple[str, str]] = []
     for item in population:
-        judged = judge(
+        judged = _verdict(
             spec_tree=spec_tree,
             statement=intent_statement(item=item),
             run_model=run_model,
         )
+        if isinstance(judged, AttemptFailure):
+            unjudged.append((item.id, str(judged.error)))
+            continue
         if not is_successful(judged):
             unjudged.append((item.id, judged.failure().detail))
             continue
@@ -197,6 +217,32 @@ def _judged(
         if finding is not None:
             findings.append(finding)
     return findings, unjudged
+
+
+def _verdict(
+    *, spec_tree: Mapping[str, str], statement: str, run_model: ModelRunner
+) -> Result[SpecStatedVerdict, SpecStatedParseError] | AttemptFailure:
+    """One item's verdict, with a judge that could not answer on the same track.
+
+    A judge CLI that EXITS NON-ZERO is the routine provider failure — an
+    outage, an expired credential, a rate limit — and it is a failure to
+    measure exactly as a response the parser refuses is. So it is captured
+    here rather than left to unwind: `run_ledger_intent_scan` writes the
+    attempt record the detection-coverage contract owes every invocation
+    AFTER this loop, so an error that escaped it would exit through
+    `orchestrator.main` having recorded nothing — a pass that was attempted
+    and failed leaving the anchor indistinguishable from one never run, which
+    is the one state the unconditional attempt record exists to rule out.
+
+    The capture is NARROW on purpose. Only `InjectedCliError` is caught, so a
+    judge binding that fails in some way this package has not modelled still
+    unwinds and is seen, rather than being folded into "could not read a
+    verdict" and reported as though the scan understood it.
+    """
+    return attempt(
+        action=lambda: judge(spec_tree=spec_tree, statement=statement, run_model=run_model),
+        exceptions=(InjectedCliError,),
+    )
 
 
 def _resolved_cut(*, spec_root: Path, since_version: int | None) -> SpecVersionCut | None:
