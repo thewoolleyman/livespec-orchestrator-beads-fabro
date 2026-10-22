@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.235.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.234.3...v0.235.0) (2026-10-22)
+
+
+### Features
+
+* confirm expired holds from factory successes ([52f9fb7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/52f9fb7a98089031869a3dfecf66981ec057d32f))
+* define availability probe timeout ([c00717a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c00717aae9198d350e752a4e65ee0644b374803c))
+* name the outstanding confirmation as the governing condition ([3595f02](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3595f02e96c9d765798533ed5a44bf5b45c664f8))
+* reject invalid availability probe timeouts ([dd40275](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dd40275155d9f0c209fcc83f2fcf2bade93ada30))
+* require confirmation after hold expiry ([4d6524d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4d6524d07e0037d71bb246573f768bbc0bdda538))
+* scope expiry confirmations to observations ([a53427c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a53427cb007a7bc49b3976c24a55927d6e13f743))
+
+
+### Bug Fixes
+
+* clear a post-expiry confirmation on a peer operator clearance ([077ce7e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/077ce7e823a862f1fdc11bdbd92f337557d3de51))
+
 ## [0.234.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.234.2...v0.234.3) (2026-10-22)
 
 
