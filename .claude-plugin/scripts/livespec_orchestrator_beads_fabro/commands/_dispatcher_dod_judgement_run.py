@@ -12,14 +12,30 @@ WHAT THE HOST CALL ADDS, AND WHY ONLY THAT. The node ends a pass by falling
 through the graph and a failure by emitting one JSON object; a host call has no
 graph to fall through, so a pass and a reply nobody could read would be the same
 bytes. The appended ending contract therefore asks for a verdict object in BOTH
-directions and nothing else changes — the six checks, their order, and every
-remedy they name are the file's.
+directions and nothing else changes — every check, its order, and every remedy
+it names are the file's.
+
+AND "NOTHING ELSE" IS A RULE RATHER THAN A HABIT. `contracts.md`'s
+one-rubric-one-subject clause lets a taking other than the node "append only an
+ending contract stating the verdict form it must return", and says that "any
+other guidance about how to grade a check, including any statement about where
+the capability set comes from, MUST be written into the rubric itself, so that
+the node grades by it too". This contract used to carry a capability-source
+bullet of its own — the published file is unreachable from a host, so resolve the
+set from the committed array — which is grading guidance the node never reads. It
+is gone, and not relocated: the rubric already resolves the capability set in its
+own order, and what a host call owes is to grade by that order rather than to
+replace it. Every measured preflight-versus-in-run disagreement on this
+repository's own items is the same shape one layer up, so the discipline is the
+point: a sentence that changes an answer belongs in the one file both takings
+read.
 
 WHY THE SUBJECT CARRIES THE REFERENCED HEADING BODIES. A headless `claude -p`
 grants no tools by default, so the judge is given a read-only grant AND the
-heading bodies inline: the grant lets it search `scenarios.md` as check 6
-requires, and the inline bodies mean the assertion can still be judged against
-its governing heading on a host where that search returns nothing.
+heading bodies inline: the grant lets it search `scenarios.md` as the
+reference-coverage check requires, and the inline bodies mean the assertion can
+still be judged against its governing heading on a host where that search
+returns nothing.
 
 WHY EVERY FAILURE CAUSE IS MEASURED RATHER THAN PROBED. The runner already maps
 an absent executable to exit 127, a timeout to exit 124 and a launch the
@@ -81,6 +97,7 @@ __all__: list[str] = [
     "CAUSE_JUDGE_COMMAND_FAILED",
     "CAUSE_NO_ELIGIBLE_MODEL",
     "CAUSE_PROMPT_UNREADABLE",
+    "HOST_ENDING_CONTRACT",
     "dod_gate_prompt_path",
     "judgement_argv",
     "judgement_prompt",
@@ -117,32 +134,32 @@ _ALLOWED_TOOLS = "Read,Grep,Glob"
 _EXIT_TIMED_OUT = 124
 _EXIT_EXECUTABLE_ABSENT = 127
 
-_HOST_ENDING_CONTRACT = """
+# The ONE thing a host taking appends, and the whole of it: the verdict form.
+# PUBLIC, because the repository preflight appends the identical bytes — a second
+# copy over there is two ending contracts that can drift, and a drifted one makes
+# the preflight's verdict unreadable while the judge it ran was perfectly healthy.
+HOST_ENDING_CONTRACT = """
 ## How THIS taking of the judgement ends — a host call, not a node
 
-You are running on the operator host, before any sandbox exists, so two things
-replace the "How to end" section above. Nothing else changes: the six checks,
-their order, and every remedy they name are exactly as written.
+You are running as a host call rather than as a node of a graph, so ONE thing
+replaces the "How to end" section above. Nothing else changes: every check, its
+order, and every remedy it names are exactly as written, and this section adds
+no rule of its own about how to grade any of them.
 
-- The published capability file `/etc/livespec/sandbox-capabilities` is NOT
-  reachable from here. Resolve the capability set from the governed
-  repository's committed `dispatcher.sandbox_capabilities` array alone, and
-  where that answers nothing the set is UNKNOWN — withhold check 5 exactly as
-  it tells you to, and report `sandbox-capabilities: unpublished`.
-- There is no graph to fall through, so end with a JSON object on the LAST line
-  of your reply in BOTH directions:
-  - every check clean: {"outcome": "passed"}
-  - any finding: {"outcome": "failed", "failure_reason": "<the findings>"},
-    one finding per line inside `failure_reason`, each naming the work-item id,
-    the offending element quoted verbatim, and the remedy.
-  A reply whose last line is neither is read as a judgement that could not run,
-  and the item is then routed exactly as it would be without the judgement.
+There is no graph to fall through, so end with a JSON object on the LAST line of
+your reply in BOTH directions:
+
+- every check clean: {"outcome": "passed"}
+- any finding: {"outcome": "failed", "failure_reason": "<the findings>"}, one
+  finding per line inside `failure_reason`, each naming the work-item id, the
+  offending element quoted verbatim, and the remedy.
+
+A reply whose last line is neither is read as a judgement that could not run,
+and the item is then routed exactly as it would be without the judgement.
 
 ## The work-item under judgement
 
-Its effective acceptance criteria and the body of each heading its reference
-line names follow verbatim. The repository is your working directory, so you
-MAY read the spec tree directly to settle any further question of fact.
+It follows verbatim.
 
 """
 
@@ -160,7 +177,7 @@ def dod_gate_prompt_path(*, payload_root: Path | None = None) -> Path:
 
 def judgement_prompt(*, gate_prompt: str, subject: str) -> str:
     """The node's prompt, the host ending contract, then the item's subject."""
-    return f"{gate_prompt}{_HOST_ENDING_CONTRACT}{subject}\n"
+    return f"{gate_prompt}{HOST_ENDING_CONTRACT}{subject}\n"
 
 
 def judgement_argv(*, judge_path: str, prompt: str, model: str) -> list[str]:
