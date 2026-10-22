@@ -16,13 +16,24 @@ naming epoch 101, "the deriving operation ... resolves to no transition recorded
 at epoch 101"; naming epoch 100, "the supersession names previous epoch 100, but
 the chain stands at epoch 101".
 
+WHAT THE REPAIR MUST NOT COST, and what every refusal case here is about.
+Dropping the epoch from the deriving match makes an operation identity alone
+resolve A transition of this plan — a real one, recorded by a real derivation
+actor — and the obligation that transition wrote need not be the obligation
+standing now. So the named derivation must be shown to have written the RETAINED
+obligation: without that, a supersession reads as fully evidenced while naming a
+derivation that has nothing to do with the result it is replacing, which is the
+rename-with-a-verified-footnote shape the whole cause exists to refuse.
+
 THE RETAINING WRITE IS A REAL `set_next_action` HUMAN POINTER, not a
 hand-committed transition, because that is the write the incident turned on and
 the one the derivation gate prescribes for an open carrier. The derivation itself
 IS hand-committed, because a derivation recorded while a mapped carrier was open
 is the state the gate now prevents — so the only honest way to reach it is to
 seed the ledger a pre-gate build left behind, which is exactly the population
-this repair exists to unlock.
+this repair exists to unlock. The refusal case advances the chain through
+`commit_transition` alone, which is what leaves the DERIVED pointer standing for
+it to assert unchanged.
 """
 
 from __future__ import annotations
@@ -84,6 +95,7 @@ _CARRIER_REPO = "carrier-repo"
 _CARRIER_PREFIX = "cr"
 _OPEN_CARRIER = f"{_CARRIER_PREFIX}-open"
 _DERIVING_OPERATION = "op-derived-while-the-carrier-was-open"
+_OTHER_OPERATION = "op-wrote-another-obligation"
 _PLAN_RESUME_ACTOR = "plan-resume"
 _SESSION = "plan-session"
 # The obligation the false derivation persisted: the plan's own proof record.
@@ -91,10 +103,24 @@ _SUPERSEDED_RESULT: dict[str, object] = {
     "repo": _OWN,
     "item_comment": {"item_id": _EPIC, "marker": PLAN_PROOF_RECORD_TITLE},
 }
+# A DIFFERENT plan-level obligation of the SAME epic, so a transition recording
+# it is plan-level too: the refusal under test must be about WHICH obligation a
+# derivation wrote, never about the kind of step it named.
+_OTHER_RESULT: dict[str, object] = {
+    "repo": _OWN,
+    "item_comment": {"item_id": _EPIC, "marker": "plan-completeness-review-evidence"},
+}
 _CARRIER_RESULT: dict[str, object] = {
     "repo": _CARRIER_REPO,
     "item_status": {"item_id": _OPEN_CARRIER, "status": "closed"},
 }
+# The words each provenance refusal is identified by. They are asserted PRESENT
+# in their own case and ABSENT in the sibling's, because a reader told its
+# derivation recorded another obligation, about a supersession whose obligation
+# was in fact changed by a later write, fixes the identity and meets the same
+# refusal again.
+_RECORDED_ANOTHER = "recorded the required result"
+_CHANGED_AFTER = "changed the required result"
 
 
 def _identity(*, required_result: dict[str, object]) -> str:
@@ -345,3 +371,50 @@ def test_an_obligation_retained_by_a_later_pointer_write_is_still_supersedable(
     assert budget["handoff_count"] == _CONSUMED_HANDOFFS
     assert budget["max_handoffs"] == _MAX_HANDOFFS
     assert _chain_obligation(repo=repo) == _CARRIER_RESULT
+
+
+def test_a_derivation_that_recorded_another_obligation_cannot_supersede_this_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A real derivation of this plan, but not the one that wrote what stands now.
+
+    Both seeded transitions are recorded by the `plan-resume` actor and both name
+    a plan-level step of this epic, so every other `misderived` condition holds
+    and the carrier is open; the two differ only in WHICH obligation each
+    recorded. The supersession names the earlier one, whose obligation the later
+    transition replaced — so it names a derivation that has nothing to do with
+    the result it is replacing.
+
+    The refusal is graded on the condition it REPORTS and the pointer is read
+    back as well, because a write that refused and mutated anyway would satisfy a
+    refusal-only assertion while having already replaced the obligation.
+    """
+    repo = _project(tmp_path=tmp_path)
+    monkeypatch.chdir(repo)
+    _open_carrier(repo=repo)
+    epoch = _seed(
+        repo=repo,
+        transitions=(
+            (_OTHER_OPERATION, _OTHER_RESULT),
+            (_DERIVING_OPERATION, _SUPERSEDED_RESULT),
+        ),
+    )
+
+    refusal = set_next_action(
+        config=_config(repo=repo),
+        epic_id=_EPIC,
+        action=_replacement(),
+        session=_SESSION,
+        now=_LATER,
+        supersession=_supersession(epoch=epoch, operation_id=_OTHER_OPERATION),
+    )
+
+    assert refusal is not None
+    assert _RECORDED_ANOTHER in refusal.detail
+    assert _CHANGED_AFTER not in refusal.detail
+    assert _identity(required_result=_OTHER_RESULT) in refusal.detail
+    assert _identity(required_result=_SUPERSEDED_RESULT) in refusal.detail
+    pointer = _pointer(repo=repo)
+    assert pointer["kind"] == "proof"
+    assert pointer["required_result"] == _SUPERSEDED_RESULT
+    assert _chain_obligation(repo=repo) == _SUPERSEDED_RESULT

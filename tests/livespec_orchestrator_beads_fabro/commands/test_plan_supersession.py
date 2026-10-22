@@ -15,6 +15,13 @@ WHICH condition they report as well as on their existence: a reader told its
 carrier is closed, about a supersession that also named the wrong epoch, fixes
 the carrier and meets the same refusal again.
 
+THE DEFAULT EVIDENCE NAMES A DERIVATION THAT REALLY DID WRITE THE OBLIGATION
+STANDING NOW, which is what keeps each refusal attributable to the one condition
+its own case stages. The provenance condition — that the named derivation wrote
+the retained obligation — runs ahead of the author and carrier conditions, so a
+default recording some other result would report that one for every case in the
+module and the conditions below would never be reached.
+
 AND THE ONE PAIR THAT MUST NOT BE COLLAPSED. A carrier closed BEFORE the
 derivation and a carrier closed SINCE are both "closed now", and the clause gives
 them different reasons: the first means the derived step could legitimately have
@@ -47,6 +54,13 @@ _EPOCH = 3
 _DERIVED_AT = "2026-10-22T07:00:00Z"
 _BEFORE = "2026-10-21T07:00:00Z"
 _AFTER = "2026-10-22T09:00:00Z"
+# The obligation the identity above renders, so the DEFAULT evidence names a
+# derivation that really did write what stands now: every refusal below is then
+# about the one condition its own case stages.
+_OBLIGATION: dict[str, object] = {
+    "repo": "repo",
+    "item_comment": {"item_id": _EPIC, "marker": "Plan Proof of Done"},
+}
 _REPLACEMENT: dict[str, object] = {
     "repo": "carrier-repo",
     "item_status": {"item_id": _CARRIER, "status": "closed"},
@@ -66,6 +80,14 @@ def _supersession(**overrides: object) -> CausalSupersession:
     return CausalSupersession(**fields)  # pyright: ignore[reportArgumentType]
 
 
+def _deriving(
+    *, author: str = DERIVATION_ACTORS[0], recorded_result: object = _OBLIGATION
+) -> DerivingTransition:
+    return DerivingTransition(
+        author=author, recorded_at=_DERIVED_AT, required_result=recorded_result
+    )
+
+
 def _evidence(
     *,
     author: str = DERIVATION_ACTORS[0],
@@ -74,7 +96,7 @@ def _evidence(
     plan_level: bool = True,
 ) -> SupersessionEvidence:
     return SupersessionEvidence(
-        deriving=DerivingTransition(author=author, recorded_at=_DERIVED_AT) if deriving else None,
+        deriving=_deriving(author=author) if deriving else None,
         carrier=carrier
         if carrier is not None
         else CarrierEvidence(mapped=True, status="ready", closed_at=None),
@@ -210,8 +232,53 @@ def test_a_deriving_operation_that_resolves_to_no_transition_is_refused() -> Non
     assert "op-derived" in verdict.detail
 
 
+@pytest.mark.parametrize(
+    ("label", "recorded_result"),
+    [
+        (
+            "a recorded result nothing can parse as a typed reference",
+            {"shell": "test -f done"},
+        ),
+        ("a transition that recorded no result at all", None),
+    ],
+)
+def test_a_derivation_whose_recorded_result_is_unreadable_is_refused(
+    label: str, recorded_result: object
+) -> None:
+    """A derivation whose recorded result has no identity wrote no obligation.
+
+    The comparison the provenance condition makes is between CANONICAL
+    IDENTITIES, and a recorded value that parses to none compares unequal to
+    every obligation — so it refuses, naming the unreadable reference rather
+    than rendering the untrusted ledger value back.
+
+    Its two shapes sit together because they refuse for one reason and the
+    integration tier reaches NEITHER: a chain whose transitions are committed
+    through the production writer records a typed reference on every one of them.
+    """
+    verdict = _refusal(
+        supersession=_supersession(),
+        evidence=SupersessionEvidence(
+            deriving=_deriving(recorded_result=recorded_result),
+            carrier=CarrierEvidence(mapped=True, status="ready", closed_at=None),
+            plan_level=True,
+        ),
+        prior_identity=_IDENTITY,
+        current_epoch=_EPOCH,
+        replacement=_REPLACEMENT,
+    )
+
+    assert "unreadable typed reference" in verdict.detail, label
+    assert _IDENTITY in verdict.detail, label
+
+
 def test_an_obligation_no_derivation_wrote_is_refused_naming_its_writer() -> None:
-    """The cause is accepted only for the two reserved derivation actors."""
+    """The cause is accepted only for the two reserved derivation actors.
+
+    The evidence names a derivation that DID write the obligation standing now,
+    so the refusal is attributable to the author alone: the provenance condition
+    runs first, and a case staging both would report that one instead.
+    """
     verdict = _refusal(
         supersession=_supersession(),
         evidence=_evidence(author="plan-session"),
@@ -265,11 +332,7 @@ def test_carrier_evidence_about_nothing_this_plan_asserted_is_refused(
     """
     verdict = _refusal(
         supersession=_supersession(),
-        evidence=SupersessionEvidence(
-            deriving=DerivingTransition(author=DERIVATION_ACTORS[0], recorded_at=_DERIVED_AT),
-            carrier=carrier,
-            plan_level=True,
-        ),
+        evidence=SupersessionEvidence(deriving=_deriving(), carrier=carrier, plan_level=True),
         prior_identity=_IDENTITY,
         current_epoch=_EPOCH,
         replacement=_REPLACEMENT,
@@ -325,7 +388,9 @@ def test_an_undatable_derivation_instant_also_refuses_a_closed_carrier() -> None
     verdict = _refusal(
         supersession=_supersession(),
         evidence=SupersessionEvidence(
-            deriving=DerivingTransition(author=DERIVATION_ACTORS[0], recorded_at="whenever"),
+            deriving=DerivingTransition(
+                author=DERIVATION_ACTORS[0], recorded_at="whenever", required_result=_OBLIGATION
+            ),
             carrier=CarrierEvidence(mapped=True, status="closed", closed_at=_AFTER),
             plan_level=True,
         ),
