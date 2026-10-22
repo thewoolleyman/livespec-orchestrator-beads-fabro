@@ -148,6 +148,33 @@ def _hermetic_dod_judgement_judge(
     )
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_definition_of_done_workflow_shape(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
+    """Keep unrelated dispatch tests focused on their own intentionally small graphs.
+
+    Most established dispatch fixtures predate the Definition-of-Done graph
+    wall and use a one-node workflow solely to reach the seam they exercise.
+    Their graph shape is not their subject, so let them model an already-checked
+    workflow just as the judgement fixture above models an already-judged item.
+    The dedicated wall module is explicitly left unmocked: it is the suite's
+    assertion that malformed target-local and bundled graphs are refused before
+    claim.
+    """
+    if request.node.path.name == "test_dispatcher_definition_of_done_workflow.py":
+        return
+
+    def admitted_fixture_workflow(*, args: object, repo: Path, items: object) -> None:
+        _ = (args, repo, items)
+
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands."
+        "_dispatcher_pre_dispatch_wall.definition_of_done_workflow_refusal",
+        admitted_fixture_workflow,
+    )
+
+
 def _fresh_codex_auth_json() -> str:
     """A host Codex `auth.json` whose access-token JWT `exp` is a century out.
 
