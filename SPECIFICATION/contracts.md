@@ -4305,13 +4305,34 @@ dispatch whose merged PR did not complete post-run disposition. For the `ready`
 item it applies every guard and the post-merge disposition below exactly as for
 an `active` one, with `ready` in place of `active` in each state effect: a green
 janitor writes `ready -> acceptance` where an `active` item's writes `active ->
-acceptance`, and every failed guarded precondition leaves the item `ready`. For an item resting in `acceptance` it MUST NOT
-re-run the post-merge janitor or re-merge anything: it MUST re-run only the
-acceptance pass of §"Post-merge acceptance (`acceptance → done`)" against the
-records now on the pull request, apply that pass's ordinary disposition, and
-write a missing Proof of Done pointer (§"Proof of Done record" → "The
-pointer"); this is the route by which a host-leg record posted after the
-original pass reaches a verdict.
+acceptance`, and every failed guarded precondition leaves the item `ready`. For an item resting in `acceptance` it MUST NOT re-merge anything. Whether it
+runs the post-merge janitor depends on what that item's latest dispatch
+journaled about the janitor:
+
+- When the item's latest dispatch journaled that its post-merge janitor did NOT
+  run, the item is still OWED that janitor. That is the case when the janitor
+  checkout's bootstrap failed after the merge and the dispatch parked the merged
+  item in `acceptance` with a needs-attention verdict saying the janitor did not
+  run. The valve MUST then run that owed post-merge janitor against the merged
+  default-branch tip, under every guard, the dispatch-scoped ownership lock and
+  the janitor rules that apply to an `active` item, and journal the janitor's
+  result against that dispatch. Only on a green janitor MUST it then re-run the
+  acceptance pass described in the next item. A red or unrunnable owed janitor
+  MUST leave the item in `acceptance` with a needs-attention verdict naming the
+  janitor stage and its failing target or bootstrap error. It MUST NOT close the
+  item, MUST NOT re-run acceptance on that attempt, and MUST exit non-zero.
+- Otherwise, the janitor already ran, and the valve MUST NOT re-run it. It MUST
+  re-run only the acceptance pass of
+  §"Post-merge acceptance (`acceptance → done`)" against the records now on the
+  pull request, apply that pass's ordinary disposition, and write a missing
+  Proof of Done pointer (§"Proof of Done record" → "The pointer"). This is the
+  route by which a host-leg record posted after the original pass reaches a
+  verdict.
+
+The valve MUST decide which case applies from the dispatch journal's record of
+the janitor, never from the item's status alone. When the journal cannot be
+read, or carries no janitor record for the latest dispatch, it MUST refuse and
+name the missing evidence rather than guess either way.
 It MUST additionally refuse ANY item carrying the `rework:pending` label,
 whatever its status: such an item's dispatch COMPLETED its post-run
 disposition — the disposition's outcome was rework — and the remedy is the

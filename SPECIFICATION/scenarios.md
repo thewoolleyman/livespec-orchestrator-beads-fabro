@@ -4448,6 +4448,7 @@ Feature: Proof that needs the released build is captured by an agent on a host, 
     And under ai-only the item closes to done and its pointer carries the host_verified record link
   Scenario: reconcile-merged driven by hand is the same route
     Given an item resting in acceptance with a host_verified record the pass has not yet observed
+    And its latest dispatch journaled a green post-merge janitor
     When reconcile-merged is driven for the item by hand
     Then only the acceptance pass is re-run, without a post-merge janitor
   Scenario: A self-replayed host record is refused
@@ -8823,4 +8824,41 @@ Feature: The staged source checkout's names are a stable interface
     And that directory sits under the per-user worktree root, inside a directory named "governed-repo"
     And the checkout is on a new local branch named "livespec/source/" followed by the same 32 characters
     And the staged branch is not the run's publish branch
+```
+
+## Scenario 237 — reconcile-merged runs the post-merge janitor a merged acceptance item is still owed
+
+```gherkin
+Feature: A merged item parked before its janitor ran can still reach a verdict
+  As an operator recovering a merged work-item
+  I want reconcile-merged to run the janitor the item is owed
+  So that a bootstrap failure after merge does not strand the item in acceptance
+
+  Scenario: An owed janitor runs, then acceptance re-runs
+    Given a work-item resting in acceptance whose pull request is merged
+    And its latest dispatch journaled that the post-merge janitor did not run because the janitor checkout bootstrap failed
+    When reconcile-merged --item runs for that item and the janitor is green on the merged default-branch tip
+    Then the post-merge janitor runs against the merged default-branch tip under the ownership lock
+    And the janitor result is journaled against that dispatch
+    And the acceptance pass re-runs and applies its ordinary disposition
+    And nothing is merged again
+
+  Scenario: A red owed janitor keeps the item in acceptance
+    Given a work-item resting in acceptance whose latest dispatch journaled that the post-merge janitor did not run
+    When reconcile-merged --item runs and the owed janitor fails
+    Then the item stays in acceptance with a needs-attention verdict naming the janitor stage and its failing target
+    And the acceptance pass does not re-run
+    And the command exits non-zero
+
+  Scenario: A janitor that already ran is not re-run
+    Given a work-item resting in acceptance whose latest dispatch journaled a green post-merge janitor
+    When reconcile-merged --item runs for that item
+    Then the post-merge janitor does not run
+    And only the acceptance pass re-runs
+
+  Scenario: Missing janitor evidence refuses
+    Given a work-item resting in acceptance whose latest dispatch has no journaled janitor record
+    When reconcile-merged --item runs for that item
+    Then the command refuses, naming the missing janitor evidence
+    And no janitor runs and the acceptance pass does not re-run
 ```
