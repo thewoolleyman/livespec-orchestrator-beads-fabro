@@ -94,6 +94,7 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
+    "names_plan_epic",
     "plan_owned_reference",
     "read_plan_owned_result",
 ]
@@ -141,19 +142,27 @@ def read_plan_owned_result(
 
 def plan_owned_reference(*, config: StoreConfig, epic_id: str, required_result: object) -> object:
     """The reference to READ: the recorded one, or its plan-owned repository."""
-    if not _names_epic(required_result=required_result, epic_id=epic_id):
+    if not names_plan_epic(required_result=required_result, epic_id=epic_id):
         return required_result
     recorded = cast("dict[str, Any]", required_result)
     return {**recorded, REPO_FIELD: project_repository_identity(config=config)}
 
 
-def _names_epic(*, required_result: object, epic_id: str) -> bool:
+def names_plan_epic(*, required_result: object, epic_id: str) -> bool:
     """Whether a recorded obligation's own target is the plan epic itself.
 
     Read off the RAW value rather than through the typed parse, because a
     reference the parse refuses is one `read_result` must report its own refusal
     for — so a parse here would either duplicate that ladder or decide a
     redirect on a target the reader never admitted.
+
+    PUBLIC because it answers a second question as well as the redirect's. The
+    authority chain records no pointer KIND, so "is this obligation a plan-level
+    step" has exactly one checkable form — its target IS the plan epic — and the
+    `misderived` supersession's own plan-level condition rests on it. A second
+    account of that predicate would be two readings of one obligation whose
+    disagreement nothing surfaces: this one decides a redirect, the other decides
+    whether an obligation may be replaced at all.
     """
     fields = cast("dict[str, Any]", required_result) if isinstance(required_result, dict) else {}
     return any(

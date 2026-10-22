@@ -69,6 +69,11 @@ PLAN_PROGRESS_PREFIX = "plan-progress-event"
 
 _OPERATION_LABEL = "operation: "
 _PAYLOAD_LABEL = "payload: "
+# The two header fields `plan_comment_body` renders above every plan comment,
+# read back through the same labelled-line reader the payload uses so one
+# format is never parsed two ways.
+_AUTHOR_LABEL = "author: "
+_RECORDED_LABEL = "recorded: "
 _METADATA_FIELD = "metadata"
 _TEXT_FIELD = "text"
 
@@ -89,10 +94,21 @@ class ProgressEvent:
     That is kept apart from the comment's absence because a recovery owes the
     retry the event that was RECORDED, and an unparseable record is reportable
     rather than something to fill in.
+
+    `author` and `recorded_at` are the comment's own two header fields, and they
+    are here because the payload cannot carry either: it is rendered before the
+    comment exists, while WHO committed a transition and WHEN is precisely what
+    an evidenced causal supersession must establish about the derivation it
+    supersedes. Both default to the empty string, so a comment found without
+    them is a DEGRADED read rather than an unparseable event — an absent author
+    is simply not one of the reserved derivation actors, which is the fail-closed
+    answer.
     """
 
     operation_id: str
     payload: TransitionPayload | None
+    author: str = ""
+    recorded_at: str = ""
 
 
 def chain_cache_metadata(
@@ -215,7 +231,12 @@ def _parse_event(*, text: str) -> ProgressEvent | None:
         return None
     payload_text = _labelled_value(text=text, label=_PAYLOAD_LABEL)
     payload = None if payload_text is None else parse_payload(text=payload_text)
-    return ProgressEvent(operation_id=operation_id, payload=payload)
+    return ProgressEvent(
+        operation_id=operation_id,
+        payload=payload,
+        author=_labelled_value(text=text, label=_AUTHOR_LABEL) or "",
+        recorded_at=_labelled_value(text=text, label=_RECORDED_LABEL) or "",
+    )
 
 
 def _labelled_value(*, text: str, label: str) -> str | None:

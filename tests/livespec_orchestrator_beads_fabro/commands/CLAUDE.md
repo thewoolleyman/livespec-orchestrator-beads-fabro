@@ -121,6 +121,29 @@ Tests for the thin-transport command modules under
   control, without which a gate answering `None` unconditionally passes every
   absence in the module.
 
+- `test_plan_supersession.py` and `test_plan_supersession_evidence.py` — the two
+  modules of the evidenced causal supersession (`bd-ib-evrynu`). Scenario 211 is
+  bound at the integration tier by
+  `tests/integration/test_plan_misderived_supersession.py`, which drives
+  `set_next_action` over the real store; these cover the arms that tier cannot
+  REACH, and every one of them is a state in which a supersession would be
+  ADMITTED if the condition it grades were dropped. Three things to know before
+  editing. The PURE module's refusals are asserted on WHICH condition they
+  report, not merely that one fired: a reader told its carrier is closed, about
+  a supersession that also named the wrong epoch, fixes the carrier and meets the
+  same refusal again. Its closed-carrier parametrization must keep both
+  directions — closed BEFORE the derivation and closed SINCE have different
+  reasons and different remedies, and the three undatable shapes belong with the
+  first, which is the refusing arm. And the EVIDENCE module's load-bearing
+  fixture is the two-transition chain: an operation identity alone resolves a
+  real transition of the same plan, recorded by a real derivation actor, so an
+  identity-only match returns well-formed evidence for the wrong derivation —
+  the one failure in that module that produces no refusal at all. Its
+  status-less carrier record and its unresolvable connection are reached through
+  a read-only stand-in and one seam patch respectively, because a single-threaded
+  fixture reads one configuration file twice and gets one answer; each sits
+  beside a case that reaches the same read untouched.
+
 - `test_plan_next_action_admission.py` sits beside those too, on the WRITER's
   side of the same repository identity: a `repo` value the writer accepted could
   be one the reader can never resolve, which locked a plan for its whole budget

@@ -1995,6 +1995,47 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   unattended resume may take — with explicit null tracking so the unmet
   obligation stays in the progress history rather than being discharged by
   pointing elsewhere.
+- The EVIDENCED CAUSAL SUPERSESSION of `contracts.md` §"Required result, budget
+  and progress epoch" (`bd-ib-evrynu`, Scenario 211), split pure-from-impure the
+  usual way and reading bottom-up: `_plan_supersession` (PURE: the ratified
+  closed cause set, what one write must NAME, the evidence values and the whole
+  refusal ladder) → `_plan_supersession_evidence` (the three ledger readings the
+  `misderived` cause's verification needs) → `_plan_progress_unmet`'s
+  `superseded_decision`, reached from `_plan_progress_decision` and carried by
+  `_plan_tracked_write` as one more field of a sanctioned write. It is the ONE
+  write that may rename an unmet obligation, and the derivation gate above is
+  what stops new obligations needing it.
+  Six properties an editor must not invert. The REPLACEMENT inherits the
+  superseded obligation's original deadline and consumed handoff count unchanged
+  and consumes nothing, so the candidate's own budget is DISCARDED — a
+  supersession that adopted it is the laundering route the cause exists to
+  close, and the pointer it produced would be indistinguishable from a
+  legitimately advanced one. The EXPIRY RULES STILL BIND: the clause says a
+  supersession of an already expired obligation "remains subject to the expiry
+  rules above", so it is not a second route past a deadline. The cause set is
+  the RATIFIED three and what this build can VERIFY is one of them, so a cause
+  whose evidence it takes no reading for is refused under the clause's own rule
+  that a cause whose evidence does not verify must be refused — fail-closed in
+  the only direction available, since all three were refused before. The
+  REPLACEMENT must be the closure of the carrier the evidence names, because the
+  evidence for this arm IS a carrier and a replacement free to name anything
+  else makes it a verified footnote attached to an unrelated rename. A carrier
+  CLOSED when the derivation was recorded and one closed SINCE are two refusals
+  with two reasons — the first means the step could legitimately have been
+  taken, the second that the replacement is already satisfied — and every
+  UNDATABLE closure routes to the first, which is the arm that refuses. And the
+  deriving match is an identity AND an epoch: an identity alone resolves a real
+  transition of the same plan, recorded by a real derivation actor, that wrote
+  an obligation the supersession is not about.
+  `_plan_progress_outcome` and `_plan_progress_unmet` are the cohesion split
+  that made room for it, and the direction is one-way: the outcome leaf imports
+  nothing from the family, the unmet module owns every arm that DEFENDS a
+  standing obligation (the rename refusal, the expiry gate, the typed causal
+  recovery and the supersession), and `_plan_progress_decision` is left as the
+  DISPATCH plus the arms that ESTABLISH a budget. `_plan_write_identity` is the
+  pure retry-identity derivation, split off `_plan_tracked_write` for the same
+  pure-from-impure reason. None of the four leaves a re-export shim; callers
+  import from the module that owns the name.
 - `_plan_resume_reconcile.py` — the reconciliation half of the resume, split out
   of `_plan_resume` by cohesion once the durable progress check pushed that file
   past its size ceiling. `_plan_resume` keeps the TOP-LEVEL sequence (the
