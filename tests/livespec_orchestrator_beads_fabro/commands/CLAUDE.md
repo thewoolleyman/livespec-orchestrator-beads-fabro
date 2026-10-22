@@ -98,6 +98,29 @@ Tests for the thin-transport command modules under
   and a top-level import of an absent name dies at collection, proving only that
   the name is absent.
 
+- `test_plan_carrier_map_reader.py`, `test_plan_carrier_tenancy.py` and
+  `test_plan_carrier_gate.py` — the three modules of the carrier gate
+  (`bd-ib-evrynu`). The gate's end-to-end behaviour is bound at the integration
+  tier by `tests/integration/test_plan_resume_open_carrier_await.py`; these cover
+  what that tier cannot DISCRIMINATE, because several distinct readings all
+  produce a derived proof pointer there and so look identical from the resume's
+  own surface. Three things to know before editing. The reader module's cases are
+  mostly about what is NOT a carrier, because a scope-event body is made of list
+  lines from its first section onward — a reader collecting every `- ` line would
+  hand the resume a sentence of requirement prose as a work-item id, and the
+  resume would then wait on it. The tenancy module is filesystem-only and its
+  load-bearing case is the OVERLAPPING-PREFIX one, in the shape this family
+  actually has (`livespec-driver-codex` beside `livespec-driver-pi`): a
+  first-match scan over the manifest's own order gives one tenant's carriers to
+  the other, and the resulting obligation is well-formed, so the wrong answer
+  surfaces as an `unsatisfied` reading from a tenant that never held the item.
+  And the gate module's two discriminating cases pull in OPPOSITE directions — an
+  unplaceable carrier is passed over so the scan reaches the open carrier behind
+  it, while a carrier whose status cannot be READ is reported open — so neither
+  may be collapsed onto the other; its no-carrier-map case is the positive
+  control, without which a gate answering `None` unconditionally passes every
+  absence in the module.
+
 - `test_plan_next_action_admission.py` sits beside those too, on the WRITER's
   side of the same repository identity: a `repo` value the writer accepted could
   be one the reader can never resolve, which locked a plan for its whole budget

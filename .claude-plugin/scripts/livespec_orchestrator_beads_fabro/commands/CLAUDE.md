@@ -1954,6 +1954,36 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   "stop grading expiry". A twin committing in the window between that scan and
   the chain's own is still answered as a recovery, by the chain's guard, which is
   why `_persist`'s idempotent arm stays reachable rather than becoming dead.
+- The CARRIER GATE that stops a plan deriving a plan-level step while a carrier
+  of one of its assertions is still open (`bd-ib-evrynu`), split
+  pure-from-impure the usual way and reading bottom-up: `_plan_carrier_map`
+  (PURE: the `carriers:` block, written AND read — `last_carrier_map_carriers`
+  is the read half) → `_plan_carrier_tenancy` (which repository one carrier id
+  names, from each configured tenant's own create-prefix) →
+  `_plan_carrier_gate` (the first carrier that is not closed) →
+  `_plan_resume_advance`, the one caller. `_plan_ready_child` is the ledger
+  half of that advance, extracted so the carrier question and the child
+  question sit beside each other rather than one inside the other's module.
+  Six properties an editor must not invert. The gate sits BETWEEN the child
+  check and the plan-level leg: a ready child is the next step whatever the
+  carrier map says, and every plan-level leg asserts something about the WHOLE
+  Definition of Done, so asking the gate first holds a plan's own child behind a
+  sibling tenant's carrier and asking it afterwards asks it too late. The LATEST
+  carrier-map event governs and the events are never unioned, because such an
+  event RESTATES the whole map — a union makes a plan wait on work its own
+  maintainer re-assigned. A `plan-level proof` entry is NOT a work-item carrier
+  and is discharged by the plan's own proof record, so it is dropped at the
+  parse rather than refused downstream. The status comes from the SHARED result
+  reader and never from a local `bd` call, because every carrier of a real plan
+  is cross-tenant and a local call answers, for an id this tenant never minted,
+  that the carrier is not closed — a confident negative on the wrong
+  population. Only a `satisfied` reading establishes closure, so an
+  `unobservable` one is OPEN: the other way round makes an unreachable tenant
+  the cheapest route to a proof record asserting work nobody could look at. And
+  the carrier wait is the ONE derived step whose obligation names a repository
+  other than the plan's own, because its target is a work-item in the carrier's
+  tenant rather than the plan epic — the exception that proves `_carried`'s
+  rule rather than an exception to it.
 - `_plan_resume_reconcile.py` — the reconciliation half of the resume, split out
   of `_plan_resume` by cohesion once the durable progress check pushed that file
   past its size ceiling. `_plan_resume` keeps the TOP-LEVEL sequence (the
