@@ -915,6 +915,64 @@ def test_a_conflicting_rebase_is_aborted_with_no_side_chosen(tmp_path: Path) -> 
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
 
 
+def test_a_rebase_that_never_started_is_not_reported_as_a_refresh(tmp_path: Path) -> None:
+    """A rebase git REFUSED TO START is a failed refresh, not a completed one.
+
+    The regenerating-rebase wrapper has to notice when a rebase it resolved and
+    continued has FINISHED, and "no rebase in progress" is the only thing it can
+    observe -- but that is also what a rebase that never started looks like. An
+    unstaged change to a tracked file makes `git rebase` refuse outright
+    (`cannot rebase: You have unstaged changes`), exit non-zero, and create
+    neither `rebase-merge` nor `rebase-apply`, so the wrapper's FIRST loop pass
+    sees exactly that state with the head untouched.
+
+    THE FIXTURE IS A REAL REFUSAL rather than a stand-in for one, because the
+    condition under test is a property of git's own precondition checking: a
+    fixture that handed the wrapper a canned non-zero exit would assert only
+    that the wrapper can read a return code, and would say nothing about which
+    of the two states the absent rebase directory means.
+
+    EVERY ASSERTION IS SOMETHING A FALSE SUCCESS ALSO PRODUCES ONE OF, which is
+    why there are five. A wrapper reporting the refusal as a refresh ran the
+    plugin gate, the generated-record-file head check and the declared gate
+    against the UNREBASED head, performed a no-op leased push (HEAD still equals
+    the recorded remote, so origin's ref is unchanged either way), wrote the
+    changed marker and a new-base/new-head pair whose heads are identical, and
+    printed `LIVESPEC_PR_REFRESH_CHANGED` about a rebase that had not happened.
+    So the exit code, the sentinel, the ABSENCE of the changed sentinel, the
+    changed marker and -- the one the wrapper now actually asks about -- the
+    local head still not containing the advanced default are each asserted,
+    since origin's ref alone cannot tell the two worlds apart.
+
+    This is a REGRESSION control: before the regenerating wrapper existed the
+    same condition left `$conflicted` empty, fell through to `git rebase
+    --abort` and `LIVESPEC_PR_REFRESH_CONFLICT`, and exited 1.
+    """
+    box = _build(root=tmp_path)
+    before = box.remote_head(ref=_BRANCH)
+    published = box.local_head()
+    advanced = _advance_default(box=box)
+    _ = (box.clone / _OWNED_FILE).write_text("an unstaged edit\n", encoding="utf-8")
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_PR_REFRESH_CONFLICT" in result.stderr
+    assert "LIVESPEC_PR_REFRESH_CHANGED" not in result.stderr
+    assert box.remote_head(ref=_BRANCH) == before, "a refusal to rebase still published"
+    assert box.local_head() == published, "the refused rebase moved HEAD"
+    contains = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", advanced, "HEAD"],
+        cwd=box.clone,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_fixture_git_env(),
+    )
+    assert contains.returncode != 0, "the head contains the advanced default after a refused rebase"
+    assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
+
+
 def test_a_failing_post_rebase_gate_pushes_nothing(tmp_path: Path) -> None:
     """The gate is a PRECONDITION of the push, not a report alongside it.
 
