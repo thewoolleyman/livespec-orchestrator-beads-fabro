@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.231.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.230.4...v0.231.0) (2026-10-22)
+
+
+### Features
+
+* add the read-only sandbox-images subcommand over the enumerated repositories ([5c7d832](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5c7d832f1d0900944314ce54eafd71a2443207cb))
+* discover the host-wide executing plugin builds for the image enumeration ([96708a2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/96708a24596b2aaa73efd0b14bdcf6baf0e90351))
+* report an unreadable sandbox image source without truncating the rest ([2f7723c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2f7723c9b9efb3ae52c17d28a123a9c93f9f916a))
+* resolve one repository's sandbox image sources through dispatch seams ([682d2a0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/682d2a0514e9972f8e01bc5395740875d654fe9b))
+
+
+### Bug Fixes
+
+* report a committed run config with no build executing ([6873acf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6873acf485e0311c2e91fe40684d531c12ae74c7))
+
 ## [0.230.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.230.3...v0.230.4) (2026-10-22)
 
 
