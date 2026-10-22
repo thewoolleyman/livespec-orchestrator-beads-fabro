@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.232.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.231.4...v0.232.0) (2026-10-22)
+
+
+### Features
+
+* **dispatcher:** correlate ACP selections to dispatches ([287cfd6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/287cfd625bf40269294ec65990b1cb4801b4be61))
+* **dispatcher:** derive fallback warnings from selection records ([9274d74](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9274d74af735537f31804ad5d972ef3dbad95ea6))
+* **dispatcher:** reconcile selected fallback outcomes ([879d21d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/879d21dbd110385aa797be3dd1db5216f47e019c))
+
+
+### Bug Fixes
+
+* **dispatcher:** bound the selection replay set ([d268447](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d26844711806abd760602bf7927c0a05142fa139))
+
 ## [0.231.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.231.3...v0.231.4) (2026-10-22)
 
 
