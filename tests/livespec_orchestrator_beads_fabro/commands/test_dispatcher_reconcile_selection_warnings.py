@@ -82,6 +82,19 @@ _WARNED_AT = "2026-10-22T08:00:00Z"
 _BEFORE_WARNING = "2026-10-22T07:00:00Z"
 _AFTER_WARNING = "2026-10-22T09:00:00Z"
 _GENERATION = "primary-1"
+# A stamp from years before the newest one, which is outside any bound this lane
+# could reasonably carry. It is deliberately not expressed as the window
+# constant: a case reading that constant passes for whatever the constant says,
+# including a window so wide that the set it bounds is still the whole journal.
+_LONG_PAST = "2024-01-01T00:00:00Z"
+# A stamp time that is a non-empty string and still not an instant, which is the
+# other way a journaled `at` fails to read -- the first being no string at all.
+_UNDATEABLE = "not-an-instant"
+# How many passes the bounded-retry case drives. It must exceed whatever ceiling
+# the lane carries, because the claim is that the appends STOP; a count equal to
+# the ceiling cannot tell a bound from an unbounded retry.
+_BOUNDED_RETRY_PASSES = 40
+_STALE_RUN = "01STALE"
 
 
 @dataclass(kw_only=True)
@@ -202,6 +215,18 @@ def _standing_warning(
         "full_chain": full_chain,
         "event_id": "selection:01EARLIER:selection-0",
         "work_item_id": _ITEM,
+    }
+
+
+def _unavailable(*, run_id: str, at: str = _WARNED_AT) -> dict[str, Any]:
+    """One earlier pass's unavailable record, as `_replay_one_run` appended it."""
+    return {
+        "at": at,
+        "stage": _UNAVAILABLE_STAGE,
+        "work_item_id": _ITEM,
+        "run_id": run_id,
+        "factory_name": _HP.name,
+        "factory_server_url": _HP.server,
     }
 
 
@@ -620,6 +645,133 @@ def test_a_replaced_primary_retires_its_warning_as_superseded(tmp_path: Path) ->
 
     assert _stages_written(journal_path=journal_path).count(_SUPERSEDED_STAGE) == 1
     assert _fact_ids(repo=repo, journal_path=journal_path) == []
+
+
+def test_a_stamp_older_than_the_replay_window_is_not_replayed(tmp_path: Path) -> None:
+    """The replay set is bounded by the stamp's own journal time.
+
+    Every output of this lane is a journal append and the journal is the file
+    the lane re-reads on every pass, so a set that grew with the repository's
+    LIFETIME dispatch count would spend one `fabro inspect` per historical run
+    for ever and feed its own growth. The stale run here is given a readable
+    engine record and a non-primary selection, so a build that still replayed
+    it would mint a SECOND warning rather than merely spending a read: the
+    wrong answer is observable at the attention lane and not only at the port.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_LONG_PAST, dispatch_id="dispatch-old", index=1, identity="selection-0"),
+            _run_stamp(dispatch_id="dispatch-old", run_id=_STALE_RUN, at=_LONG_PAST),
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+        ),
+    )
+    runner = _Runner(inspect_by_run={_FALLBACK_RUN: _stages(), _STALE_RUN: _stages()})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert [call[2] for call in runner.calls if call[1] == "inspect"] == [_FALLBACK_RUN]
+    written = _stages_written(journal_path=journal_path)
+    assert written.count(_WARNING_STAGE) == 1
+    assert _UNAVAILABLE_STAGE not in written
+
+
+def test_a_stamp_whose_journal_time_cannot_be_read_is_not_replayed(tmp_path: Path) -> None:
+    """A stamp the window cannot PLACE is passed over, not carried for ever.
+
+    Both ways a journaled `at` fails to read are here, because they reach the
+    pass-over through different arms and each one alone leaves the other able to
+    carry a record no bound can measure. Neither run is asked for, so the
+    absence is observable at the port as well as at the warning the readable
+    engine record would otherwise have minted.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            {**_run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN), "at": None},
+            {**_run_stamp(dispatch_id="dispatch-2", run_id=_STALE_RUN), "at": _UNDATEABLE},
+        ),
+    )
+    runner = _Runner(inspect_by_run={_FALLBACK_RUN: _stages(), _STALE_RUN: _stages()})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    written = _stages_written(journal_path=journal_path)
+    assert "inspect" not in [call[1] for call in runner.calls]
+    assert _WARNING_STAGE not in written
+    assert _UNAVAILABLE_STAGE not in written
+
+
+def test_the_unavailable_retry_is_bounded_rather_than_asked_for_ever(tmp_path: Path) -> None:
+    """A run nothing can read is retried, and then stops being asked.
+
+    Factory run storage is pruned, so every historical run eventually becomes
+    PERMANENTLY unreadable; the clause requires the unavailable reading to be
+    retried, and a retry with no ceiling appends one record per run per pass for
+    the rest of the journal's life. The assertions are two-sided on purpose: the
+    appends must stop, and they must not stop at one, because "ask once" would
+    satisfy a ceiling assertion while retiring the retry the clause ratifies.
+    The pass count is read off no constant, so the case fails for an unbounded
+    retry whatever ceiling the lane later chooses.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _standing_warning(),
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+        ),
+    )
+    runner = _Runner()
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    for _ in range(_BOUNDED_RETRY_PASSES):
+        _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    unavailable = _stages_written(journal_path=journal_path).count(_UNAVAILABLE_STAGE)
+    assert 1 < unavailable < _BOUNDED_RETRY_PASSES
+    assert [call[1] for call in runner.calls].count("inspect") == unavailable
+    assert _fact_ids(repo=tmp_path, journal_path=journal_path) == [_FACT_ID]
+
+
+def test_the_retry_ceiling_is_read_from_this_lane_s_own_journaled_records(
+    tmp_path: Path,
+) -> None:
+    """The prior attempts are the JOURNAL's, not a counter this process accumulated.
+
+    The case above drives many passes through ONE `ReconcileInputs`, so a lane
+    holding a per-process tally would satisfy it exactly as a lane reading the
+    journal does — and a per-process tally is no bound at all, because the timer
+    starts a fresh process every ten minutes. Here the attempts are already ON
+    the journal and this process takes its FIRST pass, so nothing but a read of
+    those records can produce the pass-over.
+
+    The seeded count is the other case's pass count, which is what keeps the two
+    consistent: a ceiling above it would red them both rather than leaving this
+    one quietly agreeing with a number nobody rechecks.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _standing_warning(),
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+            *(_unavailable(run_id=_FALLBACK_RUN) for _ in range(_BOUNDED_RETRY_PASSES)),
+        ),
+    )
+    runner = _Runner()
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    written = _stages_written(journal_path=journal_path)
+    assert "inspect" not in [call[1] for call in runner.calls]
+    assert written.count(_UNAVAILABLE_STAGE) == _BOUNDED_RETRY_PASSES
+    assert _fact_ids(repo=tmp_path, journal_path=journal_path) == [_FACT_ID]
 
 
 def test_a_fallback_only_edit_leaves_the_warning_standing(tmp_path: Path) -> None:
