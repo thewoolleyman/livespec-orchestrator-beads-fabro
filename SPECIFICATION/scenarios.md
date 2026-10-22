@@ -7996,6 +7996,20 @@ Feature: A wrong obligation can be retired without letting a rename evade expiry
     When set_next_action carries a supersession with cause misderived
     Then the write is refused and the obligation is unchanged
 
+  Scenario: A plan-level step derived while a carrier was open is superseded by an await on that carrier
+    Given an unmet plan obligation written by the plan-resume actor in a recorded epoch transition
+    And it names a proof step while a work-item carrier named by the epic's latest carrier-map scope event was not closed at that transition
+    And that carrier is still not closed when the supersession is written
+    When set_next_action carries a supersession with cause misderived naming that operation identity and, as the replacement result, an await whose required result is that carrier's item_status closed
+    Then a plan-progress-event of kind supersession is recorded before the pointer changes
+    And the replacement result carries the superseded obligation's original deadline and consumed handoff count
+
+  Scenario: A plan-level step derived after its carriers closed is not misderived
+    Given an unmet plan obligation written by the plan-resume actor naming a proof step
+    And every work-item carrier named by the epic's latest carrier-map scope event was closed when that transition was recorded
+    When set_next_action carries a supersession with cause misderived
+    Then the write is refused and the obligation is unchanged
+
   Scenario: A supersession to an already satisfied result is refused
     Given an unmet plan obligation that qualifies for supersession
     When the supersession names a replacement result that is already satisfied
