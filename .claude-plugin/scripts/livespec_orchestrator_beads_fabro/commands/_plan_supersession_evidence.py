@@ -155,7 +155,11 @@ def _deriving(
     for event in read_progress_events(client=client, epic_id=epic_id):
         if event.operation_id != operation_id or event.payload is None:
             continue
-        return DerivingTransition(author=event.author, recorded_at=event.recorded_at)
+        return DerivingTransition(
+            author=event.author,
+            recorded_at=event.recorded_at,
+            required_result=event.payload.authority.required_result,
+        )
     return None
 
 
