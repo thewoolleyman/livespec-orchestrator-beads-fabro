@@ -599,6 +599,29 @@ Tests for the thin-transport command modules under
   no-baseline case asserts ZERO git reads, which is the only observation that
   distinguishes "judged nothing" from "judged the whole branch".
 
+- The three `test_spec_tree_condensation_*` modules cover the condensed spec
+  tree a spec-stated judgement is taken against (`bd-ib-a2bfp3`), split by what
+  each one can FAIL on. `..._prompt_ceiling` measures the prompt at the
+  `run_model` SEAM rather than over the condensation's own return value,
+  because the prompt is rendered inside the vendored `judge` by a renderer this
+  repository does not own — and its CONTROL is the same measurement through the
+  unreduced tree, without which the assertion passes for every repository whose
+  spec tree is small, which is every repository but this one.
+  `..._heading_inventory` carries assertion 2, and its discriminating case
+  cites the clause the retrieval did NOT select: a clause the retrieval DID
+  select is carried whole whatever the condensation does with the rest, so a
+  case that only ever cites a selected clause passes against a condensation
+  that drops every unselected one entirely. Its real-tree case is universally
+  quantified over every H2 heading the five spec files carry, with the same
+  citation against the UNREDUCED tree as the control that pins the module's own
+  heading regex to the one the shared judgement validates against; and its
+  invented-heading negative is what tells "carries every real heading" apart
+  from "carries everything". `..._budget` owns the degenerate trees a real tree
+  never has, and its ordering is counted in clause BODIES WITHHELD and never in
+  characters — the marker standing in for a body is longer than a short body,
+  so a tighter budget legitimately yields a LONGER tree and a character count
+  would report the design working as the design failing.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr

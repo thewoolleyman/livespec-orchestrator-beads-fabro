@@ -11,15 +11,33 @@ is the same defect paid for rather than refused.
 
 The renderer lives upstream and is vendored here, so this module condenses the
 TREE the shared judgement is handed rather than changing how that tree is
-rendered: one block per path, exactly as before, carrying the clauses a cheap
-lexical retrieval selects for the statement under judgement.
+rendered: one block per path, exactly as before, carrying every H2 heading the
+file carries and the full body of only the clauses a cheap lexical retrieval
+selects for the statement under judgement.
 
-THREE PROPERTIES AN EDITOR MUST NOT INVERT.
+FIVE PROPERTIES AN EDITOR MUST NOT INVERT.
+
+EVERY H2 HEADING SURVIVES, VERBATIM, WHETHER OR NOT ITS BODY DOES, and that is
+the whole reason an unselected clause keeps its heading line rather than being
+dropped. `judge` derives the citable clause set from the TREE IT IS HANDED and
+REFUSES a `stated_by` naming a heading that tree does not carry — so a
+condensation that dropped headings would turn a correct `stated` verdict into
+an unreadable response, which every consumer reports as an item it could not
+judge. That failure is silent in the expensive direction: the scan's own output
+says the judgement could not be read, never that the condensation removed the
+clause the model was right to cite.
+
+THE ELISION IS IN-BAND AND SELF-DESCRIBING. A heading whose body is absent, with
+nothing saying so, invites the model to report `unstated` for a clause it was
+simply not shown. The marker says the heading exists and its text was withheld,
+so an unselected clause reads as unexamined rather than as absent.
 
 THE SPLIT USES THE SAME HEADING PATTERN THE SHARED JUDGEMENT USES, because the
-clause set this module reasons about and the clause set that module validates a
+heading set this module preserves and the heading set that module validates a
 verdict against must be the same set. The pattern is restated here rather than
-imported, since the upstream name is private.
+imported, since the upstream name is private; the heading-inventory test is the
+control that the two still agree, taken THROUGH `judge` over this repository's
+real tree rather than by comparing two regexes.
 
 THE BUDGET IS SPENT ON AS MUCH SPEC TEXT AS FITS, in relevance order, rather
 than on a fixed number of clauses. A fixed count is wrong in both directions at
@@ -53,6 +71,7 @@ if TYPE_CHECKING:
     from returns.result import Result
 
 __all__: list[str] = [
+    "ELIDED_BODY_MARKER",
     "PROMPT_CHARACTER_CEILING",
     "condensed_spec_tree",
     "judge_within_ceiling",
@@ -62,6 +81,14 @@ __all__: list[str] = [
 # `Input exceeds the maximum length of 1048576 characters (input_too_large,
 # actual_chars 1360329)`.
 PROMPT_CHARACTER_CEILING = 1_048_576
+
+# What stands where an unselected clause's body would be. It NAMES the omission
+# rather than leaving a bare heading, so the model reads the clause as one it
+# was not shown instead of one the specification does not carry.
+ELIDED_BODY_MARKER = (
+    "(body omitted from this prompt: this clause was not selected as a candidate "
+    "for this judgement, so its heading is listed but its text is not shown)"
+)
 
 # Headroom between the budget this module spends and the ceiling it is bounded
 # by. The template overhead and the statement are measured exactly; the block
@@ -90,15 +117,17 @@ _TERM = re.compile(r"[a-z0-9_]{3,}")
 
 @dataclass(frozen=True, kw_only=True)
 class _Section:
-    """One clause of one spec file, as the file carries it.
+    """One clause of one spec file, in both the forms the condensation may use.
 
     `full` is the clause exactly as the file carries it, heading line included,
     so concatenating every section's `full` reproduces the file byte for byte.
+    `elided` is the same clause reduced to its heading line and the marker.
     """
 
     path: str
     index: int
     full: str
+    elided: str
     terms: frozenset[str]
 
     @property
@@ -115,9 +144,8 @@ def condensed_spec_tree(
 ) -> dict[str, str]:
     """`spec_tree` reduced to a tree whose rendered prompt fits under `ceiling`.
 
-    Every path of `spec_tree` is present in the result, carrying the clauses the
-    retrieval selected for `statement` and as many of the rest as the budget
-    left room for.
+    Every path of `spec_tree` is present in the result and carries every H2
+    heading it carried; only the bodies of unselected clauses are withheld.
     """
     sections = [
         section
@@ -134,9 +162,10 @@ def condensed_spec_tree(
     )
     chosen: set[tuple[str, int]] = set()
     for section in _relevance_order(sections=sections, statement=statement):
-        if len(section.full) <= remaining:
+        cost = len(section.full) - len(section.elided)
+        if cost <= remaining:
             chosen.add(section.key)
-            remaining -= len(section.full)
+            remaining -= cost
     return _condensed(sections=sections, chosen=chosen, paths=spec_tree)
 
 
@@ -167,18 +196,30 @@ def _sections_of(*, path: str, text: str) -> list[_Section]:
     starts = [match.start() for match in matches]
     ends = [*starts[1:], len(text)]
     preamble = text[: starts[0]] if starts else text
-    sections = [_section(path=path, index=0, full=preamble)] if preamble else []
-    for ordinal, (start, end) in enumerate(zip(starts, ends, strict=True)):
-        sections.append(_section(path=path, index=ordinal + 1, full=text[start:end]))
+    sections = (
+        [_section(path=path, index=0, full=preamble, elided=f"{ELIDED_BODY_MARKER}\n")]
+        if preamble
+        else []
+    )
+    for ordinal, (match, end) in enumerate(zip(matches, ends, strict=True)):
+        sections.append(
+            _section(
+                path=path,
+                index=ordinal + 1,
+                full=text[match.start() : end],
+                elided=f"{match.group()}\n{ELIDED_BODY_MARKER}\n",
+            )
+        )
     return sections
 
 
-def _section(*, path: str, index: int, full: str) -> _Section:
+def _section(*, path: str, index: int, full: str, elided: str) -> _Section:
     """One section with its retrieval terms taken from the text it carries."""
     return _Section(
         path=path,
         index=index,
         full=full,
+        elided=elided,
         terms=frozenset(_TERM.findall(full.casefold())),
     )
 
@@ -214,11 +255,10 @@ def _condensed(
     chosen: Collection[tuple[str, int]],
     paths: Collection[str],
 ) -> dict[str, str]:
-    """The tree these sections render into, carrying only the `chosen` clauses."""
+    """The tree these sections render into, with only `chosen` bodies carried."""
     parts: dict[str, list[str]] = {path: [] for path in paths}
     for section in sections:
-        if section.key in chosen:
-            parts[section.path].append(section.full)
+        parts[section.path].append(section.full if section.key in chosen else section.elided)
     return {path: "".join(pieces) for path, pieces in parts.items()}
 
 
