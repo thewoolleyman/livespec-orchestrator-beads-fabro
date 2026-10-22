@@ -52,12 +52,16 @@ from livespec_orchestrator_beads_fabro.commands._acp_fallback_warning_records im
     MODEL_FALLBACK_CLEARED_STAGE,
     MODEL_FALLBACK_STAGE,
     MODEL_FALLBACK_SUPERSEDED_STAGE,
+    MODEL_FALLBACK_WARNING_STAGES,
     ModelFallbackWarning,
     parse_model_fallback_warning,
     warning_id,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_hold_records import parse_hold_instant
 from livespec_orchestrator_beads_fabro.commands._acp_journal_records import journal_records
+from livespec_orchestrator_beads_fabro.commands._fabro_port_node_outcomes import (
+    fabro_stage_node,
+)
 
 __all__: list[str] = [
     "AcpPrimaryAttempt",
@@ -125,7 +129,7 @@ def read_model_fallback_warnings(*, journal_path: Path | None) -> ModelFallbackW
         if stage in _RETIREMENT_STAGES:
             retired.update(_retired_ids(record=record))
             continue
-        if stage != MODEL_FALLBACK_STAGE:
+        if stage not in MODEL_FALLBACK_WARNING_STAGES:
             continue
         parsed = parse_model_fallback_warning(record=record)
         if isinstance(parsed, str):
@@ -287,9 +291,10 @@ def selection_warning_records(
     choices = selection.get("selections")
     if occurred_at is None or not isinstance(choices, Mapping):
         return ()
+    normalized = _outcomes_by_node(outcomes=outcomes)
     warnings: list[dict[str, object]] = []
     for node, raw in cast("Mapping[object, object]", choices).items():
-        if not isinstance(node, str) or node not in outcomes or not isinstance(raw, Mapping):
+        if not isinstance(node, str) or node not in normalized or not isinstance(raw, Mapping):
             continue
         warning = _selection_warning(
             node=node,
@@ -380,6 +385,19 @@ def _selection_warning(
         "event_id": event_id,
         "work_item_id": work_item_id,
     }
+
+
+def _outcomes_by_node(
+    *, outcomes: Mapping[str, Mapping[str, object]]
+) -> Mapping[str, Mapping[str, object]]:
+    """Normalize one engine outcome map to configured node identities.
+
+    Petri records stage outcomes as ``<node>@<visit>``.  The port deliberately
+    preserves that key so visit-aware consumers retain provenance; this ledger
+    asks instead whether the configured node executed, and therefore divides
+    keys through the port's shared projection before matching selections.
+    """
+    return {fabro_stage_node(stage=stage): outcome for stage, outcome in outcomes.items()}
 
 
 def _text(*, value: object) -> str | None:

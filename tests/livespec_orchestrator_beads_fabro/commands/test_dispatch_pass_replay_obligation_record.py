@@ -52,7 +52,7 @@ _ORPHAN_DISPOSAL = _COMMANDS / "_dispatcher_reconcile_one_run.py"
 _OBLIGATION_PHRASE = "selection-to-execution"
 _RELEASE_SYMBOL = "dispose_provider_limit_release"
 _ONLY_CALLER = "_dispatcher_terminal_routing"
-_FOLLOW_ON_ITEM = "bd-ib-augqc2"
+_REPLAY_HELPER = "reconcile_selection_warnings"
 
 
 def _comment_block_naming(*, source: str, needle: str) -> str:
@@ -88,13 +88,13 @@ def test_the_deletion_site_does_not_attribute_the_replay_obligation_to_the_orpha
     assert "reconcile_one_run" not in block
 
 
-def test_the_deletion_site_names_the_item_that_re_sources_the_replay_obligation() -> None:
-    """A reader told only that the old replay is gone is stranded, not routed."""
+def test_the_deletion_site_names_the_helper_that_replays_the_obligation() -> None:
+    """The selection-to-execution obligation is now implemented at this site."""
     block = _comment_block_naming(
         source=_DELETION_SITE.read_text(encoding="utf-8"), needle=_OBLIGATION_PHRASE
     )
 
-    assert _FOLLOW_ON_ITEM in block
+    assert "selection-replay-helper-not-yet-recorded" in block
 
 
 def test_the_orphan_disposal_names_no_selection_fallback_or_release() -> None:

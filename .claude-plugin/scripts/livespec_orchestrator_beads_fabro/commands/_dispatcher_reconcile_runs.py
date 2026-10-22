@@ -53,6 +53,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_acp_selection import (
+    reconcile_selection_warnings,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_one_run import (
     reconcile_one_run,
 )
@@ -264,20 +267,11 @@ def _reconcile_one_factory(
         grace_seconds=inputs.blocked_run_grace_seconds,
         now_epoch=inputs.now_epoch,
     )
-    # NO EVENT-PROJECTION REPLAY RIDES THIS SURVEY. The replay that stood here
-    # re-read each unresolved projection-failure fact's run through
-    # `fabro events`; v127 retired both the fact and the projection, so there
-    # is nothing left to replay and nothing a replay could learn. What v127
-    # SEPARATELY requires -- replaying selection-to-execution observation
-    # idempotently, keyed by factory, run, node attempt and selection identity
-    # -- is NOT discharged here, and nothing this survey calls performs it. The
-    # orphan disposal below names no selection, fallback or release at all, and
-    # the provider-limit release leg is reached only from
-    # `_dispatcher_terminal_routing`, on the DISPATCH terminal path this survey
-    # never enters. Re-sourcing that replay from the authoritative
-    # `acp-node-selection` and `provider-limit-release` records is the
-    # follow-on item `bd-ib-augqc2`, the other half of the same v127 proposal.
-    # Do NOT read this deletion as evidence the obligation is met.
+    # The selection-to-execution replay reads the terminal outcomes from THIS factory's
+    # bound port through `reconcile_selection_warnings`. It intentionally replaces the retired engine-event replay:
+    # a selection says what the Dispatcher rendered, while the run outcomes say
+    # what actually executed, and their stamped dispatch id is the stable join.
+    reconcile_selection_warnings(inputs=inputs, factory=factory, port=port)
     for orphan in classify_orphans(inventory=inventory, grace=grace):
         if inputs.only_work_item_id is not None and orphan.work_item_id != inputs.only_work_item_id:
             continue

@@ -48,6 +48,7 @@ __all__: list[str] = [
     "MODEL_FALLBACK_SCHEMA_VERSION",
     "MODEL_FALLBACK_STAGE",
     "MODEL_FALLBACK_SUPERSEDED_STAGE",
+    "MODEL_FALLBACK_WARNING_STAGES",
     "ModelFallbackWarning",
     "model_fallback_warning_record",
     "parse_model_fallback_warning",
@@ -56,7 +57,11 @@ __all__: list[str] = [
 
 MODEL_FALLBACK_SCHEMA_VERSION = 1
 
-MODEL_FALLBACK_STAGE = "acp-model-fallback-observed"
+# Selection-derived observations have their own explicit stage.  The prior
+# engine-projection spelling remains in `MODEL_FALLBACK_WARNING_STAGES` so old
+# fallback audit records retain their v1 meaning when the ledger is replayed.
+MODEL_FALLBACK_STAGE = "acp-model-fallback-warning"
+MODEL_FALLBACK_WARNING_STAGES = frozenset({MODEL_FALLBACK_STAGE, "acp-model-fallback-observed"})
 
 # The two retirement stages, kept apart because they assert different
 # things: CLEARED says the primary demonstrably works again, SUPERSEDED
