@@ -59,12 +59,39 @@ record has no version an operator can cite independently of the field being
 observed, so the record id and the observed status together are the evidence —
 which is also what makes a satisfied and an unsatisfied status observation
 comparable: the two differ in exactly the field under test.
+
+AND THE STATUS COMPARISON GOES THROUGH THE ADAPTER, NEVER BY STRING EQUALITY.
+The two sides are written in two vocabularies. An obligation names a WORK-ITEM
+LIFECYCLE status, whose terminal name is `done`; the record carries the stored
+BEADS-NATIVE status, which the work-item beads-issue mapping of
+`SPECIFICATION/contracts.md` spells `closed` for exactly that lifecycle state.
+Comparing the two spellings directly therefore reported an item that had been
+closed for hours as standing somewhere else, so an obligation naming `done` was
+unsatisfiable for the rest of its plan's budget — and the fault did not look
+like one, because every surface reported a well-formed `unsatisfied` reading
+quoting the real stored status. Measured 2026-10-21 on plan epic
+`bd-ib-jxvgq5`, whose chain obligation named `item_status bd-ib-rszkjc status
+done` while the ledger held that item at `closed`.
+
+Both sides are normalized onto the LIFECYCLE vocabulary rather than the target
+alone being mapped onto the stored one, and the symmetry is the point: this
+tenant holds obligations in both spellings — `_plan_resume_advance` derives its
+own with the native `closed` literal while a hand-authored plan obligation names
+`done` — so normalizing both makes "either vocabulary reaches the same verdict"
+a property of the comparison rather than a special case that has to be kept in
+step with whichever side is thought to be canonical.
+
+The EVIDENCE and the DETAIL still quote the status the ledger STORES, unmapped.
+The mapping decides how two names are compared; it is not a rewriting of what
+was observed, and an operator told an item stands at a status the store does not
+hold has been pointed at the wrong record.
 """
 
 from __future__ import annotations
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro._store_statuses import livespec_status_for
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     SOURCE_LEDGER,
     ResultObservation,
@@ -154,7 +181,7 @@ def observe_item_status(
                 " so it is evidence of nothing about where the item stands"
             ),
         )
-    if status != target.status:
+    if livespec_status_for(status=status) != livespec_status_for(status=target.status):
         return unsatisfied(
             repo=repository.name,
             target=target.identity,
@@ -172,7 +199,10 @@ def observe_item_status(
         source=SOURCE_LEDGER,
         now=now,
         evidence=f"ledger record {target.item_id} at status {status}",
-        detail=f"the ledger reports {target.item_id} at the expected status {status}",
+        detail=(
+            f"the ledger reports {target.item_id} at status {status}, which is the"
+            f" expected {target.status}"
+        ),
     )
 
 

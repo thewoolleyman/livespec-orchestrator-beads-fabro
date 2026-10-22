@@ -199,6 +199,84 @@ def test_a_different_status_is_unsatisfied_and_reports_the_status_it_read(
     assert "not the expected done" in observation.detail
 
 
+def test_a_done_target_is_satisfied_by_the_beads_native_closed_status(
+    tmp_path: Path,
+) -> None:
+    """The lifecycle terminal name reaches the status the store actually holds.
+
+    The work-item beads-issue mapping of `SPECIFICATION/contracts.md` maps
+    lifecycle `done` onto the beads-native `closed` through the adapter, and an
+    obligation is written in the LIFECYCLE vocabulary — so a reader comparing the
+    target's spelling to the stored one by string equality can never satisfy a
+    correctly written `done` obligation, however long the item has been closed.
+
+    The evidence still names the status the ledger STORES, because that is the
+    field the reader observed; the mapping is how the two are compared, not a
+    rewriting of what was read.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    _seed(repository=repository, status="closed")
+    observation = observe_item_status(
+        repository=repository,
+        target=ItemStatusTarget(item_id=_ITEM_ID, status="done"),
+        now=_NOW,
+    )
+    assert observation.status == OBSERVATION_SATISFIED
+    assert observation.source == SOURCE_LEDGER
+    assert observation.evidence == f"ledger record {_ITEM_ID} at status closed"
+
+
+def test_either_status_vocabulary_reaches_one_verdict_for_one_closed_item(
+    tmp_path: Path,
+) -> None:
+    """A `closed` target and a `done` target are one obligation, read one way.
+
+    The two vocabularies are both live in this tenant: `_plan_resume_advance`
+    derives its own obligations with the beads-native `closed` literal, while a
+    hand-authored plan obligation names the lifecycle `done`. The two readings are
+    asserted EQUAL rather than each asserted satisfied, which is the control a
+    per-vocabulary special case would fail: a reader that satisfied one spelling
+    alone still discharges half the obligations this plan store holds.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    _seed(repository=repository, status="closed")
+    readings = tuple(
+        observe_item_status(
+            repository=repository,
+            target=ItemStatusTarget(item_id=_ITEM_ID, status=spelling),
+            now=_NOW,
+        )
+        for spelling in ("done", "closed")
+    )
+    assert {one.status for one in readings} == {OBSERVATION_SATISFIED}
+    assert {one.evidence for one in readings} == {f"ledger record {_ITEM_ID} at status closed"}
+
+
+@pytest.mark.parametrize("stored", ["active", "acceptance"])
+def test_a_done_target_is_unsatisfied_for_an_item_stored_anywhere_else(
+    tmp_path: Path, stored: str
+) -> None:
+    """The control on the mapping: it maps ONE name and satisfies nothing else.
+
+    A reader repaired by satisfying every `done` obligation outright would pass
+    both cases above while discharging every plan obligation in the tenant the
+    instant it was written. This arm is the confident negative that forbids it,
+    and it names the STORED status so an operator reading the refusal is told
+    where the item actually stands rather than only that it is not closed.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    _seed(repository=repository, status=stored)
+    observation = observe_item_status(
+        repository=repository,
+        target=ItemStatusTarget(item_id=_ITEM_ID, status="done"),
+        now=_NOW,
+    )
+    assert observation.status == OBSERVATION_UNSATISFIED
+    assert observation.source == SOURCE_LEDGER
+    assert observation.evidence == f"ledger record {_ITEM_ID} at status {stored}"
+    assert stored in observation.detail
+
+
 def test_an_unreadable_connection_makes_the_status_read_unobservable(
     tmp_path: Path,
 ) -> None:
