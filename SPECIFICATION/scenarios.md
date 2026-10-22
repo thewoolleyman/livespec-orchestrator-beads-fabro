@@ -8980,3 +8980,82 @@ Feature: A Definition of Done passed before dispatch is graded in-run by the sam
     And the item carries one judgement-record comment with the same facts
     And the item rests at blocked with blocked_reason needs-human exactly as any dod_gate refusal rests it
 ```
+
+## Scenario 240 — A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled
+
+```gherkin
+Feature: A judge that flips on unchanged input cannot flip a recorded verdict
+  As the operator of a factory
+  I want the first verdict on a Definition of Done to stand until its text or rubric changes
+  So that relaunching an item never re-rolls the judgement of unchanged bytes
+
+  Scenario Outline: A host taking reuses a recorded host verdict without running any judge
+    Given an item carrying a host record written by the <earlier> taking for its current subject digest and rubric digest
+    When the <later> taking judges the item
+    Then it returns that record's outcome and names the record as reused
+    And no judge or candidate is started
+    And no record is appended
+
+    Examples:
+      | earlier              | later                |
+      | repository preflight | pre-dispatch         |
+      | pre-admission        | repository preflight |
+      | pre-dispatch         | pre-dispatch         |
+
+  Scenario: Recording a verdict does not change the subject it was taken on
+    Given an item with no record for its current digests
+    When the repository preflight judges the item and appends its record
+    Then the subject digest the pre-dispatch judgement computes next equals the digest the preflight record carries
+    And the goal the Dispatcher renders for the node omits the preflight record
+
+  Scenario: Reuse selects the earliest record among those matching the current digests
+    Given an item whose cache-eligible records, all under one rubric digest, carry subject digest A, then subject digest B, then subject digest A again
+    When the pre-dispatch judgement judges the item while its current subject digest is B
+    Then it reuses the record carrying digest B
+    When the item's subject is restored so its current subject digest is A and the pre-dispatch judgement judges it again
+    Then it reuses the first record carrying digest A, not the later one
+
+  Scenario: A candidate that cannot run leaves no binding verdict
+    Given an item with no cache-eligible record for its current digests
+    When the repository preflight runs two candidates and the second times out
+    Then the preflight exits with code 2 and returns no verdict
+    And the item carries one did-not-run record naming the second candidate and the timeout
+    When the repository preflight runs again on the same digests and both candidates return verdicts
+    Then the candidates are started rather than the did-not-run record being reused
+    And the record this run appends answers every later host taking on those digests
+
+  Scenario: A preflight chain is one taking whose mixed candidate outcomes are recorded and journaled
+    Given an item with no record for its current digests
+    When the repository preflight runs two candidates and the first passes while the second refuses
+    Then the item carries one record naming the preflight as refusing, with both candidates and their outcomes
+    And the dispatch journal carries one dod-judgement-disagreement row naming the two candidates
+    And a later host taking on the same digests returns the refusal without running any candidate
+
+  Scenario: A changed subject takes a fresh judgement
+    Given an item whose host record refused it
+    And the item's Definition of Done section has since been edited
+    When the pre-dispatch judgement judges the item
+    Then a judge is started against the new subject
+    And one new record carries the new subject digest
+
+  Scenario Outline: Opposite outcomes on identical digests are journaled once, whichever takings produced them
+    Given an item whose records include a <first> and a <second> on identical subject and rubric digests
+    When the Dispatcher next reads the item's records
+    Then the dispatch journal carries one dod-judgement-disagreement row naming both takings, both digests and each outcome's timestamp
+    And the item carries one disagreement record with the same facts
+    And a later read of the same two records appends nothing further
+
+    Examples:
+      | first                              | second                                  |
+      | pass recorded by the preflight     | refusal recorded by pre-admission       |
+      | node pass recorded for one run     | node refusal recorded for a later run   |
+      | node pass recorded for one run     | refusal recorded by the pre-dispatch    |
+
+  Scenario: The node still runs, records its outcome, and is never answered from a record
+    Given an item whose only record is a pass written by the repository preflight on the current digests
+    When a run of the item reaches the dod_gate node and the node refuses it
+    Then the node ran rather than being answered from the record
+    And the item carries one node record naming the run and the refusal
+    And the dispatch journal carries one dod-judgement-disagreement row naming the run and the repository preflight
+    And the item rests at blocked with blocked_reason needs-human exactly as any dod_gate refusal rests it
+```

@@ -2242,5 +2242,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal dod-judgement-shared-rubric, and the owning work-item bd-ib-gob6gl makes every taking of the Definition-of-Done judgement grade one subject by one rubric, together with the test that binds this entry.",
     "work_item": "bd-ib-gob6gl"
+  },
+  {
+    "heading": "## Scenario 240 \u2014 A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal dod-judgement-verdict-binding, and the owning work-item bd-ib-8zyan makes a recorded Definition-of-Done verdict bind every host taking on identical digests and journals opposite verdicts, together with the test that binds this entry.",
+    "work_item": "bd-ib-8zyan"
   }
 ]
