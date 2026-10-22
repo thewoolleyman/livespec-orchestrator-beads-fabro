@@ -48,6 +48,7 @@ __all__: list[str] = [
     "MODEL_FALLBACK_SCHEMA_VERSION",
     "MODEL_FALLBACK_STAGE",
     "MODEL_FALLBACK_SUPERSEDED_STAGE",
+    "AcpPrimaryAttempt",
     "ModelFallbackWarning",
     "model_fallback_warning_record",
     "parse_model_fallback_warning",
@@ -83,6 +84,32 @@ _REQUIRED_TEXT: tuple[str, ...] = (
     "full_chain",
     "event_id",
 )
+
+
+@dataclass(frozen=True, kw_only=True)
+class AcpPrimaryAttempt:
+    """One node attempt by candidate ZERO, as the clearance rule reads it.
+
+    `executed` is separate from `succeeded` on purpose. A credential probe
+    and a preflight selection both have "no failure" to report, so a type
+    carrying only `succeeded` would let either of them answer True and
+    clear a warning the contract says they cannot touch.
+
+    IT LIVES HERE RATHER THAN BESIDE THE RULE THAT READS IT, because TWO
+    sources of evidence now build one: the engine event scan the existing
+    audit records are read through, and the Dispatcher's own selection
+    records (`_acp_fallback_selection_warnings`). The rule folds the ledger
+    and so imports the selection source back; defining the shared record in
+    either of those modules would close an import cycle, and defining it in
+    both would be two accounts of one value with nothing announcing a
+    divergence.
+    """
+
+    node: str
+    primary_generation: str
+    started_at: str
+    executed: bool
+    succeeded: bool
 
 
 @dataclass(frozen=True, kw_only=True)

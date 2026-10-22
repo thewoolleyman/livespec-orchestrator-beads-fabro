@@ -10,28 +10,34 @@ and, separately, that "Reconciliation MUST replay selection-to-execution
 observation idempotently using factory, run, node attempt, and selection
 identity".
 
-THE SECOND OBLIGATION IS NOT DISCHARGED AT THAT SITE, and the comment left in
-place of the deletion claimed it was — naming `reconcile_one_run` as the
-function that performs it. That function disposes ORPHAN runs and names no
-selection, fallback or release at all; `dispose_provider_limit_release` is
-reached only from `_dispatcher_terminal_routing`, on the DISPATCH terminal path,
-which reconciliation never enters.
+THE SECOND OBLIGATION IS NOW DISCHARGED, AND NOT WHERE THE COMMENT ONCE SAID.
+`bd-ib-augqc2` re-sourced the replay from the authoritative selection records and
+runs it as its own lane, `pass_selection_replays`, which `reconcile_runs` calls
+after the factory loop. What the comment said BEFORE that — naming
+`reconcile_one_run` as the function performing it — was false then and is still
+false now: that function disposes ORPHAN runs, the orphan join considers only
+NON-TERMINAL runs while a selection replay reads runs that have ENDED, and it
+names no selection, fallback or release at all. `dispose_provider_limit_release`
+remains reached only from `_dispatcher_terminal_routing`, on the DISPATCH
+terminal path reconciliation never enters, so the release half of the paragraph
+is STILL undischarged here and the new lane must not be read as covering it.
 
-WHY A COMMENT IS WORTH A TEST HERE. This comment is the only surviving design
-record at the exact site of a contract-relevant deletion, so it is what the next
-reader auditing v127 conformance finds. A false "already discharged" there is
-the confident-wrong-answer-that-forecloses-the-action class: nothing downstream
-re-tests a conclusion that the obligation is met, and the live risk is that the
-follow-on half of v127 (`bd-ib-augqc2`) is closed as already-covered on the
-strength of it.
+WHY A COMMENT IS WORTH A TEST HERE. This comment is the only design record at
+the exact site of a contract-relevant deletion, so it is what the next reader
+auditing v127 conformance finds. A claim that misroutes the reader is the
+confident-wrong-answer-that-forecloses-the-action class, and it is wrong in both
+directions: while the obligation was open, a false "already discharged" risked
+closing the follow-on half as already-covered; now that it is closed, a record
+still naming an open follow-on item sends a reader to re-implement a lane that
+exists. So the assertion MOVED with the behaviour rather than being deleted.
 
-THE CONTROL IS THE MEASUREMENT THAT MAKES THE CLAIM FALSE, and it is what gives
-the two prose assertions their meaning: a module that happened to carry neither
-word would satisfy them while saying nothing about where the leg actually runs.
-It reads the importers through `ast` rather than as text, because the one module
-that mentions `dispose_provider_limit_release` WITHOUT importing it mentions it
-in a comment — and a text scan counting that comment reports a second caller
-that does not exist.
+THE CONTROLS ARE THE MEASUREMENTS THAT MAKE THE CLAIM CHECKABLE, and they are
+what give the prose assertions their meaning: a module that happened to carry
+neither word would satisfy them while saying nothing about where either leg
+actually runs. The second reads the importers through `ast` rather than as text,
+because the one module that mentions `dispose_provider_limit_release` WITHOUT
+importing it mentions it in a comment — and a text scan counting that comment
+reports a second caller that does not exist.
 """
 
 from __future__ import annotations
@@ -52,7 +58,9 @@ _ORPHAN_DISPOSAL = _COMMANDS / "_dispatcher_reconcile_one_run.py"
 _OBLIGATION_PHRASE = "selection-to-execution"
 _RELEASE_SYMBOL = "dispose_provider_limit_release"
 _ONLY_CALLER = "_dispatcher_terminal_routing"
-_FOLLOW_ON_ITEM = "bd-ib-augqc2"
+# The lane that now performs the replay. Named here rather than described, so
+# the record routes a reader to a symbol they can grep for.
+_REPLAY_LANE = "pass_selection_replays"
 
 
 def _comment_block_naming(*, source: str, needle: str) -> str:
@@ -88,13 +96,30 @@ def test_the_deletion_site_does_not_attribute_the_replay_obligation_to_the_orpha
     assert "reconcile_one_run" not in block
 
 
-def test_the_deletion_site_names_the_item_that_re_sources_the_replay_obligation() -> None:
+def test_the_deletion_site_names_the_lane_that_discharges_the_replay_obligation() -> None:
     """A reader told only that the old replay is gone is stranded, not routed."""
     block = _comment_block_naming(
         source=_DELETION_SITE.read_text(encoding="utf-8"), needle=_OBLIGATION_PHRASE
     )
 
-    assert _FOLLOW_ON_ITEM in block
+    assert _REPLAY_LANE in block
+
+
+def test_the_named_lane_is_the_one_reconciliation_actually_calls() -> None:
+    """The control for the prose above: a named symbol that nothing calls routes nowhere.
+
+    Reads the import through `ast` for the release leg's own reason — a lane
+    named only in the comment would satisfy the prose assertion while the
+    obligation sat exactly as undischarged as before.
+    """
+    imported = {
+        alias.name
+        for node in ast.walk(ast.parse(_DELETION_SITE.read_text(encoding="utf-8")))
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    }
+
+    assert _REPLAY_LANE in imported
 
 
 def test_the_orphan_disposal_names_no_selection_fallback_or_release() -> None:

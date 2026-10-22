@@ -444,6 +444,35 @@ Tests for the thin-transport command modules under
   projection, in both directions, since a resolution answering `None` for
   everything satisfies its unresolvable case exactly as well as a correct one.
 
+- `test_dispatcher_reconcile_selection_warnings.py`,
+  `test_acp_fallback_selection_warning.py`,
+  `test_acp_fallback_selection_warning_tolerances.py`,
+  `test_acp_fallback_selection_primary_attempts.py` and
+  `test_acp_selection_dispatch_correlation.py` — the selection-to-execution
+  replay (`bd-ib-augqc2`), split by what each one can FAIL on. The first is the
+  only one that drives `reconcile_runs`, and that is its whole point: the pure
+  reading was already correct and already covered when the item was filed, and
+  what was absent was any CALLER — so `ingest_model_fallback_warning` had no
+  production reader at all and the attention lane reported a repository where no
+  fallback had ever run. A case built on a hand-written outcome map cannot fail
+  for that reason, because it passes against a dispatcher that never looks at a
+  run; its outcome maps are therefore produced by the real port out of real
+  `fabro inspect` stdout, and its `inspect` fixtures spell `implement@1` rather
+  than `implement`, which is the visit-qualified key a hand-built map hides.
+  Three further things to know before editing. It selects TWO nodes and executes
+  only ONE throughout, since "the run executed it" cannot fail on a one-node
+  fixture — a build minting a warning per SELECTED node satisfies every
+  assertion about the executed one. Every retirement case sits beside the
+  near-miss it must refuse, and all three near-misses produce a well-formed
+  executed primary attempt: a primary that STARTED BEFORE the warning, one that
+  executed without succeeding, and a fallback-only chain edit whose full-chain
+  digest no longer matches anything declared. And its `_configured_repo` fixture
+  is used by the supersede cases ALONE, with every other case on a bare
+  `tmp_path`, because a repository that resolves a current primary generation
+  would retire the warnings those cases just minted — the fallback-only control
+  reads that generation through the production resolver rather than transcribing
+  it, so a configuration change makes the control stop matching instead of
+  leaving it agreeing with a constant nobody rechecks.
 - `test_dispatch_pass_replay_obligation_record.py` sits beside those three and
   covers what the surviving DESIGN RECORD at that deletion site may claim. The
   v127 paragraph carries TWO obligations, and the comment left in place of the

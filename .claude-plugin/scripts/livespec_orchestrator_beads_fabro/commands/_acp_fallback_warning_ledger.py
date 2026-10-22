@@ -38,6 +38,19 @@ generation against the node's CURRENT one is what retires it. A
 fallback-only edit leaves that generation untouched, so the same pass
 leaves the warning standing -- the discrimination falls out of which
 digest is compared rather than out of a rule about edits.
+
+THIS MODULE OWNS THE RULE AND NOT THE EVIDENCE, which is the seam the
+selection source sits on. `primary_attempts_from_scan` reads an ENGINE
+event stream, which is how the existing fallback audit records stay
+readable; `selection_primary_attempts` and `selection_warning_records`
+read the DISPATCHER'S OWN selection records, which is where v127 moved
+the live observation to, and they live next door in
+`_acp_fallback_selection_warnings` with the private helpers only they
+use. Both are imported back here, so this module's surface answers for
+warnings derived from per-node selection records exactly as it answers
+for the fold -- and both hand the SAME `AcpPrimaryAttempt` to the one
+clearance predicate, which is what keeps the contract's four conditions
+stated once rather than once per source.
 """
 
 from __future__ import annotations
@@ -48,13 +61,17 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_fallback_event_types import AcpEventScan
+from livespec_orchestrator_beads_fabro.commands._acp_fallback_selection_warnings import (
+    selection_primary_attempts,
+    selection_warning_records,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_fallback_warning_records import (
     MODEL_FALLBACK_CLEARED_STAGE,
     MODEL_FALLBACK_STAGE,
     MODEL_FALLBACK_SUPERSEDED_STAGE,
+    AcpPrimaryAttempt,
     ModelFallbackWarning,
     parse_model_fallback_warning,
-    warning_id,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_hold_records import parse_hold_instant
 from livespec_orchestrator_beads_fabro.commands._acp_journal_records import journal_records
@@ -69,6 +86,7 @@ __all__: list[str] = [
     "primary_replacement_records",
     "primary_success_clearance_records",
     "read_model_fallback_warnings",
+    "selection_primary_attempts",
     "selection_warning_records",
 ]
 
@@ -79,23 +97,6 @@ class _Journal(Protocol):
     def append(self, *, record: dict[str, object]) -> None:
         """Persist one journal record."""
         ...
-
-
-@dataclass(frozen=True, kw_only=True)
-class AcpPrimaryAttempt:
-    """One node attempt by candidate ZERO, as the clearance rule reads it.
-
-    `executed` is separate from `succeeded` on purpose. A credential probe
-    and a preflight selection both have "no failure" to report, so a type
-    carrying only `succeeded` would let either of them answer True and
-    clear a warning the contract says they cannot touch.
-    """
-
-    node: str
-    primary_generation: str
-    started_at: str
-    executed: bool
-    succeeded: bool
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -263,128 +264,6 @@ def primary_replacement_records(
         if warning.node in primary_generations
         and primary_generations[warning.node] != warning.primary_generation
     )
-
-
-def selection_warning_records(
-    *,
-    records: tuple[Mapping[str, object], ...],
-    work_item_id: str,
-    run_id: str,
-    outcomes: Mapping[str, Mapping[str, object]],
-) -> tuple[dict[str, object], ...] | None:
-    """Build warnings from executed non-primary Dispatcher selections.
-
-    An empty outcome map is unavailable evidence, not proof that every selected
-    node was skipped.  Returning ``None`` lets the caller retain the existing
-    warning and schedule another read.
-    """
-    if not outcomes:
-        return None
-    selection = _latest_selection(records=records, work_item_id=work_item_id, run_id=run_id)
-    if selection is None:
-        return ()
-    occurred_at = _text(value=selection.get("at"))
-    choices = selection.get("selections")
-    if occurred_at is None or not isinstance(choices, Mapping):
-        return ()
-    warnings: list[dict[str, object]] = []
-    for node, raw in cast("Mapping[object, object]", choices).items():
-        if not isinstance(node, str) or node not in outcomes or not isinstance(raw, Mapping):
-            continue
-        warning = _selection_warning(
-            node=node,
-            choice=cast("Mapping[object, object]", raw),
-            occurred_at=occurred_at,
-            work_item_id=work_item_id,
-            run_id=run_id,
-        )
-        if warning is not None:
-            warnings.append(warning)
-    return tuple(warnings)
-
-
-def _latest_selection(
-    *, records: tuple[Mapping[str, object], ...], work_item_id: str, run_id: str
-) -> Mapping[str, object] | None:
-    """Return this run's selection, joined through its immutable dispatch id.
-
-    Historical rows predate dispatch correlation, so they remain readable only
-    when this run has no stamp at all.  Once a run is stamped, a selection that
-    does not carry the same id is deliberately not evidence for that run.
-    """
-    stamps = tuple(
-        record
-        for record in records
-        if record.get("stage") == "dispatch-run-stamp"
-        and record.get("work_item_id") == work_item_id
-        and record.get("run_id") == run_id
-    )
-    dispatch_ids = {
-        dispatch_id
-        for record in stamps
-        if (dispatch_id := _text(value=record.get("dispatch_id"))) is not None
-    }
-    for record in reversed(records):
-        if (
-            record.get("stage") != "acp-node-selection"
-            or record.get("work_item_id") != work_item_id
-        ):
-            continue
-        dispatch_id = _text(value=record.get("dispatch_id"))
-        if dispatch_id in dispatch_ids or (not stamps and dispatch_id is None):
-            return record
-    return None
-
-
-def _selection_warning(
-    *,
-    node: str,
-    choice: Mapping[object, object],
-    occurred_at: str,
-    work_item_id: str,
-    run_id: str,
-) -> dict[str, object] | None:
-    """Translate one executed non-primary selection into the legacy record shape."""
-    index = choice.get("selected_index")
-    if isinstance(index, bool) or not isinstance(index, int) or index <= 0:
-        return None
-    selection_identity = _text(value=choice.get("selection_identity"))
-    candidate_key = _text(value=choice.get("selected_candidate_key"))
-    availability_key = _text(value=choice.get("selected_availability_key"))
-    primary_generation = _text(value=choice.get("primary_generation_digest"))
-    full_chain = _text(value=choice.get("full_chain_digest"))
-    if None in (
-        selection_identity,
-        candidate_key,
-        availability_key,
-        primary_generation,
-        full_chain,
-    ):
-        return None
-    event_id = f"selection:{run_id}:{selection_identity}"
-    return {
-        "stage": MODEL_FALLBACK_STAGE,
-        "schema_version": 1,
-        "warning_id": warning_id(event_id=event_id, node=node),
-        "node": node,
-        "occurred_at": occurred_at,
-        "candidate_display_name": candidate_key,
-        "candidate_key": candidate_key,
-        "candidate_index": index,
-        "availability_key": availability_key,
-        "hold_key": availability_key,
-        "cause": "dispatcher-selection",
-        "scope": "node",
-        "primary_generation": primary_generation,
-        "full_chain": full_chain,
-        "event_id": event_id,
-        "work_item_id": work_item_id,
-    }
-
-
-def _text(*, value: object) -> str | None:
-    """Return a non-empty text identity, otherwise ``None``."""
-    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def _starts_after(*, warning: ModelFallbackWarning, started_at: str) -> bool:

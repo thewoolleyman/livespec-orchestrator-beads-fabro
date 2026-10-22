@@ -53,6 +53,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_acp_selection import (
+    pass_selection_replays,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_one_run import (
     reconcile_one_run,
 )
@@ -180,6 +183,13 @@ def reconcile_runs(
     if not dry_run:
         for error in errors:
             journal_error(journal=inputs.journal, error=error)
+    # The SELECTION-TO-EXECUTION replay, as its own lane over the factories
+    # this pass actually surveyed, after the factory loop rather than inside
+    # it: its supersede pass is driven by the repository's CURRENT primaries
+    # rather than by any run, so a per-factory call would append one
+    # replacement per configured factory and make one replacement read as
+    # several.
+    pass_selection_replays(inputs=inputs, factories=tuple(surveyed), dry_run=dry_run)
     claims = _claim_lane(
         inputs=inputs, factories=tuple(factories), observed=observed, dry_run=dry_run
     )
@@ -270,14 +280,15 @@ def _reconcile_one_factory(
     # is nothing left to replay and nothing a replay could learn. What v127
     # SEPARATELY requires -- replaying selection-to-execution observation
     # idempotently, keyed by factory, run, node attempt and selection identity
-    # -- is NOT discharged here, and nothing this survey calls performs it. The
-    # orphan disposal below names no selection, fallback or release at all, and
-    # the provider-limit release leg is reached only from
-    # `_dispatcher_terminal_routing`, on the DISPATCH terminal path this survey
-    # never enters. Re-sourcing that replay from the authoritative
-    # `acp-node-selection` and `provider-limit-release` records is the
-    # follow-on item `bd-ib-augqc2`, the other half of the same v127 proposal.
-    # Do NOT read this deletion as evidence the obligation is met.
+    # -- is discharged by `pass_selection_replays`, which `reconcile_runs`
+    # calls as its own LANE once this factory loop has finished, never from
+    # inside the orphan disposal below: that join considers only NON-TERMINAL
+    # runs, while the evidence a selection replay reads belongs to runs that
+    # have already ENDED. The orphan disposal still names no selection,
+    # fallback or release at all, and the provider-limit release leg is reached
+    # only from `_dispatcher_terminal_routing`, on the DISPATCH terminal path
+    # this survey never enters. Do NOT read the selection replay as covering
+    # that release leg either.
     for orphan in classify_orphans(inventory=inventory, grace=grace):
         if inputs.only_work_item_id is not None and orphan.work_item_id != inputs.only_work_item_id:
             continue
