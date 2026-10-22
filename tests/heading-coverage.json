@@ -2040,16 +2040,16 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal proof-loop-graph-change, and the owning work-item bd-ib-2oxr6v lands the proof-loop graph change together with the test that binds this entry.",
-    "work_item": "bd-ib-2oxr6v"
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal proof-loop-graph-change. bd-ib-2oxr6v landed tests/integration/test_credential_use_window_scenario228.py covering the first two scenarios; the queue-exceeded scenarios were split to bd-ib-6skm77 (coordinator R544), which completes the scenario and binds this entry.",
+    "work_item": "bd-ib-6skm77"
   },
   {
     "heading": "## Scenario 229 \u2014 A non-overlapping refresh after one re-proof carries the proof forward",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal proof-loop-graph-change, and the owning work-item bd-ib-2oxr6v lands the proof-loop graph change together with the test that binds this entry.",
-    "work_item": "bd-ib-2oxr6v"
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal proof-loop-graph-change. The v177 refresh rule is carried by bd-ib-6sb5cn (split from bd-ib-2oxr6v under coordinator R523), which lands the refresh behaviour together with the test that binds this entry.",
+    "work_item": "bd-ib-6sb5cn"
   },
   {
     "heading": "## Scenario 232 \u2014 needs-attention surfaces an item labelled approval:workflow-edit",
