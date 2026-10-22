@@ -8862,3 +8862,31 @@ Feature: A merged item parked before its janitor ran can still reach a verdict
     Then the command refuses, naming the missing janitor evidence
     And no janitor runs and the acceptance pass does not re-run
 ```
+
+## Scenario 238 — A refresh resolves a conflicted generated record file by running its generator
+
+```gherkin
+Feature: A generated register is regenerated, never hand-merged, when a refresh conflicts
+  As the maintainer of a repository with a generated coverage register
+  I want a refresh conflict in that register resolved by its generator
+  So that rows the default branch added while a run was in flight are not lost
+
+  Scenario: A conflict only in record files regenerates the generated one
+    Given a repository whose committed dispatcher.record_files declares tests/heading-coverage.json as json-array and tests/heading-coverage-debt.json as json-array with a generator
+    And the default branch added two registry rows and their register rows while the run removed a different row from both files
+    When pr_refresh rebases the run and the rebase conflicts only in those two files
+    Then the stage merges tests/heading-coverage.json entry by entry and then runs the generator to write tests/heading-coverage-debt.json
+    And the refreshed register carries the default branch's two added rows and omits the row the run removed
+    And the stage records the regenerated file with the generator it ran and no refresh-repair round is counted
+
+  Scenario: A repair brief tells fix to regenerate the generated file
+    Given a refresh that conflicts in a Python module and in a generated record file
+    When pr_refresh rebases the run
+    Then the stage restores the pre-refresh head and routes to fix with a brief carrying one regenerate line naming that file and its generator
+
+  Scenario: A refreshed head whose generated file was edited by hand fails before the gate
+    Given a refreshed head whose committed generated record file differs from its generator's output over that head
+    When the stage checks the head before the repository-declared gate
+    Then the stage fails with a failed gate target named generated-record-file followed by that file's path
+    And the refresh-repair brief carries that target and a regenerate line for the file
+```
