@@ -2445,6 +2445,58 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   nothing in the four modules reaches the ledger, the dispatch journal or a
   factory.
 
+- The PER-MERGE DRIFT RUN of the detection coverage-record contract's "The
+  drift run" bullet (`bd-ib-yvjxo4`, Scenario 207) lives in SEVEN cohesive
+  modules, and the dependency direction reads bottom-up:
+  `_drift_run_findings` (PURE leaf: one merge as git records it, the behaviour
+  statement the shared judgement is asked about, the finding, and the stable
+  finding identity) -> `_drift_run_merges` (the merges after a frontier and one
+  merge's own diff, plus the ONE account of which ref the default branch is and
+  which range "after the frontier" names) and `_drift_run_proposals` (the
+  drift-origin proposal document, where it rests, which identities are already
+  filed, and which drift-origin proposals are OPEN) and `_drift_run_held` (the
+  held-finding records on the detection-coverage anchor) ->
+  `_drift_run_disposition` (file one finding, or hold it past
+  `dispatcher.drift_proposal_queue_cap`) and `_drift_run_frontier` (PURE: the
+  contiguous all-filed prefix, and whether the scope closed) -> `_drift_run`
+  (the pass: enumerate, judge, dispose) -> `_dispatcher_reconcile_drift_lane`
+  (resolve the frontier off the anchor, run the pass, record it).
+  `_drift_run_judge` is the leaf model seam; `_dispatcher_reconcile_runs_command`
+  is the ONE caller, which is what makes the contract's "each reconcile pass"
+  true rather than leaving a primitive nobody invokes.
+  Eight properties an editor must not invert. The ENUMERATION excludes no class
+  of commit — no `--merges`, no `--first-parent`, no path filter — because under
+  this repository's rebase-merge discipline a landed pull request appears as its
+  REBASED SERIES, so a merge-commit filter enumerates almost nothing while
+  reporting a clean empty answer and the frontier advances over merges nobody
+  judged. ORDER is oldest-first, since a pass judging newest-first files the
+  newest merge's proposal while an earlier merge still blocks the frontier. The
+  judge prompt travels on STANDARD INPUT and never as an argv entry: it carries
+  the whole ratified tree (1.36 MB here, measured 2026-10-22) against a 131072-byte
+  single-entry kernel cap, so an argv-borne prompt makes every judgement of
+  every pass fail at `execve` for a reason nothing names. The ALL-OR-NOTHING
+  rule is NOT re-implemented in the lane — it describes the pass honestly in a
+  `DetectionRun` and `_detection_coverage.completed_coverage_is_claimable`
+  grades it, which is also what makes a HELD finding stop the frontier with no
+  code saying so: a held finding is surfaced and NOT disposed. The FRONTIER is
+  the contiguous all-filed PREFIX and never the newest filed merge, because a
+  later merge's success must not advance past an earlier failure. A merge with
+  NO VERDICT is not a merge whose every finding is filed — the set-equality test
+  alone reads it as one, which is the exact reading that advances over an
+  unprocessed merge. The already-filed set spans the ARCHIVE as well as the open
+  queue (a ratified proposal has been filed and must not be re-filed every ten
+  minutes) while the queue CAP counts the open queue alone (a cap counting
+  ratified proposals closes permanently). And with NO frontier on record the
+  lane judges NOTHING: the honest reading of the range would be the whole
+  branch, thousands of commits at one model call each, and a cap imposed here
+  would record a frontier covering merges nobody judged — recording the baseline
+  is separately owned work (plan `spec-implementation-lockstep`'s host-routed
+  R2). `_needs_attention_held_drift_findings` is the attention lane the cap
+  clause requires, composed inside `_needs_attention_detection_staleness`
+  because all three facts are readings of the one committed anchor that function
+  already resolves; it subtracts the FILED set, since the hold records are
+  append-only and a filed finding would otherwise sit in the inbox for ever.
+
 Rules an agent editing this tree must follow:
 
 - `main()` is the only place `sys.stdout.write` / `sys.stderr.write`
