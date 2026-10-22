@@ -74,6 +74,7 @@ from datetime import datetime, timedelta
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import (
     HEADROOM_SKIP,
     LEGACY_HOLD_SKIP,
+    OUTSTANDING_CONFIRMATION_SKIP,
     PROBE_SKIP,
     TYPED_HOLD_SKIP,
     UNAVAILABLE_EVIDENCE_SKIP,
@@ -114,9 +115,26 @@ UNAVAILABLE_EVIDENCE = UNAVAILABLE_EVIDENCE_SKIP
 # the records that WERE read and the two local skips, exactly where the filter
 # applies it -- a precedence that disagreed with the filter's own ordering
 # would name a condition for a candidate the filter never reached.
+#
+# THE OUTSTANDING CONFIRMATION SITS BELOW BOTH HOLDS AND ABOVE THE THREE LOCAL
+# CONDITIONS, which is the clause's own ordering rather than the filter's. "When
+# no hold governs the refusal, it MUST name the outstanding confirmation,
+# unavailable evidence source, admission-time credential-probe skip, or
+# admission session-headroom skip instead" -- so a LIVE record still governs a
+# node that also owes a confirmation, even though the filter consults the
+# confirmation first. That is the one place the two orderings diverge, and the
+# clause decides it: a confirmation names no expiry and nothing an operator can
+# clear, while a live hold names both.
+#
+# Omitting it entirely is the fail-wrong direction, and it is silent: a node
+# emptied by a confirmation alone substantiates no condition in the tuple, so
+# it fell through to `UNAVAILABLE_EVIDENCE` and reported an unreadable evidence
+# source for a chain whose evidence had been read perfectly well -- a remedy
+# pointing at a factory nobody needs to look at.
 GOVERNING_CONDITION_PRECEDENCE: tuple[str, ...] = (
     TYPED_HOLD_SKIP,
     LEGACY_HOLD_SKIP,
+    OUTSTANDING_CONFIRMATION_SKIP,
     UNAVAILABLE_EVIDENCE_SKIP,
     PROBE_SKIP,
     HEADROOM_SKIP,

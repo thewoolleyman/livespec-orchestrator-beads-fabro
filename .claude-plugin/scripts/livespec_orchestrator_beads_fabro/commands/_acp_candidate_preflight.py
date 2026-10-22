@@ -85,6 +85,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro.commands._acp_availability_confirmation import (
+    AcpAvailabilityConfirmation,
+    outstanding_confirmation_holds,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import ResolvedAcpChain
 from livespec_orchestrator_beads_fabro.commands._acp_hold_coverage import (
@@ -97,16 +101,18 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     SessionHeadroomPolicy,
     SessionHeadroomReading,
     headroom_covers_candidate,
-    headroom_skips_candidate,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_projection import (
-    projection_skips_candidate,
+    FLOOR_SKIP_KIND,
+    PROJECTION_SKIP_KIND,
+    headroom_skip_kind,
 )
 
 __all__: list[str] = [
     "FLOOR_SKIP_KIND",
     "HEADROOM_SKIP",
     "LEGACY_HOLD_SKIP",
+    "OUTSTANDING_CONFIRMATION_SKIP",
     "PROBE_SKIP",
     "PROJECTION_SKIP_KIND",
     "PROVIDER_LIMIT_CONDITIONS",
@@ -121,6 +127,7 @@ __all__: list[str] = [
 # The five reasons a candidate leaves the selectable set, as stable machine
 # tokens so a verdict's explanation is greppable rather than prose-matched.
 TYPED_HOLD_SKIP = "typed-availability-hold"
+OUTSTANDING_CONFIRMATION_SKIP = "outstanding-availability-confirmation"
 LEGACY_HOLD_SKIP = "legacy-provider-hold"
 PROBE_SKIP = "credential-probe-refusal"
 HEADROOM_SKIP = "session-headroom-shortfall"
@@ -133,16 +140,6 @@ HEADROOM_SKIP = "session-headroom-shortfall"
 # filter records and the condition a refusal names cannot drift apart into two
 # spellings of one fact.
 UNAVAILABLE_EVIDENCE_SKIP = "unavailable-availability-evidence"
-
-# WHICH of the two headroom shortfalls decided one `HEADROOM_SKIP`. They are a
-# second field rather than a second skip reason because the clause gives a
-# projection skip "exactly the semantics of a floor skip" -- every surface
-# keying on the reason must treat them alike -- while also requiring the
-# records to "name a projection skip as a projection skip, distinct from a
-# floor skip". A reason-level split would have satisfied the second at the cost
-# of the first.
-FLOOR_SKIP_KIND = "floor"
-PROJECTION_SKIP_KIND = "projection"
 
 # The ONLY probe conditions that produce an ephemeral skip. Every other refusal
 # -- absent, revoked, denied, unassessable -- is a fault no fallback repairs, so
@@ -195,6 +192,7 @@ class SkippedCandidate:
     headroom_floor_percent: int | None = None
     headroom_horizon_minutes: int | None = None
     headroom_skip_kind: str | None = None
+    confirmation_observation_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -247,6 +245,8 @@ class PreflightInputs:
     """
 
     holds: tuple[AcpAvailabilityHold, ...] = ()
+    expired_holds: tuple[AcpAvailabilityHold, ...] = ()
+    confirmations: tuple[AcpAvailabilityConfirmation, ...] = ()
     legacy_providers: frozenset[str] = frozenset()
     builtin_pairs: frozenset[tuple[str, str]] = frozenset()
     probe: Callable[[str], str] | None = None
@@ -311,6 +311,13 @@ def _skip_for(
                 scope=hold.scope,
                 hold_key=hold.hold_key,
             )
+    outstanding = outstanding_confirmation_holds(
+        expired_holds=inputs.expired_holds,
+        confirmations=inputs.confirmations,
+        candidate=candidate,
+    )
+    if outstanding:
+        return _confirmation_skip(candidate=candidate, holds=outstanding)
     legacy = _legacy_provider(candidate=candidate, inputs=inputs)
     if legacy is not None:
         return _record_skip(candidate=candidate, reason=LEGACY_HOLD_SKIP, hold_key=legacy)
@@ -403,7 +410,7 @@ def _headroom_skip(
     reading = policy.read()
     if reading not in assessments:
         assessments.append(reading)
-    kind = _headroom_skip_kind(reading=reading, floor_percent=policy.floor_percent)
+    kind = headroom_skip_kind(reading=reading, floor_percent=policy.floor_percent)
     if kind is None:
         return None
     return _ephemeral_skip(
@@ -416,24 +423,6 @@ def _headroom_skip(
             kind=kind,
         ),
     )
-
-
-def _headroom_skip_kind(*, reading: SessionHeadroomReading, floor_percent: int) -> str | None:
-    """Which headroom shortfall stops this candidate, or `None` for neither.
-
-    THE FLOOR IS TESTED FIRST, and the order is the reported kind rather than
-    an optimization. The two tests are not exclusive -- a reading below the
-    floor whose window is also projected to empty inside the horizon fails both
-    -- and the floor is the one an operator can act on directly, so a skip
-    reporting `projection` there would point at a dial that was never the
-    binding constraint. It is also the only order under which an unobservable
-    reading, which has no projection to be refused by, reports the floor.
-    """
-    if headroom_skips_candidate(reading=reading, floor_percent=floor_percent):
-        return FLOOR_SKIP_KIND
-    if projection_skips_candidate(reading=reading):
-        return PROJECTION_SKIP_KIND
-    return None
 
 
 def _record_skip(
@@ -453,6 +442,19 @@ def _record_skip(
         cause=cause,
         scope=scope,
         hold_key=hold_key,
+    )
+
+
+def _confirmation_skip(
+    *, candidate: AcpCandidate, holds: tuple[AcpAvailabilityHold, ...]
+) -> SkippedCandidate:
+    """Record the exact expired observations a candidate must re-confirm."""
+    availability_key, candidate_key = _skip_identity(candidate=candidate)
+    return SkippedCandidate(
+        availability_key=availability_key,
+        candidate_key=candidate_key,
+        reason=OUTSTANDING_CONFIRMATION_SKIP,
+        confirmation_observation_ids=tuple(hold.observation_id for hold in holds),
     )
 
 

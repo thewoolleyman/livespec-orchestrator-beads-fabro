@@ -335,10 +335,26 @@ def _cleared_ids(
 ) -> frozenset[str]:
     """The observations one OPERATOR-CLEARANCE run's record names as cleared.
 
-    Bounded by the run's START, exactly as the confirmation arm is and for the
-    same reason: a clearance recorded longer ago than `HOLD_INTERVAL` can only
-    retire a record that has already expired on its own, so reading one would
-    cost a round trip per historical clearance on every admission evaluation.
+    Bounded by the run's START, exactly as the confirmation arm is -- but NOT
+    any longer for the same reason, and the difference is worth stating because
+    the original premise has been falsified by its own consumer. That premise
+    was that a clearance older than `HOLD_INTERVAL` can only retire a record
+    which has already expired on its own, and therefore retires nothing that
+    decides anything. Since the post-expiry confirmation
+    (`_acp_availability_confirmation`) an EXPIRED record is no longer inert: it
+    carries an outstanding availability confirmation and GOVERNS selection, so
+    such a clearance now does have an effect to be missed.
+
+    The bound is kept anyway, on a cost argument rather than a vacuity one.
+    Reading past the window costs one `fabro inspect` per historical clearance
+    on EVERY admission evaluation, against a factory that listed 1626 rows for
+    this fleet; what missing one costs is a single confirmation turn, since the
+    ordinary route to satisfying a post-expiry confirmation is a successful
+    attempt and not a clearance at all. That is the conservative direction, and
+    the same asymmetry `_acp_availability_confirmation` already reasons from.
+    A future editor who finds that trade has changed should widen the window
+    here -- the arm is correct, its justification is simply no longer the one
+    it was written with.
 
     Empty is what EVERY non-clearance row answers, and also what a clearance
     run whose record states nothing readable answers. The two are deliberately

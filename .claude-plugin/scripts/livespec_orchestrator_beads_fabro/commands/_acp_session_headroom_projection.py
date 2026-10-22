@@ -57,6 +57,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     UNAVAILABLE_RESULT,
     SessionHeadroomProjection,
     SessionHeadroomReading,
+    headroom_skips_candidate,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_drain import (
     SessionHeadroomBaseline,
@@ -67,10 +68,13 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_drain impo
 __all__: list[str] = [
     "FLOOR_DISABLED_REASON",
     "FLOOR_SKIPPED_READING_REASON",
+    "FLOOR_SKIP_KIND",
     "NO_BASELINE_REASON",
+    "PROJECTION_SKIP_KIND",
     "UNOBSERVABLE_READING_REASON",
     "UNREADABLE_OBSERVATION_REASON",
     "UTILIZATION_NOT_HIGHER_REASON",
+    "headroom_skip_kind",
     "projection_skips_candidate",
     "reading_with_projection",
     "session_headroom_projection",
@@ -104,6 +108,34 @@ _INSTANT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 _FLOOR_DISABLED_PERCENT = 0
 _HORIZON_DISABLED_MINUTES = 0
+
+# WHICH of the two headroom shortfalls decided one `HEADROOM_SKIP`. They are a
+# second field rather than a second skip reason because the clause gives a
+# projection skip "exactly the semantics of a floor skip" -- every surface
+# keying on the reason must treat them alike -- while also requiring the
+# records to "name a projection skip as a projection skip, distinct from a
+# floor skip". A reason-level split would have satisfied the second at the cost
+# of the first.
+FLOOR_SKIP_KIND = "floor"
+PROJECTION_SKIP_KIND = "projection"
+
+
+def headroom_skip_kind(*, reading: SessionHeadroomReading, floor_percent: int) -> str | None:
+    """Which headroom shortfall stops this candidate, or `None` for neither.
+
+    THE FLOOR IS TESTED FIRST, and the order is the reported kind rather than
+    an optimization. The two tests are not exclusive -- a reading below the
+    floor whose window is also projected to empty inside the horizon fails both
+    -- and the floor is the one an operator can act on directly, so a skip
+    reporting `projection` there would point at a dial that was never the
+    binding constraint. It is also the only order under which an unobservable
+    reading, which has no projection to be refused by, reports the floor.
+    """
+    if headroom_skips_candidate(reading=reading, floor_percent=floor_percent):
+        return FLOOR_SKIP_KIND
+    if projection_skips_candidate(reading=reading):
+        return PROJECTION_SKIP_KIND
+    return None
 
 
 def session_headroom_projection(
