@@ -2047,10 +2047,13 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   pointing elsewhere.
 - The EVIDENCED CAUSAL SUPERSESSION of `contracts.md` §"Required result, budget
   and progress epoch" (`bd-ib-evrynu`, Scenario 211), split pure-from-impure the
-  usual way and reading bottom-up: `_plan_supersession` (PURE: the ratified
-  closed cause set, what one write must NAME, the evidence values and the whole
-  refusal ladder) → `_plan_supersession_evidence` (the three ledger readings the
-  `misderived` cause's verification needs) → `_plan_progress_unmet`'s
+  usual way and reading bottom-up: `_plan_supersession_provenance` (PURE and a
+  LEAF: whether the derivation a supersession NAMES wrote the obligation
+  standing now, answering a reason or no objection) → `_plan_supersession`
+  (PURE: the ratified closed cause set, what one write must NAME, the evidence
+  values and the whole refusal ladder) → `_plan_supersession_evidence` (the
+  three ledger readings the `misderived` cause's verification needs) →
+  `_plan_progress_unmet`'s
   `superseded_decision`, reached from `_plan_progress_decision` and carried by
   `_plan_tracked_write` as one more field of a sanctioned write. It is the ONE
   write that may rename an unmet obligation, and the derivation gate above is
@@ -2074,9 +2077,35 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   with two reasons — the first means the step could legitimately have been
   taken, the second that the replacement is already satisfied — and every
   UNDATABLE closure routes to the first, which is the arm that refuses. And the
-  deriving match is an identity AND an epoch: an identity alone resolves a real
-  transition of the same plan, recorded by a real derivation actor, that wrote
-  an obligation the supersession is not about.
+  deriving match is the IDENTITY ALONE, resolved at the epoch that transition's
+  own payload records — never the chain head's.
+  THAT LAST ONE IS `bd-ib-4hznqp`, and it is the entry most easily re-inverted,
+  because requiring the two epochs to agree reads like the clause's own words.
+  It is not: "that epoch" is the epoch the derivation wrote the obligation at,
+  while the epoch the SUPERSESSION names is graded against the head as the
+  ordinary staleness check. Requiring both made a misderived obligation
+  supersedable only while NOTHING had been written since it was derived — so the
+  human pointer the derivation gate itself prescribes for an open carrier, or any
+  handoff, made it permanently unsupersedable, and the only rest state left was
+  that same human pointer. Measured 2026-10-22 on plan epic `bd-ib-fyozyd`,
+  derived at epoch 99 -> 100 and retained to 101 nine minutes later: naming 101
+  resolved no transition and naming 100 was refused as stale.
+  WHAT THAT COSTS, AND WHAT PAYS FOR IT, is the whole of
+  `_plan_supersession_provenance`: an identity alone selects ANY recorded
+  transition of the plan, including a real derivation by a real derivation actor
+  whose obligation a later transition replaced. So the named transition must have
+  RECORDED the retained obligation and every transition after it must have
+  RETAINED it unchanged, and the second is NOT implied by the first — an
+  obligation changed and then changed back satisfies the first exactly while the
+  transition that wrote what stands is the restoring one. Both comparisons are
+  between CANONICAL IDENTITIES, so a recorded value that parses to no typed
+  reference has none and compares unequal to every obligation; a later transition
+  whose payload the reader could not parse is carried as `None` rather than
+  SKIPPED, because skipping it would make the one transition nobody can place the
+  cheapest route past the retention condition. And both run BEFORE the
+  derivation-actor condition, whose refusal says "the obligation was written by
+  ..." — a sentence that is only true once the named transition is known to have
+  written it.
   `_plan_progress_outcome` and `_plan_progress_unmet` are the cohesion split
   that made room for it, and the direction is one-way: the outcome leaf imports
   nothing from the family, the unmet module owns every arm that DEFENDS a

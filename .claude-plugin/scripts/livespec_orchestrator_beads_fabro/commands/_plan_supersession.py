@@ -83,6 +83,9 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_targets import (
     ItemStatusTarget,
     ResultReference,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_supersession_provenance import (
+    provenance_detail,
+)
 from livespec_orchestrator_beads_fabro.effects import IsoDatetimeParseFailure, parse_iso_datetime
 
 __all__: list[str] = [
@@ -121,11 +124,6 @@ DERIVATION_ACTORS: tuple[str, ...] = (PLAN_RESUME_ACTOR, PLAN_ARCHIVE_ACTOR)
 # advanced one.
 EVENT_SUPERSESSION = "supersession"
 
-# How a recorded required result nothing could parse is NAMED in a refusal. The
-# raw value is deliberately not rendered: it is untrusted ledger content, and the
-# question the refusal answers is which canonical identity the derivation wrote.
-_UNREADABLE_REFERENCE = "an unreadable typed reference"
-
 
 @dataclass(frozen=True, kw_only=True)
 class CausalSupersession:
@@ -148,17 +146,24 @@ class CausalSupersession:
 class DerivingTransition:
     """The recorded transition a supersession's operation identity resolves to.
 
-    `required_result` is the obligation that transition WROTE, and it is what
-    establishes the named derivation as the one that wrote the obligation
-    standing now. It carries no default, because an absent one reads as a
-    transition that recorded nothing — which compares unequal to every
-    obligation, so a caller that forgot the field would refuse every
-    supersession and retire the cause in silence.
+    `required_result` is the obligation that transition WROTE, and
+    `later_results` is what every transition recorded AFTER it: together they
+    establish the named derivation as the one that wrote the obligation standing
+    now. A later result the reader could not place is `None`, which has no
+    canonical identity and so compares unequal to every obligation — the
+    fail-closed answer, since a transition whose recorded result is unreadable
+    cannot be shown to have retained anything.
+
+    Neither carries a default. An absent one reads as a transition that recorded
+    nothing, and an absent `later_results` reads as a derivation nothing
+    followed, so a caller that forgot either field would refuse every
+    supersession or admit one it should not — each retiring the cause in silence.
     """
 
     author: str
     recorded_at: str
     required_result: object
+    later_results: tuple[object, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -273,11 +278,14 @@ def _misderived_refusal(
                 " no recorded transition of this plan"
             )
         )
-    provenance = _provenance_refusal(
-        supersession=supersession, deriving=evidence.deriving, prior_identity=prior_identity
+    provenance = provenance_detail(
+        operation_id=supersession.deriving_operation_id,
+        recorded_result=evidence.deriving.required_result,
+        later_results=evidence.deriving.later_results,
+        prior_identity=prior_identity,
     )
     if provenance is not None:
-        return provenance
+        return SupersessionRefusal(detail=provenance)
     if evidence.deriving.author not in DERIVATION_ACTORS:
         return SupersessionRefusal(
             detail=(
@@ -291,52 +299,6 @@ def _misderived_refusal(
         deriving=evidence.deriving,
         replacement=replacement,
     )
-
-
-def _provenance_refusal(
-    *,
-    supersession: CausalSupersession,
-    deriving: DerivingTransition,
-    prior_identity: str,
-) -> SupersessionRefusal | None:
-    """Refuse unless the NAMED derivation wrote the obligation standing now.
-
-    An operation identity resolves at its OWN epoch, which is what lets a
-    retained obligation be superseded at all — so the identity alone selects ANY
-    recorded transition of this plan, including a real derivation by a real
-    derivation actor whose obligation some later transition replaced. Without
-    this condition such a supersession reads as fully evidenced while naming a
-    derivation that has nothing to do with the result it is replacing.
-
-    IT RUNS BEFORE THE AUTHOR CONDITION, and the order is about the REPORT. The
-    author refusal below says "the obligation was written by ...", which is only
-    a true sentence once the named transition is known to have written the
-    obligation; reported the other way round it sends its reader to fix an
-    author on a transition that wrote something else entirely.
-    """
-    recorded = _identity_of(value=deriving.required_result)
-    if recorded == prior_identity:
-        return None
-    return SupersessionRefusal(
-        detail=(
-            f"the deriving operation {supersession.deriving_operation_id!r} recorded the"
-            f" required result {recorded if recorded is not None else _UNREADABLE_REFERENCE},"
-            f" which is not the retained obligation {prior_identity}"
-        )
-    )
-
-
-def _identity_of(*, value: object) -> str | None:
-    """One recorded required result's canonical identity, or `None` for unreadable.
-
-    `None` rather than a rendering of the raw value, because what this feeds is a
-    comparison between CANONICAL IDENTITIES — the thing the clause says governs
-    continuity — and a value that does not parse as a typed reference has none.
-    So it compares unequal to every obligation, which is the fail-closed answer
-    for a transition whose recorded result this reader cannot place.
-    """
-    parsed = parse_result_reference(value=value)
-    return parsed.identity if isinstance(parsed, ResultReference) else None
 
 
 def _carrier_refusal(

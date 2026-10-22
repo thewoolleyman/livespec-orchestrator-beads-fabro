@@ -80,11 +80,15 @@ def _supersession(**overrides: object) -> CausalSupersession:
     return CausalSupersession(**fields)  # pyright: ignore[reportArgumentType]
 
 
-def _deriving(
-    *, author: str = DERIVATION_ACTORS[0], recorded_result: object = _OBLIGATION
-) -> DerivingTransition:
+def _deriving(*, author: str = DERIVATION_ACTORS[0]) -> DerivingTransition:
+    """A derivation that really did write the obligation, and was retained since.
+
+    Both provenance fields are supplied so every refusal below is attributable to
+    the one condition its own case stages; the grade itself is covered beside it,
+    in `test_plan_supersession_provenance.py`.
+    """
     return DerivingTransition(
-        author=author, recorded_at=_DERIVED_AT, required_result=recorded_result
+        author=author, recorded_at=_DERIVED_AT, required_result=_OBLIGATION, later_results=()
     )
 
 
@@ -232,46 +236,6 @@ def test_a_deriving_operation_that_resolves_to_no_transition_is_refused() -> Non
     assert "op-derived" in verdict.detail
 
 
-@pytest.mark.parametrize(
-    ("label", "recorded_result"),
-    [
-        (
-            "a recorded result nothing can parse as a typed reference",
-            {"shell": "test -f done"},
-        ),
-        ("a transition that recorded no result at all", None),
-    ],
-)
-def test_a_derivation_whose_recorded_result_is_unreadable_is_refused(
-    label: str, recorded_result: object
-) -> None:
-    """A derivation whose recorded result has no identity wrote no obligation.
-
-    The comparison the provenance condition makes is between CANONICAL
-    IDENTITIES, and a recorded value that parses to none compares unequal to
-    every obligation — so it refuses, naming the unreadable reference rather
-    than rendering the untrusted ledger value back.
-
-    Its two shapes sit together because they refuse for one reason and the
-    integration tier reaches NEITHER: a chain whose transitions are committed
-    through the production writer records a typed reference on every one of them.
-    """
-    verdict = _refusal(
-        supersession=_supersession(),
-        evidence=SupersessionEvidence(
-            deriving=_deriving(recorded_result=recorded_result),
-            carrier=CarrierEvidence(mapped=True, status="ready", closed_at=None),
-            plan_level=True,
-        ),
-        prior_identity=_IDENTITY,
-        current_epoch=_EPOCH,
-        replacement=_REPLACEMENT,
-    )
-
-    assert "unreadable typed reference" in verdict.detail, label
-    assert _IDENTITY in verdict.detail, label
-
-
 def test_an_obligation_no_derivation_wrote_is_refused_naming_its_writer() -> None:
     """The cause is accepted only for the two reserved derivation actors.
 
@@ -389,7 +353,10 @@ def test_an_undatable_derivation_instant_also_refuses_a_closed_carrier() -> None
         supersession=_supersession(),
         evidence=SupersessionEvidence(
             deriving=DerivingTransition(
-                author=DERIVATION_ACTORS[0], recorded_at="whenever", required_result=_OBLIGATION
+                author=DERIVATION_ACTORS[0],
+                recorded_at="whenever",
+                required_result=_OBLIGATION,
+                later_results=(),
             ),
             carrier=CarrierEvidence(mapped=True, status="closed", closed_at=_AFTER),
             plan_level=True,

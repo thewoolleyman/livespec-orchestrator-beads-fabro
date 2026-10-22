@@ -1426,6 +1426,27 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   and the last case measures WHY — `janitor` is its only in-edge — rather than
   trusting it.
 
+- `test_plan_misderived_supersession_retained.py` — the half of Scenario 211 the
+  first supersession build could not reach (`bd-ib-4hznqp`): a misderived
+  plan-level obligation RETAINED by a later pointer write, so the chain stands
+  past the derivation. All three cases drive the real `set_next_action` over the
+  real store/client seam with nothing stood in. Three things to know before
+  editing. The retaining write is a real `set_next_action` HUMAN pointer, because
+  that is the write the measured incident turned on and the one the derivation
+  gate prescribes for an open carrier — while the derivation itself is
+  hand-committed, since a derivation recorded against an open mapped carrier is
+  exactly the state that gate now prevents, so the only honest way to reach it is
+  to seed the ledger a pre-gate build left behind. Both refusal cases advance the
+  chain through `commit_transition` alone, which is what leaves the DERIVED
+  pointer standing for them to assert unchanged — and each asserts the chain's
+  own authority as well, because the pointer is a projection every writer
+  rewrites wholesale while the chain is what the next write grades against. And
+  the two refusals assert each other's words ABSENT: a reader told its derivation
+  recorded another obligation, about a chain that in fact changed the result and
+  changed it back, fixes the identity and meets the same refusal again. The
+  changed-and-changed-back case is the one no cheaper reading catches, because
+  the named derivation DID record the result standing now.
+
 - `test_sandbox_images_scenario212.py` — the read-only sandbox-image enumeration,
   driven through the production `dispatcher.py` parser and handler table over
   REAL host state in a scratch HOME: a real `installed_plugins.json`, real
