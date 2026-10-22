@@ -54,6 +54,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_readiness_diagnostic
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_pass import (
     reconcile_runs_pass,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_files import (
+    record_file_generators_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import (
     rework_redispatch_eligible_ids,
 )
@@ -256,6 +259,13 @@ def dispatch_preamble(
     # declarations can join it, and ahead of the binary resolution below because
     # which client a dispatch drives is a property of the factory it is routed
     # to.
+    #
+    # The record-file generator grade is LAST and refuses nothing a repository
+    # left unwritten: the key is optional, and the one thing it decides is
+    # whether a refresh has an argv to run in place of merging a generated
+    # record file's text. An operator sent to fix it is editing a key that only
+    # a conflicted refresh would otherwise have read, which is several stages
+    # into a run.
     args.fabro_factory_target = _resolve_fabro_factory_for(args=args, repo=repo)
     config_refusal = (
         schema_validation_refusal(args=args, repo=repo)
@@ -263,6 +273,7 @@ def dispatch_preamble(
         or explicit_factory_selection_refusal(args=args, repo=repo)
         or factory_declaration_refusal(factory=args.fabro_factory_target)
         or overflow_factories_refusal(repo=repo)
+        or record_file_generators_refusal(repo=repo)
     )
     if config_refusal is not None:
         _ = write_stderr(text=config_refusal)
