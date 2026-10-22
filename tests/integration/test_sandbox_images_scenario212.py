@@ -28,6 +28,19 @@ WAITING on the child and not merely by signalling it: an unreaped child is a
 zombie whose `/proc/<pid>` entry still exists, so a fixture that only killed it
 would report every stale lease as live and the case would pass against an
 implementation that never asked.
+
+THE REPORTED ARRAY IS SCOPED TO THIS CASE'S OWN SCRATCH TREE, through `_own`,
+and the exit code is read as the rule rather than as a constant. The payload
+route is HOST-WIDE by design -- any process whose argv names a
+`scripts/bin/dispatcher.py` is a build a dispatch could execute from -- so the
+bundled arm legitimately reports one entry per such build on the host. Measured
+2026-10-21 under `pytest -n 18`: a sibling worker's `tests/bin/test_payload*`
+fixture spawns exactly that child out of a full copy of the plugin root, so the
+array carried foreign `bundled_run_config` entries and the exact-array form reds
+although every reading is correct. Scoping drops nothing the scenario claims:
+the catalog, variant and three bundled entries, and the stale lease's ABSENCE,
+are all under this root, and the live-versus-stale discrimination stays the real
+`/proc` one. The change-nothing snapshot is already scoped, so it is untouched.
 """
 
 from __future__ import annotations
@@ -98,6 +111,30 @@ def _stopped(*, processes: Iterator[subprocess.Popen[bytes]]) -> None:
     for process in processes:
         process.kill()
         _ = process.wait()
+
+
+def _own(*, payload: list[dict[str, str | None]], root: Path) -> list[dict[str, str | None]]:
+    """Only the entries this case's own tree produced, in the command's own order.
+
+    An entry is this fixture's when it names no path at all — the catalog arm,
+    whose whole evidence is that it declares none — or a path under `root`.
+    """
+    return [
+        entry
+        for entry in payload
+        if entry["path"] is None or Path(str(entry["path"])).is_relative_to(root)
+    ]
+
+
+def _unreadable_exit(*, payload: list[dict[str, str | None]]) -> int:
+    """The exit code the reported array implies — the clause's own rule, as read.
+
+    An unreadable source moves the exit code and nothing else, so a build that
+    exited zero regardless, or non-zero regardless, fails this. The concrete
+    0-and-1 readings are asserted by the sibling case, whose array is scoped by
+    `--repo` to repositories that reach no host-wide arm.
+    """
+    return 1 if any(entry["source"] == "unreadable" for entry in payload) else 0
 
 
 def _snapshot(*, roots: tuple[Path, ...]) -> dict[str, bytes | None]:
@@ -177,9 +214,9 @@ def test_scenario212_sandbox_images_enumerates_every_source_and_changes_nothing(
     finally:
         _stopped(processes=iter((live, *payloads)))
 
-    assert exit_code == 0
+    assert exit_code == _unreadable_exit(payload=payload)
     assert after == before
-    assert payload == [
+    assert _own(payload=payload, root=tmp_path) == [
         {
             "repository": str(catalog),
             "source": "catalog_environment",

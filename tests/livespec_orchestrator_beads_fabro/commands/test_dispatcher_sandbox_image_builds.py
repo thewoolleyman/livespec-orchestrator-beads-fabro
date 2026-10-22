@@ -12,6 +12,19 @@ recorded process exists.
 A pid is made STALE by waiting on the child, not merely by killing it. An
 unreaped child is a zombie and `/proc/<pid>` still exists, so a fixture that
 only signalled would report every stale lease as live.
+
+EVERY COMPARISON IS SCOPED TO THIS CASE'S OWN SCRATCH TREE, through `_own`. The
+payload route is HOST-WIDE by design -- it scans the real `/proc` for any argv
+naming a `scripts/bin/dispatcher.py` -- so an exact-equality assertion over the
+raw union is partly an assertion about what else the host happens to be running.
+Measured 2026-10-21 under `pytest -n 18`: a sibling worker's
+`tests/bin/test_payload*` fixture, which spawns a real `dispatcher.py` child out
+of a full copy of the plugin root, contributed foreign `BuildRoot`s such as
+`/tmp/livespec-public-route-exact-*/install-True`, and the case reds although the
+reading is correct. Scoping drops nothing these cases claim: the registered
+build, the live lease, the stale lease and the two payload processes are all real
+and all under this root, so the live-versus-stale discrimination stays the real
+`/proc` one the module exists to take.
 """
 
 from __future__ import annotations
@@ -74,6 +87,11 @@ def _stopped(*, processes: Iterator[subprocess.Popen[bytes]]) -> None:
         _ = process.wait()
 
 
+def _own(*, builds: tuple[BuildRoot, ...], root: Path) -> tuple[BuildRoot, ...]:
+    """Only the builds under this case's own scratch tree, in the union's own order."""
+    return tuple(build for build in builds if build.root.is_relative_to(root))
+
+
 def test_executing_builds_are_the_host_wide_deduplicated_union(tmp_path: Path) -> None:
     """Registered install, live lease and running payload all contribute; a stale lease does not."""
     cache = tmp_path / "cache"
@@ -93,7 +111,7 @@ def test_executing_builds_are_the_host_wide_deduplicated_union(tmp_path: Path) -
     finally:
         _stopped(processes=iter((live, *payloads)))
 
-    assert builds == (
+    assert _own(builds=builds, root=cache) == (
         BuildRoot(identity="registered", root=registered),
         BuildRoot(identity="leased", root=leased),
         BuildRoot(identity="executed", root=executed),
@@ -109,7 +127,7 @@ def test_a_build_manifest_version_is_the_builds_identity(tmp_path: Path) -> None
 
     builds = executing_builds(install_paths=(build,), roots=_roots(plugin_cache=cache))
 
-    assert builds == (BuildRoot(identity="0.229.8", root=build),)
+    assert _own(builds=builds, root=cache) == (BuildRoot(identity="0.229.8", root=build),)
 
 
 def test_an_absent_plugin_cache_and_proc_tree_contribute_no_build(tmp_path: Path) -> None:

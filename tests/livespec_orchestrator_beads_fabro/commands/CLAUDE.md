@@ -456,11 +456,28 @@ Tests for the thin-transport command modules under
   `/proc/<pid>` entry still exists. Its running-Dispatcher fixture is
   deliberately NOT a Python child -- `check-tests-no-subprocess-spawn` asks
   tests not to spawn one, and the argv is the whole of what the reader observes.
-  And `..._images_command` gives every repository fixture a CATALOG or
-  CONFIGURED image, so no assertion depends on the host's executing-build set:
-  a factory host that happened to be running a Dispatcher would otherwise change
-  how many entries a workflow-arm repository contributes, and the assertion
-  would be about that host rather than about the command.
+  And `..._images_command` gives nearly every repository fixture a CATALOG or
+  CONFIGURED image, so almost no assertion depends on the host's executing-build
+  set.
+  NO ASSERTION IN EITHER MODULE -- NOR IN THE INTEGRATION MODULE -- MAY TAKE AN
+  EXACT-EQUALITY READING OF A HOST-WIDE SET, and this is the one thing to know
+  before editing any of the three. The payload route scans the real `/proc` for
+  any argv naming a `scripts/bin/dispatcher.py`, which is host-wide BY DESIGN,
+  so every such process is a legitimate build a dispatch could execute from.
+  Measured 2026-10-21 under `pytest -n 18`, which is how CI runs: a sibling
+  worker's `tests/bin/test_payload*` fixture spawns exactly that child out of a
+  full copy of the plugin root, so foreign roots such as
+  `/tmp/livespec-public-route-exact-*/install-True` entered the union and four
+  cases across the three modules reddened on correct readings while the sandbox
+  gate, where nothing else ran concurrently, passed. The three repairs each keep
+  the real `/proc` reading the liveness claim needs and scope only the
+  COMPARISON: `..._image_builds` and the integration module filter to their own
+  scratch tree through their own `_own` helper, and `..._images_command`'s one
+  bundled-arm case asserts its registered build's entry is PRESENT rather than
+  sole, since "`--repo` scopes repositories, not builds" is a claim about that
+  entry. Where the array is host-wide the exit code is read as the RULE an
+  unreadable source moves rather than as a constant; the concrete 0-and-non-zero
+  readings stay on the sibling cases whose arrays are the fixture's alone.
 
 Conventions:
 
