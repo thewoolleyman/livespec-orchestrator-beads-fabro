@@ -16,15 +16,35 @@ filed, and asking the cap about it first would hold a finding whose proposal
 already rests in the queue, stopping the frontier for ever behind work that is
 done.
 
-ALREADY HELD comes second, because the record is append-only and the root
-reconcile timer fires every ten minutes: a pass that re-recorded each held
-finding would bury the anchor under copies of one hold, and the operator
-surface would list it once per copy.
-
-THE CAP comes third and is read as `>=` rather than `>`, because the contract
+THE CAP comes second and is read as `>=` rather than `>`, because the contract
 says the hold begins "when the count of open drift-origin proposals is AT"
 the cap. A `>` reading admits one proposal beyond the cap on every pass, which
 is the off-by-one that looks correct in every test with a cap of one.
+
+ALREADY HELD IS A RUNG *INSIDE* THE CAP RUNG, never ahead of it, and the
+difference is the whole of this module's correctness. A hold is a decision about
+THIS PASS's queue and not a property of the finding, so a ladder that answered
+"already held" before consulting the cap could never file a held finding again:
+once an identity had a hold record, every later pass reported it held however
+empty the queue had since become. Measured on cap 1 with one open drift-origin
+proposal and one `unstated` merge — the first pass held the finding and the
+contiguous frontier answered None; the open proposal was then adjudicated into
+`history/vNNN/proposed_changes/`, leaving the queue at 0 of 1; and the next pass
+still reported it held with the frontier still None. That is PERMANENT: the
+contract's frontier rule says a merge carrying a held finding stops the frontier
+"until every finding of it is filed", so the frontier wedges at that merge for
+ever while every later tick re-judges a growing backlog at one model call per
+merge and files nothing. Both this module's own account of the ladder and
+`_needs_attention_held_drift_findings`'s subtraction of the filed set describe
+the promotion that rung made unreachable.
+
+So the cap rung decides, and the already-held reading only decides what to do
+once it has: at the cap a hold already on record is REPORTED without being
+re-recorded, because the record is append-only and the root reconcile timer
+fires every ten minutes — a pass that re-recorded each held finding would bury
+the anchor under copies of one hold, and the operator surface would list it once
+per copy. Below the cap the same finding FILES, which is the act the hold was
+waiting on.
 
 A FINDING NOBODY COULD HOLD IS IN NEITHER TUPLE, and that is the fail-closed
 answer rather than an oversight. `record_held_finding` returns False when no
@@ -126,12 +146,8 @@ def _dispose_one(
     if finding.identity in filed_finding_identities(spec_root=context.spec_root):
         filed.append(finding.identity)
         return
-    if finding.identity in _held_identities(context=context):
-        held.append(finding.identity)
-        return
     if len(open_drift_origin_proposals(spec_root=context.spec_root)) >= context.cap:
-        if record_held_finding(path=context.config, anchor=context.anchor, finding=finding):
-            held.append(finding.identity)
+        _hold_one(finding=finding, context=context, held=held)
         return
     _ = file_drift_proposal(
         spec_root=context.spec_root,
@@ -144,6 +160,25 @@ def _dispose_one(
         ),
     )
     filed.append(finding.identity)
+
+
+def _hold_one(*, finding: DriftFinding, context: DispositionContext, held: list[str]) -> None:
+    """Hold ONE finding the queue has no room for, re-recording nothing.
+
+    Reached only with the queue AT the cap, which is what keeps the hold a
+    decision about this pass's queue rather than a property the finding keeps
+    for ever — see the module docstring for what answering this question first
+    costs.
+
+    A finding ALREADY on record is reported held without a second record,
+    because the anchor is append-only. A finding nothing could hold is in
+    neither tuple, which stops the frontier at its merge.
+    """
+    if finding.identity in _held_identities(context=context):
+        held.append(finding.identity)
+        return
+    if record_held_finding(path=context.config, anchor=context.anchor, finding=finding):
+        held.append(finding.identity)
 
 
 def _held_identities(*, context: DispositionContext) -> frozenset[str]:
