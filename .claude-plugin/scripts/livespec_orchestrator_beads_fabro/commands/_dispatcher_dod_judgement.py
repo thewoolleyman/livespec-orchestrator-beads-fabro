@@ -12,6 +12,18 @@ correct what the section asserts, so a judge that never read them grades a brief
 the item has moved on from — and the node, whose goal DOES carry every rider,
 then refuses a section the host taking passed.
 
+AND WHY THE ITEM'S OWN FIELDS COME FIRST, VERBATIM. The clause's GOAL is the
+item's rendered goal — title, description, effective criteria, notes, lessons and
+riders — and the rubric grades the DESCRIPTION: its first heading, its bullets,
+and the `### Host-captured` / `### Human-attested` positions that declare each
+assertion's proof mode. The effective-criteria projection flattens all three
+away, so a subject that showed only the projection left check 1 nothing to read
+and reported every host-captured assertion as factory_captured (bd-ib-kt4mgw).
+The fields are rendered as the goal renders them, without the goal's
+host-varying lines (the checkout path, the publish branch, a rider's author and
+time), because a digest that moved with the host would retire every verdict the
+moment another host took the judgement.
+
 AND WHY THE DISPATCHER'S OWN JUDGEMENT RECORDS ARE NOT. The same clause excludes
 them, and the reason is mechanical rather than aesthetic: recording a verdict
 appends a comment, so a subject that carried receipts would move the digest the
@@ -40,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_marker
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
     effective_criteria,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_lessons import read_ratified_lessons
 from livespec_orchestrator_beads_fabro.effects import (
     AttemptFailure,
     JsonParseFailure,
@@ -73,6 +86,13 @@ _VERDICT_FAILED = "failed"
 _REMEDY_SEPARATOR = "; "
 _UNRESOLVED_HEADING_BODY = "(this heading does not resolve in the governed spec tree)"
 _ABSENT_CRITERIA_BODY = "(this item carries no effective acceptance criteria)"
+# The description is the item's own text, so it can carry any heading; the end
+# marker is what keeps the subject's next heading from reading as the item's.
+_DESCRIPTION_END = "(end of the item's description)"
+_LESSONS_LABEL = (
+    "Ratified lessons (human-merged via loop-reflection-gate/lessons.md; "
+    "treat as standing guidance for this dispatch):"
+)
 # The riders' own heading in the subject, and what stands where they would be
 # when the item carries none. The explicit absence is what keeps an item with no
 # riders distinguishable from one whose riders were dropped, which is the
@@ -101,7 +121,7 @@ class DodJudgement:
 
 
 def judgement_subject(*, item: WorkItem, cwd: Path, comments: Sequence[str] = ()) -> str:
-    """Render the criteria, every referenced heading body and every rider.
+    """Render the item's goal fields, criteria, referenced heading bodies and riders.
 
     `comments` is the item's ledger comment bodies, oldest first, exactly as the
     gate reads them. It defaults to EMPTY rather than being required, because
@@ -117,6 +137,11 @@ def judgement_subject(*, item: WorkItem, cwd: Path, comments: Sequence[str] = ()
         f"work-item: {item.id}",
         f"title: {item.title}",
         "",
+        "Description:",
+        item.description,
+        _DESCRIPTION_END,
+        *_goal_fields(item=item, lessons=read_ratified_lessons(lessons_root=cwd)),
+        "",
         "## Effective acceptance criteria",
         criteria.text if criteria.text else _ABSENT_CRITERIA_BODY,
     ]
@@ -130,6 +155,18 @@ def judgement_subject(*, item: WorkItem, cwd: Path, comments: Sequence[str] = ()
         )
     blocks.extend(("", _RIDERS_HEADING, _riders_body(comments=comments)))
     return "\n".join(blocks)
+
+
+def _goal_fields(*, item: WorkItem, lessons: str) -> list[str]:
+    """The goal's optional item fields, each present only when the goal shows it."""
+    fields: list[str] = []
+    if item.acceptance_criteria is not None:
+        fields.extend(("", "Acceptance criteria:", item.acceptance_criteria))
+    if item.notes is not None:
+        fields.extend(("", "Notes:", item.notes))
+    if lessons:
+        fields.extend(("", _LESSONS_LABEL, lessons))
+    return fields
 
 
 def judgement_subject_digest(*, item: WorkItem, cwd: Path, comments: Sequence[str] = ()) -> str:
