@@ -16,6 +16,26 @@ at 03:39Z while `claude-cred-status` still returned condition `usable` / HTTP
 credential, and this clause exists precisely because the first cannot stand in
 for the second.
 
+BOTH WINDOWS COME OFF ONE RESPONSE, which is the seven-day clause's own
+wording -- "From the same provider response it MUST also take the seven-day
+utilization and the seven-day status" -- and the reason this module reads four
+headers rather than issuing a second request. The admission path spends one
+bounded request per credential per evaluation, so a second round trip for the
+weekly half would double what the brake costs the provider while answering a
+question the first response already answered.
+
+THE SEVEN-DAY HEADER NAMES ARE THE MEASURED FIVE-HOUR HEADER'S SIBLINGS, not a
+second measurement. `anthropic-ratelimit-unified-5h-utilization` was measured
+on this host (see below); the weekly pair is the same unified rate-limit
+family's `7d` spelling. That is stated rather than implied because the
+consequence of being wrong matters: an unrecognised header reads as an ABSENT
+weekly reading, which the clause forbids from skipping anything, so a wrong
+spelling degrades to the five-hour-only behaviour this module already had
+rather than to a wrong refusal. The DECISION is also immune to whether the
+weekly figure is a fraction or a percentage -- the status decides, and the
+figure is only journaled -- so the conversion below can be wrong without any
+candidate being skipped or admitted differently.
+
 WHY THE READING RIDES A MESSAGES REQUEST AND NOT THE OAUTH USAGE ENDPOINT
 (`bd-ib-nzp5ln`). The first build of this module read `GET /api/oauth/usage`.
 That endpoint requires the `user:profile` OAuth scope, which the projected
@@ -55,13 +75,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass, replace
 from email.message import Message
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
+    UNOBSERVABLE_SEVEN_DAY,
     SessionHeadroomReading,
+    SevenDayReading,
     session_headroom_reading,
+    seven_day_reading,
     unobservable_session_headroom,
 )
 
@@ -75,6 +99,8 @@ __all__: list[str] = [
     "FIVE_HOUR_RESET_HEADER",
     "FIVE_HOUR_UTILIZATION_HEADER",
     "SESSION_HEADROOM_READ_TIMEOUT_SECONDS",
+    "SEVEN_DAY_STATUS_HEADER",
+    "SEVEN_DAY_UTILIZATION_HEADER",
     "TIMED_OUT_REASON",
     "TRANSPORT_FAILED_REASON",
     "projected_credential_identity",
@@ -94,6 +120,14 @@ FIVE_HOUR_UTILIZATION_HEADER = "anthropic-ratelimit-unified-5h-utilization"
 # unverified provider claim" and forbids it from changing the projection skip,
 # and nothing here or downstream has a second source to check it against.
 FIVE_HOUR_RESET_HEADER = "anthropic-ratelimit-unified-5h-reset"
+
+# The seven-day window, which the same response reports beside the five-hour
+# one. The STATUS is the field the clause's skip turns on; the utilization is
+# journaled and grades nothing, which is why it carries the same
+# fraction-to-percentage conversion as its five-hour sibling without that
+# conversion being able to change any decision.
+SEVEN_DAY_UTILIZATION_HEADER = "anthropic-ratelimit-unified-7d-utilization"
+SEVEN_DAY_STATUS_HEADER = "anthropic-ratelimit-unified-7d-status"
 
 # Finite, as the clause requires in as many words, and the same bound the
 # sibling credential probe uses: both are one bounded request on the admission
@@ -123,6 +157,26 @@ _CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
 _AUTHENTICATION_STATUSES = frozenset({401, 403})
 
 
+@dataclass(frozen=True, kw_only=True)
+class _ProviderWindows:
+    """What ONE request came back with: both windows, or the fault instead.
+
+    A value rather than a widening tuple, which is what the five-hour-only read
+    carried. Two windows plus a reset claim plus a fault name is four slots
+    whose meanings are not interchangeable, and a positional reader of four is
+    exactly how a response's weekly status comes to be read as its reset claim.
+
+    `reason` being set is what makes this a FAULT: the two windows are then
+    whatever could still be read off a refused response, which the caller
+    journals beside the unobservable five-hour result.
+    """
+
+    utilization: float | None = None
+    reason: str | None = None
+    reset_claim: str | None = None
+    seven_day: SevenDayReading = UNOBSERVABLE_SEVEN_DAY
+
+
 def projected_credential_identity(*, token: str | None) -> str:
     """The opaque, non-secret identity the journal names this credential by."""
     if not token:
@@ -142,69 +196,81 @@ def read_projected_session_headroom(
             observed_at=observed_at,
             reason=ABSENT_CREDENTIAL_REASON,
         )
-    utilization, reset_claim = _five_hour_window(token=token)
-    if isinstance(utilization, str):
+    windows = _provider_windows(token=token)
+    if windows.reason is not None:
         return unobservable_session_headroom(
             credential_identity=identity,
             observed_at=observed_at,
-            reason=utilization,
-            provider_reset_claim=reset_claim,
+            reason=windows.reason,
+            provider_reset_claim=windows.reset_claim,
+            seven_day=windows.seven_day,
         )
     return session_headroom_reading(
         credential_identity=identity,
         observed_at=observed_at,
-        utilization=utilization,
-        provider_reset_claim=reset_claim,
+        utilization=windows.utilization,
+        provider_reset_claim=windows.reset_claim,
+        seven_day=windows.seven_day,
     )
 
 
-def _five_hour_window(*, token: str) -> tuple[float | None | str, str | None]:
-    """The utilization or the NAME of the failure, plus any reset claim.
+def _provider_windows(*, token: str) -> _ProviderWindows:
+    """Both usage windows off ONE bounded request, or the fault that replaced them.
 
-    `None` in the first slot means the provider answered without a parseable
-    header, which the shared grader reports as an unreadable utilization. A
-    `str` there is an unobservable reason rather than an error message: the
-    caller journals it verbatim, so it must be one of the closed reasons above
-    and must never carry the provider's own sentence, which is a raw provider
-    response.
+    The fault name is one of the closed reasons above and never the provider's
+    own sentence, which is a raw provider response and may not be journaled.
 
-    THE CLAIM TRAVELS WITH EVERY ANSWER THE PROVIDER ACTUALLY GAVE, including a
-    refused one -- a 429 at the session limit is exactly the response most
-    likely to carry it -- and is `None` for the two faults where there is no
-    response at all to read it from.
+    EVERY ANSWER THE PROVIDER ACTUALLY GAVE IS READ, including a refused one --
+    a 429 at a session or weekly limit is exactly the response most likely to
+    carry the figures -- and the two faults where no response exists carry
+    nothing, because there is nothing to read them off.
     """
     try:
         with urlopen(  # noqa: S310 - fixed HTTPS endpoint, no caller-controlled URL.
             _headroom_request(token=token),
             timeout=SESSION_HEADROOM_READ_TIMEOUT_SECONDS,
         ) as response:
-            return (
-                _header_percent(headers=response.headers),
-                _reset_claim(headers=response.headers),
-            )
+            return _answered(headers=response.headers)
     except HTTPError as error:
-        percent = _header_percent(headers=error.headers)
-        reset_claim = _reset_claim(headers=error.headers)
-        if percent is not None:
-            return (percent, reset_claim)
-        return (_http_reason(status=error.code), reset_claim)
+        answered = _answered(headers=error.headers)
+        if answered.utilization is not None:
+            return answered
+        return replace(answered, reason=_http_reason(status=error.code))
     except TimeoutError:
-        return (TIMED_OUT_REASON, None)
+        return _ProviderWindows(reason=TIMED_OUT_REASON)
     except (URLError, OSError):
-        return (TRANSPORT_FAILED_REASON, None)
+        return _ProviderWindows(reason=TRANSPORT_FAILED_REASON)
 
 
-def _reset_claim(*, headers: Message | None) -> str | None:
-    """The provider's claimed reset instant, verbatim, or `None`.
+def _answered(*, headers: Message | None) -> _ProviderWindows:
+    """Every window one ANSWERED response reports, graded.
 
-    Taken as the header's own text with no parsing and no validation: nothing
-    downstream reads it, so a parse here would be work performed to produce a
-    value no decision consumes -- and a parse that FAILED would discard the
-    claim the clause permits journaling.
+    Shared by the success and refusal arms rather than written twice, which is
+    what keeps a refused response from being read differently than a 200 -- the
+    whole reason the five-hour header is taken off a 429 at all.
+    """
+    return _ProviderWindows(
+        utilization=_header_percent(headers=headers, name=FIVE_HOUR_UTILIZATION_HEADER),
+        reset_claim=_header_text(headers=headers, name=FIVE_HOUR_RESET_HEADER),
+        seven_day=seven_day_reading(
+            utilization=_header_percent(headers=headers, name=SEVEN_DAY_UTILIZATION_HEADER),
+            status=_header_text(headers=headers, name=SEVEN_DAY_STATUS_HEADER),
+        ),
+    )
+
+
+def _header_text(*, headers: Message | None, name: str) -> str | None:
+    """One header's own text, verbatim, or `None` when it is not there.
+
+    No parsing and no validation. Of its two callers, the reset claim is read
+    by no decision at all -- so a parse would be work performed to produce a
+    value nothing consumes, and a parse that FAILED would discard the claim the
+    clause permits journaling -- and the seven-day status is graded by the
+    shared reading, which owns what counts as exhaustion.
     """
     if headers is None:
         return None
-    raw = headers.get(FIVE_HOUR_RESET_HEADER)
+    raw = headers.get(name)
     if raw is None:
         return None
     return str(raw)
@@ -239,15 +305,19 @@ def _http_reason(*, status: int) -> str:
     return TRANSPORT_FAILED_REASON
 
 
-def _header_percent(*, headers: Message | None) -> float | None:
-    """The five-hour header as a percentage, or `None` when it cannot be read.
+def _header_percent(*, headers: Message | None, name: str) -> float | None:
+    """One utilization header as a percentage, or `None` when it cannot be read.
 
     Range and finiteness are NOT checked here: grading is the reading's own
     job, and a value this function silently clamped would be a coerced reading.
+
+    The header is named by the CALLER because both windows report their
+    utilization the same way, and one function reading a fixed name is how the
+    weekly figure comes to be reported as the five-hour one.
     """
     if headers is None:
         return None
-    raw = headers.get(FIVE_HOUR_UTILIZATION_HEADER)
+    raw = headers.get(name)
     if raw is None:
         return None
     try:

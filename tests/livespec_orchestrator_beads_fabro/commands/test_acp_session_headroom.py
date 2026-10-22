@@ -353,4 +353,13 @@ def test_the_record_carries_no_credential_value_or_raw_provider_response() -> No
         "five_hour_drain_percent_per_hour",
         "projection",
         "provider_reset_claim",
+        "seven_day",
+    }
+    # The one field that is itself a VALUE has to be closed too, or the
+    # structural guarantee stops at the outer type and the nested one becomes
+    # the place a raw provider response can arrive.
+    assert set(headroom.SevenDayReading.__dataclass_fields__) == {
+        "utilization_percent",
+        "status",
+        "unobservable",
     }
