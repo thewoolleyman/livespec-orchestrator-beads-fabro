@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.232.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.232.0...v0.232.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **dod:** compose the preflight's prompt through the package ([f5ebe18](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f5ebe189a00d2c7f3a1f8c69dc3509b7df0c75da))
+* **dod:** grade the item's riders and omit the judgement receipts ([366016d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/366016dbb44f2cc5fbcec55d20d4008beb39329d))
+* **dod:** hand the judge the rubric, the ending contract, and nothing else ([ca9d711](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ca9d711da3a4e097049b7d0c139264dd09039424))
+* **dod:** name both digests on every judgement record ([c6eb142](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c6eb14229c99e6a926cf15cf04b4ad627a0d299e))
+* **dod:** omit the judgement receipts from the rendered goal ([5f5b438](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5f5b43844c924adca683defca81171770ca500b4))
+* **dod:** project one assertion per Definition of Done bullet ([a58333d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a58333d3f3b07ada1b3c66a13b58b9cfa1e80451))
+* **dod:** refuse a Definition of Done section carrying a stray line ([c11f708](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c11f7087d4c104a19ef7bade03a09b867a93395f))
+
 ## [0.232.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.231.4...v0.232.0) (2026-10-22)
 
 
