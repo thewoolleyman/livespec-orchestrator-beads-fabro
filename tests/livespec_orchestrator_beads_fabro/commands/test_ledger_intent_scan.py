@@ -21,6 +21,7 @@ from livespec_orchestrator_beads_fabro.commands._ledger_intent_cut import (
     CUT_INSTANT_FIELD,
     SpecVersionCut,
     latest_spec_version_cut,
+    parse_spec_version,
     spec_version_cut,
 )
 from livespec_orchestrator_beads_fabro.commands._ledger_intent_scan import (
@@ -131,6 +132,25 @@ def test_the_latest_cut_is_the_newest_version_the_tree_carries(tmp_path: Path) -
     assert latest_spec_version_cut(spec_root=tmp_path) == SpecVersionCut(
         version=2, instant="2026-02-01T00:00:00Z"
     )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        pytest.param("v026", 26, id="ratified-form"),
+        pytest.param("V7", 7, id="uppercase"),
+        pytest.param("26", 26, id="bare-integer"),
+        pytest.param("v0", None, id="zero"),
+        pytest.param("", None, id="empty"),
+        pytest.param("v", None, id="marker-only"),
+        pytest.param("latest", None, id="word"),
+        pytest.param("-3", None, id="negative"),
+    ],
+)
+def test_the_since_version_grammar_accepts_both_spellings_and_nothing_else(
+    raw: str, expected: int | None
+) -> None:
+    assert parse_spec_version(raw=raw) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +313,41 @@ def test_a_judge_that_exits_non_zero_raises_the_injected_cli_error() -> None:
     with pytest.raises(InjectedCliError) as excinfo:
         _ = run("a prompt")
     assert "exit 7" in excinfo.value.detail
+
+
+def test_a_scoped_scan_whose_named_version_records_no_cut_refuses_naming_it(
+    tmp_path: Path,
+) -> None:
+    """The refusal names the VERSION, which the unscoped arm cannot say."""
+    context = _context(root=tmp_path)
+    stderr = io.StringIO()
+    with contextlib.redirect_stderr(stderr):
+        code = run_ledger_intent_scan(
+            context=context,
+            judge_cli=_answering(text="{}"),
+            since_version=26,
+            as_json=True,
+        )
+    assert code == 3
+    assert "spec version v026" in stderr.getvalue()
+
+
+def test_an_unusable_since_version_value_is_a_narrated_usage_error(tmp_path: Path) -> None:
+    stderr = io.StringIO()
+    with contextlib.redirect_stderr(stderr):
+        code = main(
+            argv=[
+                "ledger-intent-scan",
+                "--project-root",
+                str(tmp_path),
+                "--judge-cli",
+                json.dumps([sys.executable, "-c", "pass"]),
+                "--since-version",
+                "latest",
+            ]
+        )
+    assert code == 2
+    assert "--since-version requires a positive integer" in stderr.getvalue()
 
 
 def test_a_judge_cli_that_is_not_an_argv_array_is_a_usage_error(tmp_path: Path) -> None:

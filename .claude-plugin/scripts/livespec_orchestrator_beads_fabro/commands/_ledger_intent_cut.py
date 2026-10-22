@@ -46,6 +46,7 @@ __all__: list[str] = [
     "CUT_INSTANT_FIELD",
     "SpecVersionCut",
     "latest_spec_version_cut",
+    "parse_spec_version",
     "spec_version_cut",
 ]
 
@@ -94,6 +95,26 @@ def latest_spec_version_cut(*, spec_root: Path) -> SpecVersionCut | None:
     if version <= 0:
         return None
     return spec_version_cut(spec_root=spec_root, version=version)
+
+
+def parse_spec_version(*, raw: str) -> int | None:
+    """One `--since-version` value as a version number, or `None` when unusable.
+
+    Accepts the ratified `v<N>` spelling and a bare `<N>`, which is the same
+    pair `detect-impl-gaps` documents for its own `--since-version`: an
+    operator who learned one flag types either at the other. Unifying the two
+    readers is deliberately NOT done here — that detector's flag means
+    something different (it scopes a file diff, not a capture instant), and
+    folding them would make one grammar module serve two populations.
+
+    `None` rather than a raised usage error, because the caller is a CLI arm
+    that owes the operator a narrated exit 2 naming the value it refused.
+    """
+    candidate = raw[1:] if raw[:1] in {"v", "V"} else raw
+    if not candidate.isdigit():
+        return None
+    version = int(candidate)
+    return version if version > 0 else None
 
 
 def _revised_at(*, text: str) -> str | None:

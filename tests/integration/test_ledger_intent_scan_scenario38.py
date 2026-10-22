@@ -255,6 +255,62 @@ def test_an_item_the_judgement_states_produces_no_finding(tmp_path: Path) -> Non
     assert [one["item_id"] for one in findings] == ["bd-ib-bbb"]
 
 
+def test_since_version_restricts_the_population_to_the_named_version_cut(
+    tmp_path: Path,
+) -> None:
+    """Assertion 3 — the NAMED version's cut governs, and the live set does not widen it.
+
+    Two scoped runs over one tenant, because a build that read the latest cut
+    whatever the flag said would answer the `v002` case correctly and the
+    `v001` case with one item too few. The live item captured before both cuts
+    is what pins the clause's "only work-items captured on or after the cut":
+    it is in the unscoped population and in neither scoped one.
+    """
+    root = _project(root=tmp_path)
+    _seed(
+        id_="bd-ib-aaa",
+        status="backlog",
+        captured_at="2026-01-01T00:00:00Z",
+        title="Live, captured before either cut",
+    )
+    _seed(
+        id_="bd-ib-bbb",
+        status="done",
+        captured_at="2026-02-15T00:00:00Z",
+        title="Captured between the two cuts",
+    )
+    _seed(
+        id_="bd-ib-ccc",
+        status="done",
+        captured_at="2026-06-01T00:00:00Z",
+        title="Captured after both cuts",
+    )
+    unstated: dict[str, object] = {
+        "kind": "unstated",
+        "stated_by": [],
+        "generalization_target": _COVERAGE_HEADING,
+        "rationale": "no clause states it",
+    }
+    judge_cli = _judge_cli(
+        verdicts={"bd-ib-aaa": unstated, "bd-ib-bbb": unstated, "bd-ib-ccc": unstated}
+    )
+    latest_code, latest = _run(root=root, judge_cli=judge_cli, extra=["--since-version", "v002"])
+    assert latest_code == 0, f"the scoped scan did not succeed: exit {latest_code}"
+    assert isinstance(latest, dict)
+    assert latest["cut"] == _LATEST_CUT
+    assert latest["scanned"] == 1
+    assert [one["item_id"] for one in latest["findings"]] == ["bd-ib-ccc"]  # pyright: ignore[reportGeneralTypeIssues]
+    earlier_code, earlier = _run(root=root, judge_cli=judge_cli, extra=["--since-version", "v001"])
+    assert earlier_code == 0
+    assert isinstance(earlier, dict)
+    assert earlier["cut"] == _EARLIER_CUT
+    assert earlier["scanned"] == 2
+    assert [one["item_id"] for one in earlier["findings"]] == [  # pyright: ignore[reportGeneralTypeIssues]
+        "bd-ib-bbb",
+        "bd-ib-ccc",
+    ]
+
+
 def test_an_unknown_flag_is_a_usage_error_that_emits_no_envelope(tmp_path: Path) -> None:
     """The usage exit this module's own invoker tolerates, asserted rather than assumed.
 
