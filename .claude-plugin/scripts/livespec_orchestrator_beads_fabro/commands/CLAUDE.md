@@ -1458,6 +1458,48 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   such a record covers only a candidate whose own key the engine would have
   recorded the same way, and broadening it would name an entitlement nobody
   declared.
+- `_acp_availability_confirmation.py` — the POST-EXPIRY CONFIRMATION of the same
+  section's "A candidate covered by an expired domain or candidate hold carries
+  an outstanding availability confirmation, and per-node selection MUST skip
+  that candidate until that confirmation is satisfied" (`bd-ib-nk7jiz`,
+  Scenarios 60, 94 and 127). PURE, and the other half of the retirement entry
+  above: expiry ENDS a hold and establishes nothing, so before this an expired
+  observation made its candidate immediately selectable and every expiry was
+  followed by a real dispatch that rediscovered the outage by failing — the
+  measured outages lasted DAYS against a fifteen-minute bounded expiry, so that
+  rediscovery was the ordinary case. `_acp_hold_ledger` now carries the expired
+  records alongside the live ones, `_dispatcher_acp_preflight` derives the
+  confirmations from the SAME factory read the holds come from, and
+  `_acp_candidate_preflight` applies them as one more skip reason.
+  Four properties an editor must not invert. The retirement predicate is REUSED
+  rather than restated, because `retired_by_success` already carries both the
+  time ordering — which IS the clause's "MUST NOT satisfy a newer observation" —
+  and the domain-or-candidate scoping; what differs is the direction, since a
+  confirmation must retain the observation id a retirement deletes. A success
+  whose factory row recorded NO CANDIDATE KEY confirms nothing for anybody, the
+  deliberate asymmetry with retirement: such an attempt still retires the right
+  DOMAIN record, but availability is confirmed only by a turn whose candidate
+  identity is known, so the candidate keeps its outstanding confirmation. A
+  confirmation is matched on the candidate's EXACT identity pair and never on
+  the hold's scope, which is what leaves one DOMAIN observation outstanding per
+  covered candidate separately. And the SCHEDULING is the cadence of
+  `dispatcher.credential_reprobe_interval_seconds` and never a provider's own
+  advertised reset instant — an expired record has no expiry left for
+  `_acp_availability_wait._reevaluate_at` to take, so the claim is the only
+  other instant in the evaluation and it is carried as unverified provenance
+  on the headroom reading alone, read by no decision.
+  `dispatcher.availability_probe_timeout_seconds`
+  (`_dispatcher_policy_settings`, committed-only, positive integer, default
+  120) bounds the confirmation TURN, which this item deliberately does not
+  build: `bd-ib-n3pzcl` consumes the key.
+  THE GOVERNING-CONDITION PRECEDENCE PUTS IT BELOW BOTH HOLDS, which is the
+  one place that tuple follows the CLAUSE's ordering rather than the filter's —
+  the filter consults the confirmation before the legacy blanket, while "when
+  no hold governs the refusal" makes a live record outrank it. Omitting it
+  from the tuple was silent and wrong: a node emptied by a confirmation alone
+  substantiated no listed condition and fell through to
+  `unavailable-availability-evidence`, reporting an unreadable factory for a
+  chain whose evidence had been read perfectly well.
 - The FACTORY-NATIVE OPERATOR CLEARANCE of the same paragraph's "an operator
   clearance by a minimal factory-native record whose recorded outcome carries
   the clearance's exact identity, actor, time, and reason" (`bd-ib-dtfv2p`,
