@@ -69,6 +69,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     read_dispatch_labels,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_workflow import (
+    definition_of_done_workflow_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_wall import (
     dod_judgement_refusal,
 )
@@ -324,6 +327,11 @@ def _refusing_sequence(
         (
             lambda: dod_judgement_refusal(repo=repo, items=items, workflow_name=args.workflow_name),
             EXIT_UNGRADEABLE_CRITERIA,
+            False,
+        ),
+        (
+            lambda: definition_of_done_workflow_refusal(args=args, repo=repo, items=items),
+            EXIT_PRECONDITION_ERROR,
             False,
         ),
         (
