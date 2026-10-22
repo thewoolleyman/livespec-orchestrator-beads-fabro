@@ -135,7 +135,9 @@ def run_ledger_intent_scan(*, context: CliContext, judge_cli: list[str], as_json
         if not is_successful(judged):
             unjudged.append(f"{item.id}: {judged.failure().detail}")
             continue
-        findings.append(finding_for(item=item, verdict=judged.unwrap()))
+        finding = finding_for(item=item, verdict=judged.unwrap())
+        if finding is not None:
+            findings.append(finding)
     _emit(findings=findings, scanned=len(population), cut_instant=cut.instant, as_json=as_json)
     for narration in unjudged:
         _ = write_stderr(text=f"ERROR: the judgement could not be read for {narration}\n")

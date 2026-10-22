@@ -176,8 +176,29 @@ def test_a_finding_carries_the_verdict_and_the_generalization_target() -> None:
         generalization_target="## A clause",
         rationale="part of it",
     )
+    assert finding is not None
     assert finding.projection()["stated_by"] == ["## A clause"]
     assert finding.kind in LEDGER_INTENT_KINDS
+
+
+def test_a_stated_verdict_yields_no_finding_at_all() -> None:
+    """The control for the case above: a kind outside the two drift verdicts.
+
+    Without it a build that emitted a finding for every judged item satisfies
+    the positive case exactly as well as the filter does.
+    """
+    assert (
+        finding_for(
+            item=_item(),
+            verdict=SpecStatedVerdict(
+                kind="stated",
+                stated_by=("## A clause",),
+                generalization_target=None,
+                rationale="the clause states it",
+            ),
+        )
+        is None
+    )
 
 
 # ---------------------------------------------------------------------------
