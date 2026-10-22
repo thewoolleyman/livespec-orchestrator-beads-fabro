@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.234.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.234.0...v0.234.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **dod:** carry the item's description, notes and lessons in the judgement subject (bd-ib-kt4mgw) ([97dcc3c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/97dcc3cc31acaba3cca91b9b7c111c470a78e52b))
+
 ## [0.234.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.233.1...v0.234.0) (2026-10-22)
 
 
