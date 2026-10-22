@@ -6521,6 +6521,75 @@ def test_render_goal_omits_comments_section_when_none(tmp_path: Path) -> None:
     assert "Ledger comments" not in goal
 
 
+def test_render_goal_carries_every_rider_and_omits_the_judgement_records(
+    tmp_path: Path,
+) -> None:
+    """A judgement record is a RECEIPT, not brief, so the node never reads one.
+
+    `contracts.md`'s one-rubric-one-subject clause excludes the Dispatcher's own
+    Definition-of-Done judgement records from the node's rendered goal for the
+    same reason it excludes them from the subject the host takings grade: they
+    are what the Dispatcher wrote ABOUT the brief, and a node that read them
+    would grade a brief that grows by one paragraph every time a verdict is
+    recorded.
+
+    The RIDERS are the control, and they are what makes this case able to fail: a
+    renderer that dropped every comment would satisfy the two absences while
+    withholding exactly the prose an operator appends to correct the section.
+    """
+    comments = (
+        WorkItemComment(text="rider one", author="operator", created_at=None),
+        WorkItemComment(
+            text=(
+                "livespec-dod-judgement\n\nwork-item: bd-ib-1\nstage: pre-dispatch\n"
+                "outcome: admitted\nsubject-digest: aaa\nrubric-digest: bbb"
+            ),
+            author="Chad Woolley",
+            created_at=None,
+        ),
+        WorkItemComment(
+            text=(
+                "livespec-dod-judgement-unavailable\n\n"
+                "judgement-unavailable-cause: judge-command-failed"
+            ),
+            author="Chad Woolley",
+            created_at=None,
+        ),
+        WorkItemComment(text="rider two", author="operator", created_at=None),
+    )
+
+    goal = render_goal(item=_item(), repo=tmp_path, branch="feat/t", comments=comments)
+
+    assert "rider one" in goal
+    assert "rider two" in goal
+    assert "livespec-dod-judgement" not in goal
+    # The two surviving riders are renumbered from one, so the brief carries no
+    # gap where a receipt was dropped — a gap reads as a comment the renderer
+    # lost rather than one it deliberately omitted.
+    assert "[1] (operator) rider one" in goal
+    assert "[2] (operator) rider two" in goal
+
+
+def test_render_goal_omits_the_comments_section_when_only_records_remain(
+    tmp_path: Path,
+) -> None:
+    # An item whose only comments are receipts carries no rider, so the section
+    # is absent exactly as it is for an item with no comment at all. A section
+    # with nothing under it would tell the node riders exist.
+    goal = render_goal(
+        item=_item(),
+        repo=tmp_path,
+        branch="feat/t",
+        comments=(
+            WorkItemComment(
+                text="livespec-dod-judgement\n\noutcome: admitted", author=None, created_at=None
+            ),
+        ),
+    )
+
+    assert "Ledger comments" not in goal
+
+
 # MiniJinja's three opening delimiters: expression `{{`, statement `{%`,
 # comment `{#`. Fabro renders the run goal through MiniJinja (the graph's
 # `goal` attribute) and into the prompts as `{{ goal }}`, so any one of
