@@ -25,6 +25,9 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_declaration import (
+    PLUGIN_BLOCK,
+)
 
 _COMMANDS_DIR = Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
 _MODULE_FILE = "_dispatcher_record_file_regeneration.py"
@@ -71,10 +74,19 @@ def _initialized(*, root: Path) -> Path:
 
 
 def _repo(*, tmp_path: Path, entries: list[dict[str, object]]) -> Path:
-    """A real git repository whose committed declaration names `entries`."""
+    """A real git repository whose committed declaration names `entries`.
+
+    Nested under the PLUGIN BLOCK, which is where a governed `.livespec.jsonc`
+    carries its dispatcher block and where this package's own `dispatcher_block`
+    reads it from. The shape is read from the module that owns the block name
+    rather than spelled, because a fixture written in a shape no repository
+    carries asserts agreement with itself — the wrong-population failure
+    `test_dispatcher_record_file_declaration_shape.py` exists to close.
+    """
     repo = _initialized(root=tmp_path / "repo")
     _ = (repo / ".livespec.jsonc").write_text(
-        "// a committed declaration\n" + json.dumps({"dispatcher": {"record_files": entries}}),
+        "// a committed declaration\n"
+        + json.dumps({PLUGIN_BLOCK: {"dispatcher": {"record_files": entries}}}),
         encoding="utf-8",
     )
     return repo
@@ -373,7 +385,9 @@ def test_a_repository_declaring_no_record_files_checks_clean(
     """
     program = _materialized(tmp_path=tmp_path)
     repo = _initialized(root=tmp_path / "bare")
-    _ = (repo / ".livespec.jsonc").write_text('{"dispatcher": {}}', encoding="utf-8")
+    _ = (repo / ".livespec.jsonc").write_text(
+        json.dumps({PLUGIN_BLOCK: {"dispatcher": {}}}), encoding="utf-8"
+    )
     _commit(repo=repo, message="base")
     monkeypatch.chdir(repo)
     state = tmp_path / "state"

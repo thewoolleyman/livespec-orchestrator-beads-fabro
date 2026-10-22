@@ -26,6 +26,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
     publication_push_program_source,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
+)
 
 WORKFLOW = Path(".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro")
 BRANCH = "feat/push-time-test"
@@ -216,6 +220,13 @@ def provision_auth(
     executable(path=bin_dir / "gh", source="#!/bin/sh\nprintf 'null\\n'\nexit 0\n")
     executable(path=plugins / "livespec-push-exact-head", source=publication_push_program_source())
     (plugins / "livespec-run-plugin-gate.py").write_text("# fixture gate\n")
+    # The generated-record-file resolution rides the SAME prepare block as the
+    # push program (bd-ib-ze7xxj), and a refreshing stage that cannot resolve it
+    # fails closed before the repository-declared gate -- so a fixture omitting
+    # it would exercise that refusal rather than the push route under test.
+    (plugins / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
     env.update(
         PATH=f"{bin_dir}:{env['PATH']}",
         LIVESPEC_SANDBOX_GH_REFRESH_ROOT=str(bundle),
