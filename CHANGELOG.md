@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.233.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.232.1...v0.233.0) (2026-10-22)
+
+
+### Features
+
+* **orchestrator:** --since-version scopes the ledger-intent scan to one cut ([fceb559](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fceb5594a59a6160e6da34236c6a7ad9045a0fa9))
+* **orchestrator:** ledger-intent scan emits nothing for stated intent ([d710195](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d710195830ef4b034225df1998c7ddd7c8dd86c2))
+* **orchestrator:** ledger-intent scan lists the population with each verdict ([079a2ea](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/079a2ea6ab1c1f2a8b5c327ea2ad05a6ce7c14ef))
+* **orchestrator:** the ledger-intent scan records its own coverage attempt ([ab94ea3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ab94ea3af938248f23753d63e04a530389671706))
+
+
+### Bug Fixes
+
+* **orchestrator:** a judge that fails to answer still records the scan attempt ([943be6a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/943be6a4664d90346c3fdda2ed3a1ed356aff3a3))
+
 ## [0.232.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.232.0...v0.232.1) (2026-10-22)
 
 
