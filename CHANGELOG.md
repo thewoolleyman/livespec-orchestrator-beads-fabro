@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.234.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.234.2...v0.234.3) (2026-10-22)
+
+
+### Bug Fixes
+
+* read a spec-stated citation of an existing subsection as its clause ([71baf4a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/71baf4acb1735073be15c7a78748e944233ba31c))
+
 ## [0.234.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.234.1...v0.234.2) (2026-10-22)
 
 
