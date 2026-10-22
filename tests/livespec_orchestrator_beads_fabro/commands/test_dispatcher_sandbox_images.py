@@ -197,6 +197,35 @@ def test_a_committed_reserved_workflow_reports_its_own_pin_once(
     )
 
 
+def test_a_committed_reserved_workflow_is_reported_with_no_build_executing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The target's own copy is reported when the host has no executing build at all.
+
+    The `--repo` scope exists to serve exactly this state — no process argv
+    names a dispatcher, no plugin-cache lease is live, and the registry names
+    no install of this plugin — and the committed answer is the target's own
+    file, so it cannot depend on how many builds happen to be executing.
+    Deciding it inside the per-build walk dropped the entry here and exited
+    zero, which is the silent hole in a warm timer's tag list.
+    """
+    monkeypatch.delenv(_SANDBOX_IMAGE_ENV, raising=False)
+    repo = _repo(tmp_path=tmp_path, name="committed-no-builds")
+    _write_config(repo=repo, dispatcher={"factories": {_FACTORY: {}}})
+    _write_workflow(path=repo.joinpath(*_RESERVED), image="ghcr.io/example/sandbox:own")
+
+    entries = sandbox_images(factory=_FACTORY, repo=repo, builds=())
+
+    assert entries == (
+        SandboxImageEntry(
+            repository=repo,
+            source=COMMITTED_RUN_CONFIG_SOURCE,
+            image="ghcr.io/example/sandbox:own",
+            path=repo.joinpath(*_RESERVED),
+        ),
+    )
+
+
 def test_each_executing_build_reports_its_bundled_pin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -227,6 +256,23 @@ def test_each_executing_build_reports_its_bundled_pin(
             path=builds[1].root.joinpath(*_RESERVED),
         ),
     )
+
+
+def test_a_repository_committing_no_reserved_workflow_reports_nothing_without_a_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bundled arm stays per build: no build executing means no bundled entry.
+
+    The control for the case above. A bundled pin belongs to the build whose
+    bundle carries it, so there is nothing to name when no build is executing —
+    and an enumeration that answered the reserved workflow unconditionally
+    would satisfy the committed case while inventing an entry here.
+    """
+    monkeypatch.delenv(_SANDBOX_IMAGE_ENV, raising=False)
+    repo = _repo(tmp_path=tmp_path, name="bundled-no-builds")
+    _write_config(repo=repo, dispatcher={"factories": {_FACTORY: {}}})
+
+    assert sandbox_images(factory=_FACTORY, repo=repo, builds=()) == ()
 
 
 def test_the_entry_source_comes_from_the_dispatch_image_source_function(

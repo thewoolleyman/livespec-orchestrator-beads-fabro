@@ -112,7 +112,12 @@ def test_a_repository_config_that_cannot_be_read_is_one_unreadable_entry(
 def test_an_unreadable_named_variant_keeps_every_other_entry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """One variant's failed read is one unreadable entry beside intact siblings."""
+    """One variant's failed read is one unreadable entry beside intact siblings.
+
+    The reserved workflow this fixture also commits is one of those siblings,
+    and it stands with no build executing: the committed answer is the
+    target's own file, so it does not depend on the build set.
+    """
     monkeypatch.delenv(_SANDBOX_IMAGE_ENV, raising=False)
     repo = _repo(tmp_path=tmp_path, name="variant-unreadable")
     _write_config(
@@ -138,6 +143,12 @@ def test_an_unreadable_named_variant_keeps_every_other_entry(
             variant="sound",
             image="ghcr.io/example/sandbox:sound",
             path=sound,
+        ),
+        SandboxImageEntry(
+            repository=repo,
+            source=COMMITTED_RUN_CONFIG_SOURCE,
+            image="ghcr.io/example/sandbox:reserved",
+            path=repo.joinpath(*_RESERVED),
         ),
     )
 
