@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.235.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.235.0...v0.235.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **dispatcher:** refuse incomplete Definition-of-Done workflows ([47c030d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/47c030d3e44f1c0543685f3ca4c7a22b3fb8fd53))
+* **dispatcher:** refuse unreadable Definition-of-Done workflow inputs ([6325cae](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6325cae2c004c114887b1c21a21da01401388508))
+
 ## [0.235.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.234.3...v0.235.0) (2026-10-22)
 
 
