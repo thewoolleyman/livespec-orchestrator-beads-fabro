@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.231.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.231.0...v0.231.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* bind DoD judge to selected credential ([690c10a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/690c10afd4a74484110cb13d767c4d12a9518540))
+* report DoD credential fallback ([d34c510](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d34c51077a6ebabe202203e866702d54084feb08))
+
 ## [0.231.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.230.4...v0.231.0) (2026-10-22)
 
 
