@@ -173,6 +173,16 @@
       "github_url": "https://github.com/thewoolleyman/livespec-console-beads-fabro",
       "local_clone": "/data/projects/livespec-console-beads-fabro",
       "default_branch": "master"
+    },
+    "dolt-server": {
+      "github_url": "https://github.com/thewoolleyman/dolt-server",
+      "local_clone": "/data/projects/dolt-server",
+      "default_branch": "master"
+    },
+    "livespec-tdd-proof": {
+      "github_url": "https://github.com/thewoolleyman/livespec-tdd-proof",
+      "local_clone": "/data/projects/livespec-tdd-proof",
+      "default_branch": "master"
     }
   },
   "livespec-orchestrator-beads-fabro": {
