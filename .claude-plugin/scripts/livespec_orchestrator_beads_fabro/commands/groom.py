@@ -326,9 +326,23 @@ def _work_item_for(
     already resolved from the earlier draft slices. The initial status is the
     capture-style shell; `_route_approved_slice_intake` moves it through A1
     lifecycle routing after creation.
+
+    THE THREE FOLDED LINES SIT UNDER A HEADING OF THEIR OWN, and that heading is
+    load-bearing rather than decoration. A candidate description whose own first
+    heading is the Definition of Done section runs to the next heading at that
+    level or above, so a flush-left trailer appended with no heading lands INSIDE
+    the section — where the grammar admits only bullets, the two opt-out
+    sub-headings with their `Reason:` lines, and the one `References:` line. The
+    section parse used to grade such a trailer as further assertions (measured:
+    three authored bullets reaching the size gate as five), and it now reports
+    each line as a stray-line finding, which would refuse every groomed slice at
+    its own dispatch. The heading ends the section, so the trailer is the
+    provenance it was always meant to be.
     """
     description = (
         f"{candidate.description}\n\n"
+        "## Filing\n"
+        "\n"
         f"Acceptance: {candidate.acceptance}\n"
         f"Autonomy tier: {candidate.autonomy_tier}\n"
         f"Repo target: {candidate.repo_target}"

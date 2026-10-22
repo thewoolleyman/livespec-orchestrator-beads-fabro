@@ -197,6 +197,15 @@ class DefinitionOfDone:
     author wrote; the mode is recovered from it by `declared_proof_mode` — which
     takes the same `subject`, so a plan's title cannot be resolved under the
     work-item defaults.
+
+    `stray_lines` carries, verbatim and in order, every body line the grammar
+    does not admit: one that is neither a `- ` bullet nor one of its own
+    indented continuation lines, neither a sub-heading nor a `Reason:` line, and
+    not the `References:` line. Blank lines are not stray — they separate
+    bullets. REPORTING them is what makes the host-side wall able to refuse
+    before a dispatch spends anything; the alternative the measured defect took
+    was to grade them, which produced an assertion no capture could satisfy and
+    surfaced only at the run's last node.
     """
 
     present: bool
@@ -204,6 +213,7 @@ class DefinitionOfDone:
     assertions: tuple[DefinitionOfDoneAssertion, ...]
     references: tuple[str, ...]
     malformed_proof_modes: tuple[str, ...]
+    stray_lines: tuple[str, ...] = ()
 
     @property
     def host_captured_assertions(self) -> tuple[str, ...]:
@@ -237,7 +247,7 @@ def definition_of_done(*, description: str, subject: str = SUBJECT_WORK_ITEM) ->
     if title != DEFINITION_OF_DONE_TITLE:
         return _absent()
     body = _section_body(lines=lines, start=index + 1, level=level)
-    assertions = _assertions(body=body, subject=subject)
+    assertions, stray = _parse_body(body=body, subject=subject)
     text = "\n".join(one.text for one in assertions)
     return DefinitionOfDone(
         present=True,
@@ -245,6 +255,7 @@ def definition_of_done(*, description: str, subject: str = SUBJECT_WORK_ITEM) ->
         assertions=assertions,
         references=_references(body=body),
         malformed_proof_modes=_malformed_proof_modes(body=body, subject=subject),
+        stray_lines=stray,
     )
 
 
@@ -274,22 +285,27 @@ def _absent() -> DefinitionOfDone:
     )
 
 
-def _assertions(*, body: list[str], subject: str) -> tuple[DefinitionOfDoneAssertion, ...]:
-    """Segment the section body into assertions, each carrying its declared mode.
+def _parse_body(
+    *, body: list[str], subject: str
+) -> tuple[tuple[DefinitionOfDoneAssertion, ...], tuple[str, ...]]:
+    """Classify the section body ONCE, as its assertions and its stray lines.
 
-    One bullet, one assertion. The body is walked in order and exactly three
+    One bullet, one assertion. The body is walked in order and exactly four
     kinds of line matter: a HEADING, which closes the open bullet and sets the
     mode the next ones carry; a BULLET, which closes the open one and opens a
-    fresh assertion; and an INDENTED line while a bullet is open, which is that
-    bullet's own continuation and joins it.
+    fresh assertion; an INDENTED line while a bullet is open, which is that
+    bullet's own continuation and joins it; and the required PROSE the grammar
+    names — the `References:` line, a sub-heading's `Reason:` line, and the
+    blank line between two bullets — which closes the open bullet and
+    contributes nothing.
 
-    Every OTHER line closes the open bullet and contributes nothing — the blank
-    line between two bullets, the `References:` line, a sub-heading's `Reason:`
-    line, and any flush-left prose the author left inside the section. That last
-    one is reported separately as a finding rather than silently graded, which is
-    the whole repair this module's docstring records.
+    Anything ELSE is a STRAY line, and it is reported rather than graded. The
+    two answers come out of ONE walk deliberately: a separate classifier for the
+    findings surface is how the parse and the refusal come to disagree about
+    which lines the section asserts, which is the measured defect one level up.
     """
     assertions: list[DefinitionOfDoneAssertion] = []
+    stray: list[str] = []
     mode = _DEFAULT_MODES[subject]
     pending: list[str] = []
     for raw in body:
@@ -306,8 +322,21 @@ def _assertions(*, body: list[str], subject: str) -> tuple[DefinitionOfDoneAsser
             pending.append(raw.strip())
             continue
         _close_assertion(assertions=assertions, pending=pending, mode=mode)
+        if not _is_required_prose(text=raw):
+            stray.append(raw.strip())
     _close_assertion(assertions=assertions, pending=pending, mode=mode)
-    return tuple(assertions)
+    return tuple(assertions), tuple(stray)
+
+
+def _is_required_prose(*, text: str) -> bool:
+    """Whether a non-bullet body line is one the grammar requires or permits.
+
+    The blank line is in because it is the separator between two bullets, so
+    reporting it would report every conforming section. The two prefixed lines
+    are in because the grammar names them.
+    """
+    stripped = text.strip()
+    return not stripped or stripped.startswith((REFERENCES_PREFIX, REASON_PREFIX))
 
 
 def _close_assertion(

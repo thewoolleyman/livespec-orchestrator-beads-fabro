@@ -65,6 +65,10 @@ _H2 = re.compile(r"^##\s+(.+?)\s*$")
 # by MODE rather than by sub-heading title so the title-to-mode mapping stays the
 # parser's one table: a second mapping here is how the wall would come to report
 # a `Host-captured` sub-heading's fault as a `human_attested` one.
+# The two opt-out sub-headings as a reader of the finding must TYPE them. The
+# parser's own constants are case-folded match keys rather than display text, so
+# interpolating them would print a heading nobody should write.
+_OPT_OUT_SUB_HEADINGS = "`### Host-captured` and `### Human-attested`"
 _REASON_SUBJECTS = {
     PROOF_MODE_HOST_CAPTURED: (
         "the host surface the proof needs, or the released-build requirement"
@@ -124,6 +128,7 @@ def definition_of_done_findings(*, item: WorkItem, cwd: Path) -> tuple[str, ...]
         _malformed_proof_mode_finding(item=item, sub_heading=sub_heading)
         for sub_heading in section.malformed_proof_modes
     )
+    findings.extend(_stray_line_finding(item=item, line=line) for line in section.stray_lines)
     return tuple(findings)
 
 
@@ -157,6 +162,26 @@ def _unresolved_reference_finding(*, item: WorkItem, reference: str) -> str:
         f"work-item {item.id}: the Definition of Done reference {reference!r} does not"
         " resolve to an H2 heading of the governed spec tree; correct the heading"
         " text to match the spec tree verbatim"
+    )
+
+
+def _stray_line_finding(*, item: WorkItem, line: str) -> str:
+    """The finding for one line the section's grammar does not admit.
+
+    The line is quoted VERBATIM, because the remedy is to move or delete that
+    one line and a paraphrase would send its author hunting for it. The remedy
+    names BOTH routes — move it out of the section, or make it a bullet — because
+    which one is right is the author's call: a provenance paragraph belongs
+    outside the section, while a sentence the author meant as an assertion
+    belongs on a bullet of its own.
+    """
+    return (
+        f"work-item {item.id}: the Definition of Done section carries the line"
+        f" {line!r}, which is neither a `- ` bullet, one of the"
+        f" {_OPT_OUT_SUB_HEADINGS} sub-headings or its `{REASON_PREFIX}` line,"
+        f" nor the `{REFERENCES_PREFIX}` line; move it out of the section, under"
+        " a heading of its own, or make it a `- ` bullet carrying one gradeable"
+        " assertion"
     )
 
 
