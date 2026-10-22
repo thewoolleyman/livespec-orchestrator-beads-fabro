@@ -189,6 +189,26 @@ def test_the_judge_uses_the_caam_selected_credential_slot(
     assert runner.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "selected-token"
 
 
+def test_the_judge_names_the_unnumbered_credential_fallback_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home-without-selection"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "bare-token")
+
+    verdict, runner = _take(
+        tmp_path=tmp_path,
+        result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""),
+    )
+
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert runner.environ is not None
+    assert runner.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "bare-token"
+    assert capsys.readouterr().err.splitlines() == [
+        "factory credential slot fallback — using CLAUDE_CODE_OAUTH_TOKEN: "
+        "no caam-published account selection record"
+    ]
+
+
 def test_a_failing_reply_holds_the_item_with_its_findings(tmp_path: Path) -> None:
     verdict, _ = _take(
         tmp_path=tmp_path,

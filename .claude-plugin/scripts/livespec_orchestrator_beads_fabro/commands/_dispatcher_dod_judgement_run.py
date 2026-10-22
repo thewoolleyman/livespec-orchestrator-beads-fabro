@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -244,7 +245,7 @@ def run_dod_judgement(
     credential = select_factory_credential(
         environ=environ,
         home=Path.home(),
-        warn=lambda _message: None,
+        warn=lambda message: sys.stderr.write(f"{message}\n"),
     )
     judge_environ = dict(environ)
     judge_environ[CLAUDE_OAUTH_TOKEN_ENV] = environ.get(credential.env_name, "")
