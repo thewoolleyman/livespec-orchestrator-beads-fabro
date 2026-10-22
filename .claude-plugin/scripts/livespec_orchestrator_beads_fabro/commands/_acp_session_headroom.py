@@ -89,6 +89,7 @@ __all__: list[str] = [
     "headroom_skips_candidate",
     "session_headroom_reading",
     "seven_day_reading",
+    "seven_day_skips_candidate",
     "unobservable_session_headroom",
 ]
 
@@ -162,6 +163,17 @@ class SevenDayReading:
     utilization_percent: float | None = None
     status: str | None = None
     unobservable: str | None = None
+
+    @property
+    def exhausted(self) -> bool:
+        """Whether the provider EXPLICITLY reports the weekly allowance refused.
+
+        An absent, unparseable or unrecognised reading answers `False` for
+        free, which is the clause's own fail-open direction: every value that
+        is not the refusal literal -- a warning, an allowance, an unobservable
+        result -- is not exhaustion.
+        """
+        return self.status == SEVEN_DAY_REJECTED_STATUS
 
 
 # The weekly result a response that reported neither figure produces, and the
@@ -402,6 +414,26 @@ def headroom_skips_candidate(*, reading: SessionHeadroomReading, floor_percent: 
     if remaining is None:
         return True
     return remaining < floor_percent
+
+
+def seven_day_skips_candidate(*, reading: SessionHeadroomReading) -> bool:
+    """Whether the WEEKLY window alone stops this covered candidate.
+
+    Its own predicate rather than a third arm of `headroom_skips_candidate`,
+    because the two measure different windows and the records must name which
+    one fired: the clause requires a seven-day skip to be named "distinct from
+    a floor skip and a projection skip", and a predicate answering for both
+    windows cannot say which it answered for.
+
+    THE STATUS IS THE WHOLE TEST, which is the clause in as many words: "a
+    warning status, a utilization below 100, or any other value is not
+    exhaustion". So no figure is compared, and a reading whose weekly
+    utilization sits at 100 while the provider still reports the allowance
+    available is admitted -- the provider is the authority on its own refusal,
+    and a build inferring one from the percentage would refuse an account the
+    provider was still serving.
+    """
+    return reading.seven_day.exhausted
 
 
 def _valid_utilization(*, value: object) -> float | None:
