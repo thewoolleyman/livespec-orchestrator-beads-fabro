@@ -86,10 +86,30 @@ _CURRENCY_SECTION = re.compile(
     re.DOTALL | re.MULTILINE,
 )
 
-# The routing labels the prompt offers, read off its own JSON examples. The
-# graph's `review` node has exactly two outbound verdict labels.
+# The routing labels the prompt offers, read off its own JSON examples, and the
+# labels the graph's `review` node actually carries, read off the graph's own
+# outbound edges.
+#
+# THE GRAPH SIDE IS DERIVED AND NOT A LITERAL, which is the whole of this case.
+# It was written as the literal `{"approve", "fix"}` while its own comment said
+# "the graph's `review` node has exactly two outbound verdict labels" -- so the
+# assertion claimed to compare the prompt against the graph and compared it
+# against a transcription. When the recapture route was re-landed, the graph
+# gained a third label and this case FAILED for the correct prompt, naming the
+# graph's labels as the two it no longer had: an instrument reporting its own
+# stale literal as a measurement of the thing it was pointed at.
 _ROUTING_LABEL = re.compile(r'"preferred_next_label":\s*"(?P<label>\w+)"')
-_GRAPH_ROUTING_LABELS = {"approve", "fix"}
+# Keyed on the `preferred_label=` CONDITION rather than on the edge's display
+# label, because a verdict label IS the value that condition matches: the node's
+# other outbound edges are an `outcome=failed` route and an unconditional
+# fallthrough, whose display labels (`Blocked`, `unmatched review outcome`) are
+# prose for a graph reader and are reachable by no verdict the prompt could
+# emit. A reader keyed on the display label counts them as verdicts and reports
+# every correct prompt as missing two routes.
+_REVIEW_VERDICT_LABEL = re.compile(
+    r'^\s*review\s*->\s*\w+\s*\[[^\]]*condition="preferred_label=(?P<label>\w+)"',
+    re.MULTILINE,
+)
 
 # The rule itself: what CURRENT means, and the command that decides it. The
 # tree-equality definition and the `git diff --quiet` comparison are asserted
@@ -130,7 +150,13 @@ _STILL_BLOCKING = (
 
 # And the routing a blocking finding here earns, stated in the section itself:
 # this graph has one blocking route and the re-capture is owed through it.
-_FIX_ROUTE = "re-enters `proof_capture` through the review-fix route"
+# The ROUTE a non-current record is owed, as the re-landed classification states
+# it: a currency finding is a PROOF-RECORD finding, so it earns the `recapture`
+# verdict and re-enters `proof_capture` directly rather than through the
+# review-fix route. The needle is the classification itself, because that is
+# what decides the route — a section naming a route without classifying the
+# finding leaves the reviewer to improvise the tag the verdict is read off.
+_PROOF_RECORD_ROUTE = "proof-record finding"
 
 
 def _review_prompt_files() -> tuple[str, ...]:
@@ -230,24 +256,41 @@ def test_the_currency_section_keeps_an_absent_record_and_an_absent_head_blocking
         )
 
 
-def test_the_currency_section_routes_its_finding_through_this_graphs_fix_label() -> None:
-    """A blocking finding here is owed through the review-fix route this graph has."""
+def test_the_currency_section_classifies_its_finding_as_a_proof_record_finding() -> None:
+    """A currency finding is about the RECORD, so it earns the recapture route.
+
+    The classification rather than a route name, because the verdict is read off
+    the tag: `review_fix` is a CODE-fix node and cannot repair a record, so a
+    currency finding routed there spends a fix round rewriting a tree nobody
+    objected to and re-enters capture knowing nothing about why its record was
+    rejected — the measured defect the recapture route exists for.
+    """
     section = _currency_section()
 
-    assert _FIX_ROUTE in section, (
-        f"the record-currency section omits {_FIX_ROUTE!r}, so a reviewer holding a "
-        f"stale-record finding is not told which route re-earns the capture, and the "
-        f"re-capture this graph does offer reads as unavailable"
+    assert _PROOF_RECORD_ROUTE in section, (
+        f"the record-currency section omits {_PROOF_RECORD_ROUTE!r}, so a reviewer "
+        f"holding a non-current-record finding is not told it is about the RECORD, and "
+        f"the recapture route this graph offers reads as unavailable"
     )
 
 
 def test_the_review_prompt_offers_exactly_the_routing_labels_the_graph_has() -> None:
-    """The prompt's verdict labels are `approve` and `fix` — the graph's own two."""
-    offered = set(_ROUTING_LABEL.findall(_review_prompt_text()))
+    """The prompt's verdict labels are the graph's own outbound `review` labels.
 
-    assert offered == _GRAPH_ROUTING_LABELS, (
+    BOTH SIDES ARE DERIVED — the offered set from the prompt's JSON examples, the
+    carried set from the graph's own edges — so the comparison is between two
+    readings of this tree rather than between one reading and a literal. The
+    graph side is asserted non-empty first, because a regex that matched no edge
+    would compare the prompt against an empty set and report every label it
+    offers as one the graph does not carry.
+    """
+    offered = set(_ROUTING_LABEL.findall(_review_prompt_text()))
+    carried = set(_REVIEW_VERDICT_LABEL.findall(_GRAPH.read_text(encoding="utf-8")))
+
+    assert carried, "no verdict-conditioned outbound edge of the review node was read"
+    assert offered == carried, (
         f"the review prompt offers routing labels {sorted(offered)} while the graph's "
-        f"`{_REVIEW_NODE}` node has {sorted(_GRAPH_ROUTING_LABELS)}. A label the graph "
-        f"does not carry selects no edge, and a label the prompt never offers is a "
-        f"route no verdict can reach"
+        f"`{_REVIEW_NODE}` node carries {sorted(carried)}. A label the graph does not "
+        f"carry selects no edge, and a label the prompt never offers is a route no "
+        f"verdict can reach"
     )
