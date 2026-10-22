@@ -240,6 +240,30 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   reads it and hands `admit_and_select` the NAME through `explicit_factory`. A
   valve reaching for `args.factory` itself would be the second reader this
   entry's first half exists to retire.
+- `_dispatcher_record_files.py` — the `generator` key of a committed
+  `dispatcher.record_files` entry, read and graded, with the pre-claim refusal a
+  malformed one earns. The declared-record-file clause makes a generated record
+  file's correct content "its generator's output over the tree it sits in", so a
+  refresh resolves a conflict in one by RUNNING that argv rather than by merging
+  its text; until this module existed nothing read the key, so no repository
+  could declare a generated record file at all. Same
+  answer-or-finding-or-absent shape `_dispatcher_overflow_factories` uses, and
+  wired into the same `_dispatcher_run_checks` arm. Three properties an editor
+  must not invert. The resolution is POSITIONAL and grades `generator` ALONE:
+  the same ratified paragraph governs the entry-wise merge of Scenario 200,
+  whose `path` / `format` / `key` parse is a separate unimplemented TODO owned
+  by work-item bd-ib-davaxq, so grading those keys here would make this a second
+  authority on the entry grammar and the two would drift in the direction
+  nothing announces — both would keep producing a well-formed entry list. An
+  entry that names NO generator is an ANSWER and resolves to `None` in its slot,
+  never a refusal, because the clause makes the key optional and a refusal there
+  would stop every repository that declares a record file at all. And a refused
+  declaration yields the finding and NOTHING ELSE, never the slots that happened
+  to parse: the refusal exists to precede a refresh that would otherwise run one
+  of these commands, and a list built from the survivors would read exactly like
+  a healthy one. Scenario 238's refresh behaviour is NOT here — it is produced by
+  the graph's own command scripts against a released payload, so it is captured
+  on an operator host rather than proved in a sandbox.
 - `_dispatcher_journal_file.py` — the append-only dispatch journal and the
   attribution stamp it owns, split out of `_dispatcher_io` for the same reason
   `_dispatcher_shell_runner` was: that aggregate's import closure reaches the
