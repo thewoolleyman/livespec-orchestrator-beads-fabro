@@ -3248,20 +3248,7 @@ sandbox image the Dispatcher selects MUST publish its capabilities as
 the file `/etc/livespec/sandbox-capabilities`, one lowercase snake_case
 name per line. A governed repository MAY mirror the list as the
 committed `dispatcher.sandbox_capabilities` array, so that the filing
-and approve displays can show it without a sandbox. The published file
-is the authority: where it exists the gate MUST read the capability set
-from it, and MUST report a mirrored name the image does not publish as a
-configuration mismatch in its own output, which the Dispatcher MUST
-journal; a configuration mismatch is not a finding against the item and
-MUST NOT fail the gate. Where the image publishes no capability file the
-gate MUST use the committed mirror when present. Where neither exists
-the capability set is UNKNOWN: the gate MUST NOT raise a
-missing-capability finding, and MUST report `sandbox-capabilities:
-unpublished` in its output. The gate MUST take the capability set from
-these two sources and MUST NOT infer capability from the item's own
-prose. The fleet sandbox image MUST publish the file before the gate's
-missing-capability duty takes effect for a repository; that image change
-is sequenced ahead of the gate change. Scenario 139 in `scenarios.md`
+and approve displays can show it without a sandbox. The committed `dispatcher.sandbox_capabilities` array is the GRADING SET. Every taking of the Definition-of-Done judgement (§"Effective acceptance criteria" → "One rubric, one subject"), the `dod_gate` node included, MUST grade proof-mode feasibility against that array and against nothing else, because it is the one source every taking can read. The published file is the authority for what the image provides. Where the file exists, the `dod_gate` node MUST compare it with the grading set and MUST report in its own output, as a configuration mismatch, each name the array lists that the image does not publish and each name the image publishes that the array omits. The Dispatcher MUST journal every mismatch. A configuration mismatch is not a finding against the item and MUST NOT fail the gate. An assertion graded feasible on a listed name the image does not publish meets the missing-capability ending of `proof_capture`, which names that capability. Where the repository commits no array, the capability set is UNKNOWN for every taking, whether or not the image publishes a file: no taking may raise a missing-capability finding, and each MUST report `sandbox-capabilities: unpublished` in its output. Every taking MUST take the grading set from the committed array alone and MUST NOT infer capability from the item's own prose. The fleet sandbox image MUST publish the file, because it is the authority the node compares the grading set against. A repository MUST NOT list a name in its array that the image it dispatches to does not publish, and the journaled mismatch is how a violation is found. Scenario 139 in `scenarios.md`
 exercises this paragraph and the gate's capability duties below.
 
 **The stages.** The reserved `implement-work-item` workflow MUST carry three
@@ -3598,7 +3585,7 @@ identify, for every `factory_captured` assertion, the surface its proof
 needs, and MUST report as a Definition-of-Done finding an assertion
 whose surface no capability in a known capability set provides, naming
 the assertion, the missing capability, and the remedies in this order:
-add the capability to the sandbox image; declare the assertion
+add the capability to the sandbox image and list it in the committed `dispatcher.sandbox_capabilities` array; declare the assertion
 `host_captured` with a Reason when its proof needs the released build or
 a host surface; declare it `human_attested` only when no agent session
 can exercise it. Its refusal of a `host_captured` or `human_attested`
@@ -3606,11 +3593,7 @@ assertion that a sandbox capability could exercise MUST name the
 capability it relies on, and its refusal of a `human_attested` assertion
 that an agent session could exercise on a host MUST name the host
 surface. The node MUST also report every test-existence assertion on an
-item whose deliverable is not a test, a check or a gate, and every
-reference line that names only a non-scenario H2 while a scenario
-heading states the behaviour the assertion names (§"Effective acceptance
-criteria" → "Behavioural assertions" and "The Definition of Done
-section"), naming the remedy in each case. On success it falls through to `implement`. On
+item whose deliverable is not a test, a check or a gate, and every reference line that omits, for any assertion, a heading that governs it — each `## Scenario NN — <title>` heading of `scenarios.md` that states behaviour the assertion names, and each non-scenario H2 whose clauses govern that behaviour — naming each omitted heading verbatim and the remedy of adding it to the reference line (§"Effective acceptance criteria" → "Behavioural assertions" and "The Definition of Done section"). This reference-coverage finding is a semantic judgement: it MUST NOT be added to the mechanical half the host-side wall runs, and a reference line the wall accepts MAY still carry it. On success it falls through to `implement`. On
 failure it MUST end through the structured needs-human ending whose
 failure reason is the list of Definition-of-Done findings, so the run
 terminates at the `needs_human` terminal and the Dispatcher rests the
@@ -3623,7 +3606,7 @@ malformed item never spends a sandbox. The semantic half MUST run in the
 node on every run, and MUST also run before admission and before
 dispatch per §"Effective acceptance criteria" → "Authoring at filing
 time" ("Judged before admission" and "Judged again before dispatch");
-neither earlier judgement removes or replaces the node.
+neither earlier judgement removes or replaces the node. Every taking of this judgement grades the rubric and subject defined in §"Effective acceptance criteria" → "One rubric, one subject".
 
 **`proof_capture`.** For every `factory_captured` assertion the node MUST
 author the reproduction steps, execute them verbatim inside the sandbox,
@@ -6187,7 +6170,20 @@ Definition-of-Done finding, so that it is repaired before a sandbox is
 spent on it. The implement prompt MUST state the kept-current rule
 below. Scenario 140 in `scenarios.md` exercises this clause.
 
-**The spec-stated judgement is one shared component.** The Dispatcher MUST obtain two verdicts from the `livespec_runtime.spec_stated` module of the livespec-runtime release this plugin vendors, and from nowhere else: for a behaviour statement, whether the ratified specification states it — `stated`, naming each governing H2 heading verbatim; `partial` or `unstated`, naming the existing heading whose generalization would state it, or none — and for a work-item, whether it is a `feature`, a `bug`, a `chore` or `non_functional`, the stored type being evidence rather than the answer. The module defines the prompt, the inputs and the verdict schema and invokes no model itself; the Dispatcher supplies the model runner through the module's injected callable, so the judgement is defined once for every orchestrator. The Definition-of-Done judgement named in the two paragraphs that follow, the `dod_gate` node, and the filing-time reference advisory MUST take the governing-heading verdict for each assertion from this component and MUST name the heading it returns as the remedy for a reference that does not govern the assertion; coherence, proof-mode feasibility, rider coherence and every existing refusal remedy remain graded exactly as before, because this component answers only the two questions above. A verdict MUST be reused while the item's effective criteria and referenced headings are byte-unchanged and no specification revision has been ratified since it was taken; a new revision under `<spec-root>/history/` invalidates every earlier verdict, so the judgement that releases a held spec-change-tier item always runs against the ratified specification. Scenario 206 in `scenarios.md` exercises this paragraph together with the autonomy-tier bullet below.
+**The spec-stated judgement is one shared component.** The Dispatcher MUST obtain two verdicts from the `livespec_runtime.spec_stated` module of the livespec-runtime release this plugin vendors, and from nowhere else: for a behaviour statement, whether the ratified specification states it — `stated`, naming each governing H2 heading verbatim; `partial` or `unstated`, naming the existing heading whose generalization would state it, or none — and for a work-item, whether it is a `feature`, a `bug`, a `chore` or `non_functional`, the stored type being evidence rather than the answer. The module defines the prompt, the inputs and the verdict schema and invokes no model itself; the Dispatcher supplies the model runner through the module's injected callable, so the judgement is defined once for every orchestrator. The Definition-of-Done judgement named in the "Judged before admission" and "Judged again before dispatch" paragraphs below, the `dod_gate` node, and the filing-time reference advisory MUST take the governing-heading verdict for each assertion from this component and MUST name the heading it returns as the remedy for a reference that does not govern the assertion; coherence, proof-mode feasibility, rider coherence and every existing refusal remedy remain graded exactly as before, because this component answers only the two questions above. A verdict MUST be reused only while its input and the spec identity it was taken against (§"Effective acceptance criteria" → "One rubric, one subject") are both unchanged since it was taken. For a governing-heading verdict taken for an assertion, the input is the assertion's text together with every ledger comment the subject's goal carries, so a rider appended to the item invalidates the governing-heading verdicts of all its assertions. For a work-item classification, the input is the subject's goal. A new revision under `<spec-root>/history/` invalidates every earlier verdict, so the judgement that releases a held spec-change-tier item always runs against the ratified specification. Scenario 206 in `scenarios.md` exercises this paragraph together with the autonomy-tier bullet below.
+
+**One rubric, one subject.** The Definition-of-Done judgement is taken by the `dod_gate` node, before admission, before dispatch, and by any host-side preflight a repository runs before launching a dispatch. Every taking MUST grade by ONE rubric: the `dod_gate` node's prompt file, read from the plugin build that will execute the dispatch. A taking MUST NOT add, remove or restate a check. A taking other than the node MAY append only an ending contract stating the verdict form it must return. Any other guidance about how to grade a check, including any statement about where the capability set comes from, MUST be written into the rubric itself, so that the node grades by it too.
+
+Every taking MUST grade one SUBJECT, made of four components.
+
+- The GOAL: the item's rendered goal exactly as the Dispatcher renders it for the node — title, description, effective criteria, notes, lessons and every ledger comment except the Dispatcher's own Definition-of-Done judgement records (verdict, did-not-run and disagreement comments). Those records are receipts, not brief, so the Dispatcher MUST omit them from the node's rendered goal as well.
+- The HEADINGS: the verbatim body of each heading the reference line names.
+- The SPEC IDENTITY: a digest of the bytes of every file under the governed spec root at the resolved commit, excluding `proposed_changes/` and `history/`, so that a ratified revision or any change to a governing scenario, referenced or not, changes it.
+- The GRADING SET: the committed `dispatcher.sandbox_capabilities` array at that commit, as sorted names, or the literal `unpublished`.
+
+The RESOLVED COMMIT is the default-branch commit the dispatch seeds the sandbox from. The Dispatcher MUST resolve it once per dispatch, MUST take the pre-dispatch judgement against it, and MUST seed the sandbox from that same commit. A host taking before dispatch resolves the default branch's current tip. Every recorded verdict MUST carry the SUBJECT DIGEST and the RUBRIC DIGEST. The rubric digest is a SHA-256 over the rubric file's bytes. The subject digest is a SHA-256 over the four components in the order above, each encoded as UTF-8 and preceded by its byte length in ASCII decimal and one newline. Within the components: the HEADINGS are the bodies in reference-line order, each preceded by its heading line; the SPEC IDENTITY is itself a SHA-256 over the included files sorted by their path relative to the spec root, each contributing its path, a NUL byte, its byte length in ASCII decimal, a NUL byte and its bytes; the GRADING SET is the sorted names joined by newlines.
+
+When a run's `dod_gate` node refuses an item whose most recent pre-dispatch verdict admitted the same subject digest under the same rubric digest, the Dispatcher MUST append one `dod-judgement-disagreement` row to the dispatch journal and one judgement-record comment on the item. Each MUST name the run, both digests, the admitting verdict's timestamp and the node's findings. The item MUST rest exactly as any `dod_gate` refusal rests it. Scenario 239 in `scenarios.md` exercises this paragraph.
 
 **Judged before admission.** Before intake routes an implement-kind
 item to `ready` — from `backlog` or `pending-approval`, whether through
@@ -6233,11 +6229,9 @@ Dispatcher MUST record on the item that the pre-dispatch judgement did
 not run and why, and MUST proceed as it would without the judgement; the
 in-run `dod_gate` node remains the backstop. The Dispatcher MUST reuse
 the most recent verdict recorded for the item, the pre-admission verdict
-or an earlier pre-dispatch verdict, while the item's effective criteria and referenced headings are byte-unchanged since that verdict was taken and no specification
-revision has been ratified since, and MUST NOT run the judgement again or append another comment for a
+or an earlier pre-dispatch verdict, while that verdict's subject digest and rubric digest both equal the digests of the subject and rubric this dispatch would grade ("One rubric, one subject"), and MUST NOT run the judgement again or append another comment for a
 reused verdict; a reused refusing verdict refuses the dispatch without a
-new comment. A refused item MUST be excluded from drain candidate enumeration until its effective criteria or referenced headings change or a
-specification revision is ratified,
+new comment. A refused item MUST be excluded from drain candidate enumeration until the subject digest or the rubric digest it would now be graded by differs from the refusing verdict's,
 and `needs-attention` MUST list it as a hygiene fact naming the
 verdict's first remedy, exactly as the pre-admission paragraph does for
 held items. The did-not-run record MUST likewise be written at most once
