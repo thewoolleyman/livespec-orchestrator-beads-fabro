@@ -6,8 +6,10 @@ anchor and never from a remembered "last run" timestamp:
 - **Gap-capture staleness**, when the newest ratified spec revision is newer
   than the last completed gap-capture coverage point.
 - **Drift staleness**, when default-branch merges since the last completed
-  drift coverage point stand at or past the effective
-  `dispatcher.drift_capture_merge_threshold`.
+  drift coverage point — the merges after the recorded FRONTIER — stand at or
+  past the effective `dispatcher.drift_capture_merge_threshold`. It exists so
+  that an unrun or FAILING drift pass is visible: the reconcile pass is what
+  runs the drift pass over those merges, and this fact runs nothing.
 - **Held drift findings**, from the anchor's held-finding records, composed by
   `_needs_attention_held_drift_findings`. It is composed HERE rather than in
   `needs_attention` because all three facts are readings of the one committed
@@ -191,8 +193,10 @@ def _drift_items(
     summary = (
         f"Drift coverage is stale for {repo}: {merges} default-branch merge(s) since the "
         f"last completed drift coverage point ({recorded or 'none on record'}), at or past "
-        f"the effective drift_capture_merge_threshold of {threshold}. Run capture-spec-drift; "
-        f"the consent-gated dialogue stays the only way the detector runs. {_MERGE_COUNTING_NOTE}"
+        f"the effective drift_capture_merge_threshold of {threshold}. Those are the merges "
+        f"after the recorded frontier. This fact invokes no detector: the reconcile pass is "
+        f"what runs the drift pass over them, and an attended capture-spec-drift survey is "
+        f"the operator's own owned trigger. {_MERGE_COUNTING_NOTE}"
     )
     return [
         _item(

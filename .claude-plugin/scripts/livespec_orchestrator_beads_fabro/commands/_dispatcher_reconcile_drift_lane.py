@@ -36,6 +36,23 @@ frontier", singular, and this pass and the attended `capture-spec-drift` survey
 both move it. A second operation key would give the repository two frontiers,
 and the fact would count merges since whichever one its reader happened to ask
 for.
+
+⛔ WITH NO FRONTIER ON RECORD THE LANE JUDGES NOTHING, and this is the one
+refusal worth reading twice. The contract's range is "every default-branch
+merge AFTER the recorded frontier"; with none recorded there is no "after", and
+the honest reading of the range expression would be the WHOLE BRANCH — which on
+this repository is thousands of commits, each costing one model call, on the
+first tick of a timer that fires every ten minutes. That is not a cap this
+module may quietly impose either: a truncated enumeration would report a
+frontier covering merges it never judged.
+
+Recording the BASELINE is separately owned work — plan
+`spec-implementation-lockstep`'s host-routed child R2, "Reconcile merged
+unspecified behaviour and record the baseline frontier", which depends on this
+one. So the lane writes an attempt record naming the missing baseline and
+judges nothing; the drift-staleness fact still fires, because an absent
+coverage point leaves every merge unaccounted for, so the state is VISIBLE
+rather than silent.
 """
 
 from __future__ import annotations
@@ -75,6 +92,7 @@ if TYPE_CHECKING:
         DriftRunOutcome,
         DriftRunSeams,
     )
+    from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "DriftLaneOutcome",
@@ -83,6 +101,12 @@ __all__: list[str] = [
 
 _FAILED_OUTCOME = "failed"
 _UNCONFIGURED = "no-tenant-connection"
+_NO_BASELINE = "no-recorded-drift-frontier"
+_BASELINE_SCOPE = (
+    "no completed drift coverage point is on record, so there is no range after a "
+    "frontier to enumerate; the baseline frontier is recorded by the reconciliation "
+    "of merged unspecified behaviour, not by this pass"
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -128,17 +152,59 @@ def run_drift_lane(*, repo: Path, invoker: str, seams: DriftRunSeams) -> DriftLa
             records=None,
         )
     anchor = detection_coverage_anchor(cwd=repo)
+    if anchor is None:
+        return _unrecordable(config=config, anchor=anchor, invoker=invoker, reason=None)
     frontier = completed_coverage_point(
         path=config, anchor=anchor, operation=DRIFT_CAPTURE_OPERATION
     )
+    if frontier is None:
+        return _unrecordable(config=config, anchor=anchor, invoker=invoker, reason=_NO_BASELINE)
     outcome = run_drift_pass(project_root=repo, frontier=frontier, seams=seams)
-    scope = merge_range(since=frontier, ref="HEAD") if frontier else "every default-branch merge"
+    scope = merge_range(since=frontier, ref="HEAD")
     recorded = record_detection_run(
         path=config,
         anchor=anchor,
         run=_detection_run(outcome=outcome, invoker=invoker, scope=scope),
     )
     return _lane_outcome(outcome=outcome, scope=scope, recorded=recorded)
+
+
+def _unrecordable(
+    *, config: StoreConfig, anchor: str | None, invoker: str, reason: str | None
+) -> DriftLaneOutcome:
+    """Judge nothing, record the attempt where it can be recorded, and say why.
+
+    TWO conditions reach here, and the ORDER their caller tests them in is what
+    keeps each remedy nameable. An absent ANCHOR subsumes an absent baseline —
+    a repository with nowhere to write a record can never have one on record —
+    so it is tested first and reported through the RECORDER's own refusal
+    detail, which names the config key an operator must commit. Only once an
+    anchor exists is "no baseline frontier is on record" a distinct state, with
+    a distinct owner.
+    """
+    recorded = record_detection_run(
+        path=config,
+        anchor=anchor,
+        run=DetectionRun(
+            operation=DRIFT_CAPTURE_OPERATION,
+            scope=_BASELINE_SCOPE,
+            invoker=invoker,
+            outcome=_FAILED_OUTCOME,
+            exit_code=1,
+            partial_range=True,
+        ),
+    )
+    records = recorded.value_or(None)
+    return DriftLaneOutcome(
+        scope="",
+        merges=(),
+        frontier=None,
+        filed=(),
+        held=(),
+        advanced=False,
+        withheld_reason=reason or _withheld_reason(records=records, recorded=recorded),
+        records=records,
+    )
 
 
 def _detection_run(*, outcome: DriftRunOutcome, invoker: str, scope: str) -> DetectionRun:

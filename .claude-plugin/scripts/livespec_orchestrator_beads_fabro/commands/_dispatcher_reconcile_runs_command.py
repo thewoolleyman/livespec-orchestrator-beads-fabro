@@ -81,6 +81,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_claim_lane import (
     reconcile_claim_lane,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_drift_lane import (
+    run_drift_lane,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs import (
     ReconcileRunsSummary,
     reconcile_runs,
@@ -112,6 +115,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_stamp import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_records import (
     HeldClaim,
 )
+from livespec_orchestrator_beads_fabro.commands._drift_run import DriftRunSeams
+from livespec_orchestrator_beads_fabro.commands._drift_run_judge import drift_judge
 from livespec_orchestrator_beads_fabro.io import write_stdout
 
 __all__: list[str] = ["run_reconcile_runs_command"]
@@ -180,8 +185,45 @@ def run_reconcile_runs_command(*, args: argparse.Namespace) -> int:
         spans_path=calibration_spans_path(args=args, repo=repo),
         now_ns=time.time_ns(),
     )
+    _run_drift_lane_if_live(args=args, repo=repo, journal_identity=journal.identity.invoker)
     _emit(summary=summary, record=record, as_json=args.as_json)
     return 1 if _has_failure(summary=summary, record=record) else 0
+
+
+def _run_drift_lane_if_live(*, args: argparse.Namespace, repo: Path, journal_identity: str) -> None:
+    """The DRIFT lane of this pass, which the detection contract binds to it.
+
+    "Each reconcile pass of the Dispatcher MUST enumerate every default-branch
+    merge after the recorded frontier ... and MUST run the drift pass over each
+    merge's diff through the spec-stated judgement." THIS command is what the
+    root timer invokes, so this is where that binding lives — the post-merge
+    janitor is one further caller of the same primitive, not the enumerator.
+
+    SKIPPED ON A DRY RUN, because a dry pass "performs no export, no
+    termination, and no journal write" and the drift lane's whole output is a
+    record on the detection-coverage anchor plus a proposal under
+    `proposed_changes/`. A dry run that filed a proposal would be an act taken
+    by a projection.
+
+    It is run REGARDLESS of whether the runs lane surveyed a factory, and does
+    not move this command's exit code. The two lanes answer unrelated
+    questions: a pass that surveyed no factory has reconciled no run, which
+    says nothing about whether the specification has caught up with the
+    default branch — and a drift pass that could not advance its frontier
+    records that on the anchor, which is where the contract puts it, so folding
+    it into the runs lane's exit code would make one lane's state read as the
+    other's.
+    """
+    if args.dry_run:
+        return
+    _ = run_drift_lane(
+        repo=repo,
+        invoker=journal_identity,
+        seams=DriftRunSeams(
+            runner=ShellCommandRunner(),
+            judge=drift_judge(project_root=repo, runner=ShellCommandRunner()),
+        ),
+    )
 
 
 def _has_failure(*, summary: ReconcileRunsSummary, record: ReconcilePassSummary) -> bool:
