@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.230.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.230.2...v0.230.3) (2026-10-22)
+
+
+### Bug Fixes
+
+* **dispatcher:** compose only the model-fallback warning fact ([7a05e71](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7a05e71df173eb4277bd563358fe8a792b36f5b1))
+* **dispatcher:** let an unattended drain pick past retired projection facts ([31faf4b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/31faf4b7c502a9d3298e00ae43823735760a836f))
+* **dispatcher:** retire the projection-failure fact itself ([2aad5db](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2aad5dbbd80f7d8d2b811d4fa47abbd7170193fa))
+* **dispatcher:** retire the projection-failure stop-picking posture module ([d261010](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d2610109add2cdbb24094efb45ede4ec217a6096))
+* **dispatcher:** source fallback history from selection records alone ([664e581](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/664e5811b694e5e394eacbfbb594dc179f2fc76f))
+* **dispatcher:** stop claiming the replay obligation is discharged at the deletion site ([1fe9da5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1fe9da5afea3a04adb2055826a61e3e5f0fb42af))
+
 ## [0.230.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.230.1...v0.230.2) (2026-10-21)
 
 
