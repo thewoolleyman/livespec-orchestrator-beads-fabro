@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.231.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.231.1...v0.231.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **plan:** accept a misderived supersession of a falsely derived plan-level step ([d734c6e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d734c6e9cae9c42cccdb311d324f0e5d98aa6264))
+* **plan:** never wait on a plan-level proof carrier entry as a work item ([dbfc650](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dbfc6506f6998254f69ef814215461490ce88dee))
+* **plan:** rest a plan on a human pointer when no open carrier can be placed ([17817e6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/17817e60ef40ae26f7af9625c10dc4628a394277))
+* **plan:** wait on an open plan carrier instead of deriving the proof leg ([5baa41e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5baa41e4fda8fb2be5708256e17bc6cee0426fc7))
+
 ## [0.231.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.231.0...v0.231.1) (2026-10-22)
 
 
