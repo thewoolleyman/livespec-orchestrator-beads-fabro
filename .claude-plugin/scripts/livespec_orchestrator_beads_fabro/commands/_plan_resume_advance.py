@@ -65,6 +65,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_carrier_gate import (
     OpenCarrier,
     carrier_status_target,
     first_open_carrier,
+    unplaceable_carrier_ids,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_completeness_evidence import (
     PLAN_COMPLETENESS_REVIEW_PREFIX,
@@ -72,6 +73,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_completeness_evidence impo
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     ARCHIVE_KIND,
     AWAIT_KIND,
+    HUMAN_KIND,
     IMPL_KIND,
     PLAN_RESUME_ACTOR,
     PROOF_KIND,
@@ -248,7 +250,7 @@ def _carrier_gated(
     """
     carrier: OpenCarrier | None = first_open_carrier(config=request.config, epic_id=request.epic_id)
     if carrier is None:
-        return plan_level
+        return _unplaceable_gated(request=request, plan_level=plan_level)
     return _pointer(
         kind=AWAIT_KIND,
         ref=f"item:{carrier.item_id}",
@@ -256,6 +258,46 @@ def _carrier_gated(
         result=carrier_status_target(carrier=carrier),
         carried=carried,
         repo=carrier.repo,
+    )
+
+
+def _unplaceable_gated(*, request: AdvanceRequest, plan_level: NextAction) -> NextAction:
+    """Rest the plan on a human when no open carrier can be placed at all.
+
+    THE SECOND HALF OF THE SAME GATE, and it is owed because the first half
+    PASSES OVER a carrier whose repository nothing resolves. Such a carrier has
+    a status nobody measured, so it cannot be waited on — an obligation naming
+    an unresolvable repository is refused at the write and unobservable at every
+    read — and it cannot be treated as closed either, because the carrier map
+    names it as carrying one of this plan's own assertions. Deriving the
+    plan-level step anyway would record a step asserting the whole Definition of
+    Done on evidence nothing supports.
+
+    SO THE REST STATE IS A `human` POINTER, which the clause already reserves for
+    a genuine needed decision: configuring the sibling, re-assigning the
+    assertion, or recording that the carrier is done are all decisions, and none
+    of them is one an unattended resume may take. Its tracking fields are
+    explicit nulls, so the unmet obligation stays in the progress history rather
+    than being discharged by pointing elsewhere.
+
+    THE POINTER NAMES THE CARRIERS rather than the configuration behind them,
+    because what the maintainer decides is per-carrier and the ids are the only
+    thing that says which carriers are in question.
+    """
+    unplaceable = unplaceable_carrier_ids(config=request.config, epic_id=request.epic_id)
+    if not unplaceable:
+        return plan_level
+    named = ", ".join(unplaceable)
+    return NextAction(
+        kind=HUMAN_KIND,
+        ref=request.epic_id,
+        text=(
+            f"Decide how plan {request.epic_id} reaches its carriers {named}:"
+            " no configured repository resolves the tenant that minted them, so"
+            " neither their status nor the plan's own proof can be established."
+        ),
+        required_result=None,
+        budget=None,
     )
 
 

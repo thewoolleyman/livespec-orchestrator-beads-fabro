@@ -32,6 +32,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 from livespec_orchestrator_beads_fabro.commands._plan_carrier_gate import (
     first_open_carrier,
     plan_carrier_ids,
+    unplaceable_carrier_ids,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
     PLAN_SCOPE_PREFIX,
@@ -152,6 +153,7 @@ def test_a_plan_with_no_carrier_map_event_names_no_carriers(tmp_path: Path) -> N
 
     assert plan_carrier_ids(config=_config(repo=repo), epic_id=_EPIC) == ()
     assert first_open_carrier(config=_config(repo=repo), epic_id=_EPIC) is None
+    assert unplaceable_carrier_ids(config=_config(repo=repo), epic_id=_EPIC) == ()
 
 
 def test_an_unresolvable_carrier_is_passed_over_so_the_scan_reaches_the_next(
@@ -192,6 +194,27 @@ def test_a_carrier_whose_status_cannot_be_read_is_reported_open(tmp_path: Path) 
 
     assert carrier is not None
     assert (carrier.item_id, carrier.repo) == (f"{_CARRIER_PREFIX}-missing", _CARRIER_REPO)
+
+
+def test_the_carriers_no_configured_target_places_are_reported_in_written_order(
+    tmp_path: Path,
+) -> None:
+    """The pass-over's companion reading, and the one a human pointer names.
+
+    The SAME fixture as the pass-over case above, asked the other question: the
+    carrier the scan skipped is the carrier reported here, and the carrier it
+    waited on is not. Reading both off one fixture is what keeps the two from
+    answering about different populations — a gate reporting every carrier, or
+    none, would satisfy whichever question was asked in isolation.
+    """
+    repo = _project(tmp_path=tmp_path)
+    _item(repo=repo, item_id="cr-open", closed=False)
+    _epic(repo=repo, carriers=("1: ob-5qlusq", "2: cr-open", "3: hl-pu2xr6"))
+
+    assert unplaceable_carrier_ids(config=_config(repo=repo), epic_id=_EPIC) == (
+        "ob-5qlusq",
+        "hl-pu2xr6",
+    )
 
 
 def test_every_carrier_closed_leaves_no_carrier_to_wait_on(tmp_path: Path) -> None:
