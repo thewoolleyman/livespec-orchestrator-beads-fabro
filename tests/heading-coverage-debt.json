@@ -1080,13 +1080,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 238 \u2014 A refresh resolves a conflicted generated record file by running its generator",
-    "work_item": "bd-ib-ze7xxj",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 239 \u2014 Every taking of the Definition-of-Done judgement grades one subject by one rubric",
     "work_item": "bd-ib-gob6gl",
     "first_seen": "2026-10-22"
