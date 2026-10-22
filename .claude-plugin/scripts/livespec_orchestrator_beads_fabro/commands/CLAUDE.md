@@ -2530,7 +2530,38 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `_orchestrator_ledger_intent._verdict` and `_drift_run._judge_one` — call
   `judge_within_ceiling` and never `spec_stated.judge`: a caller that reached
   the bare entry point would not take a bigger judgement but NO judgement, and
-  the refusal surfaces as a verdict that could not be read.
+  the refusal surfaces as a verdict that could not be read. That entry point
+  also composes the citation resolution below, for the same reason.
+- `_spec_stated_citation.py` — the clause a spec-stated judgement CITED, read
+  at the level that governs (`bd-ib-n2drk5`). PURE. The ratified text cites its
+  own SUBSECTIONS by name, so a model that reads a clause correctly names the
+  H3 or H4 subsection it actually read — written with a leading H2 marker,
+  because the prompt asks for one — and `judge` refuses any `stated_by` its
+  tree does not carry as an H2. Measured 2026-10-22 on released v0.234.2, that
+  refused 9 of 15 ledger-intent judgements against this repository, exited the
+  scan 4 and wrote no completed-coverage record, while every rejected name
+  existed one level down in `SPECIFICATION/contracts.md` and was in the
+  condensed prompt with its body. So a citation naming an existing H3 or H4
+  heading is resolved to the governing clause enclosing it, for `stated_by` and
+  `generalization_target` alike, before the shared judgement validates it.
+  Five properties an editor must not invert. The PROMPT IS NOT THE REMEDY: it
+  already demands verbatim H2 headings and already forbids an invented one, so
+  the model's habit is predictable rather than aberrant and only a
+  deterministic resolution makes the correct reading expressible. A heading the
+  tree carries at NO level is STILL REFUSED, which is the only observation that
+  distinguishes resolving existing subsections from accepting whatever a
+  response names. A citation NO SINGLE CLAUSE ENCLOSES is refused too — a title
+  two clauses carry, or a subsection standing before any clause of its file, is
+  absent from the map rather than guessed, since naming one would send a
+  proposal to a clause the model never cited. An ALREADY-GOVERNING citation is
+  carried through BEFORE the title-keyed map is consulted, so a title a clause
+  and a subsection happen to share cannot rewrite the clause's own citation.
+  And a response this cannot read is returned VERBATIM: the shared parser owns
+  what a malformed response means and names the field it could not read, so a
+  second account here would report one shape of malformedness as another. The
+  map is built from the GOVERNED tree and not the condensed one, because a
+  clause whose body the condensation withheld still encloses the subsections
+  the specification states it through.
 
 Rules an agent editing this tree must follow:
 
