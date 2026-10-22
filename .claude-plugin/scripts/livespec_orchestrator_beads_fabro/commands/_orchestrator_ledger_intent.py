@@ -13,9 +13,17 @@ references, `--json` everywhere):
 
     orchestrator.py ledger-intent-scan --judge-cli <json-argv>
                                        [--since-version <vN>]
+                                       [--coverage-point <value>]
                                        [--project-root <path>]
                                        [--spec-target <path>]
                                        [--json]
+
+Every invocation appends an attributed ATTEMPT record to the repository's
+detection-coverage anchor, and a completed-coverage record only when the shared
+writer finds the pass claimable; `--coverage-point` is how a caller that walked
+the merges supplies the frontier such a record carries. `_ledger_intent_coverage`
+owns that projection and records why an absent point withholds coverage rather
+than being invented.
 
 THE JUDGE IS INJECTED AND REQUIRED. `livespec_runtime.spec_stated` reaches a
 model only through the `run_model` callable its caller supplies — it opens no
@@ -43,6 +51,7 @@ from livespec_runtime.spec_stated import ModelRunner, judge
 from returns.pipeline import is_successful
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.commands._ledger_intent_coverage import record_scan
 from livespec_orchestrator_beads_fabro.commands._ledger_intent_cut import (
     SpecVersionCut,
     latest_spec_version_cut,
@@ -63,6 +72,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from livespec_orchestrator_beads_fabro.commands._orchestrator_shared import CliContext
+    from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = ["InjectedJudge", "judge_runner", "run_ledger_intent_scan"]
 
@@ -112,14 +122,21 @@ def run_ledger_intent_scan(
     context: CliContext,
     judge_cli: list[str],
     since_version: int | None = None,
+    coverage_point: str | None = None,
     as_json: bool,
 ) -> int:
-    """Run the ledger-intent scan: select, judge, emit.
+    """Run the ledger-intent scan: select, judge, emit, record.
 
     `since_version` is the parsed `--since-version` value, and `None` means the
     flag was omitted. The distinction decides BOTH readings the ratified clause
     separates: which version's cut bounds the captured-since set, and whether
     the live set widens it.
+
+    THE RECORDING IS LAST AND UNCONDITIONAL once a population was established,
+    because "every invocation" includes one that could not read a verdict —
+    which is precisely the pass whose coverage must not be credited. Only the
+    refusal above it returns first, and it returns before any work: a scan that
+    could not establish its own population has nothing to record a scope for.
     """
     cut = _resolved_cut(spec_root=context.spec_root, since_version=since_version)
     if cut is None:
@@ -132,10 +149,41 @@ def run_ledger_intent_scan(
         cut=cut.instant,
         include_live=since_version is None,
     )
+    findings, unjudged = _judged(context=context, judge_cli=judge_cli, population=population)
+    _emit(findings=findings, scanned=len(population), cut_instant=cut.instant, as_json=as_json)
+    for item_id, detail in unjudged:
+        _ = write_stderr(text=f"ERROR: the judgement could not be read for {item_id}: {detail}\n")
+    scan_exit = _EXIT_VALIDATION_ERROR if unjudged else 0
+    record = record_scan(
+        config=config,
+        project_root=context.project_root,
+        since_version=since_version,
+        surfaced=tuple(one.item_id for one in findings) + tuple(one for one, _ in unjudged),
+        exit_code=scan_exit,
+        coverage_point=coverage_point,
+    )
+    if record.narration is not None:
+        label = "ERROR" if record.anchor_refused else "NOTE"
+        _ = write_stderr(text=f"{label}: {record.narration}\n")
+    if record.anchor_refused:
+        return scan_exit or _EXIT_PRECONDITION_ERROR
+    return scan_exit
+
+
+def _judged(
+    *, context: CliContext, judge_cli: list[str], population: tuple[WorkItem, ...]
+) -> tuple[list[LedgerIntentFinding], list[tuple[str, str]]]:
+    """Judge every item of the population, keeping the unreadable ones apart.
+
+    The unreadable list carries the ITEM ID beside its detail, because the id
+    is what the coverage record counts as a surfaced candidate and the detail
+    is what the operator needs — one combined string would make the record's
+    candidate key a sentence.
+    """
     spec_tree = read_current_specification(spec_root=context.spec_root).files
     run_model = judge_runner(judge_cli=judge_cli)
     findings: list[LedgerIntentFinding] = []
-    unjudged: list[str] = []
+    unjudged: list[tuple[str, str]] = []
     for item in population:
         judged = judge(
             spec_tree=spec_tree,
@@ -143,15 +191,12 @@ def run_ledger_intent_scan(
             run_model=run_model,
         )
         if not is_successful(judged):
-            unjudged.append(f"{item.id}: {judged.failure().detail}")
+            unjudged.append((item.id, judged.failure().detail))
             continue
         finding = finding_for(item=item, verdict=judged.unwrap())
         if finding is not None:
             findings.append(finding)
-    _emit(findings=findings, scanned=len(population), cut_instant=cut.instant, as_json=as_json)
-    for narration in unjudged:
-        _ = write_stderr(text=f"ERROR: the judgement could not be read for {narration}\n")
-    return _EXIT_VALIDATION_ERROR if unjudged else 0
+    return findings, unjudged
 
 
 def _resolved_cut(*, spec_root: Path, since_version: int | None) -> SpecVersionCut | None:

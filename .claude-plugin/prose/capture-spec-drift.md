@@ -56,6 +56,50 @@ For each candidate, ask:
   behavior. Proceed to Step 3 with a "refinement" framing.
 - `skip` — defer judgment.
 
+### Step 2b — The ledger-intent scan (the SECOND drift source)
+
+Per `SPECIFICATION/contracts.md` §"`capture-spec-drift`", drift has TWO
+sources, and Step 2's impl-tree survey is only the first. The second is a
+read-only pass over the Ledger that surfaces recorded work-item intent —
+its `title`, `description`, `acceptance_criteria` and closure `reason` —
+that the ratified specification does not state. Run it through the
+orchestrator CLI, which judges each item through the one shared
+spec-stated judgement rather than through a reading of your own:
+
+```bash
+"$LIVESPEC_ORCHESTRATOR_BIN" ledger-intent-scan \
+  --project-root "$PROJECT_ROOT" \
+  --spec-target SPECIFICATION \
+  --judge-cli "$JUDGE_CLI_ARGV_JSON" \
+  --json
+```
+
+- `--judge-cli` is a JSON array of strings naming the command that
+  answers one judgement: it receives the rendered prompt on standard
+  input and writes the verdict JSON on standard output. It is REQUIRED —
+  there is no judgement without a judge.
+- `--since-version <vN>` scopes the scan to work-items captured on or
+  after the cut of version `<vN>`. Omitted, the scan considers every live
+  work-item PLUS every work-item captured on or after the most-recently-cut
+  version's cut. An item's TYPE is never a detection exclusion — a `bug`,
+  a `chore` and a non-functional item are all scanned.
+- `--coverage-point <value>` is the processed-merge frontier this pass ran
+  through, for Step 5's completed-coverage record. Supply it only when
+  this invocation really is the whole drift pass; the scan never invents
+  one, and an absent point is reported as the reason coverage was withheld.
+
+The stdout envelope carries `findings`, `scanned` and `cut`. Each finding
+names the `item_id`, the `kind` (`partial` or `unstated`), the
+`generalization_target` — the existing H2 heading whose generalization
+would state the behaviour — and the `rationale`. An item the judgement
+classifies `stated` produces NO finding; do not re-judge it yourself.
+
+Carry each finding into Step 3's per-finding consent flow exactly as a
+Step 2 finding, and name its `generalization_target` in the
+propose-change handoff so the proposal targets the clause that would
+state the behaviour. The scan MUTATES NO WORK-ITEM: it does not close,
+re-rank, or edit one, and it never auto-files a propose-change.
+
 ### Step 3 — Per-finding propose-change handoff
 
 For each `no` / `partial` finding:

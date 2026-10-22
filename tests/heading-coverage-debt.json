@@ -555,13 +555,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 38 \u2014 capture-spec-drift surfaces ledger intent missing from spec",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-07-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 39 \u2014 Ratified lesson injects into dispatch briefs",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-04"

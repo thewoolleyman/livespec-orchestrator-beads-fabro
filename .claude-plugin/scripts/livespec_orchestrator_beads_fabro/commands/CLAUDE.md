@@ -150,7 +150,9 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   reads bottom-up: `_ledger_intent_cut` (the instant one ratified spec version
   was CUT, read off its revision record's `revised_at` front matter) →
   `_ledger_intent_scan` (PURE: the population rule, the statement the four
-  intent fields render into, and the finding) → `_orchestrator_ledger_intent`
+  intent fields render into, and the finding) → `_ledger_intent_coverage` (how
+  one scan DESCRIBES itself to the detection-coverage anchor) →
+  `_orchestrator_ledger_intent`
   (the `orchestrator ledger-intent-scan` subcommand: the injected judge, the
   store read, the detection-coverage record and the envelope).
   Five properties an editor must not invert. The FOUR intent fields are judged
@@ -172,6 +174,19 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   that writer is the only surface that may decide whether a completed record is
   claimable, so a scan that judged its own completeness would be the second
   authority on the all-or-nothing rule.
+  THREE FURTHER PROPERTIES OF THE COVERAGE PROJECTION. The record is written
+  under the DRIFT operation, because the ledger-intent scan is one of the two
+  sources the clause names and a private operation name would make its records
+  invisible to the staleness fact computed from that operation. The COVERAGE
+  POINT is supplied by the caller and never invented, since the drift point is
+  the processed-merge FRONTIER and only a caller that walked those merges knows
+  it — a standalone scan has done half the detection, so an invented point
+  would clear drift staleness on a pass that never ran the impl-to-spec half.
+  And the WRITE half does not fail soft where `completed_coverage_point`'s read
+  half does: that read answers `None` for an anchor naming no live row because
+  it runs inside the needs-attention composition, while here the record IS what
+  the contract requires of the invocation, so the expected `BeadsMappingError`
+  is caught only to turn it into a refusal naming the anchor.
 - `_dispatcher_sandbox_worktree_pack.py` — the gitignored worktree-discipline pack
   a fleet-default sandbox installs before anything reads it (`bd-ib-tlmq3m`,
   Scenarios 30 and 96), plus the premise that decides whether it is owed. PURE,

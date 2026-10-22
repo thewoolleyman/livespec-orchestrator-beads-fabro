@@ -20,6 +20,7 @@ names in argv form:
                                 [--dry-run] [--json]
   orchestrator.py ledger-intent-scan --judge-cli <json-argv>
                                 [--since-version <vN>]
+                                [--coverage-point <value>]
                                 [--project-root <path>] [--spec-target <path>]
                                 [--json]
 
@@ -141,6 +142,7 @@ def _dispatch_ledger_intent(*, args: argparse.Namespace, context: CliContext) ->
         context=context,
         judge_cli=judge_cli,
         since_version=since_version,
+        coverage_point=args.coverage_point,
         as_json=args.as_json,
     )
 
@@ -169,6 +171,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_common(parser=ledger_intent)
     _ = ledger_intent.add_argument("--judge-cli", dest="judge_cli", required=True)
     _ = ledger_intent.add_argument("--since-version", dest="since_version", default=None)
+    _ = ledger_intent.add_argument("--coverage-point", dest="coverage_point", default=None)
     drift_capture = subparsers.add_parser("drift-capture")
     _add_common(parser=drift_capture)
     _add_capture_common(parser=drift_capture)
