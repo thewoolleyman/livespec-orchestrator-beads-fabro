@@ -272,3 +272,43 @@ def test_a_mechanical_finding_and_an_advisory_finding_are_both_displayed_and_lab
     assert len(advisory) == 1
     assert "regression tests" in advisory[0]
     assert "definition-of-done findings: none" not in lines
+
+
+def test_a_stray_section_line_is_displayed_as_a_mechanical_finding_quoting_it(
+    tmp_path: Path,
+) -> None:
+    """A line the section's grammar does not admit is a MECHANICAL finding.
+
+    The kind matters more than the wording: a mechanical finding withholds
+    `ready` at intake and an advisory one is forbidden to, so a filer reading the
+    display has to be able to tell which of the two is holding the item out of
+    the queue. The line is quoted verbatim for the same reason the wall quotes
+    it — the remedy is to move or delete that one line.
+    """
+    stray = "Governing text: the supervision round, as ratified under v064."
+    item = _item(
+        description=(
+            "## Definition of Done\n"
+            "\n"
+            "- The filed slice records one line in the marker file.\n"
+            "\n"
+            f"{stray}\n"
+            "\n"
+            f"References: {_SPEC_HEADING}\n"
+        )
+    )
+
+    lines = _display(item=item, cwd=_repo(tmp_path=tmp_path))
+
+    mechanical = [
+        line for line in lines if line.startswith("definition-of-done finding (mechanical):")
+    ]
+    assert len(mechanical) == 1
+    assert repr(stray) in mechanical[0]
+    # The control: the bullet beside it is still displayed as the one gradeable
+    # assertion, so the finding is about the stray line rather than about a
+    # section the display failed to parse at all.
+    assert lines[1] == (
+        "assertion 1 (proof mode: factory_captured):"
+        " The filed slice records one line in the marker file."
+    )
