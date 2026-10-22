@@ -61,8 +61,6 @@ which is a gauge passing because it was blinded.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from hashlib import sha256
-from json import dumps
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
@@ -96,30 +94,36 @@ from livespec_orchestrator_beads_fabro.commands._plan_obligation import (
     projected_action,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_progress_decision import (
+    decide_tracked_write,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_progress_outcome import (
     TrackedDecision,
     TrackedRefusal,
-    decide_tracked_write,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_recovery import CausalRecovery
 from livespec_orchestrator_beads_fabro.commands._plan_result_plan_owned import (
     read_plan_owned_result,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_supersession_evidence import (
+    supersession_evidence,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
     PLAN_HANDOFF_PREFIX,
     plan_comment_body,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_write_identity import derived_operation_id
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
         ResultObservation,
     )
+    from livespec_orchestrator_beads_fabro.commands._plan_supersession import CausalSupersession
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "TrackedWrite",
     "TrackedWriteRequest",
     "commit_tracked_write",
-    "derived_operation_id",
 ]
 
 
@@ -131,7 +135,10 @@ class TrackedWriteRequest:
     is true. `operation_id` is the identity a retry is recognised by; a caller
     that supplies none gets `derived_operation_id`'s deterministic value.
     `recovery` is the typed causal attempt an EXPIRED obligation needs before it
-    will accept any continuation at all.
+    will accept any continuation at all, and `supersession` is the evidenced
+    causal event an UNMET one needs before its required result may be renamed.
+    The two are never carried together: they answer different questions about one
+    obligation, and a write claiming each would leave neither graded.
     """
 
     config: StoreConfig
@@ -143,6 +150,7 @@ class TrackedWriteRequest:
     body: str | None = None
     operation_id: str | None = None
     recovery: CausalRecovery | None = None
+    supersession: CausalSupersession | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -154,44 +162,6 @@ class TrackedWrite:
     consumed_handoffs: int
     idempotent: bool
     tracked: bool
-
-
-def derived_operation_id(*, request: TrackedWriteRequest) -> str:
-    """A deterministic operation identity for a caller that named none.
-
-    Two calls agreeing on the epic, author, instant, WHOLE pointer and handoff
-    body are the SAME logical operation — a retry — and must recover one event rather than
-    consume two handoff units. Anything that differs in any of those is a
-    different operation.
-
-    THE PROPOSED OBLIGATION IS PART OF THE IDENTITY, including the budget the
-    continuation path goes on to discard. On the FRESH-obligation arm the
-    proposed budget is the very thing that becomes durable, so excluding it
-    would let the second of two distinct establishing writes be recovered as a
-    retry of the first, silently adopting a budget its caller never asked for.
-
-    A digest is used rather than the fields themselves because the identity
-    rides in a close reason and a progress event, and an unbounded
-    concatenation of caller prose does not belong in either. The parts are
-    joined on a unit separator so no two different field splits can render one
-    string, and `sort_keys` makes the reference rendering independent of dict
-    insertion order so two equal references cannot digest differently.
-    """
-    material = "\x1f".join(
-        (
-            request.epic_id,
-            request.author,
-            request.now,
-            request.action.kind,
-            request.action.ref,
-            request.action.text,
-            request.body or "",
-            str(request.is_handoff),
-            dumps(request.action.required_result, sort_keys=True, default=str),
-            dumps(request.action.budget, sort_keys=True, default=str),
-        )
-    )
-    return f"plan-write-{sha256(material.encode('utf-8')).hexdigest()[:16]}"
 
 
 def commit_tracked_write(*, request: TrackedWriteRequest) -> TrackedWrite | NextActionRefusal:
@@ -248,6 +218,13 @@ def _tracked_write(
         is_handoff=request.is_handoff,
         observation=_prior_observation(request=request, head=head),
         recovery=request.recovery,
+        supersession=request.supersession,
+        evidence=supersession_evidence(
+            config=request.config,
+            epic_id=request.epic_id,
+            supersession=request.supersession,
+            head=head,
+        ),
     )
     if isinstance(decision, TrackedRefusal):
         return NextActionRefusal(detail=decision.detail)
