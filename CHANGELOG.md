@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.231.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.231.3...v0.231.4) (2026-10-22)
+
+
+### Bug Fixes
+
+* **plan:** refuse a supersession naming a derivation that wrote another result ([d9ad714](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d9ad7144a069339ca42e15e6a5de6fc307c8ee75))
+* **plan:** refuse a supersession whose obligation a later transition changed ([5349a65](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5349a658b241343159c69dc3da78a2ab3da6f3fc))
+* **plan:** supersede a retained misderived obligation at a higher epoch ([6f16fc6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6f16fc653cd55b07edba5c51e6882f6457cab568))
+
 ## [0.231.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.231.2...v0.231.3) (2026-10-22)
 
 
