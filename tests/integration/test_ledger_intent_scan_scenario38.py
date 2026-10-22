@@ -27,6 +27,12 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro.commands._detection_coverage import (
+    ATTEMPT_MARKER_PREFIX,
+    COMPLETED_MARKER_PREFIX,
+    DRIFT_CAPTURE_OPERATION,
+)
 from livespec_orchestrator_beads_fabro.commands.orchestrator import main
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
@@ -79,6 +85,16 @@ def _project(*, root: Path) -> Path:
     )
     _revision(spec=spec, version=1, cut=_EARLIER_CUT)
     _revision(spec=spec, version=2, cut=_LATEST_CUT)
+    # The detection-coverage anchor is an OPERATOR-provisioned ledger item, so
+    # every case gets one: a committed anchor id naming no live row is a
+    # precondition failure, which is its own case rather than the ambient state
+    # every other case is read through.
+    _seed(
+        id_=_ANCHOR,
+        status="done",
+        captured_at="2026-01-01T00:00:00Z",
+        title="Detection-coverage anchor",
+    )
     return root
 
 
@@ -309,6 +325,58 @@ def test_since_version_restricts_the_population_to_the_named_version_cut(
         "bd-ib-bbb",
         "bd-ib-ccc",
     ]
+
+
+def _anchor_records(*, prefix: str) -> list[str]:
+    """Every comment on the detection-coverage anchor carrying one marker."""
+    return [
+        one.text
+        for one in read_work_item_comments(path=_config(), work_item_id=_ANCHOR)
+        if one.text.startswith(prefix)
+    ]
+
+
+def test_every_invocation_records_an_attempt_and_only_a_clean_pass_completes(
+    tmp_path: Path,
+) -> None:
+    """Assertion 4 — the attempt record is unconditional, the completed one is not.
+
+    Two invocations over one anchor, because the all-or-nothing rule is only
+    observable as a DIFFERENCE: a build that always wrote both records, and one
+    that never wrote either, each satisfy one of the two runs on its own.
+    """
+    root = _project(root=tmp_path)
+    _seed(
+        id_="bd-ib-aaa",
+        status="backlog",
+        captured_at="2026-04-01T00:00:00Z",
+        title="Behaviour no clause states",
+    )
+    drifting = _judge_cli(
+        verdicts={
+            "bd-ib-aaa": {
+                "kind": "unstated",
+                "stated_by": [],
+                "generalization_target": _COVERAGE_HEADING,
+                "rationale": "no clause states it",
+            }
+        }
+    )
+    point = ["--coverage-point", "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c"]
+    drift_code, _ = _run(root=root, judge_cli=drifting, extra=point)
+    assert drift_code == 0, f"the scan did not succeed: exit {drift_code}"
+    assert len(_anchor_records(prefix=ATTEMPT_MARKER_PREFIX)) == 1
+    assert _anchor_records(prefix=COMPLETED_MARKER_PREFIX) == []
+    clean_code, clean = _run(root=root, judge_cli=_judge_cli(verdicts={}), extra=point)
+    assert clean_code == 0
+    assert isinstance(clean, dict)
+    assert clean["findings"] == []
+    assert len(_anchor_records(prefix=ATTEMPT_MARKER_PREFIX)) == 2
+    completed = _anchor_records(prefix=COMPLETED_MARKER_PREFIX)
+    assert len(completed) == 1
+    recorded = json.loads(completed[0].removeprefix(COMPLETED_MARKER_PREFIX))
+    assert recorded["coverage_point"] == point[1]
+    assert recorded["operation"] == DRIFT_CAPTURE_OPERATION
 
 
 def test_an_unknown_flag_is_a_usage_error_that_emits_no_envelope(tmp_path: Path) -> None:

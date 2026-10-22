@@ -44,6 +44,16 @@ from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import WorkItem
 from livespec_runtime.spec_stated import SpecStatedVerdict
 
+_ANCHOR = "bd-ib-anchor"
+_STATED_VERDICT = json.dumps(
+    {
+        "kind": "stated",
+        "stated_by": ["## A clause"],
+        "generalization_target": None,
+        "rationale": "the clause states it",
+    }
+)
+
 
 def _item(**overrides: object) -> WorkItem:
     base: dict[str, object] = {
@@ -226,11 +236,18 @@ def test_a_stated_verdict_yields_no_finding_at_all() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _context(*, root: Path) -> CliContext:
+def _context(*, root: Path, anchor: str | None = _ANCHOR) -> CliContext:
+    """A project root whose committed config optionally declares the anchor.
+
+    `anchor=None` is the UNCONFIGURED case, which the shared writer refuses
+    before touching the tenant — a different refusal from a declared anchor
+    naming no live row, and the two have different remedies.
+    """
+    block: dict[str, object] = {"connection": {"prefix": "bd-ib"}}
+    if anchor is not None:
+        block["dispatcher"] = {"detection_coverage_anchor": anchor}
     _ = (root / ".livespec.jsonc").write_text(
-        json.dumps(
-            {"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}},
-        ),
+        json.dumps({"livespec-orchestrator-beads-fabro": block}),
         encoding="utf-8",
     )
     spec = root / "SPECIFICATION"
@@ -261,13 +278,21 @@ def test_an_unreadable_latest_cut_refuses_rather_than_scanning(tmp_path: Path) -
     assert "cannot" in stderr.getvalue()
 
 
-def _one_item_project(*, root: Path) -> CliContext:
+def _one_item_project(*, root: Path, seed_anchor: bool = True) -> CliContext:
     context = _context(root=root)
     _revision(spec=context.spec_root, version=1, body=_frontmatter(instant="2026-01-01T00:00:00Z"))
+    config = resolve_store_config(cwd=root, work_items_arg=None)
     append_work_item(
-        path=resolve_store_config(cwd=root, work_items_arg=None),
+        path=config,
         item=_item(id="bd-ib-aaa", captured_at="2026-06-01T00:00:00Z"),
     )
+    if seed_anchor:
+        # Closed and captured BEFORE the cut, so the anchor row is outside the
+        # population and these cases read one judged item rather than two.
+        append_work_item(
+            path=config,
+            item=_item(id=_ANCHOR, status="done", captured_at="2025-01-01T00:00:00Z"),
+        )
     return context
 
 
@@ -306,6 +331,36 @@ def test_the_human_rendering_names_the_item_the_verdict_and_the_target(
     code, stdout, _ = _scanned(context=context, judge_cli=_answering(text=verdict))
     assert code == 0
     assert stdout == "bd-ib-aaa  unstated  (no generalization target)\n"
+
+
+def test_an_unconfigured_anchor_refuses_the_invocation_naming_the_obligation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No committed anchor: the records the contract requires cannot land."""
+    monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
+    context = _context(root=tmp_path, anchor=None)
+    _revision(spec=context.spec_root, version=1, body=_frontmatter(instant="2026-01-01T00:00:00Z"))
+    code, _, stderr = _scanned(context=context, judge_cli=_answering(text=_STATED_VERDICT))
+    assert code == 3
+    assert "detection_coverage_anchor" in stderr
+
+
+def test_a_declared_anchor_naming_no_live_row_refuses_naming_the_anchor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control for the case above: declared, but unwritable.
+
+    Both refuse with the same exit code, and that is the point of asserting on
+    the narration: the remedies differ — provision the anchor, versus fix the
+    committed id — and a build that reported one cause for both would send
+    every operator down the wrong one.
+    """
+    monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
+    context = _one_item_project(root=tmp_path, seed_anchor=False)
+    code, _, stderr = _scanned(context=context, judge_cli=_answering(text=_STATED_VERDICT))
+    assert code == 3
+    assert _ANCHOR in stderr
+    assert "did not land" in stderr
 
 
 def test_a_judge_that_exits_non_zero_raises_the_injected_cli_error() -> None:
