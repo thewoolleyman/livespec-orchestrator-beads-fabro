@@ -16,7 +16,12 @@ import sys
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.commands._detection_coverage import (
+    ATTEMPT_MARKER_PREFIX,
+)
+from livespec_orchestrator_beads_fabro.commands._ledger_intent_coverage import FAILED_OUTCOME
 from livespec_orchestrator_beads_fabro.commands._ledger_intent_cut import (
     CUT_INSTANT_FIELD,
     SpecVersionCut,
@@ -368,6 +373,58 @@ def test_a_judge_that_exits_non_zero_raises_the_injected_cli_error() -> None:
     with pytest.raises(InjectedCliError) as excinfo:
         _ = run("a prompt")
     assert "exit 7" in excinfo.value.detail
+
+
+def test_a_judge_that_exits_non_zero_is_an_unjudged_item_the_attempt_record_counts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A judge that FAILED to answer records the attempt, exactly as one that answered badly.
+
+    The case above pins the raise in isolation; this one pins what the SCAN
+    does with it. A non-zero judge exit is the routine provider failure — an
+    outage, an expired credential, a rate limit — so letting the error unwind
+    past the recording leaves the detection-coverage anchor with no trace that
+    the pass was attempted and failed, which is the one thing the contract's
+    unconditional attempt record exists to prevent. The invocation is driven
+    through `main` because the unwound error is only VISIBLE there: it maps to
+    the precondition code, so an operator reading the exit cannot tell a scan
+    that could not reach its judge from one whose cut could not be read.
+
+    `test_an_unreadable_verdict_exits_the_wire_shape_code_naming_the_item` is
+    the control: a judge that exits ZERO with unusable output already lands
+    here, so the two failures to measure must be recorded alike.
+    """
+    monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
+    context = _one_item_project(root=tmp_path)
+    stderr = io.StringIO()
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+        code = main(
+            argv=[
+                "ledger-intent-scan",
+                "--project-root",
+                str(tmp_path),
+                "--spec-target",
+                str(context.spec_root),
+                "--judge-cli",
+                json.dumps(_answering(text="{}", exit_code=7)),
+                "--json",
+            ]
+        )
+    assert code == 4
+    assert "bd-ib-aaa" in stderr.getvalue()
+    assert "exit 7" in stderr.getvalue()
+    recorded = [
+        json.loads(one.text.removeprefix(ATTEMPT_MARKER_PREFIX))
+        for one in read_work_item_comments(
+            path=resolve_store_config(cwd=tmp_path, work_items_arg=None),
+            work_item_id=_ANCHOR,
+        )
+        if one.text.startswith(ATTEMPT_MARKER_PREFIX)
+    ]
+    assert len(recorded) == 1
+    assert recorded[0]["exit_code"] == 4
+    assert recorded[0]["outcome"] == FAILED_OUTCOME
+    assert recorded[0]["surfaced"] == 1
 
 
 def test_a_scoped_scan_whose_named_version_records_no_cut_refuses_naming_it(
