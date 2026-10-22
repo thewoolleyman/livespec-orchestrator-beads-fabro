@@ -106,14 +106,23 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
     runner: CommandRunner | None = None,
     payload_root: Path | None = None,
 ) -> DodJudgementDecision:
-    """Reuse the recorded verdict, else take the judgement and record it."""
-    digest = judgement_subject_digest(item=item, cwd=repo)
+    """Reuse the recorded verdict, else take the judgement and record it.
+
+    `comments` is spent TWICE and on one reading: the subject carries the riders
+    among them, and the record scan reads the receipts among them. One read is
+    what makes the digest this decision compares the digest of the subject it
+    would grade — a second read taken for the subject alone could see a rider the
+    scan did not.
+    """
+    digest = judgement_subject_digest(item=item, cwd=repo, comments=comments)
     reused = reusable_verdict(comments=comments, digest=digest)
     if reused is not None:
         return DodJudgementDecision(
             work_item_id=item.id, outcome=reused.outcome, findings=reused.findings, reused=True
         )
-    verdict = run_dod_judgement(item=item, cwd=repo, runner=runner, payload_root=payload_root)
+    verdict = run_dod_judgement(
+        item=item, cwd=repo, comments=comments, runner=runner, payload_root=payload_root
+    )
     if verdict.outcome == JUDGEMENT_UNAVAILABLE:
         _record_did_not_run(
             item=item,
@@ -198,7 +207,8 @@ def held_judgement(
     caller, which is that nothing is holding this item back.
     """
     recorded = reusable_verdict(
-        comments=comments, digest=judgement_subject_digest(item=item, cwd=repo)
+        comments=comments,
+        digest=judgement_subject_digest(item=item, cwd=repo, comments=comments),
     )
     if recorded is None or recorded.outcome != JUDGEMENT_HELD:
         return None

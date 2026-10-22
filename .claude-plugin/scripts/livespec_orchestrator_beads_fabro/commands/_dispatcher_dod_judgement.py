@@ -1,19 +1,41 @@
 """Pure Definition-of-Done judgement subject and verdict parsing.
 
 The admission and dispatch walls share this one rendering so a verdict is reused
-only when the exact criteria and referenced specification headings are unchanged.
+only when the exact criteria, referenced specification headings and ledger riders
+are unchanged.
+
+WHAT THE SUBJECT CARRIES, AND WHY THE RIDERS ARE PART OF IT. `contracts.md`'s
+one-rubric-one-subject clause puts the item's effective criteria, the body of
+each heading its reference line names, and its ledger comments in the subject.
+The riders are not decoration: an operator appends one precisely to narrow or
+correct what the section asserts, so a judge that never read them grades a brief
+the item has moved on from — and the node, whose goal DOES carry every rider,
+then refuses a section the host taking passed.
+
+AND WHY THE DISPATCHER'S OWN JUDGEMENT RECORDS ARE NOT. The same clause excludes
+them, and the reason is mechanical rather than aesthetic: recording a verdict
+appends a comment, so a subject that carried receipts would move the digest the
+verdict was just taken against. No later taking could ever reuse it, every pass
+would pay a model call, and every pass would append one more receipt — a subject
+that grows without bound and a reuse rule that can never fire. The predicate is
+`_dispatcher_dod_judgement_markers.is_judgement_record`, shared with the goal
+renderer, because a second spelling of the marker is two answers to one question.
 """
 
 from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     definition_of_done,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
+    is_judgement_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
     effective_criteria,
@@ -50,6 +72,12 @@ _VERDICT_FAILED = "failed"
 _REMEDY_SEPARATOR = "; "
 _UNRESOLVED_HEADING_BODY = "(this heading does not resolve in the governed spec tree)"
 _ABSENT_CRITERIA_BODY = "(this item carries no effective acceptance criteria)"
+# The riders' own heading in the subject, and what stands where they would be
+# when the item carries none. The explicit absence is what keeps an item with no
+# riders distinguishable from one whose riders were dropped, which is the
+# difference between a brief that is complete and one that was truncated.
+_RIDERS_HEADING = "## Ledger comments (operator riders; part of the brief)"
+_ABSENT_RIDERS_BODY = "(this item carries no operator rider)"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -71,8 +99,17 @@ class DodJudgement:
         return "\n".join(self.findings)
 
 
-def judgement_subject(*, item: WorkItem, cwd: Path) -> str:
-    """Render the criteria and every referenced heading body for the judge."""
+def judgement_subject(*, item: WorkItem, cwd: Path, comments: Sequence[str] = ()) -> str:
+    """Render the criteria, every referenced heading body and every rider.
+
+    `comments` is the item's ledger comment bodies, oldest first, exactly as the
+    gate reads them. It defaults to EMPTY rather than being required, because
+    three callers legitimately hold no sidecar — the two pure digest readings a
+    test takes, and any caller whose comments could not be read — and in each the
+    honest subject is the one with no rider section to show. A caller that has
+    them and omits them renders a smaller subject and a different digest, so the
+    one call site that matters is bound by its own test.
+    """
     criteria = effective_criteria(item=item)
     section = definition_of_done(description=item.description)
     blocks = [
@@ -90,12 +127,15 @@ def judgement_subject(*, item: WorkItem, cwd: Path) -> str:
                 _heading_body(repo=cwd, reference=reference),
             )
         )
+    blocks.extend(("", _RIDERS_HEADING, _riders_body(comments=comments)))
     return "\n".join(blocks)
 
 
-def judgement_subject_digest(*, item: WorkItem, cwd: Path) -> str:
+def judgement_subject_digest(*, item: WorkItem, cwd: Path, comments: Sequence[str] = ()) -> str:
     """Return the stable byte digest used to determine verdict reuse."""
-    return hashlib.sha256(judgement_subject(item=item, cwd=cwd).encode("utf-8")).hexdigest()
+    return hashlib.sha256(
+        judgement_subject(item=item, cwd=cwd, comments=comments).encode("utf-8")
+    ).hexdigest()
 
 
 def parse_judgement_reply(*, reply: str) -> DodJudgement:
@@ -121,6 +161,17 @@ def first_remedy(*, findings: tuple[str, ...]) -> str | None:
     head = findings[0]
     _, separator, remedy = head.rpartition(_REMEDY_SEPARATOR)
     return remedy.strip() if separator else head.strip()
+
+
+def _riders_body(*, comments: Sequence[str]) -> str:
+    """Every rider's text, oldest first, with the Dispatcher's receipts dropped.
+
+    A comment's TEXT is rendered and nothing else — no author, no timestamp —
+    because both move without the brief moving, and either in the subject would
+    retire a recorded verdict on an edit that changed no requirement.
+    """
+    riders = [body for body in comments if not is_judgement_record(body=body)]
+    return "\n\n".join(riders) if riders else _ABSENT_RIDERS_BODY
 
 
 def _unreadable() -> DodJudgement:

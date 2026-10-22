@@ -16,11 +16,20 @@ A DID-NOT-RUN RECORD IS WRITTEN ONCE PER DISTINCT CAUSE. Asserted by taking the
 same unavailable judgement twice and counting one comment, then taking a
 DIFFERENT cause and counting a second — without the second half, a decision
 that never recorded anything at all would pass the first.
+
+THE SUBJECT IS THE ITEM'S BRIEF, AND A JUDGEMENT RECORD IS NOT PART OF IT. The
+one-rubric-one-subject clause puts every ledger comment in the subject EXCEPT the
+Dispatcher's own judgement records, which are receipts rather than brief. Both
+halves are load-bearing and each fails in its own direction: without the riders,
+the judge grades a brief the item no longer has — a rider that narrows an
+assertion is exactly the kind an operator appends — and without the exclusion,
+the first recorded verdict changes the subject it was taken on, so no later
+taking can ever reuse it and every pass pays a model call.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
@@ -37,8 +46,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate i
     judge_item_definition_of_done,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
+    JUDGEMENT_COMMENT_MARKER,
     STAGE_PRE_ADMISSION,
     STAGE_PRE_DISPATCH,
+    UNAVAILABLE_COMMENT_MARKER,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.store import append_work_item
@@ -50,6 +61,31 @@ _HELD_REPLY = (
     ' "bd-ib-7f66ar: the References line omits the scenario; add that heading."}'
 )
 _PASS_REPLY = '{"outcome": "passed"}'
+# A rider of the shape operators actually append: it narrows what the section
+# asserts, so a judge that never read it is grading a brief the item has moved on
+# from.
+_RIDER = "EVIDENCE: the preflight and the in-run gate disagreed on these same bytes."
+# Two judgement records as a reader meets them on the timeline. They are written
+# as LITERAL bodies rather than through the renderer so this case stays a test of
+# the SUBJECT: what a record's fields look like is the record module's subject,
+# and only its marker line decides whether the subject carries it. The verdict
+# record names a digest nothing matches, so it cannot be reused and the judgement
+# below really is taken.
+_FOREIGN_VERDICT_RECORD = (
+    f"{JUDGEMENT_COMMENT_MARKER}\n"
+    "\n"
+    "work-item: bd-ib-7f66ar\n"
+    "stage: pre-admission\n"
+    "outcome: admitted\n"
+    "subject-digest: 0000000000000000000000000000000000000000000000000000000000000000\n"
+)
+_UNAVAILABLE_RECORD = (
+    f"{UNAVAILABLE_COMMENT_MARKER}\n"
+    "\n"
+    "The pre-admission Definition-of-Done judgement did not run for this item.\n"
+    "\n"
+    "judgement-unavailable-cause: judge-command-failed\n"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -66,6 +102,7 @@ class _Runner:
 
     results: list[CommandResult]
     calls: int = 0
+    prompts: list[str] = field(default_factory=list)
 
     def run(
         self,
@@ -77,7 +114,8 @@ class _Runner:
         stdin: int | None = None,
         start_new_session: bool = False,
     ) -> CommandResult:
-        _ = (argv, cwd, timeout_seconds, env, stdin, start_new_session)
+        _ = (cwd, timeout_seconds, env, stdin, start_new_session)
+        self.prompts.append(argv[argv.index("-p") + 1])
         self.calls += 1
         return self.results[min(self.calls - 1, len(self.results) - 1)]
 
@@ -287,3 +325,25 @@ def test_the_store_bound_entry_reads_and_appends_through_the_ledger(tmp_path: Pa
     )
     assert reused.reused is True
     assert runner.calls == 1
+
+
+def test_the_pre_dispatch_subject_carries_a_rider_and_omits_the_judgement_records(
+    tmp_path: Path,
+) -> None:
+    ledger = _Ledger()
+    ledger.bodies.extend((_RIDER, _FOREIGN_VERDICT_RECORD, _UNAVAILABLE_RECORD))
+    runner = _Runner(results=[CommandResult(exit_code=0, stdout=_PASS_REPLY, stderr="")])
+
+    decision = _judge(tmp_path=tmp_path, ledger=ledger, runner=runner, stage=STAGE_PRE_DISPATCH)
+
+    # The foreign verdict record names a digest nothing matches, so the judgement
+    # really was taken and there IS a prompt to read.
+    assert decision.reused is False
+    assert runner.calls == 1
+    prompt = runner.prompts[0]
+    assert _RIDER in prompt
+    # The two record markers, which is the whole of how a reader tells a receipt
+    # from a rider. Asserting the markers rather than a field name is deliberate:
+    # a record's fields are the record module's subject and may change.
+    assert JUDGEMENT_COMMENT_MARKER not in prompt
+    assert UNAVAILABLE_COMMENT_MARKER not in prompt
