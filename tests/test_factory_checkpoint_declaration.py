@@ -173,15 +173,28 @@ figures:
   bound and its retired-`"15m"` control are measured against
   `execution_allowance_seconds`, not against the required lifetime -- which,
   being window-governed, is 111600 at `"5m"` AND at `"15m"` and therefore
-  discriminates nothing. Re-measured against this tree: 840675 shipped and
-  1310475 at the retired `"15m"`, so the bound sits at 880000 between them, with
-  39325 seconds of headroom. Both figures fell by 3600 against the pre-v177
-  readings because they are now the allowance itself rather than the allowance
-  plus the margin.
+  discriminates nothing. Re-measured against this tree, which carries the
+  RE-LANDED recapture route: 902955 shipped and 1415955 at the retired `"15m"`,
+  so the bound moves to 1000000 between them, with 97045 seconds of headroom.
+  Both figures are now the allowance itself rather than the allowance plus the
+  margin, which is why they do not match the pre-v177 readings by 3600.
 * The CREDENTIAL CEILING is graded against the REQUIRED LIFETIME, which is what
   the gate demands of a token, and it stays exactly as it was: a shipped payload
   asking more than a freshly renewed credential carries is refusable on a token
   minted moments earlier.
+
+AND THE ROUTE v175 ADDED IS BACK IN THIS TREE, which is what the smaller-of-two
+rule was ratified for. `review -> recapture_route -> proof_capture -> review` is
+a third cycle through the proof loop, so the derivation bills `proof_capture`,
+`review`, `proof_verify` and `proof_grade` one more visit each per lap it
+admits, and the allowance is 902955 seconds -- the figure whose 906555-second
+requirement priced a freshly renewed credential out of every Codex dispatch
+before v177. Under the bounded window that same graph requires 111600 seconds,
+which a fresh credential clears with 752400 to spare. The route's own node is
+declared DOWNWARD at 600 s in `.livespec.jsonc` like the two route nodes before
+it, and its `max_visits` is the EXACT bound the contract admits -- three
+verdicts, not the grade route's bound-plus-one -- because a fourth admitted
+visit here would buy a fourth visit of each of those four nodes.
 
 AND THE CEILING CASE IS HONEST ABOUT ITS OWN REACH, which is the half worth
 stating rather than leaving a reader to infer. With the window at 108000 no
@@ -228,8 +241,8 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # would make every unrelated timeout edit fail this case; the control pins the
 # 15m figure exactly, because that one is the thing being moved away from and a
 # drifting comparand would hide the move.
-_ALLOWANCE_BOUND_SECONDS = 880_000
-_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_310_475
+_ALLOWANCE_BOUND_SECONDS = 1_000_000
+_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_415_955
 
 # The execution ALLOWANCE the shipped payload resolves, the lifetime the
 # freshness gate actually demands of a credential, and the lifetime of a FRESH
@@ -242,7 +255,7 @@ _ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_310_475
 # comparand is what let v175's widened graph cross the credential ceiling while
 # every case here still passed, and an exact pin forces the re-measurement that
 # was skipped.
-_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 840_675
+_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 902_955
 _SHIPPED_FRESHNESS_REQUIREMENT_SECONDS = 111_600
 _FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS = 864_000
 
