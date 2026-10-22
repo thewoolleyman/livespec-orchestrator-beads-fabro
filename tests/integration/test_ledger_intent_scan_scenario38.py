@@ -218,6 +218,43 @@ def test_the_scan_lists_the_population_with_each_verdict_and_target(tmp_path: Pa
     ]
 
 
+def test_an_item_the_judgement_states_produces_no_finding(tmp_path: Path) -> None:
+    """Assertion 2 — intent already reflected in the spec emits nothing.
+
+    Both items are in the population and both are judged, so a scan that
+    reported one finding because it judged one item would pass this case for
+    the wrong reason; `scanned` is asserted to pin that down.
+    """
+    root = _project(root=tmp_path)
+    _seed(
+        id_="bd-ib-aaa",
+        status="backlog",
+        captured_at="2026-01-01T00:00:00Z",
+        title="Behaviour the ratified text already states",
+    )
+    _seed(
+        id_="bd-ib-bbb",
+        status="backlog",
+        captured_at="2026-01-01T00:00:00Z",
+        title="Behaviour no clause states",
+    )
+    verdicts: dict[str, dict[str, object]] = {
+        "bd-ib-bbb": {
+            "kind": "unstated",
+            "stated_by": [],
+            "generalization_target": _COVERAGE_HEADING,
+            "rationale": "no clause states it",
+        },
+    }
+    code, payload = _run(root=root, judge_cli=_judge_cli(verdicts=verdicts))
+    assert code == 0, f"the scan did not succeed: exit {code}"
+    assert isinstance(payload, dict)
+    assert payload["scanned"] == 2
+    findings = payload["findings"]
+    assert isinstance(findings, list)
+    assert [one["item_id"] for one in findings] == ["bd-ib-bbb"]
+
+
 def test_an_unknown_flag_is_a_usage_error_that_emits_no_envelope(tmp_path: Path) -> None:
     """The usage exit this module's own invoker tolerates, asserted rather than assumed.
 
