@@ -1,13 +1,19 @@
 """Detection-staleness attention lanes derived from completed coverage points.
 
-Two facts, both COMPUTED from the completed coverage records on the anchor and
-never from a remembered "last run" timestamp:
+Three facts, the first two COMPUTED from the completed coverage records on the
+anchor and never from a remembered "last run" timestamp:
 
 - **Gap-capture staleness**, when the newest ratified spec revision is newer
   than the last completed gap-capture coverage point.
 - **Drift staleness**, when default-branch merges since the last completed
   drift coverage point stand at or past the effective
   `dispatcher.drift_capture_merge_threshold`.
+- **Held drift findings**, from the anchor's held-finding records, composed by
+  `_needs_attention_held_drift_findings`. It is composed HERE rather than in
+  `needs_attention` because all three facts are readings of the one committed
+  anchor, which this function already resolves: a third resolution of the same
+  key one venue over is how two surfaces come to disagree about which row they
+  are reading.
 
 ⛔ NEITHER FACT RUNS A DETECTOR, AND THAT IS A CONTRACT, NOT AN OPTIMISATION.
 Both `capture-impl-gaps` and `capture-spec-drift` are consent-gated attended
@@ -76,6 +82,9 @@ from livespec_orchestrator_beads_fabro.commands._drift_run_merges import (
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
     ConformanceContext,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_held_drift_findings import (
+    held_drift_finding_items,
+)
 from livespec_orchestrator_beads_fabro.spec_reader import current_specification_version
 
 if TYPE_CHECKING:
@@ -113,12 +122,20 @@ def detection_staleness_items(
     config: StoreConfig,
     seams: DetectionStalenessSeams = DEFAULT_DETECTION_STALENESS_SEAMS,
 ) -> list[AttentionItem]:
-    """Compose the gap-capture and drift staleness facts for this repository."""
+    """Compose this repository's three detection-coverage facts."""
     anchor = detection_coverage_anchor(cwd=project_root)
-    return _gap_items(
-        project_root=project_root, repo=repo, config=config, anchor=anchor
-    ) + _drift_items(
-        project_root=project_root, repo=repo, config=config, anchor=anchor, seams=seams
+    return (
+        _gap_items(project_root=project_root, repo=repo, config=config, anchor=anchor)
+        + _drift_items(
+            project_root=project_root, repo=repo, config=config, anchor=anchor, seams=seams
+        )
+        + held_drift_finding_items(
+            project_root=project_root,
+            spec_root=project_root / _SPEC_DIRNAME,
+            repo=repo,
+            config=config,
+            anchor=anchor,
+        )
     )
 
 

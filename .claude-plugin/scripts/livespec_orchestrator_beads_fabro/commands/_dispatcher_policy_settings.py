@@ -55,6 +55,7 @@ __all__: list[str] = [
     "DEFAULT_AUTO_APPROVE_READY",
     "DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS",
     "DEFAULT_DRIFT_CAPTURE_MERGE_THRESHOLD",
+    "DEFAULT_DRIFT_PROPOSAL_QUEUE_CAP",
     "DEFAULT_GROOM_CUT_APPROVAL",
     "DEFAULT_MERGE_ON_REVIEW_CAP",
     "DEFAULT_READY_AGING_THRESHOLD_HOURS",
@@ -70,6 +71,7 @@ __all__: list[str] = [
     "resolve_automated_regroom_cap",
     "resolve_credential_reprobe_interval_seconds",
     "resolve_drift_capture_merge_threshold",
+    "resolve_drift_proposal_queue_cap",
     "resolve_groom_cut_approval",
     "resolve_merge_on_review_cap",
     "resolve_ready_aging_threshold_hours",
@@ -88,6 +90,7 @@ DEFAULT_ACCEPTANCE_REWORK_CAP = 2
 DEFAULT_READY_AGING_THRESHOLD_HOURS = 24
 DEFAULT_REQUIRE_INVOKER = False
 DEFAULT_DRIFT_CAPTURE_MERGE_THRESHOLD = 1
+DEFAULT_DRIFT_PROPOSAL_QUEUE_CAP = 5
 DEFAULT_GROOM_CUT_APPROVAL = "human"
 DEFAULT_AUTOMATED_REGROOM_CAP = 2
 DEFAULT_ANSWER_DISPOSITION = "human"
@@ -105,6 +108,7 @@ _ACCEPTANCE_REWORK_CAP_KEY = "acceptance_rework_cap"
 _READY_AGING_THRESHOLD_HOURS_KEY = "ready_aging_threshold_hours"
 _REQUIRE_INVOKER_KEY = "require_invoker"
 _DRIFT_CAPTURE_MERGE_THRESHOLD_KEY = "drift_capture_merge_threshold"
+_DRIFT_PROPOSAL_QUEUE_CAP_KEY = "drift_proposal_queue_cap"
 _GROOM_CUT_APPROVAL_KEY = "groom_cut_approval"
 _AUTOMATED_REGROOM_CAP_KEY = "automated_regroom_cap"
 _ANSWER_DISPOSITION_KEY = "answer_disposition"
@@ -245,6 +249,22 @@ def resolve_drift_capture_merge_threshold(*, cwd: Path) -> IOResult[int, PolicyS
         cwd=cwd,
         key=_DRIFT_CAPTURE_MERGE_THRESHOLD_KEY,
         default=DEFAULT_DRIFT_CAPTURE_MERGE_THRESHOLD,
+        minimum=1,
+    )
+
+
+def resolve_drift_proposal_queue_cap(*, cwd: Path) -> IOResult[int, PolicySettingUnreadable]:
+    """Read `dispatcher.drift_proposal_queue_cap`, defaulting to 5.
+
+    The number of drift-origin proposed changes that MAY be open at once. The
+    open-proposal queue is a REPOSITORY property — every proposal costs a human
+    review, whichever item occasioned it — so this dial has no per-item
+    override, exactly as the drift trigger above has none.
+    """
+    return _resolve_int_setting(
+        cwd=cwd,
+        key=_DRIFT_PROPOSAL_QUEUE_CAP_KEY,
+        default=DEFAULT_DRIFT_PROPOSAL_QUEUE_CAP,
         minimum=1,
     )
 

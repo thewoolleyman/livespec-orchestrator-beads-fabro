@@ -101,6 +101,15 @@ CONFIG_KEYS: tuple[ConfigKey, ...] = (
         default=1,
         per_item_override=False,
     ),
+    # The open drift-origin proposal queue is likewise a repository property:
+    # every proposal costs a human review whichever merge occasioned it, so
+    # this cap carries no per-item override either.
+    ConfigKey(
+        key="drift_proposal_queue_cap",
+        value_type="positive_integer",
+        default=5,
+        per_item_override=False,
+    ),
 )
 
 
