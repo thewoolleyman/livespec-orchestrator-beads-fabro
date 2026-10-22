@@ -30,6 +30,16 @@ its rebased series rather than as one merge commit: a reader who assumed
 "merges" meant merge commits would otherwise read a correct number as the
 wrong quantity.
 
+WHICH REF AND WHICH RANGE ARE NOT THIS MODULE'S TO DECIDE. Both now come from
+`_drift_run_merges`, which the drift run of the reconcile pass reads the same
+two answers out of. The contract requires this fact to name "the merges after
+the frontier" and that run to enumerate "every default-branch merge after the
+recorded frontier": two private copies of the ref resolution or the range
+expression would let the fact report a population the run never acted on, and
+both numbers would look perfectly healthy. Only the READINGS differ — a count
+here, a list there — because this lane renders one integer inside an
+interactive inbox and has no use for the listing.
+
 Both lanes fail SOFT on an unreadable input — an unresolvable default branch,
 a git invocation that does not answer — rather than guessing a count. An
 absent coverage point is a different thing and is NOT a failure: it means no
@@ -58,6 +68,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_DRIFT_CAPTURE_MERGE_THRESHOLD,
     resolve_drift_capture_merge_threshold,
 )
+from livespec_orchestrator_beads_fabro.commands._drift_run_merges import (
+    GIT_TIMEOUT_SECONDS,
+    default_branch_ref,
+    merge_range,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
     ConformanceContext,
 )
@@ -75,7 +90,6 @@ __all__: list[str] = [
 ]
 
 _SPEC_DIRNAME = "SPECIFICATION"
-_GIT_TIMEOUT_SECONDS = 30.0
 _MERGE_COUNTING_NOTE = (
     "Merge counting is every commit on the default branch since that point, "
     "with no class of commit excluded."
@@ -183,34 +197,12 @@ def _version_number(*, point: str | None) -> int:
     return int(digits) if digits.isdecimal() else 0
 
 
-def _default_branch_ref(*, project_root: Path, runner: CommandRunner) -> str | None:
-    """The local `origin/<default>` ref, resolved WITHOUT touching the forge.
-
-    Deliberately not `resolve_default_branch`, whose second route shells out to
-    `gh repo view`. That route is right for a dispatch preflight, which is
-    already talking to the forge and can afford a network round trip; it is
-    wrong HERE. This lane runs inside every `needs-attention` composition — an
-    interactive operator surface — so a forge call would put an unbounded
-    network wait in front of an inbox render, on behalf of one fact. A clone
-    whose `refs/remotes/origin/HEAD` is unset simply yields no drift fact.
-    """
-    result = runner.run(
-        argv=["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
-        cwd=project_root,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
-    )
-    resolved = result.stdout.strip()
-    if result.exit_code != 0 or resolved == "":
-        return None
-    return resolved
-
-
 def _merge_count(*, project_root: Path, runner: CommandRunner, since: str | None) -> int | None:
-    ref = _default_branch_ref(project_root=project_root, runner=runner)
+    ref = default_branch_ref(project_root=project_root, runner=runner)
     if ref is None:
         return None
-    argv = ["git", "rev-list", "--count", f"{since}..{ref}" if since else ref]
-    result = runner.run(argv=argv, cwd=project_root, timeout_seconds=_GIT_TIMEOUT_SECONDS)
+    argv = ["git", "rev-list", "--count", merge_range(since=since, ref=ref)]
+    result = runner.run(argv=argv, cwd=project_root, timeout_seconds=GIT_TIMEOUT_SECONDS)
     counted = result.stdout.strip()
     if result.exit_code != 0 or not counted.isdecimal():
         return None
