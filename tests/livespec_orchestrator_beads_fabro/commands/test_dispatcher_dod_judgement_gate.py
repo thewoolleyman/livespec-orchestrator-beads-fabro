@@ -29,6 +29,7 @@ taking can ever reuse it and every pass pays a model call.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -38,6 +39,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     JUDGEMENT_ADMITTED,
     JUDGEMENT_HELD,
     JUDGEMENT_UNAVAILABLE,
+    judgement_subject_digest,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
     DodJudgementDecision,
@@ -50,6 +52,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record
     STAGE_PRE_ADMISSION,
     STAGE_PRE_DISPATCH,
     UNAVAILABLE_COMMENT_MARKER,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
+    dod_gate_prompt_path,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.store import append_work_item
@@ -147,10 +152,20 @@ def _item(**overrides: object) -> WorkItem:
 
 
 def _payload(*, tmp_path: Path) -> Path:
+    """A payload whose rubric is the SHIPPED one, byte for byte.
+
+    The judgement-free read below resolves the EXECUTING build's rubric rather
+    than a fixture's, so a rubric of this module's own invention would make every
+    verdict recorded here unreusable by that read. That refusal would be correct
+    behaviour and would hide what these cases are about, which is what the two
+    surfaces do with a verdict that DOES stand.
+    """
     root = tmp_path / "payload"
     prompts = root / ".fabro" / "workflows" / "implement-work-item" / "prompts"
     prompts.mkdir(parents=True, exist_ok=True)
-    _ = (prompts / "dod-gate.md").write_text("# gate\n", encoding="utf-8")
+    _ = (prompts / "dod-gate.md").write_text(
+        dod_gate_prompt_path().read_text(encoding="utf-8"), encoding="utf-8"
+    )
     return root
 
 
@@ -347,3 +362,44 @@ def test_the_pre_dispatch_subject_carries_a_rider_and_omits_the_judgement_record
     # a record's fields are the record module's subject and may change.
     assert JUDGEMENT_COMMENT_MARKER not in prompt
     assert UNAVAILABLE_COMMENT_MARKER not in prompt
+
+
+def test_every_appended_judgement_record_names_the_subject_and_rubric_digests(
+    tmp_path: Path,
+) -> None:
+    """Both digests, on the verdict record AND on the did-not-run record.
+
+    The clause keys reuse on the pair, so a record naming only one of them
+    supports no comparison — and the half it names is the half that reads as a
+    complete answer: such a record is reused across a rubric change, which is
+    exactly the state the pair exists to retire.
+    """
+    payload = _payload(tmp_path=tmp_path)
+    rubric = (
+        payload / ".fabro" / "workflows" / "implement-work-item" / "prompts" / "dod-gate.md"
+    ).read_bytes()
+    expected_rubric = hashlib.sha256(rubric).hexdigest()
+    expected_subject = judgement_subject_digest(
+        item=_item(), cwd=_repo(tmp_path=tmp_path), comments=()
+    )
+
+    held = _Ledger()
+    _ = _judge(
+        tmp_path=tmp_path,
+        ledger=held,
+        runner=_Runner(results=[CommandResult(exit_code=0, stdout=_HELD_REPLY, stderr="")]),
+        stage=STAGE_PRE_DISPATCH,
+    )
+    unavailable = _Ledger()
+    _ = _judge(
+        tmp_path=tmp_path,
+        ledger=unavailable,
+        runner=_Runner(results=[CommandResult(exit_code=127, stdout="", stderr="")]),
+        stage=STAGE_PRE_DISPATCH,
+    )
+
+    assert len(held.bodies) == 1
+    assert len(unavailable.bodies) == 1
+    for body in (held.bodies[0], unavailable.bodies[0]):
+        assert f"subject-digest: {expected_subject}" in body
+        assert f"rubric-digest: {expected_rubric}" in body

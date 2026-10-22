@@ -58,6 +58,7 @@ __all__: list[str] = [
     "judgement_subject",
     "judgement_subject_digest",
     "parse_judgement_reply",
+    "rubric_digest",
 ]
 
 JUDGEMENT_ADMITTED = "admitted"
@@ -136,6 +137,18 @@ def judgement_subject_digest(*, item: WorkItem, cwd: Path, comments: Sequence[st
     return hashlib.sha256(
         judgement_subject(item=item, cwd=cwd, comments=comments).encode("utf-8")
     ).hexdigest()
+
+
+def rubric_digest(*, rubric: str) -> str:
+    """The digest of the ONE rubric every taking grades by: the gate prompt's bytes.
+
+    It is here rather than beside the file read because the gate needs it BEFORE
+    it decides whether to run anything, and because a digest computed in two
+    places is two answers to "is this the rubric that verdict was taken under" —
+    one of which would let a verdict be reused across the very rubric change
+    that invalidates it.
+    """
+    return hashlib.sha256(rubric.encode("utf-8")).hexdigest()
 
 
 def parse_judgement_reply(*, reply: str) -> DodJudgement:
