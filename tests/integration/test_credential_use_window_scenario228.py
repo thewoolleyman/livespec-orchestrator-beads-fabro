@@ -27,7 +27,13 @@ the import then happens inside the test body where the module exists.
 
 from __future__ import annotations
 
+import base64
 import importlib
+import json
+import os
+import subprocess
+import tempfile
+import time
 from pathlib import Path
 
 _COMMANDS = (
@@ -53,6 +59,13 @@ _CREDENTIAL_USE_WINDOW_SECONDS = _QUEUE_ALLOWANCE_SECONDS + _RUN_WALL_BUDGET_SEC
 _MARGIN_SECONDS = 3_600
 _REQUIRED_LIFETIME_SECONDS = 111_600
 _FRESH_CREDENTIAL_LIFETIME_SECONDS = 864_000
+
+# The guard case's own deadline, kept short so a real child can be observed
+# dying by it, plus the slack a loaded host's scheduler costs. The guard sends
+# TERM a five-second grace BEFORE the deadline and KILL at it, so a deadline
+# below that grace would assert nothing about the ordering.
+_GUARD_DEADLINE_SECONDS = 8
+_GUARD_SLACK_SECONDS = 20
 
 
 def test_scenario228_the_bounded_window_governs_when_it_is_smaller() -> None:
@@ -208,3 +221,125 @@ def _requirement(*, execution_allowance_seconds: int) -> object:
         margin_seconds=_MARGIN_SECONDS,
         detail="",
     )
+
+
+def test_scenario228_the_worker_deadline_uses_the_governing_figure() -> None:
+    """The projection instant plus the SAME figure the freshness gate requires.
+
+    The join is what this case adds, and it is the clause's own requirement
+    ("so the host gate and the in-sandbox guard use one figure"): each half was
+    already covered alone, and two surfaces that each derive a plausible figure
+    are exactly the shape that disagrees across a container boundary with
+    nothing in either record to say which arithmetic was wrong.
+
+    Both figures are read off ONE requirement rather than supplied, so the
+    deadline is compared against the gate's own comparand. The credential is
+    given far more lifetime than the window needs, which is what makes the
+    GOVERNING FIGURE the binding term rather than the expiry cap beside it —
+    with a short expiry the same assertion would hold for a deadline derived
+    from no allowance at all.
+    """
+    assert (_COMMANDS / "_dispatcher_credential_window.py").is_file()
+    projection_module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_projection"
+    )
+    requirement = _requirement(execution_allowance_seconds=_EXECUTION_ALLOWANCE_SECONDS)
+    projected_at = 1_000_000
+    expiry = projected_at + _FRESH_CREDENTIAL_LIFETIME_SECONDS
+
+    projected = projection_module.credential_use_projection_for(
+        codex_snapshot=_codex_snapshot(exp=expiry),
+        allowance_seconds=requirement.allowance_seconds,
+        margin_seconds=requirement.margin_seconds,
+        now_epoch=projected_at,
+    )
+
+    assert requirement.allowance_seconds == _CREDENTIAL_USE_WINDOW_SECONDS
+    assert projected.deadline_epoch == projected_at + requirement.allowance_seconds
+    assert projected.required_remaining_seconds == requirement.required_seconds
+
+
+def test_scenario228_a_coding_agent_still_running_at_the_deadline_is_stopped() -> None:
+    """The guard's reaper, EXECUTED, so the deadline is a bound rather than a field.
+
+    A projected deadline is only a bound if something enforces it, and the
+    enforcement is POSIX sh inside the sandbox — so this runs the shipped guard
+    bytes against a real sleeping child and asserts the child is gone BY the
+    instant the deadline names. Asserting the projection alone would certify a
+    number nobody acts on.
+    """
+    guard_module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard"
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        guard = Path(directory) / "guard.sh"
+        _ = guard.write_text(guard_module.guard_script_text(), encoding="utf-8")
+        deadline = int(time.time()) + _GUARD_DEADLINE_SECONDS
+        started = time.monotonic()
+        completed = subprocess.run(
+            ["/bin/sh", str(guard), "--", "/bin/sh", "-c", "sleep 600"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={
+                **os.environ,
+                guard_module.CREDENTIAL_USE_DEADLINE_ENV_VAR: str(deadline),
+            },
+        )
+
+    assert completed.returncode != 0, completed.stdout
+    # BY the deadline, not after it: the grace is spent inside the allowance.
+    assert time.monotonic() - started <= _GUARD_DEADLINE_SECONDS + _GUARD_SLACK_SECONDS
+    assert int(time.time()) >= deadline - _GUARD_SLACK_SECONDS
+
+
+def test_scenario228_the_start_check_grades_the_credential_with_budget_remaining() -> None:
+    """An aged CREDENTIAL refuses while the whole wall budget still remains.
+
+    The clause requires BOTH measurements at the start check and says they are
+    different ones. This case establishes the premise the other measurement
+    reads — the time remaining before the deadline is at least the resolved
+    whole-run wall budget — and asserts the launch is refused anyway, on the
+    credential. Without that premise an implementation that graded only the
+    queue would satisfy the refusal and never read the credential at all.
+
+    The credential is given EXACTLY the required lifetime, which the admission
+    criterion (strictly greater) does not admit: the credential that would
+    finish its last enforced second with zero margin is the one state the
+    margin exists to prevent.
+    """
+    guard_module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard"
+    )
+    now = int(time.time())
+    deadline = now + _CREDENTIAL_USE_WINDOW_SECONDS
+    assert deadline - now >= _RUN_WALL_BUDGET_SECONDS, "the budget premise does not hold"
+
+    with tempfile.TemporaryDirectory() as directory:
+        guard = Path(directory) / "guard.sh"
+        _ = guard.write_text(guard_module.guard_script_text(), encoding="utf-8")
+        completed = subprocess.run(
+            ["/bin/sh", str(guard), "--check-start"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={
+                **os.environ,
+                guard_module.CREDENTIAL_USE_DEADLINE_ENV_VAR: str(deadline),
+                guard_module.CREDENTIAL_EXPIRY_ENV_VAR: str(now + _REQUIRED_LIFETIME_SECONDS),
+                guard_module.CREDENTIAL_REQUIRED_REMAINING_ENV_VAR: str(_REQUIRED_LIFETIME_SECONDS),
+            },
+        )
+
+    assert completed.returncode == guard_module.GUARD_REFUSAL_EXIT_CODE, completed.stdout
+    # The refusal must name the CREDENTIAL shortfall and not the deadline, or it
+    # reports a cause nobody measured.
+    assert "remaining lifetime" in completed.stderr
+    assert "passed" not in completed.stderr
+
+
+def _codex_snapshot(*, exp: int) -> str:
+    """A Codex auth snapshot whose access token carries one expiry claim."""
+    claims = base64.urlsafe_b64encode(json.dumps({"exp": exp}).encode()).decode().rstrip("=")
+    token = f"header.{claims}.signature"
+    return json.dumps({"tokens": {"access_token": token}})
