@@ -105,6 +105,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_projection import (
     FLOOR_SKIP_KIND,
     PROJECTION_SKIP_KIND,
+    SEVEN_DAY_SKIP_KIND,
     headroom_skip_kind,
 )
 
@@ -116,6 +117,7 @@ __all__: list[str] = [
     "PROBE_SKIP",
     "PROJECTION_SKIP_KIND",
     "PROVIDER_LIMIT_CONDITIONS",
+    "SEVEN_DAY_SKIP_KIND",
     "TYPED_HOLD_SKIP",
     "UNAVAILABLE_EVIDENCE_SKIP",
     "NodePreflight",

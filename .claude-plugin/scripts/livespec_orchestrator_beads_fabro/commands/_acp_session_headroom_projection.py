@@ -58,6 +58,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     SessionHeadroomProjection,
     SessionHeadroomReading,
     headroom_skips_candidate,
+    seven_day_skips_candidate,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_drain import (
     SessionHeadroomBaseline,
@@ -71,6 +72,7 @@ __all__: list[str] = [
     "FLOOR_SKIP_KIND",
     "NO_BASELINE_REASON",
     "PROJECTION_SKIP_KIND",
+    "SEVEN_DAY_SKIP_KIND",
     "UNOBSERVABLE_READING_REASON",
     "UNREADABLE_OBSERVATION_REASON",
     "UTILIZATION_NOT_HIGHER_REASON",
@@ -118,21 +120,22 @@ _HORIZON_DISABLED_MINUTES = 0
 # of the first.
 FLOOR_SKIP_KIND = "floor"
 PROJECTION_SKIP_KIND = "projection"
+SEVEN_DAY_SKIP_KIND = "seven-day"
 
 
 def headroom_skip_kind(*, reading: SessionHeadroomReading, floor_percent: int) -> str | None:
-    """Which headroom shortfall stops this candidate, or `None` for neither.
+    """Which headroom shortfall stops this candidate, or `None` for none of them.
 
-    THE FLOOR IS TESTED FIRST, and the order is the reported kind rather than
-    an optimization. The two tests are not exclusive -- a reading below the
-    floor whose window is also projected to empty inside the horizon fails both
-    -- and the floor is the one an operator can act on directly, so a skip
-    reporting `projection` there would point at a dial that was never the
-    binding constraint. It is also the only order under which an unobservable
-    reading, which has no projection to be refused by, reports the floor.
+    The floor is tested first, followed by a provider-rejected weekly allowance,
+    then this dispatcher's five-hour projection. A provider rejection is more
+    authoritative than an extrapolation, while the floor remains the operator
+    dial that governs every shortfall. A zero floor disables the weekly arm via
+    `seven_day_skips_candidate`.
     """
     if headroom_skips_candidate(reading=reading, floor_percent=floor_percent):
         return FLOOR_SKIP_KIND
+    if seven_day_skips_candidate(reading=reading, floor_percent=floor_percent):
+        return SEVEN_DAY_SKIP_KIND
     if projection_skips_candidate(reading=reading):
         return PROJECTION_SKIP_KIND
     return None
