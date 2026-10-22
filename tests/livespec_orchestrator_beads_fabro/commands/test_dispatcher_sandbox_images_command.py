@@ -5,12 +5,21 @@ entry names its repository and its source, the two repository-discovery modes,
 the successful undeclared-factory report, and the non-zero exit an unreadable
 source earns while every other entry is still printed.
 
-Every repository fixture here resolves its image through the CATALOG or the
-CONFIGURED arm, so none of them depends on the host's executing-build set. The
-real `/proc` is read for build discovery, so a factory host that happened to be
-running a Dispatcher would otherwise change how many entries a workflow-arm
-repository contributes and the assertion would be about this host rather than
-about the command.
+Nearly every repository fixture here resolves its image through the CATALOG or
+the CONFIGURED arm, so none of those depends on the host's executing-build set.
+That matters because build discovery reads the real `/proc`, which is host-wide
+by design: any process whose argv names a `scripts/bin/dispatcher.py` is a build
+a dispatch could execute from, so a factory host running a Dispatcher — or, under
+`pytest -n 18`, a sibling worker's `tests/bin/test_payload*` fixture, which
+spawns exactly such a child — contributes a perfectly valid foreign build.
+
+THE ONE CASE THAT DOES REACH THE BUNDLED ARM therefore asserts its registered
+build's entry is PRESENT rather than that it is the only entry, because
+"`--repo` scopes repositories, not builds" is a claim about that entry and never
+a claim about how many builds the host is executing. Measured 2026-10-21 under
+`pytest -n 18`, the exact-array form reds on a correct reading, while the
+`--repo` scope it exists to establish is still asserted exactly: every reported
+entry belongs to the named repository, and the registered project is absent.
 """
 
 from __future__ import annotations
@@ -94,6 +103,18 @@ def _home_with_registry(
 
 def _records(*, repos: tuple[Path, ...], install: Path) -> list[dict[str, str]]:
     return [{"projectPath": str(repo), "installPath": str(install)} for repo in repos]
+
+
+def _unreadable_exit(*, payload: list[dict[str, str | None]]) -> int:
+    """The exit code the reported array implies — the clause's own rule, as read.
+
+    Asserted in this form on the one case whose array is host-wide (see the
+    module docstring): the rule is that an unreadable source moves the exit code
+    and nothing else, and a build that exited zero regardless, or non-zero
+    regardless, fails it. The concrete 0-and-non-zero readings are asserted by
+    the sibling cases, whose arrays are the fixture's alone.
+    """
+    return 1 if any(entry["source"] == UNREADABLE_SOURCE for entry in payload) else 0
 
 
 def test_the_json_output_is_one_array_whose_every_entry_names_repository_and_source(
@@ -206,18 +227,17 @@ def test_explicit_repositories_still_use_every_host_registered_build(
     exit_code = run_sandbox_images_command(args=_args(repos=[str(named)], as_json=True))
     payload = json.loads(capsys.readouterr().out)
 
-    assert exit_code == 0
-    assert payload == [
-        {
-            "repository": str(named),
-            "source": "bundled_run_config",
-            "environment_id": None,
-            "image": "ghcr.io/example/sandbox:registered",
-            "path": str(workflow),
-            "build": "build",
-            "variant": None,
-        }
-    ]
+    assert exit_code == _unreadable_exit(payload=payload)
+    assert {entry["repository"] for entry in payload} == {str(named)}
+    assert {
+        "repository": str(named),
+        "source": "bundled_run_config",
+        "environment_id": None,
+        "image": "ghcr.io/example/sandbox:registered",
+        "path": str(workflow),
+        "build": "build",
+        "variant": None,
+    } in payload
 
 
 def test_an_undeclared_factory_is_reported_and_exits_zero(
