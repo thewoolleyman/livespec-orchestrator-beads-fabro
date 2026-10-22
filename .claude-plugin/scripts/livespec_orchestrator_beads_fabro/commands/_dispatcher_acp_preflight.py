@@ -472,20 +472,26 @@ def _host_wide_ledger(
     filter's expired records and the confirmations clearing them describe one
     moment.
 
-    The expired half is read off the JOURNAL fold rather than the union, and
-    the two are the same records: `_acp_factory_hold_evidence` bounds its hold
-    arm by `HOLD_INTERVAL`, because a failure older than that can only
-    re-derive a record that has already expired, so the factory half
-    contributes no expired record for the union to carry.
+    Every expired record ORIGINATES in the journal fold, because
+    `_acp_factory_hold_evidence` bounds its hold arm by `HOLD_INTERVAL` and a
+    failure older than that can only re-derive a record that has already
+    expired -- so the factory half contributes no expired record. The set is
+    nonetheless read off the UNION rather than off that fold, because the union
+    RETIRES from it: a clearance arriving on a peer's factory-native record
+    names ids this repository's own journal cannot know are cleared. Reading
+    the fold here would hand the filter an expired record the same ledger value
+    reports as retired, and would derive a confirmation naming a record that no
+    longer stands.
     """
     ledger = read_acp_hold_ledger(journal_path=journal_path, now_iso=now_iso)
     if factory_runs is None:
         return _HostWideLedger(ledger=ledger)
     evidence = factory_hold_evidence(repo=repo, reader=factory_runs, now_iso=now_iso)
+    unioned = _unioned(ledger=ledger, evidence=evidence)
     return _HostWideLedger(
-        ledger=_unioned(ledger=ledger, evidence=evidence),
+        ledger=unioned,
         confirmations=confirmations_for_successes(
-            expired_holds=ledger.expired_holds,
+            expired_holds=unioned.expired_holds,
             successes=evidence.successes,
         ),
     )
@@ -521,6 +527,28 @@ def _unioned(*, ledger: AcpHoldLedger, evidence: FactoryHoldEvidence) -> AcpHold
     every consumer of this verdict sees, and a clearance applied here but
     absent from the value would leave a later reader of `retired_observation_ids`
     answering a different question from the filter above it.
+
+    THE EXPIRED HALF IS RETIRED TOO, and by the ID SET ALONE -- never through
+    `retained_holds`. Both halves of that are load-bearing in opposite
+    directions. It must be retired at all because expiry no longer makes a
+    record inert: since the post-expiry confirmation
+    (`_acp_availability_confirmation`) an expired observation GOVERNS
+    selection, so carrying a cleared one through leaves the filter refusing a
+    candidate on an observation this very value reports as retired -- which
+    defeats the clause's "Operator clearance MUST make the affected wait
+    eligible for immediate reevaluation", and indefinitely rather than
+    transiently, because the confirmation turn this item deliberately does not
+    build is the only other thing that would satisfy it.
+
+    And it must be retired by the ID SET ALONE because the SUCCESS route means
+    the opposite thing here. `retained_holds` also DELETES a record a later
+    success retires, which is right for a live hold and wrong for an expired
+    one: a success against an expired observation is precisely the evidence
+    `confirmations_for_successes` must still see, and it has to name that
+    observation's id to satisfy it. Running the expired half through
+    `retained_holds` would delete the record first and leave the confirmation
+    naming nothing -- the "retirement DELETES, confirmation RETAINS" asymmetry
+    `_acp_availability_confirmation` records, inverted.
     """
     retired = ledger.retired_observation_ids | evidence.retired_observation_ids
     return replace(
@@ -529,6 +557,9 @@ def _unioned(*, ledger: AcpHoldLedger, evidence: FactoryHoldEvidence) -> AcpHold
             holds=(*ledger.holds, *evidence.holds),
             successes=evidence.successes,
             retired_observation_ids=retired,
+        ),
+        expired_holds=tuple(
+            hold for hold in ledger.expired_holds if hold.observation_id not in retired
         ),
         unobservable=(*ledger.unobservable, *evidence.unobservable),
         unconfirmed_keys=evidence.unconfirmed_keys,
