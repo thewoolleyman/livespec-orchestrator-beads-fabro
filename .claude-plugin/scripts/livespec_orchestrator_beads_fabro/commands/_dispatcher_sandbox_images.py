@@ -81,6 +81,17 @@ _LIVESPEC_CONFIG = ".livespec.jsonc"
 # own `[environments.<id>.image] docker` is the tag a launch pulls. This is the
 # same pair `_dispatcher_overlay` reads to decide which table its own overlay
 # rewrites, so the enumeration reports the key a dispatch would actually act on.
+#
+# The payload root handed to `workflow_toml` solely so its answer can be
+# TESTED: a returned path sitting under this root is the bundled default, and
+# any other path is the dispatch target's own committed copy. Nothing ever
+# opens it — the resolver only ever JOINS onto a payload root — so it needs to
+# be nothing but a root the committed answer cannot sit under. Anchored as a
+# child of the repository, which makes that provable rather than probable: the
+# committed answer is a path under the repository ROOT, so it can never be
+# under a named child of it.
+_BUNDLED_PROBE_SEGMENT = "livespec-bundled-run-config-probe"
+
 _RUN_ENVIRONMENT_SECTION = "run.environment"
 _ENVIRONMENT_ID_KEY = "id"
 _IMAGE_SECTION_TEMPLATE = "environments.{environment}.image"
@@ -219,27 +230,37 @@ def _reserved_entries(
     """The reserved workflow: the target's own copy, else one entry per build.
 
     The committed-or-bundled choice is not re-decided here — it is read off
-    `workflow_toml`'s own answer, by asking it once per build and seeing whether
-    the path it returned sits under that build. A target-local copy wins for
-    EVERY build, so such a repository has exactly one reserved entry however
-    many builds are executing; a target that commits none has one per build,
-    because each build's own bundle carries its own pin.
+    `workflow_toml`'s own answer, by handing it a payload root and seeing
+    whether the path it returned sits under it. That question is asked ONCE,
+    against the probe root above, because a target-local copy is a property of
+    the TARGET alone: whether a repository commits its own run config cannot
+    depend on how many builds happen to be executing.
+
+    Asking it once PER BUILD instead made the committed answer vanish whenever
+    the build set was empty — the state `--repo` exists to serve, reached
+    whenever no process argv names a dispatcher, no plugin-cache lease is live
+    and the registry names no install of this plugin. The entry was not
+    refused, it was simply absent, and the command still exited zero: the
+    silent hole in a warm timer's tag list that this enumeration exists to
+    close.
+
+    Only the bundled arm stays per build, because only there does each build's
+    own bundle carry its own pin — so a target committing none has one entry
+    per executing build, and none at all when none is executing.
     """
-    resolved = tuple(
-        (build, workflow_toml(args=_resolution_args(repo=repo), payload_root=build.root))
-        for build in builds
-    )
-    committed = tuple(path for build, path in resolved if not path.is_relative_to(build.root))
-    if committed:
-        return (_image_entry(repo=repo, path=committed[0], source=COMMITTED_RUN_CONFIG_SOURCE),)
+    args = _resolution_args(repo=repo)
+    probe = repo / _BUNDLED_PROBE_SEGMENT
+    probed = workflow_toml(args=args, payload_root=probe)
+    if not probed.is_relative_to(probe):
+        return (_image_entry(repo=repo, path=probed, source=COMMITTED_RUN_CONFIG_SOURCE),)
     return tuple(
         _image_entry(
             repo=repo,
-            path=path,
+            path=workflow_toml(args=args, payload_root=build.root),
             source=BUNDLED_RUN_CONFIG_SOURCE,
             build=build.identity,
         )
-        for build, path in resolved
+        for build in builds
     )
 
 
