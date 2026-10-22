@@ -2496,6 +2496,41 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   because all three facts are readings of the one committed anchor that function
   already resolves; it subtracts the FILED set, since the hold records are
   append-only and a filed finding would otherwise sit in the inbox for ever.
+- `_spec_tree_condensation.py` — the spec tree a spec-stated judgement is
+  actually taken against, and the ONE entry point every consumer of that
+  judgement in this repository goes through (`bd-ib-a2bfp3`). PURE.
+  `livespec_runtime.spec_stated.judge` renders the WHOLE current spec tree into
+  every prompt, which against this repository is 1354623 characters (measured
+  2026-10-22) while a Codex judge refuses an input over 1048576 outright with
+  `input_too_large` — so a ledger-intent scan over nine work-items judged none
+  of them, recorded a failed attempt on its coverage anchor and exited 4, and a
+  Claude judge with a million-token context accepts the same prompt at roughly
+  340000 input tokens per item, which is the same defect paid for rather than
+  refused. The renderer lives upstream and is vendored, so this module condenses
+  the TREE rather than the rendering: one block per path exactly as before,
+  carrying every H2 heading the file carries and the full body of only the
+  clauses a cheap inverse-clause-frequency retrieval selects for the statement.
+  Five properties an editor must not invert. EVERY H2 HEADING SURVIVES whether
+  or not its body does, because `judge` derives the citable clause set from the
+  tree it is HANDED and refuses a `stated_by` naming a heading that tree does
+  not carry — so a condensation that dropped headings turns a correct `stated`
+  verdict into an unreadable response, and the consumer reports that as an item
+  it could not judge rather than as a clause the condensation removed. The
+  elision is IN-BAND and self-describing, because a heading whose body is absent
+  with nothing saying so invites the model to report `unstated` for a clause it
+  was simply never shown. The split uses the SAME heading pattern the shared
+  judgement uses, restated rather than imported because the upstream name is
+  private, with the heading-inventory test as the control that the two still
+  agree. The budget buys as much spec text as FITS in relevance order rather
+  than a fixed clause count, which is wrong in both directions at once — it
+  withholds text a one-megabyte budget would have paid for, and it overflows on
+  a tree whose clauses are long. And a clause that does not fit is PASSED OVER
+  rather than ending the walk, since stopping would let one enormous low-ranked
+  clause withhold every smaller clause behind it. Both consumers —
+  `_orchestrator_ledger_intent._verdict` and `_drift_run._judge_one` — call
+  `judge_within_ceiling` and never `spec_stated.judge`: a caller that reached
+  the bare entry point would not take a bigger judgement but NO judgement, and
+  the refusal surfaces as a verdict that could not be read.
 
 Rules an agent editing this tree must follow:
 

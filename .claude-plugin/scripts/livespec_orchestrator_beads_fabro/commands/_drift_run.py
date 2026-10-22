@@ -61,6 +61,9 @@ from livespec_orchestrator_beads_fabro.commands._drift_run_merges import (
     merge_under_judgement,
     merges_after,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
+    judge_within_ceiling,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     ConnectionPrefixMissingError,
@@ -281,12 +284,19 @@ def _judge_one(
     spec_tree: dict[str, str],
     sha: str,
 ) -> MergeOutcome:
-    """One merge put to the shared judgement, or the reason it could not be."""
+    """One merge put to the shared judgement, or the reason it could not be.
+
+    THROUGH `judge_within_ceiling` AND NEVER THROUGH `spec_stated.judge`, for
+    the reason the condensation module records: the shared judgement renders the
+    whole spec tree into every prompt, this repository's tree exceeds the
+    judging model's input ceiling, and a pass reaching the bare entry point
+    judges no merge at all — which stops the frontier at the oldest of them.
+    """
     merge = merge_under_judgement(project_root=project_root, runner=seams.runner, sha=sha)
     if merge is None:
         return MergeOutcome(merge=sha, statement="", verdict=None, failure=CAUSE_MERGE_UNREADABLE)
     statement = behaviour_statement(merge=merge)
-    judged = spec_stated.judge(spec_tree=spec_tree, statement=statement, run_model=seams.judge)
+    judged = judge_within_ceiling(spec_tree=spec_tree, statement=statement, run_model=seams.judge)
     return MergeOutcome(
         merge=sha,
         statement=statement,
