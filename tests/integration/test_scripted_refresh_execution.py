@@ -82,6 +82,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state im
     REFRESH_COUNT_STATE_FILENAME,
     publication_state_filenames,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import resume_checkout_for
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
@@ -308,17 +312,23 @@ def _origin_with_default(*, root: Path) -> Path:
 
 
 def _materialized_plugins_root(*, root: Path) -> Path:
-    """The sandbox plugins root, carrying the two PRODUCTION helpers.
+    """The sandbox plugins root, carrying the three PRODUCTION helpers.
 
-    The push program is written from its own source and the gate from its own
-    prepare-step body, so the lease the stage performs is the lease the
-    Dispatcher ships rather than one restated here.
+    Each is written from its OWN source, so the lease the stage performs and the
+    generated-record-file reading it takes are the ones the Dispatcher ships
+    rather than ones restated here. The record-file resolution rides the same
+    prepare block as the push program (bd-ib-ze7xxj), and a stage that cannot
+    resolve it fails closed before the gate -- so a harness omitting it would
+    exercise that refusal on every case rather than the route under test.
     """
     plugins_root = root / "plugins"
     _ = plugins_root.mkdir()
     push_program = plugins_root / PUBLICATION_PUSH_PROGRAM_FILENAME
     _ = push_program.write_text(publication_push_program_source(), encoding="utf-8")
     push_program.chmod(0o700)
+    _ = (plugins_root / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
     gate_script = root / "install-plugin-gate.sh"
     _ = gate_script.write_text(plugin_cache_gate_script(), encoding="utf-8")
     return plugins_root

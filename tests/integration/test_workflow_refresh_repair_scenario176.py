@@ -64,6 +64,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state im
     PUBLISH_HEAD_STATE_FILENAME,
     REFRESH_COUNT_STATE_FILENAME,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
 )
@@ -365,10 +369,20 @@ def _run_publish_draft(
     allowlist requires it, and an inherited `LIVESPEC_*` from the enclosing
     factory run could otherwise satisfy a guard the case meant to exercise.
     """
+    plugins = world.clone.parent / "publish-draft-plugins"
+    plugins.mkdir(parents=True, exist_ok=True)
+    # The generated-record-file resolution rides the SAME prepare block as the
+    # push program (bd-ib-ze7xxj), and this stage fails closed before the
+    # repository-declared gate when it cannot resolve one -- so a world omitting
+    # it would report that refusal as this case's failed gate target.
+    _ = (plugins / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
     env = {
         "PATH": "/usr/local/bin:/usr/bin:/bin",
         "HOME": str(world.clone.parent / "home"),
         "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
+        SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins),
         # The push-time credential helper's root, pointed at a directory that
         # holds no helper. The sandbox this suite runs inside DOES carry the
         # production helper at the default path, and a case that reached it would
@@ -1111,6 +1125,14 @@ def _materialized_push_program(*, root: Path) -> Path:
     """
     plugins_root = root / "plugins"
     plugins_root.mkdir(parents=True, exist_ok=True)
+    # The generated-record-file resolution rides the SAME prepare block as the
+    # push program (bd-ib-ze7xxj), and a refreshing stage that cannot resolve it
+    # fails closed before the repository-declared gate -- so a harness omitting
+    # it would exercise that refusal on every case rather than the route under
+    # test.
+    _ = (plugins_root / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
     program = plugins_root / PUBLICATION_PUSH_PROGRAM_FILENAME
     _ = program.write_text(publication_push_program_source(), encoding="utf-8")
     program.chmod(0o700)

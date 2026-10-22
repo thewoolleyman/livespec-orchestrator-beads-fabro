@@ -60,6 +60,9 @@ from __future__ import annotations
 
 import json
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_declaration import (
+    PLUGIN_BLOCK,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_record_files import (
     GENERATOR_KEY,
     RECORD_FILES_KEY,
@@ -122,6 +125,7 @@ BRIEF_LABEL = "__BRIEF_LABEL__"
 BRIEF_FILENAME = "__BRIEF_FILENAME__"
 TARGETS_FILENAME = "__TARGETS_FILENAME__"
 CONFIG_FILENAME = ".livespec.jsonc"
+PLUGIN_BLOCK = "__PLUGIN_BLOCK__"
 DISPATCHER_KEY = "dispatcher"
 RESOLVED_MARKER = "LIVESPEC_RECORD_FILE_REGENERATED"
 HELD_MARKER = "LIVESPEC_RECORD_FILE_HELD"
@@ -181,9 +185,23 @@ def declaration(root):
     that could not tell them apart would hand-merge a register whose declaration
     it had merely failed to parse -- which is the exact loss this program exists
     to stop, reached through the one state nothing announces.
+
+    An ABSENT file is on the ANSWER side of that line, exactly as an absent key
+    is: a clone whose configuration has not been written declares no record
+    files. A reading that held on it would refuse the refresh of every such
+    clone before the repository-declared gate, which is a refusal about the
+    clone rather than about any register.
+
+    The block is read where a GOVERNED repository carries it -- nested under the
+    plugin block, which is where this package's own `dispatcher_block` reads it
+    from. A top-level `dispatcher` key is carried by no `.livespec.jsonc` in this
+    fleet, so a reader pointed there cannot return a hit and reports none.
     """
+    path = os.path.join(root, CONFIG_FILENAME)
+    if not os.path.isfile(path):
+        return ((), {})
     try:
-        with open(os.path.join(root, CONFIG_FILENAME), encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             text = handle.read()
     except OSError:
         return None
@@ -194,7 +212,17 @@ def declaration(root):
         return None
     if not isinstance(document, dict):
         return None
-    block = document.get(DISPATCHER_KEY)
+    return dispatcher_entries(document)
+
+
+def dispatcher_entries(document):
+    """The declaration's entries read out of the plugin's own nested block."""
+    plugin = document.get(PLUGIN_BLOCK)
+    if plugin is None:
+        return ((), {})
+    if not isinstance(plugin, dict):
+        return None
+    block = plugin.get(DISPATCHER_KEY)
     if block is None:
         return ((), {})
     if not isinstance(block, dict):
@@ -474,13 +502,17 @@ def record_file_program_source() -> str:
     """The program's exact bytes, with every owned spelling substituted.
 
     A function rather than a constant for the reason the carry-forward program's
-    own fragment gives: a reader must be able to see that the two configuration
-    keys, the gate target and the brief label came from the modules that own
-    them, not from literals typed twice on either side of a sandbox boundary.
+    own fragment gives: a reader must be able to see that the plugin block, the
+    two configuration keys, the gate target and the brief label came from the
+    modules that own them, not from literals typed twice on either side of a
+    sandbox boundary. The plugin block is the one a wrong literal would make
+    INVISIBLE: the program would read a key no governed repository carries and
+    report every register as undeclared.
     """
     return (
         _PROGRAM.replace("__RECORD_FILES_KEY__", RECORD_FILES_KEY)
         .replace("__GENERATOR_KEY__", GENERATOR_KEY)
+        .replace("__PLUGIN_BLOCK__", PLUGIN_BLOCK)
         .replace("__GATE_TARGET__", GENERATED_RECORD_FILE_GATE_TARGET)
         .replace("__BRIEF_LABEL__", REGENERATE_BRIEF_LABEL)
         .replace("__BRIEF_FILENAME__", RECORD_FILE_BRIEF_FILENAME)

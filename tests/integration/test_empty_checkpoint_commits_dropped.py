@@ -69,6 +69,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state im
     PUBLICATION_STATE_GIT_PATH,
     PUBLISH_HEAD_STATE_FILENAME,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
     PUBLISH_HEAD_LABEL,
 )
@@ -413,6 +417,14 @@ def _materialized_push_program(*, root: Path) -> Path:
     """
     plugins_root = root / "plugins"
     plugins_root.mkdir(parents=True, exist_ok=True)
+    # The generated-record-file resolution rides the SAME prepare block as the
+    # push program (bd-ib-ze7xxj), and a refreshing stage that cannot resolve it
+    # fails closed before the repository-declared gate -- so a harness omitting
+    # it would exercise that refusal on every case rather than the route under
+    # test.
+    _ = (plugins_root / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
     program = plugins_root / PUBLICATION_PUSH_PROGRAM_FILENAME
     _ = program.write_text(publication_push_program_source(), encoding="utf-8")
     program.chmod(0o700)
