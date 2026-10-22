@@ -25,9 +25,6 @@ from typing import TYPE_CHECKING
 from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import (
     builtin_acp_identities,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_capability_gate import (
-    acp_capability_refusal,
-)
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import (
     AcpCatalogs,
     resolve_acp_catalogs,
@@ -54,7 +51,6 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_repository import (
     repository_acp_overlays,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_node_selection import (
-    acp_node_selection_record,
     selected_candidate_identities,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
@@ -73,7 +69,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_poli
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_selection import (
     SelectedAcpNodes,
-    select_acp_node_adapters,
+    factory_name,
+    select_and_gate_acp_node_adapters,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_selection_journal import (
+    append_acp_node_selection,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     workflow_declared_inputs,
@@ -195,6 +195,7 @@ def prepare_acp_nodes(  # noqa: PLR0913 — kw-only dispatch inputs; each is one
     overrides: tuple[str, ...],
     journal: JournalWriter,
     work_item_id: str,
+    dispatch_id: str | None = None,
     factory: FactoryTarget | None = None,
     verdict: AcpPreflightVerdict | None = None,
 ) -> AcpNodeResolution | str:
@@ -271,11 +272,11 @@ def prepare_acp_nodes(  # noqa: PLR0913 — kw-only dispatch inputs; each is one
     # two answer different questions -- what each node's CHAIN resolved to, and
     # which position of it this dispatch ran -- and a reader triaging a fallback
     # needs the first to make sense of the second.
-    journal.append(
-        record={
-            **acp_node_selection_record(selected=selected.selected),
-            "work_item_id": work_item_id,
-        }
+    append_acp_node_selection(
+        journal=journal,
+        selected=selected.selected,
+        work_item_id=work_item_id,
+        dispatch_id=dispatch_id,
     )
     return resolution
 
@@ -375,16 +376,6 @@ def _workflow_configuration(
     return rendered if isinstance(rendered, str) else (rendered, kind)
 
 
-def _factory_name(*, factory: FactoryTarget | None) -> str:
-    """The resolved factory's name for a refusal message.
-
-    A dispatch path always pins one; the fallback covers the non-dispatching
-    entry points that reach this code with a Namespace that never carried it,
-    so a refusal names something rather than crashing on `None`.
-    """
-    return "(unresolved)" if factory is None else factory.name
-
-
 def _select_and_gate(
     *,
     resolution: AcpNodeResolution,
@@ -392,37 +383,14 @@ def _select_and_gate(
     verdict: AcpPreflightVerdict | None,
     factory: FactoryTarget | None,
 ) -> SelectedAcpNodes | str:
-    """Choose each node's candidate, then refuse one the factory cannot configure.
-
-    WHICH candidate of each node's chain this dispatch renders, folded onto the
-    finished resolution rather than resolved beside it, so the launch reads the
-    adapters from the same object the record was projected from. A launch that
-    selected its own would be a second read of one configuration, and the
-    disagreement would be invisible: both reads produce a perfectly well-formed
-    candidate.
-
-    THE CAPABILITY GATE SITS HERE, AFTER THE SELECTION, because the one
-    remaining engine capability gates the candidate this dispatch RENDERS: an
-    unselected fallback's `config_options` is a request no engine is asked to
-    honour here, so gating on it would refuse a dispatch that would have run
-    correctly. It is still before any Fabro run exists, exactly as every other
-    refusal in this seam is -- the move is a few lines within one pre-run
-    function, so nothing about its position relative to the claim changes.
-
-    ONE reader, built here and passed in, so the dispatch issues at most one
-    `GET /system/info` however many nodes are in question.
-    """
-    selected = select_acp_node_adapters(resolution=resolution, chains=chains, verdict=verdict)
-    if isinstance(selected, str):
-        return selected
-    uncapable = acp_capability_refusal(
-        selected=selected.selected,
-        factory_name=_factory_name(factory=factory),
+    """Delegate selection and the factory-capability gate to their shared concern."""
+    return select_and_gate_acp_node_adapters(
+        resolution=resolution,
+        chains=chains,
+        verdict=verdict,
+        factory_name=factory_name(factory=factory),
         capabilities=factory_capability_reader(factory=factory),
     )
-    if uncapable is not None:
-        return uncapable
-    return selected
 
 
 def _resolve_chains(

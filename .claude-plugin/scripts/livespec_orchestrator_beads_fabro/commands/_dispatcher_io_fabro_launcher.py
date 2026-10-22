@@ -41,6 +41,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel import 
     cancel_stalled_run,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watch_poll import (
+    WatchPollBinding,
     observe_watch_poll,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
@@ -258,8 +259,11 @@ class WatchedFabroLauncher:
                 runner=runner,
                 journal=journal,
                 port=port,
-                attribution=stamp,
-                bound_run_id=bound_run_id,
+                binding=WatchPollBinding(
+                    attribution=stamp,
+                    bound_run_id=bound_run_id,
+                    dispatch_id=self.dispatch_id,
+                ),
             )
             stamp = poll.attribution
             run, run_id = poll.run, poll.running_run_id
