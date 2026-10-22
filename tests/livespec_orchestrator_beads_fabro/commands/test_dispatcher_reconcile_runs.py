@@ -15,6 +15,7 @@ from livespec_orchestrator_beads_fabro.commands import (
 )
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
     PRESERVE_POINTER_MARKER,
 )
@@ -32,6 +33,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_container_po
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroTarget
+from livespec_orchestrator_beads_fabro.commands._needs_attention_model_fallback import (
+    model_fallback_warning_items,
+)
 from livespec_orchestrator_beads_fabro.commands._run_attribution import (
     GOAL_TEXT_ONLY,
     RunAttribution,
@@ -854,6 +858,93 @@ def test_a_zero_grace_inspects_nothing_and_holds_nothing(tmp_path: Path) -> None
     assert [call[1] for call in runner.calls] == ["ps", "dump"]
 
 
+def test_reconciliation_derives_an_idempotent_fallback_fact_from_petri_outcomes(
+    tmp_path: Path,
+) -> None:
+    """The factory replay joins one stamped selection to its own visit-qualified run."""
+    journal_path = tmp_path / "tmp" / "fabro-dispatch-journal.jsonl"
+    journal_path.parent.mkdir()
+    initial = _selection_journal_records()
+    journal_path.write_text("\n".join(json.dumps(record) for record in initial) + "\n")
+    runner = _Runner(
+        ps_by_server={_HP.server or "": "[]"},
+        inspect_by_run={
+            "01SELECTED": json.dumps(
+                [{"run_id": "01SELECTED", "stages": {"implement@1": {"state": "succeeded"}}}]
+            )
+        },
+    )
+    journal = JournalFile(path=journal_path)
+    inputs = ReconcileInputs(
+        repo=tmp_path,
+        fabro_bin="fabro",
+        id_prefix="bd-ib",
+        items=[],
+        journaled=journaled_runs(
+            text=journal_path.read_text(encoding="utf-8"), source_path=journal_path
+        ),
+        runner=runner,
+        journal=journal,
+        ledger=_Ledger(),
+        http=_Transport(),
+    )
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    facts = model_fallback_warning_items(
+        project_root=tmp_path, repo="target", journal_path=journal_path
+    )
+    assert [fact.id for fact in facts] == ["hygiene:model-fallback:target:implement"]
+    written = [json.loads(line) for line in journal_path.read_text(encoding="utf-8").splitlines()]
+    assert [record["stage"] for record in written].count("acp-model-fallback-warning") == 1
+
+
+def test_reconciliation_retries_unavailable_outcomes_without_retiring_a_warning(
+    tmp_path: Path,
+) -> None:
+    """An unreadable retry is visible, and leaves the already-derived warning live."""
+    journal_path = tmp_path / "tmp" / "fabro-dispatch-journal.jsonl"
+    journal_path.parent.mkdir()
+    initial = _selection_journal_records()
+    journal_path.write_text("\n".join(json.dumps(record) for record in initial) + "\n")
+    runner = _Runner(
+        ps_by_server={_HP.server or "": "[]"},
+        inspect_by_run={
+            "01SELECTED": json.dumps(
+                [{"run_id": "01SELECTED", "stages": {"implement@1": {"state": "succeeded"}}}]
+            )
+        },
+    )
+    journal = JournalFile(path=journal_path)
+    inputs = ReconcileInputs(
+        repo=tmp_path,
+        fabro_bin="fabro",
+        id_prefix="bd-ib",
+        items=[],
+        journaled=journaled_runs(
+            text=journal_path.read_text(encoding="utf-8"), source_path=journal_path
+        ),
+        runner=runner,
+        journal=journal,
+        ledger=_Ledger(),
+        http=_Transport(),
+    )
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+    runner.inspect_by_run["01SELECTED"] = "[]"
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    facts = model_fallback_warning_items(
+        project_root=tmp_path, repo="target", journal_path=journal_path
+    )
+    assert [fact.id for fact in facts] == ["hygiene:model-fallback:target:implement"]
+    written = [json.loads(line) for line in journal_path.read_text(encoding="utf-8").splitlines()]
+    assert [record["stage"] for record in written].count("acp-selection-outcomes-unavailable") == 2
+    assert [call[1] for call in runner.calls].count("inspect") == 3
+
+
 def _inputs(
     *,
     tmp_path: Path,
@@ -889,6 +980,35 @@ def _inputs(
         now_epoch=now_epoch,
         telemetry_spans_path=telemetry_spans_path,
         cancelling_actor=cancelling_actor,
+    )
+
+
+def _selection_journal_records() -> tuple[dict[str, object], ...]:
+    return (
+        {
+            "at": "2026-10-22T08:00:00Z",
+            "stage": "acp-node-selection",
+            "work_item_id": "bd-ib-augqc2",
+            "dispatch_id": "dispatch-1",
+            "selections": {
+                "implement": {
+                    "selection_identity": "selection-1",
+                    "selected_index": 1,
+                    "selected_candidate_key": "fallback",
+                    "selected_availability_key": "availability",
+                    "primary_generation_digest": "primary-1",
+                    "full_chain_digest": "chain-1",
+                }
+            },
+        },
+        {
+            "stage": "dispatch-run-stamp",
+            "work_item_id": "bd-ib-augqc2",
+            "dispatch_id": "dispatch-1",
+            "run_id": "01SELECTED",
+            "dispatch_factory": "hp",
+            "dispatch_factory_server": _HP.server,
+        },
     )
 
 
