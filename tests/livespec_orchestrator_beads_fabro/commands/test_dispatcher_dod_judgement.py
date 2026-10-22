@@ -6,6 +6,7 @@ import importlib
 from dataclasses import replace
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.store import WorkItemComment
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 
@@ -181,3 +182,57 @@ def test_heading_lookup_skips_irrelevant_sections_and_ends_at_the_next_heading(
 
     assert "Target body." in subject
     assert "Following body." not in subject
+
+
+def test_subject_carries_the_goal_fields_the_rubric_grades(tmp_path: Path) -> None:
+    """The rubric's check 1 reads the DESCRIPTION's first heading (bd-ib-kt4mgw).
+
+    A subject that showed only the effective-criteria projection left a judge
+    nothing to read for that check, so a strict one refused every valid section.
+    """
+    judgement = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement"
+    )
+    goal = importlib.import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_goal")
+    lessons_file = tmp_path / "loop-reflection-gate" / "lessons.md"
+    lessons_file.parent.mkdir()
+    _ = lessons_file.write_text(
+        "# Lessons\n\n## Lessons\n\nPrefer one rendering of a shared brief.\n",
+        encoding="utf-8",
+    )
+    item = replace(
+        _item(),
+        acceptance_criteria="- A native criterion travels with the item.",
+        notes="A note the operator left on the item.",
+    )
+    rider = "Rider: narrow the first assertion to the admission wall."
+    record = "livespec-dod-judgement-unavailable\n\nThe judgement did not run."
+
+    subject = judgement.judgement_subject(item=item, cwd=tmp_path, comments=(rider, record))
+    rendered = goal.render_goal(
+        item=item,
+        repo=tmp_path,
+        branch="feat/bd-ib-7f66ar",
+        comments=tuple(
+            WorkItemComment(text=text, author=None, created_at=None) for text in (rider, record)
+        ),
+        lessons="Prefer one rendering of a shared brief.",
+    )
+
+    assert item.description in subject
+    first_heading = next(line for line in subject.splitlines() if line.startswith("## "))
+    assert first_heading == "## Definition of Done"
+    assert subject.index(item.description) < subject.index("## Effective acceptance criteria")
+    for field in (
+        item.description,
+        "- A native criterion travels with the item.",
+        "A note the operator left on the item.",
+        "Prefer one rendering of a shared brief.",
+        rider,
+    ):
+        assert field in subject
+        assert field in rendered
+    assert "livespec-dod-judgement-unavailable" not in subject
+    assert "livespec-dod-judgement-unavailable" not in rendered
+    assert "feat/bd-ib-7f66ar" not in subject
+    assert judgement.judgement_subject(item=item, cwd=tmp_path, comments=(rider,)) == subject
