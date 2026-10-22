@@ -20,11 +20,37 @@ answer from any factory running a different engine.
 
 IDEMPOTENCE IS THE LEDGER'S, NOT A FLAG HELD HERE. Every append goes through
 `ingest_model_fallback_warning`, which dedupes on the warning id -- a digest of
-the selection identity and the node -- so the same run replayed on every pass
-for the rest of its journal's life appends exactly one record. The ledger is
-re-read before each item's ingest rather than once per pass, because this pass
-writes to the very file the ledger is folded from and a snapshot taken before
-the first append cannot see the second.
+the selection identity and the node -- so a run replayed on several passes
+appends exactly one record. The ledger is re-read before each item's ingest
+rather than once per pass, because this pass writes to the very file the ledger
+is folded from and a snapshot taken before the first append cannot see the
+second.
+
+THE REPLAY SET IS BOUNDED, AND BOTH BOUNDS ARE READ OFF THE JOURNAL. Idempotence
+makes a repeat append harmless; it does nothing about the COST of taking the
+reading again, and this lane is driven by a timer every ten minutes. An unbounded
+set re-inspects every stamp the journal has ever carried, so per-pass cost grows
+monotonically with the repository's lifetime dispatch count, for ever -- and the
+growth feeds back, because the journal is the same file this lane re-reads per
+warning and per attempt. So:
+
+- A stamp older than `SELECTION_REPLAY_WINDOW`, measured from the NEWEST stamp
+  the journal carries, is passed over. The reference is the journal's own
+  newest stamp rather than a wall clock, so the window is a span of the
+  repository's own dispatch history and a pass takes the same decision whenever
+  it runs. The window bounds the SET; a burst is not truncated by it, because
+  every stamp of one burst sits within minutes of that burst's own newest.
+- A run this lane has already reported unavailable
+  `SELECTION_OUTCOMES_UNAVAILABLE_ATTEMPT_LIMIT` times is passed over. Factory
+  run storage is pruned, so a historical run becomes PERMANENTLY unreadable, and
+  the clause's retry has to be a retry rather than one append per pass for the
+  rest of the journal's life. The standing warning is untouched either way --
+  the ceiling stops the lane ASKING, and never clears anything.
+
+A stamp whose own `at` cannot be read is passed over too, because the window is
+what bounds this set and a record the bound cannot PLACE would otherwise be
+replayed for ever. A journal in which NO stamp can be dated establishes no
+window at all and replays nothing, which is the same answer as having no stamps.
 
 UNAVAILABLE EVIDENCE IS RECORDED AND RETRIED, NEVER RESOLVED. A run whose node
 outcomes cannot be read says nothing about whether a fallback executed, so the
@@ -48,6 +74,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from livespec_orchestrator_beads_fabro.commands._acp_fallback_warning_ledger import (
     ingest_model_fallback_warning,
@@ -78,9 +105,15 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_node_outcomes import
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     fabro_inspect_record,
 )
+from livespec_orchestrator_beads_fabro.effects import (
+    IsoDatetimeParseFailure,
+    parse_iso_datetime,
+)
 
 __all__: list[str] = [
+    "SELECTION_OUTCOMES_UNAVAILABLE_ATTEMPT_LIMIT",
     "SELECTION_OUTCOMES_UNAVAILABLE_STAGE",
+    "SELECTION_REPLAY_WINDOW",
     "pass_selection_replays",
 ]
 
@@ -89,6 +122,19 @@ __all__: list[str] = [
 # standing warning in place, which at the attention lane is indistinguishable
 # from a run that executed no fallback.
 SELECTION_OUTCOMES_UNAVAILABLE_STAGE = "acp-selection-outcomes-unavailable"
+
+# How far back from the journal's NEWEST stamp a stamp may sit and still be
+# replayed. A week of this repository's own dispatch history: a run whose
+# terminal node outcomes have not been read within that span will not become
+# readable later, because factory run storage is pruned, so the window is this
+# lane's reach rather than a throttle on it.
+SELECTION_REPLAY_WINDOW = timedelta(days=7)
+
+# How many times one run may be reported unavailable before this lane stops
+# asking. The root timer drives a pass every ten minutes, so this is about two
+# hours of asking -- long enough to ride out a factory restart or a transient
+# outage, and a ceiling rather than one append per pass for ever.
+SELECTION_OUTCOMES_UNAVAILABLE_ATTEMPT_LIMIT = 12
 
 _INSPECT_TIMEOUT_SECONDS = 60.0
 
@@ -211,29 +257,101 @@ def _stamped_runs(
     factory: FactoryTarget,
     inputs: ReconcileInputs,
 ) -> tuple[_StampedRun, ...]:
-    """Every run THIS factory ran whose stamp carries a dispatch to join on.
+    """Every run THIS factory ran that is still inside both of the lane's bounds.
 
     Keyed by run id so a re-stamped run is replayed once per pass; a stamp
     missing any of the three identities is passed over, because a run nothing
     joins to a selection cannot be evidence about one and guessing the join
     from journal order is exactly what the dispatch id replaced.
+
+    The two bounds are the module docstring's, and the ORDER between them is
+    not load-bearing -- a stamp outside either is passed over, and neither
+    reading writes anything. They are applied here rather than inside
+    `_replay_one_run` because the cost this bounds is the `fabro inspect` that
+    function OPENS with: a ceiling read after the round trip has been spent
+    would bound the journal and not the pass.
     """
+    dated = _dated_stamps(records=records)
+    if not dated:
+        return ()
+    horizon = max(instant for instant, _ in dated)
+    attempts = _unavailable_attempts(records=records)
     found: dict[str, _StampedRun] = {}
-    for record in records:
-        if (
-            record.get("stage") != STAMP_JOURNAL_STAGE
-            or record.get("dispatch_factory") != factory.name
-            or record.get("dispatch_factory_server") != factory.server
-        ):
+    for instant, record in dated:
+        target = _replay_target(record=record, factory=factory, inputs=inputs)
+        if target is None or horizon - instant > SELECTION_REPLAY_WINDOW:
             continue
-        run_id = _text(value=record.get("run_id"))
-        work_item_id = _text(value=record.get("work_item_id"))
-        if run_id is None or work_item_id is None or _text(value=record.get("dispatch_id")) is None:
+        if attempts.get(target.run_id, 0) >= SELECTION_OUTCOMES_UNAVAILABLE_ATTEMPT_LIMIT:
             continue
-        if inputs.only_work_item_id is not None and work_item_id != inputs.only_work_item_id:
-            continue
-        found[run_id] = _StampedRun(run_id=run_id, work_item_id=work_item_id)
+        found[target.run_id] = target
     return tuple(found.values())
+
+
+def _replay_target(
+    *,
+    record: Mapping[str, object],
+    factory: FactoryTarget,
+    inputs: ReconcileInputs,
+) -> _StampedRun | None:
+    """One stamp as this factory's replay target, or `None` when it is not one."""
+    if (
+        record.get("dispatch_factory") != factory.name
+        or record.get("dispatch_factory_server") != factory.server
+    ):
+        return None
+    run_id = _text(value=record.get("run_id"))
+    work_item_id = _text(value=record.get("work_item_id"))
+    if run_id is None or work_item_id is None or _text(value=record.get("dispatch_id")) is None:
+        return None
+    if inputs.only_work_item_id is not None and work_item_id != inputs.only_work_item_id:
+        return None
+    return _StampedRun(run_id=run_id, work_item_id=work_item_id)
+
+
+def _dated_stamps(
+    *, records: tuple[Mapping[str, object], ...]
+) -> tuple[tuple[datetime, Mapping[str, object]], ...]:
+    """Every launch stamp this lane can DATE, paired with the instant it read.
+
+    Across every factory, because the window's reference is the journal's own
+    newest stamp: a per-factory horizon would let a quiet factory's whole
+    history stay in the set for ever, which is the unbounded set arriving one
+    factory at a time.
+    """
+    found: list[tuple[datetime, Mapping[str, object]]] = []
+    for record in records:
+        if record.get("stage") != STAMP_JOURNAL_STAGE:
+            continue
+        instant = _instant(value=record.get("at"))
+        if instant is not None:
+            found.append((instant, record))
+    return tuple(found)
+
+
+def _unavailable_attempts(*, records: tuple[Mapping[str, object], ...]) -> dict[str, int]:
+    """How many times this lane has already reported each run unavailable."""
+    counts: dict[str, int] = {}
+    for record in records:
+        run_id = _text(value=record.get("run_id"))
+        if record.get("stage") != SELECTION_OUTCOMES_UNAVAILABLE_STAGE or run_id is None:
+            continue
+        counts[run_id] = counts.get(run_id, 0) + 1
+    return counts
+
+
+def _instant(*, value: object) -> datetime | None:
+    """One journal instant as a comparable datetime, or `None` when unreadable.
+
+    The journal writes the `%Y-%m-%dT%H:%M:%SZ` form and this runtime's
+    `fromisoformat` does not accept the trailing `Z`, so the suffix is rewritten
+    to the offset it means rather than stripped -- a naive datetime would raise
+    on comparison against the aware ones every other instant here produces.
+    """
+    text = _text(value=value)
+    if text is None:
+        return None
+    parsed = parse_iso_datetime(text=text.removesuffix("Z") + "+00:00")
+    return None if isinstance(parsed, IsoDatetimeParseFailure) else parsed
 
 
 def _node_outcomes(*, port: FabroPort, run_id: str) -> Mapping[str, Mapping[str, object]] | None:

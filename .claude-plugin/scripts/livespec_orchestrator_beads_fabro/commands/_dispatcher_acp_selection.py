@@ -90,7 +90,12 @@ def select_acp_node_adapters(
 
 
 def factory_name(*, factory: FactoryTarget | None) -> str:
-    """Return the resolved factory's name or the explicit unresolved marker."""
+    """The resolved factory's name for a refusal message.
+
+    A dispatch path always pins one; the fallback covers the non-dispatching
+    entry points that reach this code with a Namespace that never carried it,
+    so a refusal names something rather than crashing on `None`.
+    """
     return "(unresolved)" if factory is None else factory.name
 
 

@@ -1254,6 +1254,30 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `primary_attempts_from_scan` is deliberately LEFT in place beside the new
   reading: it reads the ENGINE event stream, which is how the existing fallback
   audit records stay readable, and the clause requires exactly that.
+  THE REPLAY SET IS BOUNDED, and both bounds are read off the journal rather
+  than configured. Ledger-side idempotence makes a repeat APPEND harmless and
+  says nothing about the cost of taking the reading again, so the set itself has
+  to be bounded: the root timer drives this lane every ten minutes, and an
+  unbounded set re-inspects every stamp the journal has ever carried — per-pass
+  cost growing monotonically with the repository's lifetime dispatch count, and
+  the growth feeding back, since the journal is the same file the lane re-reads
+  per warning and per attempt. A stamp older than `SELECTION_REPLAY_WINDOW`
+  measured from the journal's NEWEST stamp is passed over, and a run already
+  reported unavailable `SELECTION_OUTCOMES_UNAVAILABLE_ATTEMPT_LIMIT` times is
+  too. Three properties an editor must not invert. The window's reference is the
+  journal's own newest stamp and never a wall clock, so the window is a span of
+  the repository's own dispatch history and a pass decides the same thing
+  whenever it runs — and that reference is taken across EVERY factory, because a
+  per-factory horizon lets a quiet factory's whole history stay in the set for
+  ever, which is the unbounded set arriving one factory at a time. The attempt
+  ceiling stops the lane ASKING and clears nothing, which is what keeps it
+  compatible with the clause's "MUST NOT clear an existing warning": factory run
+  storage is pruned, so a historical run becomes PERMANENTLY unreadable and the
+  ratified retry has to be a retry rather than one append per pass for the rest
+  of the journal's life. And both are applied in `_stamped_runs` rather than
+  inside `_replay_one_run`, because the cost they bound is the `fabro inspect`
+  that function opens with — a ceiling read after the round trip has been spent
+  bounds the journal and not the pass.
 - `_acp_dispatch_coverage` is the DISPATCH-scoped half of the legacy
   provider-record coverage rule: `_acp_hold_coverage` answers it for one
   candidate, and this answers it for the whole set a dispatch's resolved node
