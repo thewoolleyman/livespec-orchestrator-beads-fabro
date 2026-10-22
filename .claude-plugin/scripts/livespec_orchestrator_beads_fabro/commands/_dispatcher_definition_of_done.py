@@ -16,15 +16,30 @@ is that a reader and a parser find the same section, and "the first heading I
 happen to match" would let a Context or Notes section quietly host a second
 definition that nothing grades.
 
+WHY THE BULLET IS THE UNIT, AND NOT THE SENTENCE. The clause fixes the body as
+"one or more `- ` bullets, each carrying exactly one gradeable assertion", so
+ONE bullet yields exactly ONE assertion however much punctuation it contains.
+This parse therefore does its own segmentation rather than handing the body to
+`criteria_lines`, the general segmenter the two LEGACY sources share: that
+segmenter splits a block into sentences, which is right for a free-form criteria
+field and wrong for a section whose grammar already names its units.
+
+The cost of borrowing it was measured on `livespec-overseer`'s
+`overseer-uzvcbn.5`. Every non-bullet line of the section reached the segmenter
+too, so a flush-left provenance paragraph was projected as a seventh
+`factory_captured` assertion; the host preflight and the in-run `dod_gate` both
+graded the section as the six assertions it states, and the deterministic
+projection the LAST node reads graded seven. The run spent three and three
+quarter hours and ended at `proof_grade` on an assertion no capture could ever
+satisfy. A sentence split is the same fault one level down: a bullet graded
+twice is graded once against evidence that answers the whole bullet and once
+against half of it.
+
 WHY HEADINGS AND THE REFERENCE LINE ARE NOT ASSERTIONS. The clause says the
 body consists of bullets plus exactly one `References:` line, and that the
 reference line "MUST NOT be counted as a gradeable assertion by any parse".
-Both exclusions happen HERE rather than in `criteria_lines`, because
-`criteria_lines` is the general segmenter shared with the two legacy sources and
-neither of them has a reference line to exclude. Leaving the exclusion to the
-segmenter is also how the sub-heading would have leaked: `### Human-attested`
-is neither short-and-shouting nor colon-terminated, so the segmenter's
-header heuristic reads it as prose and would grade it as an assertion.
+Neither is a bullet, so neither opens an assertion — and nothing that is not a
+bullet or one of its own continuation lines can contribute to one.
 
 WHY THE TWO OPT-OUT SUB-HEADINGS SHARE ONE TABLE. `### Host-captured` (v115) and
 `### Human-attested` differ in WHICH mode they declare and in nothing else this
@@ -57,10 +72,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-
-from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria import (
-    criteria_lines,
-)
 
 __all__: list[str] = [
     "DEFINITION_OF_DONE_TITLE",
@@ -125,6 +136,11 @@ _REASON_OWING_SUB_HEADINGS = {
 }
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+# What OPENS an assertion: the `- ` bullet marker the clause names, and nothing
+# else. The lookahead is what keeps a bare `-` out — such a line carries no
+# assertion, so admitting it would mint an empty one whose text nothing can
+# grade.
+_BULLET = re.compile(r"^\s*-\s+(?=\S)")
 # Where ONE reference ends and the next begins. The clause writes the line as
 # `References: <heading>[, <heading>...]`, but a ratified H2 heading carries
 # commas OF ITS OWN — `## Scenario 133 — A mixed item is refused ai-only from
@@ -261,40 +277,53 @@ def _absent() -> DefinitionOfDone:
 def _assertions(*, body: list[str], subject: str) -> tuple[DefinitionOfDoneAssertion, ...]:
     """Segment the section body into assertions, each carrying its declared mode.
 
-    The body is walked in order and split into RUNS of consecutive lines sharing
-    one mode; each run is handed whole to the shared segmenter, so a bullet that
-    carries two sentences yields two assertions exactly as it does from a legacy
-    source. Segmenting run by run rather than line by line is what keeps an
-    indented continuation attached to the bullet it wraps.
+    One bullet, one assertion. The body is walked in order and exactly three
+    kinds of line matter: a HEADING, which closes the open bullet and sets the
+    mode the next ones carry; a BULLET, which closes the open one and opens a
+    fresh assertion; and an INDENTED line while a bullet is open, which is that
+    bullet's own continuation and joins it.
+
+    Every OTHER line closes the open bullet and contributes nothing — the blank
+    line between two bullets, the `References:` line, a sub-heading's `Reason:`
+    line, and any flush-left prose the author left inside the section. That last
+    one is reported separately as a finding rather than silently graded, which is
+    the whole repair this module's docstring records.
     """
     assertions: list[DefinitionOfDoneAssertion] = []
     mode = _DEFAULT_MODES[subject]
-    run: list[str] = []
+    pending: list[str] = []
     for raw in body:
         heading = _HEADING.match(raw)
         if heading is not None:
-            assertions.extend(_segment(run=run, mode=mode))
-            run = []
+            _close_assertion(assertions=assertions, pending=pending, mode=mode)
             mode = declared_proof_mode(sub_heading=heading.group(2), subject=subject)
             continue
-        if _is_section_prose(text=raw):
+        if _BULLET.match(raw) is not None:
+            _close_assertion(assertions=assertions, pending=pending, mode=mode)
+            pending.append(_BULLET.sub("", raw, count=1).strip())
             continue
-        run.append(raw)
-    assertions.extend(_segment(run=run, mode=mode))
+        if pending and raw[:1].isspace():
+            pending.append(raw.strip())
+            continue
+        _close_assertion(assertions=assertions, pending=pending, mode=mode)
+    _close_assertion(assertions=assertions, pending=pending, mode=mode)
     return tuple(assertions)
 
 
-def _segment(*, run: list[str], mode: str) -> list[DefinitionOfDoneAssertion]:
-    text = "\n".join(run).strip()
-    return [
-        DefinitionOfDoneAssertion(text=one, proof_mode=mode)
-        for one in criteria_lines(criteria_text=text or None)
-    ]
+def _close_assertion(
+    *, assertions: list[DefinitionOfDoneAssertion], pending: list[str], mode: str
+) -> None:
+    """Finish the open bullet, if one is open, as ONE assertion carrying `mode`.
 
-
-def _is_section_prose(*, text: str) -> bool:
-    """Whether a body line is required prose rather than a gradeable assertion."""
-    return text.strip().startswith((REFERENCES_PREFIX, REASON_PREFIX))
+    The continuation lines are joined with a SPACE rather than a newline, so a
+    hard-wrapped bullet renders as the single sentence its author wrote: every
+    consumer pairs one assertion with one proof mode on one display line, and a
+    multi-line assertion text breaks that pairing.
+    """
+    text = " ".join(pending).strip()
+    pending.clear()
+    if text:
+        assertions.append(DefinitionOfDoneAssertion(text=text, proof_mode=mode))
 
 
 def _malformed_proof_modes(*, body: list[str], subject: str) -> tuple[str, ...]:

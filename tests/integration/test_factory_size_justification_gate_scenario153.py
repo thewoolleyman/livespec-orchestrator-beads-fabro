@@ -860,10 +860,12 @@ def _exercise_unjustified_groom(*, tmp_path: Path, justification: object = None)
     )
     groomed_id = groomed.filed_slice_ids[0]
     assert _stored(config=groom_config)[groomed_id].status == "backlog"
-    _assert_missing_reason(
-        reason=_size_reason_for(config=groom_config, item_id=groomed_id),
-        assertion_count=5,
-    )
+    # THREE, the bullet count of the candidate's own section. The filing folds
+    # the acceptance, autonomy tier and repo target into the description after
+    # the section's reference line, and those trailer lines used to be segmented
+    # into two further assertions — so the gate measured five where the author
+    # wrote three. One bullet is one assertion.
+    _assert_missing_reason(reason=_size_reason_for(config=groom_config, item_id=groomed_id))
 
 
 def _exercise_unjustified_approval(*, tmp_path: Path, justification: object = None) -> None:
@@ -1503,7 +1505,7 @@ def test_consensus_first_cut_requires_an_adopted_ceiling_and_has_no_size_excepti
     above_repo, above_config, above_epic, above_candidate = _consensus_cut_fixture(
         tmp_path=tmp_path,
         name="above",
-        ceiling=4,
+        ceiling=2,
     )
     above_ids = set(_stored(config=above_config))
     with pytest.raises(GroomDraftError, match="size_justification cannot waive"):
@@ -1522,7 +1524,7 @@ def test_consensus_first_cut_requires_an_adopted_ceiling_and_has_no_size_excepti
     boundary_repo, boundary_config, boundary_epic, boundary_candidate = _consensus_cut_fixture(
         tmp_path=tmp_path,
         name="boundary",
-        ceiling=5,
+        ceiling=3,
     )
     filed = file_approved_slices(
         path=boundary_config,
