@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.234.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.234.1...v0.234.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **drift:** bound the spec-stated judgement prompt to the judging model's input ceiling ([188ca5d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/188ca5d710e8ce9b8758ad169be30b4fd6a6b48f))
+* **drift:** keep every H2 heading citable through the condensed spec tree ([078983b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/078983bb3c86aa8b15da57be29f6fa0e2eb72d80))
+
 ## [0.234.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.234.0...v0.234.1) (2026-10-22)
 
 
