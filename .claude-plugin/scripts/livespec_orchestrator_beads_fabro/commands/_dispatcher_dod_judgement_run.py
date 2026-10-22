@@ -47,11 +47,17 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
+    CLAUDE_OAUTH_TOKEN_ENV,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_UNAVAILABLE,
     DodJudgement,
     judgement_subject,
     parse_judgement_reply,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
+    select_factory_credential,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import executing_payload_root
@@ -235,6 +241,13 @@ def run_dod_judgement(
     if isinstance(gate_prompt, AttemptFailure):
         return DodJudgement(outcome=JUDGEMENT_UNAVAILABLE, cause=CAUSE_PROMPT_UNREADABLE)
     environ = dict(os.environ)
+    credential = select_factory_credential(
+        environ=environ,
+        home=Path.home(),
+        warn=lambda _message: None,
+    )
+    judge_environ = dict(environ)
+    judge_environ[CLAUDE_OAUTH_TOKEN_ENV] = environ.get(credential.env_name, "")
     active_runner = ShellCommandRunner() if runner is None else runner
     result = active_runner.run(
         argv=judgement_argv(
@@ -246,6 +259,7 @@ def run_dod_judgement(
         ),
         cwd=cwd,
         timeout_seconds=resolve_judge_timeout_seconds(environ=environ),
+        env=judge_environ,
     )
     if result.exit_code != 0:
         return DodJudgement(
