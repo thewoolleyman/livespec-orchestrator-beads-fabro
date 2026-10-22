@@ -280,7 +280,7 @@ def selection_warning_records(
     """
     if not outcomes:
         return None
-    selection = _latest_selection(records=records, work_item_id=work_item_id)
+    selection = _latest_selection(records=records, work_item_id=work_item_id, run_id=run_id)
     if selection is None:
         return ()
     occurred_at = _text(value=selection.get("at"))
@@ -304,17 +304,36 @@ def selection_warning_records(
 
 
 def _latest_selection(
-    *, records: tuple[Mapping[str, object], ...], work_item_id: str
+    *, records: tuple[Mapping[str, object], ...], work_item_id: str, run_id: str
 ) -> Mapping[str, object] | None:
-    """Return the newest compatible selection record for the item."""
-    selected: Mapping[str, object] | None = None
-    for record in records:
+    """Return this run's selection, joined through its immutable dispatch id.
+
+    Historical rows predate dispatch correlation, so they remain readable only
+    when this run has no stamp at all.  Once a run is stamped, a selection that
+    does not carry the same id is deliberately not evidence for that run.
+    """
+    stamps = tuple(
+        record
+        for record in records
+        if record.get("stage") == "dispatch-run-stamp"
+        and record.get("work_item_id") == work_item_id
+        and record.get("run_id") == run_id
+    )
+    dispatch_ids = {
+        dispatch_id
+        for record in stamps
+        if (dispatch_id := _text(value=record.get("dispatch_id"))) is not None
+    }
+    for record in reversed(records):
         if (
-            record.get("stage") == "acp-node-selection"
-            and record.get("work_item_id") == work_item_id
+            record.get("stage") != "acp-node-selection"
+            or record.get("work_item_id") != work_item_id
         ):
-            selected = record
-    return selected
+            continue
+        dispatch_id = _text(value=record.get("dispatch_id"))
+        if dispatch_id in dispatch_ids or (not stamps and dispatch_id is None):
+            return record
+    return None
 
 
 def _selection_warning(

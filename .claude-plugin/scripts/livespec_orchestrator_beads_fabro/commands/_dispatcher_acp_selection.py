@@ -23,9 +23,12 @@ distinguishes without a repository on disk.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro.commands._acp_capability_gate import (
+    acp_capability_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import AcpChainResolution
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import (
     AcpNodeResolution,
@@ -36,10 +39,13 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_selection import (
     select_acp_candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
+from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 
 __all__: list[str] = [
     "SelectedAcpNodes",
+    "factory_name",
     "select_acp_node_adapters",
+    "select_and_gate_acp_node_adapters",
 ]
 
 
@@ -81,3 +87,49 @@ def select_acp_node_adapters(
     if isinstance(rendered, str):
         return rendered
     return SelectedAcpNodes(resolution=rendered, selected=selected)
+
+
+def factory_name(*, factory: FactoryTarget | None) -> str:
+    """Return the resolved factory's name or the explicit unresolved marker."""
+    return "(unresolved)" if factory is None else factory.name
+
+
+def select_and_gate_acp_node_adapters(
+    *,
+    resolution: AcpNodeResolution,
+    chains: AcpChainResolution,
+    verdict: AcpPreflightVerdict | None,
+    factory_name: str,
+    capabilities: Callable[[], frozenset[str] | None],
+) -> SelectedAcpNodes | str:
+    """Choose each node's candidate, then refuse one the factory cannot configure.
+
+    WHICH candidate of each node's chain this dispatch renders, folded onto the
+    finished resolution rather than resolved beside it, so the launch reads the
+    adapters from the same object the record was projected from. A launch that
+    selected its own would be a second read of one configuration, and the
+    disagreement would be invisible: both reads produce a perfectly well-formed
+    candidate.
+
+    THE CAPABILITY GATE SITS HERE, AFTER THE SELECTION, because the one
+    remaining engine capability gates the candidate this dispatch RENDERS: an
+    unselected fallback's `config_options` is a request no engine is asked to
+    honour here, so gating on it would refuse a dispatch that would have run
+    correctly. It is still before any Fabro run exists, exactly as every other
+    refusal in this seam is -- the move is a few lines within one pre-run
+    function, so nothing about its position relative to the claim changes.
+
+    ONE reader, built here and passed in, so the dispatch issues at most one
+    `GET /system/info` however many nodes are in question.
+    """
+    selected = select_acp_node_adapters(resolution=resolution, chains=chains, verdict=verdict)
+    if isinstance(selected, str):
+        return selected
+    uncapable = acp_capability_refusal(
+        selected=selected.selected,
+        factory_name=factory_name,
+        capabilities=capabilities,
+    )
+    if uncapable is not None:
+        return uncapable
+    return selected

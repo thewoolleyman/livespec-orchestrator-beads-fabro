@@ -120,6 +120,7 @@ def materialize_dispatch(
     repo: Path,
     work_item_id: str,
     journal: JournalWriter,
+    dispatch_id: str | None = None,
     verdict: AcpPreflightVerdict | None = None,
 ) -> MaterializedDispatch | MaterializationRefusal:
     """Resolve this dispatch's workflow variant, payload and ACP adapters, or refuse.
@@ -191,6 +192,7 @@ def materialize_dispatch(
         overrides=tuple(getattr(args, "acp_node", None) or ()),
         journal=journal,
         work_item_id=work_item_id,
+        dispatch_id=dispatch_id,
         # The factory `dispatch_preamble` pinned, read defensively for the same
         # reason `acp_node` is: the reconcile and check subcommands reach this
         # code with a Namespace that never carried one.
