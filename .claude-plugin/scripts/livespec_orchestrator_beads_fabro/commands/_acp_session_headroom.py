@@ -71,19 +71,24 @@ from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import A
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
 
 __all__: list[str] = [
+    "ABSENT_SEVEN_DAY_READING",
     "DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT",
     "DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES",
     "FULL_ALLOWANCE_PERCENT",
     "NOT_PROJECTED_RESULT",
     "PROJECTED_RESULT",
+    "SEVEN_DAY_REJECTED_STATUS",
     "UNAVAILABLE_RESULT",
+    "UNOBSERVABLE_SEVEN_DAY",
     "UNREADABLE_UTILIZATION",
     "SessionHeadroomPolicy",
     "SessionHeadroomProjection",
     "SessionHeadroomReading",
+    "SevenDayReading",
     "headroom_covers_candidate",
     "headroom_skips_candidate",
     "session_headroom_reading",
+    "seven_day_reading",
     "unobservable_session_headroom",
 ]
 
@@ -119,6 +124,52 @@ UNREADABLE_UTILIZATION = "unreadable-utilization"
 PROJECTED_RESULT = "projected"
 UNAVAILABLE_RESULT = "unavailable"
 NOT_PROJECTED_RESULT = "not-projected"
+
+# The ONE seven-day status that counts as exhaustion, which the clause states
+# as a literal: "A seven-day status is exhausted only when the provider
+# explicitly reports the allowance refused (for Claude, rejected)". It is
+# matched EXACTLY rather than case-folded, because a fold would admit a
+# spelling no provider sends while reading like tolerance -- and the clause's
+# own fail-open direction already covers every value this does not recognise.
+SEVEN_DAY_REJECTED_STATUS = "rejected"
+
+# The one unobservable reason the seven-day half can reach: the response
+# reported neither figure. It is distinct from `UNREADABLE_UTILIZATION`, which
+# is a five-hour result, because the two windows fail independently -- a
+# response carrying the five-hour header and no weekly pair is the ordinary
+# shape of a provider that has not begun reporting one.
+ABSENT_SEVEN_DAY_READING = "absent-seven-day-reading"
+
+
+@dataclass(frozen=True, kw_only=True)
+class SevenDayReading:
+    """The seven-day allowance, as the five-hour response reported it.
+
+    A VALUE OF ITS OWN rather than two more columns on the reading beside it,
+    because the weekly window fails independently of the five-hour one: a
+    response can carry a readable five-hour utilization and no weekly pair at
+    all, and the reverse happens at the weekly limit, where the refusal still
+    names the status. Nesting is what lets each window carry its own explicit
+    unobservable result instead of one flag that cannot say which half failed.
+
+    `status` IS THE FIELD THAT DECIDES, and `utilization_percent` decides
+    nothing. The clause is explicit that "a utilization below 100 is not
+    exhaustion", so the figure is journaled and never graded -- which is also
+    what makes the decision immune to whether the provider reports that figure
+    as a fraction or as a percentage.
+    """
+
+    utilization_percent: float | None = None
+    status: str | None = None
+    unobservable: str | None = None
+
+
+# The weekly result a response that reported neither figure produces, and the
+# default every reading carries. A reading built by a caller that never asked
+# therefore reports the ABSENT result rather than an omitted key, which is the
+# same answer the clause requires of an absent provider reading -- and the one
+# a floor can never skip on.
+UNOBSERVABLE_SEVEN_DAY = SevenDayReading(unobservable=ABSENT_SEVEN_DAY_READING)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -179,6 +230,7 @@ class SessionHeadroomReading:
     five_hour_drain_percent_per_hour: float | None = None
     projection: SessionHeadroomProjection | None = None
     provider_reset_claim: str | None = None
+    seven_day: SevenDayReading = UNOBSERVABLE_SEVEN_DAY
 
     @property
     def observable(self) -> bool:
@@ -219,6 +271,7 @@ def session_headroom_reading(
     observed_at: str,
     utilization: object,
     provider_reset_claim: str | None = None,
+    seven_day: SevenDayReading = UNOBSERVABLE_SEVEN_DAY,
 ) -> SessionHeadroomReading:
     """Grade one provider utilization figure into a reading, or an unobservable.
 
@@ -227,6 +280,12 @@ def session_headroom_reading(
     inclusive" is a question about a value of unknown shape, and a narrower
     parameter type would push that grading onto the caller with the least
     context for it.
+
+    `seven_day` is already GRADED where `utilization` is raw, and the asymmetry
+    is deliberate: the weekly half has two fields and its own unobservable
+    result, so a second raw pair here would make this one function the grader
+    of two independent windows and leave its unobservable arms unable to say
+    which window they are about.
     """
     percent = _valid_utilization(value=utilization)
     if percent is None:
@@ -235,6 +294,7 @@ def session_headroom_reading(
             observed_at=observed_at,
             reason=UNREADABLE_UTILIZATION,
             provider_reset_claim=provider_reset_claim,
+            seven_day=seven_day,
         )
     return SessionHeadroomReading(
         credential_identity=credential_identity,
@@ -242,6 +302,7 @@ def session_headroom_reading(
         utilization_percent=percent,
         remaining_percent=FULL_ALLOWANCE_PERCENT - percent,
         provider_reset_claim=provider_reset_claim,
+        seven_day=seven_day,
     )
 
 
@@ -251,6 +312,7 @@ def unobservable_session_headroom(
     observed_at: str,
     reason: str,
     provider_reset_claim: str | None = None,
+    seven_day: SevenDayReading = UNOBSERVABLE_SEVEN_DAY,
 ) -> SessionHeadroomReading:
     """The explicit unobservable result, naming the measurement that failed.
 
@@ -258,13 +320,41 @@ def unobservable_session_headroom(
     graded independently from one response: a reply whose utilization header is
     missing or malformed can still assert when the window resets, and dropping
     the claim there would discard the only thing that response said.
+
+    THE WEEKLY READING SURVIVES IT TOO, for the same reason and with a sharper
+    consequence: the response most likely to carry a seven-day refusal is a
+    REFUSED one, and a refusal whose five-hour header is absent would otherwise
+    throw away the one field that decides the weekly skip.
     """
     return SessionHeadroomReading(
         credential_identity=credential_identity,
         observed_at=observed_at,
         unobservable=reason,
         provider_reset_claim=provider_reset_claim,
+        seven_day=seven_day,
     )
+
+
+def seven_day_reading(*, utilization: object, status: object) -> SevenDayReading:
+    """Grade one response's seven-day pair, or the explicit absence of both.
+
+    Both arguments are typed `object` for the reason `session_headroom_reading`
+    takes a raw utilization: they arrive from a provider response, so whether
+    either is reportable is a question about values of unknown shape.
+
+    THE UTILIZATION IS GRADED BY THE FIVE-HOUR RULE, which is the clause's own
+    inclusive 0-through-100 range, so an out-of-range figure is journaled as
+    absent rather than as a number. EITHER field alone makes the reading
+    observable: a response naming a status with no figure has still said the
+    thing the skip turns on, and a response naming a figure with no status has
+    still said something worth journaling. Only a response reporting NEITHER is
+    the explicit unobservable result -- which never skips a candidate.
+    """
+    percent = _valid_utilization(value=utilization)
+    reported = status if isinstance(status, str) and status else None
+    if percent is None and reported is None:
+        return UNOBSERVABLE_SEVEN_DAY
+    return SevenDayReading(utilization_percent=percent, status=reported)
 
 
 def headroom_covers_candidate(
