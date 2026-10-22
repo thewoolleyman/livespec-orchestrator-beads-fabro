@@ -60,6 +60,10 @@ from typing import TYPE_CHECKING
 
 from livespec_runtime.spec_stated import JUDGE_PROMPT, judge
 
+from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
+    resolving_subsection_citations,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping
 
@@ -182,11 +186,19 @@ def judge_within_ceiling(
     takes, so the condensation cannot be remembered at one call site and
     forgotten at the next — a dispatch that forgot it is not a smaller
     judgement but no judgement at all, since the provider refuses the prompt.
+
+    And the SAME reason puts the citation resolution of `_spec_stated_citation`
+    here rather than at either consumer: a citation of an existing subsection
+    that nothing resolves is refused as unreadable, so a call site that forgot
+    the resolution would report an item it judged correctly as one it could not
+    judge. The resolution reads the UNREDUCED tree while the prompt carries the
+    condensed one, because a clause whose body the condensation withheld still
+    encloses the subsections the specification states it through.
     """
     return judge(
         spec_tree=condensed_spec_tree(spec_tree=spec_tree, statement=statement, ceiling=ceiling),
         statement=statement,
-        run_model=run_model,
+        run_model=resolving_subsection_citations(run_model=run_model, spec_tree=spec_tree),
     )
 
 
