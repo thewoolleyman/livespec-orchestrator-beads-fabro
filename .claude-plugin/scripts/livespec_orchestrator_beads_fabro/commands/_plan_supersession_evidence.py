@@ -11,7 +11,21 @@ could supply. The DERIVING TRANSITION comes from the epic's own
 `plan-progress-event` comments, because the clause requires the named operation
 identity to "resolve to that epoch's recorded transition" and it is that
 comment's header that records WHO committed it and WHEN — the canonical payload
-is rendered before the comment exists and can carry neither. The CARRIER's status
+is rendered before the comment exists and can carry neither.
+
+THAT EPOCH IS THE DERIVATION'S OWN, NEVER THE CHAIN HEAD'S, and the distinction
+is the whole of `bd-ib-4hznqp`. "That epoch" in the clause is the epoch the
+derivation wrote the obligation at, which the deriving event's own payload
+records; the epoch the SUPERSESSION names is the chain head, because
+`validate_causal_supersession` keeps the ordinary staleness check on the write
+itself. Requiring the two to agree made a misderived obligation supersedable only
+while NOTHING had been written since it was derived — so the human pointer the
+derivation gate prescribes, or any handoff, made it permanently unsupersedable.
+Measured 2026-10-22 on plan epic `bd-ib-fyozyd`, derived at epoch 99 -> 100 and
+retained to epoch 101 nine minutes later: naming 101 resolved no transition, and
+naming 100 was refused as stale.
+
+The CARRIER's status
 history comes from the carrier's OWN tenant, resolved through the same carrier
 tenancy the gate uses, because a carrier of a real plan is routinely
 cross-tenant and this project's ledger has no record of it. And whether the
@@ -112,7 +126,6 @@ def supersession_evidence(
             config=config,
             epic_id=epic_id,
             operation_id=supersession.deriving_operation_id,
-            epoch=supersession.previous_epoch,
         ),
         carrier=_carrier(config=config, epic_id=epic_id, carrier_id=supersession.open_carrier_id),
         plan_level=obligation is not None
@@ -125,25 +138,24 @@ def _deriving(
     config: StoreConfig,
     epic_id: str,
     operation_id: str,
-    epoch: int,
 ) -> DerivingTransition | None:
-    """The recorded transition one operation identity resolves to at one epoch.
+    """The recorded transition one operation identity resolves to, at its own epoch.
 
-    BOTH the identity AND the epoch must match, which is the clause's own
-    requirement that the identity resolve to "that epoch's recorded transition".
-    An identity alone would resolve a transition from some other epoch of the
-    same plan — a real derivation, recorded by a real derivation actor, that
-    wrote an obligation this supersession is not about.
+    The IDENTITY alone selects it, because the epoch the clause asks it to
+    resolve at is the one that transition itself recorded — see the module
+    docstring for what requiring the chain head's epoch here cost.
 
-    An event whose canonical payload did not parse resolves NOTHING, because its
-    epoch is exactly what could not be read.
+    An event whose canonical payload did not parse resolves NOTHING. The payload
+    is where the obligation that transition WROTE is recorded, and that is the
+    fact the `misderived` cause's verification rests on, so a comment this reader
+    can see the operation identity in but not the payload of establishes nothing
+    about the derivation it names.
     """
     client = make_beads_client(config=config)
     for event in read_progress_events(client=client, epic_id=epic_id):
         if event.operation_id != operation_id or event.payload is None:
             continue
-        if event.payload.new_epoch == epoch:
-            return DerivingTransition(author=event.author, recorded_at=event.recorded_at)
+        return DerivingTransition(author=event.author, recorded_at=event.recorded_at)
     return None
 
 

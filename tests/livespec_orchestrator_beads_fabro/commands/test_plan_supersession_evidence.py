@@ -2,18 +2,25 @@
 
 `tests/integration/test_plan_misderived_supersession.py` drives the whole write
 over the real store, so the readings that a healthy ledger produces are covered
-there. This module covers the ones it cannot STAGE, and every one of them is a
-reading whose absence must refuse: the deriving transition resolved from a
-DIFFERENT epoch of the same plan, a progress event whose canonical payload did
-not parse, a carrier whose repository no configured target resolves, and a
-carrier record the ledger holds without a readable status.
+there. This module covers the ones it cannot STAGE: a progress event whose
+canonical payload did not parse, a carrier whose repository no configured target
+resolves, and a carrier record the ledger holds without a readable status — each
+a reading whose absence must refuse.
 
-WHY THE EPOCH HALF OF THE DERIVING MATCH IS THE ONE WORTH STAGING. An operation
-identity alone resolves A transition of this plan — a real one, recorded by a
-real derivation actor — and the obligation it wrote is not the one being
-superseded. That makes the resulting supersession look fully evidenced while
-naming the wrong derivation, which is the one failure here that produces no
-refusal at all.
+WHY THE DERIVING MATCH IS THE IDENTITY ALONE, which `bd-ib-4hznqp` corrected. The
+epoch the clause asks the identity to resolve at is the DERIVATION's own, which
+its payload records, while the epoch the supersession NAMES is the chain head.
+Requiring the two to agree made a misderived obligation supersedable only while
+nothing had been written since it was derived, so one retaining pointer write
+locked the plan for its whole budget. The case below therefore resolves the SAME
+identity from a chain that has moved past it, which is the shape the measured
+incident had and the one the retired reading could not answer.
+
+AND WHY AN UNPARSEABLE PAYLOAD STILL RESOLVES NOTHING. The reason moved with the
+reading rather than going away: the payload is where the obligation that
+transition WROTE is recorded, and the `misderived` verification now rests on
+that obligation being the retained one. A comment whose identity this reader can
+see but whose payload it cannot establishes nothing about the derivation it names.
 """
 
 from __future__ import annotations
@@ -123,9 +130,9 @@ def _project(*, tmp_path: Path, configure_carrier: bool) -> Path:
 def _seed(*, repo: Path, transitions: tuple[str, ...]) -> None:
     """A chain-tracked epic carrying one committed transition per named operation.
 
-    Several transitions is the whole point of the fixture: the deriving match is
-    an identity AND an epoch, and only a chain that has moved more than once can
-    tell a match on both from a match on the identity alone.
+    Several transitions is the whole point of the fixture: only a chain that has
+    moved more than once can tell an identity resolved at ITS OWN epoch from one
+    resolved at the epoch the chain now stands at.
     """
     fake = _fake(repo=repo)
     _ = fake.create_issue(
@@ -256,38 +263,43 @@ def test_no_supersession_takes_no_reading_at_all(tmp_path: Path) -> None:
     )
 
 
-def test_the_deriving_match_needs_the_epoch_as_well_as_the_identity(tmp_path: Path) -> None:
-    """An identity resolved at the WRONG epoch names a different derivation.
+def test_the_deriving_identity_resolves_from_a_chain_that_has_moved_past_it(
+    tmp_path: Path,
+) -> None:
+    """The identity resolves at ITS OWN epoch, whatever epoch the chain stands at.
 
-    Both transitions here are recorded by a real derivation actor, so an
-    identity-only match returns a well-formed `DerivingTransition` and the
-    supersession reads as fully evidenced while naming the derivation that wrote
-    some earlier obligation. The pair is the discriminator: the same identity is
-    asked for at the epoch it moved the chain to, and at the next one.
+    The first operation moved the chain to its own epoch and the second moved it
+    on, so the first derivation sits one epoch back — the measured shape, where a
+    retaining write had advanced the chain past the derivation. BOTH readings are
+    taken with the supersession naming the HEAD epoch, which is the only epoch
+    `validate_causal_supersession` admits, so the pair separates the epoch an
+    identity is RESOLVED at from the epoch a supersession NAMES: the retired
+    reading answered nothing for the first and resolved only the second.
     """
     repo = _project(tmp_path=tmp_path, configure_carrier=True)
     _carrier_record(repo=repo)
     _seed(repo=repo, transitions=(_FIRST_OPERATION, _SECOND_OPERATION))
     head = _head(repo=repo)
 
-    matched = supersession_evidence(
+    retained = supersession_evidence(
         config=_config(repo=repo),
         epic_id=_EPIC,
         supersession=_supersession(epoch=head.epoch, operation_id=_FIRST_OPERATION),
         head=head,
     )
-    mismatched = supersession_evidence(
+    latest = supersession_evidence(
         config=_config(repo=repo),
         epic_id=_EPIC,
-        supersession=_supersession(epoch=head.epoch - 1, operation_id=_FIRST_OPERATION),
+        supersession=_supersession(epoch=head.epoch, operation_id=_SECOND_OPERATION),
         head=head,
     )
 
-    assert matched is not None
-    assert matched.deriving is None
-    assert mismatched is not None
-    assert mismatched.deriving is not None
-    assert mismatched.deriving.author == _PLAN_RESUME_ACTOR
+    assert retained is not None
+    assert retained.deriving is not None
+    assert retained.deriving.author == _PLAN_RESUME_ACTOR
+    assert latest is not None
+    assert latest.deriving is not None
+    assert latest.deriving.author == _PLAN_RESUME_ACTOR
 
 
 def test_a_progress_event_whose_payload_did_not_parse_resolves_nothing(
