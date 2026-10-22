@@ -5,7 +5,7 @@ is at `dispatcher.drift_proposal_queue_cap`, further findings are held on the
 detection-coverage anchor with their identities and listed by needs-attention,
 and no proposal is filed for them."
 
-Four things are pinned, and the first two are each other's control.
+Five things are pinned, and the first two are each other's control.
 
 BELOW the cap a finding files, AT the cap it holds. Either case alone is
 satisfied by a build that always does that one thing — a pass that never held
@@ -23,6 +23,19 @@ A RETRIED pass re-records nothing. The root reconcile timer fires every ten
 minutes, so a hold that re-appended its record each tick would bury the anchor
 in copies of one finding — and the needs-attention lane would list it once per
 copy.
+
+AND A HELD FINDING FILES ONCE A SLOT FREES, which is the second half of
+assertion 4 — "a merge whose pass fails or that carries a held finding stops
+the frontier until every finding of it is filed" — and the half a hold the pass
+can never promote makes unreachable. A build whose already-held rung answers
+before the cap is consulted is byte-identical to a correct one on every case
+above: it holds at the cap, re-records nothing on retry, and lists the finding.
+What it cannot do is ever file that finding again, so the first time the queue
+fills, the coverage frontier wedges permanently and every later tick re-judges a
+growing backlog at one model call per merge while filing nothing. The slot is
+freed the way `revise` adjudication frees one — the open proposal moves into
+`history/vNNN/proposed_changes/` — which also keeps that identity in the FILED
+set, so the pass files the held finding and not the adjudicated one.
 
 And the LISTING is read off the real composed attention lane rather than off
 the pass's return value, because the contract's requirement is that
@@ -45,6 +58,7 @@ from livespec_orchestrator_beads_fabro.commands._drift_run import (
     DriftRunSeams,
     run_drift_pass,
 )
+from livespec_orchestrator_beads_fabro.commands._drift_run_frontier import contiguous_frontier
 from livespec_orchestrator_beads_fabro.commands._needs_attention_detection_staleness import (
     DetectionStalenessSeams,
     detection_staleness_items,
@@ -241,6 +255,37 @@ def test_a_retried_pass_records_the_hold_once(tmp_path: Path) -> None:
     second = _run(root=tmp_path)
 
     assert first.held == second.held
+    assert len(_anchor_bodies()) == 1
+
+
+def test_a_held_finding_is_filed_once_a_queue_slot_frees_and_the_frontier_advances(
+    tmp_path: Path,
+) -> None:
+    assert (_COMMANDS / "_drift_run_held.py").is_file()
+    spec_root = _project(root=tmp_path, cap=1, open_proposals=1)
+    _seed_anchor()
+
+    held = _run(root=tmp_path)
+    # The hold is observed FIRST, so the filing below is attributable to the
+    # freed slot rather than to a build that never held anything.
+    assert held.filed == ()
+    assert len(held.held) == 1
+    assert contiguous_frontier(judged=held.judged) is None
+
+    adjudicated = spec_root / "proposed_changes" / "drift-existing0.md"
+    _ = adjudicated.rename(spec_root / "history" / "v001" / "proposed_changes" / adjudicated.name)
+    assert _open_queue(spec_root=spec_root) == []
+
+    freed = _run(root=tmp_path)
+
+    assert freed.filed == held.held
+    assert freed.held == ()
+    # The merge's every finding is now filed, so the frontier advances past it.
+    assert contiguous_frontier(judged=freed.judged) == "aaaaaaa1"
+    # Exactly the held finding's proposal, and not a second copy of the
+    # adjudicated one: an archived proposal has been filed and is never re-filed.
+    assert [path.name for path in _open_queue(spec_root=spec_root)] == [f"{held.held[0]}.md"]
+    # And the hold record was not re-appended while it was being promoted.
     assert len(_anchor_bodies()) == 1
 
 
