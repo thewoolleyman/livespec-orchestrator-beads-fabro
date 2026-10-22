@@ -22,6 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     CAUSE_UNPARSEABLE_VERDICT,
     JUDGEMENT_ADMITTED,
@@ -55,6 +56,7 @@ class _Runner:
     result: CommandResult
     argv: list[str] | None = None
     timeout_seconds: float | None = None
+    environ: dict[str, str] | None = None
 
     def run(
         self,
@@ -68,7 +70,8 @@ class _Runner:
     ) -> CommandResult:
         self.argv = argv
         self.timeout_seconds = timeout_seconds
-        _ = (cwd, env, stdin, start_new_session)
+        self.environ = env
+        _ = (cwd, stdin, start_new_session)
         return self.result
 
 
@@ -163,6 +166,27 @@ def test_a_passing_reply_admits_the_item_and_the_judge_is_given_the_gate_prompt(
     # The referenced heading's own body travels with the subject, because a
     # headless judge reaches no spec tree of its own by default.
     assert "The judgement runs before admission." in " ".join(runner.argv)
+
+
+def test_the_judge_uses_the_caam_selected_credential_slot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    selection = home / ".local/state/caam-usage-rotate/selected-account.json"
+    selection.parent.mkdir(parents=True)
+    _ = selection.write_text('{"profile": "anthropic-5"}', encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "bare-token")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN__ANTHROPIC_5", "selected-token")
+
+    verdict, runner = _take(
+        tmp_path=tmp_path,
+        result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""),
+    )
+
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert runner.environ is not None
+    assert runner.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "selected-token"
 
 
 def test_a_failing_reply_holds_the_item_with_its_findings(tmp_path: Path) -> None:
