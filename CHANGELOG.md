@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.231.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.231.2...v0.231.3) (2026-10-22)
+
+
+### Bug Fixes
+
+* **dispatcher:** grade the generator key of a declared record file ([24b681e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/24b681e2550e7083f48672c0343a069cde2b67a4))
+* **dispatcher:** read the record-file declaration where a repository carries it ([46fae2c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/46fae2c89b73d04e7a5fe36839cff272e634d582))
+* **dispatcher:** resolve a conflicted generated record file by its generator ([24a1b4d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/24a1b4d746cc1b84ae2813d46deee8e3f188b783))
+* **workflow:** report a refresh only when the regenerating rebase landed ([5ef0d16](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5ef0d16f9b104c13a924c26e72f6b2b8d003aa76))
+
 ## [0.231.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.231.1...v0.231.2) (2026-10-22)
 
 
