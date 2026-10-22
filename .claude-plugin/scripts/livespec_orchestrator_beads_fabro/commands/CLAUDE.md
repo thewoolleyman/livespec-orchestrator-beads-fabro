@@ -1984,6 +1984,17 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   other than the plan's own, because its target is a work-item in the carrier's
   tenant rather than the plan epic — the exception that proves `_carried`'s
   rule rather than an exception to it.
+  THE GATE HAS TWO READINGS AND NOT ONE VERDICT, and they pull in OPPOSITE
+  directions, so neither may be collapsed onto the other. `first_open_carrier`
+  passes a carrier nothing can place OVER, so it cannot hide the open carrier
+  behind it; `unplaceable_carrier_ids` then reports exactly those passed-over
+  carriers, because a carrier whose status nobody measured must not read as
+  closed. The advance's rest state for the second is a `human` pointer NAMING
+  the carriers — configuring the sibling, re-assigning the assertion, or
+  recording that the carrier is done are all decisions, and none is one an
+  unattended resume may take — with explicit null tracking so the unmet
+  obligation stays in the progress history rather than being discharged by
+  pointing elsewhere.
 - `_plan_resume_reconcile.py` — the reconciliation half of the resume, split out
   of `_plan_resume` by cohesion once the durable progress check pushed that file
   past its size ceiling. `_plan_resume` keeps the TOP-LEVEL sequence (the

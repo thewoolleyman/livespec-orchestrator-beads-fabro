@@ -30,6 +30,17 @@ required result, so a second open carrier changes nothing about the step this
 plan owes next — and each further carrier costs a cross-tenant read. The carriers
 are scanned in the order the maintainer wrote them, so the carrier waited on is
 deterministic rather than whichever read answered first.
+
+WHY THERE ARE TWO READINGS AND NOT ONE VERDICT. `first_open_carrier` PASSES OVER
+a carrier whose repository nothing resolves — its status was never measured, and
+an obligation naming an unresolvable repository is refused at the write and
+unobservable at every read — so those carriers have to be reported separately or
+they are silently treated as closed. `unplaceable_carrier_ids` is that report,
+and it asks a CONFIGURATION question rather than a status one: which carriers of
+this plan live somewhere this checkout has not been told about. The two readings
+pull in opposite directions, which is why neither may be collapsed onto the
+other: one must not block the open carrier behind an unplaceable one, and the
+other must not let an unplaceable one pass as done.
 """
 
 from __future__ import annotations
@@ -63,6 +74,7 @@ __all__: list[str] = [
     "carrier_status_target",
     "first_open_carrier",
     "plan_carrier_ids",
+    "unplaceable_carrier_ids",
 ]
 
 # The lifecycle status a carrier reaches when it is done. The livespec statuses
@@ -127,6 +139,34 @@ def first_open_carrier(*, config: StoreConfig, epic_id: str) -> OpenCarrier | No
         if not _carrier_closed(tenancy=tenancy, carrier=carrier):
             return carrier
     return None
+
+
+def unplaceable_carrier_ids(*, config: StoreConfig, epic_id: str) -> tuple[str, ...]:
+    """Every carrier of this plan whose repository no configured target resolves.
+
+    THE COMPANION OF `first_open_carrier`'S PASS-OVER, and it exists because
+    that pass-over is only half an answer. A carrier nothing can place has a
+    status nobody measured, so the gate cannot wait on it — an obligation naming
+    a repository nothing resolves is refused at the write and would be
+    `unobservable` at every read — and it equally cannot be treated as closed,
+    because the carrier map names it as carrying one of the plan's own
+    assertions. So the carriers that were passed over have to be REPORTED, and
+    this is the reading that reports them.
+
+    NO STATUS IS READ, which is the whole point rather than an economy: there is
+    no tenant to read one from. The question this answers is a configuration
+    question — which carriers of this plan live somewhere this checkout has not
+    been told about — and its answer is what a human decides on.
+    """
+    carriers = plan_carrier_ids(config=config, epic_id=epic_id)
+    if not carriers:
+        return ()
+    tenancy = carrier_tenancy(config=config)
+    return tuple(
+        carrier_id
+        for carrier_id in carriers
+        if repository_for_carrier(tenancy=tenancy, carrier_id=carrier_id) is None
+    )
 
 
 def _carrier_closed(*, tenancy: CarrierTenancy, carrier: OpenCarrier) -> bool:
