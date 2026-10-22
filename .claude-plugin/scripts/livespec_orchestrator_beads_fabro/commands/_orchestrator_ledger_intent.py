@@ -12,6 +12,7 @@ CLI shape (the orchestrator-CLI convention — explicit addressing, injected
 references, `--json` everywhere):
 
     orchestrator.py ledger-intent-scan --judge-cli <json-argv>
+                                       [--since-version <vN>]
                                        [--project-root <path>]
                                        [--spec-target <path>]
                                        [--json]
@@ -43,7 +44,9 @@ from returns.pipeline import is_successful
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._ledger_intent_cut import (
+    SpecVersionCut,
     latest_spec_version_cut,
+    spec_version_cut,
 )
 from livespec_orchestrator_beads_fabro.commands._ledger_intent_scan import (
     LedgerIntentFinding,
@@ -57,6 +60,8 @@ from livespec_orchestrator_beads_fabro.spec_reader import read_current_specifica
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from livespec_orchestrator_beads_fabro.commands._orchestrator_shared import CliContext
 
 __all__: list[str] = ["InjectedJudge", "judge_runner", "run_ledger_intent_scan"]
@@ -102,25 +107,30 @@ def judge_runner(*, judge_cli: list[str]) -> ModelRunner:
     return InjectedJudge(judge_cli=judge_cli)
 
 
-def run_ledger_intent_scan(*, context: CliContext, judge_cli: list[str], as_json: bool) -> int:
-    """Run the ledger-intent scan: select, judge, emit."""
-    cut = latest_spec_version_cut(spec_root=context.spec_root)
+def run_ledger_intent_scan(
+    *,
+    context: CliContext,
+    judge_cli: list[str],
+    since_version: int | None = None,
+    as_json: bool,
+) -> int:
+    """Run the ledger-intent scan: select, judge, emit.
+
+    `since_version` is the parsed `--since-version` value, and `None` means the
+    flag was omitted. The distinction decides BOTH readings the ratified clause
+    separates: which version's cut bounds the captured-since set, and whether
+    the live set widens it.
+    """
+    cut = _resolved_cut(spec_root=context.spec_root, since_version=since_version)
     if cut is None:
-        _ = write_stderr(
-            text=(
-                "ERROR: no ratified spec version under "
-                f"{context.spec_root}/history/ records a cut instant, so the "
-                "population of work-items captured since the latest cut cannot "
-                "be established; the scan refuses rather than reporting an "
-                "unscoped answer.\n"
-            ),
-        )
+        detail = _unresolved_cut_detail(context=context, since_version=since_version)
+        _ = write_stderr(text=f"ERROR: {detail}\n")
         return _EXIT_PRECONDITION_ERROR
     config = resolve_store_config(cwd=context.project_root, work_items_arg=None)
     population = scan_population(
         items=materialize_work_items(records=read_work_items(path=config)).values(),
         cut=cut.instant,
-        include_live=True,
+        include_live=since_version is None,
     )
     spec_tree = read_current_specification(spec_root=context.spec_root).files
     run_model = judge_runner(judge_cli=judge_cli)
@@ -142,6 +152,33 @@ def run_ledger_intent_scan(*, context: CliContext, judge_cli: list[str], as_json
     for narration in unjudged:
         _ = write_stderr(text=f"ERROR: the judgement could not be read for {narration}\n")
     return _EXIT_VALIDATION_ERROR if unjudged else 0
+
+
+def _resolved_cut(*, spec_root: Path, since_version: int | None) -> SpecVersionCut | None:
+    """The cut this invocation is scoped by, or `None` when none is readable."""
+    if since_version is None:
+        return latest_spec_version_cut(spec_root=spec_root)
+    return spec_version_cut(spec_root=spec_root, version=since_version)
+
+
+def _unresolved_cut_detail(*, context: CliContext, since_version: int | None) -> str:
+    """Why the scan refused, naming the version whose cut could not be read.
+
+    The version is NAMED rather than left implicit: an operator who mistyped
+    `--since-version` and one whose spec tree carries no revision record have
+    the same symptom and opposite remedies.
+    """
+    scope = (
+        "the latest ratified spec version"
+        if since_version is None
+        else f"spec version v{since_version:03d}"
+    )
+    return (
+        f"no revision record under {context.spec_root}/history/ records a cut "
+        f"instant for {scope}, so the population of work-items captured on or "
+        "after that cut cannot be established; the scan refuses rather than "
+        "reporting an answer over a population nobody scoped."
+    )
 
 
 def _emit(

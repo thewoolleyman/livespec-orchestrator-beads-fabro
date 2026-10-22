@@ -19,6 +19,7 @@ names in argv form:
                                 [--project-root <path>] [--spec-target <path>]
                                 [--dry-run] [--json]
   orchestrator.py ledger-intent-scan --judge-cli <json-argv>
+                                [--since-version <vN>]
                                 [--project-root <path>] [--spec-target <path>]
                                 [--json]
 
@@ -38,6 +39,7 @@ expected-error → exit-code mapping.
 import argparse
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._ledger_intent_cut import parse_spec_version
 from livespec_orchestrator_beads_fabro.commands._orchestrator_drift_capture import run_drift_capture
 from livespec_orchestrator_beads_fabro.commands._orchestrator_gap_capture import run_gap_capture
 from livespec_orchestrator_beads_fabro.commands._orchestrator_ledger_intent import (
@@ -124,7 +126,23 @@ def _dispatch_ledger_intent(*, args: argparse.Namespace, context: CliContext) ->
     judge_cli = parse_cli_argv(raw=args.judge_cli, flag="--judge-cli")
     if judge_cli is None:
         return _EXIT_USAGE_ERROR
-    return run_ledger_intent_scan(context=context, judge_cli=judge_cli, as_json=args.as_json)
+    since_version: int | None = None
+    if args.since_version is not None:
+        since_version = parse_spec_version(raw=args.since_version)
+        if since_version is None:
+            _ = write_stderr(
+                text=(
+                    "ERROR: --since-version requires a positive integer (got "
+                    f"{args.since_version!r}); accepted forms are 'v<N>' and '<N>'.\n"
+                ),
+            )
+            return _EXIT_USAGE_ERROR
+    return run_ledger_intent_scan(
+        context=context,
+        judge_cli=judge_cli,
+        since_version=since_version,
+        as_json=args.as_json,
+    )
 
 
 def _optional_cli(*, raw: str | None, flag: str) -> tuple[list[str] | None, bool]:
@@ -150,6 +168,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ledger_intent = subparsers.add_parser("ledger-intent-scan")
     _add_common(parser=ledger_intent)
     _ = ledger_intent.add_argument("--judge-cli", dest="judge_cli", required=True)
+    _ = ledger_intent.add_argument("--since-version", dest="since_version", default=None)
     drift_capture = subparsers.add_parser("drift-capture")
     _add_common(parser=drift_capture)
     _add_capture_common(parser=drift_capture)
