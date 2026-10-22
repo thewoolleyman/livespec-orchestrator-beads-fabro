@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.230.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.230.3...v0.230.4) (2026-10-22)
+
+
+### Bug Fixes
+
+* **credential:** bound the freshness requirement by the credential-use window ([0ff3507](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0ff3507b0948a81f191b2a72381161ee50cf8dbd))
+* **credential:** name the governing figure on both credential surfaces ([79813bf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/79813bffec6dcbcca9e9521e6c1f4ed8fd3594b1))
+* **credential:** reject an invalid credential queue allowance at admission ([b485e6e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b485e6e0f2f1ebe806509f32c14c7fb242c96fb4))
+* **review:** re-land the proof-record recapture route ([98ffb4e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/98ffb4ec4bda9182cb5e005bc8dc83572e5880e1))
+
 ## [0.230.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.230.2...v0.230.3) (2026-10-22)
 
 
