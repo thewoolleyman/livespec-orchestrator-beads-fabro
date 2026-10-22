@@ -1,8 +1,8 @@
-"""The drift lane's three arms that record nothing, and what each one reports.
+"""The drift lane's four arms that record nothing, and what each one reports.
 
 Every case here is a repository state in which the lane CANNOT move the
-frontier, and the three are not interchangeable — they have three remedies, and
-a lane that collapsed them would send an operator to fix the wrong thing.
+frontier, and the four are not interchangeable — they have four remedies, and a
+lane that collapsed them would send an operator to fix the wrong thing.
 
 NO TENANT CONNECTION: the lane cannot read the recorded frontier at all, so it
 does not run the pass. Judging merges against an unknown frontier would mean
@@ -14,6 +14,13 @@ over every merge — correctly — but the record has nowhere to go. The lane
 reports the RECORDER's own refusal detail rather than wording of its own, so an
 operator comparing this report against the journal sees one condition rather
 than two descriptions of it.
+
+NO RECORDED BASELINE FRONTIER: the anchor exists and carries no completed drift
+coverage point, so there is no range "after a frontier" at all. The lane judges
+nothing rather than reading that as the whole branch, which on this repository
+is thousands of commits at one model call each — and rather than capping the
+enumeration, which would record a frontier covering merges nobody judged. The
+baseline is separately owned work; see the lane module's own docstring.
 
 AN UNENUMERABLE RANGE: git did not answer, so the attempt record names that
 measurement instead of a merge. The scope detail is the only place an operator
@@ -31,7 +38,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client, reset_fake_singleton
-from livespec_orchestrator_beads_fabro.commands._detection_coverage import ATTEMPT_MARKER_PREFIX
+from livespec_orchestrator_beads_fabro.commands._detection_coverage import (
+    ATTEMPT_MARKER_PREFIX,
+    DRIFT_CAPTURE_OPERATION,
+    DetectionRun,
+    record_detection_run,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_drift_lane import (
     run_drift_lane,
@@ -123,6 +135,22 @@ def _seed_anchor() -> None:
     )
 
 
+def _record_baseline() -> None:
+    """The completed coverage point every judging pass needs to have a range."""
+    _ = record_detection_run(
+        path=_config(),
+        anchor=_ANCHOR,
+        run=DetectionRun(
+            operation=DRIFT_CAPTURE_OPERATION,
+            scope="deadbeef",
+            invoker="human:maintainer",
+            outcome="succeeded",
+            exit_code=0,
+            coverage_point="deadbeef",
+        ),
+    )
+
+
 def _project(*, root: Path, anchor: str | None) -> None:
     spec_root = root / "SPECIFICATION"
     (spec_root / "proposed_changes").mkdir(parents=True)
@@ -184,11 +212,32 @@ def test_no_committed_anchor_reports_the_recorders_own_refusal(tmp_path: Path) -
     assert "detection_coverage_anchor" in outcome.withheld_reason
 
 
+def test_no_recorded_baseline_frontier_judges_nothing(tmp_path: Path) -> None:
+    _project(root=tmp_path, anchor=_ANCHOR)
+    _seed_anchor()
+    runner = _GitRunner()
+
+    outcome = run_drift_lane(
+        repo=tmp_path,
+        invoker="reconcile-pass:test",
+        seams=DriftRunSeams(runner=runner, judge=_stated, now=lambda: "2026-10-22T00:00:00Z"),
+    )
+
+    assert outcome.advanced is False
+    assert outcome.withheld_reason == "no-recorded-drift-frontier"
+    # Not one git read, and so not one model call: the whole branch is not the
+    # range, and judging it would cost one judgement per commit in history.
+    assert runner.argvs == []
+    assert outcome.records is not None
+    assert "baseline frontier" in outcome.records.attempt
+
+
 def test_an_unenumerable_range_names_that_measurement_in_the_attempt_record(
     tmp_path: Path,
 ) -> None:
     _project(root=tmp_path, anchor=_ANCHOR)
     _seed_anchor()
+    _record_baseline()
 
     outcome = run_drift_lane(
         repo=tmp_path,
@@ -206,13 +255,15 @@ def test_an_unenumerable_range_names_that_measurement_in_the_attempt_record(
         if str(comment["text"]).startswith(ATTEMPT_MARKER_PREFIX)
     ]
     assert outcome.advanced is False
-    assert len(attempts) == 1
-    assert CAUSE_MERGES_UNREADABLE in attempts[0]
+    # Two attempt records: the baseline's own completed pass, then this one.
+    assert len(attempts) == 2
+    assert CAUSE_MERGES_UNREADABLE in attempts[-1]
 
 
 def test_a_scope_with_no_findings_at_all_advances_to_its_newest_merge(tmp_path: Path) -> None:
     _project(root=tmp_path, anchor=_ANCHOR)
     _seed_anchor()
+    _record_baseline()
 
     outcome = run_drift_lane(
         repo=tmp_path,

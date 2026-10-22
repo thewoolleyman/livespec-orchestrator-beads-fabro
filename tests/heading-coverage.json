@@ -983,8 +983,8 @@
     "heading": "## Scenario 82 \u2014 Staleness facts surface owned triggers, never headless runs",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "tests.integration.test_detection_coverage_records::test_the_gap_staleness_fact_hands_off_to_capture_impl_gaps",
-    "reason": "The bound test exercises the unchanged gap-capture case: the staleness fact names `capture-impl-gaps` and the stale range, and composition invokes no detector. Integration-tier (`tests.integration`) through the real snapshot composition. The drift case was amended by proposal per-merge-drift-run-and-coverage-baseline to name the merges after the recorded frontier; its exercising test is owed by bd-ib-yvjxo4, which lands the drift run and re-binds this entry to the test that exercises the amended drift case."
+    "test": "tests.integration.test_per_merge_drift_run_scenario207::test_merges_after_the_frontier_still_surface_the_fact_naming_them",
+    "reason": "Re-bound by bd-ib-yvjxo4 to the AMENDED drift case, as proposal per-merge-drift-run-and-coverage-baseline required: the bound test advances the frontier through a real drift pass, lands a further merge, and asserts the fact names the merges after THAT frontier and states that it invokes no detector - the reconcile pass is what runs the drift pass. Integration-tier (`tests.integration`) through the real needs-attention composition. The unchanged gap-capture case stays exercised by tests.integration.test_detection_coverage_records::test_the_gap_staleness_fact_hands_off_to_capture_impl_gaps."
   },
   {
     "heading": "## Scenario 83 \u2014 Capacity truth is composed from the accounting, never re-derived",
@@ -2006,9 +2006,8 @@
     "heading": "## Scenario 207 \u2014 The drift run processes each merge behind a contiguous frontier and files proposals it never accepts",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal per-merge-drift-run-and-coverage-baseline, and the owning work-item bd-ib-yvjxo4 lands the drift run together with the integration-tier test that binds this entry.",
-    "work_item": "bd-ib-yvjxo4"
+    "test": "tests.integration.test_per_merge_drift_run_scenario207::test_the_pass_files_a_proposal_it_never_accepts",
+    "reason": "Integration-tier (`tests.integration`) through the real lane, the real spec tree and the real store/client seam: the bound test drives a pass over two merges after a recorded frontier and asserts the proposal rests under proposed_changes/ while every artifact an acceptance would have left - a history/vNNN snapshot, a <topic>-revision.md, the proposal leaving the open queue - is absent, which is the scenario's last case. Its siblings in the same module carry the frontier advance, the merges-after-the-frontier fact and the anchor-only ledger write; the failed-merge, retried-pass and queue-cap cases are exercised by tests.livespec_orchestrator_beads_fabro.commands.test_drift_run_frontier, ..._proposal_filing and ..._queue_cap."
   },
   {
     "heading": "## Scenario 211 \u2014 An unmet plan obligation is superseded only by a typed event whose cause verifies, and keeps its original budget",
