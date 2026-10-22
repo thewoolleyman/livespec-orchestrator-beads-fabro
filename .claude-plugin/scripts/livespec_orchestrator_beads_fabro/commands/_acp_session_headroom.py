@@ -416,7 +416,7 @@ def headroom_skips_candidate(*, reading: SessionHeadroomReading, floor_percent: 
     return remaining < floor_percent
 
 
-def seven_day_skips_candidate(*, reading: SessionHeadroomReading) -> bool:
+def seven_day_skips_candidate(*, reading: SessionHeadroomReading, floor_percent: int) -> bool:
     """Whether the WEEKLY window alone stops this covered candidate.
 
     Its own predicate rather than a third arm of `headroom_skips_candidate`,
@@ -432,7 +432,15 @@ def seven_day_skips_candidate(*, reading: SessionHeadroomReading) -> bool:
     available is admitted -- the provider is the authority on its own refusal,
     and a build inferring one from the percentage would refuse an account the
     provider was still serving.
+
+    THE FLOOR GOVERNS THIS SKIP TOO, and it is the SAME dial rather than a
+    weekly one of its own: the clause makes a seven-day skip "a headroom skip
+    with exactly the semantics of a floor skip" and says that same floor of 0
+    disables it. A second dial would let an operator switch the filter off and
+    still have dispatches refused by the arm they had not heard of.
     """
+    if floor_percent <= 0:
+        return False
     return reading.seven_day.exhausted
 
 
