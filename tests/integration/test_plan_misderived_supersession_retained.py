@@ -21,9 +21,17 @@ Dropping the epoch from the deriving match makes an operation identity alone
 resolve A transition of this plan — a real one, recorded by a real derivation
 actor — and the obligation that transition wrote need not be the obligation
 standing now. So the named derivation must be shown to have written the RETAINED
-obligation: without that, a supersession reads as fully evidenced while naming a
-derivation that has nothing to do with the result it is replacing, which is the
-rename-with-a-verified-footnote shape the whole cause exists to refuse.
+obligation AND to have been retained unchanged since: without both, a
+supersession reads as fully evidenced while naming a derivation that has nothing
+to do with the result it is replacing, which is the rename-with-a-verified-
+footnote shape the whole cause exists to refuse.
+
+WHY THE SECOND HALF IS NOT IMPLIED BY THE FIRST, which is what makes it its own
+case. An obligation CHANGED and then CHANGED BACK satisfies the first half
+exactly — the named derivation did record the result standing now — while the
+obligation standing now was written by the restoring transition, not by that
+derivation. So a chain that changed its result away and back is the one shape in
+which naming the original derivation looks fully evidenced and is not.
 
 THE RETAINING WRITE IS A REAL `set_next_action` HUMAN POINTER, not a
 hand-committed transition, because that is the write the incident turned on and
@@ -31,9 +39,9 @@ the one the derivation gate prescribes for an open carrier. The derivation itsel
 IS hand-committed, because a derivation recorded while a mapped carrier was open
 is the state the gate now prevents — so the only honest way to reach it is to
 seed the ledger a pre-gate build left behind, which is exactly the population
-this repair exists to unlock. The refusal case advances the chain through
+this repair exists to unlock. The refusal cases advance the chain through
 `commit_transition` alone, which is what leaves the DERIVED pointer standing for
-it to assert unchanged.
+them to assert unchanged.
 """
 
 from __future__ import annotations
@@ -96,6 +104,7 @@ _CARRIER_PREFIX = "cr"
 _OPEN_CARRIER = f"{_CARRIER_PREFIX}-open"
 _DERIVING_OPERATION = "op-derived-while-the-carrier-was-open"
 _OTHER_OPERATION = "op-wrote-another-obligation"
+_RESTORING_OPERATION = "op-wrote-the-first-obligation-back"
 _PLAN_RESUME_ACTOR = "plan-resume"
 _SESSION = "plan-session"
 # The obligation the false derivation persisted: the plan's own proof record.
@@ -412,6 +421,53 @@ def test_a_derivation_that_recorded_another_obligation_cannot_supersede_this_one
     assert refusal is not None
     assert _RECORDED_ANOTHER in refusal.detail
     assert _CHANGED_AFTER not in refusal.detail
+    assert _identity(required_result=_OTHER_RESULT) in refusal.detail
+    assert _identity(required_result=_SUPERSEDED_RESULT) in refusal.detail
+    pointer = _pointer(repo=repo)
+    assert pointer["kind"] == "proof"
+    assert pointer["required_result"] == _SUPERSEDED_RESULT
+    assert _chain_obligation(repo=repo) == _SUPERSEDED_RESULT
+
+
+def test_a_later_transition_that_changed_the_result_defeats_the_named_derivation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Changed away and changed back: the derivation recorded it, and did not write it.
+
+    The named derivation DID record the obligation standing now, so the
+    provenance condition's first half holds and the refusal cannot come from it.
+    What the chain then did is change the result away and restore it, which makes
+    the RESTORING transition the one that wrote what stands — and the clause asks
+    the supersession to name the derivation that wrote the obligation, not one
+    that once recorded the same words.
+
+    The chain is read back as well as the pointer, because the chain is the
+    authority the next write grades against while the pointer is a projection.
+    """
+    repo = _project(tmp_path=tmp_path)
+    monkeypatch.chdir(repo)
+    _open_carrier(repo=repo)
+    epoch = _seed(
+        repo=repo,
+        transitions=(
+            (_DERIVING_OPERATION, _SUPERSEDED_RESULT),
+            (_OTHER_OPERATION, _OTHER_RESULT),
+            (_RESTORING_OPERATION, _SUPERSEDED_RESULT),
+        ),
+    )
+
+    refusal = set_next_action(
+        config=_config(repo=repo),
+        epic_id=_EPIC,
+        action=_replacement(),
+        session=_SESSION,
+        now=_LATER,
+        supersession=_supersession(epoch=epoch, operation_id=_DERIVING_OPERATION),
+    )
+
+    assert refusal is not None
+    assert _CHANGED_AFTER in refusal.detail
+    assert _RECORDED_ANOTHER not in refusal.detail
     assert _identity(required_result=_OTHER_RESULT) in refusal.detail
     assert _identity(required_result=_SUPERSEDED_RESULT) in refusal.detail
     pointer = _pointer(repo=repo)

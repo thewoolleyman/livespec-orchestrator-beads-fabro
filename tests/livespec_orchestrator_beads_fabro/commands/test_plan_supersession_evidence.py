@@ -302,26 +302,37 @@ def test_the_deriving_identity_resolves_from_a_chain_that_has_moved_past_it(
     assert latest.deriving.author == _PLAN_RESUME_ACTOR
 
 
+def _unparseable_event(*, repo: Path, operation_id: str) -> None:
+    """One progress-event comment whose canonical payload line is not JSON.
+
+    Written through the client's own comment surface rather than a transition,
+    because the production writer renders a parseable payload on every write —
+    while a live ledger holds whatever a build of any age left behind, which is
+    the population both cases below are about.
+    """
+    _fake(repo=repo).add_comment(
+        issue_id=_EPIC,
+        body=(
+            f"{PLAN_PROGRESS_PREFIX}\nauthor: {_PLAN_RESUME_ACTOR}\ntimestamp: {_NOW}\n\n"
+            f"operation: {operation_id}\nrecorded: {_NOW}\npayload: not-json"
+        ),
+    )
+
+
 def test_a_progress_event_whose_payload_did_not_parse_resolves_nothing(
     tmp_path: Path,
 ) -> None:
-    """An event whose epoch could not be read cannot be matched on its epoch.
+    """The MATCHED event's payload carries the obligation it wrote.
 
-    The payload line is what carries the epoch, so a comment this reader can see
-    the operation identity in but not the payload of resolves NOTHING rather than
-    being matched on the identity alone.
+    That obligation is the fact the `misderived` cause's verification rests on,
+    so a comment this reader can see the operation identity in but not the
+    payload of resolves NOTHING rather than being matched on the identity alone.
     """
     repo = _project(tmp_path=tmp_path, configure_carrier=True)
     _carrier_record(repo=repo)
     _seed(repo=repo, transitions=(_FIRST_OPERATION,))
     head = _head(repo=repo)
-    _fake(repo=repo).add_comment(
-        issue_id=_EPIC,
-        body=(
-            f"{PLAN_PROGRESS_PREFIX}\nauthor: {_PLAN_RESUME_ACTOR}\ntimestamp: {_NOW}\n\n"
-            f"operation: {_SECOND_OPERATION}\nrecorded: {_NOW}\npayload: not-json"
-        ),
-    )
+    _unparseable_event(repo=repo, operation_id=_SECOND_OPERATION)
 
     evidence = supersession_evidence(
         config=_config(repo=repo),
@@ -332,6 +343,38 @@ def test_a_progress_event_whose_payload_did_not_parse_resolves_nothing(
 
     assert evidence is not None
     assert evidence.deriving is None
+
+
+def test_a_later_event_whose_payload_did_not_parse_retains_nothing(tmp_path: Path) -> None:
+    """A later transition nobody can read is carried as having retained NOTHING.
+
+    It is NOT skipped, which is the whole of the arm: the decision compares
+    canonical identities, and `None` has none, so an unreadable later transition
+    compares unequal to every obligation and refuses. Skipping it would let the
+    one transition this reader cannot place be the cheapest route past the
+    retention condition.
+
+    Its control is the case above, which puts the unreadable payload on the
+    MATCHED event instead and resolves no transition at all — so the two arms
+    report different absences and neither stands in for the other.
+    """
+    repo = _project(tmp_path=tmp_path, configure_carrier=True)
+    _carrier_record(repo=repo)
+    _seed(repo=repo, transitions=(_FIRST_OPERATION,))
+    head = _head(repo=repo)
+    _unparseable_event(repo=repo, operation_id=_SECOND_OPERATION)
+
+    evidence = supersession_evidence(
+        config=_config(repo=repo),
+        epic_id=_EPIC,
+        supersession=_supersession(epoch=head.epoch, operation_id=_FIRST_OPERATION),
+        head=head,
+    )
+
+    assert evidence is not None
+    assert evidence.deriving is not None
+    assert evidence.deriving.required_result == _OBLIGATION
+    assert evidence.deriving.later_results == (None,)
 
 
 def test_a_carrier_whose_repository_resolves_to_no_configured_target_is_absent(

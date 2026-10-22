@@ -150,15 +150,27 @@ def _deriving(
     fact the `misderived` cause's verification rests on, so a comment this reader
     can see the operation identity in but not the payload of establishes nothing
     about the derivation it names.
+
+    THE LATER RESULTS ARE TAKEN BY POSITION, from the events after the one that
+    matched, because `read_progress_events` answers oldest first and "retained
+    unchanged since" is a question about what followed this transition. A later
+    event whose payload did not parse contributes `None`, which the decision
+    reads as having retained nothing — the fail-closed direction, and the reason
+    it is not skipped.
     """
     client = make_beads_client(config=config)
-    for event in read_progress_events(client=client, epic_id=epic_id):
+    events = read_progress_events(client=client, epic_id=epic_id)
+    for index, event in enumerate(events):
         if event.operation_id != operation_id or event.payload is None:
             continue
         return DerivingTransition(
             author=event.author,
             recorded_at=event.recorded_at,
             required_result=event.payload.authority.required_result,
+            later_results=tuple(
+                None if one.payload is None else one.payload.authority.required_result
+                for one in events[index + 1 :]
+            ),
         )
     return None
 
