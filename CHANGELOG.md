@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.234.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.233.1...v0.234.0) (2026-10-22)
+
+
+### Features
+
+* **drift:** advance the coverage frontier only behind a filed prefix ([f5cd1b1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f5cd1b1d99ec91d049fc2868cb5ac88ebc6fd947))
+* **drift:** file one drift-origin proposal per unstated behaviour ([3b09826](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3b09826576ebe31ab0e97e5e859a5dc341fa924e))
+* **drift:** hold a finding past the drift proposal queue cap ([9424bef](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9424bef608448d4f3fbd2a9632f409037cf3cd79))
+* **drift:** judge every merge after the frontier in merge order ([e9a7e2f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e9a7e2f1ed838b6f36dd791d84b91eb5dd20c42f))
+* **drift:** run the drift pass from every reconcile pass and never accept ([357919f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/357919fd7537dc4d82135f3a46b3bf6e81354ddd))
+
+
+### Bug Fixes
+
+* **drift:** file a held finding once a queue slot frees ([1875e8e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1875e8e5e39f68e21533327d32e8409da37c61e8))
+
 ## [0.233.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.233.0...v0.233.1) (2026-10-22)
 
 
