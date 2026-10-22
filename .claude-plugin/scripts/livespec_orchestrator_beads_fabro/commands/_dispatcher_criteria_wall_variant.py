@@ -86,6 +86,18 @@ class CriteriaWallVariant:
 
     name: str
     kind: str
+    # The registry-declared directory the resolved variant lives in, or None for
+    # the reserved workflow, which is never read from the registry.
+    #
+    # CARRIED SO A WALL CAN RESOLVE THE VARIANT'S OWN MANIFEST. `workflow_toml`
+    # takes exactly this value as its second precedence step, and a wall that
+    # reached for it would otherwise have to resolve the variant a SECOND time
+    # through `previewed_workflow_variant` -- which is the duplication this
+    # module exists to prevent, and which brings back the whole `_UNRESOLVABLE`
+    # escape with it. The armed-side answer carries None, which resolves the
+    # reserved workflow: that is a real graph to grade rather than a refusal,
+    # so a wall degraded onto it still grades something.
+    directory: str | None = None
 
     @property
     def exempt(self) -> bool:
@@ -129,4 +141,8 @@ def criteria_wall_variant(
     )
     if isinstance(resolved, AttemptFailure):
         return CriteriaWallVariant(name=RESERVED_WORKFLOW_NAME, kind=WORKFLOW_KIND_IMPLEMENT)
-    return CriteriaWallVariant(name=resolved.name, kind=variant_kind(repo=repo, variant=resolved))
+    return CriteriaWallVariant(
+        name=resolved.name,
+        kind=variant_kind(repo=repo, variant=resolved),
+        directory=resolved.directory,
+    )
