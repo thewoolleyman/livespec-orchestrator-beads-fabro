@@ -36,10 +36,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     JUDGEMENT_HELD,
     DodJudgement,
     judgement_subject_digest,
+    rubric_digest,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     STAGE_PRE_DISPATCH,
     verdict_comment,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
+    judgement_rubric,
 )
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
@@ -216,6 +220,19 @@ def test_the_snapshot_composition_carries_the_lane(tmp_path: Path) -> None:
     assert "held_definition_of_done_items(" in composition
 
 
+def _executing_rubric_digest() -> str:
+    """The digest of the EXECUTING build's rubric, which the held lane reads.
+
+    Taken off the shipped file rather than written as a literal: the lane reads
+    the executing payload, so a verdict standing against any other rubric is one
+    it would correctly refuse to reuse — and this case's subject is what the lane
+    does with a verdict that DOES stand.
+    """
+    rubric = judgement_rubric()
+    assert rubric is not None
+    return rubric_digest(rubric=rubric)
+
+
 def test_the_held_lane_reports_nothing_when_no_ledger_connection_resolves(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -259,6 +276,7 @@ def test_the_held_lane_reports_nothing_when_no_ledger_connection_resolves(
             item_id=item.id,
             stage=STAGE_PRE_DISPATCH,
             digest=judgement_subject_digest(item=item, cwd=connected),
+            rubric_digest=_executing_rubric_digest(),
             judgement=DodJudgement(
                 outcome=JUDGEMENT_HELD,
                 findings=("bd-ib-advisory: restate assertion 1 as behaviour.",),

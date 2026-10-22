@@ -40,10 +40,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     JUDGEMENT_HELD,
     DodJudgement,
     judgement_subject_digest,
+    rubric_digest,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     STAGE_PRE_DISPATCH,
     verdict_comment,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
+    judgement_rubric,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_wall import (
     dod_unrefused_candidates,
@@ -165,8 +169,21 @@ def _item() -> WorkItem:
     )
 
 
+def _executing_rubric_digest() -> str:
+    """The digest of the EXECUTING build's rubric, which both wall surfaces read.
+
+    Taken off the shipped file rather than written as a literal: the wall reads
+    the executing payload, so a verdict standing against any other rubric is one
+    it would correctly refuse to reuse — and this module's subject is what the
+    wall does with a verdict that DOES stand.
+    """
+    rubric = judgement_rubric()
+    assert rubric is not None
+    return rubric_digest(rubric=rubric)
+
+
 def _record_held_verdict(*, repo: Path, item: WorkItem) -> None:
-    """Stand a refusing verdict against this item's current bytes."""
+    """Stand a refusing verdict against this item's current bytes and rubric."""
     config = _config(repo=repo)
     append_work_item(path=config, item=item)
     append_work_item_comment(
@@ -176,6 +193,7 @@ def _record_held_verdict(*, repo: Path, item: WorkItem) -> None:
             item_id=item.id,
             stage=STAGE_PRE_DISPATCH,
             digest=judgement_subject_digest(item=item, cwd=repo),
+            rubric_digest=_executing_rubric_digest(),
             judgement=DodJudgement(outcome=JUDGEMENT_HELD, findings=(_FINDING,)),
         ),
     )

@@ -74,6 +74,11 @@ _WORK_ITEM_FIELD = "work-item"
 _STAGE_FIELD = "stage"
 _OUTCOME_FIELD = "outcome"
 _DIGEST_FIELD = "subject-digest"
+# The rubric the verdict was taken UNDER, which is the other half of the reuse
+# condition. It is a field of its own rather than part of the subject digest
+# because the two change for unrelated reasons and a reader of the record has to
+# be able to say which one retired a verdict: an item edit, or a plugin release.
+_RUBRIC_DIGEST_FIELD = "rubric-digest"
 _FINDING_FIELD = "finding"
 _REMEDY_FIELD = "first-remedy"
 # Deliberately NOT the bare `cause`. The did-not-run scan below walks back over
@@ -92,6 +97,7 @@ class RecordedJudgement:
 
     outcome: str
     digest: str
+    rubric_digest: str
     findings: tuple[str, ...] = ()
 
     @property
@@ -100,7 +106,9 @@ class RecordedJudgement:
         return first_remedy(findings=self.findings)
 
 
-def verdict_comment(*, item_id: str, stage: str, digest: str, judgement: DodJudgement) -> str:
+def verdict_comment(
+    *, item_id: str, stage: str, digest: str, rubric_digest: str, judgement: DodJudgement
+) -> str:
     """The ledger comment recording one taken verdict, findings and all."""
     lines = [
         JUDGEMENT_COMMENT_MARKER,
@@ -109,6 +117,7 @@ def verdict_comment(*, item_id: str, stage: str, digest: str, judgement: DodJudg
         f"{_STAGE_FIELD}{_FIELD_SEPARATOR}{stage}",
         f"{_OUTCOME_FIELD}{_FIELD_SEPARATOR}{judgement.outcome}",
         f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
+        f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
     ]
     lines.extend(f"{_FINDING_FIELD}{_FIELD_SEPARATOR}{finding}" for finding in judgement.findings)
     remedy = first_remedy(findings=judgement.findings)
@@ -117,7 +126,9 @@ def verdict_comment(*, item_id: str, stage: str, digest: str, judgement: DodJudg
     return "\n".join(lines)
 
 
-def did_not_run_comment(*, item_id: str, stage: str, digest: str, cause: str) -> str:
+def did_not_run_comment(
+    *, item_id: str, stage: str, digest: str, rubric_digest: str, cause: str
+) -> str:
     """The ledger comment recording that the judgement did not run, and why."""
     return "\n".join(
         (
@@ -129,30 +140,46 @@ def did_not_run_comment(*, item_id: str, stage: str, digest: str, cause: str) ->
             f"{_STAGE_FIELD}{_FIELD_SEPARATOR}{stage}",
             f"{_OUTCOME_FIELD}{_FIELD_SEPARATOR}{JUDGEMENT_UNAVAILABLE}",
             f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
+            f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
             f"{_CAUSE_FIELD}{_FIELD_SEPARATOR}{cause}",
         )
     )
 
 
-def reusable_verdict(*, comments: Sequence[str], digest: str) -> RecordedJudgement | None:
-    """The most recent TAKEN verdict, when it was taken against these same bytes.
+def reusable_verdict(
+    *, comments: Sequence[str], digest: str, rubric_digest: str
+) -> RecordedJudgement | None:
+    """The most recent TAKEN verdict, when BOTH digests still equal these.
 
     A did-not-run record is passed over rather than treated as the most recent
     verdict: it records that no judgement happened, so reading it as one would
     make an outage permanent — the item would reuse "nothing was decided"
     forever and the judgement would never run again.
+
+    A record naming no RUBRIC digest is not reusable either, for the reason the
+    module docstring gives about the subject digest: it cannot say which rubric
+    it was taken under, so reusing it is reusing a verdict against rules that may
+    since have changed. Such a record is what every verdict written before the
+    rubric digest existed looks like, so the fail-closed reading retires each of
+    them once rather than honouring them forever.
     """
     for body in reversed(tuple(comments)):
         if comment_marker(body=body) != JUDGEMENT_COMMENT_MARKER:
             continue
         fields = _fields_of(body=body)
         recorded = fields.get(_DIGEST_FIELD)
+        recorded_rubric = fields.get(_RUBRIC_DIGEST_FIELD)
         outcome = fields.get(_OUTCOME_FIELD)
-        if recorded is None or outcome is None:
+        if recorded is None or recorded_rubric is None or outcome is None:
             return None
-        if recorded != digest:
+        if (recorded, recorded_rubric) != (digest, rubric_digest):
             return None
-        return RecordedJudgement(outcome=outcome, digest=recorded, findings=_findings_of(body=body))
+        return RecordedJudgement(
+            outcome=outcome,
+            digest=recorded,
+            rubric_digest=recorded_rubric,
+            findings=_findings_of(body=body),
+        )
     return None
 
 

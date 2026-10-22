@@ -101,6 +101,7 @@ __all__: list[str] = [
     "dod_gate_prompt_path",
     "judgement_argv",
     "judgement_prompt",
+    "judgement_rubric",
     "resolve_judge_model",
     "resolve_judge_path",
     "resolve_judge_timeout_seconds",
@@ -175,6 +176,22 @@ def dod_gate_prompt_path(*, payload_root: Path | None = None) -> Path:
     return root / ".fabro" / "workflows" / RESERVED_WORKFLOW_NAME / "prompts" / "dod-gate.md"
 
 
+def judgement_rubric(*, payload_root: Path | None = None) -> str | None:
+    """The executing build's `dod-gate.md` bytes, or `None` when unreadable.
+
+    PUBLIC because the GATE reads it, not this module: the rubric's digest is
+    half the reuse condition, so it has to be in hand before the gate decides
+    whether to take a judgement at all. Reading it twice — once to decide and
+    once to grade — would be two readings of a file a release can replace
+    between them, and the verdict would then name a rubric the judge never saw.
+    """
+    read = attempt(
+        action=lambda: dod_gate_prompt_path(payload_root=payload_root).read_text(encoding="utf-8"),
+        exceptions=(OSError,),
+    )
+    return None if isinstance(read, AttemptFailure) else read
+
+
 def judgement_prompt(*, gate_prompt: str, subject: str) -> str:
     """The node's prompt, the host ending contract, then the item's subject."""
     return f"{gate_prompt}{HOST_ENDING_CONTRACT}{subject}\n"
@@ -244,6 +261,7 @@ def run_dod_judgement(
     item: WorkItem,
     cwd: Path,
     comments: Sequence[str] = (),
+    rubric: str | None = None,
     runner: CommandRunner | None = None,
     payload_root: Path | None = None,
 ) -> DodJudgement:
@@ -256,12 +274,18 @@ def run_dod_judgement(
     `comments` is the item's ledger comment bodies, oldest first. They travel
     into the SUBJECT rather than being read here, and the default is empty for
     the reason `judgement_subject` records.
+
+    `rubric` is the gate prompt's bytes. A caller that already holds them — the
+    gate, which needs their digest before it decides anything — hands them in, so
+    the bytes the judge grades by and the bytes the record names are ONE reading.
+    Omitting it reads the file here, which is what keeps every other caller
+    unchanged; an unreadable one returns BEFORE the judge is invoked, because a
+    judgement with no rubric is not the judgement the clause names and spending a
+    model call on whatever is left would produce a verdict against rules nobody
+    wrote.
     """
-    prompt_path = dod_gate_prompt_path(payload_root=payload_root)
-    gate_prompt = attempt(
-        action=lambda: prompt_path.read_text(encoding="utf-8"), exceptions=(OSError,)
-    )
-    if isinstance(gate_prompt, AttemptFailure):
+    gate_prompt = judgement_rubric(payload_root=payload_root) if rubric is None else rubric
+    if gate_prompt is None:
         return DodJudgement(outcome=JUDGEMENT_UNAVAILABLE, cause=CAUSE_PROMPT_UNREADABLE)
     environ = dict(os.environ)
     credential = select_factory_credential(
