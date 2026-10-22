@@ -569,6 +569,36 @@ Tests for the thin-transport command modules under
   unreadable source moves rather than as a constant; the concrete 0-and-non-zero
   readings stay on the sibling cases whose arrays are the fixture's alone.
 
+- The seven `test_drift_*` modules cover the per-merge drift run
+  (`bd-ib-yvjxo4`). Scenario 207 is bound at the integration tier by
+  `tests/integration/test_per_merge_drift_run_scenario207.py`, which also
+  carries Scenario 82's re-bound drift case; these cover what that tier cannot
+  observe, and the split follows the one in the product tree. Five of them are
+  worth knowing about before editing. `..._merge_enumeration` asserts the
+  rev-list argv carries NO filter beyond `--reverse`, because a `--merges`-style
+  filter returns a clean empty answer under this repository's rebase-merge
+  discipline and every other assertion in the module would still pass.
+  `..._proposal_filing` drives the whole pass TWICE over one merge rather than
+  calling the identity function twice, since a stable identity the filer never
+  consults files a second proposal on every ten-minute tick; its `stated`
+  verdict is the control, without which a build filing on every verdict passes
+  every positive case. `..._queue_cap`'s below-the-cap and at-the-cap cases are
+  each other's control — either alone is satisfied by a build that always does
+  that one thing — and the held case asserts the open queue is UNCHANGED, since
+  a build that recorded the hold AND wrote the document defeats the cap while
+  satisfying every hold assertion. `..._judge_seam` asserts its property over a
+  prompt LARGER than the 131072-byte argv-entry cap, because a small prompt
+  passes whether or not the prompt travels on stdin, which is exactly why that
+  defect would have shipped; and its fake runner reads the descriptor
+  UNCONDITIONALLY, because a guard there is an arm no call can reach and an
+  unreachable arm in a fake is a fake that has stopped describing the seam. And
+  `..._lane_unrecordable` keeps the four record-nothing arms apart — no tenant
+  connection, no committed anchor, no recorded baseline, an unenumerable range —
+  with a scope-that-advances case as the positive control, without which a lane
+  that never advanced would satisfy every other assertion in the module; its
+  no-baseline case asserts ZERO git reads, which is the only observation that
+  distinguishes "judged nothing" from "judged the whole branch".
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr
