@@ -38,8 +38,21 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from livespec_runtime import spec_stated
+from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro.commands._detection_coverage import (
+    detection_coverage_anchor,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file import utc_now_iso
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
+    DEFAULT_DRIFT_PROPOSAL_QUEUE_CAP,
+    resolve_drift_proposal_queue_cap,
+)
+from livespec_orchestrator_beads_fabro.commands._drift_run_disposition import (
+    DispositionContext,
+    dispose_findings,
+)
 from livespec_orchestrator_beads_fabro.commands._drift_run_findings import (
     behaviour_statement,
     findings_from_verdict,
@@ -48,11 +61,10 @@ from livespec_orchestrator_beads_fabro.commands._drift_run_merges import (
     merge_under_judgement,
     merges_after,
 )
-from livespec_orchestrator_beads_fabro.commands._drift_run_proposals import (
-    drift_proposal_document,
-    file_drift_proposal,
-    filed_finding_identities,
-    target_spec_files,
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
+from livespec_orchestrator_beads_fabro.errors import (
+    ConnectionPrefixMissingError,
+    LivespecConfigUnreadableError,
 )
 from livespec_orchestrator_beads_fabro.spec_reader import read_current_specification
 
@@ -62,6 +74,7 @@ if TYPE_CHECKING:
 
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
     from livespec_orchestrator_beads_fabro.commands._drift_run_findings import DriftFinding
+    from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "CAUSE_JUDGEMENT_UNREADABLE",
@@ -125,11 +138,15 @@ class MergeOutcome:
     could not be read or its judgement could not be parsed, and in both cases
     the merge has not been processed.
 
-    `findings` are the `partial` or `unstated` behaviours the merge adds, and
-    `filed` the identities among them that now rest under `proposed_changes/`.
-    An identity an EARLIER pass filed is in `filed` too: the frontier rule asks
-    whether every finding of the merge IS filed, not whether this pass was the
-    one that filed it.
+    `findings` are the `partial` or `unstated` behaviours the merge adds;
+    `filed` the identities among them that now rest under `proposed_changes/`,
+    and `held` those recorded on the detection-coverage anchor because the open
+    queue stood at the cap. An identity an EARLIER pass filed or held is in the
+    matching tuple too: the frontier rule asks whether every finding of the
+    merge IS filed, not whether this pass was the one that filed it.
+
+    A finding in NEITHER tuple is one nothing could dispose of, which is what
+    leaves its merge unprocessed.
     """
 
     merge: str
@@ -138,6 +155,7 @@ class MergeOutcome:
     failure: str | None
     findings: tuple[DriftFinding, ...] = ()
     filed: tuple[str, ...] = ()
+    held: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -148,14 +166,16 @@ class DriftRunOutcome:
     was judged, and is None on every pass that enumerated its scope — including
     one whose scope was empty.
 
-    `filed` is every finding identity now resting under `proposed_changes/`,
-    across every merge of the scope and in merge order.
+    `filed` is every finding identity now resting under `proposed_changes/`
+    and `held` every one recorded on the anchor, across every merge of the
+    scope and in merge order.
     """
 
     merges: tuple[str, ...]
     judged: tuple[MergeOutcome, ...]
     unreadable: str | None
     filed: tuple[str, ...] = ()
+    held: tuple[str, ...] = ()
 
 
 def run_drift_pass(
@@ -167,57 +187,90 @@ def run_drift_pass(
         return DriftRunOutcome(merges=(), judged=(), unreadable=CAUSE_MERGES_UNREADABLE)
     spec_root = project_root / _SPEC_DIRNAME
     spec_tree = read_current_specification(spec_root=spec_root).files
+    context = _disposition_context(
+        project_root=project_root, spec_root=spec_root, spec_tree=spec_tree, seams=seams
+    )
     judged: list[MergeOutcome] = []
     for sha in merges:
         one = _judge_one(project_root=project_root, seams=seams, spec_tree=spec_tree, sha=sha)
-        judged.append(_disposed(one=one, spec_root=spec_root, spec_tree=spec_tree, seams=seams))
+        judged.append(_disposed(one=one, context=context))
     return DriftRunOutcome(
         merges=merges,
         judged=tuple(judged),
         unreadable=None,
         filed=tuple(identity for outcome in judged for identity in outcome.filed),
+        held=tuple(identity for outcome in judged for identity in outcome.held),
     )
 
 
-def _disposed(
+def _disposition_context(
     *,
-    one: MergeOutcome,
+    project_root: Path,
     spec_root: Path,
     spec_tree: dict[str, str],
     seams: DriftRunSeams,
-) -> MergeOutcome:
-    """One judged merge with its findings derived and filed.
+) -> DispositionContext:
+    """The committed inputs one pass disposes its findings against.
 
-    The already-filed set is re-read PER MERGE rather than once for the scope,
-    because this pass files into the very directory it reads: two merges of one
-    scope can carry one identity — the same behaviour re-landed — and a set
-    taken before the loop would file it twice under one name, with the second
-    write silently replacing the first.
+    Resolved ONCE per pass rather than per finding, because all four are
+    repository properties that cannot change under a pass that holds no lock on
+    them — and because re-reading `.livespec.jsonc` per finding would let two
+    readings of one file disagree while both looked healthy.
+    """
+    return DispositionContext(
+        spec_root=spec_root,
+        spec_tree=spec_tree,
+        config=_store_config_or_none(project_root=project_root),
+        anchor=detection_coverage_anchor(cwd=project_root),
+        cap=unsafe_perform_io(
+            resolve_drift_proposal_queue_cap(cwd=project_root).value_or(
+                DEFAULT_DRIFT_PROPOSAL_QUEUE_CAP
+            )
+        ),
+        author=seams.author,
+        now=seams.now,
+    )
+
+
+def _store_config_or_none(*, project_root: Path) -> StoreConfig | None:
+    """This repository's tenant connection, or None when it declares none.
+
+    FAIL-SOFT, because the drift pass's dependence on the tenant is confined to
+    the ONE record type it may write there — a held finding — and a repository
+    that declares no resolvable connection simply cannot hold. Letting the
+    resolver's refusal escape would instead kill the whole pass, including the
+    enumeration and judgement of every merge, over a question whose honest
+    answer is "this repository cannot hold a finding".
+    """
+    resolved = attempt(
+        action=lambda: store_config(repo=project_root),
+        exceptions=(ConnectionPrefixMissingError, LivespecConfigUnreadableError, OSError),
+    )
+    if isinstance(resolved, AttemptFailure):
+        return None
+    return resolved
+
+
+def _disposed(*, one: MergeOutcome, context: DispositionContext) -> MergeOutcome:
+    """One judged merge with its findings derived and disposed of.
+
+    A merge the pass could not judge is returned UNCHANGED: there is no verdict
+    to derive findings from, and a merge with no findings would otherwise read
+    as one whose every finding is filed — which is exactly the reading that
+    advances the frontier over an unprocessed merge.
     """
     if one.verdict is None:
         return one
     findings = findings_from_verdict(merge=one.merge, statement=one.statement, verdict=one.verdict)
-    already = filed_finding_identities(spec_root=spec_root)
-    for finding in findings:
-        if finding.identity in already:
-            continue
-        _ = file_drift_proposal(
-            spec_root=spec_root,
-            finding=finding,
-            document=drift_proposal_document(
-                finding=finding,
-                author=seams.author,
-                now=seams.now(),
-                targets=target_spec_files(spec_tree=spec_tree, finding=finding),
-            ),
-        )
+    disposition = dispose_findings(findings=findings, context=context)
     return MergeOutcome(
         merge=one.merge,
         statement=one.statement,
         verdict=one.verdict,
         failure=one.failure,
         findings=findings,
-        filed=tuple(finding.identity for finding in findings),
+        filed=disposition.filed,
+        held=disposition.held,
     )
 
 
