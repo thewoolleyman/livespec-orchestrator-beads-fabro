@@ -33,6 +33,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_queue_allowance import (
+    credential_queue_allowance_from_block,
+    credential_queue_allowance_journal_record,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_adapters import (
     render_acp_commands,
 )
@@ -138,6 +142,14 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
     budget = run_wall_budget_from_block(block=block, argument=run_wall_budget_argument)
     if isinstance(budget, str):
         return budget
+    # The queue allowance is graded BESIDE the wall budget and from the same
+    # block read, because the two are summed into the bounded credential-use
+    # window: resolved from two reads, a dispatch could launch against a window
+    # neither key's refusal would describe, and both reads produce a well-formed
+    # figure so nothing would announce the divergence.
+    queue_allowance = credential_queue_allowance_from_block(block=block)
+    if isinstance(queue_allowance, str):
+        return queue_allowance
     payload = materialize_workflow_payload(
         committed=committed,
         payload_dir=payload_dir,
@@ -157,6 +169,7 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
             "work_item_id": work_item_id,
             **node_timeouts_journal_record(timeouts=timeouts, nodes=payload.node_seconds),
             **run_wall_budget_journal_record(budget=budget),
+            **credential_queue_allowance_journal_record(allowance=queue_allowance),
         }
     )
     return payload
