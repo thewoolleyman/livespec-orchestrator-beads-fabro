@@ -140,7 +140,18 @@ def last_carrier_map_position(*, comments: Sequence[Mapping[str, object]]) -> in
 
 
 def last_carrier_map_carriers(*, comments: Sequence[Mapping[str, object]]) -> tuple[str, ...]:
-    """Every carrier the LATEST carrier-map event names, in written order.
+    """Every WORK-ITEM carrier the LATEST carrier-map event names, in written order.
+
+    A `plan-level proof` ENTRY IS NOT ONE, and that carve-out lives here rather
+    than at each reader. The clause gives a carrier line two forms, and reserves
+    that literal for an assertion no child carries — "the plan's own Proof of
+    Done record is what will discharge it" — so the entry records the ABSENCE of
+    a work-item carrier and is discharged by the plan's own record. It is not a
+    carrier that happens to be unplaceable: a reader returning it would make
+    every consumer responsible for recognising it, the one that forgot would wait
+    on an item no repository mints, and the assertion it marks is exactly the one
+    the proof leg exists to discharge — so that wait would hold the plan's proof
+    step behind the plan's proof step.
 
     THE LATEST EVENT AND NOT THE UNION OF ALL OF THEM. The clause makes every
     event that "adds, removes or re-words a plan assertion or changes a carrier"
@@ -201,19 +212,24 @@ def _carriers_in(*, text: str) -> tuple[str, ...]:
 
 
 def _record_carriers(*, line: str, found: list[str]) -> None:
-    """Note each carrier one `- <ordinal>: <carrier>[, <carrier>...]` line names.
+    """Note each WORK-ITEM carrier one `- <ordinal>: <carrier>[, ...]` line names.
 
     A line with no ordinal separator names no carrier, exactly as
     `_mapped_ordinals` reads it: such a line maps no assertion, so the assertion
     it was meant to map reports as unmapped at the write that recorded the event
     rather than being half-read here.
+
+    `PLAN_LEVEL_PROOF` is dropped alongside the empty token, because both say the
+    same thing in the clause's own grammar: this position names no work-item
+    carrier. The module's `last_carrier_map_carriers` docstring carries why the
+    carve-out belongs at the parse.
     """
     _, separator, named = line.removeprefix(_LIST_MARKER).partition(_ORDINAL_SEPARATOR)
     if not separator:
         return
     for token in named.split(","):
         one = token.strip()
-        if one != "" and one not in found:
+        if one not in ("", PLAN_LEVEL_PROOF) and one not in found:
             found.append(one)
 
 

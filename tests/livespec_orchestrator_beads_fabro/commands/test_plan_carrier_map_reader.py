@@ -7,6 +7,15 @@ own grammar tolerance. This module is the read half — `last_carrier_map_carrie
 is handed a carriers TUPLE and never parses one, so every shape below is a shape
 the write path cannot produce or reach.
 
+THE `plan-level proof` CASES SIT HERE RATHER THAN AT THE GATE, because the
+carve-out is at the parse: the clause reserves that literal for an assertion no
+child carries, so the entry records the ABSENCE of a work-item carrier. Its
+behavioural half is bound at the integration tier by
+`tests/integration/test_plan_resume_plan_level_proof_carrier.py`; what these
+cases pin is that the literal is dropped WITHOUT dropping the work-item carrier
+beside it — including when the two share one line, which is the shape a reader
+that stopped at the literal would get wrong while passing the per-line case.
+
 WHY THE CASES ARE MOSTLY ABOUT WHAT IS *NOT* A CARRIER. A scope-event body is
 made of list lines from its first section onward — every event opens with
 `Requirement carriers:` and `Explicit deferrals:`, each carrying bullets of
@@ -84,6 +93,16 @@ def test_the_latest_map_event_governs_and_earlier_ones_are_not_unioned() -> None
             ("cr-one",),
         ),
         ("a line naming no ordinal maps and names nothing", ("cr-one",), ()),
+        (
+            "a plan-level proof entry names no work-item carrier",
+            ("1: cr-one", "2: plan-level proof"),
+            ("cr-one",),
+        ),
+        (
+            "a plan-level proof entry beside an id on one line is still dropped",
+            ("1: plan-level proof, cr-one",),
+            ("cr-one",),
+        ),
         (
             "an empty name between separators is not a carrier",
             ("1: cr-one, , cr-two",),
