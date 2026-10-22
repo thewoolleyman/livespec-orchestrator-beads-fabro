@@ -11,6 +11,20 @@ seeded sandbox starts on — is rendered by `_dispatcher_goal_recovery` and hand
 in, for the cohesion reason that module's docstring gives: it is authored by the
 Dispatcher from the invocation's resume attributes rather than read off the item,
 so it shares neither input nor provenance with anything assembled here.
+
+WHICH COMMENTS ARE BRIEF, AND WHICH ARE RECEIPTS. Every ledger comment reaches
+the brief EXCEPT the Dispatcher's own Definition-of-Done judgement records, which
+`contracts.md`'s one-rubric-one-subject clause excludes from the node's rendered
+goal for the same reason it excludes them from the subject the host takings
+grade: a receipt is what the Dispatcher wrote ABOUT the brief, so a node that
+read one would grade a brief growing by a paragraph every time a verdict was
+recorded — and would meet, among its riders, a verdict about itself.
+
+The predicate is `_dispatcher_dod_judgement_markers.is_judgement_record`, the
+same one the subject uses. One spelling of the marker is the whole point: two
+would make the subject and the goal disagree about which comments the item's
+brief consists of, which is the disagreement between host and in-run takings
+that the clause exists to close.
 """
 
 from __future__ import annotations
@@ -20,6 +34,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
+    is_judgement_record,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_goal_recovery import (
     InterruptedAttempt,
     interrupted_attempt_section,
@@ -201,13 +218,21 @@ def render_goal(
     # lessons, comments, repo path) is neutralized in one place: the whole
     # rendered goal is what flows into fabro's MiniJinja-templated graph
     # `goal` attribute and prompts (work-item livespec-impl-beads-ajv).
-    if not comments:
+    # The RIDERS, which is every comment but the Dispatcher's own judgement
+    # receipts. An item whose comments are ALL receipts renders no section at
+    # all, exactly as one with no comment does: a heading with nothing under it
+    # would tell the node riders exist.
+    riders = tuple(comment for comment in comments if not is_judgement_record(body=comment.text))
+    if not riders:
         return escape_minijinja_literal(text=body)
     lines = [
         "",
         "Ledger comments (operator riders appended after filing; treat them as part of the brief):",
     ]
-    for index, comment in enumerate(comments, start=1):
+    # Numbered over the RIDERS rather than over the comments, so the brief
+    # carries no gap where a receipt was dropped — a gap reads as a comment the
+    # renderer lost rather than one it deliberately omitted.
+    for index, comment in enumerate(riders, start=1):
         lines.append(f"[{index}] {_comment_entry(comment=comment)}")
     return escape_minijinja_literal(text=body + "\n".join(lines) + "\n")
 
