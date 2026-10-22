@@ -59,7 +59,6 @@ from livespec_runtime.spec_stated import (
     ModelRunner,
     SpecStatedParseError,
     SpecStatedVerdict,
-    judge,
 )
 from returns.pipeline import is_successful
 
@@ -77,6 +76,9 @@ from livespec_orchestrator_beads_fabro.commands._ledger_intent_scan import (
     scan_population,
 )
 from livespec_orchestrator_beads_fabro.commands._orchestrator_shared import InjectedCliError
+from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
+    judge_within_ceiling,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 from livespec_orchestrator_beads_fabro.spec_reader import read_current_specification
@@ -238,9 +240,17 @@ def _verdict(
     judge binding that fails in some way this package has not modelled still
     unwinds and is seen, rather than being folded into "could not read a
     verdict" and reported as though the scan understood it.
+
+    THE JUDGEMENT GOES THROUGH `judge_within_ceiling` AND NEVER THROUGH `judge`
+    DIRECTLY, because the shared judgement renders the whole spec tree into
+    every prompt and this repository's tree exceeds the judging model's input
+    ceiling: a scan reaching the bare entry point judges NOTHING and reports
+    every item as one whose verdict could not be read.
     """
     return attempt(
-        action=lambda: judge(spec_tree=spec_tree, statement=statement, run_model=run_model),
+        action=lambda: judge_within_ceiling(
+            spec_tree=spec_tree, statement=statement, run_model=run_model
+        ),
         exceptions=(InjectedCliError,),
     )
 
