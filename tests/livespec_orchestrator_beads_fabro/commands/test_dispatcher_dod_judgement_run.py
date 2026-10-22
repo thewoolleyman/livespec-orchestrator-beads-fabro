@@ -9,6 +9,16 @@ asserts its text reaches the judge — a host-side paraphrase would pass every
 behavioural assertion while judging by different rules, and nothing downstream
 would catch it.
 
+THE ONE-RUBRIC CLAUSE NARROWS WHAT THE HOST CALL MAY ADD. `contracts.md`'s
+one-rubric-one-subject rule says a taking other than the node "MAY append only
+an ending contract stating the verdict form it must return", and that "any other
+guidance about how to grade a check, including any statement about where the
+capability set comes from, MUST be written into the rubric itself, so that the
+node grades by it too". So the contract is asserted here for what it must NOT
+carry as well as for what it must: a host-side sentence about the capability
+source is one the node never reads, and the two takings then grade the same
+section by different rules while every surface reports a clean pass.
+
 THE FOUR UNAVAILABLE CAUSES ARE THE OTHER LOAD-BEARING SET. The clause names
 "no eligible model, a timeout, or an unparseable verdict" and requires each to
 route the item as it would be routed without the judgement. Each is MEASURED
@@ -19,6 +29,7 @@ already took, not from a probe of our own that could disagree with it.
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -47,6 +58,33 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _GATE_PROMPT = "# Definition-of-Done gate\n\nWork through all six checks.\n"
 _HEADING = "## Scenario 174 — The judgement runs before admission"
+_RUN_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run"
+# Words that can only be in the ending contract if the contract is grading, or
+# telling the judge how to grade. `capabilit` covers both `capability` and
+# `capabilities`; `unpublished` is the report the rubric's own capability
+# section asks for; the published file's path and the committed key's name are
+# the two capability SOURCES the clause names outright.
+_GRADING_WORDS = (
+    "capabilit",
+    "unpublished",
+    "/etc/livespec",
+    "sandbox_capabilities",
+    "check 5",
+    "surface",
+)
+
+
+def _ending_contract() -> str:
+    """The published host ending contract, resolved without a top-level import.
+
+    A top-level import of a name that does not exist yet makes the Red a
+    COLLECTION error, which proves only that the name is absent. The assertion
+    below is a genuine one about the module's own surface instead.
+    """
+    module = importlib.import_module(_RUN_MODULE)
+    contract = getattr(module, "HOST_ENDING_CONTRACT", None)
+    assert isinstance(contract, str)
+    return contract
 
 
 @dataclass
@@ -142,6 +180,49 @@ def test_the_prompt_the_judge_receives_is_the_node_s_own_prompt_plus_the_subject
     # unreadable reply are the same bytes.
     assert '{"outcome": "passed"}' in prompt
     assert '"outcome": "failed"' in prompt
+
+
+def test_the_prompt_is_the_rubric_bytes_then_the_ending_contract_then_the_subject() -> None:
+    subject = "work-item: bd-ib-gob6gl"
+
+    prompt = judgement_prompt(gate_prompt=_GATE_PROMPT, subject=subject)
+
+    # EQUALITY, not containment: "the rubric's bytes unchanged, followed only by
+    # the ending contract and the subject" is a claim about the whole string, and
+    # a containment check passes for a prompt carrying a paragraph of its own
+    # between the two.
+    assert prompt == f"{_GATE_PROMPT}{_ending_contract()}{subject}\n"
+
+
+def test_the_ending_contract_states_the_verdict_form_and_grades_nothing() -> None:
+    contract = _ending_contract()
+
+    # It has to name BOTH objects: without the passing one, a clean judgement
+    # and an unreadable reply are the same bytes.
+    assert '{"outcome": "passed"}' in contract
+    assert '"outcome": "failed"' in contract
+    lowered = contract.casefold()
+    assert [word for word in _GRADING_WORDS if word in lowered] == []
+
+
+def test_the_judge_is_handed_the_executing_builds_rubric_followed_only_by_those_two(
+    tmp_path: Path,
+) -> None:
+    payload = _payload(tmp_path=tmp_path)
+
+    _verdict, runner = _take(
+        tmp_path=tmp_path,
+        result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""),
+        payload=payload,
+    )
+
+    assert runner.argv is not None
+    prompt = runner.argv[runner.argv.index("-p") + 1]
+    rubric = (
+        payload / ".fabro" / "workflows" / "implement-work-item" / "prompts" / "dod-gate.md"
+    ).read_text(encoding="utf-8")
+    assert prompt.startswith(rubric)
+    assert prompt[len(rubric) :].startswith(_ending_contract())
 
 
 def test_the_shipped_node_prompt_resolves_under_the_executing_payload() -> None:
