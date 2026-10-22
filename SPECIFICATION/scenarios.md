@@ -4668,41 +4668,49 @@ Feature: The proof chain does not lose what it found
 ## Scenario 139 — The gate checks each proof mode against the capabilities the sandbox image publishes
 
 ```gherkin
-Feature: Sandbox capabilities are published, and proof modes are checked against them in both directions
-  Scenario: A factory-captured assertion needing an unpublished capability is a gate finding
-    Given a sandbox image publishing terminal, tmux and headless_browser
+Feature: Proof modes are graded against the committed capability set, and the published file is compared with it
+  Scenario: A factory-captured assertion needing an unlisted capability is a gate finding
+    Given a repository whose committed dispatcher.sandbox_capabilities lists terminal, tmux and headless_browser
+    And a sandbox image publishing the same three names
     And an item whose factory-captured assertion is about behaviour inside herdr
     When the dod_gate node evaluates the rendered goal
     Then the run ends through the structured needs-human ending naming the assertion and the capability herdr
-    And the finding lists the remedies in order: add the capability to the image, declare host_captured with a Reason, declare human_attested only when no agent session can exercise it
-  Scenario: Publishing the capability clears the finding
-    Given the same item and a sandbox image that now publishes herdr
+    And the finding lists the remedies in order: add the capability to the image and list it in the committed array, declare host_captured with a Reason, declare human_attested only when no agent session can exercise it
+  Scenario: Publishing the capability without listing it leaves the finding
+    Given the same item, a sandbox image that now publishes herdr, and a committed array that still omits it
+    When the dod_gate node evaluates the rendered goal
+    Then the run still ends through the structured needs-human ending naming herdr
+    And the gate's output reports herdr as a configuration mismatch
+  Scenario: Listing and publishing the capability clears the finding
+    Given the same item, a committed array that now lists herdr, and a sandbox image that publishes herdr
     When the dod_gate node evaluates the rendered goal
     Then the run proceeds to the implement node
-  Scenario: An image without the capability file falls back to the committed mirror
+  Scenario: An image without the capability file is graded by the committed array
     Given a sandbox image that publishes no capability file
     And a repository whose committed dispatcher.sandbox_capabilities lists terminal and tmux
     When the dod_gate node evaluates a factory-captured assertion needing a browser
     Then the finding names headless_browser as missing
-  Scenario: With neither source the capability set is unknown and raises no missing-capability finding
-    Given a sandbox image that publishes no capability file and a repository with no committed mirror
+  Scenario: With no committed array the capability set is unknown even when the image publishes one
+    Given a repository with no committed dispatcher.sandbox_capabilities
+    And a sandbox image publishing terminal
     When the dod_gate node evaluates a factory-captured assertion needing a browser
     Then no missing-capability finding is raised
     And the gate's output reports sandbox-capabilities unpublished
-  Scenario: A mirrored capability the image does not publish is reported without failing the gate
-    Given a sandbox image publishing terminal and a committed mirror that also lists herdr
+  Scenario: A difference between the array and the published file is reported without failing the gate
+    Given a committed array listing terminal and herdr
+    And a sandbox image publishing terminal and headless_browser
     And an item whose assertions need only the terminal
     When the dod_gate node evaluates the rendered goal
-    Then the gate's output reports the mirrored name herdr as a configuration mismatch
-    And the Dispatcher journals the mismatch
+    Then the gate's output reports herdr and headless_browser as configuration mismatches
+    And the Dispatcher journals the mismatches
     And the run proceeds to the implement node
   Scenario: The capability set is read, never inferred from the item
-    Given a sandbox image publishing only terminal
+    Given a committed array and a sandbox image both listing only terminal
     And an item whose description states that the sandbox carries herdr
     When the dod_gate node evaluates its factory-captured assertion about behaviour inside herdr
     Then the finding names herdr as missing
-  Scenario: A host-captured declaration is refused where a published capability can exercise the assertion
-    Given a sandbox image publishing headless_browser
+  Scenario: A host-captured declaration is refused where a listed capability can exercise the assertion
+    Given a committed array and a sandbox image both listing headless_browser
     And an item declaring a web-interface behaviour of its own application under a Host-captured sub-heading
     When the dod_gate node evaluates the rendered goal
     Then the run ends through the structured needs-human ending naming the assertion and the capability headless_browser
@@ -6039,15 +6047,15 @@ Feature: A judged Definition-of-Done defect is found before a dispatch is spent 
     Then the dispatch proceeds as it would without the judgement
     And a ledger comment records that the pre-dispatch judgement did not run and why
   Scenario: A refused item is not judged or commented again while it is unchanged
-    Given an item whose pre-dispatch judgement refused it and whose effective criteria and referenced headings are unchanged since
-    And no specification revision has been ratified since that verdict was taken
+    Given an item whose pre-dispatch judgement refused it
+    And the subject digest and rubric digest it would now be graded by equal the refusing verdict's
     When the Dispatcher's drain enumerates dispatch candidates
     Then the item is excluded from the candidates
     And no further judgement runs and no further ledger comment is appended for it
     And needs-attention lists the item with its verdict's first remedy
-  Scenario: A refused item re-enters enumeration and is judged once after its criteria change or a revision is ratified
+  Scenario: A refused item re-enters enumeration and is judged once after its subject or rubric changes
     Given an item excluded from drain candidates by a pre-dispatch refusal
-    And its effective criteria or referenced headings have changed, or a specification revision has been ratified, since that verdict was taken
+    And the subject digest or the rubric digest it would now be graded by differs from the refusing verdict's
     And the judgement of its current criteria would still rest the item at needs-human
     When the Dispatcher's drain enumerates dispatch candidates
     Then the item is included among the candidates
@@ -8889,4 +8897,86 @@ Feature: A generated register is regenerated, never hand-merged, when a refresh 
     When the stage checks the head before the repository-declared gate
     Then the stage fails with a failed gate target named generated-record-file followed by that file's path
     And the refresh-repair brief carries that target and a regenerate line for the file
+```
+
+## Scenario 239 — Every taking of the Definition-of-Done judgement grades one subject by one rubric
+
+```gherkin
+Feature: A Definition of Done passed before dispatch is graded in-run by the same rubric on the same subject
+  As the operator of a factory
+  I want every Definition-of-Done judgement to grade the same text by the same rules
+  So that a pre-dispatch pass is not refused in-run on unchanged bytes
+
+  Scenario Outline: A host taking grades by the node's rubric and appends only its ending contract
+    Given the plugin build that will execute a dispatch carries the dod_gate node's prompt file
+    When the <taking> judgement is taken on the host
+    Then the judge's prompt carries that prompt file's bytes unchanged
+    And after it only the ending contract and the subject
+
+    Examples:
+      | taking                   |
+      | repository preflight     |
+      | pre-admission            |
+      | pre-dispatch             |
+
+  Scenario: The subject carries rider comments and omits judgement receipts
+    Given a ready item whose ledger comments include a rider appended after filing and an earlier pre-admission verdict comment
+    When the pre-dispatch judgement is taken
+    Then the subject carries the rider's text and omits the verdict comment
+    And the node's rendered goal for a dispatch of that item carries the rider and omits the verdict comment
+    And appending the new verdict comment leaves the item's subject digest unchanged
+
+  Scenario Outline: A reference line missing one of several governing headings is refused by every host taking
+    Given an item whose reference line names one of the two scenario headings that state its first assertion's behaviour
+    And a non-scenario H2 of contracts.md whose clauses govern its second assertion is not on its reference line
+    When the <taking> judgement is taken
+    Then it refuses the item naming the omitted scenario heading and that H2 verbatim, each with the remedy of adding it
+    And no factory run is created
+
+    Examples:
+      | taking               |
+      | repository preflight |
+      | pre-admission        |
+      | pre-dispatch         |
+
+  Scenario: A rider that changes the governing heading invalidates the reused governing-heading verdict
+    Given an item admitted with a governing-heading verdict naming one scenario heading for its assertion
+    And a rider is appended that narrows the assertion's behaviour to one another scenario heading states
+    And the item's effective criteria and referenced heading bodies are unchanged
+    When the pre-dispatch judgement is taken
+    Then the governing-heading verdict is taken again rather than reused
+    And a reference line that omits the newly governing heading is refused naming it
+
+  Scenario: A change to an unreferenced governing scenario invalidates an admission verdict
+    Given an item admitted by its pre-admission verdict
+    And a scenario heading the item does not reference is added to the ratified spec tree before dispatch
+    When the Dispatcher selects the item for a dispatch
+    Then the subject digest differs from the admission verdict's
+    And the judgement is taken again against the resolved commit before any claim is taken
+
+  Scenario: The judgement and the sandbox seed share one resolved commit
+    Given the default branch advances while a dispatch is being prepared
+    When the Dispatcher takes the pre-dispatch judgement and creates the run
+    Then the sandbox is seeded from the commit the judgement's spec identity was computed at
+
+  Scenario: A changed rubric invalidates a stored verdict
+    Given an item whose pre-dispatch verdict admitted it under one rubric digest
+    And the plugin build that will execute the dispatch carries a dod_gate prompt file with different bytes
+    When the Dispatcher selects the item for a dispatch
+    Then the stored verdict is not reused
+    And the judgement is taken again by the new rubric
+
+  Scenario: The host taking and the node grade the same capability set
+    Given a committed array listing terminal and herdr and a sandbox image publishing only terminal
+    And an item whose factory-captured assertion is about behaviour inside herdr
+    When the pre-dispatch judgement is taken and the run's dod_gate node grades the item
+    Then neither raises a missing-capability finding for herdr
+    And the node reports herdr as a configuration mismatch that the Dispatcher journals
+
+  Scenario: An in-run refusal of an admitted subject is recorded as a disagreement
+    Given an item whose pre-dispatch verdict admitted a subject digest under a rubric digest
+    When the run's dod_gate node refuses that same subject under that same rubric
+    Then the dispatch journal carries one dod-judgement-disagreement row naming the run, both digests, the admitting verdict's timestamp and the node's findings
+    And the item carries one judgement-record comment with the same facts
+    And the item rests at blocked with blocked_reason needs-human exactly as any dod_gate refusal rests it
 ```
