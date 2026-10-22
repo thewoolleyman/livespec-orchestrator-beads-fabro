@@ -264,6 +264,32 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   a healthy one. Scenario 238's refresh behaviour is NOT here — it is produced by
   the graph's own command scripts against a released payload, so it is captured
   on an operator host rather than proved in a sandbox.
+- `_dispatcher_record_file_regeneration.py` — the Dispatcher-materialized program
+  the refreshing stages resolve a GENERATED record file through, plus the prepare
+  step that lands it. Three modes, one per thing a refresh needs to decide:
+  `--resolve` writes every conflicted generated record file from its generator
+  and stages it, `--brief` emits the `regenerate: <path> via <generator argv>`
+  lines a refresh-repair brief carries, and `--check-head` fails a refreshed head
+  whose committed generated file is not its generator's output, with the gate
+  target `generated-record-file:<path>`, BEFORE the repository-declared gate
+  runs. Four properties an editor must not invert. It reads `path` where
+  `_dispatcher_record_files` deliberately does not, because a generator is an
+  argv that rewrites a FILE and there is no pairing without it; what it does with
+  a `path` it cannot use is the whole of the distinction — it refuses the
+  resolution outright rather than dropping the entry, since a dropped entry makes
+  the file read as UNDECLARED, which is exactly the state in which a `fix` turn
+  hand-merges the register. An UNREADABLE declaration is never an empty one: both
+  read as "no generated record file here", so collapsing them hand-merges a
+  register whose declaration was merely unparsed. A conflicted declared record
+  file naming NO generator is a refusal rather than a no-op, because only the
+  entry-wise merge that work-item bd-ib-davaxq owns resolves one and that is
+  implemented nowhere — writing the generated half of a wider conflict would
+  stage a tree still carrying the other file's markers. And `--check-head`
+  RESTORES every path it touched, comparing the tree's status against the reading
+  taken before any generator ran rather than demanding cleanliness: the
+  repository-declared gate runs immediately after it, so output left behind
+  would gate a head nobody committed, while demanding a clean tree would hold on
+  every sandbox's own provisioning residue.
 - `_dispatcher_journal_file.py` — the append-only dispatch journal and the
   attribution stamp it owns, split out of `_dispatcher_io` for the same reason
   `_dispatcher_shell_runner` was: that aggregate's import closure reaches the

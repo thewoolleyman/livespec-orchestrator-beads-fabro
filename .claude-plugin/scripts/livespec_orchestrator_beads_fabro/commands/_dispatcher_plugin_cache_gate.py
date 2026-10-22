@@ -104,6 +104,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
     publication_push_program_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    record_file_program_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
     sandbox_plugins_root_expansion,
@@ -512,11 +515,12 @@ def plugin_cache_gate_prepare_steps_block() -> str:
     A sandbox with nothing registered yet reports exactly that and exits 0.
 
     The publication-head reader, the exact-head push program, the carry-forward
-    decision and the per-assertion proof grade ride the SAME block for the reason
-    the module docstring records: all five land below one root, and a sandbox
-    given a subset fails closed at a stage whose refusal would name the wrong
-    seam. They follow the gate rather than precede it so the cheapest refusal — an
-    unrepairable plugin cache — still aborts setup first.
+    decision, the per-assertion proof grade and the generated-record-file
+    resolution ride the SAME block for the reason the module docstring records:
+    all six land below one root, and a sandbox given a subset fails closed at a
+    stage whose refusal would name the wrong seam. They follow the gate rather
+    than precede it so the cheapest refusal — an unrepairable plugin cache —
+    still aborts setup first.
     """
     lines = [
         "",
@@ -534,4 +538,5 @@ def plugin_cache_gate_prepare_steps_block() -> str:
         + publication_push_program_prepare_steps_block()
         + carry_forward_program_prepare_steps_block()
         + proof_grade_program_prepare_steps_block()
+        + record_file_program_prepare_steps_block()
     )
