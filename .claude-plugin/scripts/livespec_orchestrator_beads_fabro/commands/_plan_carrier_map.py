@@ -49,6 +49,7 @@ __all__: list[str] = [
     "PlanCarrierMapRefusedError",
     "carrier_map_block",
     "guard_carrier_map",
+    "last_carrier_map_carriers",
     "last_carrier_map_position",
 ]
 
@@ -134,12 +135,34 @@ def last_carrier_map_position(*, comments: Sequence[Mapping[str, object]]) -> in
     ledger's own ordering, where a comment's rendered timestamp is whatever its
     author wrote.
     """
-    positions = [
-        position
-        for position, comment in enumerate(comments)
-        if _is_carrier_map_body(text=comment.get("text"))
-    ]
-    return positions[-1] if positions else None
+    found = _carrier_map_bodies(comments=comments)
+    return found[-1][0] if found else None
+
+
+def last_carrier_map_carriers(*, comments: Sequence[Mapping[str, object]]) -> tuple[str, ...]:
+    """Every carrier the LATEST carrier-map event names, in written order.
+
+    THE LATEST EVENT AND NOT THE UNION OF ALL OF THEM. The clause makes every
+    event that "adds, removes or re-words a plan assertion or changes a carrier"
+    a carrier-map event, and such an event RESTATES the whole map — so a carrier
+    a later event dropped is no longer a carrier of this plan, and a union would
+    make a plan wait on work its own maintainer re-assigned.
+
+    Returned as written, with duplicates collapsed on first appearance. One
+    carrier legitimately carries several assertions, and a reader waiting on it
+    twice would wait on the same item under two obligations; collapsing on FIRST
+    appearance keeps the order the maintainer wrote, which is the only order the
+    map has.
+
+    The BODY is taken from the same scan that located the event rather than
+    re-read out of the comment list at the position that scan returned. A
+    position plus a second read is two readings of one comment, and the second
+    one has to grade a text the first already established — an arm no input can
+    reach, which is either dead code or a lie about which reading is
+    authoritative.
+    """
+    found = _carrier_map_bodies(comments=comments)
+    return _carriers_in(text=found[-1][1]) if found else ()
 
 
 def carrier_map_block(*, carriers: tuple[str, ...]) -> str:
@@ -155,9 +178,58 @@ def carrier_map_block(*, carriers: tuple[str, ...]) -> str:
     return "\n".join(lines)
 
 
-def _is_carrier_map_body(*, text: object) -> bool:
-    """Whether one comment body carries the `carriers:` block, matched by line."""
-    return isinstance(text, str) and CARRIERS_BLOCK_PREFIX in text.splitlines()
+def _carriers_in(*, text: str) -> tuple[str, ...]:
+    """Every carrier token the `carriers:` block of one event body lists.
+
+    The block is read POSITIONALLY — the list lines that follow the `carriers:`
+    line, up to the first line that is not one — because the rest of the body is
+    also made of list lines: every scope event opens with a `Requirement
+    carriers:` section and an `Explicit deferrals:` section, each carrying its own
+    bullets. A reader that collected every `- ` line of the body would read a
+    maintainer's requirement prose as a carrier id.
+    """
+    found: list[str] = []
+    listed = False
+    for line in text.splitlines():
+        if line == CARRIERS_BLOCK_PREFIX:
+            listed = True
+        elif listed and line.startswith(_LIST_MARKER):
+            _record_carriers(line=line, found=found)
+        elif listed:
+            break
+    return tuple(found)
+
+
+def _record_carriers(*, line: str, found: list[str]) -> None:
+    """Note each carrier one `- <ordinal>: <carrier>[, <carrier>...]` line names.
+
+    A line with no ordinal separator names no carrier, exactly as
+    `_mapped_ordinals` reads it: such a line maps no assertion, so the assertion
+    it was meant to map reports as unmapped at the write that recorded the event
+    rather than being half-read here.
+    """
+    _, separator, named = line.removeprefix(_LIST_MARKER).partition(_ORDINAL_SEPARATOR)
+    if not separator:
+        return
+    for token in named.split(","):
+        one = token.strip()
+        if one != "" and one not in found:
+            found.append(one)
+
+
+def _carrier_map_bodies(*, comments: Sequence[Mapping[str, object]]) -> tuple[tuple[int, str], ...]:
+    """Each carrier-map event's position and body, oldest first, matched BY LINE.
+
+    A comment carrying no readable text is not a carrier-map event at all —
+    `omitempty`-sparse records omit the key rather than carrying an empty one —
+    so such a comment never displaces the map a real event recorded.
+    """
+    found: list[tuple[int, str]] = []
+    for position, comment in enumerate(comments):
+        text = comment.get("text")
+        if isinstance(text, str) and CARRIERS_BLOCK_PREFIX in text.splitlines():
+            found.append((position, text))
+    return tuple(found)
 
 
 def _mapped_ordinals(*, carriers: tuple[str, ...]) -> frozenset[int]:
