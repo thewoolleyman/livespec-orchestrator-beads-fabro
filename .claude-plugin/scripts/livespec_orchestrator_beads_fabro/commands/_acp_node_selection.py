@@ -243,7 +243,9 @@ def selected_candidate_identities(
     }
 
 
-def acp_node_selection_record(*, selected: Mapping[str, SelectedAcpCandidate]) -> dict[str, object]:
+def acp_node_selection_record(
+    *, selected: Mapping[str, SelectedAcpCandidate], dispatch_id: str | None = None
+) -> dict[str, object]:
     """ONE record per dispatch, carrying every node's selection.
 
     ONE RECORD AND NOT ONE PER NODE. "which candidate did this dispatch select"
@@ -263,10 +265,13 @@ def acp_node_selection_record(*, selected: Mapping[str, SelectedAcpCandidate]) -
     selection passed over, so `selected_index` is never a number with nothing
     behind it.
     """
-    return {
+    record: dict[str, object] = {
         "stage": ACP_NODE_SELECTION_STAGE,
         "selections": {node: _selection_fields(one=one) for node, one in sorted(selected.items())},
     }
+    if dispatch_id is not None:
+        record["dispatch_id"] = dispatch_id
+    return record
 
 
 def _selection_fields(*, one: SelectedAcpCandidate) -> dict[str, object]:

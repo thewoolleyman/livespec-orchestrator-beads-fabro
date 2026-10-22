@@ -131,7 +131,12 @@ def record_dispatch(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict` is 
             journal=journal, work_item_id=item.id, stage="ledger-labels", detail=raw_labels
         )
     materialized = materialize_dispatch(
-        args=args, repo=repo, work_item_id=item.id, journal=journal, verdict=verdict
+        args=args,
+        repo=repo,
+        work_item_id=item.id,
+        journal=journal,
+        dispatch_id=identity.dispatch_id,
+        verdict=verdict,
     )
     if isinstance(materialized, MaterializationRefusal):
         return failed_dispatch_outcome(

@@ -45,6 +45,7 @@ from livespec_orchestrator_beads_fabro.commands._run_attribution import RunAttri
 
 __all__: list[str] = [
     "WatchPoll",
+    "WatchPollBinding",
     "observe_watch_poll",
 ]
 
@@ -73,14 +74,22 @@ class WatchPoll:
     attribution: RunAttribution
 
 
+@dataclass(frozen=True, kw_only=True)
+class WatchPollBinding:
+    """The evolving run binding and immutable correlation of one watch loop."""
+
+    attribution: RunAttribution
+    bound_run_id: str | None
+    dispatch_id: str | None
+
+
 def observe_watch_poll(
     *,
     plan: DispatchPlan,
     runner: CommandRunner,
     journal: JournalWriter,
     port: FabroPort,
-    attribution: RunAttribution,
-    bound_run_id: str | None,
+    binding: WatchPollBinding,
 ) -> WatchPoll:
     """Take this poll's observation, reaping the run if its item moved on.
 
@@ -98,8 +107,8 @@ def observe_watch_poll(
         work_item_id=plan.work_item_id,
         port=port,
         journal=journal,
-        attribution=attribution,
-        bound_run_id=bound_run_id,
+        attribution=binding.attribution,
+        bound_run_id=binding.bound_run_id,
     )
     run = observed.run
     # THE STAMP PRECEDES THE REAP, and the order is the original loop's rather
@@ -108,7 +117,13 @@ def observe_watch_poll(
     # and it is written while the run is still alive; a reap taken first would
     # skip it for exactly the runs whose attribution is hardest to recover
     # afterwards, because the run is about to be destroyed.
-    stamp = stamped_attribution(plan=plan, journal=journal, run=run, attribution=attribution)
+    stamp = stamped_attribution(
+        plan=plan,
+        journal=journal,
+        run=run,
+        attribution=binding.attribution,
+        dispatch_id=binding.dispatch_id,
+    )
     return WatchPoll(
         run=run,
         recorded_running_epoch=recorded_running_epoch(payload=observed.record),
