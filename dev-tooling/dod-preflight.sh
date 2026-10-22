@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
-# STOPGAP pre-dispatch Definition-of-Done judgement (maintainer ruling 2026-10-20,
-# stopgap 2 on plan epic bd-ib-7sjdzv). Retire it when bd-ib-7f66ar ships the
-# ratified v132/v141 judgement inside the Dispatcher.
+# The REPOSITORY PREFLIGHT taking of the Definition-of-Done judgement.
 #
-# Runs the factory's OWN `dod_gate` prompt on the host, over the item's title,
-# description and ledger-comment riders, so a Definition of Done the gate would
-# refuse is caught for one model call instead of a factory slot. It is not a
-# second copy of the gate: the prompt is read from the orchestrator build the
-# CURRENT repository has registered, so it changes whenever the gate does.
+# `contracts.md`'s one-rubric-one-subject clause names three HOST TAKINGS — this
+# preflight, the Dispatcher's pre-admission judgement and its pre-dispatch
+# judgement — and binds all three to ONE rubric and ONE subject: the `dod_gate`
+# node's own prompt file, read from the plugin build that will execute the
+# dispatch, over the item's effective criteria, the body of each heading its
+# reference line names, and its operator riders. A taking other than the node may
+# append ONLY an ending contract stating the verdict form it must return.
+#
+# So this script composes NOTHING. It resolves the registered build, asks the
+# package for the prompt, and runs it on every candidate of the gate's chain.
+# Everything it used to assemble itself — a `Goal:` preamble built out of the
+# item's fields, a capability-source sentence, a paragraph about how to grade
+# proof-mode feasibility — was prose the node has never read. Measured on this
+# repository's own items between 2026-10-22 00:21Z and 08:13Z, four preflight
+# PASSes were followed by an in-run refusal on unchanged Definition-of-Done
+# bytes, and twice the same leg returned opposite verdicts on identical text.
 #
 # Usage, from the governed repository's root, under its credential wrapper:
 #   with-<project>-env.sh -- <orchestrator checkout>/dev-tooling/dod-preflight.sh <item-id> [<description-file>]
@@ -25,7 +34,7 @@ override="${2:-}"
 repo_root=$(git rev-parse --show-toplevel)
 
 # The orchestrator build THIS repository has registered, read from Claude Code's
-# install registry rather than hard-coded, so a release moves the prompt with it.
+# install registry rather than hard-coded, so a release moves the rubric with it.
 install_root=$(python3 - "$repo_root" <<'PY'
 import json, os, sys
 repo = os.path.realpath(sys.argv[1])
@@ -38,20 +47,21 @@ if not paths:
 print(paths[0])
 PY
 ) || exit 2
-prompt_file="$install_root/.fabro/workflows/implement-work-item/prompts/dod-gate.md"
-[ -r "$prompt_file" ] || { echo "dod-preflight: prompt not readable: $prompt_file" >&2; exit 2; }
 
-# EVERY candidate of the in-run gate's chain, and the capability set it can resolve.
-# Measured 2026-10-20 over five PASS-then-refused items. A hard-coded `sonnet` here
-# graded more leniently than the gate's `acp_nodes.dod_gate` route (References and
-# deliverable-policy misses). A governed repository with no committed
-# `dispatcher.sandbox_capabilities` made this host call withhold check 5 while the
-# sandbox, which publishes the file, ran it. And the admission session-headroom filter
-# can skip the claude-acp primary at dispatch time, so the gate then runs a FALLBACK
-# (bd-ib-h7iaai: the gate ran codex-acp gpt-5.6-terra while this script graded on
-# claude-opus-5). Which candidate a dispatch will select is not knowable here, so the
-# judgement runs on every candidate in the chain and passes only if all of them pass.
-# It fails closed when the capability set cannot be resolved.
+# EVERY candidate of the in-run gate's chain. Measured 2026-10-20 over five
+# PASS-then-refused items. A hard-coded `sonnet` here graded more leniently than
+# the gate's `acp_nodes.dod_gate` route (References and deliverable-policy
+# misses). And the admission session-headroom filter can skip the claude-acp
+# primary at dispatch time, so the gate then runs a FALLBACK (bd-ib-h7iaai: the
+# gate ran codex-acp gpt-5.6-terra while this script graded on claude-opus-5).
+# Which candidate a dispatch will select is not knowable here, so the judgement
+# runs on every candidate in the chain and passes only if all of them pass.
+#
+# IT NO LONGER REFUSES ON AN ABSENT `dispatcher.sandbox_capabilities` ARRAY. That
+# refusal was this script grading the capability question itself, which is the
+# rubric's to grade: the rubric resolves the set in its own order and reports
+# `sandbox-capabilities: unpublished` where neither source answers, and the node
+# grades by exactly that.
 routes=$(python3 - "$install_root" "$repo_root" <<'PY'
 import sys
 from pathlib import Path
@@ -59,9 +69,6 @@ sys.path.insert(0, f"{sys.argv[1]}/scripts")
 sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 block = dispatcher_block(cwd=Path(sys.argv[2]))
-if not block.get("sandbox_capabilities"):
-    sys.exit("dod-preflight: the governed repository commits no dispatcher.sandbox_capabilities, "
-             "so this host cannot run the gate's capability check (check 5); publish the mirror first")
 # No entry means the workflow's built-in dod_gate default, its review_adapter.
 entry = (block.get("acp_nodes") or {}).get("dod_gate") or {
     "agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high"}
@@ -73,35 +80,56 @@ PY
 ) || exit 2
 [ -n "$routes" ] || exit 2
 
-# The same three parts of the run goal the gate grades: title, description and riders.
-goal=$(python3 - "$item" "$override" <<'PY'
-import json, subprocess, sys
-item, override = sys.argv[1], sys.argv[2]
-record = json.loads(subprocess.check_output(["bd", "show", item, "--json"], text=True))[0]
-comments = json.loads(subprocess.check_output(["bd", "comments", item, "--json"], text=True))
-description = open(override, encoding="utf-8").read() if override else record.get("description") or ""
-lines = [f"Work-item: {item}", f"Title: {record['title']}", "", "Description:", description, "",
-         "Ledger comments (operator riders appended after filing; treat them as part of the brief):"]
-lines += [f"[{n}] ({c.get('author')}, {c.get('created_at')}) {c.get('text', '')}"
-          for n, c in enumerate(comments, 1)]
-print("\n".join(lines))
-PY
-) || exit 2
-
+# THE WHOLE PROMPT, composed by the PACKAGE rather than assembled here:
+# `judgement_prompt` over `judgement_rubric` and `judgement_subject`, which is
+# the one assembly every host taking uses. A second copy here is a second set of
+# rules, and the node reads neither of them.
 judgement_input=$(mktemp)
 trap 'rm -f "$judgement_input" "$judgement_input.last"' EXIT
-{
-  printf 'Goal: %s\n\n\n' "$goal"
-  cat "$prompt_file"
-  printf '\n\nYou are running on the HOST as a pre-dispatch check, not inside a sandbox, so /etc/livespec/sandbox-capabilities is absent: use the committed mirror. Read files only. End with the JSON failure line on any finding, or with the single word PASS alone on the last line.\n'
-  # Measured 2026-10-20: two items passed check 5 on wording while their proof
-  # needed a surface no sandbox capability provides. bd-ib-qnokup (R351) named
-  # rules of stage prompts the item itself changes and failed at dod_gate.
-  # livespec-dev-tooling-cmgqnz (R353) named a Job on the k3s gates cluster; it
-  # passed dod_gate too and was refused only at proof_capture, after a 74 m
-  # implement. So the host leg is told to name the surface, not grade wording.
-  printf '\nFor check 5, name the SURFACE each factory_captured assertion'\''s proof needs, concretely, before judging it, and do not grade the wording alone. A surface no sandbox capability provides makes the assertion a check 5 finding, even when the assertion reads as a plain command. These surfaces include: an external cluster or service (for example a Kubernetes gates cluster or a Job that exists only after a real submit); a credential or kubeconfig the sandbox is not given; a host service or operator-host state; and any effect of a released build. The last class includes behaviour that a stage prompt or workflow file under .claude-plugin/.fabro/ produces when this item changes that file. The run carrying the change cannot exercise it, because such a change takes effect only in a later run on the released build (contracts.md "Self-contained plugin dispatch", Scenario 54), and Scenario 137 forbids a fixture substitute. Give the host_captured remedy with a Reason line naming the host surface or the first post-release run that exercises it.\n'
-} > "$judgement_input"
+python3 - "$install_root" "$repo_root" "$item" "$override" > "$judgement_input" <<'PROMPT_PY'
+import sys
+from dataclasses import replace
+from pathlib import Path
+
+sys.path.insert(0, f"{sys.argv[1]}/scripts")
+sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
+
+from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
+    judgement_subject,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
+    judgement_prompt,
+    judgement_rubric,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
+
+install_root, repo_root, item_id, override = sys.argv[1:5]
+repo = Path(repo_root)
+config = store_config(repo=repo)
+items = materialize_work_items(records=read_work_items(path=config))
+if item_id not in items:
+    sys.exit(f"dod-preflight: {item_id} is not a work-item of this repository's tenant")
+item = items[item_id]
+# The optional description file is substituted into the ITEM rather than into a
+# rendered subject, so the same ratified parse reads the candidate edit.
+if override:
+    item = replace(item, description=Path(override).read_text(encoding="utf-8"))
+comments = tuple(
+    comment.text for comment in read_work_item_comments(path=config, work_item_id=item_id)
+)
+rubric = judgement_rubric(payload_root=Path(install_root))
+if rubric is None:
+    sys.exit(f"dod-preflight: the registered build ships no readable rubric under {install_root}")
+sys.stdout.write(
+    judgement_prompt(
+        gate_prompt=rubric,
+        subject=judgement_subject(item=item, cwd=repo, comments=comments),
+    )
+)
+PROMPT_PY
+[ -s "$judgement_input" ] || exit 2
 
 # The claude leg authenticates as the account a dispatch would, through the
 # Dispatcher's own selector, not as whatever bare CLAUDE_CODE_OAUTH_TOKEN the
@@ -153,9 +181,23 @@ while read -r agent model effort; do
     { sub(/\r$/, ""); sub(/^[ \t]+/, ""); sub(/[ \t]+$/, "") }
     NF && !/^(```|~~~)/ { line = $0 }
     END { print line }')
-  case "$last" in
-    PASS) ;;
-    *'"outcome"'*'"failed"'*) status=1 ;;
+  # READ by the package, for the same reason the prompt is COMPOSED by it: the
+  # ending contract states one verdict form, and `parse_judgement_reply` is the
+  # one reader of it. A second parse here is how this script came to accept a
+  # bare `PASS` the contract never asked any judge to write.
+  outcome=$(python3 - "$install_root" "$last" <<'VERDICT_PY'
+import sys
+sys.path.insert(0, f"{sys.argv[1]}/scripts")
+sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
+    parse_judgement_reply,
+)
+print(parse_judgement_reply(reply=sys.argv[2]).outcome)
+VERDICT_PY
+) || exit 2
+  case "$outcome" in
+    admitted) ;;
+    rests-at-needs-human) status=1 ;;
     *) echo "dod-preflight: $agent $model gave no verdict line; treat as not run" >&2; exit 2 ;;
   esac
 done <<< "$routes"
