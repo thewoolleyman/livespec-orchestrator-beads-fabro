@@ -8792,3 +8792,21 @@ Feature: A capture that names no run is re-captured instead of stranding the run
     When the review node ends with that defect as its only blocking finding
     Then the run routes to non_converged without entering proof_capture
 ```
+
+## Scenario 236 — A staged Fabro source checkout carries the ratified worktree and branch names
+
+```gherkin
+Feature: The staged source checkout's names are a stable interface
+  As the maintainer of a tool that must recognise a factory-owned worktree
+  I want the Dispatcher's staged source checkout to carry fixed, ratified names
+  So that a worktree reaper can recognise and skip a live factory checkout by its name
+
+  Scenario: Staging a run's source creates a fabro-source worktree on a livespec/source branch
+    Given a governed repository checked out in a directory named "governed-repo"
+    And a dispatch whose source the Dispatcher stages in a disposable worktree
+    When the Dispatcher creates the staged source checkout
+    Then the checkout's directory is "fabro-source-" followed by 32 lowercase hexadecimal characters
+    And that directory sits under the per-user worktree root, inside a directory named "governed-repo"
+    And the checkout is on a new local branch named "livespec/source/" followed by the same 32 characters
+    And the staged branch is not the run's publish branch
+```

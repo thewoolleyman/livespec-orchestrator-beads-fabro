@@ -1069,5 +1069,12 @@
     "heading": "## Scenario 235 \u2014 A captured comment that does not parse as a record is a proof-record finding",
     "work_item": "bd-ib-f7lrks",
     "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 236 \u2014 A staged Fabro source checkout carries the ratified worktree and branch names",
+    "work_item": "bd-ib-7pags",
+    "first_seen": "2026-10-22"
   }
 ]

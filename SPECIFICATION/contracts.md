@@ -5423,6 +5423,22 @@ is a governed-repository obligation the adopter fixture (§"Governed-repository
 integration constraints") exercises. The marker is local git config only and
 never leaves the ephemeral sandbox (a push carries refs, not config).
 
+**Staged source checkout names.** When the Dispatcher stages a Fabro run's
+source in a disposable worktree, so that the engine's pre-run push runs from a
+checkout that is not the primary, it MUST create that worktree at
+`<worktree-root>/<repository-directory-name>/fabro-source-<id>` on a new local
+branch named `livespec/source/<id>`. Here `<worktree-root>` is the per-user
+worktree root `~/.worktrees`, `<repository-directory-name>` is the final path
+component of the dispatching repository's checkout, and `<id>` is ONE value,
+freshly generated for each staging, written as 32 lowercase hexadecimal
+characters and shared by the directory name and the branch name. The staged
+branch is never the run's publish branch. These names are a stable interface
+that other repositories rely on: livespec-dev-tooling's worktree-pack `reap`
+verb identifies a factory-owned source checkout by the directory-name prefix
+`fabro-source-` and never removes one. The Dispatcher MUST NOT change either
+name, or the format of `<id>`, except by ratifying a change to this paragraph
+that names the consumers it affects.
+
 **Members-and-adopters-identical audit of the step and preflight set.**
 Every obligation in the named closed step set, and the dispatch-time
 preflight chain that feeds it, is dispositioned here against the principle
