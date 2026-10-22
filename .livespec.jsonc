@@ -158,6 +158,21 @@
       "github_url": "https://github.com/thewoolleyman/livespec-dev-tooling",
       "local_clone": "/data/projects/livespec-dev-tooling",
       "default_branch": "master"
+    },
+    "livespec-driver-codex": {
+      "github_url": "https://github.com/thewoolleyman/livespec-driver-codex",
+      "local_clone": "/data/projects/livespec-driver-codex",
+      "default_branch": "master"
+    },
+    "livespec-driver-pi": {
+      "github_url": "https://github.com/thewoolleyman/livespec-driver-pi",
+      "local_clone": "/data/projects/livespec-driver-pi",
+      "default_branch": "master"
+    },
+    "livespec-console-beads-fabro": {
+      "github_url": "https://github.com/thewoolleyman/livespec-console-beads-fabro",
+      "local_clone": "/data/projects/livespec-console-beads-fabro",
+      "default_branch": "master"
     }
   },
   "livespec-orchestrator-beads-fabro": {
