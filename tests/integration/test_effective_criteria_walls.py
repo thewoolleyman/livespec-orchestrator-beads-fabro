@@ -14,6 +14,14 @@ replaced by a recording stand-in so no fabro sandbox launches:
   text is followed through all four gates — the capture front-end's parse, the
   entry-to-`ready` wall, the pre-dispatch wall, and the post-merge acceptance
   pass — and the assertions each resolves are compared for equality.
+- "Scenario 131 — The Definition of Done gate admits a coherent item, refuses a
+  malformed one host-side, and rests an incoherent one at needs-human": a
+  section carrying a line that is neither a bullet, a sub-heading or its
+  `Reason:` line, nor the one `References:` line is refused host-side through
+  the same exit code and the same recorded-launch control, with the offending
+  line quoted verbatim. That item's bullet IS gradeable, so the
+  empty-criteria refusal cannot fire and the stray line is the only thing the
+  wall can be refusing on.
 
 The recording stand-in is what makes "before any spend" checkable rather than
 asserted: a refusal that still created a run would show up as a recorded launch,
@@ -81,6 +89,22 @@ _CRITERION = "The dispatched slice is verified green by the check suite."
 # reference-line PRESENCE is what is being satisfied.
 _EMPTY_DEFINITION_OF_DONE = (
     "## Definition of Done\n" "\n" "References: ## Effective acceptance criteria\n"
+)
+# The shape measured on `livespec-overseer`'s `overseer-uzvcbn.5`: a flush-left
+# provenance paragraph left inside the section, below the bullets. It is neither
+# a bullet, a sub-heading or its `Reason:` line, nor the reference line, so the
+# section's grammar does not admit it — and the deterministic projection the LAST
+# node of the run reads used to carry it as one more `factory_captured`
+# assertion, three and three quarter hours after the dispatch was admitted.
+_STRAY_SECTION_LINE = "Governing text: the supervision round, as ratified under v064."
+_SECTION_WITH_A_STRAY_LINE = (
+    "## Definition of Done\n"
+    "\n"
+    "- The dispatched slice records one line in the marker file.\n"
+    "\n"
+    f"{_STRAY_SECTION_LINE}\n"
+    "\n"
+    "References: ## Effective acceptance criteria\n"
 )
 _EXIT_CRITERIA_BODY = (
     "Implement the slice.\n"
@@ -321,6 +345,34 @@ def test_the_pre_dispatch_wall_refuses_a_targeted_dispatch_with_exit_five(
     stderr = capsys.readouterr().err
     assert item.id in stderr
     assert "empty or ungradeable" in stderr
+    assert _stored()[item.id].status == "ready"
+
+
+def test_a_stray_section_line_refuses_the_targeted_dispatch_with_exit_five(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(description=f"Implement the slice.\n\n{_SECTION_WITH_A_STRAY_LINE}")
+    append_work_item(path=_config(), item=item)
+    calls: list[str] = []
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _recording(calls=calls))
+
+    exit_code = main(
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+    )
+
+    assert exit_code == _EXIT_UNGRADEABLE_CRITERIA
+    assert exit_code != _EXIT_PRECONDITION_ERROR
+    # The same recorded-launch control the empty-criteria case uses: a refusal
+    # that still created a run is what the exit code alone cannot distinguish.
+    assert calls == []
+    stderr = capsys.readouterr().err
+    assert item.id in stderr
+    # VERBATIM, because the remedy is to move or delete that one line and a
+    # paraphrase would send the author hunting for it.
+    assert repr(_STRAY_SECTION_LINE) in stderr
     assert _stored()[item.id].status == "ready"
 
 
