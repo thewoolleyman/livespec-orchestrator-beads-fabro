@@ -143,6 +143,35 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   in-memory `index: dict[str, WorkItem]`); callers (`next`,
   `list-work-items`, the Dispatcher) import them from there.
 - `_jsonc.py` — JSONC parsing for `.livespec.jsonc`.
+- The LEDGER-INTENT SCAN of `SPECIFICATION/contracts.md`
+  §"`capture-spec-drift`" (`bd-ib-dzk5jd`, Scenario 38) — the second of the two
+  drift sources, ratified in v026 and unbuilt until now. Three cohesive
+  modules, split pure-from-impure the usual way, and the dependency direction
+  reads bottom-up: `_ledger_intent_cut` (the instant one ratified spec version
+  was CUT, read off its revision record's `revised_at` front matter) →
+  `_ledger_intent_scan` (PURE: the population rule, the statement the four
+  intent fields render into, and the finding) → `_orchestrator_ledger_intent`
+  (the `orchestrator ledger-intent-scan` subcommand: the injected judge, the
+  store read, the detection-coverage record and the envelope).
+  Five properties an editor must not invert. The FOUR intent fields are judged
+  as ONE statement rather than four, because the clause names them as one
+  item's intent and a title and its acceptance criteria are halves of one
+  behaviour — judging either alone reports `unstated` for intent the other
+  states. The stored TYPE is neither rendered into the statement nor allowed to
+  filter: "an item's type is never a detection exclusion" is the clause's own
+  wording, and `bug` / `chore` / `non_functional` is a DISPATCH exemption that
+  lives elsewhere. An UNRESOLVABLE cut REFUSES rather than defaulting, because
+  both available sentinels are silently wrong in opposite directions — the
+  epoch admits every item the tenant holds, so the scan reports a population
+  nobody scoped, and a far-future instant admits none, so it reports the clean
+  empty answer on exactly the population it exists to cover. An UNREADABLE
+  verdict exits the wire-shape code naming each item it could not judge, never
+  reporting those items as carrying no drift, which is the one answer a
+  detector must make impossible. And the coverage record is written through the
+  SHARED `_detection_coverage.record_detection_run` and never assembled here:
+  that writer is the only surface that may decide whether a completed record is
+  claimable, so a scan that judged its own completeness would be the second
+  authority on the all-or-nothing rule.
 - `_dispatcher_sandbox_worktree_pack.py` — the gitignored worktree-discipline pack
   a fleet-default sandbox installs before anything reads it (`bd-ib-tlmq3m`,
   Scenarios 30 and 96), plus the premise that decides whether it is owed. PURE,
