@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.233.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.233.0...v0.233.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* read the plan item_status obligation through the status adapter ([1667392](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1667392f5cad0ea6b3cfe86afac3118542db9900))
+
 ## [0.233.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.232.1...v0.233.0) (2026-10-22)
 
 
