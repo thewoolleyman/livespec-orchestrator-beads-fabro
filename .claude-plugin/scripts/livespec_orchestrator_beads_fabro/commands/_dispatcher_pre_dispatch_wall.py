@@ -100,6 +100,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_reclaim import (
     reclaim_stale_publish_branches,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_wall import (
+    spec_change_tier_refusal,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     ConnectionPrefixMissingError,
@@ -169,6 +172,16 @@ def pre_dispatch_wall_exit(
     already have refused the selection, and before the two rows that spend more
     than it does — the proof-assets gate, which CREATES a repository
     prerelease, and the Codex gate, which spends a bounded provider renewal.
+
+    The SPEC-CHANGE-TIER row follows, and it is the last of the free reads. It
+    refuses a held item with the same exit code the two criteria rows carry,
+    because the exit-code enumeration ratifies one code for all three. Its
+    position is cheap-first like the rest of this table and ALSO fail-closed by
+    construction: it spends no model call and reaches no provider — the clause
+    makes the hold "a read of the spec history [that] needs no model" — so it
+    cannot be weakened by an outage, and putting it ahead of the two rows that
+    spend more than it does keeps a dispatch that can never run from creating a
+    repository prerelease or a bounded provider renewal first.
 
     The proof-ASSETS gate follows (S5 / bd-ib-b4u6b7): an item carrying a
     `factory_captured` assertion needs this repository's standing proof-assets
@@ -350,6 +363,11 @@ def _refusing_sequence(
         (
             lambda: definition_of_done_workflow_refusal(args=args, repo=repo, items=items),
             EXIT_PRECONDITION_ERROR,
+            False,
+        ),
+        (
+            lambda: spec_change_tier_refusal(repo=repo, items=items),
+            EXIT_UNGRADEABLE_CRITERIA,
             False,
         ),
         (
