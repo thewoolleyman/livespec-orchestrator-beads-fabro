@@ -1600,6 +1600,51 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   ending. And the observation ids it names are PROVENANCE — what the probe was
   FOR — never a claim about what it cleared, which `retired_by_success` derives
   from the attempt's own instant.
+- `_acp_availability_probe_run.py` — PERFORMING the turn, and the only half that
+  reaches a factory. A HOST-SIDE probe is not available to us, which is why
+  this is a run: the clause permits one "only when these execution properties
+  are equivalent and its outcome is durably observable through the same
+  authoritative evidence source", and that source is the factory's own run
+  records.
+  TERMINATION IS PERFORMED BEFORE ANYTHING IS READ, which is the mechanics
+  worth reading twice. The bound must include "termination of unfinished probe
+  work", so a probe past it is reaped FIRST — `fabro rm -f`, the watchdog's own
+  verb — and its cost reported unobservable. Reading first would buy one cost
+  figure at the price of leaving an adapter running against a provider, and a
+  terminated probe's cost is the one figure nobody acts on.
+  FOUR READINGS AN EDITOR MUST NOT LOOSEN. A timed-out launch is exit 124,
+  which is `ShellCommandRunner`'s OWN mapping and is exported so the bound's
+  test reads that value rather than a literal beside it. The run id is read off
+  a PARTIAL launch deliberately, because `fabro run` prints it early and it is
+  the only thing that can reap the work — and a launch carrying none reports
+  `terminated=False`, since there is unfinished work this Dispatcher cannot
+  name and a record claiming otherwise is the one lie a later reader cannot
+  check. The prompt boundary is read from the `agent.acp.started` EVENT'S
+  PRESENCE rather than through `scan_acp_events`, which requires
+  `candidate_index` before it admits a start: this asks the strictly weaker
+  question the adapter-launch clause answers, so a pre-chain engine's start
+  still tells a created session from an adapter that exited. And the node
+  outcome is keyed through `fabro_stage_node`, so the Petri-era `confirm@1` and
+  a pinned-engine `confirm` both resolve — comparing the node id against the
+  raw key matches nothing, which would report every successful probe as
+  unconfirmed.
+  TWO REFUSALS RETURN BEFORE ANY RUN EXISTS: the candidate the probe cannot
+  faithfully run, and a repository declaring no participating factory — which
+  is NOT a fallback to a host-side probe, because such a repository has no
+  authoritative source for the confirmation to become evidence in.
+- `_acp_preflight_skips.py` — the VALUES one preflight evaluation is made of,
+  split out of `_acp_candidate_preflight` by cohesion when the confirmation
+  seam took that module past the LLOC ceiling: what a skip IS, the three
+  disjoint field sets the three kinds populate, the factory for each, and the
+  two carriers one node's filtering reads and returns. The filter imports these
+  and re-exports the public names, so every caller's import is unchanged; every
+  name crossing the boundary is PUBLIC, because a cross-module private import
+  is rejected by pyright strict and the `private_calls` check alike. THE THREE
+  KINDS KEEP DISJOINT FIELDS, which is why there are three factories and not
+  one taking every field: one factory accepting all of them is how a durable
+  typed cause comes to be written onto an ephemeral skip, after which a
+  credential merely rate-limited on this host is indistinguishable, downstream,
+  from an entitlement the provider revoked.
 - The FACTORY-NATIVE OPERATOR CLEARANCE of the same paragraph's "an operator
   clearance by a minimal factory-native record whose recorded outcome carries
   the clearance's exact identity, actor, time, and reason" (`bd-ib-dtfv2p`,
