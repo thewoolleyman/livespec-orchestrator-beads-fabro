@@ -45,7 +45,14 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro._store_dispatch_claim import claim_stamp_from_record
 from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_factory
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_stamp import (
+    stamp_pending_claim,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import build_plan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_stamp import stamp_dispatch_run
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 # Two factories the registry maps, and a third the repository commits itself.
@@ -65,6 +72,8 @@ _FLEET = "fleet"
 _TENANT = "livespec-orch-beads-fabro"
 _PREFIX = "bd-ib"
 _WORK_ITEM_ID = "bd-ib-ep4eeo"
+_DISPATCH_ID = "01M5MXVMK95EKAGEV5AX2MFTQJ"
+_RUN_ID = "01M580PF02S0VMFKX5HPB05Z8C"
 
 
 @pytest.fixture(autouse=True)
@@ -187,3 +196,100 @@ def test_a_fleet_default_resolves_to_the_factory_the_registry_designates(
 
     assert target.name == _PETRI
     assert target.server == _PETRI_SERVER
+
+
+def test_moving_the_fleet_default_reroutes_the_next_fresh_dispatch_with_no_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Changing only the registry's designation re-routes the next fresh dispatch.
+
+    Both records the clause names are read at EACH designation, because each is
+    written by code that resolves the factory for itself and either can keep
+    naming the previous one while the resolver has moved on — and the item is
+    dispatched to `petri` FIRST, so its own `dispatch_factory` record names the
+    old designation when the second dispatch resolves. That is the shape a
+    fresh dispatch must ignore: an implementation reading the recorded factory
+    as a pin returns `petri` for the second dispatch and satisfies every
+    assertion a single-designation case could make.
+
+    The committed file's bytes are compared across the move, which is the one
+    assertion distinguishing a fleet default from a re-written configuration.
+
+    Both designations are DECLARED here, which Scenario 241's Background admits
+    per case and which is what makes the pin claim able to fail: a recorded
+    factory the committed table does not declare is already discarded as
+    unusable, so with the Background's undeclared shape a build that read the
+    pin on a fresh dispatch would pass this case anyway.
+    """
+    _write_config(
+        cwd=tmp_path,
+        factories={
+            _LEGACY: {"server": _LEGACY_SERVER},
+            _PETRI: {"registry": True},
+            _NEXT: {"registry": True},
+        },
+        default_factory=_FLEET,
+    )
+    registry = _write_registry(
+        cwd=tmp_path, monkeypatch=monkeypatch, payload=_fleet_registry(default=_PETRI)
+    )
+    _seed_item()
+    committed = _config_path(cwd=tmp_path).read_bytes()
+
+    assert _dispatch_records(cwd=tmp_path) == (_PETRI, _PETRI_SERVER, _PETRI, _PETRI_SERVER)
+
+    _ = registry.write_text(json.dumps(_fleet_registry(default=_NEXT)), encoding="utf-8")
+
+    assert _dispatch_records(cwd=tmp_path) == (_NEXT, _NEXT_SERVER, _NEXT, _NEXT_SERVER)
+    assert _config_path(cwd=tmp_path).read_bytes() == committed
+
+
+def _dispatch_records(*, cwd: Path) -> tuple[str | None, str | None, str | None, str | None]:
+    """One fresh dispatch's claim stamp and dispatch-factory record, as four fields.
+
+    Taken together rather than asserted apart because they are two points on ONE
+    routing decision and a failure has to say which point dropped it: a stamp
+    naming the old designation beside a record naming the new one is a different
+    defect from both naming the old one.
+
+    The stamp is read back through the production `claim_stamp_from_record`
+    rather than by indexing the metadata, so a case cannot pass by agreeing with
+    a nesting the reader does not use — and it is read IMMEDIATELY, before the
+    run stamp below replaces it. The clause's subject is the ADMISSION stamp,
+    and `stamp_dispatch_run` overwrites that record with the launch's own
+    factory: a reading taken afterwards reports the plan's resolution twice and
+    cannot fail for an admission stamp that named the wrong factory.
+    """
+    journal = JournalFile(path=cwd / "journal.jsonl")
+    stamp_pending_claim(
+        repo=cwd, work_item_id=_WORK_ITEM_ID, dispatch_id=_DISPATCH_ID, journal=journal
+    )
+    admission = claim_stamp_from_record(record=_fake().show_issue(issue_id=_WORK_ITEM_ID))
+    assert admission is not None
+    target = resolve_fabro_factory(cwd=cwd)
+    _ = stamp_dispatch_run(
+        plan=build_plan(
+            repo=cwd,
+            work_item_id=_WORK_ITEM_ID,
+            workflow_toml=cwd / "workflow.toml",
+            goal_file=cwd / "goal.md",
+            fabro_bin="/opt/fabro",
+            fabro_factory_name=target.name,
+            fabro_factory_server=target.server,
+            janitor=None,
+            janitor_checkout=cwd / "janitor",
+        ),
+        journal=journal,
+        run_id=_RUN_ID,
+    )
+    metadata = _fake().show_issue(issue_id=_WORK_ITEM_ID).get("metadata")
+    assert isinstance(metadata, dict)
+    recorded = metadata["dispatch_factory"]
+    assert isinstance(recorded, dict)
+    return (
+        admission.factory_name,
+        admission.factory_server,
+        recorded.get("name"),
+        recorded.get("server"),
+    )
