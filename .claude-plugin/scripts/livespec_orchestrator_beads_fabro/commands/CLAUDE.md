@@ -2580,6 +2580,19 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   because all three facts are readings of the one committed anchor that function
   already resolves; it subtracts the FILED set, since the hold records are
   append-only and a filed finding would otherwise sit in the inbox for ever.
+  THAT INERT ARM RECORDS ONCE RATHER THAN ONCE PER TICK (`bd-ib-yfn7ht`), and
+  the three properties of the de-duplication are in
+  `_dispatcher_reconcile_drift_lane`'s own docstring. The one worth knowing
+  before editing either module: the record is de-duplicated and the REPORT is
+  not, so `withheld_reason` carries the state on every pass while `records` is
+  None on a skipped one — a tick that recorded nothing and said nothing reads as
+  a lane that had advanced, which is the one reading a withheld frontier must
+  never produce. `_detection_coverage.attempt_record_present` is the reader that
+  makes it possible, matched on the DECLARED SCOPE because that is the only
+  field two invocations describing one unchanged repository state agree on, and
+  fail-soft onto False so a blinded read records rather than suppresses. The
+  reporting half is `_dispatcher_reconcile_runs_command`'s `drift` key and
+  `DRIFT` line, written BEFORE its zero-factory early return.
 - `_spec_tree_condensation.py` — the spec tree a spec-stated judgement is
   actually taken against, and the ONE entry point every consumer of that
   judgement in this repository goes through (`bd-ib-a2bfp3`). PURE.
