@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
 
+from livespec_orchestrator_beads_fabro.commands._acp_factory_run_reader import FactoryRunReader
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     resolve_acp_preflight,
@@ -117,6 +118,25 @@ def acp_chain_preflight_verdict(*, project_root: Path, now_iso: str) -> AcpPrefl
     exactly the disagreement a snapshot cannot report, because both halves
     produce a well-formed row.
 
+    THE PRODUCTION FACTORY RUN READER IS SUPPLIED, which is the "read-only
+    observation of the factory-native availability evidence" the idle-factory
+    clause requires of the shared verdict. Without it the verdict is resolved
+    from this repository's own journal alone, so a hold another repository's
+    run observed on a shared factory is invisible here and -- worse -- a
+    factory whose listing REFUSES is never asked, leaving the composition to
+    report an evidence set it had no part of as complete. The clause forbids
+    exactly that: "Unavailable availability evidence MUST NOT be treated as an
+    empty hold set or as proof of eligibility."
+
+    The reader resolves each declared factory's own server from
+    `dispatcher.factories` and is unreadable rather than falling back to a
+    local default, which is what keeps a remote factory's runs from being
+    surveyed on whichever engine the composing host happens to run.
+
+    A repository declaring NO factory reads nothing at all: `declared_factory_names`
+    enumerates none, so no listing, no inspect, and no round trip is spent --
+    which is what keeps this composable on an offline host.
+
     No probe is supplied, so the read performs no credential assessment at all:
     `_acp_candidate_preflight._probe_skip` returns on an absent probe before it
     reaches a credential, and no confirmation turn exists on this path either.
@@ -132,6 +152,7 @@ def acp_chain_preflight_verdict(*, project_root: Path, now_iso: str) -> AcpPrefl
         repo=project_root,
         journal_path=project_root / _DISPATCHER_JOURNAL_PATH,
         now_iso=now_iso,
+        factory_runs=FactoryRunReader(repo=project_root),
     )
 
 
