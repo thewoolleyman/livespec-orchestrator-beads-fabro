@@ -170,6 +170,15 @@ class AvailabilityWait:
     the unavailable-evidence arm described in the module docstring: the
     condition is real and bounded, and there is no node it can be attributed
     to. The empty string would read as a node whose id was lost.
+
+    `legacy_provider` names the vendor whose LEGACY blanket emptied the named
+    node, and it is here rather than left to a consumer for the same reason
+    `holds` is: a surface offering the legacy clearance valve has to name the
+    provider, and re-deriving it from the journal would be a second reading of
+    one evaluation that could name a different vendor from the skip the filter
+    actually recorded. It is `None` on every other condition — including a
+    `legacy-provider-hold` whose skip recorded no key — because a blanket whose
+    vendor nothing substantiates is one no valve can be pointed at.
     """
 
     node: str | None
@@ -178,6 +187,7 @@ class AvailabilityWait:
     reevaluate_at: str
     holds: tuple[GoverningHold, ...]
     unobservable_observations: int
+    legacy_provider: str | None = None
 
 
 def availability_wait(
@@ -224,6 +234,7 @@ def availability_wait(
         ),
         holds=governing,
         unobservable_observations=len(verdict.unobservable),
+        legacy_provider=_legacy_provider(emptied=emptied),
     )
 
 
@@ -310,6 +321,24 @@ def _governing_condition(*, emptied: tuple[NodePreflight, ...]) -> str:
         if condition in reasons:
             return condition
     return UNAVAILABLE_EVIDENCE
+
+
+def _legacy_provider(*, emptied: tuple[NodePreflight, ...]) -> str | None:
+    """The vendor whose legacy blanket emptied the FIRST emptied chain.
+
+    Scoped to that one node for the reason `_governing_condition` is, and read
+    off the SKIP the filter recorded rather than re-derived from the journal:
+    `_legacy_provider` in `_acp_candidate_preflight` records the covering
+    provider in the skip's `hold_key` at the moment it decides, so this is the
+    one value that cannot disagree with the refusal it accompanies.
+    """
+    keys = [
+        skip.hold_key
+        for preflight in emptied[:1]
+        for skip in preflight.skipped
+        if skip.reason == LEGACY_HOLD_SKIP and skip.hold_key is not None
+    ]
+    return keys[0] if keys else None
 
 
 def _governing_holds(
