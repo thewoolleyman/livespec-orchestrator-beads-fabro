@@ -222,3 +222,44 @@ Scenario: Overflow may not name the resolved default factory
 ```
 
 The revision MUST add a tests/heading-coverage.json row for this heading in the same change.
+
+**Amendments after independent review (gpt-6-astra round 5, BLOCKERS 2):**
+
+12. Recorded fleet-derived targets are attributable and observable. A factory name a dispatch reached through `fleet` is a RECORDED-TARGET factory: it is not declared by this proposal, and amendment 10's rule that only a declared entry is explicitly selectable is unchanged. For OBSERVATION and RECOVERY of a recorded run, and for no other purpose, every rule that addresses a recorded factory by "its declared server target" or treats a stamp that "names no declared factory" as unattributable MUST also accept a recorded-target factory, resolving its address through the registry under its recorded name, including after the fleet default has moved. Accordingly:
+   - In §"Stranded claim release", the *Run state* measurement ("that factory's answer for that run, asked by the factory's declared server target") reads "asked by the factory's declared server target, or, for a recorded-target factory, by the server the registry resolves for its recorded name".
+   - Hold reason 1 ("`claim-unattributable`: the item carries no readable run stamp, or the stamp names no declared factory.") reads "`claim-unattributable`: the item carries no readable run stamp, or the stamp names a factory that is neither declared nor a recorded-target factory." A stamp naming a recorded-target factory whose name the registry no longer resolves is held `factory-unobservable`, naming the factory and the registry path, and is never treated as unattributable or as holding no run.
+   - Every other surface listed in the paragraph beginning "Every surface that turns a declared factory into an address MUST use this one resolution" (the reconcile survey, a liveness read, the needs-human valve enrichment, the run-event projection, and the others it names) reads a recorded-target factory the same way, and reports one the registry cannot resolve as unobservable, naming it.
+   - In amendment 10, "A fresh dispatch MUST NOT validate, resolve or refuse on the item's recorded factory" reads "For factory SELECTION, a fresh dispatch MUST NOT validate, resolve or refuse on the item's recorded factory; the readers v203 preserves, and recovery routing's measurements of an earlier run, still read it."
+
+13. Amendment 11's case "An invalid registry-supplied client setting is refused naming the registry" is replaced by:
+
+```gherkin
+Scenario: An invalid registry-supplied client setting is refused as a committed one would be, naming the registry
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri"
+  And the committed "petri" entry declares no secret_channel
+  And the registry gives "petri" a secret_channel value a committed entry would be refused for
+  When an item is dispatched
+  Then the dispatch receives the same refusal, at the same point and with the same effects, as a committed secret_channel of that value receives
+  And the refusal names the registry path as the source of the value
+```
+
+Amendment 11's Scenario Outline "A committed client setting outranks the registry's, key by key" gains a second axis, so it also runs with `dispatcher.default_factory` naming a declared registry-backed factory (`"registry": true`) in place of `fleet`. Amendment 11's case "Overflow may not name the resolved default factory" declares "petri" as a registry-backed factory in `dispatcher.factories`, so that the case isolates the resolved-default prohibition.
+
+Add to Scenario 241:
+
+```gherkin
+Scenario: A stranded claim on a fleet-derived factory is recovered after the fleet default moves
+  Given dispatcher.default_factory is "fleet"
+  And an item active and assigned fabro whose run stamp names "petri", reached through the fleet default, and this host
+  And the registry's default has since moved to "next" while its "petri" entry remains
+  And the run on "petri" has terminated and no live process owns the item
+  When the reconcile pass surveys the claim
+  Then the run state is read from the server the registry resolves for "petri"
+  And the claim is not held as claim-unattributable
+
+Scenario: A stranded claim on a fleet-derived factory the registry no longer resolves is held unobservable
+  Given the same claim and the registry no longer has a "petri" entry
+  When the reconcile pass surveys the claim
+  Then the claim is held as factory-unobservable, naming "petri" and the registry path
+  And it is not treated as holding no run
+```
