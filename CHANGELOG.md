@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.236.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.235.2...v0.236.0) (2026-10-23)
+
+
+### Features
+
+* declare the read-only engine verbs a snapshot composition may spend ([edb88c3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/edb88c312cc57cd8aa5f41c5af784f2c5b628997))
+* hold the availability wait's evaluation time fixed across two compositions ([06cbf53](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/06cbf53f8d5cf7563e203fb4afa233dccc0eb9c0))
+* name the governing condition and reevaluation instant on the availability wait row ([b4f8c6a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b4f8c6a38d3e3de02385895cd6ea62bd889438fc))
+* offer the exact clearance valve the availability wait's own condition sanctions ([642b609](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/642b609b3e68f4c8804913b13da5b22fec2b4f1f))
+* read factory availability evidence through the production run reader ([5cd7d87](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5cd7d87e10b519f597bc3ea24573587feacd4f15))
+
+
+### Bug Fixes
+
+* omit the placeholder reason from the advertised clearance handoff ([11fcdae](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/11fcdae89aa58583f032bd5f3ab7be39688e6453))
+
 ## [0.235.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.235.1...v0.235.2) (2026-10-23)
 
 
