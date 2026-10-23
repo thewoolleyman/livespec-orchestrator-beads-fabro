@@ -1331,8 +1331,8 @@
     "heading": "## Scenario 122 \u2014 An attention item's answer disposition governs who may answer it",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by the attention-item-answer-policy revise pass (plan control-plane-accounts-and-dispatch-policy, epic bd-ib-rh3iyd, child bd-ib-rh3iyd.1). The exercising integration-tier test is owed by the leg-1 implementation slices (needs-attention effective-policy surfacing; drive answer-press refusal) re-groomed under bd-ib-rh3iyd.1 after this revision lands; until then the behavior has no implementation to bind to.",
+    "test": "tests.integration.test_answer_disposition_scenario122.test_scenario122_an_automated_press_is_refused_and_a_human_press_lands_the_answer",
+    "reason": "Integration-tier acceptance for the answer-disposition policy (the fifth dispatcher policy setting of SPECIFICATION/contracts.md), bound by bd-ib-wt7fv4 after the owners named in the prior reason had all closed. The press goes through the real drive.run_action and the published disposition through the real needs-attention JSON envelope, both over the store/client seam against the in-memory FakeBeadsClient, because the clause's advertiser-and-enforcer binding is a claim about two surfaces AGREEING. The bound node id is the control pair of the heading's first gherkin scenario -- the refusal and the admission differ in exactly one input, the role the invoker asserts -- and the per-item label override, the byte-for-byte consensus comparison and the per-entry snapshot disposition are sibling tests in the same module.",
     "work_item": "bd-ib-heat"
   },
   {
@@ -1347,16 +1347,16 @@
     "heading": "## Scenario 124 \u2014 The human answer lands as a marked ledger comment before the transition, and a poisoned answer is refused",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by the ratify-b3-answer-route revise pass (plan control-plane-accounts-and-dispatch-policy, epic bd-ib-rh3iyd, child bd-ib-rh3iyd.7). The b3 answer route already ships (bd-ib-aqith2 PR #2168, bd-ib-uuohty PR #2200); the exercising integration-tier test binding this scenario heading to the marker/poison-refusal/write-before-transition assertions is owed as a scenario-binding deliverable and is not a by-product of this ratification.",
+    "test": "tests.integration.test_answer_comment_scenario124.test_scenario124_the_marked_comment_lands_before_the_status_transition",
+    "reason": "Integration-tier acceptance for the v093-native answer route, bound by bd-ib-wt7fv4 after the owners named in the prior reason had all closed. Driven through the real drive.run_action over the store/client seam, with the comment read back through the bd comments --json seam (bd show carries no bodies, so verifying the write through it reports every successful append as lost). The marker line is asserted FIELD BY FIELD rather than by containment, since a body that merely mentioned the marker would satisfy an `in` check while naming none of the invoker, its source, the write instant or the action id. The write-before-transition ordering is OBSERVED rather than inferred: the production status writer is wrapped and asked what the ledger already held when it was entered, because the end state is identical whichever order the two writes took. The poisoned-answer refusal is the sibling test in the same module.",
     "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 125 \u2014 The needs-attention valve item carries the terminated run's account and fails soft",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by the ratify-b3-answer-route revise pass (plan control-plane-accounts-and-dispatch-policy, epic bd-ib-rh3iyd, child bd-ib-rh3iyd.7). The valve run-account enrichment already ships (bd-ib-uuohty PR #2200); the exercising integration-tier test binding this scenario heading to the account-fields and fail-soft assertions is owed as a scenario-binding deliverable and is not a by-product of this ratification.",
+    "test": "tests.integration.test_needs_human_valve_run_account_scenario125.test_scenario125_the_valve_summary_carries_the_terminated_runs_account",
+    "reason": "Integration-tier acceptance for the resolve-blocked valve's run-account enrichment, bound by bd-ib-wt7fv4 after the owner named in the prior reason had closed. Both cases compose the WHOLE needs-attention JSON envelope through the real needs_attention.main over the store/client seam, a real on-disk dispatch journal and the repository's own committed factory block, with only the `fabro` CLI stood in at the runner the production port constructs -- so the run-id attribution, the factory resolution, the inspect argv, the record parse and the summary composition are production code. The bound node id is the enriched summary, read fact by fact and with the inspect argv read off the seam, since a probe of the repository default for a run living on another factory returns cleanly and finds nothing. The fail-soft leg -- an unreachable factory costing the enrichment and never the valve -- is the sibling test in the same module, run over a byte-identical fixture so the comparison isolates the one input under test.",
     "work_item": "bd-ib-heat"
   },
   {

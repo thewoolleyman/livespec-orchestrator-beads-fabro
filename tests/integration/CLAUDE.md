@@ -385,6 +385,54 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   time is evidence the committed dial was read — a stubbed sleep would prove
   only that some number reached some stand-in.
 
+- `test_answer_disposition_scenario122.py`,
+  `test_answer_comment_scenario124.py` and
+  `test_needs_human_valve_run_account_scenario125.py` — bind
+  `SPECIFICATION/scenarios.md` Scenarios 122, 124 and 125, the three headings
+  that govern WHO may answer a parked attention item, WHAT their answer lands
+  as, and WHAT the item they are answering about says. All three drive the two
+  surfaces an operator actually meets — `drive.run_action` for a press and the
+  real `needs_attention.main(argv=["--json", …])` envelope for what a console
+  renders — over the real store/client seam against the in-memory
+  `FakeBeadsClient`; the `answer:` override is seeded through the client's own
+  public write verb, because the shared `WorkItem` model carries no field for
+  it. Four things in them are worth keeping in view.
+  The 122 module asserts the REFUSAL and the ADMISSION as one case: a refusal
+  alone passes just as well against a gate that refuses every press, which
+  would make the ratified answer route unreachable, so the admitted half runs
+  the identical answer against an identically-shaped item and differs in
+  exactly one input — the role the invoker asserts. Its consensus leg is
+  compared BYTE FOR BYTE against the human leg with the disposition word
+  substituted, because the clause asks for the same refusal and two
+  independently drifting messages that each mention a disposition satisfy a
+  containment check too; and its per-entry snapshot case carries a sibling
+  parked item with no override in the SAME tenant, so a snapshot reporting one
+  disposition for the whole tenant cannot pass.
+  The 124 module OBSERVES the write-before-transition ordering rather than
+  inferring it: the end state is identical whichever order the two writes took,
+  so the production status writer is wrapped, asked what the ledger already
+  held when it was entered, and delegated to. Its marker line is asserted FIELD
+  BY FIELD, since a body that merely mentioned the marker would satisfy an `in`
+  check while naming none of the invoker, its source, the write instant or the
+  action id — and the action id is the only place the disposition an answer
+  carried survives into the ledger at all. The answer is two lines, because
+  "follows the marker line verbatim" is a claim about the whole answer.
+  The 125 module composes the WHOLE envelope for both legs, with only the
+  `fabro` CLI stood in at the runner the production port constructs, because
+  its fail-soft claim is that the valve item is STILL SURFACED when the factory
+  cannot be reached — which an enrichment asserted in isolation cannot show. An
+  unreachable factory is modelled as the non-zero `fabro inspect` one really
+  produces rather than as an empty record, the two legs share a byte-identical
+  fixture so the comparison isolates that one input, and the `inspect` argv is
+  read off the seam, since a probe of the repository default for a run living
+  on another factory returns cleanly and finds nothing.
+  Every claim in all three was mutation-checked against the product: admitting
+  the `session` role under `human`, reporting `human` for every row, moving the
+  transition ahead of the comment, stripping the comment header, admitting a
+  template opener, dropping the factory server, dropping the preserved ref, and
+  degrading a blinded enrichment to anything but the lane's own summary each
+  red at least one case.
+
 - `test_ledger_adoption_rank_scenario126.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 126 — Ledger normalization adopts a
   beads-native `open` row and assigns it a real rank" and the
