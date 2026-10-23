@@ -6822,7 +6822,7 @@ def test_dispatch_fails_at_ledger_comments_stage_when_read_raises(
         raise BeadsCommandError(command="bd comments", exit_code=1, stderr="connection lost")
 
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands._dispatcher_credentials.read_work_item_comments",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads.read_work_item_comments",
         _boom,
     )
     exit_code = main(

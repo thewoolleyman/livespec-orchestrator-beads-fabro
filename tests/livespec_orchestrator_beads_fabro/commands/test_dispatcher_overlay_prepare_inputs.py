@@ -22,11 +22,14 @@ rendered from, so the two cannot drift apart. It needs no engine change.
 
 from __future__ import annotations
 
+from importlib import import_module
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     render_run_config_overlay,
 )
+
+_PACKAGE = "livespec_orchestrator_beads_fabro.commands"
 
 _FAKE_TOKEN = "test-oauth-token"
 _FAKE_GITHUB_TOKEN = "test-github-token"
@@ -147,3 +150,32 @@ def test_omitting_prepare_inputs_leaves_the_committed_text_untouched(tmp_path: P
     rendered = _render(tmp_path=tmp_path, prepare_inputs=None)
     assert "{{ inputs.prepare_toolchain_mise }}" in rendered
     assert "{{ inputs.sandbox_exempt_marker }}" in rendered
+
+
+def test_the_substitution_is_its_own_module_reached_through_the_overlay() -> None:
+    """The chain lives in a module of its own, entry point only (bd-ib-kyeor4).
+
+    The substituter and the TOML escaper only it reaches moved out of
+    `_dispatcher_overlay` by cohesion when the factory-environment env-table
+    keying needed room under that file's LLOC ceiling. Pinned here, where the
+    behaviour is already covered, and pinned as GONE from the module they left:
+    a new module re-exporting from the old one — or an old module that kept its
+    copy — would satisfy every existence check while leaving that file exactly
+    as large as it was, which is the whole reason for the move.
+
+    The escaper stays PRIVATE inside the new module. Importing a `_`-prefixed
+    name across modules is what pyright strict's `reportPrivateUsage` and this
+    repository's `private_calls` check both reject, and that is the usual way a
+    size-split fails.
+    """
+    moved = import_module(f"{_PACKAGE}._dispatcher_overlay_input_tokens")
+    source = import_module(f"{_PACKAGE}._dispatcher_overlay")
+
+    assert moved.__all__ == ["substitute_input_tokens"]
+    assert callable(moved.substitute_input_tokens)
+    assert "_escape_toml_basic_string" not in moved.__all__
+    for name in ("_INPUT_TOKEN_RE", "_substitute_input_tokens", "_escape_toml_basic_string"):
+        assert not hasattr(source, name), f"{name} is still defined on _dispatcher_overlay"
+    # And the rendering is still REACHED through the overlay, which the cases
+    # above exercise end to end.
+    assert source.substitute_input_tokens is moved.substitute_input_tokens

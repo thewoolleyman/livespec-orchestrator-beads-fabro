@@ -59,13 +59,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import
     resolve_dispatch_candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import host_only_refusal
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import read_dispatch_labels
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
     resolve_adopted_assertion_count_ceiling,
     route_factory_size_dispatch_entry,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
+from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
+    read_dispatch_labels,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
     failed_dispatch_outcome,
 )

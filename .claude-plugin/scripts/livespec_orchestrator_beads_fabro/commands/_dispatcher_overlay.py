@@ -13,12 +13,19 @@ have bought none of the room the split was for.
 owns the harness shell-tool policy's keys and both of its projections — the env
 table line and the sandbox `local` settings file — and it is re-exported here
 because that is where every caller already reaches for it.
+
+`substitute_input_tokens` now LIVES in `_dispatcher_overlay_input_tokens`,
+alongside the TOML escaper only it reaches. It moved out by COHESION — this
+module ASSEMBLES an overlay and that chain is the string surgery one of its
+inputs needs — when the factory-environment env-table keying below needed room
+under this file's LLOC ceiling (bd-ib-kyeor4), and it deliberately left NO
+re-export shim behind, exactly as `escape_minijinja_literal` did: a shim would
+have bought none of the room the split was for.
 """
 
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
@@ -62,6 +69,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program import (
     hook_limit_prepare_steps_block,
     resolve_publish_draft_limit,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_input_tokens import (
+    substitute_input_tokens,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_sandbox_image import (
     resolve_sandbox_image,
@@ -147,6 +157,12 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     graph_artifact: Path | None = None,
     warn: Callable[[str], object] | None = None,
     prepare_inputs: Mapping[str, str] | None = None,
+    # The catalog environment the RESOLVED FACTORY declares, which is the
+    # environment the run intent selects through `fabro run --environment`.
+    # None is a factory that declares none, and is also the pinned-engine
+    # posture every dispatch in this fleet carried before the key existed — so
+    # a caller that wires nothing keys its env table exactly where it did.
+    factory_environment: str | None = None,
     dispatch_id: str | None = None,
     proof_store_env: str = "",
     proof_credentials_env: str = "",
@@ -213,6 +229,28 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     caller that renders none projects no title line and no body step, which is
     exactly the overlay every direct caller rendered before.
 
+    `factory_environment` keys the run-scoped `[environments.<id>.env]` table,
+    because that table is read by the engine ONLY under the environment the run
+    intent selected — `[environments.<selected id>]` plus the id-less
+    `[run.environment]`, and nothing else. The committed `[run.environment] id`
+    was the right key only while it was also the selected environment; since
+    the dispatch began passing `--environment <the factory's catalog
+    environment>` a differently-spelled factory environment made the engine
+    resolve an empty `env`, so every projected variable and every credential
+    was silently dropped (measured on gmktec run
+    01M5MH0JBKGJ2HRW7VCBP3PGK4, which died in preparation with an empty
+    `CODEX_HOME`; a Docker run on the same server under the committed id
+    resolved 37 keys).
+
+    The `[environments.<id>.image]` table deliberately does NOT follow it, and
+    the asymmetry is the whole of the repair. On a registered-provider
+    environment Petri REFUSES an image found under the selected id, and the
+    image is the catalog's to supply — so the committed declaration stays keyed
+    on the committed id, which is where `resolve_sandbox_image` finds it and
+    WITHHOLDS it. Moving both tables together would read as correct at the env
+    table while leaving that pin standing under a key the engine does read,
+    overriding the catalog's image.
+
     `credential_use` carries the three enforcement inputs a protected sandbox
     needs: the absolute credential-use deadline, the observed credential expiry,
     and the lifetime this dispatch requires. A credential projected WITHOUT them
@@ -252,7 +290,13 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     rewritten = resolve_workflow_git_author(committed_text=rewritten, author=git_author)
     if rewritten is None:
         return None
-    rewritten = _substitute_input_tokens(text=rewritten, prepare_inputs=prepare_inputs)
+    # WHICH environment the run-scoped env table is keyed on, as distinct from
+    # the id the image table above was addressed by. The factory's declared
+    # catalog environment wins because it is what the run intent SELECTS, and a
+    # factory declaring none leaves the committed id — which is what every
+    # dispatch on the pinned engine carries.
+    env_environment_id = environment_id if factory_environment is None else factory_environment
+    rewritten = substitute_input_tokens(text=rewritten, prepare_inputs=prepare_inputs)
     token_literal = json.dumps(token)
     github_token_literal = json.dumps(github_token)
     sibling_steps = "" if siblings is None else sibling_clone_steps_block(siblings=siblings)
@@ -358,7 +402,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + publication_metadata_prepare_steps_block(metadata=publication_metadata)
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
-        + f"[environments.{environment_id}.env]\n"
+        + f"[environments.{env_environment_id}.env]\n"
         + f"CLAUDE_CODE_OAUTH_TOKEN = {token_literal}\n"
         + f"GITHUB_TOKEN = {github_token_literal}\n"
         + author_env_lines
@@ -393,62 +437,6 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         # mode-600 overlay the credential set above already rides (S8).
         + proof_credentials_env
     )
-
-
-# The `{{ inputs.<name> }}` token the committed run config templates its prepare
-# commands with. The name grammar is deliberately narrow (an identifier), so a
-# MiniJinja expression this substituter does not understand is left for whatever
-# does.
-_INPUT_TOKEN_RE = re.compile(r"\{\{\s*inputs\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
-
-
-def _substitute_input_tokens(*, text: str, prepare_inputs: Mapping[str, str] | None) -> str:
-    """Render the run config's `inputs.*` tokens HOST-SIDE, because the engine does not.
-
-    fabro 0.254.0 renders `inputs.*` in graph node attributes at run-create time
-    and leaves `run.prepare` commands verbatim, so a templated prepare step
-    reaches bash as a literal `{{` and kills the run in setup at exit 127 before
-    any agent node runs. The committed payload has templated its toolchain and
-    conformance premises that way since the typed-integration-contract change,
-    which made every dispatch through it unrunnable.
-
-    Substituting here rather than asking the engine to change keeps the values
-    on the one already-resolved `ResolvedIntegrationContract` the `--input`
-    pairs are rendered from, so the run config and the run's bound inputs cannot
-    drift apart. The `--input` pairs are still sent: they are what the GRAPH
-    reads, and the graph half works.
-
-    A name the mapping does not carry is LEFT ALONE rather than blanked. An
-    unresolved premise then fails visibly at its own step, instead of quietly
-    becoming a no-op — which is the failure mode that made the sibling
-    conformance-gate defect dangerous.
-    """
-    if not prepare_inputs:
-        return text
-    rendered: list[str] = []
-    cursor = 0
-    for match in _INPUT_TOKEN_RE.finditer(text):
-        value = prepare_inputs.get(match.group(1))
-        if value is None:
-            continue
-        rendered.append(text[cursor : match.start()])
-        rendered.append(_escape_toml_basic_string(value=value))
-        cursor = match.end()
-    rendered.append(text[cursor:])
-    return "".join(rendered)
-
-
-def _escape_toml_basic_string(*, value: str) -> str:
-    """Escape a substituted value for the TOML basic string it lands inside.
-
-    Every token sits within `script = "..."`. Contract values arrive as one
-    shell word-list from `shlex.join`, and `shlex.quote` emits the `'"'"'`
-    sandwich for an embedded apostrophe — which carries double quotes. Written
-    raw, one of those terminates the TOML string early and makes the WHOLE
-    overlay unparseable, turning one repository's command into a dispatch-wide
-    failure. Backslash first, so the quote escape is not re-escaped.
-    """
-    return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def _otel_env_lines(*, otel_env: dict[str, str] | None) -> str:

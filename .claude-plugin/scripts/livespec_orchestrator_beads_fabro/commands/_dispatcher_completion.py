@@ -34,9 +34,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_completion_close imp
     close_dispatch_item,
     no_change_needed_reason,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
-    read_dispatch_labels,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_decision_journal import (
     auto_disposition_journal_record,
 )
@@ -48,6 +45,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_only_refusal im
     host_only_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
+    read_dispatch_labels,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes import (
     write_work_item_status_and_reconcile,
 )

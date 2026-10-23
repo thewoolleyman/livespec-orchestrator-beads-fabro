@@ -915,6 +915,56 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   asked". The record's `sandbox_image` argument is REQUIRED for the mirror
   reason: a default is how one dispatch's record silently reports the
   no-declaration answer for a dispatch that had a declaration.
+  THE TWO `[environments.<id>.*]` TABLES THE OVERLAY RENDERS ARE KEYED ON
+  DIFFERENT IDS, and the asymmetry is a correctness requirement rather than an
+  oversight (`bd-ib-kyeor4`). The ENV table follows the catalog environment the
+  resolved FACTORY declares, because the engine reads an overlay only from
+  `[environments.<selected id>]` and the id-less `[run.environment]` — so once
+  the dispatch began passing `--environment <that id>`, a factory environment
+  spelled differently from the committed `[run.environment] id` made the engine
+  resolve an EMPTY `env` and silently drop every projected variable and every
+  credential (measured on gmktec run 01M5MH0JBKGJ2HRW7VCBP3PGK4, which died in
+  preparation with an empty `CODEX_HOME`, against a Docker run on the same
+  server under the committed id that resolved 37 keys). The IMAGE table stays
+  keyed on the COMMITTED id, because on a registered-provider environment Petri
+  refuses an image found under the selected id and the image is the catalog's to
+  supply — so that is where `resolve_sandbox_image` finds the committed
+  declaration and WITHHOLDS it. Moving both tables together reads as correct at
+  the env table while leaving the committed pin standing under a key the engine
+  does read, overriding the catalog. The id is the SAME
+  `factory_environment_id` projection `fabro run --environment` is rendered
+  from, threaded from the plan through `materialize_overlay` rather than
+  re-resolved: a second resolution can key the table away from the environment
+  the launch selected, and both readings are well-formed. `None` is a factory
+  declaring none, which is the pinned-engine posture and keys the env table
+  exactly where every dispatch keyed it before the parameter existed.
+- `_dispatcher_overlay_input_tokens.py` — rendering the committed run config's
+  `{{ inputs.<name> }}` prepare-command tokens HOST-SIDE, because the pinned
+  engine renders `inputs.*` in graph node attributes and leaves `run.prepare`
+  verbatim. Moved out of `_dispatcher_overlay` by cohesion when the env-table
+  keying above needed room under that file's LLOC ceiling: the overlay ASSEMBLES
+  a run config, while this is the TOML-string surgery one of its inputs needs.
+  Entry point only — the TOML escaper stays private inside it, because importing
+  a `_`-prefixed name across modules is what pyright strict's
+  `reportPrivateUsage` and the `private_calls` check both reject — and NO
+  re-export shim was left behind, for the reason `_dispatcher_minijinja_escape`
+  records. An input name the mapping does not carry is LEFT ALONE rather than
+  blanked, so an unresolved premise fails visibly at its own step instead of
+  quietly becoming a no-op.
+- `_dispatcher_item_ledger_reads.py` — the ONE item's own ledger readings a
+  dispatch needs before it can decide: the operator riders its goal brief must
+  carry, and the raw beads labels its per-item policy overrides ride on. Moved
+  out of `_dispatcher_credentials` by cohesion for the same reason, and for the
+  same reason the credential-wrapper reader left it: that module PROJECTS
+  credentials and sibling clones into a sandbox overlay, and neither of these is
+  a credential. Both route their failure as DATA rather than raising, and the two
+  reasons differ — a brief assembled WITHOUT comments silently drops binding
+  scope nothing else announces, so a failed read refuses the dispatch, while an
+  unreadable label record is the same absence an unlabelled one is, so that read
+  answers the empty tuple for a record carrying no labels and a refusal only for
+  a read that could not be taken. `_LEDGER_READ_ERRORS` moved WITH them: a copy
+  left behind would be a second account of which beads failures are routable as
+  data.
 - `_dispatcher_proof_budget.py` — the declared size budget every proof record is
   measured against before it is posted (`bd-ib-555xcd`). PURE, and the ONE place
   the three figures are named: the MEASURED forge comment ceiling, the record

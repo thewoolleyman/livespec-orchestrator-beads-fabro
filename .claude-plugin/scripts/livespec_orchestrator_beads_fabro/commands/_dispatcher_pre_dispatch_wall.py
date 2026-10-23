@@ -69,9 +69,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requireme
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper import (
     credential_wrapper_text,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
-    read_dispatch_labels,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_workflow import (
     definition_of_done_workflow_refusal,
 )
@@ -84,6 +81,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency_gate 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
+    read_dispatch_labels,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_overrides import (
     effective_review_fix_cap,
