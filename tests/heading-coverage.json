@@ -498,8 +498,8 @@
     "heading": "## Scenario 26 \u2014 list-work-items emits lane and lane_reason",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it.",
+    "test": "tests.integration.test_list_work_items_lane_scenario26.test_scenario26_lane_and_lane_reason_are_computed_from_lane_of",
+    "reason": "Bound to an integration-tier test, per the heading taxonomy's pyramid-tier requirement: `tests/integration/test_list_work_items_lane_scenario26.py` seeds the scenario's three items into one in-memory tenant through the production `append_work_item` and reads `lane` / `lane_reason` back off one real `list-work-items --json` payload, so the derivation has the whole population it is defined over. Filed by bd-ib-tghmyn; the unit-tier cases in `tests/livespec_orchestrator_beads_fabro/commands/test_list_work_items.py` remain the per-lane coverage beneath it.",
     "work_item": "bd-ib-heat"
   },
   {
@@ -561,8 +561,8 @@
     "heading": "## Dispatcher policy settings",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "test": "TODO",
-    "reason": "Dispatcher-policy-settings revise, retitled by the v100 consensus-gated-automated-groom-cut revise: the wire surface of the FOUR policy settings of '### The four policy settings' (auto_approve_ready, acceptance_mode, merge_on_review_cap, and groom_cut_approval, whose per-item label may only LOWER an item to human), the THREE rework caps of '### The three rework caps' (review_fix_cap, acceptance_rework_cap, automated_regroom_cap), the per-item merge hold, the no-per-item-override wip_cap, the always-escalate-needs-human floor, the per-disposition audit journal, and the API-configurable completeness principle. The two v100 settings are parsed and manifested by bd-ib-v6nexg and stay inert there; the integration-tier test id is populated as the clause->scenario->test binding lands, and the behaviors are exercised by Scenarios 33-37.",
+    "test": "tests.livespec_orchestrator_beads_fabro.commands.test_dispatcher_policy_settings.test_raw_boolean_false_label_beats_true_global",
+    "reason": "Bound to a unit-tier test, which this heading may take: the pyramid-tier requirement applies to `scenarios.md` headings alone, and the behaviours this contract describes are exercised at the integration tier by Scenarios 33-37. The bound case drives the committed `dispatcher.merge_on_review_cap` wire setting together with the per-item label that may only LOWER it, which is the precedence this section fixes. Bound by bd-ib-tghmyn; the spec.md entry for the same heading names no owner and stays TODO.",
     "work_item": "bd-ib-heat"
   },
   {
@@ -764,8 +764,8 @@
     "heading": "## Scenario 54 \u2014 Host-side dispatch runs a released payload, never the working tree",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified with the pin-host-direct-dispatch-to-release proposal (bd-ib-4zif.1): host-side dispatch executes a released payload rather than a working tree, self-update triggers on a running-release vs latest-release comparison, and every promotion is gated on a canary of the candidate artifact. Per the test-pyramid tier requirement this scenario binds to an INTEGRATION-tier test (never unit-tier); the exercising test lands with the implementation slice bd-ib-4zif.2 and this entry is bound to its real node id in that change.",
+    "test": "tests.bin.test_payload_canary_subject_is_the_candidate.test_a_broken_candidate_fails_the_canary_and_keeps_the_last_known_good",
+    "reason": "Bound to an integration-tier test (`tests.bin` is in this repository's declared `scenario_tiers` allowlist), per the heading taxonomy's pyramid-tier requirement: `tests/bin/test_payload_canary_subject_is_the_candidate.py` drives the exported `self_update_after_release` boundary with a real bounded subprocess and a recording journal, and observes that a failing canary keeps the last-known-good payload running, alarms a human, and leaves the running Dispatcher's own execution artifact unmoved. Its sibling case is the healthy-candidate control. Bound by bd-ib-tghmyn.",
     "work_item": "bd-ib-heat"
   },
   {
@@ -1019,17 +1019,17 @@
     "heading": "## Scenario 87 \u2014 A node's adapter resolves through three layers and the record names the supplying layer",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
+    "test": "tests.integration.test_acp_node_layer_resolution_scenarios87_88.test_scenario87_a_repository_entry_overrides_the_workflow_default_for_one_node_only",
     "work_item": "bd-ib-heat",
-    "reason": "Ratified by the commission item B revise (plan homelab-loop-hardening-orchestrator): layered adapter resolution and the journaled supplying layer; bd-ib-tsna lands the exercising integration test."
+    "reason": "Bound to an integration-tier test, per the heading taxonomy's pyramid-tier requirement: `tests/integration/test_acp_node_layer_resolution_scenarios87_88.py` drives `prepare_acp_nodes` \u2014 the one function a dispatch calls \u2014 from a committed `.livespec.jsonc` on disk against this repository's own committed `workflow.toml`, and reads the supplying layer per node and per env key off the journal record. Its siblings in the same module carry the per-dispatch override, the environment-is-not-a-layer control and the unknown-node refusal. Bound by bd-ib-tghmyn."
   },
   {
     "heading": "## Scenario 88 \u2014 An arbitrary adapter with an env map and args renders without a code change",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
+    "test": "tests.integration.test_acp_node_layer_resolution_scenarios87_88.test_scenario88_an_env_map_renders_in_sorted_key_order_ahead_of_the_command",
     "work_item": "bd-ib-heat",
-    "reason": "Ratified by the commission item B revise (plan homelab-loop-hardening-orchestrator): arbitrary adapters with env maps and args, proven hermetically; bd-ib-tsna lands the exercising integration test."
+    "reason": "Bound to an integration-tier test, per the heading taxonomy's pyramid-tier requirement: `tests/integration/test_acp_node_layer_resolution_scenarios87_88.py` renders an arbitrary command with a deliberately out-of-order env map through the real committed-configuration and three-layer-merge seams, and asserts the env segment is sorted and precedes the command; its sibling case asserts a node's args render after the command in declaration order. Bound by bd-ib-tghmyn."
   },
   {
     "heading": "## Scenario 89 \u2014 Node timeouts resolve from configuration and land as literal durations",
@@ -1139,9 +1139,9 @@
     "heading": "## Scenario 99 \u2014 Empty-diff acceptance integrity: a zero-change merge is ungradeable, not delivered",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
+    "test": "tests.integration.test_dispatcher_acceptance_needs_attention.test_scenario99_a_zero_change_merge_parks_needs_attention_on_the_empty_diff_leg",
     "work_item": "bd-ib-heat",
-    "reason": "Ratified with the empty-diff-acceptance-integrity revision (plan epic bd-ib-xmom). For a change-implying item an empty merged diff resolves the merged-diff leg ungradeable and the acceptance pass returns NEEDS_ATTENTION (never PASS, never NO_CHANGE_NEEDED) parking one attention item whose summary names the empty-diff leg; a file-scoped check matching zero files reports a distinct vacuous-match outcome a gate counts toward neither passing nor failing; a real-change merge still grades normally; and a declared change-optional item with an empty diff is not misclassified. Awaits the integration-tier binding test delivered by the four impl_followups children (acceptance-empty-diff-refusal, scoped-check-vacuous-match, dispatcher-empty-diff-composition, change-implying-criteria-default); real test ID to follow."
+    "reason": "Bound to an integration-tier test, per the heading taxonomy's pyramid-tier requirement: `tests/integration/test_dispatcher_acceptance_needs_attention.py` dispatches a change-implying item through the real `dispatcher.main(argv=[\"dispatch\", ...])` CLI to a green merged run whose diff is empty, and reads the NEEDS_ATTENTION verdict, the named empty-diff evidence leg and the single parking record off the real ledger and dispatch journal. Its control in the same module is the identical item with only the diff non-empty. Bound by bd-ib-tghmyn; the verdict function's three empty-diff arms and the vacuous-match outcome keep their unit-tier coverage in `test_dispatcher_acceptance_ai.py` and `test_dispatcher_scoped_check_vacuity.py`."
   },
   {
     "heading": "## Scenario 100 \u2014 The repository integration contract resolves once and projects identically to every seam",
@@ -1974,8 +1974,8 @@
     "heading": "## Scenario 205 \u2014 Gap detection enumerates headings without an exercising test",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified in v167 with proposal gap-signal-from-heading-coverage, and the owning work-item bd-ib-4dlokv lands the integration-tier test that binds this entry.",
+    "test": "tests.integration.test_heading_gap_enumeration_scenario205.test_scenario205_the_uncovered_heading_is_the_one_gap_and_files_naming_its_entry",
+    "reason": "Bound to an integration-tier test, per the heading taxonomy's pyramid-tier requirement: `tests/integration/test_heading_gap_enumeration_scenario205.py` carries one uncovered heading from the shipped `detect-impl-gaps --json` entry point over a real spec tree and coverage registry through to the filed work-item's labels, read back off the real store seam, with a covered heading naming a resolvable test as the control. Bound by bd-ib-tghmyn, which supersedes bd-ib-4dlokv's ownership of this row.",
     "work_item": "bd-ib-4dlokv"
   },
   {
