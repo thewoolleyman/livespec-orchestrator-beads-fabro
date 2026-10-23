@@ -2247,5 +2247,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal dod-judgement-verdict-binding, and the owning work-item bd-ib-8zyan makes a recorded Definition-of-Done verdict bind every host taking on identical digests and journals opposite verdicts, together with the test that binds this entry.",
     "work_item": "bd-ib-8zyan"
+  },
+  {
+    "heading": "## Scenario 241 \u2014 A repository naming the fleet default dispatches to the factory the registry designates, and moving the fleet default re-routes it with no repository commit",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal fleet-default-factory, and the owning work-item bd-ib-ep4eeo makes dispatch resolve a fleet default factory and per-factory client settings from the factory registry, together with the test that binds this entry.",
+    "work_item": "bd-ib-ep4eeo"
   }
 ]

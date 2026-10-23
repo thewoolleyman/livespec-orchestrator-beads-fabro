@@ -1055,5 +1055,12 @@
     "heading": "## Scenario 240 \u2014 A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled",
     "work_item": "bd-ib-8zyan",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 241 \u2014 A repository naming the fleet default dispatches to the factory the registry designates, and moving the fleet default re-routes it with no repository commit",
+    "work_item": "bd-ib-ep4eeo",
+    "first_seen": "2026-10-23"
   }
 ]
