@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.235.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.235.1...v0.235.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* **headroom:** journal the weekly figures beside the five-hour ones ([d81134e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d81134e85b9fcb5e773d1c4f061cd68fae480478))
+* **headroom:** skip a covered candidate whose weekly allowance is refused ([9aa078a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9aa078a11df6958a4a2bd826fb99c4798ad61a80))
+* **headroom:** take the seven-day allowance from the five-hour response ([108bbda](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/108bbdaef83f98bbe032f35323e08f81bdb679ee))
+* **headroom:** the weekly skip reads the status alone, and a floor of 0 disables it ([2777275](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/277727521266d41aaeaa3d95a5fad2d8bd6c7bf3))
+
 ## [0.235.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.235.0...v0.235.1) (2026-10-22)
 
 
