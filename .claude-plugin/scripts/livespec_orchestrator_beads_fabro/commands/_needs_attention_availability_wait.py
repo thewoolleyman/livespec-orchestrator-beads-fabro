@@ -1,0 +1,144 @@
+"""The attention row an admission-required ACP chain's own wait produces.
+
+`SPECIFICATION/contracts.md`, among the orchestrator-owned attention facts,
+closes its enumerated wait list with "an item waiting because an
+admission-required ACP chain has no eligible candidate ... including because of
+live holds, outstanding post-expiry confirmation, unavailable evidence,
+admission-time credential-probe skips, or admission session-headroom skips,
+which likewise stays `ready`", and then states what that row owes: "The wait
+item MUST name the governing condition and scheduled reevaluation instant."
+
+NOTHING COMPOSED THAT ROW, AND ITS ABSENCE WAS THE QUIET KIND. The wait is
+already derived — `resolve_availability_wait` has computed the condition and
+the instant on every containment refusal since v127 — but the only consumer was
+the dispatch journal, which an operator reads after being told to look. On the
+awareness surface the item simply rests in `ready`: nothing is stranded, no
+claim is held, no capacity is pressured, and the idle-factory row deliberately
+CLEARS, because a factory held back by an exhausted chain is waiting rather
+than idle. So the one surface built to report every wait reported this one as
+nothing at all.
+
+THE ROW IS SCOPED PER WAITING ITEM, exactly as the legacy
+provider-exhaustion lane beside it is. The clause's subject is "an item
+waiting", and the ready items a chain exhaustion holds are the population it
+holds: a single repository-wide row would have no `work_item` to point at and
+would make the one wait that holds twenty items look like the one that holds
+one.
+
+NO AVAILABILITY WAIT USES `resolve-blocked`, which the same clause states
+outright, and nothing here advertises one: the item stays `ready` throughout,
+so there is no blocked reason for a valve to resolve.
+
+NOTHING HERE PROBES A CREDENTIAL, TAKES A CONFIRMATION TURN, OR MUTATES. The
+verdict comes from the shared `acp_chain_preflight_verdict`, which supplies no
+probe at all, and the only other read is the repository's own committed
+re-probe cadence. That is what lets two compositions over one unchanged store
+render identical bytes — and the instant they render is a function of the
+availability evidence rather than of the clock, because `_reevaluate_at`
+answers the earliest governing expiry whenever one parses.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
+
+from livespec_orchestrator_beads_fabro.commands._acp_availability_wait import (
+    AvailabilityWait,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
+    resolve_availability_wait,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import utc_now_iso
+from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
+    ConformanceContext,
+)
+from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import (
+    availability_wait_journal_command,
+)
+from livespec_orchestrator_beads_fabro.commands._needs_attention_waits import (
+    acp_chain_preflight_verdict,
+)
+from livespec_orchestrator_beads_fabro.types import WorkItem
+
+__all__: list[str] = [
+    "availability_wait_items",
+]
+
+# The orchestrator-owned `hygiene:<type>:<resource>` form, whose resource is the
+# waiting work-item. `acp-availability-wait` names the mechanism rather than the
+# condition, because the condition varies per evaluation while the stable id
+# must not -- a row whose id moved when a typed hold expired into an outstanding
+# confirmation would read downstream as one fact clearing and another appearing.
+_WAIT_TYPE = "acp-availability-wait"
+
+# What the summary renders where the wait names NO admission-required node: the
+# unavailable-evidence arm, which is a real bounded wait with no node to
+# attribute it to. Spelled rather than left empty, because an empty field reads
+# as a node id that did not survive.
+_NO_NODE = "none"
+
+
+def availability_wait_items(
+    *,
+    project_root: Path,
+    repo: str,
+    items: list[WorkItem],
+) -> list[AttentionItem]:
+    """One row per ready item an admission-required chain's wait holds.
+
+    Empty when nothing is waiting, which is every repository whose chains still
+    hold a candidate and whose evidence sources all read — and every repository
+    declaring no fallback configuration at all, which short-circuits inside the
+    shared verdict before any graph or journal is touched.
+    """
+    now_iso = utc_now_iso()
+    wait = resolve_availability_wait(
+        repo=project_root,
+        verdict=acp_chain_preflight_verdict(project_root=project_root, now_iso=now_iso),
+        now_iso=now_iso,
+    )
+    if wait is None:
+        return []
+    return [
+        _wait_item(project_root=project_root, repo=repo, item=item, wait=wait)
+        for item in items
+        if item.status == "ready" and item.factory_safety is None
+    ]
+
+
+def _wait_item(
+    *,
+    project_root: Path,
+    repo: str,
+    item: WorkItem,
+    wait: AvailabilityWait,
+) -> AttentionItem:
+    return ConformanceContext(project_root=project_root, repo=repo).candidate(
+        id=f"hygiene:{_WAIT_TYPE}:{item.id}",
+        kind="hygiene",
+        urgency="high",
+        summary=_summary(work_item=item.id, wait=wait),
+        source_ref=SourceRef(repo=repo, work_item=item.id),
+        handoff=Handoff(
+            kind="shell",
+            command=availability_wait_journal_command(project_root=project_root),
+        ),
+    )
+
+
+def _summary(*, work_item: str, wait: AvailabilityWait) -> str:
+    """Name the condition, the node and the instant, and nothing that varies.
+
+    Deterministic by construction: every field is read off the wait, which is a
+    function of the availability evidence and the committed cadence. No clock
+    reading, dwell or run id appears here.
+    """
+    return (
+        f"Work-item {work_item} stays ready while an admission-required ACP node "
+        f"has no eligible candidate: governing_condition={wait.governing_condition} "
+        f"admission_required_node={wait.node or _NO_NODE} "
+        f"scheduled_reevaluation_at={wait.reevaluate_at}. "
+        "Reevaluation is automatic and needs no human action."
+    )
