@@ -1,0 +1,163 @@
+"""The RECORDS one confirmation turn leaves behind: a hold, and a journal row.
+
+`SPECIFICATION/contracts.md` section "Factory-configurable ACP fallback
+priority" -> "Availability is re-confirmed after expiry": "An eligible refusal
+creates a new occurrence-time-scoped hold. Any other probe failure skips that
+candidate for the current evaluation, creates no hold, and allows selection to
+continue to later eligible candidates." And, in the same section: "A hold MUST
+come from an actual candidate attempt: a typed eligible failure classified from
+a failed node of a terminal run, whichever terminal the run reached, or a
+refused availability confirmation turn ..., which runs the candidate's own
+adapter and is therefore an actual attempt. Expiry is computed from occurrence
+time and never from ingestion."
+
+PURE, AND THE RECORDS ONLY. Nothing here appends, reads a clock, resolves
+configuration or reaches a factory: `_acp_availability_probe_outcome` beside it
+graded the ending, and `_acp_availability_probe_run` performs the turn and
+hands both the ending and the instant in. That is the same decision/record/
+perform split `_acp_failure_classifier` / `_acp_hold_records` /
+`_acp_hold_ledger` take one level down, and it is what lets every decision
+below be exercised with no provider at all.
+
+THE EVIDENCE KIND IS `candidate-attempt`, AND THAT IS A CONTRACT CLAIM RATHER
+THAN A CONVENIENCE. `hold_observation_record` refuses any kind outside its
+closed set precisely so that "a credential probe, a catalog read or a
+provider's own reset claim" cannot mint a hold -- and the clause that forbids
+those is the same one that names a refused confirmation turn an actual attempt,
+on the stated ground that it "runs the candidate's own adapter". So a refused
+probe is admitted through the existing door rather than by widening the set.
+The clause is equally explicit about the OTHER probe: "No hold may come from
+... the admission-time credential-usability probe", which is a different
+mechanism entirely and reaches none of this.
+
+THE REFUSAL ARM IS THE ONLY ARM. Five of the six endings mint nothing, and the
+TIMED-OUT one is the reason this is a lookup on the ending rather than on the
+recorded text: a terminated turn's record can carry the provider's last
+sentence, so a builder reading the text first mints a hold from a measurement
+the Dispatcher interrupted. `probe_ending` already applies that precedence, and
+this module trusts the grade instead of re-deriving it -- two accounts of which
+endings mint would be two authorities on when an allowance is held.
+
+THE SIGNAL DIFFERS FROM THE TERMINAL-READING ONE IN EXACTLY ONE FIELD, and the
+reuse is deliberate. `provider_limit_signal` already decides WHICH observed
+channel a recorded cause is, and its own docstring carries the two independent
+measurements behind putting it on the protocol MESSAGE; a second account of
+that mapping here would be a second authority on whether a signature can ever
+match. What a probe knows and a terminal reading does not is that the turn
+STARTED: the refusal ending is reachable only through `agent.acp.started`, so
+`turn_started` is set rather than left at its conservative default. It changes
+no verdict today -- the pre-turn guard fires only when no readable field
+carries text, and a refusal by construction carries some -- and it keeps the
+signal honest about an attempt whose protocol boundary was measured.
+
+AN UNREADABLE OCCURRENCE INSTANT MINTS NOTHING. `hold_observation_record`
+refuses it, because expiry is COMPUTED from occurrence and there is nothing
+else to compute one from; this module passes that refusal through as `None`
+rather than substituting a clock, which is the one substitution the clause's
+"never from ingestion" forbids outright.
+
+THE JOURNAL ROW THIS MODULE WILL ALSO OWN is the other half of the same
+clause -- "Every probe turn is journaled with the candidate identity, outcome,
+occurrence time and, where observable, its cost" -- and it is a separate
+concern from the hold: it is written for EVERY ending, including the five that
+mint nothing and the one that confirms, because a row written only on refusal
+would make the measurement that found a provider HEALTHY invisible.
+"""
+
+from __future__ import annotations
+
+from dataclasses import replace
+
+from livespec_orchestrator_beads_fabro.commands._acp_availability_probe import (
+    AVAILABILITY_PROBE_NODE,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_availability_probe_outcome import (
+    PROBE_REFUSED,
+    AcpProbeObservation,
+    probe_ending,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
+from livespec_orchestrator_beads_fabro.commands._acp_failure_classifier import (
+    AcpAvailabilityFailure,
+    classify_acp_failure,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_hold_records import hold_observation_record
+from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_classify import (
+    provider_limit_signal,
+)
+
+__all__: list[str] = [
+    "PROBE_EVIDENCE_KIND",
+    "probe_eligible_failure",
+    "probe_hold_record",
+]
+
+# The closed-set evidence kind a refused confirmation turn is admitted under.
+# See the module docstring for why it is this one and not a new member.
+PROBE_EVIDENCE_KIND = "candidate-attempt"
+
+
+def probe_eligible_failure(
+    *,
+    candidate: AcpCandidate,
+    builtin: bool,
+    observation: AcpProbeObservation,
+    ending: str,
+) -> AcpAvailabilityFailure | None:
+    """The typed eligible cause this refusal measured, or `None` for every else.
+
+    `None` covers three different things, and none of them is a hold: an ending
+    that is not a refusal at all, a refusal whose record carries no sentence to
+    classify, and a refusal the signatures do not match -- which keeps its
+    existing route and asserts nothing about an allowance.
+    """
+    if ending != PROBE_REFUSED or observation.failure is None:
+        return None
+    verdict = classify_acp_failure(
+        signal=replace(provider_limit_signal(failure=observation.failure), turn_started=True),
+        candidate=candidate,
+        builtin=builtin,
+    )
+    return verdict if isinstance(verdict, AcpAvailabilityFailure) else None
+
+
+def probe_hold_record(
+    *,
+    candidate: AcpCandidate,
+    builtin: bool,
+    observation: AcpProbeObservation,
+    occurred_at: str,
+    run_reference: str,
+    work_item_id: str,
+) -> dict[str, object] | None:
+    """The appendable observation one refused confirmation turn mints, or `None`.
+
+    The ending is graded HERE from the observation rather than accepted as a
+    parameter, so there is exactly one route by which an ending decides whether
+    an allowance is held. A caller that has already graded the ending for its
+    own journal row passes the observation anyway, and the two readings are the
+    same `probe_ending` call -- two accounts of which endings mint would be two
+    authorities on when a candidate is skipped for fifteen minutes.
+
+    `run_reference` is the probe's own `factory:run` pair, which is what makes
+    the minted `observation_id` STABLE: re-ingesting one probe -- by a
+    reconciliation replay, or by a second evaluation in the same window --
+    reproduces the identical id and so completes rather than duplicates.
+    """
+    failure = probe_eligible_failure(
+        candidate=candidate,
+        builtin=builtin,
+        observation=observation,
+        ending=probe_ending(observation=observation),
+    )
+    if failure is None:
+        return None
+    built = hold_observation_record(
+        failure=failure,
+        evidence_kind=PROBE_EVIDENCE_KIND,
+        evidence_id=f"{run_reference}:{AVAILABILITY_PROBE_NODE}",
+        occurred_at=occurred_at,
+        work_item_id=work_item_id,
+        node=AVAILABILITY_PROBE_NODE,
+    )
+    return None if isinstance(built, str) else built

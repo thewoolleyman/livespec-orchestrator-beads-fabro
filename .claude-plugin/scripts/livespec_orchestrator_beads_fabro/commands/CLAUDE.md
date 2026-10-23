@@ -1559,6 +1559,32 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   as a successful turn is a failed attempt") is deliberately NOT graded here:
   this module sees no turn output, which is what keeps the "never an arbitrary
   exec-output tail" rule structural.
+- `_acp_availability_probe_records.py` — the RECORDS one confirmation turn
+  leaves: "An eligible refusal creates a new occurrence-time-scoped hold. Any
+  other probe failure skips that candidate for the current evaluation, creates
+  no hold". PURE, and the records only.
+  THE EVIDENCE KIND IS `candidate-attempt`, which is a CONTRACT claim rather
+  than a convenience: `hold_observation_record` refuses any kind outside its
+  closed set precisely so a credential probe, a catalog read or a provider's
+  reset claim cannot mint a hold — and the clause forbidding those is the same
+  one that names a refused confirmation turn an actual attempt, on the stated
+  ground that it "runs the candidate's own adapter". So a refused probe is
+  admitted through the existing door rather than by widening the set.
+  THE REFUSAL ARM IS THE ONLY ARM, and it is a lookup on the ENDING rather than
+  on the recorded text: a terminated turn's record can carry the provider's
+  last sentence, so a builder reading the text first mints a hold from a
+  measurement the Dispatcher interrupted. The ending is graded INSIDE
+  `probe_hold_record` rather than accepted as a parameter, so exactly one route
+  decides when an allowance is held.
+  THE SIGNAL DIFFERS FROM THE TERMINAL-READING ONE IN ONE FIELD.
+  `provider_limit_signal` is REUSED, because its own docstring carries the two
+  measurements behind putting a recorded cause on the protocol MESSAGE and a
+  second account here would be a second authority on whether a signature can
+  ever match; what a probe knows and a terminal reading does not is that the
+  turn STARTED, since the refusal ending is reachable only through
+  `agent.acp.started`. An unreadable occurrence instant mints NOTHING rather
+  than substituting a clock — the one substitution "never from ingestion"
+  forbids outright.
 - The FACTORY-NATIVE OPERATOR CLEARANCE of the same paragraph's "an operator
   clearance by a minimal factory-native record whose recorded outcome carries
   the clearance's exact identity, actor, time, and reason" (`bd-ib-dtfv2p`,
