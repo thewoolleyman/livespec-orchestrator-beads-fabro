@@ -6754,7 +6754,8 @@ Feature: Factory addresses come from a host registry, not from committed configu
     When dispatcher.default_factory is changed from "petri" to "next"
     And both items are dispatched with no --factory flag
     Then the unpinned item is dispatched to "next"
-    And the item recorded to "petri" is dispatched to "petri"
+    And the item recorded to "petri" is dispatched to "next", because a fresh dispatch reads no recorded factory
+    And when the item recorded to "petri" is instead resumed with resume --item, the resume is dispatched to "petri"
 ```
 
 ## Scenario 183 — A checkpoint-failed run whose tree nothing else carries is published to a preservation ref
@@ -7611,10 +7612,61 @@ Scenario: With no free slot anywhere the dispatch goes to the default factory an
   And the dispatch is neither refused nor deferred
 
 Scenario: A pinned dispatch reads no capacity and journals no selection
-  Given the dispatch is invoked with --factory "A", or LIVESPEC_FABRO_FACTORY names "A", or the item's recorded factory is "A"
+  Given the dispatch is invoked with --factory "A", or LIVESPEC_FABRO_FACTORY names "A", or the item's route is resume and its recorded factory is "A"
   When the Dispatcher dispatches the item
   Then the run is submitted to factory "A" without reading either server's run count or max_concurrent_runs
   And no overflow-selection journal record is written
+
+Scenario: A fresh dispatch ignores the item's recorded factory
+  Given dispatcher.default_factory names factory "A" and dispatcher.overflow_factories is empty
+  And dispatcher.factories declares factories "A" and "B"
+  And the item's recorded factory is "B" from an earlier run
+  And the item is not released for recovery, as for an item reopened for rework
+  And no explicit factory is selected
+  When the Dispatcher dispatches the item with dispatch --item, the drive action impl, or a loop drain
+  Then the admission claim stamp names factory "A"
+  And the run is submitted to factory "A"
+  And the item's dispatch-factory record names factory "A"
+
+Scenario: An explicit resume keeps the item's recorded factory
+  Given the same configuration and the item's recorded factory is "B"
+  And no explicit factory is selected
+  When the Dispatcher resumes the item with resume --item
+  Then the resumed run is submitted to factory "B"
+  And no overflow-selection journal record is written
+
+Scenario: A recovery-routed resume keeps the item's recorded factory
+  Given the same configuration and the item's recorded factory is "B"
+  And the item is released for recovery and recovery routing routes it resume
+  And no explicit factory is selected
+  When the Dispatcher dispatches the item with dispatch --item or a loop drain
+  Then the admission claim stamp names factory "B"
+  And the resumed run is submitted to factory "B"
+
+Scenario: A seeded recovery dispatch goes to the default factory
+  Given the same configuration and the item's recorded factory is "B"
+  And the item is released for recovery and recovery routing routes it seeded
+  And no explicit factory is selected
+  When the Dispatcher dispatches the item
+  Then the admission claim stamp names factory "A"
+  And the seeded run is submitted to factory "A"
+
+Scenario: One loop wave carries a resume and a fresh dispatch
+  Given the same configuration
+  And item "R" records factory "B" and recovery routing routes it resume
+  And item "F" records factory "B" and is not released for recovery
+  When one loop wave dispatches both items with no explicit factory
+  Then item "R" is stamped with and submitted to factory "B"
+  And item "F" is stamped with and submitted to factory "A"
+
+Scenario: A fresh dispatch of a previously pinned item takes overflow selection
+  Given dispatcher.default_factory names factory "A" and dispatcher.overflow_factories is ["B"]
+  And the item's recorded factory is "A" from an earlier run
+  And the item is not released for recovery
+  And no explicit factory is selected
+  When the Dispatcher dispatches the item with dispatch --item
+  Then the Dispatcher reads both candidates' run counts and max_concurrent_runs
+  And one overflow-selection journal record is written for the dispatch
 ```
 
 ## Scenario 204 — An implement turn that reports its work incomplete fails the implement stage

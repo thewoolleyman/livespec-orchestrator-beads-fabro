@@ -4539,10 +4539,10 @@ subject to every dispatch-eligibility rule of §"Dispatcher admission, WIP
 cap, and post-merge acceptance" and §"Dispatcher loop invocation surface"
 (dependencies, the WIP cap, `admission_policy`, `factory_safety`,
 `rework:pending`), hold the dispatch-scoped ownership lock, run the
-host-side mechanical wall of §"Effective acceptance criteria", resolve
-its factory as `dispatch --item` does (the selection order of §"Factory
-addresses resolved from a host registry", including `LIVESPEC_FABRO_FACTORY`
-and factory overflow selection), declare a dispatch
+host-side mechanical wall of §"Effective acceptance criteria", resolve its factory through the selection order of §"Factory
+addresses resolved from a host registry", taking that order's resume-only
+recorded-factory step, and including `LIVESPEC_FABRO_FACTORY` and factory
+overflow selection, declare a dispatch
 id to the sandbox, and journal exactly as a dispatch does — including the
 §"Fail-closed cost gate (keyed on `--item` presence)" record, under
 the hand-picked posture. It MUST
@@ -7371,18 +7371,39 @@ A factory's per-name settings — its dev token, its secret-channel declaration,
 its `bin` and its `environment` — stay keyed by the factory name, unchanged.
 
 The registry refusal applies only to resolving a DECLARED, registry-backed
-entry, and the undeclared-name refusal only to an EXPLICIT selection. Neither
-changes the factory selection order: an explicit
+entry, and the undeclared-name refusal only to an EXPLICIT selection. Neither changes the factory selection order: an explicit
 `--factory` is taken first, then `LIVESPEC_FABRO_FACTORY` when it is set and
-non-empty; then the
-item's recorded factory; then factory overflow selection (§"Factory overflow
-selection") when `dispatcher.overflow_factories` is non-empty, and otherwise
-`dispatcher.default_factory`. A recorded factory
-name that `dispatcher.factories` no longer declares keeps its existing
-treatment: when no explicit selection is made it is ignored and the dispatch
-proceeds as an unpinned one, so renaming a factory re-routes the later
-unpinned dispatches of every item that recorded the old name onto the default
-factory, or through factory overflow selection when it is configured. A `dispatcher.default_factory` that names no declared entry
+non-empty; then, for a resume only, the item's recorded factory; then factory
+overflow selection (§"Factory overflow selection") when
+`dispatcher.overflow_factories` is non-empty, and otherwise
+`dispatcher.default_factory`. A *resume* here is a dispatch whose route is
+`resume`: an invocation of §"Resume from a published pull request
+(`resume --item`)", or a `dispatch` or `loop` pass whose recovery routing
+(§"Factory-configurable ACP fallback priority" → "Recovery from the failed
+run's preserved work") routes the item `resume`. It is the one route that
+continues the run lineage the item's recorded factory belongs to. Every other
+dispatch is a FRESH dispatch, whatever entry point carries it: a
+`dispatch --item`, a `drive` action `impl:<id>` or a loop drain whose item
+recovery routing routes `seeded` or `fresh`, an item not released for
+recovery, and an item reopened for rework. The classification is per item and
+per pass, so one loop wave may carry a resume beside fresh dispatches. A fresh
+dispatch MUST NOT read the item's recorded factory as a pin. When no explicit
+selection is made it MUST proceed as an unpinned dispatch, so changing
+`dispatcher.default_factory` re-routes the next fresh dispatch of every item
+onto the new default factory, or through factory overflow selection when it is
+configured. The admission claim stamp MUST apply the same order, using the
+route recovery routing assigned before the admission valve, so a fresh
+dispatch is stamped with the factory it will reach and a resume with the
+factory selected by that same order. Every dispatch MUST still write the item's dispatch-factory
+record, and every surface that locates an item's live or earlier run through
+that record or through the run's own recorded target MUST keep reading it
+unchanged: the reconcile survey, a liveness read, the claim stamp's run
+target, adapter launch evidence, the acceptance pass, and a resume's read of
+its earlier run. A recorded factory name that `dispatcher.factories` no longer declares keeps
+its existing treatment for a resume: when no explicit selection is made it is
+ignored and the resume proceeds as an unpinned one, so renaming a factory
+re-routes the later resumes of every item that recorded the old name onto the
+default factory, or through factory overflow selection when it is configured. A `dispatcher.default_factory` that names no declared entry
 keeps its existing treatment as well; this clause does not govern it.
 
 A factory name SHOULD name the Fabro server instance it addresses and SHOULD
@@ -7402,9 +7423,10 @@ API-configurable. When it is absent or empty, selection is exactly the order
 of §"Factory addresses resolved from a host registry", and nothing in this
 section applies.
 
-Overflow selection applies ONLY to a dispatch, including a resume, that has no
-explicit `--factory`, no non-empty `LIVESPEC_FABRO_FACTORY`, and no recorded
-factory that `dispatcher.factories` still declares. For such a dispatch the
+Overflow selection applies ONLY to a dispatch that has no explicit `--factory`
+and no non-empty `LIVESPEC_FABRO_FACTORY`, and that is either a fresh dispatch
+or a resume carrying no recorded factory that `dispatcher.factories` still
+declares (§"Factory addresses resolved from a host registry"). For such a dispatch the
 candidates are `dispatcher.default_factory` followed by each entry of
 `dispatcher.overflow_factories`, in that order. For each candidate the
 Dispatcher MUST read, from that candidate's own Fabro server at selection
@@ -7426,8 +7448,8 @@ selected one, so a registry-backed default the registry cannot resolve is
 refused under §"Factory addresses resolved from a host registry".
 
 The chosen factory MUST be recorded as the item's dispatch-factory record
-exactly as an explicit choice is, so that a later resume, reconcile or
-acceptance pass of the same dispatch follows it. A registry-backed candidate
+exactly as an explicit choice is, so that a later resume, reconcile or acceptance pass of the same dispatch follows it; a later
+fresh dispatch of the item does not. A registry-backed candidate
 MUST be resolved through the host registry before its server is read. A
 candidate the registry cannot resolve counts as having no free slot for
 selection; this does not relax the registry refusal for a dispatch that names
