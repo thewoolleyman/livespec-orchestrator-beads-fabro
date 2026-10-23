@@ -102,7 +102,9 @@ _RUN_ID = "01M580PF02S0VMFKX5HPB05Z8C"
 # constant would refuse the very dispatch this case asserts succeeds.
 _REGISTRY_BIN_NAME = "registry-fabro"
 _HOST_FALLBACK_BIN_NAME = "host-fabro"
+_COMMITTED_BIN_NAME = "committed-fabro"
 _REGISTRY_ENVIRONMENT = "livespec-registry-env"
+_COMMITTED_ENVIRONMENT = "livespec-committed-env"
 
 
 @pytest.fixture(autouse=True)
@@ -395,6 +397,88 @@ def test_a_client_key_neither_source_declares_keeps_its_absent_treatment(
         SECRET_CHANNEL_INLINE_OVERLAY,
     )
     assert _refusals(cwd=tmp_path, factory=_NEXT) == (None, None, None)
+
+
+def test_a_named_default_factory_overrides_the_registrys_fleet_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`default_factory` naming a declared factory wins over the designation.
+
+    The same registry, carrying the same designation, as the fleet case above:
+    the repository's committed name is the ONLY difference, so the resolution
+    answering `legacy` is attributable to that name rather than to a build that
+    reads no registry at all.
+
+    The negative is asserted beside the positive because `legacy` is a declared
+    entry with a committed address, so "the resolver answered `legacy`" is
+    equally satisfied by a build that never consulted the designation — and the
+    discriminating fact is that `petri`, which the registry designates and
+    which this repository does not declare, is not what it answered.
+    """
+    _write_config(
+        cwd=tmp_path,
+        factories={_LEGACY: {"server": _LEGACY_SERVER}},
+        default_factory=_LEGACY,
+    )
+    _ = _write_registry(
+        cwd=tmp_path, monkeypatch=monkeypatch, payload=_fleet_registry(default=_PETRI)
+    )
+
+    target = resolve_fabro_factory(cwd=tmp_path)
+
+    assert (target.name, target.server) == (_LEGACY, _LEGACY_SERVER)
+    assert target.name != _PETRI
+    assert target.server != _PETRI_SERVER
+
+
+@pytest.mark.parametrize("default", [_FLEET, _PETRI])
+@pytest.mark.parametrize("key", ["bin", "secret_channel", "environment"])
+def test_a_committed_client_setting_outranks_the_registrys_key_by_key(
+    default: str,
+    key: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The committed value wins for the key it declares; the registry supplies the rest.
+
+    The scenario outline's own six rows: each key over both ways a repository
+    reaches `petri` — through the reserved `fleet` value, and by naming the
+    registry-backed entry outright. Both are run because the two take different
+    paths to the same factory, and a merge wired into only one of them answers
+    correctly for half of every repository in the fleet.
+
+    Each row asserts the OTHER two keys are still the registry's, which is what
+    makes it a per-KEY claim rather than a per-entry one: an implementation
+    letting one committed key suppress the whole registry entry satisfies the
+    positive half of all six rows while making the clause's recommended posture
+    — commit one override, inherit the rest — silently impossible.
+    """
+    committed: dict[str, str] = {
+        "bin": _executable(cwd=tmp_path, name=_COMMITTED_BIN_NAME),
+        "secret_channel": SECRET_CHANNEL_INLINE_OVERLAY,
+        "environment": _COMMITTED_ENVIRONMENT,
+    }
+    registry = _registry_client(cwd=tmp_path)
+    expected = {name: registry[name] for name in committed}
+    expected[key] = committed[key]
+    _write_config(
+        cwd=tmp_path,
+        factories={_PETRI: {"registry": True, key: committed[key]}},
+        default_factory=default,
+    )
+    _ = _write_registry(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        payload=_fleet_registry(default=_PETRI, client=registry),
+    )
+
+    assert _client_settings(cwd=tmp_path, factory=_PETRI) == (
+        expected["bin"],
+        expected["environment"],
+        expected["secret_channel"],
+    )
+    assert _refusals(cwd=tmp_path, factory=_PETRI) == (None, None, None)
 
 
 def _dispatch_records(*, cwd: Path) -> tuple[str | None, str | None, str | None, str | None]:
