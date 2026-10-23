@@ -2212,8 +2212,8 @@
     "heading": "## Scenario 236 \u2014 A staged Fabro source checkout carries the ratified worktree and branch names",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "A unit-tier test is owed for this heading: ratified with proposal fabro-source-worktree-name, and the owning work-item bd-ib-7pags adds a test that stages a run's source and fails unless the checkout directory is fabro-source- plus 32 lowercase hexadecimal characters under the repository's directory and the branch is livespec/source/ plus the same characters, together with the test that binds this entry.",
+    "test": "tests.integration.test_source_staging_names_scenario236.test_scenario236_the_staged_source_checkout_carries_the_ratified_names",
+    "reason": "Integration-tier acceptance for the staged source checkout's ratified names, implemented by bd-ib-7pags: the staging runs for real against a real Git repository with a real origin, only the engine launch is stood in, and the directory and branch are read off the checkout the runner actually created, inside the launch, because cleanup removes both as soon as it returns. The parent is compared against the dispatching repository's own `repo.name` rather than against the fixture's literal directory name, and the branch's 32 characters are EXTRACTED from the directory name rather than matched by a second regex, because two independent shape assertions are satisfied by a runner that mints a fresh identifier per name -- which defeats a worktree reaper from the other direction, since it could no longer name the branch a recognised worktree belongs to.",
     "work_item": "bd-ib-7pags"
   },
   {
