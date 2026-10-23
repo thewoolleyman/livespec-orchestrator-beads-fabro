@@ -170,6 +170,15 @@ class FactoryTarget:
     # server — both leave `server` at None, and only one of them may dispatch —
     # and `_dispatcher_factory_registry` owns the grade of the reading.
     registry: FactoryRegistryReading = NO_FACTORY_REGISTRY
+    # Which client keys' effective values above came from the REGISTRY entry
+    # rather than from the committed one — `_factory_client_settings` decides
+    # it, by the same per-key rule and in the same place as the values. It is
+    # carried beside them because each key's grade refuses by naming a remedy
+    # and the remedy differs by source: a committed value is corrected by a
+    # commit, a registry-supplied one by the fleet's provisioning, and
+    # `registry.path` names the file. A grade cannot re-derive it — the merged
+    # value is on the same field either way, and that is the whole point.
+    registry_sourced_client_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -494,6 +503,7 @@ def _factory_target_for(*, name: str, block: dict[str, Any]) -> FactoryTarget:
             else _optional_str(value=entry.get(_FACTORY_DOCKER_HOST_KEY))
         ),
         registry=registry,
+        registry_sourced_client_keys=client.registry_sourced,
         dev_token=_optional_str(value=os.environ.get(f"{_FABRO_DEV_AUTH_ENV_PREFIX}{name}")),
     )
 

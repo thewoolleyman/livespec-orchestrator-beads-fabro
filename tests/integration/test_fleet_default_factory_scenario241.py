@@ -529,3 +529,91 @@ def _dispatch_records(*, cwd: Path) -> tuple[str | None, str | None, str | None,
         recorded.get("name"),
         recorded.get("server"),
     )
+
+
+def _invalid_client_value(*, key: str) -> str:
+    """One value a committed entry would be refused for, per client key.
+
+    Each is the shape its own grade refuses: a `bin` that names no existing
+    executable file, a transport this build does not speak, and an
+    `environment` that is declared and is not a non-empty string.
+    """
+    if key == "bin":
+        return "/nonexistent/fabro-client"
+    if key == "secret_channel":
+        return "bogus_transport"
+    return ""
+
+
+def _client_key_refusal(*, cwd: Path, factory: str, key: str) -> str:
+    """The pre-claim refusal ONE client key's effective value earns.
+
+    Routed by key because the three grades are reached from two different
+    surfaces: `bin` and `environment` are graded off the resolved target
+    through the one composition the pre-dispatch config arm calls, and the
+    transport is graded by a reader asked for the factory by NAME.
+    """
+    if key == "secret_channel":
+        channel = resolve_secret_channel(block=dispatcher_block(cwd=cwd), factory=factory)
+        assert isinstance(channel, SecretChannelRefusal)
+        return channel.message
+    refusal = factory_declaration_refusal(factory=resolve_fabro_factory(cwd=cwd, factory=factory))
+    assert refusal is not None
+    return refusal
+
+
+@pytest.mark.parametrize("key", ["bin", "secret_channel", "environment"])
+def test_an_invalid_registry_supplied_client_setting_is_refused_naming_the_registry(
+    key: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A registry-supplied client value earns its own grade's refusal, naming the registry.
+
+    The clause requires every validation and refusal a committed value of these
+    keys receives to apply equally to a registry-supplied one "at the same
+    point and with the same effects, naming the registry path as its source",
+    and Scenario 241 asserts the same. The refusal already fires — the merge
+    lands a registry value on the same field a committed one does — so the
+    claim under test is the SOURCE: an operator reading it must be sent to the
+    file that carries the value.
+
+    The committed control beside it is what makes this a source claim rather
+    than a "mention the registry whenever one is backing the factory" one. In
+    that half the registry carries a VALID value for the same key and the
+    committed entry carries the invalid one, so a refusal naming the registry
+    path there is naming a file whose value lost the merge and whose correction
+    would change nothing.
+    """
+    registry_client = _registry_client(cwd=tmp_path)
+    invalid = _invalid_client_value(key=key)
+    _write_config(
+        cwd=tmp_path,
+        factories={_PETRI: {"registry": True}},
+        default_factory=_FLEET,
+    )
+    registry_path = _write_registry(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        payload=_fleet_registry(default=_PETRI, client={**registry_client, key: invalid}),
+    )
+
+    registry_sourced = _client_key_refusal(cwd=tmp_path, factory=_PETRI, key=key)
+
+    assert str(registry_path) in registry_sourced
+
+    _write_config(
+        cwd=tmp_path,
+        factories={_PETRI: {"registry": True, key: invalid}},
+        default_factory=_FLEET,
+    )
+    _ = _write_registry(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        payload=_fleet_registry(default=_PETRI, client=registry_client),
+    )
+
+    committed_sourced = _client_key_refusal(cwd=tmp_path, factory=_PETRI, key=key)
+
+    assert str(registry_path) not in committed_sourced
+    assert f"dispatcher.factories.{_PETRI}.{key}" in committed_sourced
