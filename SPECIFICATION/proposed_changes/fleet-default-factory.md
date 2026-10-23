@@ -64,3 +64,13 @@ Add to Scenario 241 two cases:
 Add to Scenario 241 two cases:
 - Given dispatcher.default_factory is "fleet", dispatcher.overflow_factories is non-empty, and an item with a fleet-derived recorded pin on an undeclared "petri". When the item is resumed after the fleet default moved, then the resume goes to "petri" and no overflow ranking is journaled.
 - Given the same item, when it is dispatched with an explicit --factory naming another declared factory, then the dispatch goes to that explicit factory.
+
+**Amendment accommodating v203 (fresh-dispatch-ignores-recorded-factory, bd-ib-2b2uqa):**
+
+9. Amendments 6 and 8 apply to a RESUME only. Revision v203 restricted the recorded-factory step of the selection order to a dispatch whose route is `resume` (an invocation of `resume --item`, or a `dispatch` or `loop` pass whose recovery routing routes the item `resume`), and made every other dispatch a FRESH dispatch that reads no recorded factory. This proposal amends the v203 text of §"Factory addresses resolved from a host registry" and §"Factory overflow selection", not the v202 text quoted in amendments 6 and 8. Accordingly:
+   - In amendment 6, "A resume or re-dispatch carrying such a pin" reads "A resume carrying such a pin", and the preserved resolution of a fleet-derived recorded name, together with its refusal when the registry no longer resolves that name, applies only to a resume.
+   - In amendment 8, the overflow exclusion of a dispatch carrying a preserved fleet-derived recorded pin applies only to a resume. A fresh dispatch of an item whose recorded factory was reached through `fleet` MUST resolve the CURRENT resolved default factory, or factory overflow selection when it is configured, exactly as any fresh dispatch does under v203, and its fleet-derived record pins nothing.
+   - Explicit `--factory` and a set and non-empty `LIVESPEC_FABRO_FACTORY` keep their precedence over both.
+
+In Scenario 241, the second case reads "then the next fresh dispatch of any item, including an item whose dispatch was recorded on the old default, is created on that factory, and the repository's committed configuration is unchanged". Add one case:
+- Given dispatcher.default_factory is "fleet", an item whose dispatch was recorded on "petri" through the fleet default, and the registry's default since moved to "next". When the item is dispatched with dispatch --item and recovery routing routes it fresh, then the run is created on "next", and the admission claim stamp and the dispatch-factory record name "next".
