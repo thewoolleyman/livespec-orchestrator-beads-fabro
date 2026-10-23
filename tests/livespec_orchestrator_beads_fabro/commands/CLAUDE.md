@@ -341,6 +341,38 @@ Tests for the thin-transport command modules under
   positive control is the `_repository` module, which resolves the same fixture
   and reads once as soon as a policy is supplied.
 
+- The four `test_*_seven_day_*` modules cover the session-headroom clause's
+  SEVEN-DAY half (`bd-ib-u3jq5r`). Scenario 231 is bound at the integration tier
+  by `tests/integration/test_session_headroom_seven_day_scenario231.py`; these
+  cover what that tier cannot DISCRIMINATE, and the split follows the one
+  assertion each one can fail on. `test_dispatcher_session_headroom_seven_day_
+  read` owns the READ, and its load-bearing assertion is the request COUNT
+  rather than the figures: both windows come off one response's headers, so a
+  build spending a second bounded request returns the identical reading and
+  satisfies every figure assertion while doubling what the brake costs the
+  provider. `..._skip` owns the skip and the continued selection, read off the
+  SURVIVING candidate rather than off the skip — a node that recorded the skip
+  while emptying its chain satisfies every assertion about the skip itself — and
+  its control is a FULLY SPENT weekly window the provider still serves, the
+  sharpest form available, since a build inferring exhaustion from the
+  percentage skips that one too. `..._arms` owns the seven readings that are not
+  refusals plus the floor-of-0 dial; every case there is an ADMISSION, so every
+  one is satisfied by a build that reads no weekly window at all, and what
+  discriminates is the refusing reading each case is paired against on the same
+  fixture. `..._naming` owns the two record surfaces and is explicitly a set of
+  CONTROLS: the kind is one field the filter sets and all three record surfaces
+  render, so no case there could have failed before the filter learned to report
+  it — they are what would fail if a later edit reached for a second skip REASON
+  per shortfall, which would leave every consumer keying on the reason unable to
+  see a weekly skip at all.
+  EVERY FIGURE IN ALL FOUR IS A PERCENTAGE, and that is worth knowing before
+  editing a fixture: the provider's header carries a FRACTION and the read
+  converts it once, so a fixture spelling `1.0` where it means a full window
+  builds a reading of one percent wearing the look of a spent one. Measured
+  2026-10-23 while authoring these — the first draft of the record module's
+  expectations did exactly that, and the rows labelled `below-100` and
+  `at-100-unrefused` would not have been the rows they claim to be.
+
 - The `test_dispatcher_run_wall_*` family covers the whole-run wall budget
   (`bd-ib-sdxfsn`). Scenario 175 is bound at the integration tier by
   `tests/integration/test_run_wall_budget_scenario175.py`; these cover what that
