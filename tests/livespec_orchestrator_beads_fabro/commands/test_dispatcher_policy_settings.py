@@ -8,7 +8,6 @@ from typing import TypeVar
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_policy_settings
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_overrides import (
-    _is_spec_change_tier,
     effective_acceptance_rework_cap,
     effective_admission_policy,
     effective_merge_on_review_cap,
@@ -203,19 +202,33 @@ def test_invalid_raw_labels_with_config_fall_back_to_global_values(tmp_path: Pat
     )
 
 
-def test_spec_change_tier_is_the_commitment_not_the_plan_anchor() -> None:
-    """A plan anchor marker rides the same field; only a real commitment is that tier."""
-    assert _is_spec_change_tier(item=_item(spec_commitment_hint=_PLAN_ANCHOR_MARKER)) is False
-    assert _is_spec_change_tier(item=_item(spec_commitment_hint=_SPEC_CLAUSE_COMMITMENT)) is True
+def test_neither_a_commitment_hint_nor_a_plan_anchor_pins_the_admission_policy() -> None:
+    """The repair of `bd-ib-yykjko`: the hint is not the tier, in either direction.
 
+    This pair used to assert the opposite of its second half — a
+    commitment-carrying item pinned to the `manual` floor — and that reading is
+    the inverted predicate the plan-child-disposition clause of
+    `SPECIFICATION/constraints.md` names outright: the two fields "are
+    near-opposites", since a non-null `spec_commitment_hint` marks an
+    implementation FOLLOW-UP to an ALREADY-RATIFIED change and is therefore
+    ordinary dispatchable work. Pinning it held exactly the set that should be
+    admitted while admitting every unratified feature.
 
-def test_a_plan_anchored_item_keeps_its_own_admission_policy() -> None:
-    """The routing consequence: only a real commitment is pinned to the manual floor."""
+    BOTH values are asserted to keep their own policy, which is what makes the
+    case discriminating: a resolution that had merely swapped the two answers
+    would satisfy one half and fail the other. The hold a genuine
+    spec-change-tier item earns is applied where the RECORDED classification can
+    be read — the filing route and the pre-dispatch wall — and is bound by
+    `tests/integration/test_spec_change_tier_commitment_hint.py`.
+    """
     anchored = _item(spec_commitment_hint=_PLAN_ANCHOR_MARKER, admission_policy="auto")
     committed = _item(spec_commitment_hint=_SPEC_CLAUSE_COMMITMENT, admission_policy="auto")
 
     assert _read(effective_admission_policy(item=anchored, cwd=_NO_CONFIG_CWD)) == "auto"
-    assert (
-        _read(effective_admission_policy(item=committed, cwd=_NO_CONFIG_CWD))
-        == DEFAULT_ADMISSION_POLICY
+    assert _read(effective_admission_policy(item=committed, cwd=_NO_CONFIG_CWD)) == "auto"
+    # A manual-admission item still rests for the approve valve, which is
+    # Scenario 10's own subject and is untouched by the repair.
+    manual = _item(spec_commitment_hint=_SPEC_CLAUSE_COMMITMENT, admission_policy="manual")
+    assert _read(effective_admission_policy(item=manual, cwd=_NO_CONFIG_CWD)) == (
+        DEFAULT_ADMISSION_POLICY
     )
