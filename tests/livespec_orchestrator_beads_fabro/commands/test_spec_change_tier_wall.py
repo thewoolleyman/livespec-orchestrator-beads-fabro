@@ -240,3 +240,24 @@ def test_an_item_with_no_recorded_classification_is_not_held(
     module = _module(name="_spec_change_tier_wall")
 
     assert module.spec_change_tier_refusal(repo=repo, items=[_item(item_id=_FREE_ITEM)]) is None
+
+
+def test_an_unreadable_sidecar_fails_closed_for_a_previously_labelled_item(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ledger read failure cannot erase the tier record that was already there."""
+    repo = _repo(tmp_path=tmp_path, ratified=False)
+    _record(repo=repo, item_id=_HELD_ITEM, kind="unstated")
+    module = _module(name="_spec_change_tier_wall")
+    item = _item(item_id=_HELD_ITEM)
+
+    # The cadence classification already records its did-not-run cause when its
+    # sidecar is unavailable.  Keep this test on the wall's subsequent hold
+    # read, which must not reinterpret that unreadable sidecar as no history.
+    monkeypatch.setattr(module, "classify_item_spec_change_tier", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "item_comment_bodies", lambda **_kwargs: None)
+
+    refusal = module.spec_change_tier_refusal(repo=repo, items=[item])
+    assert refusal is not None
+    assert "ledger-comments-unreadable" in refusal
+    assert module.spec_change_unrefused_candidates(items=[item], repo=repo) == []

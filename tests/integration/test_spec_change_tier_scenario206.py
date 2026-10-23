@@ -282,11 +282,12 @@ def test_scenario206_a_released_manual_item_rests_at_pending_approval(
     assert "tier: none" in "\n".join(_comments(repo=repo))
 
 
-def test_scenario206_a_bug_is_routed_through_intake_exactly_as_today(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("classification", ["bug", "chore", "non_functional"])
+def test_scenario206_an_exempt_classification_is_routed_through_intake_exactly_as_today(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, classification: str
 ) -> None:
     repo = _repo(tmp_path=tmp_path)
-    _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch, replies=("bug",))
+    _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch, replies=(classification,))
     append_work_item(path=_config(repo=repo), item=_item())
     _stand_down_earlier_rows(monkeypatch=monkeypatch)
 

@@ -30,13 +30,16 @@ held item once its topic ratifies. The FILTER spends nothing at all: it runs
 over every ready item in the tenant, and a classification there would turn one
 drain pass into two model calls per ready row.
 
-AN UNREADABLE LEDGER REFUSES NOTHING AND DROPS NOTHING. The comment sidecar is
-where the recorded classification lives, so a sidecar that could not be read is
-the absence of evidence that a hold stands rather than evidence that none does —
-and holding there would empty the queue on a transient ledger fault, which reads
-exactly like a factory with no work. The plan-child disposition takes the
-OPPOSITE direction on the same absence because its own clause requires it; that
-asymmetry is deliberate and each half is stated where it is required.
+AN UNREADABLE SIDECAR OF A DURABLE ITEM FAILS CLOSED. The comment sidecar is
+where the recorded classification lives, so a sidecar that could not be read
+cannot establish that a prior spec-change-tier hold is absent. Both the wall and
+the filter therefore model it as a conservative hold; otherwise a transient
+ledger fault would release a labelled feature into implementation. A confirmed
+absent projected row has no durable sidecar and stays on the no-record route.
+The EMPTY TUPLE remains the distinct, readable answer that establishes no tier
+record. A classifier that cannot run for a readable unlabelled item still takes
+the existing route-as-before path and records that cause; this rule protects the
+standing record that the unavailable sidecar might conceal.
 
 THE ROW REFUSES ON THE FIRST HELD ITEM OF THE SELECTION, which is how every row
 of this wall reports: the operator repairs one thing at a time, and a refusal
@@ -47,6 +50,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._dispatcher_criteria_wall_variant import (
     criteria_wall_variant,
 )
@@ -61,13 +65,20 @@ from livespec_orchestrator_beads_fabro.commands._spec_change_tier import SPEC_DI
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_gate import (
     classify_item_spec_change_tier,
 )
-from livespec_orchestrator_beads_fabro.commands._spec_change_tier_hold import spec_change_hold
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_hold import (
+    SpecChangeHold,
+    spec_change_hold,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import (
     STAGE_DISPATCH,
     recorded_spec_change_tier,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
     ConnectionPrefixMissingError,
     LivespecConfigUnreadableError,
 )
@@ -77,7 +88,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
-    from livespec_orchestrator_beads_fabro.commands._spec_change_tier_hold import SpecChangeHold
     from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = [
@@ -250,17 +260,48 @@ def _held(
     """This item's standing hold, taking no judgement and reaching no provider.
 
     `item_comment_bodies` answers `None` for a sidecar it could not read and the
-    EMPTY TUPLE for an item carrying no comments, and those are deliberately
-    different answers at the surface that WRITES — but for this read they
-    coincide exactly, because both reduce to "no classification is recorded" and
-    the module docstring's fail-open direction is the answer to both. So the two
-    are collapsed HERE rather than branched on: a branch whose two arms return
-    the same value is a branch a later editor changes one arm of, and the arm
-    that would change is the one nothing in a healthy tenant can reach.
+    EMPTY TUPLE for an item carrying no comments. The empty tuple proves there is
+    no standing tier record; `None` cannot prove that, and must not erase a hold
+    merely because the history that recorded it is unavailable. A confirmed
+    absent projected row is the narrow exception: it has no durable history to
+    conceal. The synthetic hold keeps both dispatch shapes fail-closed and gives
+    the operator the exact unreadable input to repair.
     """
     bodies = item_comment_bodies(path=config, work_item_id=item.id)
+    if bodies is None:
+        if not _exists_or_is_unreadable(config=config, work_item_id=item.id):
+            return None
+        return SpecChangeHold(
+            work_item_id=item.id,
+            reason="ledger-comments-unreadable",
+            linked_proposal_topic=None,
+            verdict_kind="unavailable",
+            generalization_target=None,
+        )
     return spec_change_hold(
         work_item_id=item.id,
-        recorded=recorded_spec_change_tier(comments=bodies or ()),
+        recorded=recorded_spec_change_tier(comments=bodies),
         ratified_topics=ratified_topics,
     )
+
+
+def _exists_or_is_unreadable(*, config: StoreConfig, work_item_id: str) -> bool:
+    """Whether the item exists, with an unreadable existence read failing closed.
+
+    A candidate surface can project a row that has not yet been persisted (the
+    fake-store wiring controls exercise exactly that seam), and such a row has
+    no comment sidecar to protect. A confirmed absence therefore stays on the
+    no-record route. For an existing item, or when the existence read itself is
+    unavailable, `None` from the sidecar is a ledger failure and must not release
+    the record it could conceal.
+    """
+    read = attempt(
+        action=lambda: make_beads_client(config=config).exists(issue_id=work_item_id),
+        exceptions=(
+            BeadsCommandError,
+            BeadsConnectionError,
+            BeadsMappingError,
+            BeadsTenantMissingError,
+        ),
+    )
+    return True if isinstance(read, AttemptFailure) else read
