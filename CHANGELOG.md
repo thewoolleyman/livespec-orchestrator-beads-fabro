@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.239.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.239.2...v0.239.3) (2026-10-23)
+
+
+### Bug Fixes
+
+* **dispatcher:** key the sandbox env table on the factory's catalog environment ([24255db](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/24255db67029ca15474c80b5b9a262741785d738))
+
 ## [0.239.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.239.1...v0.239.2) (2026-10-23)
 
 
