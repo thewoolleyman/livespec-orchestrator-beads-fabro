@@ -302,6 +302,11 @@ def test_the_assessment_record_names_the_item_the_identity_and_the_reading() -> 
             "five_hour_drain_percent_per_hour": None,
             "projection": None,
             "unverified_provider_reset_claim": None,
+            "seven_day": {
+                "utilization_percent": None,
+                "status": None,
+                "unobservable": headroom.ABSENT_SEVEN_DAY_READING,
+            },
         }
     ]
 
@@ -325,6 +330,11 @@ def test_the_assessment_record_carries_an_unobservable_result_explicitly() -> No
             "five_hour_drain_percent_per_hour": None,
             "projection": None,
             "unverified_provider_reset_claim": None,
+            "seven_day": {
+                "utilization_percent": None,
+                "status": None,
+                "unobservable": headroom.ABSENT_SEVEN_DAY_READING,
+            },
         }
     ]
 

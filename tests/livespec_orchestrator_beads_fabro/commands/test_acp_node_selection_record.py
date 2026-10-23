@@ -391,6 +391,11 @@ def test_a_headroom_skip_carries_its_assessment_floor_and_horizon(tmp_path: Path
                 "five_hour_drain_percent_per_hour": None,
                 "projection": None,
                 "unverified_provider_reset_claim": None,
+                "seven_day": {
+                    "utilization_percent": None,
+                    "status": None,
+                    "unobservable": _module(name="_acp_session_headroom").ABSENT_SEVEN_DAY_READING,
+                },
             },
         }
     ]

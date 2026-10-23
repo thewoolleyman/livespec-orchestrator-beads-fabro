@@ -136,4 +136,5 @@ def test_the_rate_sits_among_the_readings_whole_journaled_key_set() -> None:
         _DRAIN_FIELD,
         "projection",
         "unverified_provider_reset_claim",
+        "seven_day",
     }
