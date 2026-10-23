@@ -66,6 +66,7 @@ __all__: list[str] = [
     "NO_TIER",
     "SPEC_CHANGE_KINDS",
     "SPEC_CHANGE_TIER",
+    "SPEC_DIRNAME",
     "SpecChangeTierDecision",
     "asked_for_behaviour",
     "behaviour_digest",
@@ -73,6 +74,13 @@ __all__: list[str] = [
     "exempt_decision",
     "proposal_topic_for",
 ]
+
+# Where the governed spec tree sits under a dispatch target, spelled as the
+# Definition-of-Done judgement's own resolution spells it so the ratification
+# read and that judgement cannot disagree about which tree is governing. It
+# lives in this LEAF because both the ratification read and the classification
+# need it, and naming it in either of those would make them import each other.
+SPEC_DIRNAME = "SPECIFICATION"
 
 # The one class the tier can apply to. The other three are exempt by the
 # clause's own wording, so the exemption is this constant's complement rather

@@ -11,7 +11,8 @@ WHY THE WALL ROW AND THE DRAIN FILTER ARE TWO SHAPES OF ONE DECISION, exactly as
 this NAMED selection not run" and renders the refusal an operator reads; the
 filter answers "which rows may this pass advertise" and runs over every ready
 item in the tenant. Both consume `_spec_change_tier_hold.spec_change_hold`, so a
-refusal and an exclusion can never disagree about the same item.
+refusal and an exclusion can never disagree about the recorded classification of
+the same item.
 
 THE FILTER EXISTS BECAUSE THE ROW ALONE WOULD STOP THE QUEUE. A wave-level
 refusal refuses the WHOLE selection, so one held item at the head of the ranking
@@ -20,11 +21,14 @@ every pass, reporting a factory that cannot run while the work it could run sat
 behind one item waiting on a human to ratify a proposal. That is the same reason
 the Definition-of-Done judgement has a filter beside its row.
 
-NEITHER SURFACE SPENDS A MODEL CALL, and that is what the ratified "needs no
-model" wording buys. Both read the recorded classification and the spec history,
-so the filter costs one ledger read per ready item and the row costs one per
-named item — no provider request, no judgement, nothing a provider outage can
-take away.
+THE HOLD ITSELF SPENDS NO MODEL CALL, and that is what the ratified "needs no
+model" wording buys: it is a read of the recorded classification and of the spec
+history, so a provider outage cannot weaken it. What the ROW additionally spends
+is the CLASSIFICATION the clause puts on every dispatch path — reuse-capped, so
+one per item per specification version — because that is also what releases a
+held item once its topic ratifies. The FILTER spends nothing at all: it runs
+over every ready item in the tenant, and a classification there would turn one
+drain pass into two model calls per ready row.
 
 AN UNREADABLE LEDGER REFUSES NOTHING AND DROPS NOTHING. The comment sidecar is
 where the recorded classification lives, so a sidecar that could not be read is
@@ -43,6 +47,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_criteria_wall_variant import (
+    criteria_wall_variant,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
     item_comment_bodies,
 )
@@ -50,8 +57,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_c
 from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_commitments import (
     ratified_proposal_topics,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier import SPEC_DIRNAME
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_gate import (
+    classify_item_spec_change_tier,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_hold import spec_change_hold
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import (
+    STAGE_DISPATCH,
     recorded_spec_change_tier,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -64,42 +76,107 @@ if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
     from pathlib import Path
 
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
     from livespec_orchestrator_beads_fabro.commands._spec_change_tier_hold import SpecChangeHold
     from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = [
-    "SPEC_DIRNAME",
+    "classify_and_hold",
     "spec_change_tier_refusal",
     "spec_change_unrefused_candidates",
 ]
 
-# Where the governed spec tree sits under a dispatch target, spelled as the
-# Definition-of-Done judgement's own resolution spells it so the ratification
-# read and that judgement cannot disagree about which tree is governing.
-SPEC_DIRNAME = "SPECIFICATION"
+
+def classify_and_hold(
+    *,
+    item: WorkItem,
+    repo: Path,
+    path: StoreConfig,
+    stage: str,
+    runner: CommandRunner | None = None,
+) -> SpecChangeHold | None:
+    """Classify one item at this cadence point, then read the hold that stands.
+
+    The ONE composition both armed cadence points take — the pre-dispatch wall
+    row below and the filing-time route of `intake_dor` — because the clause
+    puts the classification and the hold at the same positions: "At filing, at
+    groom and again on every dispatch path, every implement-kind item MUST be
+    classified", and then "The item MUST be held out of `ready` until BOTH
+    hold".
+
+    THE ORDER IS LOAD-BEARING AND IS WHAT RELEASES A HELD ITEM. The
+    classification is reused only while the specification it was taken against
+    is unchanged, so the revision that ratifies the linked topic retires the
+    record that held the item; the classification is then re-taken against the
+    RATIFIED tree, returns `stated`, and records a `none` tier — at which point
+    the hold read below simply finds nothing holding the item. That is the
+    clause's "the next intake or drain pass MUST release the hold with no human
+    valve", and it needs no release pass of its own: a second mechanism for it
+    would be a second authority on when a hold ends.
+
+    Reading the hold FIRST would be the natural ordering and is the one that
+    cannot release anything: the record that holds the item is still the newest
+    one until the classification replaces it.
+
+    THE HOLD IS THEN READ FROM THE LEDGER, not from the classification's own
+    return value, and that is what keeps a did-not-run honest. "When the
+    classification cannot run ... route it as it would without the
+    classification" — and for an item that ALREADY carries a spec-change-tier
+    record, routing as it would without the classification means that record
+    still governs, which is exactly what the plan-child-disposition clause's
+    "from that recorded classification" asks for. Reading the fresh outcome
+    instead reports no tier at all on every provider outage, so one unavailable
+    model RELEASES every held item in the tenant and the release reads exactly
+    like a ratification. Measured while wiring this row: the wall's own
+    unratified-topic case stopped refusing the moment the row began
+    classifying, because the fixture has no judge.
+
+    Re-reading costs one comment read per item and buys the ONE rule both
+    answers come from — the newest record, which is the fresh one when the
+    classification ran and the standing one when it did not.
+    """
+    _ = classify_item_spec_change_tier(item=item, repo=repo, path=path, stage=stage, runner=runner)
+    return _held(
+        item=item,
+        config=path,
+        ratified_topics=ratified_proposal_topics(spec_root=repo / SPEC_DIRNAME),
+    )
 
 
-def spec_change_tier_refusal(*, repo: Path, items: Sequence[WorkItem]) -> str | None:
+def spec_change_tier_refusal(
+    *, repo: Path, items: Sequence[WorkItem], workflow_name: str | None = None
+) -> str | None:
     """The wall's refusal for the FIRST held item of this selection, or `None`.
 
     The refusal NAMES the topic, as the clause requires, and carries the verdict
     and the generalization target the classification recorded — the two things
     the operator needs to write the proposal, and the two a summary would drop.
+
+    This row CLASSIFIES, which is what makes "again on every dispatch path"
+    true of a dispatch rather than of an enumeration: it is scoped to the
+    SELECTION this pass would claim, so the spend is one reuse-capped
+    classification per item a dispatch is actually about. The drain's filter
+    below deliberately classifies NOTHING — it runs over every ready item in the
+    tenant, and a filter that could take a classification would turn one drain
+    pass into two model calls per ready row.
     """
     if not items:
         return None
     config = _connection(repo=repo)
     if config is None:
         return None
-    ratified = ratified_proposal_topics(spec_root=repo / SPEC_DIRNAME)
     for item in items:
-        hold = _held(item=item, config=config, ratified_topics=ratified)
+        if _exempt(repo=repo, item=item, workflow_name=workflow_name):
+            continue
+        hold = classify_and_hold(item=item, repo=repo, path=config, stage=STAGE_DISPATCH)
         if hold is not None:
             return hold.refusal
     return None
 
 
-def spec_change_unrefused_candidates(*, items: Sequence[WorkItem], repo: Path) -> list[WorkItem]:
+def spec_change_unrefused_candidates(
+    *, items: Sequence[WorkItem], repo: Path, workflow_name: str | None = None
+) -> list[WorkItem]:
     """This enumeration's candidates, with every held row dropped.
 
     The caller's ORDER is preserved rather than re-sorted, exactly as the two
@@ -114,8 +191,40 @@ def spec_change_unrefused_candidates(*, items: Sequence[WorkItem], repo: Path) -
         return list(items)
     ratified = ratified_proposal_topics(spec_root=repo / SPEC_DIRNAME)
     return [
-        item for item in items if _held(item=item, config=config, ratified_topics=ratified) is None
+        item
+        for item in items
+        if _exempt(repo=repo, item=item, workflow_name=workflow_name)
+        or _held(item=item, config=config, ratified_topics=ratified) is None
     ]
+
+
+def _exempt(*, repo: Path, item: WorkItem, workflow_name: str | None) -> bool:
+    """Whether the tier is out of scope for this item's resolved variant.
+
+    The clause scopes the classification to "every IMPLEMENT-KIND item", and a
+    GROOM target is precisely not one: it reaches the groom door BECAUSE it is
+    not yet decomposed into slices, and the groom run's own output is what
+    produces the behaviour a judgement could be taken about. Classifying it
+    would spend two model calls to judge an item whose asked-for behaviour is
+    "decompose me", and the honest answer — a feature whose behaviour the spec
+    does not state — would hold the groom door shut on the one run that could
+    open it. Measured while wiring this row: a groom-pinned dispatch took the
+    judgement and its own exemption test reported one call where none is owed.
+
+    The resolution is the SHARED one, so this row and the two criteria rows
+    above it exempt the same set — and an unresolvable variant reads as
+    `implement`, the ARMED side, for the reason `criteria_wall_variant`'s own
+    docstring gives: answering `groom` for an environment fault would let a
+    directory or ledger fault promote an item past the tier.
+
+    Both surfaces honour it, exactly as the Definition-of-Done judgement's pair
+    does: a verdict recorded by an earlier build outlives the dispatch that
+    wrote it, and the one change that would retire it is the decomposition the
+    groom run has not been allowed to produce.
+    """
+    return criteria_wall_variant(
+        repo=repo, work_item_id=item.id, workflow_name=workflow_name
+    ).exempt
 
 
 def _connection(*, repo: Path) -> StoreConfig | None:

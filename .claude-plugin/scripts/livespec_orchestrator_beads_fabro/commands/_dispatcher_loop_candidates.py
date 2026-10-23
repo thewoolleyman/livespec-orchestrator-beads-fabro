@@ -86,4 +86,5 @@ def candidates(
             workflow_name=args.workflow_name,
         ),
         repo=repo,
+        workflow_name=args.workflow_name,
     )
