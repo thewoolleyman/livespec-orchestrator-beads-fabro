@@ -117,6 +117,16 @@ def _judge_calls(*, ledger: Path) -> int:
     return len(ledger.read_text(encoding="utf-8").splitlines()) if ledger.is_file() else 0
 
 
+# How many times the judge executable is invoked by ONE taking of the judgement.
+# Two since `bd-ib-m76p2n`: the spec-stated judgement the governing-heading
+# verdict comes from, and the rubric judgement itself. Both are headless
+# `claude -p` calls through the same resolver, so both land in the ledger this
+# module counts. The number is NAMED rather than written as a literal, because
+# its meaning is "the judgement was taken ONCE" and a bare 2 beside the reuse
+# case's bare 0 reads as an arbitrary pair.
+_TAKEN_JUDGE_CALLS = 2
+
+
 def _item(**overrides: object) -> WorkItem:
     base = WorkItem(
         id="bd-ib-174",
@@ -208,7 +218,7 @@ def test_scenario174_an_unchanged_refused_item_is_neither_rejudged_nor_recomment
     # A reused refusing verdict still refuses, and spends nothing doing it.
     assert second == EXIT_UNGRADEABLE_CRITERIA
     assert len(_comments(repo=repo)) == after_first
-    assert _judge_calls(ledger=ledger) == 1
+    assert _judge_calls(ledger=ledger) == _TAKEN_JUDGE_CALLS
 
 
 def test_scenario174_a_refused_item_leaves_and_re_enters_drain_enumeration(

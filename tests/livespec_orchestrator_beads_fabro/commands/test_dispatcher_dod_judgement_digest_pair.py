@@ -49,6 +49,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_wall i
     dod_unrefused_candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
+    unjudged_governing_heading,
+)
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -255,6 +258,7 @@ def test_a_dispatch_reuses_a_verdict_whose_two_digests_both_match_and_appends_no
         append=ledger.append,
         runner=runner,
         payload_root=payload,
+        governing_heading=unjudged_governing_heading,
     )
     second = judge_definition_of_done(
         item=_item(),
@@ -264,6 +268,7 @@ def test_a_dispatch_reuses_a_verdict_whose_two_digests_both_match_and_appends_no
         append=ledger.append,
         runner=runner,
         payload_root=payload,
+        governing_heading=unjudged_governing_heading,
     )
 
     assert first.reused is False
@@ -296,6 +301,7 @@ def test_a_dispatch_under_a_different_rubric_judges_again_and_appends_one_record
         append=ledger.append,
         runner=runner,
         payload_root=_payload(tmp_path=tmp_path, name="build-one", rubric="# gate one\n"),
+        governing_heading=unjudged_governing_heading,
     )
     under_new_rubric = judge_definition_of_done(
         item=_item(),
@@ -305,6 +311,7 @@ def test_a_dispatch_under_a_different_rubric_judges_again_and_appends_one_record
         append=ledger.append,
         runner=runner,
         payload_root=_payload(tmp_path=tmp_path, name="build-two", rubric="# gate two\n"),
+        governing_heading=unjudged_governing_heading,
     )
 
     assert under_new_rubric.reused is False

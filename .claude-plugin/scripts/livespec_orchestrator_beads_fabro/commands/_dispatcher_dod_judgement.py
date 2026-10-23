@@ -53,6 +53,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
     effective_criteria,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_lessons import read_ratified_lessons
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    GoverningHeadingVerdict,
+    governing_heading_block,
+)
 from livespec_orchestrator_beads_fabro.effects import (
     AttemptFailure,
     JsonParseFailure,
@@ -72,6 +76,7 @@ __all__: list[str] = [
     "judgement_subject_digest",
     "parse_judgement_reply",
     "rubric_digest",
+    "spec_tree_identity",
 ]
 
 JUDGEMENT_ADMITTED = "admitted"
@@ -99,6 +104,11 @@ _LESSONS_LABEL = (
 # difference between a brief that is complete and one that was truncated.
 _RIDERS_HEADING = "## Ledger comments (operator riders; part of the brief)"
 _ABSENT_RIDERS_BODY = "(this item carries no operator rider)"
+# The governed spec tree, named where `_heading_body` names it, and the two
+# halves of the identity the reuse digest folds in.
+_SPEC_DIRNAME = "SPECIFICATION"
+_SPEC_IDENTITY_LABEL = "ratified-spec-identity: "
+_UNREADABLE_SPEC_IDENTITY = "unreadable"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -120,7 +130,13 @@ class DodJudgement:
         return "\n".join(self.findings)
 
 
-def judgement_subject(*, item: WorkItem, cwd: Path, comments: Sequence[str] = ()) -> str:
+def judgement_subject(
+    *,
+    item: WorkItem,
+    cwd: Path,
+    comments: Sequence[str] = (),
+    governing: GoverningHeadingVerdict | None = None,
+) -> str:
     """Render the item's goal fields, criteria, referenced heading bodies and riders.
 
     `comments` is the item's ledger comment bodies, oldest first, exactly as the
@@ -130,6 +146,14 @@ def judgement_subject(*, item: WorkItem, cwd: Path, comments: Sequence[str] = ()
     honest subject is the one with no rider section to show. A caller that has
     them and omits them renders a smaller subject and a different digest, so the
     one call site that matters is bound by its own test.
+
+    `governing` is the spec-stated judgement's own verdict about which clauses
+    govern these assertions, which `contracts.md` makes the component this
+    judgement consults rather than decides for itself. It defaults to ABSENT and
+    the block then says so in words, because a subject that simply omitted it
+    would leave the judge unable to tell a verdict of "nothing governs" from a
+    judgement nobody took — and those have opposite consequences, the first
+    foreclosing the finding and the second leaving the node its own search.
     """
     criteria = effective_criteria(item=item)
     section = definition_of_done(description=item.description)
@@ -154,6 +178,7 @@ def judgement_subject(*, item: WorkItem, cwd: Path, comments: Sequence[str] = ()
             )
         )
     blocks.extend(("", _RIDERS_HEADING, _riders_body(comments=comments)))
+    blocks.extend(("", governing_heading_block(verdict=governing)))
     return "\n".join(blocks)
 
 
@@ -170,10 +195,51 @@ def _goal_fields(*, item: WorkItem, lessons: str) -> list[str]:
 
 
 def judgement_subject_digest(*, item: WorkItem, cwd: Path, comments: Sequence[str] = ()) -> str:
-    """Return the stable byte digest used to determine verdict reuse."""
+    """Return the stable byte digest used to determine verdict reuse.
+
+    Taken over the subject AS IT STANDS BEFORE THE JUDGEMENT IS TAKEN — with no
+    governing-heading verdict in it — together with the identity of the ratified
+    tree that verdict would be taken against. The asymmetry is the point: the
+    block is the OUTPUT of a judgement this digest decides whether to spend,
+    so folding it in would make the digest depend on the answer and no recorded
+    verdict could ever be reused.
+
+    THE SPEC IDENTITY IS WHAT A RATIFIED CHANGE MOVES. The subject already
+    carries the BODY of each heading the reference line names, so an edit to a
+    cited clause retires a verdict on its own; what it cannot see is a clause
+    the item does not cite, and since `bd-ib-m76p2n` the governing-heading
+    verdict is a reading of the WHOLE tree. A scenario added before dispatch can
+    therefore become the governing one for an item that cites it nowhere, which
+    is exactly the verdict a reuse keyed on the item's own text would carry
+    forward unchanged.
+    """
+    subject = judgement_subject(item=item, cwd=cwd, comments=comments)
     return hashlib.sha256(
-        judgement_subject(item=item, cwd=cwd, comments=comments).encode("utf-8")
+        f"{subject}\n{_SPEC_IDENTITY_LABEL}{spec_tree_identity(cwd=cwd)}".encode()
     ).hexdigest()
+
+
+def spec_tree_identity(*, cwd: Path) -> str:
+    """The digest of the governed spec tree, or a word naming an unreadable one.
+
+    A SELF-DESCRIBING word rather than the digest of nothing, for the reason
+    `UNREADABLE_RUBRIC_DIGEST` is one: an empty or zero-length digest reads as a
+    tree that exists and is empty, which would make every unreadable read agree
+    with every other one and reuse a verdict across a change nobody could see.
+    The files are read through the same glob `_heading_body` resolves a
+    reference against, so the identity watches the tree the subject quotes from.
+    """
+    spec_root = cwd / _SPEC_DIRNAME
+    if not spec_root.is_dir():
+        return _UNREADABLE_SPEC_IDENTITY
+    digest = hashlib.sha256()
+    for path in sorted(spec_root.glob("*.md")):
+        read = attempt(action=lambda p=path: p.read_bytes(), exceptions=(OSError,))
+        if isinstance(read, AttemptFailure):
+            return _UNREADABLE_SPEC_IDENTITY
+        digest.update(path.name.encode("utf-8"))
+        digest.update(read)
+    return digest.hexdigest()
 
 
 def rubric_digest(*, rubric: str) -> str:
@@ -248,7 +314,7 @@ def _last_non_empty_line(*, reply: str) -> str | None:
 def _heading_body(*, repo: Path, reference: str) -> str:
     """Return an H2 section body, retaining an explicit absence when unresolved."""
     title = reference.removeprefix(_H2_MARKER)
-    spec_root = repo / "SPECIFICATION"
+    spec_root = repo / _SPEC_DIRNAME
     if not spec_root.is_dir():
         return _UNRESOLVED_HEADING_BODY
     for path in sorted(spec_root.glob("*.md")):

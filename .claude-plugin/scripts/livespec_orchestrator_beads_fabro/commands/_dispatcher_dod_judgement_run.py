@@ -78,6 +78,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_sele
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import executing_payload_root
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    GoverningHeadingVerdict,
+)
 from livespec_orchestrator_beads_fabro.commands._workflow_variants import RESERVED_WORKFLOW_NAME
 from livespec_orchestrator_beads_fabro.effects import (
     AttemptFailure,
@@ -256,7 +259,7 @@ def resolve_judge_timeout_seconds(*, environ: dict[str, str]) -> float:
     return parsed if parsed > 0 else _DEFAULT_TIMEOUT_SECONDS
 
 
-def run_dod_judgement(
+def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam input.
     *,
     item: WorkItem,
     cwd: Path,
@@ -264,6 +267,7 @@ def run_dod_judgement(
     rubric: str | None = None,
     runner: CommandRunner | None = None,
     payload_root: Path | None = None,
+    governing: GoverningHeadingVerdict | None = None,
 ) -> DodJudgement:
     """Take the judgement for ONE item, or report why it could not be taken.
 
@@ -283,6 +287,13 @@ def run_dod_judgement(
     judgement with no rubric is not the judgement the clause names and spending a
     model call on whatever is left would produce a verdict against rules nobody
     wrote.
+
+    `governing` is the spec-stated judgement's verdict about which clauses
+    govern these assertions. It travels into the SUBJECT rather than into the
+    appended contract, which is the one-rubric-one-subject clause's own
+    division: a host taking "MAY append only an ending contract stating the
+    verdict form it must return", so anything that changes how a check is
+    graded belongs in the rubric or in the subject the node also reads.
     """
     gate_prompt = judgement_rubric(payload_root=payload_root) if rubric is None else rubric
     if gate_prompt is None:
@@ -301,7 +312,9 @@ def run_dod_judgement(
             judge_path=resolve_judge_path(environ=environ),
             prompt=judgement_prompt(
                 gate_prompt=gate_prompt,
-                subject=judgement_subject(item=item, cwd=cwd, comments=comments),
+                subject=judgement_subject(
+                    item=item, cwd=cwd, comments=comments, governing=governing
+                ),
             ),
             model=resolve_judge_model(environ=environ),
         ),

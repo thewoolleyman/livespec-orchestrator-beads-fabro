@@ -70,6 +70,15 @@ _HEADING = "## Effective acceptance criteria"
 _HELD_FINDING = "bd-ib-groomjudge: the References line omits the governing scenario."
 _HELD_REPLY = '{"outcome": "failed", "failure_reason": "' + _HELD_FINDING + '"}'
 
+# How many times the judge executable is invoked by ONE taking of the
+# judgement. Two since `bd-ib-m76p2n`: the spec-stated judgement the
+# governing-heading verdict comes from, and the rubric judgement itself. Both
+# are headless `claude -p` calls through the same resolver, so both land in the
+# ledger this module counts. The number is NAMED rather than written as a
+# literal at each control, because its meaning is "the judgement was taken" and
+# a bare 2 beside a bare 0 reads as an arbitrary pair.
+_TAKEN_JUDGE_CALLS = 2
+
 _GROOM_VARIANT = "groom-cut"
 _IMPLEMENT_VARIANT = "slice"
 _GROOM_DIR = f".fabro/workflows/{_GROOM_VARIANT}"
@@ -331,7 +340,7 @@ def test_an_implement_pinned_dispatch_is_still_refused_by_the_judgement(
     assert (exit_code, calls) == (_EXIT_UNGRADEABLE_CRITERIA, [])
     assert exit_code != _EXIT_PRECONDITION_ERROR
     assert _HELD_FINDING in capsys.readouterr().err
-    assert _judge_calls(ledger=ledger) == 1
+    assert _judge_calls(ledger=ledger) == _TAKEN_JUDGE_CALLS
 
 
 def test_the_drain_exempts_the_same_groom_pinned_candidate(
@@ -403,4 +412,4 @@ def test_the_approve_valve_still_holds_an_implement_pinned_item(
     assert result["status"] != "green"
     assert _HELD_FINDING in str(result)
     assert _stored(repo=repo).status == "pending-approval"
-    assert _judge_calls(ledger=ledger) == 1
+    assert _judge_calls(ledger=ledger) == _TAKEN_JUDGE_CALLS

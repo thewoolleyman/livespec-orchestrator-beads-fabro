@@ -50,6 +50,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_marker
     UNAVAILABLE_COMMENT_MARKER,
     comment_marker,
 )
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    GoverningHeadingVerdict,
+)
 
 __all__: list[str] = [
     "JUDGEMENT_COMMENT_MARKER",
@@ -59,6 +62,7 @@ __all__: list[str] = [
     "RecordedJudgement",
     "did_not_run_comment",
     "recorded_did_not_run_causes",
+    "recorded_governing_heading",
     "reusable_verdict",
     "verdict_comment",
 ]
@@ -88,7 +92,16 @@ _REMEDY_FIELD = "first-remedy"
 # behind a comment that has nothing to do with the judgement. The field name is
 # the discriminator, so it has to be one nothing else writes.
 _CAUSE_FIELD = "judgement-unavailable-cause"
+# The spec-stated judgement's own verdict, recorded so the `dod_gate` node can
+# be briefed with the verdict the host taking used rather than with a second
+# one taken at the goal render. The heading key is REPEATED, one line per
+# governing clause, exactly as `finding` is.
+_GOVERNING_KIND_FIELD = "governing-heading-kind"
+_GOVERNING_HEADING_FIELD = "governing-heading"
 _FIELD_SEPARATOR = ": "
+# Every key a record may carry more than once, which the field map must leave
+# to the repeated-value reader rather than collapsing to its last occurrence.
+_REPEATED_FIELDS = frozenset({_FINDING_FIELD, _GOVERNING_HEADING_FIELD})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -107,9 +120,29 @@ class RecordedJudgement:
 
 
 def verdict_comment(
-    *, item_id: str, stage: str, digest: str, rubric_digest: str, judgement: DodJudgement
+    *,
+    item_id: str,
+    stage: str,
+    digest: str,
+    rubric_digest: str,
+    judgement: DodJudgement,
+    governing: GoverningHeadingVerdict | None = None,
 ) -> str:
-    """The ledger comment recording one taken verdict, findings and all."""
+    """The ledger comment recording one taken verdict, findings and all.
+
+    `governing` is the spec-stated judgement's own verdict, recorded BESIDE the
+    outcome rather than folded into it. It is here because the `dod_gate` node
+    reads it out of the goal and the Dispatcher has no other durable place to
+    put it: resolving it again at the goal render would be a second model call
+    over a prompt carrying the whole ratified tree, on every dispatch including
+    the groom-variant ones the judgement exempts — which is not a smaller
+    version of this, but the exemption silently spending the judgement it
+    exempts.
+
+    It is OPTIONAL because a record written before this field existed carries
+    none, and because a taking whose component could not run records the
+    outcome it did reach rather than nothing at all.
+    """
     lines = [
         JUDGEMENT_COMMENT_MARKER,
         "",
@@ -119,11 +152,43 @@ def verdict_comment(
         f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
         f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
     ]
+    if governing is not None:
+        lines.append(f"{_GOVERNING_KIND_FIELD}{_FIELD_SEPARATOR}{governing.kind}")
+        lines.extend(
+            f"{_GOVERNING_HEADING_FIELD}{_FIELD_SEPARATOR}{heading}"
+            for heading in governing.stated_by
+        )
     lines.extend(f"{_FINDING_FIELD}{_FIELD_SEPARATOR}{finding}" for finding in judgement.findings)
     remedy = first_remedy(findings=judgement.findings)
     if remedy is not None:
         lines.append(f"{_REMEDY_FIELD}{_FIELD_SEPARATOR}{remedy}")
     return "\n".join(lines)
+
+
+def recorded_governing_heading(*, comments: Sequence[str]) -> GoverningHeadingVerdict | None:
+    """The governing-heading verdict the NEWEST taken verdict recorded, or `None`.
+
+    `None` for an item with no verdict record, for a record written before the
+    field existed, and for a taking whose component could not run — all three
+    are the same fact for the one consumer, which is the goal renderer, and it
+    renders the block's explicit absence so the node keeps its own search.
+
+    The NEWEST record governs rather than the earliest, which is the opposite of
+    the reuse rule one function down and deliberately so: reuse asks which
+    verdict BINDS and must answer the same way however often it is asked, while
+    this asks what the last taking SAW of the ratified tree, and a dispatch is
+    briefed from the most recent reading of it.
+    """
+    for body in reversed(tuple(comments)):
+        if comment_marker(body=body) != JUDGEMENT_COMMENT_MARKER:
+            continue
+        kind = _fields_of(body=body).get(_GOVERNING_KIND_FIELD)
+        if kind is None:
+            return None
+        return GoverningHeadingVerdict(
+            kind=kind, stated_by=_repeated(body=body, key=_GOVERNING_HEADING_FIELD)
+        )
+    return None
 
 
 def did_not_run_comment(
@@ -203,20 +268,26 @@ def recorded_did_not_run_causes(*, comments: Sequence[str]) -> frozenset[str]:
 def _fields_of(*, body: str) -> dict[str, str]:
     """Every `key: value` line of one record, LAST occurrence winning.
 
-    `finding` is read separately, because it is the one repeated key and a
-    last-wins map would keep only the final one — which is the opposite of what
-    "with each remedy" asks the record to carry.
+    The REPEATED keys are read separately, because a last-wins map would keep
+    only the final one of each — which is the opposite of what "with each
+    remedy" asks the record to carry, and would reduce a multi-clause governing
+    verdict to whichever heading the renderer happened to write last.
     """
     fields: dict[str, str] = {}
     for raw in body.splitlines():
         key, separator, value = raw.strip().partition(_FIELD_SEPARATOR)
-        if separator and key != _FINDING_FIELD:
+        if separator and key not in _REPEATED_FIELDS:
             fields[key] = value
     return fields
 
 
 def _findings_of(*, body: str) -> tuple[str, ...]:
-    prefix = f"{_FINDING_FIELD}{_FIELD_SEPARATOR}"
+    return _repeated(body=body, key=_FINDING_FIELD)
+
+
+def _repeated(*, body: str, key: str) -> tuple[str, ...]:
+    """Every value one repeated key carries, in the order the record wrote them."""
+    prefix = f"{key}{_FIELD_SEPARATOR}"
     return tuple(
         raw.strip()[len(prefix) :] for raw in body.splitlines() if raw.strip().startswith(prefix)
     )

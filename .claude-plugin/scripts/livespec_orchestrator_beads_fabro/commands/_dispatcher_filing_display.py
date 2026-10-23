@@ -59,12 +59,19 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_capabilities
     UNPUBLISHED_REPORT,
     mirrored_sandbox_capabilities,
 )
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
+    GoverningHeadingReader,
+    unjudged_governing_heading,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import LivespecConfigUnreadableError
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+        GoverningHeadingVerdict,
+    )
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -98,7 +105,9 @@ NO_ASSERTIONS_REPORT = "assertions: none"
 UNDECLARED_PROOF_MODE_REPORT = "undeclared"
 
 
-def filing_display(*, item: WorkItem, cwd: Path) -> str:
+def filing_display(
+    *, item: WorkItem, cwd: Path, governing: GoverningHeadingReader = unjudged_governing_heading
+) -> str:
     """The whole pre-confirmation display for one item, as lines of text.
 
     The parse line is FIRST and unconditional, because it is the line that says
@@ -110,12 +119,21 @@ def filing_display(*, item: WorkItem, cwd: Path) -> str:
     count, the source and the line from ONE projection (plan slice S4,
     `bd-ib-tbgxm4`). The two reported different counts for the same item before
     that, and nothing structural prevented it.
+
+    `governing` is how this display takes the governing-heading verdict, and it
+    is a SEAM rather than a fixed call because filing is one item at a time
+    while the hygiene listing that shares the advisory is every item in the
+    tenant. It defaults to the reader that takes no judgement, so a caller that
+    has not decided to spend one renders the lexical candidate exactly as this
+    display did before the judgement existed; the filing front-end supplies the
+    host reader, which is what makes the remedy a filer reads here the same
+    heading the pre-admission judgement will hold the item for.
     """
     resolved = effective_criteria(item=item)
     lines = [assertion_count_of(criteria=resolved).parse_display]
     lines.extend(_assertion_lines(criteria=resolved))
     lines.append(_capability_line(cwd=cwd))
-    lines.extend(_finding_lines(item=item, cwd=cwd))
+    lines.extend(_finding_lines(item=item, cwd=cwd, governing=governing(item=item, repo=cwd)))
     return "\n".join(lines)
 
 
@@ -171,7 +189,9 @@ def _capability_line(*, cwd: Path) -> str:
     return f"{CAPABILITIES_PREFIX} {', '.join(resolved)}"
 
 
-def _finding_lines(*, item: WorkItem, cwd: Path) -> list[str]:
+def _finding_lines(
+    *, item: WorkItem, cwd: Path, governing: GoverningHeadingVerdict | None
+) -> list[str]:
     """Every finding the host-side wall can detect, labelled by kind.
 
     The mechanical ones lead, because they are the ones that withhold `ready`: a
@@ -183,7 +203,7 @@ def _finding_lines(*, item: WorkItem, cwd: Path) -> list[str]:
     ]
     lines.extend(
         f"{ADVISORY_FINDING_PREFIX} {finding}"
-        for finding in advisory_definition_of_done_findings(item=item, cwd=cwd)
+        for finding in advisory_definition_of_done_findings(item=item, cwd=cwd, governing=governing)
     )
     if not lines:
         return [FINDINGS_NONE_REPORT]

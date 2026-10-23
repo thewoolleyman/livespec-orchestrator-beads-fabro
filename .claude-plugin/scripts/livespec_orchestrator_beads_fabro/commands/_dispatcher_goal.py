@@ -37,6 +37,9 @@ from typing import TYPE_CHECKING
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     is_judgement_record,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
+    recorded_governing_heading,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_goal_recovery import (
     InterruptedAttempt,
     interrupted_attempt_section,
@@ -46,6 +49,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_minijinja_escape imp
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_guard import (
     FACTORY_WORKFLOW_BOUNDARY_TEXT,
+)
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    governing_heading_block,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_anchor import is_spec_commitment
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -152,6 +158,17 @@ def render_goal(
     is not a recovery launch has no placement to narrate — and that default is
     also why the call site's own keyword is bound by a test: an omission here
     renders the plain brief and says nothing about the section it dropped.
+
+    THE GOVERNING-HEADING VERDICT IS READ OUT OF `comments`, not taken again.
+    The `dod_gate` node's check 6 reads it instead of searching the scenario
+    file from its own recollection, and the verdict it must read is the one the
+    pre-dispatch judgement already took and RECORDED — the same comments this
+    renderer is already filtering receipts out of. Taking it again here would
+    be a second model call over a prompt carrying the whole ratified tree, on
+    EVERY dispatch including a groom-variant one the judgement exempts, and a
+    second taking can disagree with the first, which would brief the node with
+    a verdict no host taking ever used. An item with no record renders the
+    block's explicit absence, and the node keeps its own search.
     """
     gap_line = f"Gap id: {item.gap_id}\n" if item.gap_id is not None else ""
     # PRESENCE IS THE WRONG QUESTION HERE, and this site is the one where
@@ -223,8 +240,23 @@ def render_goal(
     # all, exactly as one with no comment does: a heading with nothing under it
     # would tell the node riders exist.
     riders = tuple(comment for comment in comments if not is_judgement_record(body=comment.text))
+    # The governing-heading verdict rides AFTER the riders for the same reason
+    # the recovery placement rides before them: a rider is part of the brief the
+    # verdict was taken about, so a block standing ahead of them would describe
+    # assertions the node has not finished reading. It is rendered on every
+    # dispatch, absence included, because the `dod_gate` node's check 6 reads
+    # this block and must be able to tell a verdict of "nothing governs" from a
+    # judgement nobody took — the first forecloses its finding and the second
+    # leaves it its own search.
+    verdict_block = (
+        "\n"
+        + governing_heading_block(
+            verdict=recorded_governing_heading(comments=tuple(comment.text for comment in comments))
+        )
+        + "\n"
+    )
     if not riders:
-        return escape_minijinja_literal(text=body)
+        return escape_minijinja_literal(text=body + verdict_block)
     lines = [
         "",
         "Ledger comments (operator riders appended after filing; treat them as part of the brief):",
@@ -234,7 +266,7 @@ def render_goal(
     # renderer lost rather than one it deliberately omitted.
     for index, comment in enumerate(riders, start=1):
         lines.append(f"[{index}] {_comment_entry(comment=comment)}")
-    return escape_minijinja_literal(text=body + "\n".join(lines) + "\n")
+    return escape_minijinja_literal(text=body + "\n".join(lines) + "\n" + verdict_block)
 
 
 def _comment_entry(*, comment: WorkItemComment) -> str:
