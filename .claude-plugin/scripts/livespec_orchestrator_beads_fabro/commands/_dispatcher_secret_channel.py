@@ -39,6 +39,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+from livespec_orchestrator_beads_fabro.commands._factory_client_source import (
+    client_key_source,
+)
 from livespec_orchestrator_beads_fabro.commands._factory_declared_channel import (
     DECLARATION_ABSENT,
     declared_factory_channel,
@@ -228,13 +231,20 @@ def resolve_secret_channel(
     committing no `secret_channel` silently takes the inline default on a
     factory the registry says speaks something else.
     """
-    declared = declared_factory_channel(block=block, factory=factory)
+    declaration = declared_factory_channel(block=block, factory=factory)
+    declared = declaration.value
     if declared is DECLARATION_ABSENT:
         return SECRET_CHANNEL_INLINE_OVERLAY
     if not isinstance(declared, str) or declared == "" or declared not in SECRET_CHANNELS:
+        source = client_key_source(
+            factory=factory,
+            key=SECRET_CHANNEL_KEY,
+            registry_path=declaration.registry_path,
+        )
         return SecretChannelRefusal(
             message=(
-                f"factory {factory!r} declares {SECRET_CHANNEL_KEY} = {declared!r}, "
+                f"factory {factory!r} declares {source.name} = {declared!r}"
+                f"{source.location}, "
                 "which this build does not understand; the transports it speaks "
                 f"are {', '.join(SECRET_CHANNELS)}"
             )

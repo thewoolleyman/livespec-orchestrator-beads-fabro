@@ -37,9 +37,11 @@ the designation moved.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._factory_client_settings import (
+    FACTORY_SECRET_CHANNEL_KEY,
     effective_factory_client_settings,
 )
 from livespec_orchestrator_beads_fabro.commands._factory_default import fleet_selection
@@ -49,6 +51,7 @@ from livespec_orchestrator_beads_fabro.commands._factory_registry import (
 
 __all__: list[str] = [
     "DECLARATION_ABSENT",
+    "ChannelDeclaration",
     "declared_factory_channel",
 ]
 
@@ -61,13 +64,42 @@ DECLARATION_ABSENT = object()
 _FACTORIES_KEY = "factories"
 
 
-def declared_factory_channel(*, block: Mapping[str, object], factory: str) -> object:
+@dataclass(frozen=True, kw_only=True)
+class ChannelDeclaration:
+    """One factory's effective raw transport declaration, and which source wrote it.
+
+    The source travels WITH the value because the grade downstream refuses an
+    unrecognised transport by naming the key and a remedy, and the remedy
+    differs: a committed value is a line in the governed repository's own
+    `.livespec.jsonc` and a registry-supplied one is host state the fleet's
+    provisioning renders. The value itself reaches the grade on one field either
+    way — that identity is how a registry-backed factory gets the registry's
+    transport with no consumer changing — so this field is the only thing left
+    that can tell the two apart.
+
+    `registry_path` is None for a committed value and for the absent sentinel
+    alike, and the collapse is safe because the grade returns on the sentinel
+    before it reads the source: "the registry supplied no value" and "nobody
+    supplied one" have the same remedy, which is that there is nothing to fix.
+    """
+
+    value: object
+    registry_path: str | None = None
+
+
+def declared_factory_channel(*, block: Mapping[str, object], factory: str) -> ChannelDeclaration:
     """One factory's EFFECTIVE raw transport declaration, or the absent sentinel.
 
     The committed entry wins when it declares the key, and otherwise the
     registry entry does — the same per-key rule every client setting takes, and
     applied through the same merger, so a transport cannot acquire a precedence
     of its own.
+
+    The SOURCE is read off that same merge rather than re-derived from the two
+    entries here, for the reason the merger's own docstring gives: a second
+    account of the precedence would disagree with the first in the direction
+    nothing announces, and here the disagreement would surface as a refusal
+    sending an operator to the wrong file.
     """
     entry = _committed_entry(block=block, factory=factory)
     registry = factory_registry_from_entry(
@@ -77,8 +109,13 @@ def declared_factory_channel(*, block: Mapping[str, object], factory: str) -> ob
     )
     client = effective_factory_client_settings(entry=entry, registry=registry.client)
     if not client.declares_secret_channel:
-        return DECLARATION_ABSENT
-    return client.secret_channel
+        return ChannelDeclaration(value=DECLARATION_ABSENT)
+    return ChannelDeclaration(
+        value=client.secret_channel,
+        registry_path=(
+            registry.path if FACTORY_SECRET_CHANNEL_KEY in client.registry_sourced else None
+        ),
+    )
 
 
 def _committed_entry(*, block: Mapping[str, object], factory: str) -> dict[str, Any]:

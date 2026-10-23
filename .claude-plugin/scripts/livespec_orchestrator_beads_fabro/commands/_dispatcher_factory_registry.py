@@ -40,7 +40,33 @@ from livespec_orchestrator_beads_fabro.commands._factory_registry import (
 __all__: list[str] = [
     "factory_registry_refusal",
     "factory_registry_unobservable",
+    "registry_sourced_path",
 ]
+
+
+def registry_sourced_path(*, factory: FactoryTarget, key: str) -> str | None:
+    """The registry file that supplied one client key's value, or None for the committed entry.
+
+    The reading the `bin` and `environment` grades name their source from. Both
+    facts come off the resolved target — which keys the registry supplied, and
+    which file was read — rather than from a second configuration read, so a
+    refusal cannot name a file this resolution did not use or a source this
+    merge did not take.
+
+    It lives HERE, with the registry reading's other grades, because the pair it
+    joins is the registry's: the per-key decision `_factory_client_settings`
+    made, and the path `_factory_registry` read. `_factory_client_source`, which
+    renders the refusal's words, deliberately takes neither — it is a pure
+    renderer shared with the transport grade, which holds no `FactoryTarget` at
+    all.
+
+    `None` for a committed key rather than a separate answer for "no source
+    declared it": a key no source declared is never graded, so every caller has
+    already returned by the time it could ask.
+    """
+    if key not in factory.registry_sourced_client_keys:
+        return None
+    return factory.registry.path
 
 
 def factory_registry_unobservable(*, factory: FactoryTarget) -> str | None:

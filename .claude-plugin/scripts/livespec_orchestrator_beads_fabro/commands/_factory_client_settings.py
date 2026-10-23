@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._factory_environment import (
+    FACTORY_ENVIRONMENT_KEY,
     NO_FACTORY_ENVIRONMENT,
     FactoryEnvironment,
     factory_environment_from_entry,
@@ -70,6 +71,19 @@ class FactoryClientSettings:
     what was written: a projection would collapse `null`, `""` and a misspelled
     transport onto the same absent answer, which selects the inline default and
     is the one outcome that silently persists a credential.
+
+    `registry_sourced` names the keys whose EFFECTIVE value came from the
+    registry entry rather than from the committed one, and it is empty on a bare
+    READING of either side: a reading is of one source, so which source won is a
+    fact about the MERGE and nothing else may claim to know it.
+
+    It exists because each key's grade refuses by naming the key and a remedy,
+    and the remedy differs by source — a committed `bin` is fixed by a commit to
+    `.livespec.jsonc` and a registry `bin` by the fleet's provisioning. Without
+    it every refusal a registry-supplied value reaches names a committed key the
+    repository never wrote and prescribes removing it, which is a remedy the
+    operator cannot perform; the clause requires the refusal to name the
+    registry path as its source instead.
     """
 
     declares_bin: bool = False
@@ -77,6 +91,7 @@ class FactoryClientSettings:
     environment: FactoryEnvironment = NO_FACTORY_ENVIRONMENT
     declares_secret_channel: bool = False
     secret_channel: object = None
+    registry_sourced: tuple[str, ...] = ()
 
 
 # The reading an entry declaring none of the three yields, and the registry side
@@ -127,6 +142,12 @@ def _merged(
     difference that matters to an adopter: a repository pinning one factory's
     `bin` to an upgrade-candidate client keeps the registry's `secret_channel`
     and `environment` rather than having to restate them beside it.
+
+    The SOURCE is recorded per key by the same rule and in the same place as the
+    value, which is what keeps the two from disagreeing: a refusal naming the
+    wrong source is a remedy pointed at a file whose correction changes nothing,
+    and a source derived anywhere else would be a second account of a precedence
+    that already lives here.
     """
     return FactoryClientSettings(
         declares_bin=committed.declares_bin or registry.declares_bin,
@@ -142,6 +163,43 @@ def _merged(
             if committed.declares_secret_channel
             else registry.secret_channel
         ),
+        registry_sourced=_registry_sourced(committed=committed, registry=registry),
+    )
+
+
+def _registry_sourced(
+    *, committed: FactoryClientSettings, registry: FactoryClientSettings
+) -> tuple[str, ...]:
+    """The keys the REGISTRY supplied: declared there and not in the committed entry.
+
+    The test is `declared there AND not declared here` rather than a comparison
+    of the two values, because the values legitimately coincide: a repository
+    that commits the registry's own `bin` to pin it against a later inventory
+    change has a COMMITTED value, and a refusal reading that equality as a
+    registry source would send the operator to the provisioning for a key their
+    own `.livespec.jsonc` decides.
+
+    Membership is read through each key's own `declares_*` reading rather than
+    through its value, for the reason the module docstring gives: `null` and
+    `""` are values an operator wrote, and a truthiness test would report the
+    registry as the source of a committed mistake it had no part in.
+    """
+    return tuple(
+        key
+        for key, declared_committed, declared_registry in (
+            (FACTORY_BIN_KEY, committed.declares_bin, registry.declares_bin),
+            (
+                FACTORY_ENVIRONMENT_KEY,
+                committed.environment.declared,
+                registry.environment.declared,
+            ),
+            (
+                FACTORY_SECRET_CHANNEL_KEY,
+                committed.declares_secret_channel,
+                registry.declares_secret_channel,
+            ),
+        )
+        if declared_registry and not declared_committed
     )
 
 
