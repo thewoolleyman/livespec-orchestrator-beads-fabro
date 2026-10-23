@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.237.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.236.1...v0.237.0) (2026-10-23)
+
+
+### Features
+
+* **acp:** grade one confirmation turn's ending, so only a completed turn confirms ([88ce136](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/88ce1364096773a3444561eb40a63ac969e84aca))
+* **acp:** journal every confirmation turn, whatever it ended as ([f523abc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f523abc1bda66c0a4dc8ddd630d0714830e31dd5))
+* **acp:** mint one refused confirmation turn's hold from the probe's own instant ([8313e86](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8313e860b7b66d140b391ff24bd5e8693a1b8bc3))
+* **acp:** run the availability confirmation turn as a bounded minimal factory run ([fb5f317](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fb5f317f5b7d466b7f5495a6eb4cb01a198da9d9))
+* **acp:** schedule the reprobe cadence and name the ending each turn reached ([c52aa83](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c52aa83e59e445cc57f0ab0e4961d619a9cbd86c))
+* **acp:** terminate a probe past its bound, skip its candidate, select the fallback ([e79f727](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e79f727dd3f0a3af3d1d5e9221a201127b9938df))
+
+
+### Bug Fixes
+
+* **acp:** place the confirmation turn in the factory declared environment ([73f74a3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/73f74a3708685a1bfa3ab3b9181efb0164cb0e85))
+
 ## [0.236.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.236.0...v0.236.1) (2026-10-23)
 
 
