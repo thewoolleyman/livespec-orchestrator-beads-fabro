@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.236.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.236.0...v0.236.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **drift-lane:** record the inert state once, not once per reconcile tick ([0853afe](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0853afe42474c6f44dfed89af905901e0a8ed765))
+* **reconcile-runs:** report the drift lane in the pass's own output ([e2e2edb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e2e2edb82b60b71c49e4c5daf72bda7f54381280))
+
 ## [0.236.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.235.2...v0.236.0) (2026-10-23)
 
 
