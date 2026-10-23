@@ -1606,6 +1606,22 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   are equivalent and its outcome is durably observable through the same
   authoritative evidence source", and that source is the factory's own run
   records.
+  THE TURN IS PLACED IN THE FACTORY'S DECLARED ENVIRONMENT, which is the fourth
+  of the four execution properties the clause names and the only one that is a
+  property of the SANDBOX rather than of the adapter: `_acp_availability_probe`
+  argues the first three from `render_adapter`'s byte equality, and the
+  "projected worker credential identity" is whatever the server-catalog
+  environment supplies. A target built from the server alone omits
+  `--environment` and lands the turn in the server's DEFAULT environment, which
+  is wrong in both directions and announces itself in neither — with no
+  credential there no healthy provider can ever earn a confirmation and the
+  post-expiry stall persists unchanged, and with one the turn confirms a
+  credential identity nobody dispatches with. The id is the dispatch path's own
+  `factory_environment_id` projection rather than a second read, so the probe
+  and a dispatch to the same factory cannot disagree about where they ran, and
+  an unusable declaration reduces to None here exactly as it does there —
+  safe for the same reason, since `factory_declaration_refusal` has already
+  refused the invocation.
   TERMINATION IS PERFORMED BEFORE ANYTHING IS READ, which is the mechanics
   worth reading twice. The bound must include "termination of unfinished probe
   work", so a probe past it is reaped FIRST — `fabro rm -f`, the watchdog's own
