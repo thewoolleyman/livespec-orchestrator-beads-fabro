@@ -57,7 +57,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     resolve_merge_on_review_cap,
     resolve_review_fix_cap,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_anchor import is_spec_commitment
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -107,9 +106,27 @@ def review_fix_visit_cap_for(*, review_fix_cap: int) -> int:
 def effective_admission_policy(
     *, item: WorkItem, cwd: Path
 ) -> IOResult[str, PolicySettingUnreadable]:
-    """The item's effective admission policy with per-item-over-global precedence."""
-    if _is_spec_change_tier(item=item):
-        return IOSuccess(DEFAULT_ADMISSION_POLICY)
+    """The item's effective admission policy with per-item-over-global precedence.
+
+    IT NO LONGER PINS A HINT-CARRYING ITEM TO `manual`, and that removal is the
+    repair rather than a relaxation. `spec.md` says a spec-change-tier item "is
+    never auto-approved WHILE IT IS HELD for its linked proposal's
+    ratification", and the plan-child-disposition clause of
+    `SPECIFICATION/constraints.md` says of the two fields that they "are
+    near-opposites": a non-null `spec_commitment_hint` marks an implementation
+    FOLLOW-UP to an ALREADY-RATIFIED change, which is ordinary dispatchable
+    work. So the pin this function used to apply held exactly the set it should
+    admit, and admitted every unratified feature — wrong "in both directions",
+    which is the clause's own phrase for it.
+
+    THE HOLD IS NOW APPLIED WHERE THE RECORDED CLASSIFICATION CAN BE READ, which
+    is a ledger read this pure policy resolution cannot take: `intake_dor`'s
+    filing route and the pre-dispatch wall's own row both consult
+    `_spec_change_tier_wall.classify_and_hold`, and both withhold `ready` from a
+    held item. Scenario 10 is unaffected, because its subject is an item whose
+    effective `admission_policy` is `manual` — which this function still rests
+    at `pending-approval` through the ordinary per-item precedence below.
+    """
     if item.admission_policy is not None:
         return IOSuccess(item.admission_policy)
     return resolve_auto_approve_ready(cwd=cwd).map(
@@ -231,11 +248,3 @@ def _positive_int_label_value(*, value: str | None) -> int | None:
     if parsed > 0:
         return parsed
     return None
-
-
-def _is_spec_change_tier(*, item: WorkItem) -> bool:
-    # A plan ANCHOR MARKER shares `spec_commitment_hint` with a genuine
-    # commitment to ratified spec text, so presence is not the question: a
-    # plan-anchored item pinned to the manual admission floor here is a
-    # misrouting, not a gate.
-    return is_spec_commitment(spec_id=item.spec_commitment_hint)

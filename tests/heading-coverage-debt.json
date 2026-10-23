@@ -219,511 +219,784 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 1 \u2014 Gap-tied fix cycle",
+    "heading": "## Scenario 1 — Gap-tied fix cycle",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 118 \u2014 A groom workflow variant drafts a cut, parks it in the ledger, and files only on a recorded approval",
+    "heading": "## Scenario 118 — A groom workflow variant drafts a cut, parks it in the ledger, and files only on a recorded approval",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-09-06"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 119 \u2014 A per-item merge hold publishes the pull request and merges only on release",
+    "heading": "## Scenario 119 — A per-item merge hold publishes the pull request and merges only on release",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-09-06"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 122 \u2014 An attention item's answer disposition governs who may answer it",
+    "heading": "## Scenario 122 — An attention item's answer disposition governs who may answer it",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-09-06"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 124 \u2014 The human answer lands as a marked ledger comment before the transition, and a poisoned answer is refused",
+    "heading": "## Scenario 124 — The human answer lands as a marked ledger comment before the transition, and a poisoned answer is refused",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-09-07"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 125 \u2014 The needs-attention valve item carries the terminated run's account and fails soft",
+    "heading": "## Scenario 125 — The needs-attention valve item carries the terminated run's account and fails soft",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-09-07"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 128 \u2014 An unrunnable ready item is visible but never advertised for dispatch",
+    "heading": "## Scenario 128 — An unrunnable ready item is visible but never advertised for dispatch",
     "work_item": "livespec-n33rwg.10",
     "first_seen": "2026-09-12"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 135 \u2014 A plan cannot archive until its own Definition of Done is proved against the released build",
+    "heading": "## Scenario 135 — A plan cannot archive until its own Definition of Done is proved against the released build",
     "work_item": "bd-ib-6lzeus",
     "first_seen": "2026-10-03"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 136 \u2014 A host-captured assertion holds the item in acceptance until an independent host replay verifies it against the released build",
+    "heading": "## Scenario 136 — A host-captured assertion holds the item in acceptance until an independent host replay verifies it against the released build",
     "work_item": "bd-ib-6lzeus",
     "first_seen": "2026-10-03"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 137 \u2014 A behavioural assertion is proved by exercising the behaviour, and a sandbox that cannot exercise it says so",
+    "heading": "## Scenario 137 — A behavioural assertion is proved by exercising the behaviour, and a sandbox that cannot exercise it says so",
     "work_item": "bd-ib-6lzeus",
     "first_seen": "2026-10-03"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 138 \u2014 A proof finding reaches the fix stage, and a parked acceptance verdict is recorded with its reason and its pointer",
+    "heading": "## Scenario 138 — A proof finding reaches the fix stage, and a parked acceptance verdict is recorded with its reason and its pointer",
     "work_item": "bd-ib-6lzeus",
     "first_seen": "2026-10-03"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 139 \u2014 The gate checks each proof mode against the capabilities the sandbox image publishes",
+    "heading": "## Scenario 139 — The gate checks each proof mode against the capabilities the sandbox image publishes",
     "work_item": "bd-ib-6lzeus",
     "first_seen": "2026-10-03"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 141 \u2014 The referenced scenario governs the proof, and the record names it",
+    "heading": "## Scenario 141 — The referenced scenario governs the proof, and the record names it",
     "work_item": "bd-ib-6lzeus",
     "first_seen": "2026-10-03"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 142 \u2014 A run that terminated after publishing is resumed at its first unfinished stage from its pull request, and nothing it completed runs again",
+    "heading": "## Scenario 142 — A run that terminated after publishing is resumed at its first unfinished stage from its pull request, and nothing it completed runs again",
     "work_item": "bd-ib-hfi52b",
     "first_seen": "2026-10-07"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 143 \u2014 A resume refuses, naming the mismatch, when the head moved, the earlier run is live, or the pull request is closed or merged",
+    "heading": "## Scenario 143 — A resume refuses, naming the mismatch, when the head moved, the earlier run is live, or the pull request is closed or merged",
     "work_item": "bd-ib-hfi52b",
     "first_seen": "2026-10-07"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 144 \u2014 A plain re-dispatch of an item whose run died after publishing reclaims the stale publish branch and holds when it cannot measure",
+    "heading": "## Scenario 144 — A plain re-dispatch of an item whose run died after publishing reclaims the stale publish branch and holds when it cannot measure",
     "work_item": "bd-ib-hfi52b",
     "first_seen": "2026-10-07"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 145 \u2014 A failed post-merge janitor retains its complete output and exit code as a private artifact the journal names",
+    "heading": "## Scenario 145 — A failed post-merge janitor retains its complete output and exit code as a private artifact the journal names",
     "work_item": "bd-ib-hfi52b",
     "first_seen": "2026-10-07"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 147 \u2014 A plan deadline survives pointer rewrites and permits causal recovery",
+    "heading": "## Scenario 147 — A plan deadline survives pointer rewrites and permits causal recovery",
     "work_item": "bd-ib-zi5ygh",
     "first_seen": "2026-10-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 148 \u2014 Unattended resume observes expired, legacy and unobservable progress",
+    "heading": "## Scenario 148 — Unattended resume observes expired, legacy and unobservable progress",
     "work_item": "bd-ib-zi5ygh",
     "first_seen": "2026-10-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 15 \u2014 Dispatcher composes next's ranking",
+    "heading": "## Scenario 15 — Dispatcher composes next's ranking",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-19"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 150 \u2014 Plan attention names missing results despite busy repair work",
+    "heading": "## Scenario 150 — Plan attention names missing results despite busy repair work",
     "work_item": "bd-ib-u4gqpp",
     "first_seen": "2026-10-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 151 \u2014 Repeated item failures require a causal dispatch attempt",
+    "heading": "## Scenario 151 — Repeated item failures require a causal dispatch attempt",
     "work_item": "bd-ib-s5idxj",
     "first_seen": "2026-10-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 152 \u2014 Independent recovery executes after Codex turn completion without wait registration",
+    "heading": "## Scenario 152 — Independent recovery executes after Codex turn completion without wait registration",
     "work_item": "bd-ib-ezuj43",
     "first_seen": "2026-10-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 154 \u2014 The first completed gate wakes a bounded multi-target wait",
+    "heading": "## Scenario 154 — The first completed gate wakes a bounded multi-target wait",
     "work_item": "bd-ib-z46mth",
     "first_seen": "2026-10-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 155 \u2014 A pane wait ends on non-working, missing and uncertain states",
+    "heading": "## Scenario 155 — A pane wait ends on non-working, missing and uncertain states",
     "work_item": "bd-ib-s3rj6d",
     "first_seen": "2026-10-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 156 \u2014 The shared deadline bounds stalled probes and telemetry",
+    "heading": "## Scenario 156 — The shared deadline bounds stalled probes and telemetry",
     "work_item": "bd-ib-z46mth",
     "first_seen": "2026-10-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 157 \u2014 Inventory distinguishes produced and acknowledged wake-ups",
+    "heading": "## Scenario 157 — Inventory distinguishes produced and acknowledged wake-ups",
     "work_item": "bd-ib-z46mth",
     "first_seen": "2026-10-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 158 \u2014 The host turn-end check exposes outstanding wait mismatches",
+    "heading": "## Scenario 158 — The host turn-end check exposes outstanding wait mismatches",
     "work_item": "bd-ib-itwchy",
     "first_seen": "2026-10-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 159 \u2014 Wait inventory and measurements arrive in Honeycomb without controlling liveness",
+    "heading": "## Scenario 159 — Wait inventory and measurements arrive in Honeycomb without controlling liveness",
     "work_item": "bd-ib-4mcuty",
     "first_seen": "2026-10-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 160 \u2014 Dispatch obligations survive coordinator FINAL without wait registration",
+    "heading": "## Scenario 160 — Dispatch obligations survive coordinator FINAL without wait registration",
     "work_item": "bd-ib-jy23vh",
     "first_seen": "2026-10-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 161 \u2014 Independent recovery survives notification and owner loss",
+    "heading": "## Scenario 161 — Independent recovery survives notification and owner loss",
     "work_item": "bd-ib-jy23vh",
     "first_seen": "2026-10-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 164 \u2014 Human HOLD and commit safety barriers retain recovery obligations",
+    "heading": "## Scenario 164 — Human HOLD and commit safety barriers retain recovery obligations",
     "work_item": "bd-ib-jy23vh",
     "first_seen": "2026-10-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 165 \u2014 Completed-cycle measurements explain runtime non-convergence",
+    "heading": "## Scenario 165 — Completed-cycle measurements explain runtime non-convergence",
     "work_item": "bd-ib-z2y4ca",
     "first_seen": "2026-10-09"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 167 \u2014 A failed janitor names the aggregate runner's failed targets",
+    "heading": "## Scenario 167 — A failed janitor names the aggregate runner's failed targets",
     "work_item": "bd-ib-ma3fvj",
     "first_seen": "2026-10-09"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 17 \u2014 drive operator-surface defaults",
+    "heading": "## Scenario 17 — drive operator-surface defaults",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-06"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 170 \u2014 A failed engine checkpoint commit names its node and cause and rests the item at needs-human",
+    "heading": "## Scenario 170 — A failed engine checkpoint commit names its node and cause and rests the item at needs-human",
     "work_item": "bd-ib-6jkjzm",
     "first_seen": "2026-10-12"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 172 \u2014 A stall-watchdog cancel is never non-convergence: a first cancel is released and recovered, a second rests for a human",
+    "heading": "## Scenario 171 — A still-running master CI run makes the preflight wait, not refuse",
+    "work_item": "bd-ib-ex35cb",
+    "first_seen": "2026-10-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 172 — A stall-watchdog cancel is never non-convergence: a first cancel is released and recovered, a second rests for a human",
     "work_item": "bd-ib-qgcpoc",
     "first_seen": "2026-10-12"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 26 \u2014 list-work-items emits lane and lane_reason",
+    "heading": "## Scenario 177 — A repository hook that outlives its limit is reaped and named, and publish_draft's limit is configurable",
+    "work_item": "bd-ib-xi63mq",
+    "first_seen": "2026-10-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 179 — A sandbox commit whose hook outlasts one tool call completes with the hook's own verdict",
+    "work_item": "bd-ib-sufca7",
+    "first_seen": "2026-10-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 183 — A checkpoint-failed run whose tree nothing else carries is published to a preservation ref",
+    "work_item": "bd-ib-na2xvm",
+    "first_seen": "2026-10-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 185 — A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch",
+    "work_item": "bd-ib-qgcpoc",
+    "first_seen": "2026-10-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 192 — A turn cut by its node timeout leaves its commit run to finish or be named, and a hook still executing at the cut is a hook-over-limit event",
+    "work_item": "bd-ib-ptnxyg",
+    "first_seen": "2026-10-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 196 — Reconciliation releases or completes a stranded dispatch claim on its owning host, and holds with a named reason every claim it cannot prove stranded",
+    "work_item": "bd-ib-m0t0",
+    "first_seen": "2026-10-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 197 — A sandbox agent cannot remove the clone's repository or empty its whole tree, and ordinary in-tree removals still run",
+    "work_item": "bd-ib-quzpge",
+    "first_seen": "2026-10-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 198 — A sandbox agent cannot signal the sandbox's PID 1 or its own adapter, and signals to its own processes still run",
+    "work_item": "bd-ib-dpkip6",
+    "first_seen": "2026-10-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 200 — A refresh whose conflicts lie only in declared record files merges them without a repair round",
+    "work_item": "bd-ib-davaxq",
+    "first_seen": "2026-10-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 205 — Gap detection enumerates headings without an exercising test",
+    "work_item": "bd-ib-4dlokv",
+    "first_seen": "2026-10-20"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 209 — A provider refusal booked as a successful turn is released, not left for a human",
+    "work_item": "bd-ib-wkfwtx",
+    "first_seen": "2026-10-20"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 210 — Reconciliation clears a stale fabro assignee from a ready item, and holds with a named reason every one it cannot clear",
+    "work_item": "bd-ib-3lbt4o",
+    "first_seen": "2026-10-20"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 211 — An unmet plan obligation is superseded only by a typed event whose cause verifies, and keeps its original budget",
+    "work_item": "bd-ib-egzipe",
+    "first_seen": "2026-10-20"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 213 — The plan timeline reports the record kinds it does not return",
+    "work_item": "bd-ib-p38r",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 214 — A plan resume returns the epic's rulings beside the typed next action",
+    "work_item": "bd-ib-ghijrt",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 215 — A tracks edge links a record to its epic on every surface",
+    "work_item": "bd-ib-rrhbmm",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 216 — The read projections publish a plan epic's identity keys",
+    "work_item": "bd-ib-wi5b",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 217 — A host-routed item's factory_captured assertion is an advisory finding",
+    "work_item": "bd-ib-rowuou",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 218 — A brief pointing at another work-item's evidence carries an advisory finding",
+    "work_item": "bd-ib-n1kn",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 219 — A rendered goal larger than the configured bound carries an advisory finding",
+    "work_item": "bd-ib-40vz",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 220 — An exhausted merge-poll budget on an open pull request rests the item for resume",
+    "work_item": "bd-ib-l6rleb",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 221 — A resume refusal on an active item names a remedy that changes it",
+    "work_item": "bd-ib-mzyhn2",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 222 — A capacity handoff for a claim with no recorded pull request reads the forge first",
+    "work_item": "bd-ib-dbmoeh",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 223 — A run attributed to an item under a pending stamp is not an orphan",
+    "work_item": "bd-ib-m1av",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 224 — A refused publish_draft push names the cause that refused it",
+    "work_item": "bd-ib-35kfra",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 225 — The publish-branch reclaim finds an earlier dispatch journaled in another worktree",
+    "work_item": "bd-ib-ewdqub",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 226 — An unchanged refresh strips the run's empty commits and carries the proof forward",
+    "work_item": "bd-ib-reapbq",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 227 — Fabro event reads are bounded in size, retries and concurrency",
+    "work_item": "bd-ib-2dlh7m",
+    "first_seen": "2026-10-20"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 228 — The credential freshness requirement is the smaller of the execution allowance and the bounded credential-use window",
+    "work_item": "bd-ib-6skm77",
+    "first_seen": "2026-10-20"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 229 — A non-overlapping refresh after one re-proof carries the proof forward",
+    "work_item": "bd-ib-6sb5cn",
+    "first_seen": "2026-10-20"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 230 — An item whose input exists only on the host is host-routed",
+    "work_item": "bd-ib-fv4w",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 232 — needs-attention surfaces an item labelled approval:workflow-edit",
+    "work_item": "bd-ib-qr4c7h",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 233 — A node routed to a different adapter does not inherit the replaced adapter's env",
+    "work_item": "bd-ib-5j4b",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 234 — A stalled run whose sandbox was OOM-killed names the kill and the memory limit",
+    "work_item": "bd-ib-7rnipp",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 235 — A captured comment that does not parse as a record is a proof-record finding",
+    "work_item": "bd-ib-f7lrks",
+    "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 237 — reconcile-merged runs the post-merge janitor a merged acceptance item is still owed",
+    "work_item": "bd-ib-ssmioz",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 239 — Every taking of the Definition-of-Done judgement grades one subject by one rubric",
+    "work_item": "bd-ib-gob6gl",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 240 — A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled",
+    "work_item": "bd-ib-8zyan",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 26 — list-work-items emits lane and lane_reason",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-29"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 27 \u2014 next ranks ready items by rank",
+    "heading": "## Scenario 27 — next ranks ready items by rank",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-29"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 28 \u2014 append_work_item registers and lands a custom status in two steps",
+    "heading": "## Scenario 28 — append_work_item registers and lands a custom status in two steps",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-29"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 29 \u2014 Factory GitHub App token on the dispatch path",
+    "heading": "## Scenario 29 — Factory GitHub App token on the dispatch path",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-02"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 30 \u2014 Dispatch-time baseline conformance gate",
+    "heading": "## Scenario 30 — Dispatch-time baseline conformance gate",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-02"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 33 \u2014 auto_approve_ready governs admission, and a committed setting wins over a per-item label",
+    "heading": "## Scenario 33 — auto_approve_ready governs admission, and a committed setting wins over a per-item label",
     "work_item": "bd-ib-pz7x",
     "first_seen": "2026-07-13"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 34 \u2014 acceptance_mode governs the acceptance leg",
+    "heading": "## Scenario 34 — acceptance_mode governs the acceptance leg",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-13"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 35 \u2014 A failing AI acceptance pass reworks only in the AI-dispositive modes",
+    "heading": "## Scenario 35 — A failing AI acceptance pass reworks only in the AI-dispositive modes",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-13"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 36 \u2014 Every needs-human block always escalates",
+    "heading": "## Scenario 36 — Every needs-human block always escalates",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-13"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 37 \u2014 Safe defaults hold when nothing is configured",
+    "heading": "## Scenario 37 — Safe defaults hold when nothing is configured",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-13"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 39 \u2014 Ratified lesson injects into dispatch briefs",
+    "heading": "## Scenario 39 — Ratified lesson injects into dispatch briefs",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-04"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 4 \u2014 Freeform bug fix",
+    "heading": "## Scenario 4 — Freeform bug fix",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 40 \u2014 Unratified or absent lessons never alter briefs",
+    "heading": "## Scenario 40 — Unratified or absent lessons never alter briefs",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-04"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 41 \u2014 standalone analysis lands in a plan, not a root research tree",
+    "heading": "## Scenario 41 — standalone analysis lands in a plan, not a root research tree",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-09"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 43 \u2014 loop drains the ranked queue by default",
+    "heading": "## Scenario 43 — loop drains the ranked queue by default",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-14"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 44 \u2014 --dry-run plans the ranked queue and dispatches nothing",
+    "heading": "## Scenario 44 — --dry-run plans the ranked queue and dispatches nothing",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-14"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 45 \u2014 Unobservable cost fails closed on an unattended drain and warns on a hand-picked dispatch",
+    "heading": "## Scenario 45 — Unobservable cost fails closed on an unattended drain and warns on a hand-picked dispatch",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-14"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 46 \u2014 Per-item cap overrides set a label or clear to reinherit the global default",
+    "heading": "## Scenario 46 — Per-item cap overrides set a label or clear to reinherit the global default",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-16"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 47 \u2014 The guarded move relocates within the operator-movable statuses only",
+    "heading": "## Scenario 47 — The guarded move relocates within the operator-movable statuses only",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-16"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 5 \u2014 Doctor cross-boundary read",
+    "heading": "## Scenario 5 — Doctor cross-boundary read",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-08"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 52 \u2014 A repository mise tool cannot shadow the lifecycle-guarded bd entry point",
+    "heading": "## Scenario 52 — A repository mise tool cannot shadow the lifecycle-guarded bd entry point",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-30"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 53 \u2014 A dispatch proceeds when the host is busy; the scheduler queues it",
+    "heading": "## Scenario 53 — A dispatch proceeds when the host is busy; the scheduler queues it",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-30"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 54 \u2014 Host-side dispatch runs a released payload, never the working tree",
+    "heading": "## Scenario 54 — Host-side dispatch runs a released payload, never the working tree",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-02"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 55 \u2014 plan archive commissions a missing independent completeness review",
+    "heading": "## Scenario 55 — plan archive commissions a missing independent completeness review",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-16"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 56 \u2014 A not-human-gated decision is taken by the session, never escalated",
+    "heading": "## Scenario 56 — A not-human-gated decision is taken by the session, never escalated",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-20"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 57 \u2014 A capacity refusal names which ceiling it means",
+    "heading": "## Scenario 57 — A capacity refusal names which ceiling it means",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-28"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 58 \u2014 Rows at status active are not the counted quantity",
+    "heading": "## Scenario 58 — Rows at status active are not the counted quantity",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-28"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 59 \u2014 The hand-picked operator override admits over the cap",
+    "heading": "## Scenario 59 — The hand-picked operator override admits over the cap",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-28"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 6 \u2014 Cross-repo dispatch via the Dispatcher",
+    "heading": "## Scenario 6 — Cross-repo dispatch via the Dispatcher",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-22"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 78 \u2014 A temporary throttle carries its own restore work-item",
+    "heading": "## Scenario 78 — A temporary throttle carries its own restore work-item",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-25"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 87 \u2014 A node's adapter resolves through three layers and the record names the supplying layer",
+    "heading": "## Scenario 87 — A node's adapter resolves through three layers and the record names the supplying layer",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-25"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 88 \u2014 An arbitrary adapter with an env map and args renders without a code change",
+    "heading": "## Scenario 88 — An arbitrary adapter with an env map and args renders without a code change",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-25"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 92 \u2014 Dry-run reports why a ready item was not picked",
+    "heading": "## Scenario 92 — Dry-run reports why a ready item was not picked",
     "work_item": "bd-ib-nt3cjv",
     "first_seen": "2026-08-29"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 93 \u2014 The janitor-bootstrap step resolves a declared hook-install recipe and falls back to a declared default",
+    "heading": "## Scenario 93 — The janitor-bootstrap step resolves a declared hook-install recipe and falls back to a declared default",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-29"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 94 \u2014 A provider's availability claim does not extend an exhaustion record's expiry",
+    "heading": "## Scenario 94 — A provider's availability claim does not extend an exhaustion record's expiry",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-29"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 99 \u2014 Empty-diff acceptance integrity: a zero-change merge is ungradeable, not delivered",
+    "heading": "## Scenario 99 — Empty-diff acceptance integrity: a zero-change merge is ungradeable, not delivered",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-30"
   },
@@ -775,285 +1048,5 @@
     "heading": "## What this spec is not",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 171 \u2014 A still-running master CI run makes the preflight wait, not refuse",
-    "work_item": "bd-ib-ex35cb",
-    "first_seen": "2026-10-13"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 177 \u2014 A repository hook that outlives its limit is reaped and named, and publish_draft's limit is configurable",
-    "work_item": "bd-ib-xi63mq",
-    "first_seen": "2026-10-13"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 179 \u2014 A sandbox commit whose hook outlasts one tool call completes with the hook's own verdict",
-    "work_item": "bd-ib-sufca7",
-    "first_seen": "2026-10-15"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 183 \u2014 A checkpoint-failed run whose tree nothing else carries is published to a preservation ref",
-    "work_item": "bd-ib-na2xvm",
-    "first_seen": "2026-10-15"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 185 \u2014 A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch",
-    "work_item": "bd-ib-qgcpoc",
-    "first_seen": "2026-10-15"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 192 \u2014 A turn cut by its node timeout leaves its commit run to finish or be named, and a hook still executing at the cut is a hook-over-limit event",
-    "work_item": "bd-ib-ptnxyg",
-    "first_seen": "2026-10-18"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 196 \u2014 Reconciliation releases or completes a stranded dispatch claim on its owning host, and holds with a named reason every claim it cannot prove stranded",
-    "work_item": "bd-ib-m0t0",
-    "first_seen": "2026-10-18"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 197 \u2014 A sandbox agent cannot remove the clone's repository or empty its whole tree, and ordinary in-tree removals still run",
-    "work_item": "bd-ib-quzpge",
-    "first_seen": "2026-10-18"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 198 \u2014 A sandbox agent cannot signal the sandbox's PID 1 or its own adapter, and signals to its own processes still run",
-    "work_item": "bd-ib-dpkip6",
-    "first_seen": "2026-10-18"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 200 \u2014 A refresh whose conflicts lie only in declared record files merges them without a repair round",
-    "work_item": "bd-ib-davaxq",
-    "first_seen": "2026-10-18"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 205 \u2014 Gap detection enumerates headings without an exercising test",
-    "work_item": "bd-ib-4dlokv",
-    "first_seen": "2026-10-20"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 209 \u2014 A provider refusal booked as a successful turn is released, not left for a human",
-    "work_item": "bd-ib-wkfwtx",
-    "first_seen": "2026-10-20"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 210 \u2014 Reconciliation clears a stale fabro assignee from a ready item, and holds with a named reason every one it cannot clear",
-    "work_item": "bd-ib-3lbt4o",
-    "first_seen": "2026-10-20"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 206 \u2014 The spec-change tier is decided by the spec-stated judgement, and a feature waits for ratification",
-    "work_item": "bd-ib-57ss2n",
-    "first_seen": "2026-10-20"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 211 \u2014 An unmet plan obligation is superseded only by a typed event whose cause verifies, and keeps its original budget",
-    "work_item": "bd-ib-egzipe",
-    "first_seen": "2026-10-20"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 227 \u2014 Fabro event reads are bounded in size, retries and concurrency",
-    "work_item": "bd-ib-2dlh7m",
-    "first_seen": "2026-10-20"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 228 \u2014 The credential freshness requirement is the smaller of the execution allowance and the bounded credential-use window",
-    "work_item": "bd-ib-2oxr6v",
-    "first_seen": "2026-10-20"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 229 \u2014 A non-overlapping refresh after one re-proof carries the proof forward",
-    "work_item": "bd-ib-2oxr6v",
-    "first_seen": "2026-10-20"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 232 \u2014 needs-attention surfaces an item labelled approval:workflow-edit",
-    "work_item": "bd-ib-qr4c7h",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 230 \u2014 An item whose input exists only on the host is host-routed",
-    "work_item": "bd-ib-fv4w",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 233 \u2014 A node routed to a different adapter does not inherit the replaced adapter's env",
-    "work_item": "bd-ib-5j4b",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 234 \u2014 A stalled run whose sandbox was OOM-killed names the kill and the memory limit",
-    "work_item": "bd-ib-7rnipp",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 215 \u2014 A tracks edge links a record to its epic on every surface",
-    "work_item": "bd-ib-rrhbmm",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 216 \u2014 The read projections publish a plan epic's identity keys",
-    "work_item": "bd-ib-wi5b",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 213 \u2014 The plan timeline reports the record kinds it does not return",
-    "work_item": "bd-ib-p38r",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 214 \u2014 A plan resume returns the epic's rulings beside the typed next action",
-    "work_item": "bd-ib-ghijrt",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 217 \u2014 A host-routed item's factory_captured assertion is an advisory finding",
-    "work_item": "bd-ib-rowuou",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 223 \u2014 A run attributed to an item under a pending stamp is not an orphan",
-    "work_item": "bd-ib-m1av",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 224 \u2014 A refused publish_draft push names the cause that refused it",
-    "work_item": "bd-ib-35kfra",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 225 \u2014 The publish-branch reclaim finds an earlier dispatch journaled in another worktree",
-    "work_item": "bd-ib-ewdqub",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 226 \u2014 An unchanged refresh strips the run's empty commits and carries the proof forward",
-    "work_item": "bd-ib-reapbq",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 220 \u2014 An exhausted merge-poll budget on an open pull request rests the item for resume",
-    "work_item": "bd-ib-l6rleb",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 218 \u2014 A brief pointing at another work-item's evidence carries an advisory finding",
-    "work_item": "bd-ib-n1kn",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 219 \u2014 A rendered goal larger than the configured bound carries an advisory finding",
-    "work_item": "bd-ib-40vz",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 221 \u2014 A resume refusal on an active item names a remedy that changes it",
-    "work_item": "bd-ib-mzyhn2",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 222 \u2014 A capacity handoff for a claim with no recorded pull request reads the forge first",
-    "work_item": "bd-ib-dbmoeh",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 235 \u2014 A captured comment that does not parse as a record is a proof-record finding",
-    "work_item": "bd-ib-f7lrks",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 237 \u2014 reconcile-merged runs the post-merge janitor a merged acceptance item is still owed",
-    "work_item": "bd-ib-ssmioz",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 239 \u2014 Every taking of the Definition-of-Done judgement grades one subject by one rubric",
-    "work_item": "bd-ib-gob6gl",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 240 \u2014 A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled",
-    "work_item": "bd-ib-8zyan",
-    "first_seen": "2026-10-22"
   }
 ]
