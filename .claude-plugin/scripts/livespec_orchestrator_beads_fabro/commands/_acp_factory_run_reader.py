@@ -30,10 +30,30 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroRunner
 
 __all__: list[str] = [
+    "READ_ONLY_FABRO_VERBS",
     "FactoryRunReader",
 ]
 
 _READ_TIMEOUT_SECONDS = 60.0
+
+# The engine verbs this reader may spend, as a DECLARATION rather than as a
+# property of whichever methods happen to exist.
+#
+# The idle-factory clause requires snapshot composition to observe the
+# factory-native availability evidence and forbids it to "execute credential
+# probes, availability confirmation turns, or mutations" -- and a snapshot
+# composes this reader, so every verb below is one an awareness surface spends
+# on an operator's behalf. A `run` submission IS the availability confirmation
+# turn that clause names; `auth` and `secret` write host and server credential
+# state; `rm` destroys a run. None of them is reachable from the three methods
+# here, and the point of naming the admitted set is that a future method
+# reaching past it fails a check rather than quietly widening what composing
+# an attention snapshot does.
+#
+# DECLARED HERE rather than in the test that grades it, because a verb set
+# spelled in a test is one copy of the rule compared against another copy of
+# the same transcription: both would agree after a new method left the set.
+READ_ONLY_FABRO_VERBS: tuple[str, ...] = ("inspect", "ps", "settings")
 
 
 @dataclass(frozen=True, kw_only=True)
