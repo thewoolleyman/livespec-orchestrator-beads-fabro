@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.239.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.239.0...v0.239.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **dispatcher:** scrub the target wrapper's Fabro credential from the currency probe ([8520a26](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8520a26a53ab7fccc6903f5e0e8aee00881dbd3a))
+
 ## [0.239.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.238.0...v0.239.0) (2026-10-23)
 
 
