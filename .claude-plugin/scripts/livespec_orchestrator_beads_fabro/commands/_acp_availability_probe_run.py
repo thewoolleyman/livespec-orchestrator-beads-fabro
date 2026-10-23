@@ -14,6 +14,25 @@ and this module launches the run, observes it, and hands those three their
 inputs. Nothing here decides what an ending MEANS or what a record SAYS, which
 is what keeps every one of those decisions exercisable with no factory at all.
 
+THE TURN IS PLACED IN THE FACTORY'S DECLARED ENVIRONMENT, which is the fourth
+of the four execution properties the clause names and the only one that is a
+property of the SANDBOX rather than of the adapter. `_acp_availability_probe`
+argues the first three from `render_adapter`'s byte equality; the "projected
+worker credential identity" is whatever the server-catalog environment supplies,
+so a target built from the server alone omits `--environment` and lands the turn
+in the server's DEFAULT environment, whose credential is not the dispatch's.
+Both outcomes of that omission are wrong and neither announces itself: with no
+credential there, no healthy provider can ever earn a confirmation and the
+post-expiry stall this module exists to end persists unchanged; with one, the
+turn confirms a credential identity nobody dispatches with -- the "confirm a
+model nobody ran" failure `availability_probe_refusal` turns an in-protocol
+candidate away to avoid, arriving through the placement instead of through
+`config_options`. The id is the dispatch path's OWN projection
+(`factory_environment_id`) rather than a second read, so the probe and a
+dispatch to the same factory cannot disagree about where they ran; an unusable
+declaration reduces to None here exactly as it does there, which is safe for the
+same reason -- `factory_declaration_refusal` has already refused the invocation.
+
 TERMINATION IS PERFORMED BEFORE ANYTHING IS READ, and that ordering is the one
 piece of mechanics here worth reading twice. The clause requires the bound to
 include "termination of unfinished probe work", so a probe past its bound is
@@ -90,6 +109,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_binary_record
     engine_binary,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import factory_fabro_bin
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_environment import (
+    factory_environment_id,
+)
 
 # The LEAF rather than the `_dispatcher_io` aggregate that re-exports it, for
 # the reason `_acp_clearance_factory_record` states beside its own import: the
@@ -198,7 +220,11 @@ def run_availability_probe(  # noqa: PLR0913 — kw-only probe inputs; each is o
     fabro_bin = factory_fabro_bin(factory=target, fallback=resolve_fabro_bin(cwd=repo))
     port = FabroPort(
         fabro_bin=fabro_bin,
-        target=FabroTarget(server_url=target.server, dev_token=target.dev_token),
+        target=FabroTarget(
+            server_url=target.server,
+            dev_token=target.dev_token,
+            environment=factory_environment_id(factory=target),
+        ),
         runner=command,
         cwd=repo,
         fabro_version=engine_binary(fabro_bin=fabro_bin, runner=command, cwd=repo).version,
