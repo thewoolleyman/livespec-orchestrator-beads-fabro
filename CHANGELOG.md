@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.238.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.237.0...v0.238.0) (2026-10-23)
+
+
+### Features
+
+* **dispatcher:** verify the serving App reaches an adopter target before launch ([abb964e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/abb964e265560e45cb3013cedaeb7ec6e3765c89))
+
 ## [0.237.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.236.1...v0.237.0) (2026-10-23)
 
 
