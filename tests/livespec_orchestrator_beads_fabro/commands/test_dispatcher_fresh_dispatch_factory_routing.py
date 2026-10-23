@@ -499,3 +499,86 @@ def test_a_named_factory_outranks_the_recorded_pin_on_a_resume(
     assert launched.fabro_factory_target.name == _DEFAULT
     assert launched.fabro_factory_target.server == _DEFAULT_SERVER
     assert dispatch_factory_for(path=store_config(repo=repo), work_item_id=_ITEM_ID) == _DEFAULT
+
+
+def test_a_drain_wave_sends_its_resume_routed_item_to_the_recorded_factory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `loop` leg, which is a SEPARATE call site from `dispatch --item`'s.
+
+    The clause names three ways a dispatch's route is resume and the drain is the
+    third: "a `dispatch` or `loop` pass whose recovery routing routes the item
+    `resume`". The two launch paths deliberately do not share one function, so
+    each reads the route and hands it to the valve on its own line — which means
+    a build that wired the targeted path and not the drain satisfies every case
+    above while sending every drained resume to the default factory.
+
+    This case was authored AFTER the implementation rather than against a Red of
+    its own, so it rides the suite-green leg. The mutation that reds it —
+    dropping the drain's own `resume_ids` hand-off — could not be measured here:
+    this repository's TDD order guard refuses a product-file write while HEAD is
+    a closed Green, which is the guard working as designed. What stands in its
+    place is that the assertion is read off the valve's own write (the claim
+    stamp) and the launch's own namespace, neither of which the drain supplies
+    for the other.
+
+    Recovery routing is HANDED rather than measured, exactly as in the cases
+    above: its own decision has its own tests, and a resume route is reached only
+    through a released item with a live anchor.
+    """
+    repo = _repo(tmp_path=tmp_path)
+    _seed_pinned(repo=repo)
+    wave_module = importlib.import_module(f"{_PACKAGE}._dispatcher_loop_wave")
+    eligibility_module = importlib.import_module(f"{_PACKAGE}._dispatcher_admission_eligibility")
+    admission_module = importlib.import_module(f"{_PACKAGE}._dispatcher_admission")
+    rework_module = importlib.import_module(f"{_PACKAGE}._dispatcher_rework_admission")
+    monkeypatch.setattr(eligibility_module, "read_dispatch_labels", lambda **_: ())
+    monkeypatch.setattr(admission_module, "update_work_item_status", lambda **_: None)
+    monkeypatch.setattr(wave_module, "await_usable_credential", lambda **_: None)
+    monkeypatch.setattr(wave_module, "resolve_acp_preflight", lambda **_: None)
+    monkeypatch.setattr(wave_module, "post_admission_publish_branch_reclaim", lambda **_: None)
+    monkeypatch.setattr(
+        wave_module,
+        "route_recovery",
+        lambda **_: RecoveryRouting(routes=(_resume_route(),)),
+    )
+    launched: list[argparse.Namespace] = []
+
+    def _dispatch(**kwargs: Any) -> DispatchOutcome:
+        launched.append(kwargs["args"])
+        return _LAUNCHED
+
+    monkeypatch.setattr(wave_module, "dispatch_one", _dispatch)
+
+    outcomes = wave_module.dispatch_loop_wave(
+        args=argparse.Namespace(
+            repo=str(repo),
+            journal=str(repo / "journal.jsonl"),
+            item=None,
+            items=None,
+            budget=1,
+            parallel=1,
+            factory=None,
+            fabro_bin=None,
+            workflow_name=None,
+            as_json=False,
+            dry_run=False,
+            skip_ledger_check=True,
+        ),
+        repo=repo,
+        items=[_item()],
+        selected_candidates=[_item()],
+        journal=JournalFile(path=repo / "journal.jsonl"),
+        janitor=None,
+        rework=rework_module.ReworkPass(scope_ids=frozenset()),
+    )
+
+    # The wave ADMITTED and launched the candidate rather than deferring it,
+    # which is what makes the stamp and the namespace below this wave's own.
+    assert outcomes == [_LAUNCHED]
+    stamp = _stamp_now(repo=repo)
+    assert stamp is not None
+    assert stamp.factory_name == _RECORDED
+    assert stamp.factory_server == _RECORDED_SERVER
+    assert launched[0].fabro_factory_target.name == _RECORDED
+    assert launched[0].fabro_factory_target.server == _RECORDED_SERVER
