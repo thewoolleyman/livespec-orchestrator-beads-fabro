@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.239.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.238.0...v0.239.0) (2026-10-23)
+
+
+### Features
+
+* cost every provider-limit-released run on its own factory, once ([8f6a231](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8f6a231c89f82cb18f7f82d8822949af3ac34508))
+* darken a sequence total on any unobservable attempt, and label it ([7ce9293](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7ce9293a0a6eda5670ec9a568e0923b171dba5f0))
+* journal one attempt-cost record per attempt, stably identified ([7dd3715](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7dd371525f674eb360a3e7e2a588823ddeb4bb2d))
+* sum an item's sequence cost from its records and the final run ([ab58a4f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ab58a4f37057970f75dcbe28557c6f6622507d89))
+* yield one attempt-cost record per confirmation turn, charged once ([86016b7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/86016b766ee21327dbafb7a5bd71fc6210555463))
+
 ## [0.238.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.237.0...v0.238.0) (2026-10-23)
 
 
