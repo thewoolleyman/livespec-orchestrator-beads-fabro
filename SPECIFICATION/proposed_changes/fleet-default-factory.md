@@ -263,3 +263,22 @@ Scenario: A stranded claim on a fleet-derived factory the registry no longer res
   Then the claim is held as factory-unobservable, naming "petri" and the registry path
   And it is not treated as holding no run
 ```
+
+**Amendment after independent review (gpt-6-astra round 6, BLOCKERS 1):**
+
+14. Overflow reads may select the resolved fleet default. In §"Host concurrency belongs to the Fabro scheduler", replace "solely to choose which declared factory receives an unpinned dispatch." with "solely to choose which candidate of §\"Factory overflow selection\" receives an unpinned dispatch; the candidates are the resolved default factory, including a registry fleet default the repository does not declare, and the declared entries of `dispatcher.overflow_factories`." Every other sentence of that paragraph, and every other prohibition in that section, is unchanged. This is the only selection purpose for which an undeclared factory is read; amendment 12's "for no other purpose" governs everything else.
+
+Amendment 12's observation and recovery exception applies to every rule that addresses a recorded run's factory by "its declared server target", including the needs-human valve enrichment and §"A factory run never awaits a human". Where such a rule pairs that phrase with a statement about an undeclared target, the reviser MUST apply the exception to the whole paired sentence, so that a recorded-target factory resolved through the registry counts as a declared target for that sentence, and an undeclared target that is NOT a recorded-target factory keeps its existing treatment.
+
+Add to Scenario 241:
+
+```gherkin
+Scenario: An undeclared fleet default wins overflow selection
+  Given dispatcher.default_factory is "fleet", the registry's default is "petri", and "petri" is not declared
+  And dispatcher.overflow_factories is ["legacy"]
+  And "petri" reports 1 of 4 non-terminal runs and "legacy" reports 3 of 4
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then one overflow-selection journal record lists "petri" and "legacy" and names chosen "petri", reason least-utilized-free-slot
+  And the admission claim stamp, the submitted run and the dispatch-factory record all name "petri"
+  And the capacity reads refuse, defer, hold and count nothing
+```
