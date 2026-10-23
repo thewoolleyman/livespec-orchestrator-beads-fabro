@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.239.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.239.1...v0.239.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* a fresh dispatch must not read the item's recorded factory as a pin ([952bbbb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/952bbbb93561c65cfffc3a7f752adc206d39648e))
+* a resume-routed dispatch is submitted to the item's recorded factory ([b24819f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b24819f0cfd4d129856899d23220b64a1a928e16))
+* the currency gate grades the factory a fresh dispatch would reach ([b726d38](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b726d38a1085a43bc9d76be4b5b337739bf796cb))
+
 ## [0.239.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.239.0...v0.239.1) (2026-10-23)
 
 
