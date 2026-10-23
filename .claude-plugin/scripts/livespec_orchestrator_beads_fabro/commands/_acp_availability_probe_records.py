@@ -71,6 +71,24 @@ null beside a stated observability flag rather than omitting the key: an
 omitted key is what a row from a build predating cost looks like, and the
 repository's own cost gate is fail-closed on exactly that distinction. Zero is
 a MEASURED figure and reads as observable.
+
+THE ATTEMPT-COST RECORD IS A THIRD RECORD AND NOT A KEY OF THE ROW ABOVE, which
+is the one placement decision here worth reading twice. The same section's
+"Cost follows every attempt" paragraph says "for every availability
+confirmation turn, the Dispatcher MUST journal one attempt-cost record", and
+`_dispatcher_cost_sequence`'s per-item fold selects on the attempt-cost STAGE
+and the item it names -- so a cost observation carried inside this row's own
+stage would be invisible to the one surface that counts it. Both still carry
+the figure, deliberately: the row answers "what did this turn do" for an
+operator reading the journal by hand, and the record answers "what has this
+item spent" for the fold.
+
+IT IS CHARGED TO EXACTLY ONE ITEM, which is the clause's "A shared availability
+probe MUST NOT be charged in full to multiple items". A confirmation turn run
+inside one item's admission evaluation establishes availability every peer then
+benefits from, and nothing downstream divides a charge -- so the record names
+the item that spent it and the peers' folds see nothing at all, which is what
+keeps one spend from being multiplied by the size of the queue.
 """
 
 from __future__ import annotations
@@ -92,6 +110,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_failure_classifier import (
     classify_acp_failure,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_hold_records import hold_observation_record
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_attempts import (
+    ATTEMPT_COST_CONFIRMATION_TURN,
+    attempt_cost_record,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_classify import (
     provider_limit_signal,
 )
@@ -99,6 +121,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_class
 __all__: list[str] = [
     "PROBE_EVIDENCE_KIND",
     "PROBE_JOURNAL_STAGE",
+    "probe_attempt_cost_record",
     "probe_eligible_failure",
     "probe_hold_record",
     "probe_journal_record",
@@ -179,6 +202,48 @@ def probe_hold_record(
         node=AVAILABILITY_PROBE_NODE,
     )
     return None if isinstance(built, str) else built
+
+
+def probe_attempt_cost_record(
+    *,
+    work_item_id: str,
+    occurred_at: str,
+    factory: str,
+    run_id: str | None,
+    cost_usd_micros: int | None,
+) -> dict[str, object]:
+    """The one attempt-cost observation this confirmation turn is recorded as.
+
+    Total: every ending produces one, because a record written only for the
+    turn that CONFIRMED makes the spend of every refused, exited, cancelled and
+    terminated turn invisible -- and those are the turns a chain waiting out an
+    outage actually produces.
+
+    NO ATTEMPT WINDOW IS RECORDED, and that is the honest reading rather than an
+    omission. The probe's graph is one adapter-bearing node, its ended-run read
+    asks for the node outcome and the whole-run figure, and nothing in it reads
+    an event stream for chain starts -- so the run record exposes no per-attempt
+    elapsed time to this turn, and inventing an entry from the node id would
+    report a measurement nobody took.
+
+    NO CANDIDATE IDENTITY IS TAKEN, unlike the hold record beside it, and the
+    asymmetry follows what each record is FOR. A hold is scoped BY the
+    entitlement the turn spent, so it cannot be built without one; a charge is
+    scoped by the turn's own run and the item it is charged to, and the journal
+    row written for the same turn already names the candidate for an operator
+    reading the file by hand. Taking an identity here and discarding it would
+    read as a field the record carries.
+    """
+    return attempt_cost_record(
+        source=ATTEMPT_COST_CONFIRMATION_TURN,
+        work_item_id=work_item_id,
+        factory=factory,
+        run_id=run_id,
+        node_attempt=AVAILABILITY_PROBE_NODE,
+        occurred_at=occurred_at,
+        windows=(),
+        usd_micros=cost_usd_micros,
+    )
 
 
 def probe_journal_record(  # noqa: PLR0913 — kw-only record fields, each one of the four the clause enumerates or one half of the run identity it is recorded against; grouping any pair into a carrier would invent a relationship the row does not have.
