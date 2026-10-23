@@ -1679,6 +1679,48 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   projection are two readings of ONE history, and a second journal read would
   let a rate measured against one baseline sit beside a projection naming
   another.
+  THE SEVEN-DAY ALLOWANCE IS THE SAME CLAUSE'S THIRD SHORTFALL (v182, Scenario
+  231, `bd-ib-u3jq5r`), and it adds NO module: `SevenDayReading` and
+  `seven_day_skips_candidate` sit beside the five-hour value in
+  `_acp_session_headroom`, `_dispatcher_session_headroom_io` reads two more
+  headers off the response it already had, and
+  `_acp_candidate_preflight._headroom_skip_kind` grows one arm. It closes a
+  defect the five-hour reading structurally cannot see: an account with
+  five-hour room and NO weekly room passes every existing arm and is dispatched
+  into a refusal it cannot avoid — measured on gmktec run 01M580PF02S0, where
+  `proof_verify@3` failed after 6h02m with "You've hit your weekly limit".
+  SIX PROPERTIES AN EDITOR MUST NOT INVERT. Both windows come off ONE response,
+  which is the clause's own "from the same provider response" and the reason the
+  read grew two header names rather than a second request — admission spends one
+  bounded request per credential per evaluation, and a second round trip would
+  double what the brake costs the provider to answer a question the first
+  response already answered. The STATUS is the whole test and the weekly
+  UTILIZATION decides nothing, which the clause states outright ("a warning
+  status, a utilization below 100, or any other value is not exhaustion"): a
+  window reported fully spent that the provider still serves must be admitted,
+  and that is also what makes the decision immune to whether the provider
+  reports that figure as a fraction or a percentage. The weekly reading is a
+  VALUE with its own unobservable result rather than two more columns, because
+  the two windows fail independently — the response most likely to carry a
+  weekly refusal is a REFUSED one, whose five-hour header may be absent — so
+  `unobservable_session_headroom` carries the weekly half through. Every
+  unrecognised value fails OPEN by construction, since `exhausted` compares
+  against one literal and nothing else. The SAME floor governs it and a floor of
+  0 disables it, never a weekly dial of its own, or an operator who switched the
+  filter off would still have dispatches refused by the arm they had not heard
+  of. And the weekly arm is tested AFTER the floor and BEFORE the projection:
+  the floor is the dial an operator acts on directly, and a weekly refusal is
+  one the PROVIDER has already issued while a projection is this build's own
+  extrapolation, so where both hold the measured one is what an operator can
+  check against the account.
+  THE SEVEN-DAY HEADER NAMES ARE SIBLINGS OF A MEASURED ONE, not a second
+  measurement, and that is recorded rather than implied:
+  `anthropic-ratelimit-unified-5h-utilization` was measured on this host
+  2026-10-15, and the weekly pair is the same unified family's `7d` spelling. An
+  unrecognised header reads as an ABSENT weekly reading, which the clause
+  forbids from skipping anything, so a wrong spelling degrades to the
+  five-hour-only behaviour rather than to a wrong refusal — which is why the
+  fail-open direction is load-bearing here and not merely conservative.
 - The **TDD order calibration** modules (plan `factory-test-first-enforcement`
   slice S3, `bd-ib-3h5vfq`) put seven `tdd.*` fields plus the implement
   adapter on the terminal `dispatcher.calibration` span, so "is the factory

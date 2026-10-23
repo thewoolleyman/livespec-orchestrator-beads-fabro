@@ -2085,9 +2085,8 @@
     "heading": "## Scenario 231 \u2014 Admission skips a Claude candidate whose seven-day allowance is exhausted",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal session-headroom-reads-the-seven-day-allowance, and the owning work-item bd-ib-u3jq5r lands the seven-day reading and skip in the session-headroom admission filter together with the test that binds this entry.",
-    "work_item": "bd-ib-u3jq5r"
+    "test": "tests.integration.test_session_headroom_seven_day_scenario231.test_a_seven_day_exhaustion_skips_the_candidate_and_selection_continues",
+    "reason": "Integration-tier acceptance for the seven-day admission allowance, landed by bd-ib-u3jq5r. The bound node id is the heading's FIRST gherkin block: the real `dispatcher.main(argv=[\"loop\", ...])` drives admission, the preflight filter, the committed floor and the production provider read over a target declaring one covered claude-acp primary with an uncovered fallback, with `urlopen` standing in one layer below the read so the weekly status enters the system as a response header rather than as a reading the test constructed. The warning/absent block and the floor-of-0 block are sibling cases in the same module; both are controls for this one, since a filter that skipped every covered candidate would satisfy it alone. The module replaces the suite's own autouse headroom stand-in and asserts the journaled credential identity is fingerprinted from the token the dispatch projects, so a case that fell back to that stand-in fails rather than passing vacuously; a mutation disabling the seven-day arm reds it (measured 2026-10-23)."
   },
   {
     "heading": "## Scenario 215 \u2014 A tracks edge links a record to its epic on every surface",

@@ -940,13 +940,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 231 \u2014 Admission skips a Claude candidate whose seven-day allowance is exhausted",
-    "work_item": "bd-ib-u3jq5r",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 215 \u2014 A tracks edge links a record to its epic on every surface",
     "work_item": "bd-ib-rrhbmm",
     "first_seen": "2026-10-21"

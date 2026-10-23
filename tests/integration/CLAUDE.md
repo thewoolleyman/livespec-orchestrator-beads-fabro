@@ -1078,6 +1078,41 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   absent-account case, because that one arm WIDENS a record's reach and is the
   direction every other case argues against.
 
+- `test_session_headroom_seven_day_scenario231.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 231 and the seven-day sentences of
+  `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance"
+  → "Admission filters candidates by projected Claude session headroom": an
+  account with five-hour room and no WEEKLY room is skipped at admission rather
+  than dispatched into a refusal. One case per gherkin block, each driving the
+  real `dispatcher.main(argv=["loop", ...])` over the real store/client seam, a
+  real on-disk journal, a real committed floor and the real chain resolution,
+  with only the Fabro launch and `urlopen` stood in. The weekly status therefore
+  enters the system the way a live one does — as one of four headers on one
+  response — rather than as a reading the test constructed, which matters
+  because the header names, the fraction-to-percentage conversion, the committed
+  dial, the chain order and the journal projection are each a place the decision
+  can be lost and only the whole pass exercises all of them.
+  THREE THINGS AN EDITOR MUST NOT WEAKEN. The module REPLACES the suite's own
+  autouse `_hermetic_session_headroom_reading`, which answers every admission
+  pass with an untouched window: under it every case reports an ABSENT weekly
+  reading whatever response the fixture builds, so the passes would be earned by
+  the stand-in. Each case re-arms the production read and injects `urlopen`
+  beneath it — one layer LOWER and no less hermetic, since no socket is opened
+  either way — and the CONTROL is the journaled credential identity, asserted to
+  be fingerprinted from the token this dispatch projects, which the stand-in's
+  own fixed identity cannot satisfy. The workflow is committed INSIDE the target
+  repository rather than parked beside it, because the chain resolution reads
+  the target's own `.fabro/workflows/implement-work-item/`: a workflow outside
+  the repo leaves the preflight resolving the plugin's BUNDLED graph, whose
+  other nodes are single-candidate built-in Claude adapters, so a refused weekly
+  allowance empties all seven and the dispatch is refused before this scenario's
+  own node is ever selected. And the skip is read off the SELECTED candidate and
+  the dispatch's own launch, never off the skip list alone, since "per-node
+  selection continues to the next eligible candidate" is a claim about what the
+  dispatch then ran on and a build that emptied the chain records the same skip.
+  Measured 2026-10-23: a mutation disabling the seven-day arm reds the first
+  case, while the two admitted cases stay green — which is what they are for.
+
 - `test_janitor_environment_scrub_scenario189.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 189 and the post-merge and reconcile
   janitor environment clause of `SPECIFICATION/contracts.md`: the janitor's
