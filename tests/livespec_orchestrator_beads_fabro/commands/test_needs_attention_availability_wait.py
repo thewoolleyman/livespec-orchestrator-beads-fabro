@@ -181,6 +181,21 @@ def _wait(*, governing_condition: str, holds: tuple[Any, ...] = (), **overrides:
     )
 
 
+def _valve_words(*, command: str, subcommand: str) -> list[str]:
+    """The advertised command's words after its subcommand."""
+    words = shlex.split(command)
+    assert subcommand in words
+    return words[words.index(subcommand) + 1 :]
+
+
+def _valve_parser(*, subcommand: str, module: str, adder: str) -> argparse.ArgumentParser:
+    """The valve's OWN argument surface, as the enforcer declares it."""
+    valve = importlib.import_module(f"{_PACKAGE}.{module}")
+    parser = argparse.ArgumentParser(prog=subcommand)
+    getattr(valve, adder)(parser=parser)
+    return parser
+
+
 def _parsed_valve(*, command: str, subcommand: str, module: str, adder: str) -> argparse.Namespace:
     """Parse one advertised command through the valve's OWN argument surface.
 
@@ -188,13 +203,41 @@ def _parsed_valve(*, command: str, subcommand: str, module: str, adder: str) -> 
     and the enforcer to be bound mechanically. A string assertion over the
     rendered command binds nothing: it would keep passing after the valve
     renamed a flag, which is exactly when the advertised remedy stops working.
+
+    The OPERATOR'S `--reason` is supplied here rather than read off the
+    rendered command, because the rendered command deliberately carries none --
+    see `_valve_usage_error`. Without it the parse could not reach the
+    identifying fields this helper exists to read.
     """
-    valve = importlib.import_module(f"{_PACKAGE}.{module}")
-    parser = argparse.ArgumentParser(prog=subcommand)
-    getattr(valve, adder)(parser=parser)
-    words = shlex.split(command)
-    assert subcommand in words
-    return parser.parse_args(words[words.index(subcommand) + 1 :])
+    return _valve_parser(subcommand=subcommand, module=module, adder=adder).parse_args(
+        [*_valve_words(command=command, subcommand=subcommand), "--reason", "the operator's reason"]
+    )
+
+
+def _valve_usage_error(
+    *,
+    command: str,
+    subcommand: str,
+    module: str,
+    adder: str,
+    capsys: pytest.CaptureFixture[str],
+) -> str:
+    """What the valve's own parser says about the advertised command AS RENDERED.
+
+    A clearance's `--reason` is the human act the valve exists to record, and
+    both valves refuse only a BLANK one -- so a rendered placeholder is
+    ACCEPTED, and an operator running the advertised command verbatim performs
+    the irreversible clearance with a justification that states nothing. The
+    flag is `required=True` in both surfaces, so omitting it from the rendered
+    handoff is what makes the operator be TOLD to state one, exactly as the
+    omitted `--invoker` already is.
+    """
+    with pytest.raises(SystemExit) as refusal:
+        _ = _valve_parser(subcommand=subcommand, module=module, adder=adder).parse_args(
+            _valve_words(command=command, subcommand=subcommand)
+        )
+    assert refusal.value.code == 2
+    return capsys.readouterr().err
 
 
 def test_the_wait_row_names_the_governing_condition_and_the_reevaluation_instant(
@@ -247,7 +290,7 @@ def test_only_ready_factory_safe_items_are_reported_as_waiting(tmp_path: Path) -
 
 
 def test_a_live_typed_hold_offers_the_exact_scope_and_key_clearance_valve(
-    tmp_path: Path,
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The valve names the record whose expiry the scheduled instant came from.
 
@@ -255,6 +298,11 @@ def test_a_live_typed_hold_offers_the_exact_scope_and_key_clearance_valve(
     hold whose clearance would actually shorten the wait, so a valve naming the
     later record would advertise a clearance that changes nothing an operator
     can observe.
+
+    It names no `--reason`, which is the attribution rather than a gap in it:
+    the valve requires one and refuses only a blank, so a rendered placeholder
+    would be accepted and would record an irreversible clearance whose stated
+    justification is the placeholder itself.
     """
     assert _MODULE_PATH.is_file()
     repo = _exhausted_repo(tmp_path)
@@ -276,7 +324,14 @@ def test_a_live_typed_hold_offers_the_exact_scope_and_key_clearance_valve(
         None,
     )
     assert parsed.repo == str(repo)
-    assert parsed.reason != ""
+    assert "--reason" not in shlex.split(attention[0].handoff.command)
+    assert "--reason" in _valve_usage_error(
+        command=attention[0].handoff.command,
+        subcommand="clear-acp-availability-hold",
+        module="_acp_hold_clear",
+        adder="add_clear_acp_availability_hold_arguments",
+        capsys=capsys,
+    )
 
 
 def test_a_candidate_scoped_hold_carries_its_candidate_key_into_the_valve(
@@ -306,8 +361,15 @@ def test_a_candidate_scoped_hold_carries_its_candidate_key_into_the_valve(
     )
 
 
-def test_a_legacy_provider_record_offers_the_legacy_provider_valve(tmp_path: Path) -> None:
-    """The legacy blanket is retired by its own vendor-wide valve, not the typed one."""
+def test_a_legacy_provider_record_offers_the_legacy_provider_valve(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The legacy blanket is retired by its own vendor-wide valve, not the typed one.
+
+    The sibling valve omits `--reason` for the same reason the typed one does,
+    and the pair is asserted rather than one of them: both surfaces refuse only
+    a blank reason, so a placeholder rendered into either is accepted.
+    """
     assert _MODULE_PATH.is_file()
 
     handoff = _availability_wait_handoff(
@@ -325,7 +387,14 @@ def test_a_legacy_provider_record_offers_the_legacy_provider_valve(tmp_path: Pat
         adder="add_clear_provider_exhaustion_arguments",
     )
     assert parsed.provider == "anthropic"
-    assert parsed.reason != ""
+    assert "--reason" not in shlex.split(handoff.command)
+    assert "--reason" in _valve_usage_error(
+        command=handoff.command,
+        subcommand="clear-provider-exhaustion",
+        module="_dispatcher_provider_exhaustion_clear",
+        adder="add_clear_provider_exhaustion_arguments",
+        capsys=capsys,
+    )
 
 
 def test_the_pure_wait_names_the_legacy_provider_its_first_emptied_node_was_held_by(
