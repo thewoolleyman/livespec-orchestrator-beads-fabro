@@ -19,6 +19,15 @@ from livespec_orchestrator_beads_fabro.commands._run_attribution import RunAttri
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
+# The DRIFT lane's own line, which every pass in this module now leads with.
+# These fixtures declare no tenant connection, so the lane cannot read the
+# recorded frontier and reports that — a fact about the fixture rather than
+# about the runs or claim lane each case below pins. It is spelled ONCE and
+# prepended, so the complete-output assertions stay complete while a change to
+# the drift line edits one constant instead of seven expectations. The line's
+# own behaviour is covered by `test_reconcile_pass_drift_report.py`.
+_DRIFT = "DRIFT   advanced=false frontier=(none) reason=no-tenant-connection\n"
+
 _HP = FactoryTarget(name="hp", server="https://hp.example:32276", dev_token=None)
 _VPS = FactoryTarget(name="vps", server="https://vps.example:32276", dev_token=None)
 
@@ -104,7 +113,7 @@ def test_the_factory_flag_reaches_the_factory_resolver(
     exit_code = main(argv=["reconcile-runs", "--repo", str(tmp_path), "--factory", "hp"])
 
     assert exit_code == 0
-    assert capsys.readouterr().out == "(no orphaned fabro runs found)\n"
+    assert capsys.readouterr().out == _DRIFT + "(no orphaned fabro runs found)\n"
     assert calls["factories"] == (tmp_path, "hp")
 
 
@@ -192,7 +201,7 @@ def test_a_pass_that_surveyed_no_factory_journals_zero_and_refuses_to_read_clean
     output = capsys.readouterr().out
 
     assert exit_code == 1
-    assert output == (
+    assert output == _DRIFT + (
         "ERROR   (none)  no-factory-surveyed: this pass surveyed no factory, so it "
         "reconciled nothing and observed nothing\n"
     )
@@ -266,9 +275,9 @@ def test_a_failure_on_either_leg_sets_the_nonzero_exit(
     orphan_output = capsys.readouterr().out
 
     assert errored == 1
-    assert error_output == "ERROR   hp  factory-ps-failed: fabro ps exited 7\n"
+    assert error_output == _DRIFT + "ERROR   hp  factory-ps-failed: fabro ps exited 7\n"
     assert unterminated == 1
-    assert orphan_output == (
+    assert orphan_output == _DRIFT + (
         "ORPHAN  bd-ib-orphan  01ORPHAN  factory=hp run=blocked item=closed "
         "reason=item-not-active route=cancel\n"
     )
@@ -286,7 +295,7 @@ def test_an_omitted_repo_defaults_to_the_working_directory(
     exit_code = main(argv=["reconcile-runs", "--journal", str(tmp_path / "own.jsonl")])
 
     assert exit_code == 0
-    assert capsys.readouterr().out == "(no orphaned fabro runs found)\n"
+    assert capsys.readouterr().out == _DRIFT + "(no orphaned fabro runs found)\n"
     inputs = calls["inputs"]
     assert isinstance(inputs, dict)
     assert inputs["repo"] == tmp_path
@@ -321,7 +330,7 @@ def test_a_held_parked_run_renders_a_human_line_rather_than_reading_as_empty(
     exit_code = main(argv=["reconcile-runs", "--repo", str(tmp_path)])
 
     assert exit_code == 0
-    assert capsys.readouterr().out == (
+    assert capsys.readouterr().out == _DRIFT + (
         "HELD    bd-ib-parked  01YOUNG  factory=hp run=blocked item=blocked "
         "reason=blocked-within-grace remaining=1500.0\n"
     )
@@ -345,7 +354,7 @@ def test_the_committed_grace_setting_reaches_the_reconciler(
 
     inputs = calls["inputs"]
     assert exit_code == 0
-    assert capsys.readouterr().out == "(no orphaned fabro runs found)\n"
+    assert capsys.readouterr().out == _DRIFT + "(no orphaned fabro runs found)\n"
     assert isinstance(inputs, dict)
     assert inputs["blocked_run_grace_seconds"] == 0
 
@@ -362,7 +371,7 @@ def test_an_unconfigured_grace_reaches_the_reconciler_as_the_documented_default(
 
     inputs = calls["inputs"]
     assert exit_code == 0
-    assert capsys.readouterr().out == "(no orphaned fabro runs found)\n"
+    assert capsys.readouterr().out == _DRIFT + "(no orphaned fabro runs found)\n"
     assert isinstance(inputs, dict)
     assert inputs["blocked_run_grace_seconds"] == 1800
 

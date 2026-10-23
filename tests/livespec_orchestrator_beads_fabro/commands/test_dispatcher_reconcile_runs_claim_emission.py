@@ -36,6 +36,14 @@ from livespec_orchestrator_beads_fabro.commands._run_attribution import RunAttri
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
+# The DRIFT lane's own line, which every pass in this module now leads with.
+# This fixture declares no tenant connection, so the lane cannot read the
+# recorded frontier and reports that — a fact about the fixture rather than
+# about the claim lane these cases pin. Spelled ONCE and prepended, so the
+# complete-output assertions stay complete; the line's own behaviour belongs to
+# `test_reconcile_pass_drift_report.py`.
+_DRIFT = "DRIFT   advanced=false frontier=(none) reason=no-tenant-connection\n"
+
 _HP = FactoryTarget(name="hp", server="https://hp.example:32276", dev_token=None)
 
 
@@ -118,7 +126,7 @@ def test_a_claim_only_pass_renders_human_lines_rather_than_reading_as_empty(
     exit_code = main(argv=["reconcile-runs", "--repo", str(tmp_path)])
 
     assert exit_code == 0
-    assert capsys.readouterr().out == (
+    assert capsys.readouterr().out == _DRIFT + (
         "RECLAIM bd-ib-stranded  01GONE  factory=hp reason=run-absent "
         "route=absent-run-release status=ready\n"
         "CLAIM   bd-ib-attribution  01PENDING  factory=hp host=hp-xubuntu "
@@ -142,7 +150,7 @@ def test_a_hold_the_claim_stamp_could_not_name_renders_each_absent_field(
     exit_code = main(argv=["reconcile-runs", "--repo", str(tmp_path)])
 
     assert exit_code == 0
-    assert capsys.readouterr().out == (
+    assert capsys.readouterr().out == _DRIFT + (
         "CLAIM   bd-ib-bare  (none)  factory=(none) host=(none) reason=claim-unattributable\n"
     )
 

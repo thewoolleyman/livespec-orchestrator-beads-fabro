@@ -53,6 +53,18 @@ For the same reason a pass that surveyed NO factory is a failure and not a
 clean sweep. An unresolvable factories table, an unreadable config, or a
 `--factory` naming nobody all reconcile nothing, and "nothing to reconcile"
 and "nothing was looked at" are the same empty output with opposite meanings.
+
+THE DRIFT LANE RIDES THE SAME TWO SURFACES, under its own key and its own line.
+It used to ride neither: the pass discarded the lane's outcome, so the lane's
+whole state was the records it appended to the detection-coverage anchor. That
+was survivable only while every tick appended one, which is exactly what the
+inert no-baseline arm no longer does — it records once and reports thereafter —
+so a pass that still said nothing would leave a withheld frontier invisible
+between the first tick and whenever an operator next read the anchor. It does
+NOT join either lane's arrays, and it does not move this command's exit code:
+the two lanes answer unrelated questions, and folding one into the other is how
+a drift lane that judged nothing comes to read as a factory that reconciled
+nothing.
 """
 
 from __future__ import annotations
@@ -82,6 +94,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_claim_lane
     reconcile_claim_lane,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_drift_lane import (
+    DriftLaneOutcome,
     run_drift_lane,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs import (
@@ -185,12 +198,14 @@ def run_reconcile_runs_command(*, args: argparse.Namespace) -> int:
         spans_path=calibration_spans_path(args=args, repo=repo),
         now_ns=time.time_ns(),
     )
-    _run_drift_lane_if_live(args=args, repo=repo, journal_identity=journal.identity.invoker)
-    _emit(summary=summary, record=record, as_json=args.as_json)
+    drift = _run_drift_lane_if_live(args=args, repo=repo, journal_identity=journal.identity.invoker)
+    _emit(summary=summary, record=record, drift=drift, as_json=args.as_json)
     return 1 if _has_failure(summary=summary, record=record) else 0
 
 
-def _run_drift_lane_if_live(*, args: argparse.Namespace, repo: Path, journal_identity: str) -> None:
+def _run_drift_lane_if_live(
+    *, args: argparse.Namespace, repo: Path, journal_identity: str
+) -> DriftLaneOutcome | None:
     """The DRIFT lane of this pass, which the detection contract binds to it.
 
     "Each reconcile pass of the Dispatcher MUST enumerate every default-branch
@@ -213,10 +228,18 @@ def _run_drift_lane_if_live(*, args: argparse.Namespace, repo: Path, journal_ide
     records that on the anchor, which is where the contract puts it, so folding
     it into the runs lane's exit code would make one lane's state read as the
     other's.
+
+    ITS OUTCOME IS RETURNED RATHER THAN DISCARDED, because the lane's own
+    records are no longer written on every tick: the inert no-baseline arm
+    records once and reports thereafter, so the pass's output is the surface
+    that carries the state between the first tick and whenever an operator next
+    reads the anchor. `None` is a DRY pass, which ran no lane and so has nothing
+    to report — deliberately distinct from a lane that ran and judged nothing,
+    which has a reason to name.
     """
     if args.dry_run:
-        return
-    _ = run_drift_lane(
+        return None
+    return run_drift_lane(
         repo=repo,
         invoker=journal_identity,
         seams=DriftRunSeams(
@@ -238,10 +261,14 @@ def _emit(
     *,
     summary: ReconcileRunsSummary,
     record: ReconcilePassSummary,
+    drift: DriftLaneOutcome | None,
     as_json: bool,
 ) -> None:
     if as_json:
         payload = {
+            # The DRIFT lane, on the same projection as the runs lane and the
+            # claim lane. Null on a dry pass, which ran no lane at all.
+            "drift": _drift_entry(drift=drift),
             # The sandbox-container sweeps ride the same pass, so they ride the
             # same projection: a reclaim an operator cannot see is one they
             # cannot tell apart from a sweep that found nothing to do. One
@@ -257,6 +284,12 @@ def _emit(
         }
         _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
         return
+    if drift is not None:
+        # BEFORE the zero-factory return below. The two lanes answer unrelated
+        # questions, so a repository whose factories table went unresolvable
+        # must not also stop reporting its drift lane — with nothing naming the
+        # drift lane as the casualty.
+        _ = write_stdout(text=_drift_line(drift=drift))
     if record.factories_surveyed == 0:
         # Returning here rather than falling through to the orphan lines below
         # is not an optimisation: with nothing surveyed both loops are empty by
@@ -314,6 +347,35 @@ def _reconciled_entries(*, summary: ReconcileRunsSummary) -> list[dict[str, obje
         {"kind": _KIND_CLAIM, **asdict(claim)} for claim in summary.recovered_claims
     ]
     return runs + claims
+
+
+def _drift_entry(*, drift: DriftLaneOutcome | None) -> dict[str, object] | None:
+    """The drift lane's own projection, or None for the dry pass that ran none.
+
+    The lane's two RECORD BODIES are deliberately left out. They are the
+    verbatim JSON this pass appended to the anchor, so a reader following
+    `withheld_reason` finds the same facts at their source; projecting them here
+    would make the pass's output the second copy of a record whose first copy is
+    the authority.
+    """
+    if drift is None:
+        return None
+    projected = asdict(drift)
+    del projected["records"]
+    return projected
+
+
+def _drift_line(*, drift: DriftLaneOutcome) -> str:
+    """The drift lane's one line, naming a reason only where there is one.
+
+    An advanced lane has no reason to give, so the field is OMITTED rather than
+    rendered as the absence placeholder — the same idiom `_claim_hold_line` uses
+    for its optional remedy, and for the same reason: a `reason=(none)` on a
+    lane that did its job reads as a rendering fault.
+    """
+    advanced = "true" if drift.advanced else "false"
+    reason = "" if drift.withheld_reason is None else f" reason={drift.withheld_reason}"
+    return f"DRIFT   advanced={advanced} frontier={_named(value=drift.frontier)}{reason}\n"
 
 
 def _claim_hold_line(*, held: HeldClaim) -> str:
