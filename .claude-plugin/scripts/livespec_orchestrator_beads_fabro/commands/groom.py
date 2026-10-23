@@ -65,6 +65,9 @@ from livespec_orchestrator_beads_fabro.commands._groom_context import (
     load_groom_context,
 )
 from livespec_orchestrator_beads_fabro.commands._groom_dep_handles import resolve_dep_entries
+from livespec_orchestrator_beads_fabro.commands._groom_spec_change_classification import (
+    classified_candidate_slices,
+)
 from livespec_orchestrator_beads_fabro.commands._groom_types import (
     CandidateSlice,
     CrossRepoSlice,
@@ -156,7 +159,16 @@ def file_approved_slices(
     # the failed attempt already minted. Refusing up front makes the seam
     # all-or-nothing without a transaction, which is the guarantee an absent
     # approval record already carried.
-    plan = _plan_approved_slices(slices=slices, local_repo=local_repo, prefix=path.prefix)
+    # THE TIER IS DECIDED BY THE JUDGEMENT, NOT BY THE DRAFT, which is the groom
+    # cadence point of the autonomy-tier bullet: the tier is "never declared by
+    # the filer", and at groom the filer is this draft. It runs BEFORE the plan
+    # is built, because the plan SORTS each candidate on `is_spec_change` — a
+    # classification applied afterwards would re-route nothing.
+    plan = _plan_approved_slices(
+        slices=classified_candidate_slices(slices=slices, repo=path.repo_root or Path.cwd()),
+        local_repo=local_repo,
+        prefix=path.prefix,
+    )
     prepared = _prepare_local_slices(planned=plan.local)
     if detail := consensus_groom_cut_size_refusal(
         cwd=path.repo_root or Path.cwd(),
