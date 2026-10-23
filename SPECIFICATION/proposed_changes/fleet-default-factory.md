@@ -74,3 +74,151 @@ Add to Scenario 241 two cases:
 
 In Scenario 241, the second case reads "then the next fresh dispatch of any item, including an item whose dispatch was recorded on the old default, is created on that factory, and the repository's committed configuration is unchanged". Add one case:
 - Given dispatcher.default_factory is "fleet", an item whose dispatch was recorded on "petri" through the fleet default, and the registry's default since moved to "next". When the item is dispatched with dispatch --item and recovery routing routes it fresh, then the run is created on "next", and the admission claim stamp and the dispatch-factory record name "next".
+
+**Amendments after independent review (gpt-6-astra round 4, BLOCKERS 2):**
+
+10. Scope of the registry refusals. In §"Factory addresses resolved from a host registry", replace:
+
+"The registry refusal applies only to resolving a DECLARED, registry-backed entry, and the undeclared-name refusal only to an EXPLICIT selection."
+
+with:
+
+"The registry refusal applies to resolving a DECLARED, registry-backed entry, a factory reached through the reserved default value `fleet`, and a preserved fleet-derived recorded factory selected by a resume; the fleet-default refusal of change 3 applies to every dispatch that resolves its default through `fleet`. The undeclared-name refusal applies only to an EXPLICIT selection: an explicit `--factory` or a set and non-empty `LIVESPEC_FABRO_FACTORY` MUST still name an entry of a declared `dispatcher.factories`, and a registry entry the repository does not declare is NOT selectable explicitly. A fresh dispatch MUST NOT validate, resolve or refuse on the item's recorded factory, fleet-derived or not."
+
+In the same section, replace "A `dispatcher.default_factory` that names no declared entry keeps its existing treatment as well; this clause does not govern it." with "A `dispatcher.default_factory`, other than the reserved value `fleet`, that names no declared entry keeps its existing treatment as well; this clause does not govern it."
+
+11. Scenario 241's gherkin. The new scenario "## Scenario 241 — A repository naming the fleet default dispatches to the factory the registry designates, and moving the fleet default re-routes it with no repository commit" MUST carry exactly the cases below. This list SUPERSEDES every Scenario 241 case list given earlier in this proposal (after change 5 and in amendments 7, 8 and 9). In every case, `dispatcher.factories` is declared and does NOT declare "petri" or "next" unless the case says so, and "legacy" is a declared factory with a committed `server`.
+
+```gherkin
+Feature: The factory registry designates the fleet default factory and carries its client settings
+  As a maintainer moving the whole fleet from one Fabro instance to another
+  I want each repository to name the fleet default rather than a factory
+  So that moving the default is a change to the provisioning inventory alone
+
+Background:
+  Given the factory registry maps "petri" and "next" to server addresses
+  And the registry gives "petri" a bin, a secret_channel and an environment
+
+Scenario: An undeclared registry default receives a fresh dispatch
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri"
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the admission claim stamp names "petri"
+  And the Fabro run is created on petri's registry server with petri's registry bin, secret_channel and environment
+  And the item's dispatch-factory record names "petri"
+
+Scenario: Moving the fleet default re-routes the next fresh dispatch with no repository commit
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri"
+  And an item whose dispatch was recorded on "petri" through the fleet default
+  When only the registry's default is changed to "next"
+  And the item is dispatched with no explicit factory and its route is fresh
+  Then the run is created on "next" and the claim stamp and dispatch-factory record name "next"
+  And the repository's committed configuration is unchanged
+
+Scenario: A named default overrides the fleet default
+  Given dispatcher.default_factory is "legacy"
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the run is created on "legacy" whatever the registry's default names
+
+Scenario: An absent default keeps its existing treatment outside the fleet
+  Given dispatcher.default_factory is absent and no factory registry exists on the host
+  When an item is dispatched with no explicit factory
+  Then the dispatch resolves its target exactly as it did before this revision
+
+Scenario Outline: A committed client setting outranks the registry's, key by key
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri"
+  And the committed "petri" entry declares only <key>
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the run uses the committed <key> and the registry's value for each other client key
+  Examples:
+    | key            |
+    | bin            |
+    | secret_channel |
+    | environment    |
+
+Scenario: A client key neither source declares keeps its absent-key treatment
+  Given dispatcher.default_factory is "fleet" and the registry's default is "next"
+  And neither the registry nor the repository gives "next" an environment
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the run is created with the absent-environment treatment a committed entry without that key receives
+
+Scenario: An invalid registry-supplied client setting is refused naming the registry
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri"
+  And the registry gives "petri" a secret_channel value a committed entry would be refused for
+  When an item is dispatched
+  Then the dispatch is refused before any claim, ledger write or Fabro run
+  And the refusal names the registry path as the source of the value
+
+Scenario Outline: A fleet default the registry cannot supply is refused before any claim
+  Given dispatcher.default_factory is "fleet"
+  And <registry state>
+  When an item is dispatched
+  Then the dispatch is refused before any claim, ledger write or Fabro run, naming the registry path and what it lacked
+  And the Dispatcher falls back to no committed factory, no other registry entry and no ambient local target
+  Examples:
+    | registry state                                                  |
+    | the registry file is absent                                     |
+    | the registry file is unreadable                                 |
+    | the registry has no default key                                 |
+    | the registry's default is not a string                          |
+    | the registry's default names no registry factory entry          |
+
+Scenario: The reserved key cannot name a factory
+  Given the factory registry carries a factory entry named "default"
+  When an item is dispatched through the fleet default
+  Then the registry is refused as invalid, naming the reserved key
+
+Scenario Outline: A committed address for a fleet-selected factory is a conflict
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri"
+  And the committed "petri" entry carries <address key>
+  When an item is dispatched
+  Then the dispatch is refused before any ledger write, naming "petri"
+  Examples:
+    | address key |
+    | server      |
+    | docker_host |
+
+Scenario: A resume keeps a fleet-derived pin after the fleet default moves
+  Given dispatcher.default_factory is "fleet"
+  And an item whose dispatch was recorded on "petri" through the fleet default
+  And the registry's default has since moved to "next"
+  When the item's route is resume, through resume --item or recovery routing's resume route
+  Then the resume is submitted to "petri", resolved through the registry
+  And no overflow-selection journal record is written, even when dispatcher.overflow_factories is non-empty
+
+Scenario: A resume whose fleet-derived pin the registry no longer resolves is refused
+  Given the same item and the registry no longer has a "petri" entry
+  When the item's route is resume
+  Then the resume is refused before any claim, naming "petri" and the registry path
+  And it is not re-routed to the current fleet default
+
+Scenario: A fresh dispatch ignores an unresolvable fleet-derived pin
+  Given the same item and the registry no longer has a "petri" entry
+  When the item is dispatched with no explicit factory and its route is fresh
+  Then the run is created on the registry's current default "next"
+  And nothing is refused on account of the recorded "petri"
+
+Scenario Outline: An explicit selection outranks a fleet-derived pin on a resume
+  Given dispatcher.default_factory is "fleet" and "legacy" is declared
+  And an item whose dispatch was recorded on "petri" through the fleet default, whose route is resume
+  When the resume is made with <explicit selection> naming "legacy"
+  Then the resume is submitted to "legacy"
+  Examples:
+    | explicit selection           |
+    | --factory                    |
+    | a set LIVESPEC_FABRO_FACTORY |
+
+Scenario: A fresh fleet dispatch takes overflow selection and records its winner
+  Given dispatcher.default_factory is "fleet", the registry's default is "petri", and dispatcher.overflow_factories is ["legacy"]
+  And "petri" reports no free slot and "legacy" has a free slot
+  And an item whose dispatch was recorded on "petri" through the fleet default
+  When the item is dispatched with no explicit factory and its route is fresh
+  Then one overflow-selection journal record lists "petri" and "legacy" and names chosen "legacy"
+  And the admission claim stamp, the submitted run and the dispatch-factory record all name "legacy"
+
+Scenario: Overflow may not name the resolved default factory
+  Given dispatcher.default_factory is "fleet", the registry's default is "petri", and dispatcher.overflow_factories is ["petri"]
+  When an item is dispatched
+  Then the configuration is refused before any item is claimed, naming "petri"
+```
+
+The revision MUST add a tests/heading-coverage.json row for this heading in the same change.
