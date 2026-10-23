@@ -71,29 +71,40 @@ def dispatch_factory_targets(
     repo: Path,
     work_item_ids: Sequence[str],
 ) -> tuple[FactoryTarget, ...]:
-    """Every distinct factory target this selection would dispatch to, UNRECORDED.
+    """Every distinct factory target this selection could dispatch to, UNRECORDED.
 
-    Explicit flag, else the environment, else the item's own recorded pin, else
-    the configured default — with the WRITE deliberately absent. A pre-claim
-    gate must leave the ledger exactly as it found it: the clause requires
-    currency to be evaluated before
-    any ledger mutation, so recording a factory here would be the mutation the
-    refusal is supposed to precede.
+    Explicit flag, else the environment, else — on a resume — the item's own
+    recorded pin, else the ranked or configured default, with the WRITE
+    deliberately absent. A pre-claim gate must leave the ledger exactly as it
+    found it: the clause requires currency to be evaluated before any ledger
+    mutation, so recording a factory here would be the mutation the refusal is
+    supposed to precede.
 
-    THE RECORDED PIN IS STILL READ HERE, which is the one place this resolution
-    differs from a dispatch's own. The pin is a RESUME-only layer, and the route
-    is assigned by recovery routing, which the clause places AFTER the
+    BOTH ROUTES ARE RESOLVED AND THE TARGETS UNIONED, which is the one place
+    this resolution differs from a dispatch's own, and it is forced by WHERE
+    this runs. The recorded pin is a RESUME-only layer, and the route is
+    assigned by recovery routing, which the clause places AFTER the
     pre-dispatch wall this gate runs inside — so at this point no item has a
-    route and the question "is this a resume" has no answer yet. Reading the pin
-    keeps the gate's target set exactly what it was before that layer narrowed,
-    which is deliberate: this clause governs which factory a dispatch is stamped
-    with and submitted to, and says nothing about which factories the
-    `dispatcher.minimum_release` floor is graded against.
+    route and the question "is this a resume" has no answer yet. A gate that
+    answered it anyway would be grading a factory by guess, and both guesses
+    are wrong in their own direction. Assuming RESUME grades the engine the
+    item merely used to run on while the fresh dispatch is submitted to
+    `dispatcher.default_factory` or to an overflow-selected target that is
+    never evaluated at all — the fail-OPEN this gate exists to close, and the
+    common re-dispatch path, since every item that has ever dispatched carries
+    a pin. Assuming FRESH refuses the whole selection on a condition of a
+    factory a resume would never leave. The union grades both, so no route can
+    reach an engine this gate has not graded.
 
-    DISTINCT BY NAME, in first-appearance order. One wave can carry items pinned
+    DISTINCT BY NAME, in first-appearance order, with the fresh placement first
+    because every non-resume dispatch takes it. One wave can carry items pinned
     to two factories, and each must be evaluated against its own serving commit;
-    evaluating the same target once per item would spend one engine round trip
-    per item for one answer.
+    evaluating the same target once per item — or once per route — would spend
+    one engine round trip for an answer already held.
+
+    THE RECORDED PIN IS READ ONCE PER ITEM, not once per route: the ledger read
+    is the expensive half and the precedence is the cheap half, so `_route_pins`
+    takes the row once and applies the precedence to it twice.
 
     THE RANKING IS TAKEN ONCE FOR THE WHOLE INVOCATION, and the dedup above is
     not what delivers that: every unpinned item of one wave resolves to the same
@@ -101,23 +112,23 @@ def dispatch_factory_targets(
     trips PER ITEM — four-fold the cost this dedup exists to avoid, and inside
     the pre-dispatch wall, whose whole purpose is to settle admission before
     anything further is spent. It is also several independent live readings,
-    which can disagree with each other, while the `dispatcher.minimum_release`
-    floor is graded only against the targets this one call returns.
+    which can disagree with each other, while the per-factory Fabro currency
+    gate is graded only against the targets this one call returns.
 
-    It is taken LAZILY, so a wave whose every item carries a pin — and an empty
-    selection — still reads no server's capacity at all.
+    It is taken LAZILY, and the union is what decides when: an invocation whose
+    every ROUTE is pinned — an explicit `--factory`, or `LIVESPEC_FABRO_FACTORY`,
+    which pin both routes alike — and an empty selection still read no server's
+    capacity at all. A recorded pin no longer suppresses the reading, because the
+    fresh route it leaves unpinned is exactly the one an overflow ranking places.
     """
     config = _pin_store(repo=repo)
     explicit = explicit_dispatch_factory(args=args)
     pinned = [
-        _unrecorded_pin(
-            repo=repo,
-            config=config,
-            work_item_id=work_item_id,
-            explicit=explicit,
-            resume=True,
-        )
+        name
         for work_item_id in work_item_ids
+        for name in _route_pins(
+            repo=repo, config=config, work_item_id=work_item_id, explicit=explicit
+        )
     ]
     selection = _ranking(repo=repo, unpinned=any(name is None for name in pinned))
     targets: dict[str, FactoryTarget] = {}
@@ -125,6 +136,33 @@ def dispatch_factory_targets(
         target = _placement(repo=repo, pinned=name, selection=selection).target
         _ = targets.setdefault(target.name, target)
     return tuple(targets.values())
+
+
+def _route_pins(
+    *,
+    repo: Path,
+    config: StoreConfig | None,
+    work_item_id: str,
+    explicit: str | None,
+) -> tuple[str | None, ...]:
+    """One item's pin under EACH route, fresh first, from ONE ledger read.
+
+    The pre-dispatch wall precedes recovery routing, so it must grade both
+    routes; reading the recorded row twice to do so would double the per-item
+    ledger cost of every gated dispatch for a value that cannot change between
+    the two reads. The precedence itself stays in `_pinned_factory`, so this
+    adds a second ROUTE rather than a second spelling of the order.
+
+    FRESH FIRST, because that is the route every non-resume dispatch takes and
+    the gate reports the FIRST refusal it finds: a selection whose fresh target
+    and recorded pin are both unadmissible should name the one the dispatch is
+    most likely to reach.
+    """
+    recorded = _recorded_pin(config=config, work_item_id=work_item_id)
+    return tuple(
+        _pinned_factory(repo=repo, explicit=explicit, recorded=recorded, resume=resume)
+        for resume in (False, True)
+    )
 
 
 def unrecorded_dispatch_factory_target(
@@ -136,10 +174,12 @@ def unrecorded_dispatch_factory_target(
 ) -> FactoryTarget:
     """ONE item's factory target under the dispatch precedence, UNRECORDED.
 
-    The single-item form of `dispatch_factory_targets`, for a caller that holds
-    no `argparse.Namespace` to read an explicit flag out of — admission, which
-    stamps the pending claim before any factory has been recorded. `explicit`
-    is therefore a NAME rather than a namespace, defaulting to none, and
+    The single-item, single-ROUTE form of `dispatch_factory_targets`, for a
+    caller that holds no `argparse.Namespace` to read an explicit flag out of —
+    admission, which stamps the pending claim before any factory has been
+    recorded. It takes a stated route rather than grading both, because a stamp
+    names ONE factory where the gate grades every factory a selection could
+    reach. `explicit` is therefore a NAME rather than a namespace, and
     `LIVESPEC_FABRO_FACTORY` is honoured by the precedence itself rather than
     by `resolve_fabro_factory`'s own environment layer, which an unpinned
     placement no longer reaches.
@@ -190,11 +230,12 @@ def _unrecorded_pin(
     `_recorded_pin`, while the dispatch resolution reads it unwrapped from a
     row it knows exists. Both then apply one precedence.
 
-    `resume` is REQUIRED here rather than defaulted, unlike on the two public
-    entry points: the two callers of this function answer the route question
-    differently — the pre-dispatch wall precedes routing and the admission stamp
-    follows it — and a default would let whichever caller is written next
-    inherit the other one's answer silently.
+    `resume` is REQUIRED here rather than defaulted, unlike on the public entry
+    point above: the two pre-claim resolutions answer the route question
+    differently — the pre-dispatch wall precedes routing and grades both routes
+    through `_route_pins`, while the admission stamp follows routing and states
+    the one route it was assigned — and a default would let whichever caller is
+    written next inherit the other one's answer silently.
     """
     return _pinned_factory(
         repo=repo,
