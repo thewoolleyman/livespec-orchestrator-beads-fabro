@@ -227,9 +227,26 @@ def test_manual_label_holds_pending_despite_global_auto_approve(tmp_path: Path) 
     assert _item(issue_id="li-manual").status == "pending-approval"
 
 
-def test_spec_change_tier_holds_pending_despite_auto_label_and_global_auto(
+def test_a_commitment_hint_alone_does_not_hold_an_item_pending(
     tmp_path: Path,
 ) -> None:
+    """The repair of `bd-ib-yykjko`: a hint is a ratified FOLLOW-UP, not the tier.
+
+    This case used to assert the opposite — that an item carrying a
+    `spec_commitment_hint` rests at `pending-approval` whatever its admission
+    policy says — which is the inverted predicate the plan-child-disposition
+    clause of `SPECIFICATION/constraints.md` names: a non-null hint marks an
+    implementation follow-up to an ALREADY-RATIFIED change, so holding it held
+    exactly the set that should be admitted.
+
+    The item reaches `ready` here because no spec-change-tier classification is
+    recorded against it — this fixture installs no judge, so the classification
+    cannot run — and the autonomy-tier bullet of `SPECIFICATION/contracts.md`
+    requires exactly that: "route it as it would without the classification".
+    The hold a genuine spec-change-tier item earns is bound by
+    `tests/integration/test_spec_change_tier_scenario206.py`, and the
+    hint-beside-unstated case by its commitment-hint sibling.
+    """
     _write_dispatcher_config(repo_root=tmp_path, setting='"auto_approve_ready": true')
     _seed_issue(issue_id="li-spec", labels=["admission:auto"], spec_id="SC-1")
 
@@ -239,8 +256,9 @@ def test_spec_change_tier_holds_pending_despite_auto_label_and_global_auto(
         ).unwrap()
     )
 
-    assert verdict == "pending-approval"
-    assert _item(issue_id="li-spec").status == "pending-approval"
+    assert verdict == "ready"
+    assert _item(issue_id="li-spec").status == "ready"
+    assert _item(issue_id="li-spec").spec_commitment_hint == "SC-1"
 
 
 # --------------------------------------------------------------------------
