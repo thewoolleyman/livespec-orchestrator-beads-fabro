@@ -1490,8 +1490,8 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   on the headroom reading alone, read by no decision.
   `dispatcher.availability_probe_timeout_seconds`
   (`_dispatcher_policy_settings`, committed-only, positive integer, default
-  120) bounds the confirmation TURN, which this item deliberately does not
-  build: `bd-ib-n3pzcl` consumes the key.
+  120) bounds the confirmation TURN, which `_acp_availability_probe` below
+  builds and `bd-ib-n3pzcl` consumes the key for.
   THE GOVERNING-CONDITION PRECEDENCE PUTS IT BELOW BOTH HOLDS, which is the
   one place that tuple follows the CLAUSE's ordering rather than the filter's —
   the filter consults the confirmation before the legacy blanket, while "when
@@ -1500,6 +1500,41 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   substantiated no listed condition and fell through to
   `unavailable-availability-evidence`, reporting an unreadable factory for a
   chain whose evidence had been read perfectly well.
+- `_acp_availability_probe.py` — the TURN the entry above had nothing to run
+  (`bd-ib-n3pzcl`, Scenarios 60 and 127): "Availability is confirmed only by a
+  successfully completed ACP prompt turn using the candidate's pinned adapter
+  version, requested model and effort, and projected worker credential
+  identity. ... otherwise the probe MUST be a minimal factory run. The probe
+  sends one fixed minimal prompt." PURE, and the shape only: the fixed prompt,
+  the one-ACP-node graph, the run labels, and the two candidates no turn can
+  confirm. A HOST-SIDE probe is not available to us — the clause permits one
+  only when its outcome is "durably observable through the same authoritative
+  evidence source", and that source is the factory's own run records, which
+  nothing host-side writes.
+  Four properties an editor must not invert. `acp.command` is `render_adapter`
+  over the candidate's OWN adapter, which is the one function the dispatch
+  renders a node's adapter through, and that byte equality IS the equivalence
+  claim the clause rests on — a probe rendering anything else exercised a
+  neighbour. ONE adapter-bearing node is the whole of "minimal": a second would
+  spend a second allowance per probe, and a script node would put a recorded
+  success on a node that launched no adapter, which the succeeded-attempt
+  reader would then read as a confirmation of an allowance nothing spent. The
+  LABELS are the mechanism rather than a decoration — `_acp_factory_hold_
+  evidence._successes` derives its observation only where a run's labels record
+  an entitlement for that node's own id, so labelling the probe node is what
+  makes the confirmation host-wide with no peer list and no sidecar. And the
+  OBSERVATION IDS are deliberately NOT in a label: which expired records a
+  confirmation satisfies is DERIVED by `retired_by_success` from the attempt's
+  start instant, so a label naming them would be a second account that cannot
+  know which records expired while the probe ran.
+  TWO CANDIDATES ARE REFUSED BEFORE ANY RUN EXISTS, both conservatively. An
+  identity-less candidate belongs to no typed domain, so no observation is about
+  it and its legacy blanket governs it. An IN-PROTOCOL candidate carries its
+  requested model and effort in `config_options` and nothing in its adapter, and
+  no build renders those into a run — so a turn would not use the requested
+  model, and calling it a confirmation would confirm a model nobody ran. Each is
+  the clause's "any other probe failure": skip for this evaluation, no hold,
+  selection continues.
 - The FACTORY-NATIVE OPERATOR CLEARANCE of the same paragraph's "an operator
   clearance by a minimal factory-native record whose recorded outcome carries
   the clearance's exact identity, actor, time, and reason" (`bd-ib-dtfv2p`,
