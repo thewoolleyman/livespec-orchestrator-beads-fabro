@@ -328,6 +328,13 @@ def _admit_and_dispatch_resume(
     factory as `dispatch --item` does" -- while the workflow pin deliberately is
     not: `_resumed_args` has already set the name the earlier run's dispatch
     record carries, and the workflow-pinning helper would write it to the ledger.
+
+    Applying it "as `dispatch --item` does" now includes telling it WHICH ROUTE
+    this is, because the item's recorded factory is a resume-only layer of that
+    one precedence. This path states `resume=True` rather than deriving it: a
+    `resume --item` invocation IS the clause's first resume leg, and the resume
+    attributes `_resumed_args` set are not a usable discriminator — a `seeded`
+    route sets the same head on a dispatch the clause calls fresh.
     """
     admission = admit_and_select(
         repo=repo,
@@ -340,10 +347,18 @@ def _admit_and_dispatch_resume(
         # a resume resolves its factory as `dispatch --item` does, so it passes
         # the same top layer of that precedence to the pending claim stamp.
         explicit_factory=explicit_dispatch_factory(args=args),
+        # THIS path's route, stated rather than measured: every dispatch it
+        # admits is a resume by construction, and the clause makes the item's
+        # recorded factory a pin for exactly that route. Nothing here consults
+        # recovery routing — that is the OTHER resume leg — so without this the
+        # stamp would name the repository's default for every `resume --item`.
+        resume_ids=frozenset({item.id}),
     )
     dispatched = [
         dispatch_one(
-            args=args_with_dispatch_factory_target(args=args, repo=repo, work_item_id=admitted.id),
+            args=args_with_dispatch_factory_target(
+                args=args, repo=repo, work_item_id=admitted.id, resume=True
+            ),
             repo=repo,
             item=admitted,
             journal=journal,

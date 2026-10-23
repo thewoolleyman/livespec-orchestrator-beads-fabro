@@ -58,7 +58,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFil
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records import (
     recovery_route_record,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoveryRoute
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import (
+    ROUTE_RESUME,
+    RecoveryRoute,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     RESUME_ENTRY_NODE_ARG,
     RESUME_FETCH_REF_ARG,
@@ -108,8 +111,20 @@ def recovery_launch_args(
     sets NO entry node: a seed is a plain dispatch that starts at `start`, on a
     different tree. Setting an entry node there would skip every node the seeded
     run has to run precisely because its work is unfinished.
+
+    THE FACTORY PIN IS TOLD WHICH ROUTE THIS IS, because the item's recorded
+    factory is a resume-only layer: "a fresh dispatch MUST NOT read the item's
+    recorded factory as a pin", and a `seeded` route is a fresh dispatch of its
+    own lineage however much of the earlier run's tree it starts from. The
+    answer is read off the ROUTE NAME and never off the arguments this function
+    then writes, which is the one place that distinction is easy to lose: the
+    pin is applied BEFORE the resume attributes are set, so a reader of
+    `resume_head` would answer `False` for every resume, and a `seeded` route
+    sets that same attribute, so a reader of it after the fact would answer
+    `True` for a dispatch the clause calls fresh.
     """
-    pinned = pins.factory(args=args, repo=repo, work_item_id=work_item_id)
+    resumes = route is not None and route.route == ROUTE_RESUME
+    pinned = pins.factory(args=args, repo=repo, work_item_id=work_item_id, resume=resumes)
     resume = None if route is None else route.resume
     if resume is not None:
         cloned = argparse.Namespace(**vars(pinned))

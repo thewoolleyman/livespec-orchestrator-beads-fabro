@@ -148,6 +148,11 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
         # resolves under, and the one layer `LIVESPEC_FABRO_FACTORY` cannot
         # stand in for.
         explicit_factory=explicit_dispatch_factory(args=args),
+        # The route recovery routing assigned each candidate above, which the
+        # pending claim stamp's own factory precedence reads. A SET, because one
+        # wave may carry a resume beside fresh dispatches and the item's
+        # recorded factory is a pin for the first alone.
+        resume_ids=routing.resume_ids(),
     )
     # Rework first in the launch order too, so the audit record and the wave's
     # observable sequence report the same precedence the valve applied.
