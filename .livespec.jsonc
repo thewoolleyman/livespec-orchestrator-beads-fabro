@@ -931,8 +931,11 @@
       // reach the named daemon; while they do not, the pass says so on every
       // sweep record instead of reporting a clean factory.
       "factories": {
+        // legacy submits through the pinned 0.254 8869e88 client whose bytes match hp's
+        // declared engine, staged by the livespec-dev-tooling dev-host play (bd-ib-zb2hso).
         "legacy": {
-          "registry": true
+          "registry": true,
+          "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-legacy-v0.254-8869e88/fabro"
         },
         "petri": {
           "registry": true,
