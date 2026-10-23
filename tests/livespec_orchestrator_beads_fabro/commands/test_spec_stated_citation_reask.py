@@ -38,6 +38,18 @@ class _Citing:
         )
 
 
+@dataclass(kw_only=True)
+class _Responses:
+    """A model that returns successive responses and retains every prompt."""
+
+    responses: tuple[str, ...]
+    prompts: list[str] = field(default_factory=list)
+
+    def __call__(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return self.responses[len(self.prompts) - 1]
+
+
 def test_case_and_inline_markup_normalize_for_both_citation_fields() -> None:
     """A citation of an existing marked subsection yields its governing H2."""
     model = _Citing(
@@ -55,3 +67,69 @@ def test_case_and_inline_markup_normalize_for_both_citation_fields() -> None:
     assert is_successful(verdict)
     assert verdict.unwrap().stated_by == (_GOVERNING,)
     assert verdict.unwrap().generalization_target == _GOVERNING
+
+
+def test_an_unreadable_citation_is_reasked_with_the_valid_clause_inventory() -> None:
+    """The replacement answer supplies the usable verdict after one correction."""
+    refused = "## A heading that is nowhere"
+    model = _Responses(
+        responses=(
+            json.dumps(
+                {
+                    "kind": "stated",
+                    "stated_by": [refused],
+                    "generalization_target": None,
+                    "rationale": "first answer",
+                }
+            ),
+            json.dumps(
+                {
+                    "kind": "stated",
+                    "stated_by": [_GOVERNING],
+                    "generalization_target": None,
+                    "rationale": "corrected answer",
+                }
+            ),
+        )
+    )
+
+    verdict = judge_within_ceiling(
+        spec_tree=_TREE,
+        statement=_STATEMENT,
+        run_model=model,
+        ceiling=20_000,
+    )
+
+    assert is_successful(verdict)
+    assert verdict.unwrap().stated_by == (_GOVERNING,)
+    assert len(model.prompts) == 2
+    assert refused in model.prompts[1]
+    assert _GOVERNING in model.prompts[1]
+
+
+def test_a_second_unreadable_citation_is_refused_without_a_third_reask() -> None:
+    """A bounded correction retains the shared parser's unreadable verdict."""
+    refused = "## A heading that is nowhere"
+    model = _Responses(
+        responses=tuple(
+            json.dumps(
+                {
+                    "kind": "stated",
+                    "stated_by": [refused],
+                    "generalization_target": None,
+                    "rationale": "still invalid",
+                }
+            )
+            for _ in range(3)
+        )
+    )
+
+    verdict = judge_within_ceiling(
+        spec_tree=_TREE,
+        statement=_STATEMENT,
+        run_model=model,
+        ceiling=20_000,
+    )
+
+    assert not is_successful(verdict)
+    assert len(model.prompts) == 2

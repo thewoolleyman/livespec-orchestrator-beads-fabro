@@ -61,6 +61,7 @@ from typing import TYPE_CHECKING
 from livespec_runtime.spec_stated import JUDGE_PROMPT, judge
 
 from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
+    correction_prompt_headroom,
     resolving_subsection_citations,
 )
 
@@ -196,7 +197,11 @@ def judge_within_ceiling(
     encloses the subsections the specification states it through.
     """
     return judge(
-        spec_tree=condensed_spec_tree(spec_tree=spec_tree, statement=statement, ceiling=ceiling),
+        spec_tree=condensed_spec_tree(
+            spec_tree=spec_tree,
+            statement=statement,
+            ceiling=ceiling - correction_prompt_headroom(spec_tree=spec_tree),
+        ),
         statement=statement,
         run_model=resolving_subsection_citations(run_model=run_model, spec_tree=spec_tree),
     )

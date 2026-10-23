@@ -64,7 +64,10 @@ if TYPE_CHECKING:
 
     from livespec_runtime.spec_stated import ModelRunner
 
-__all__: list[str] = ["resolving_subsection_citations"]
+__all__: list[str] = [
+    "correction_prompt_headroom",
+    "resolving_subsection_citations",
+]
 
 # One heading line of any citable depth, captured WITHOUT its trailing
 # whitespace so an H2 capture is byte-identical to what the shared judgement
@@ -98,7 +101,14 @@ def resolving_subsection_citations(
         run_model=run_model,
         governing=_governing_clauses(spec_tree=spec_tree),
         enclosing=_enclosing_clauses(spec_tree=spec_tree),
+        headings=_h2_headings(spec_tree=spec_tree),
     )
+
+
+def correction_prompt_headroom(*, spec_tree: Mapping[str, str]) -> int:
+    """The largest ordinary correction suffix this tree's H2 inventory needs."""
+    headings = _h2_headings(spec_tree=spec_tree)
+    return len(_correction_prompt(prompt="", refused=headings, headings=headings))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -114,10 +124,25 @@ class _ResolvingRunner:
     run_model: ModelRunner
     governing: Mapping[str, str]
     enclosing: Mapping[str, str]
+    headings: tuple[str, ...]
 
     def __call__(self, prompt: str) -> str:
+        response = self.run_model(prompt)
+        refused = _refused_headings(
+            text=response,
+            governing=self.governing,
+            enclosing=self.enclosing,
+        )
+        if refused:
+            response = self.run_model(
+                _correction_prompt(
+                    prompt=prompt,
+                    refused=refused,
+                    headings=self.headings,
+                )
+            )
         return _resolved_response(
-            text=self.run_model(prompt),
+            text=response,
             governing=self.governing,
             enclosing=self.enclosing,
         )
@@ -131,6 +156,20 @@ def _governing_clauses(*, spec_tree: Mapping[str, str]) -> dict[str, str]:
             if _level_of(heading=heading) == _GOVERNING_LEVEL:
                 found.setdefault(_citation_key(heading=heading), set()).add(heading)
     return {key: next(iter(headings)) for key, headings in found.items() if len(headings) == 1}
+
+
+def _h2_headings(*, spec_tree: Mapping[str, str]) -> tuple[str, ...]:
+    """Every exact H2 heading a correction prompt may offer to the judge."""
+    return tuple(
+        sorted(
+            {
+                heading
+                for text in spec_tree.values()
+                for heading in _HEADING.findall(text)
+                if _level_of(heading=heading) == _GOVERNING_LEVEL
+            }
+        )
+    )
 
 
 def _enclosing_clauses(*, spec_tree: Mapping[str, str]) -> dict[str, str]:
@@ -183,6 +222,52 @@ def _resolved_response(
             citation=target, governing=governing, enclosing=enclosing
         )
     return json.dumps(payload)
+
+
+def _refused_headings(
+    *, text: str, governing: Mapping[str, str], enclosing: Mapping[str, str]
+) -> tuple[str, ...]:
+    """The first response's unresolvable `stated_by` citations, if readable."""
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return ()
+    if not isinstance(parsed, dict):
+        return ()
+    payload = cast("dict[str, object]", parsed)
+    cited = payload.get(_STATED_BY)
+    if not isinstance(cited, list):
+        return ()
+    valid = frozenset(governing.values())
+    refused = [
+        citation
+        for citation in cast("list[object]", cited)
+        if isinstance(citation, str)
+        and _resolved(citation=citation, governing=governing, enclosing=enclosing) not in valid
+    ]
+    return tuple(dict.fromkeys(refused))
+
+
+def _correction_prompt(*, prompt: str, refused: tuple[str, ...], headings: tuple[str, ...]) -> str:
+    """One complete retry prompt, with no fuzzy expansion of a bad citation."""
+    refused_list = "\n".join("- " + citation for citation in refused)
+    heading_list = "\n".join("- " + heading for heading in headings)
+    instruction = " ".join(
+        (
+            "Reply once with a replacement JSON verdict whose stated_by only cites",
+            "these valid H2 headings:",
+        )
+    )
+    return "\n".join(
+        (
+            prompt,
+            "",
+            "Your preceding response cited heading(s) that do not exist:",
+            refused_list,
+            instruction,
+            heading_list,
+        )
+    )
 
 
 def _resolved(*, citation: str, governing: Mapping[str, str], enclosing: Mapping[str, str]) -> str:
