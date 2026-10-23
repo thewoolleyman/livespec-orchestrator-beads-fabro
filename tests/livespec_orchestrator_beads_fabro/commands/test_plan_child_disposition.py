@@ -15,6 +15,11 @@ from livespec_orchestrator_beads_fabro.commands._plan_disposition import (
     close_plan_child,
     reparent_plan_child,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier import exempt_decision
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import (
+    STAGE_FILING,
+    spec_change_tier_comment,
+)
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _NOW = "2026-08-20T00:00:00Z"
@@ -61,12 +66,36 @@ def _issue(*, issue_id: str, issue_type: str, spec_id: str | None = None) -> Non
     )
 
 
-def _seed_plan(*, spec_id: str | None = None) -> None:
+def _seed_plan(*, spec_id: str | None = None, classified: bool = True) -> None:
+    """Seed the plan, with a RECORDED classification unless a case withholds one.
+
+    The disposition reads the recorded spec-change-tier classification and fails
+    CLOSED without one, which the plan-child-disposition clause of
+    `SPECIFICATION/constraints.md` requires: "where it cannot determine a child's
+    autonomy tier from that recorded classification, it MUST refuse the
+    disposition". So every case about the ordinary disposition has to seed one,
+    and `classified=False` is how the one case about the absence withholds it.
+
+    The record is an EXEMPT classification — a `bug`, tier `none` — because these
+    cases are about the disposition rather than about the tier. The tier's own
+    cases live in `test_plan_child_spec_change_disposition.py`.
+    """
     reset_fake_singleton()
     _issue(issue_id="bd-ib-epic", issue_type="epic")
     _issue(issue_id="bd-ib-other", issue_type="epic")
     _issue(issue_id="bd-ib-child", issue_type="task", spec_id=spec_id)
     _fake().add_dependency(from_id="bd-ib-child", to_id="bd-ib-epic", edge_type=EDGE_PARENT_CHILD)
+    if classified:
+        _fake().add_comment(
+            issue_id="bd-ib-child",
+            body=spec_change_tier_comment(
+                item_id="bd-ib-child",
+                stage=STAGE_FILING,
+                decision=exempt_decision(classification="bug"),
+                spec_version="1",
+                digest="a-digest",
+            ),
+        )
 
 
 def _comment_bodies(*, issue_id: str) -> list[str]:
@@ -134,8 +163,23 @@ def test_reparenting_leaves_an_unrelated_edge_alone() -> None:
     assert {"depends_on_id": "bd-ib-blocker", "type": "blocks"} in edges
 
 
-def test_a_spec_change_tier_child_refuses_closure() -> None:
-    _seed_plan(spec_id="spec:contracts-dispatcher-admission")
+def test_an_unclassified_child_refuses_closure_and_records_nothing() -> None:
+    """Fail CLOSED: a tier nothing has determined refuses rather than being guessed.
+
+    This pair replaces two cases that asserted the RETIRED reading — a refusal
+    keyed on `spec_commitment_hint`, which the plan-child-disposition clause of
+    `SPECIFICATION/constraints.md` names as gating "the wrong set in both
+    directions". The tier's own four cases, including the hint-carrying follow-up
+    the retired predicate refused, live in
+    `test_plan_child_spec_change_disposition.py`; what is left here is the
+    absence, which is this module's own subject.
+
+    The rationale comment is asserted ABSENT as well as the status unchanged,
+    because the rationale is written BEFORE the mutation — so a refusal that
+    fired after it would leave an explained intent for a disposition that never
+    happened.
+    """
+    _seed_plan(classified=False)
 
     with pytest.raises(PlanDispositionRefusedError) as refusal:
         close_plan_child(
@@ -148,12 +192,13 @@ def test_a_spec_change_tier_child_refuses_closure() -> None:
         )
 
     assert "bd-ib-child" in str(refusal.value)
+    assert "no recorded" in str(refusal.value)
     assert _fake().show_issue(issue_id="bd-ib-child")["status"] != "closed"
     assert _comment_bodies(issue_id="bd-ib-child") == []
 
 
-def test_a_spec_change_tier_child_refuses_reparenting() -> None:
-    _seed_plan(spec_id="spec:contracts-dispatcher-admission")
+def test_an_unclassified_child_refuses_reparenting() -> None:
+    _seed_plan(classified=False)
 
     with pytest.raises(PlanDispositionRefusedError):
         reparent_plan_child(
@@ -203,23 +248,35 @@ def test_a_plan_anchored_child_is_reparentable() -> None:
     assert {"depends_on_id": "bd-ib-other", "type": EDGE_PARENT_CHILD} in edges
 
 
-def test_a_real_spec_clause_commitment_still_refuses_closure() -> None:
-    """The true-positive arm: this narrowing must not become a removal."""
+def test_a_real_spec_clause_commitment_no_longer_refuses_closure() -> None:
+    """The true-positive arm this module used to carry has INVERTED, deliberately.
+
+    It asserted that a child carrying a genuine `spec_commitment_hint` refuses,
+    as "the true-positive arm" of the narrowing that distinguished a commitment
+    from a plan anchor. The plan-child-disposition clause of
+    `SPECIFICATION/constraints.md` now says that reading is wrong: a non-null
+    hint marks an implementation FOLLOW-UP to an ALREADY-RATIFIED change, which
+    is "ordinary dispatchable work whose disposition this bullet admits". So the
+    commitment-carrying child is disposable here, exactly as the anchored one
+    is, and both are admitted by the SAME recorded `none` classification rather
+    than by anything read off that column.
+
+    The arm that must not become a removal is still asserted, one module over:
+    `test_plan_child_spec_change_disposition.py` refuses a HELD spec-change-tier
+    child and refuses one whose tier cannot be determined at all.
+    """
     _seed_plan(spec_id=_SPEC_CLAUSE_COMMITMENT)
 
-    with pytest.raises(PlanDispositionRefusedError) as refusal:
-        close_plan_child(
-            config=_config(),
-            epic_id="bd-ib-epic",
-            child_id="bd-ib-child",
-            rationale="Tidying the epic.",
-            author=_AUTHOR,
-            now=_NOW,
-        )
+    close_plan_child(
+        config=_config(),
+        epic_id="bd-ib-epic",
+        child_id="bd-ib-child",
+        rationale="A ratified follow-up, disposed of by the plan session.",
+        author=_AUTHOR,
+        now=_NOW,
+    )
 
-    assert "bd-ib-child" in str(refusal.value)
-    assert _fake().show_issue(issue_id="bd-ib-child")["status"] != "closed"
-    assert _comment_bodies(issue_id="bd-ib-child") == []
+    assert _fake().show_issue(issue_id="bd-ib-child")["status"] == "closed"
 
 
 def test_removing_an_absent_dependency_is_a_no_op() -> None:
