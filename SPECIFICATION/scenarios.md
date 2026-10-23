@@ -4189,7 +4189,7 @@ Feature: Proof of Done is captured and independently reproduced before publicati
     Then it posts one new Proof of Done verified comment and routes to pr_refresh
     And the pr node marks the pull request ready and arms auto-merge
   Scenario: A non-reproducible proof routes to fix
-    Given the proof_verify replay fails to reproduce one assertion
+    Given the proof_verify replay fails to reproduce one assertion with a behaviour difference, as the run's first or second behaviour not_reproduced verdict
     When the node ends
     Then it posts a not_reproduced record naming that assertion and routes to fix
     And no edge routes the run to pr_refresh or pr
@@ -4540,7 +4540,7 @@ Feature: Proof exercises the delivered behaviour through its real surface
     Then the engine preamble of preceding stage output carries the findings
     And the review record on the pull request carries the same findings
   Scenario: proof_capture reads the review record when the preamble is empty
-    Given a recapture entry whose engine preamble carries no review finding
+    Given a recapture entry from review whose engine preamble carries no review finding
     And a review record on the pull request carrying a proof-record finding
     When the proof_capture node runs
     Then it reads that review record
@@ -4595,6 +4595,30 @@ Feature: Proof exercises the delivered behaviour through its real surface
     Given a review verdict with no blocking finding
     When the review node ends
     Then the run takes the approval route and does not route to proof_capture
+  Scenario: A replay that differs only in record fidelity is re-captured, not fixed
+    Given a captured record whose replay differs from the capture only in the interleaving of stdout and stderr, with the same behavioural result
+    When proof_verify replays it
+    Then the record classifies the difference as fidelity
+    And the run routes to proof_capture with preferred_label recapture
+    And the run does not enter fix on that verdict
+  Scenario: A replay whose behavioural result differs routes to fix
+    Given a replay whose behavioural result differs from the capture
+    When proof_verify replays it
+    Then the record classifies the difference as behaviour
+    And the run routes to fix with that visit's not_reproduced record as its work order
+  Scenario: A fidelity verdict does not count toward the behaviour bound
+    Given a run whose proof_verify has already published two behaviour not_reproduced verdicts and whose recapture allowance is not exhausted
+    When the third proof_verify visit publishes a fidelity verdict
+    Then the run routes to proof_capture with preferred_label recapture and not to non_converged
+  Scenario: The fix-entry guard counts behaviour verdicts, not visits
+    Given a run whose first proof_verify verdict was fidelity and whose second was a behaviour not_reproduced
+    When the third proof_verify visit publishes a second behaviour not_reproduced
+    Then the run routes to fix and not to non_converged
+  Scenario: A fidelity recapture reads the proof_verify record when the preamble is empty
+    Given a recapture entry from a proof_verify fidelity verdict whose engine preamble carries no finding
+    When the proof_capture node runs
+    Then it reads that proof_verify visit's not_reproduced record
+    And the new captured record addresses each fidelity finding
 ```
 
 ## Scenario 138 — A proof finding reaches the fix stage, and a parked acceptance verdict is recorded with its reason and its pointer
@@ -4663,6 +4687,11 @@ Feature: The proof chain does not lose what it found
     When the acceptance pass looks for the merging run's verified record
     Then the record is attributed to the merging run and each factory-captured assertion is graded from it
     And the pointer is written naming that record
+  Scenario: The fix stage receives the record proof_verify graded, not a superseded capture
+    Given a run in which proof_capture published a capture and a later proof_capture visit superseded it
+    And proof_verify then published not_reproduced with a behaviour difference
+    When the fix node starts
+    Then the finding fix receives names that proof_verify record and not the superseded capture
 ```
 
 ## Scenario 139 — The gate checks each proof mode against the capabilities the sandbox image publishes

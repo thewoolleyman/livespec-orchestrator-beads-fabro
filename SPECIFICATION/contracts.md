@@ -3686,9 +3686,11 @@ review-fix round, and the engine visit limit of `review` MUST admit the
 review-fix budget's visits plus the two recapture laps. A verdict with no
 blocking finding keeps the approval route unchanged. `proof_capture`
 entered on a recapture verdict MUST receive the verdict's findings by two
-routes, the engine's preamble of preceding stage output and the review
-record on the pull request, MUST read that review record when the
-preamble carries no finding, and MUST publish a new captured record,
+routes: the engine's preamble of preceding stage output, and the issuing
+visit's record on the pull request — the review record for a recapture
+verdict from `review`, and the `not_reproduced` record that
+`proof_verify` visit published for a fidelity verdict. It MUST read that
+record when the preamble carries no finding, and MUST publish a new captured record,
 current for the publish head, that addresses each finding. A verdict that
 carries at least one blocking finding about the tree is a fix verdict: it
 routes through `disposition` and `review_fix` and is bounded by the
@@ -3703,12 +3705,34 @@ the tree it receives, and MUST NOT modify the tree, the steps, or the
 Definition of Done. It MUST publish its own record per §"Proof of Done
 record" with the verdict `verified` when every `factory_captured`
 assertion reproduced, or `not_reproduced` naming each assertion that did
-not; the record header renders the verdict verbatim. `verified` routes to
-`proof_grade`, which routes to `pr_refresh` as above; `not_reproduced` routes to `fix` while the node's own visit count is
-below three, and the third `not_reproduced` routes to the existing
-`non_converged` terminal. A `not_reproduced` proof loop re-enters `review`, and those
-review visits count toward the review-fix budget like any other; a
-`proof_grade` retry is bounded as stated above instead. The
+not; the record header renders the verdict verbatim. For each assertion
+it names as not reproduced, the record MUST classify the difference as
+either FIDELITY, where the replay's observable behavioural result equals
+the captured one and only the record's rendering differs (the
+interleaving or ordering of output streams, whitespace, or formatting),
+or BEHAVIOUR, where the behavioural result differs or cannot be compared.
+A difference the node cannot positively show to be fidelity MUST be
+classified behaviour. `verified` routes to `proof_grade`, which routes to
+`pr_refresh` as above. A `not_reproduced` verdict whose every classified
+difference is fidelity is a FIDELITY verdict: it MUST end `proof_verify`
+with `preferred_label=recapture`, which MUST route to `proof_capture`
+with the record's per-assertion findings as the recapture work order,
+and MUST NOT route to `fix`. It counts against the same two-lap
+recapture bound as a review recapture verdict, so the third recapture in
+one run, from either source, MUST route to the existing `non_converged`
+terminal. Any other `not_reproduced` is a BEHAVIOUR verdict. The first
+and second behaviour `not_reproduced` verdicts in one run MUST route to
+`fix`, and the third behaviour `not_reproduced` in one run routes to the
+existing `non_converged` terminal; a fidelity verdict MUST NOT advance
+that count. A behaviour `not_reproduced` proof loop re-enters `review`,
+and those review visits count toward the review-fix budget like any
+other. A fidelity verdict, and any `review` visit it leads back to, MUST
+consume only the shared two-lap recapture allowance and MUST NOT count
+toward the behaviour `not_reproduced` bound or the review-fix budget.
+Where a fidelity verdict and the recapture bound both apply, the
+recapture bound decides: a fidelity verdict that would be the run's
+third recapture routes to `non_converged`. A `proof_grade` retry is
+bounded as stated above instead. The
 `review` node's ship-on-review-cap edge MUST target `proof_verify`, never
 `pr`, so `merge_on_review_cap` (§"Dispatcher policy settings") skips only
 the reviewer's approval and never the replay. No edge MAY route from
@@ -3724,23 +3748,28 @@ constraints these nodes MUST honour are in `constraints.md` §"Fabro
 runtime constraints".
 
 **Proof findings are the fix stage's work order.** When `proof_capture`
-ends with `preferred_label=fix`, or `proof_verify` publishes
-`not_reproduced`, the finding — the assertion, what was observed, and
+ends with `preferred_label=fix`, or `proof_verify` publishes a first or
+second behaviour `not_reproduced` and so routes to `fix`, the finding — the assertion, what was observed, and
 what the proof needs — MUST reach the `fix` node as its work order by
 two routes: the engine's preamble of preceding stage output (no
 templated node attribute and no `inputs.*` edge condition is introduced,
 per `constraints.md` §"Fabro runtime constraints"), AND the stage's own
 record on the pull request (`not_captured` or `not_reproduced`), so the
 finding survives the run. The `fix` prompt MUST treat a proof finding as
-a first-class reason for entry beside a red janitor, and MUST read the
-latest proof record on the pull request when the preamble carries no
-finding. A `fix` visit entered on a proof finding MUST end either with a
+a first-class reason for entry beside a red janitor, and MUST take as
+its work order the record the entering stage graded in that visit: on
+entry from `proof_verify`, the `not_reproduced` record that visit
+published; on entry from `proof_capture`, that visit's `not_captured`
+record. When the preamble carries no finding, it MUST read the latest
+proof record on the pull request. A finding from a capture that a later
+`proof_capture` visit superseded MUST NOT be presented to `fix` as its
+work order. A `fix` visit entered on a proof finding MUST end either with a
 tree change addressing the finding or through the structured needs-human
 ending stating why the finding is wrong; it MUST NOT end succeeded with
 an unchanged tree. A `fix` visit entered from a red janitor is unchanged
 and receives the janitor's failure output as before. The proof loops
-stay bounded by the two visit caps above — the third
-`preferred_label=fix` from `proof_capture` and the third
+stay bounded by the two finding-count bounds above — the third
+`preferred_label=fix` from `proof_capture` and the third behaviour
 `not_reproduced` from `proof_verify` each route to `non_converged`.
 Scenario 137, Scenario 138 and Scenario 141 in `scenarios.md` exercise
 the capture, replay and fix duties added to this section.
@@ -4528,7 +4557,9 @@ from the earlier run's record on the factory the earlier dispatch names;
 when that factory answers that it no longer holds the run, the Dispatcher
 MUST derive the stage from the verdict of the latest record carrying the
 earlier run's identifier — `verified`: `pr_refresh`; `captured`: `review`;
-`not_captured` or `not_reproduced`: `fix`; no such record:
+`not_captured` or a behaviour `not_reproduced`: `fix`; a fidelity
+`not_reproduced`: `proof_capture`, read from the record's own
+classification of each difference; no such record:
 `proof_capture` — and the resume record MUST name which source decided
 it. When the earlier run terminated through `exit` after `pr` armed auto-merge, the resumed-at stage is `pr_refresh`, and the resume record MUST name the factory record as the source that decided it. An authoritative not-found answer from the factory observes the run
 as not live; only an unanswered or errored query is unobservable.
