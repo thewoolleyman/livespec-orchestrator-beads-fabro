@@ -29,12 +29,18 @@ from pathlib import Path
 __all__: list[str] = [
     "Obligation",
     "collect_obligations_and_supersedes",
+    "ratified_proposal_topics",
 ]
 
 _HISTORY_SUBDIR = "history"
 _PROPOSED_CHANGES_DIR = "proposed_changes"
 _REVISION_SUFFIX = "-revision.md"
 _PRUNED_MARKER = "PRUNED_HISTORY.json"
+# The two revision decisions that RATIFY a proposed change. Named once, because
+# this module's obligation walk and the spec-change-tier ratification read below
+# both turn on it, and two spellings of one vocabulary is how a build comes to
+# collect an obligation from a proposal it reports as unratified.
+_RATIFYING_DECISIONS = ("accept", "modify")
 _VERSION_RE = re.compile(r"^v(\d+)$")
 
 
@@ -80,15 +86,57 @@ def collect_obligations_and_supersedes(
     return obligations, superseded_set
 
 
-def _accepted_commitments(*, version_dir: Path, pc_stem: str) -> _ParsedCommitments | None:
-    """Return the PC's commitments iff its revision decision is accept/modify."""
-    pc_path = version_dir / _PROPOSED_CHANGES_DIR / f"{pc_stem}.md"
+def ratified_proposal_topics(*, spec_root: Path) -> frozenset[str]:
+    """Every proposed-change topic the governed spec history records as ratified.
+
+    The TOPIC is the stem of a `history/vNNN/proposed_changes/<topic>.md` file
+    whose paired `<topic>-revision.md` carries decision `accept` or `modify`.
+    This is the whole of the spec-change-tier hold's ratification read, which
+    the autonomy-tier bullet of `SPECIFICATION/contracts.md` requires to be a
+    read of the spec history needing no model.
+
+    PRESENCE IS NOT RATIFICATION, and that is why this walks the revision
+    records rather than listing the directory: a `reject` revision archives its
+    proposal under exactly the same path as an `accept` one, so a read keyed on
+    the proposal file's existence releases every hold whose proposal was
+    refused. The independent review of plan `spec-implementation-lockstep`
+    required this (research note 005, finding 1).
+
+    It lives beside the obligation walk rather than in the hold module because
+    both ask the same question of the same files through the same front-matter
+    parse; a second walker would be a second reading of one directory layout,
+    and the two would drift in the direction nothing announces — each would keep
+    returning a plausible non-empty set.
+    """
+    return frozenset(
+        pc_stem
+        for version_dir in _version_dirs(history_path=spec_root / _HISTORY_SUBDIR)
+        for pc_stem in _pc_stems(version_dir=version_dir)
+        if _topic_is_ratified(version_dir=version_dir, pc_stem=pc_stem)
+    )
+
+
+def _topic_is_ratified(*, version_dir: Path, pc_stem: str) -> bool:
+    """Whether one topic's paired revision record carries a ratifying decision."""
     revision_path = version_dir / _PROPOSED_CHANGES_DIR / f"{pc_stem}{_REVISION_SUFFIX}"
     if not revision_path.is_file():
+        return False
+    return _revision_decision(revision_path=revision_path) in _RATIFYING_DECISIONS
+
+
+def _accepted_commitments(*, version_dir: Path, pc_stem: str) -> _ParsedCommitments | None:
+    """Return the PC's commitments iff its revision decision is accept/modify.
+
+    The ratification test is the SHARED `_topic_is_ratified` rather than a second
+    reading of the same two files: this walk and the topic set above ask the
+    identical question of the identical pair, and two readings of it would drift
+    in the direction nothing announces — each would keep producing a well-formed
+    answer while one collected an obligation from a proposal the other reported
+    as unratified.
+    """
+    if not _topic_is_ratified(version_dir=version_dir, pc_stem=pc_stem):
         return None
-    if _revision_decision(revision_path=revision_path) not in ("accept", "modify"):
-        return None
-    return _pc_file_commitments(pc_path=pc_path)
+    return _pc_file_commitments(pc_path=version_dir / _PROPOSED_CHANGES_DIR / f"{pc_stem}.md")
 
 
 def _version_dirs(*, history_path: Path) -> list[Path]:
