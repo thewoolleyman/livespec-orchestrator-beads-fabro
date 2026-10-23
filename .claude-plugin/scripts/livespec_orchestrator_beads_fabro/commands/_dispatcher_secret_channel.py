@@ -37,8 +37,12 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol, cast
+from typing import Protocol
 
+from livespec_orchestrator_beads_fabro.commands._factory_declared_channel import (
+    DECLARATION_ABSENT,
+    declared_factory_channel,
+)
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
@@ -133,7 +137,6 @@ OPTIONAL_CREDENTIAL_ENV_NAMES: tuple[str, ...] = ("GITHUB_PRIVATE_KEY",)
 # -- it is NOT in this namespace, so it is never read, never written, and never
 # mistaken for a projected credential.
 VAULT_SECRET_PREFIX = "LIVESPEC_DISPATCH_"  # noqa: S105 - a vault-key PREFIX
-_DECLARATION_ABSENT = object()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -215,9 +218,18 @@ def resolve_secret_channel(
     UNRECOGNISED value is not, for the reason the module docstring gives, so it
     refuses naming the key, the value read, and the transports this build
     speaks.
+
+    "Declares" spans BOTH of a registry-backed factory's sources, which
+    `_factory_declared_channel` resolves: the committed entry when it carries
+    the key, and otherwise the registry entry. That is why this still takes a
+    factory NAME and a block rather than a resolved target — both sources are
+    reached from that one block, so no call site has to supply a second one,
+    and a call site that could forget to is one where a fleet repository
+    committing no `secret_channel` silently takes the inline default on a
+    factory the registry says speaks something else.
     """
-    declared = _declared_channel(block=block, factory=factory)
-    if declared is _DECLARATION_ABSENT:
+    declared = declared_factory_channel(block=block, factory=factory)
+    if declared is DECLARATION_ABSENT:
         return SECRET_CHANNEL_INLINE_OVERLAY
     if not isinstance(declared, str) or declared == "" or declared not in SECRET_CHANNELS:
         return SecretChannelRefusal(
@@ -457,28 +469,6 @@ _ENV_KEY_RE = re.compile(r"(?m)^([A-Za-z_][A-Za-z0-9_]*) = ")
 def _carries(*, text: str, env_name: str) -> bool:
     """Whether the bundle assigns `env_name` at all."""
     return _env_line_pattern(env_name=env_name).search(text) is not None
-
-
-def _declared_channel(*, block: Mapping[str, object], factory: str) -> object:
-    """One factory's raw transport declaration, or the absent sentinel.
-
-    Absence and an explicitly malformed value are different security answers:
-    only absence selects the pinned engine's inline default. Returning the raw
-    value lets ``resolve_secret_channel`` refuse empty, null and non-string
-    declarations rather than collapsing them into that credential-persisting
-    fallback.
-    """
-    cursor: object = block
-    for key in ("factories", factory):
-        if not isinstance(cursor, dict):
-            return _DECLARATION_ABSENT
-        level = cast("dict[str, Any]", cursor)
-        cursor = level.get(key, _DECLARATION_ABSENT)
-        if cursor is _DECLARATION_ABSENT:
-            return _DECLARATION_ABSENT
-    if not isinstance(cursor, dict):
-        return _DECLARATION_ABSENT
-    return cast("dict[str, Any]", cursor).get(SECRET_CHANNEL_KEY, _DECLARATION_ABSENT)
 
 
 def _decode_rendered_string(*, rendered: str) -> str | None:

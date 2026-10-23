@@ -46,13 +46,33 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     reset_fake_singleton,
 )
 from livespec_orchestrator_beads_fabro._store_dispatch_claim import claim_stamp_from_record
-from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_factory
+from livespec_orchestrator_beads_fabro.commands._config import (
+    dispatcher_block,
+    resolve_fabro_factory,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_stamp import (
     stamp_pending_claim,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
+    factory_bin_refusal,
+    factory_fabro_bin,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_environment import (
+    factory_declaration_refusal,
+    factory_environment_id,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_registry import (
+    factory_registry_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import build_plan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_stamp import stamp_dispatch_run
+from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel import (
+    SECRET_CHANNEL_INLINE_OVERLAY,
+    SECRET_CHANNEL_NATIVE_SECRETS,
+    SecretChannelRefusal,
+    resolve_secret_channel,
+)
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 # Two factories the registry maps, and a third the repository commits itself.
@@ -74,6 +94,15 @@ _PREFIX = "bd-ib"
 _WORK_ITEM_ID = "bd-ib-ep4eeo"
 _DISPATCH_ID = "01M5MXVMK95EKAGEV5AX2MFTQJ"
 _RUN_ID = "01M580PF02S0VMFKX5HPB05Z8C"
+
+# The registry's own client settings for `petri`. The `bin` is a file each case
+# CREATES and marks executable, because the clause requires every validation a
+# committed value receives to apply equally to a registry-supplied one — and the
+# `bin` grade refuses a path that is not an existing executable, so a spelled
+# constant would refuse the very dispatch this case asserts succeeds.
+_REGISTRY_BIN_NAME = "registry-fabro"
+_HOST_FALLBACK_BIN_NAME = "host-fabro"
+_REGISTRY_ENVIRONMENT = "livespec-registry-env"
 
 
 @pytest.fixture(autouse=True)
@@ -166,6 +195,28 @@ def _fleet_registry(*, default: str, client: dict[str, Any] | None = None) -> di
     return {"default": default, _PETRI: petri, _NEXT: {"server": _NEXT_SERVER}}
 
 
+def _executable(*, cwd: Path, name: str) -> str:
+    """One real executable file, so a `bin` grade can admit the value naming it.
+
+    The two engine clients a case distinguishes are created rather than spelled,
+    for the reason the constants above record: a registry-supplied `bin` is
+    graded exactly as a committed one, and the grade asks the filesystem.
+    """
+    path = cwd / name
+    _ = path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    path.chmod(0o755)
+    return str(path)
+
+
+def _registry_client(*, cwd: Path) -> dict[str, Any]:
+    """The three client settings the registry gives `petri`, with a real `bin`."""
+    return {
+        "bin": _executable(cwd=cwd, name=_REGISTRY_BIN_NAME),
+        "secret_channel": SECRET_CHANNEL_NATIVE_SECRETS,
+        "environment": _REGISTRY_ENVIRONMENT,
+    }
+
+
 def test_a_fleet_default_resolves_to_the_factory_the_registry_designates(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -243,6 +294,107 @@ def test_moving_the_fleet_default_reroutes_the_next_fresh_dispatch_with_no_commi
 
     assert _dispatch_records(cwd=tmp_path) == (_NEXT, _NEXT_SERVER, _NEXT, _NEXT_SERVER)
     assert _config_path(cwd=tmp_path).read_bytes() == committed
+
+
+def _client_settings(*, cwd: Path, factory: str) -> tuple[str, str | None, str]:
+    """One factory's EFFECTIVE `bin`, `environment` and `secret_channel`.
+
+    Read through the three production grades rather than off `FactoryTarget`,
+    because each is what a dispatch actually consumes and two of them apply a
+    layer of their own: `factory_fabro_bin` resolves the entry's declaration
+    against the host fallback, and the transport is resolved by a reader that
+    never sees a `FactoryTarget` at all — it is asked for the factory by NAME,
+    which is what makes it the one of the three that must find the registry on
+    its own rather than being handed a resolution.
+    """
+    target = resolve_fabro_factory(cwd=cwd, factory=factory)
+    channel = resolve_secret_channel(block=dispatcher_block(cwd=cwd), factory=factory)
+    assert not isinstance(channel, SecretChannelRefusal)
+    return (
+        factory_fabro_bin(
+            factory=target, fallback=_executable(cwd=cwd, name=_HOST_FALLBACK_BIN_NAME)
+        ),
+        factory_environment_id(factory=target),
+        channel,
+    )
+
+
+def _refusals(*, cwd: Path, factory: str) -> tuple[str | None, ...]:
+    """Every pre-claim refusal the three client settings and the registry raise."""
+    target = resolve_fabro_factory(cwd=cwd, factory=factory)
+    return (
+        factory_registry_refusal(factory=target),
+        factory_bin_refusal(factory=target),
+        factory_declaration_refusal(factory=target),
+    )
+
+
+def test_a_registry_backed_entry_declaring_no_client_settings_takes_the_registrys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A committed entry declaring only `registry` dispatches on the registry's client.
+
+    The committed entry declares NONE of the three, which is the shape the
+    clause recommends a fleet member commit, and all three are asserted
+    together because they are one question — "how does this Dispatcher speak to
+    this factory" — answered from one place, and a per-key case could not tell
+    a build that merged two of them from one that merged all three.
+
+    The refusals are asserted EMPTY beside the values, because each key's grade
+    runs before the claim and a registry value reaching the field while failing
+    its own grade is a dispatch refused for a declaration the repository never
+    made.
+    """
+    _write_config(
+        cwd=tmp_path,
+        factories={_PETRI: {"registry": True}},
+        default_factory=_PETRI,
+    )
+    _ = _write_registry(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        payload=_fleet_registry(default=_PETRI, client=_registry_client(cwd=tmp_path)),
+    )
+
+    assert _client_settings(cwd=tmp_path, factory=_PETRI) == (
+        _executable(cwd=tmp_path, name=_REGISTRY_BIN_NAME),
+        _REGISTRY_ENVIRONMENT,
+        SECRET_CHANNEL_NATIVE_SECRETS,
+    )
+    assert _refusals(cwd=tmp_path, factory=_PETRI) == (None, None, None)
+
+
+def test_a_client_key_neither_source_declares_keeps_its_absent_treatment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A key declared in neither place is absent, not inherited from elsewhere.
+
+    The control for the case above: without it, an implementation that invented
+    a value for every key — the host fallback for `bin`, some default
+    environment, a transport — would satisfy every positive assertion there
+    while making a repository that declares nothing dispatch differently from
+    one that always has. `next` is the registry entry carrying no client keys
+    at all, so each reading must be the absent-key answer its own key defines.
+    """
+    _write_config(
+        cwd=tmp_path,
+        factories={_NEXT: {"registry": True}},
+        default_factory=_NEXT,
+    )
+    _ = _write_registry(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        payload=_fleet_registry(default=_PETRI, client=_registry_client(cwd=tmp_path)),
+    )
+
+    assert _client_settings(cwd=tmp_path, factory=_NEXT) == (
+        _executable(cwd=tmp_path, name=_HOST_FALLBACK_BIN_NAME),
+        None,
+        SECRET_CHANNEL_INLINE_OVERLAY,
+    )
+    assert _refusals(cwd=tmp_path, factory=_NEXT) == (None, None, None)
 
 
 def _dispatch_records(*, cwd: Path) -> tuple[str | None, str | None, str | None, str | None]:
