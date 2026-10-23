@@ -190,10 +190,17 @@ def test_a_mechanical_finding_withholds_ready_and_is_recorded_as_a_ledger_commen
 
     assert verdict == "pending-approval"
     assert _status(issue_id="li-mechanical") == "pending-approval"
-    comments = _comments(issue_id="li-mechanical")
-    assert len(comments) == 1
-    assert comments[0].startswith("definition-of-done finding (mechanical):")
-    assert "does not resolve" in comments[0]
+    # The FINDING comments are selected through the existing helper rather than
+    # indexed off an unfiltered read, for the reason that helper already gives:
+    # another clause records its own verdict on the same sidecar. The
+    # spec-change-tier classification is now a third such writer — it runs at
+    # this same filing cadence point and records its outcome (here a
+    # did-not-run, since this fixture installs no judge) — so a count of every
+    # comment on the item grades the wall against records other clauses write.
+    findings = _finding_comments(issue_id="li-mechanical")
+    assert len(findings) == 1
+    assert findings[0].startswith("definition-of-done finding (mechanical):")
+    assert "does not resolve" in findings[0]
 
 
 def test_an_advisory_finding_is_recorded_and_does_not_withhold_ready(tmp_path: Path) -> None:
@@ -253,9 +260,9 @@ def test_an_item_with_no_section_is_held_out_of_ready_by_the_absent_section_find
     verdict = _route(issue_id="li-sectionless", repo=_repo(tmp_path=tmp_path))
 
     assert verdict == "pending-approval"
-    comments = _comments(issue_id="li-sectionless")
-    assert len(comments) == 1
-    assert "carries no Definition of Done section" in comments[0]
+    findings = _finding_comments(issue_id="li-sectionless")
+    assert len(findings) == 1
+    assert "carries no Definition of Done section" in findings[0]
 
 
 def test_a_verdict_reached_without_a_repository_root_grades_nothing() -> None:
