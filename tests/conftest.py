@@ -309,6 +309,42 @@ def _hermetic_operator_attribution_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
+_SERVING_APP_ENV = (
+    "GITHUB_APP_ID",
+    "GITHUB_PRIVATE_KEY",
+    "GITHUB_APP_INSTALLATION_ID",
+)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_serving_app_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the SERVING GitHub App's own identity out of the test process.
+
+    This is the same ambient-host-dependency class as the two fixtures above and
+    it has the same asymmetry, which is what makes it expensive. The App
+    environment is what the dispatch credential wrapper injects, so continuous
+    integration carries NONE of it while a session that DISPATCHES carries all
+    three — and `just check` runs inside that session on every pre-push and
+    inside the post-merge janitor.
+
+    What reads it is the app-reach preflight, whose evaluated arm issues two
+    `gh` calls against the real forge. With the identity ambient, every test
+    driving the pre-dispatch wall reached the network and journaled a reading of
+    it; with it absent, every one of them takes the preflight's UNEVALUATED arm,
+    which reads nothing and records nothing. Measured in this factory sandbox,
+    whose PID 1 carries `GITHUB_APP_ID`: five Scenario 174 cases failed inside
+    the wall on a journal append the ambient identity made reachable, on a tree
+    whose preflight is byte-identical to the one continuous integration passes.
+
+    Scrubbing the three names is the whole fixture. A case that exercises the
+    evaluated arm sets the identity it needs explicitly after this fixture runs
+    — the precedent `test_adopter_dispatch_app_reach_scenario32.py` follows —
+    and `monkeypatch` restores every one of them at teardown either way.
+    """
+    for name in _SERVING_APP_ENV:
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture(autouse=True)
 def _hermetic_factory_credential_slots(monkeypatch: pytest.MonkeyPatch) -> None:
     """Scrub the wrapper-injected per-profile credential slots for every test.
