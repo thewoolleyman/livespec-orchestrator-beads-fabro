@@ -122,6 +122,23 @@ class RecoveryRouting:
         """
         return next((one for one in self.routes if one.work_item_id == work_item_id), None)
 
+    def resume_ids(self) -> frozenset[str]:
+        """Every item this pass routed `resume`, for the FACTORY precedence.
+
+        The item's recorded factory is a resume-only pin, and the admission claim
+        stamp "MUST apply the same order, using the route recovery routing
+        assigned before the admission valve" — but the valve is handed a wave
+        rather than one item, so what it needs is the whole SET and not one
+        item's route.
+
+        A SET of ids rather than the routing value itself, because the valve has
+        no other business with a route: handing it this object would give it
+        reach over the hold list, the reclaim decision and the resume payloads,
+        and would make `_dispatcher_admission` import this module's whole reading
+        of the forge and the factory to answer one yes-or-no question per item.
+        """
+        return frozenset(one.work_item_id for one in self.routes if one.route == ROUTE_RESUME)
+
     def reclaims(self, *, work_item_id: str) -> bool:
         """Whether the stale publish-branch reclaim runs for this item.
 

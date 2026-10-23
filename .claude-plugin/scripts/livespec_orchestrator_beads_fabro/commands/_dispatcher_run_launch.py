@@ -86,6 +86,11 @@ def admit_and_dispatch_target(  # noqa: PLR0913 — kw-only targeted dispatch; `
         # resolves under, and the one layer `LIVESPEC_FABRO_FACTORY` cannot
         # stand in for.
         explicit_factory=explicit_dispatch_factory(args=args),
+        # The route recovery routing assigned each candidate before this valve,
+        # which the pending claim stamp's own factory precedence reads: the
+        # item's recorded factory is a resume-only pin, so a fresh dispatch must
+        # be stamped with the default it will actually reach.
+        resume_ids=routing.resume_ids(),
     )
     launching = [*admission.rework, *admission.admitted]
     # The stale publish-branch reclaim, for the item this path is about to
