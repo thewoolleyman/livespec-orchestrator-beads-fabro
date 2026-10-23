@@ -70,13 +70,16 @@ from livespec_orchestrator_beads_fabro.commands._fabro_bin import (
     configured_fabro_bin,
     default_fabro_bin,
 )
+from livespec_orchestrator_beads_fabro.commands._factory_client_settings import (
+    effective_factory_client_settings,
+)
 from livespec_orchestrator_beads_fabro.commands._factory_default import (
     configured_factory_name,
+    fleet_selection,
 )
 from livespec_orchestrator_beads_fabro.commands._factory_environment import (
     NO_FACTORY_ENVIRONMENT,
     FactoryEnvironment,
-    factory_environment_from_entry,
 )
 from livespec_orchestrator_beads_fabro.commands._factory_registry import (
     NO_FACTORY_REGISTRY,
@@ -126,7 +129,6 @@ _ENV_BD_PATH = "LIVESPEC_BD_PATH"
 _ENV_FAKE = "LIVESPEC_BEADS_FAKE"
 _ENV_FABRO_BIN = "LIVESPEC_FABRO_BIN"
 _ENV_FABRO_FACTORY = "LIVESPEC_FABRO_FACTORY"
-_FACTORY_BIN_KEY = "bin"
 _FACTORY_DOCKER_HOST_KEY = "docker_host"
 _FABRO_DEV_AUTH_ENV_PREFIX = "FABRO_DEV_TOKEN__"
 _ENV_FABRO_SANDBOX_IMAGE = "LIVESPEC_FABRO_SANDBOX_IMAGE"
@@ -471,14 +473,21 @@ def _factory_target_for(*, name: str, block: dict[str, Any]) -> FactoryTarget:
     liveness reads all read `FactoryTarget.server`, and none of them learns that
     the address came from a file. An entry that is not registry-backed reads
     exactly as it did before the key existed.
+
+    The CLIENT settings land on the same two fields for the same reason, with
+    the committed entry winning key by key over the registry's — a merge an
+    entry that is not registry-backed passes through unchanged, because its
+    registry side is the absent reading.
     """
     entry = _factory_entry(block=block, name=name)
-    registry = factory_registry_from_entry(entry=entry, name=name)
+    fleet = fleet_selection(block=block, name=name)
+    registry = factory_registry_from_entry(entry=entry, name=name, fleet=fleet)
+    client = effective_factory_client_settings(entry=entry, registry=registry.client)
     return FactoryTarget(
         name=name,
         server=registry.server if registry.declared else _optional_str(value=entry.get("server")),
-        fabro_bin=_optional_str(value=entry.get(_FACTORY_BIN_KEY)),
-        environment=factory_environment_from_entry(entry=entry),
+        fabro_bin=client.fabro_bin,
+        environment=client.environment,
         docker_host=(
             registry.docker_host
             if registry.declared
