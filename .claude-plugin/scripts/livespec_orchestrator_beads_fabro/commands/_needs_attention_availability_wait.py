@@ -108,6 +108,7 @@ def availability_wait_items(
     project_root: Path,
     repo: str,
     items: list[WorkItem],
+    now_iso: str | None = None,
 ) -> list[AttentionItem]:
     """One row per ready item an admission-required chain's wait holds.
 
@@ -115,12 +116,31 @@ def availability_wait_items(
     hold a candidate and whose evidence sources all read — and every repository
     declaring no fallback configuration at all, which short-circuits inside the
     shared verdict before any graph or journal is touched.
+
+    `now_iso` is this composition's EVALUATION TIME, and it is a parameter
+    because the byte-identity requirement states it as a premise: "Identical
+    ledger, capacity, configuration, availability evidence, and evaluation time
+    MUST produce a byte-identical row." Where no governing hold carries an
+    expiry the scheduled instant IS the cadence measured from this evaluation,
+    so a lane that read only its own clock left no caller able to hold that
+    premise — and two passes a second apart rendered two different rows for a
+    reason the requirement explicitly excludes.
+
+    It defaults to this pass's own clock, which is what every snapshot caller
+    takes: a composition has exactly one evaluation, so reading it here is
+    reading it once. The parameter exists for a caller that has ALREADY fixed
+    the instant, never as a second clock.
+
+    THE SAME INSTANT REACHES BOTH READS, which is the other half of the
+    determinism. The verdict's hold liveness and the wait's cadence are two
+    readings of ONE evaluation, so a clock read twice could retire a hold
+    between them and report a wait derived from evidence the verdict never saw.
     """
-    now_iso = utc_now_iso()
+    evaluated_at = utc_now_iso() if now_iso is None else now_iso
     wait = resolve_availability_wait(
         repo=project_root,
-        verdict=acp_chain_preflight_verdict(project_root=project_root, now_iso=now_iso),
-        now_iso=now_iso,
+        verdict=acp_chain_preflight_verdict(project_root=project_root, now_iso=evaluated_at),
+        now_iso=evaluated_at,
     )
     if wait is None:
         return []
