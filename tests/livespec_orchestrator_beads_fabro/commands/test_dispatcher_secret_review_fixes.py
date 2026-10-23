@@ -219,6 +219,13 @@ def test_factory_authentication_precedes_vault_materialization(
         ),
         acp_nodes=None,
         fabro_factory_name="candidate",
+        # That factory's declared catalog environment, which keys the overlay's
+        # env table. None is a factory declaring none and is the neutral answer
+        # here for the same reason the image source below is: this case is about
+        # the ORDER of the factory login against the first vault store, and a
+        # double missing the field fails on its absence rather than on that
+        # order (bd-ib-kyeor4).
+        fabro_factory_environment=None,
         # The resolved client build the dispatch hands the materializer, which
         # decides how the written config names its graph. None is the pinned
         # posture and the neutral one for this case: it is about the ORDER of

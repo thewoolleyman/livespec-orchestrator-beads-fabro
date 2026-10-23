@@ -45,10 +45,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_conformance_premises import (
     emit_conformance_premise_notices,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
-    read_dispatch_comments,
-    read_dispatch_labels,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_id_journal import (
     DispatchJournalIdentity,
     append_dispatch_id_record,
@@ -61,6 +57,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import Gi
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
+    read_dispatch_comments,
+    read_dispatch_labels,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_materialize import (
     MaterializationRefusal,

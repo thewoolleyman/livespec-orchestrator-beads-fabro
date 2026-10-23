@@ -1,4 +1,14 @@
-"""Credential and sandbox sibling-clone preparation for the Dispatcher."""
+"""Credential and sandbox sibling-clone preparation for the Dispatcher.
+
+`read_dispatch_comments` and `read_dispatch_labels` now LIVE in
+`_dispatcher_item_ledger_reads`. They were always guests here: this module
+PROJECTS credentials and sibling clones into a sandbox overlay, while those two
+read the dispatched work-item's own ledger record. They moved out by COHESION
+when the factory-environment env-table keying below needed room under this
+file's LLOC ceiling (bd-ib-kyeor4), and deliberately left NO re-export shim
+behind — a shim would have bought none of the room the split was for, and every
+caller imports from the module that owns them.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +21,6 @@ from typing import cast
 
 from livespec_runtime.github_auth.errors import GithubAppAuthError
 
-from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._config import (
     dispatcher_block,
 )
@@ -35,7 +44,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_write import (
     write_routed_overlay,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     cc_otel_overlay_env,
     render_run_config_overlay,
@@ -72,82 +80,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones impor
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_client import overlay_graph_reference
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
-from livespec_orchestrator_beads_fabro.errors import (
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-)
-from livespec_orchestrator_beads_fabro.store import (
-    WorkItemComment,
-    read_work_item_comments,
-)
-from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "fetch_fleet_manifest_text",
     "materialize_overlay",
-    "read_dispatch_comments",
-    "read_dispatch_labels",
     "resolve_sibling_clones",
 ]
 
 _GITHUB_TOKEN_ENV = GITHUB_TOKEN_ENV_VAR  # single-sourced from _dispatcher_io
-_LEDGER_READ_ERRORS = (
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-)
-
-
-def read_dispatch_comments(
-    *,
-    repo: Path,
-    item: WorkItem,
-) -> tuple[WorkItemComment, ...] | str:
-    """Read the item's ledger comments for the goal; error string on failure.
-
-    Comments are operator riders appended after filing (e.g.
-    pre-authorizations); a brief without them silently re-creates bn4
-    finding (c), so a failed read REFUSES the dispatch (error-as-data,
-    routed at the `ledger-comments` stage) instead of proceeding
-    comment-blind.
-    """
-    comments = attempt(
-        action=lambda: read_work_item_comments(path=store_config(repo=repo), work_item_id=item.id),
-        exceptions=_LEDGER_READ_ERRORS,
-    )
-    if isinstance(comments, AttemptFailure):
-        return (
-            f"ledger comments read failed for {item.id} "
-            f"({type(comments.error).__name__}: {comments.error})"
-        )
-    return comments
-
-
-def read_dispatch_labels(
-    *,
-    repo: Path,
-    item: WorkItem,
-) -> tuple[str, ...] | str:
-    """Read raw beads labels that carry per-item dispatcher policy overrides."""
-    record = attempt(
-        action=lambda: make_beads_client(config=store_config(repo=repo)).show_issue(
-            issue_id=item.id
-        ),
-        exceptions=_LEDGER_READ_ERRORS,
-    )
-    if isinstance(record, AttemptFailure):
-        return (
-            f"ledger label read failed for {item.id} "
-            f"({type(record.error).__name__}: {record.error})"
-        )
-    labels = record.get("labels")
-    if not isinstance(labels, list):
-        return ()
-    raw_labels = cast("list[object]", labels)
-    return tuple(label for label in raw_labels if isinstance(label, str))
 
 
 def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materializer; each argument is an independent projection input, matching `render_run_config_overlay` it feeds, and each return is one PRE-LAUNCH REFUSAL (credential env, App token mint, sibling clones, Codex projection, proof-credential mint, unmaterializable config) that names its own cause to the operator; collapsing any two would report the wrong one.
@@ -185,6 +125,12 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     # posture — the implicit single-factory name, and no vault — so a caller that
     # wires neither renders exactly the inline overlay it always did.
     factory_name: str = "default",
+    # That same factory's declared CATALOG ENVIRONMENT, which is the environment
+    # the run intent selects and therefore the only id under which the engine
+    # reads this overlay's env table. None is a factory that declares none —
+    # the pinned-engine posture, where the committed `[run.environment]` id is
+    # both the committed and the selected environment (bd-ib-kyeor4).
+    factory_environment: str | None = None,
     secret_sink: VaultSecretSink | None = None,
     # WHERE this dispatch's sandbox image comes from, as the plan resolved it.
     # The default is the pinned-engine posture — no catalog environment and no
@@ -368,6 +314,13 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # invisible, because both reads produce a well-formed image
         # (bd-ib-jy7fuh).
         sandbox_image=sandbox_image,
+        # The SAME `factory_environment_id` projection the `fabro run
+        # --environment` argument is rendered from, forwarded rather than
+        # re-resolved here: the run intent selects that environment and the
+        # engine reads this overlay's env table under no other id, so a second
+        # resolution could key the table away from the environment the launch
+        # selected with nothing announcing it (bd-ib-kyeor4).
+        factory_environment=factory_environment,
         # The per-dispatch payload's rendered graph, carrying this dispatch's
         # resolved node timeouts as literal durations, NAMED as the client that
         # collects it can resolve it.

@@ -177,6 +177,13 @@ def materialize_dispatch_overlay(*, overlay: DispatchOverlay) -> str | None:
         # contract gives: a credential stored in one server's vault while the run
         # launched against another's resolves to nothing.
         factory_name=plan.fabro_factory_name,
+        # And that factory's declared CATALOG ENVIRONMENT, read off the SAME
+        # plan field `fabro run --environment` is rendered from. The engine
+        # reads an overlay's env table only under the environment the run
+        # intent selected, so this is what keys it; a second resolution here
+        # could key it away from the environment the launch names, and both
+        # readings would be well-formed (bd-ib-kyeor4).
+        factory_environment=plan.fabro_factory_environment,
         secret_sink=overlay.secret_sink,
         # WHERE this dispatch's sandbox image comes from, read off the plan's
         # single resolution for the same resolve-once reason the integration
