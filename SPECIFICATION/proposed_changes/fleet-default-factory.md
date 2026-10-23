@@ -282,3 +282,42 @@ Scenario: An undeclared fleet default wins overflow selection
   And the admission claim stamp, the submitted run and the dispatch-factory record all name "petri"
   And the capacity reads refuse, defer, hold and count nothing
 ```
+
+**Amendment after independent review (gpt-6-astra round 7, BLOCKERS 2): one structural rule in place of per-surface patches**
+
+15. The resolved fleet default is an IMPLICITLY DECLARED factory. Add to §"Factory addresses resolved from a host registry", after amendment 10's scope paragraph:
+
+"When a repository's `dispatcher.default_factory` is `fleet`, the factory the registry's fleet default names is an IMPLICITLY DECLARED factory of that repository: every rule of this specification that refers to a factory declared under `dispatcher.factories`, to a declared factory or its declared server target, or to a factory name `dispatcher.factories` declares MUST treat it as a declared, registry-backed entry of that name, whose client settings resolve as this section states. A factory a repository's dispatch-factory record names because a dispatch reached it through `fleet`, a RECORDED-TARGET factory, is treated the same way while that repository has a non-closed item whose dispatch-factory record names it, so an earlier fleet default keeps its declared standing for as long as any work recorded on it can still be resumed, recovered or observed. Exactly two rules are excepted and still require a committed `dispatcher.factories` entry: an explicit selection (`--factory`, or a set and non-empty `LIVESPEC_FABRO_FACTORY`), and an entry of `dispatcher.overflow_factories`."
+
+Amendments 12 and 14 become instances of this rule. Their restrictions "for OBSERVATION and RECOVERY of a recorded run, and for no other purpose" and "This is the only selection purpose for which an undeclared factory is read" are struck. Their concrete edits (Stranded claim release run state and hold reason 1, the host-concurrency overflow read, and the whole-paired-sentence instruction) stand as consequences of this rule. A recorded-target factory the registry no longer resolves is reported unobservable on every surface, naming it and the registry path, exactly as amendment 12 states.
+
+Two consequences are stated explicitly, because their current text otherwise contradicts the rule:
+
+- §"Factory-configurable ACP fallback priority", availability participation: "The participating factory instances are every factory declared under `dispatcher.factories`; each Dispatcher MUST read availability evidence from every declared factory" reads "The participating factory instances are every factory declared under `dispatcher.factories`, every implicitly declared factory (§\"Factory addresses resolved from a host registry\"), and every recorded-target factory; each Dispatcher MUST read availability evidence from every participating factory". A participating factory whose evidence cannot be read has the existing unavailable-evidence treatment, and recording, confirmation and clearance stay on the originating factory, unchanged.
+- §"Sandbox image enumeration", Repositories: "A repository whose committed `dispatcher.factories` declares no entry of the named factory MUST be reported with source `factory_undeclared` and no image" reads "A repository that neither declares the named factory in its committed `dispatcher.factories` nor has it as an implicitly declared or recorded-target factory MUST be reported with source `factory_undeclared` and no image". For an implicitly declared factory the entries are decided by the same resolution functions dispatch calls, so a registry-supplied catalog environment, or a committed per-key override of it, is reported exactly as dispatch would use it.
+
+Amend SPECIFICATION/scenarios.md Scenario 212 (heading unchanged), case "An undeclared factory is a successful report": its Given line reads "Given repository R does not declare factory F, F is not R's resolved fleet default, and no non-closed item of R records F".
+
+Add to Scenario 241:
+
+```gherkin
+Scenario: A first fresh dispatch to an undeclared fleet default honours another repository's hold there
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri", which this repository does not declare and has never dispatched to
+  And another repository's run on "petri" recorded a live domain hold covering this node's only eligible candidate's provider allowance
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the Dispatcher reads availability evidence from "petri"
+  And it does not select the held candidate
+
+Scenario: Moving the fleet default keeps the old factory's evidence while work recorded there is open
+  Given dispatcher.default_factory is "fleet" and an open item of this repository records "petri", reached through the fleet default
+  And the registry's default has since moved to "next"
+  And a live hold is recorded on "petri"
+  When any item is dispatched
+  Then the Dispatcher reads availability evidence from both "next" and "petri"
+
+Scenario: Sandbox image enumeration reports an undeclared fleet default's registry environment
+  Given repository R's dispatcher.default_factory is "fleet", the registry's default is "petri", R does not declare "petri", and the registry gives "petri" the catalog environment "E"
+  When the sandbox-images command runs for "petri" and R
+  Then it reports source catalog_environment with environment "E" naming R, not factory_undeclared
+  And when R's committed "petri" entry declares the environment "E2", it reports "E2"
+```
