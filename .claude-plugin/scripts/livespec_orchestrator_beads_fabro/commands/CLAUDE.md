@@ -1585,6 +1585,21 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `agent.acp.started`. An unreadable occurrence instant mints NOTHING rather
   than substituting a clock — the one substitution "never from ingestion"
   forbids outright.
+  THE JOURNAL ROW BESIDE IT IS WRITTEN FOR EVERY ENDING — "Every probe turn is
+  journaled with the candidate identity, outcome, occurrence time and, where
+  observable, its cost" — and the BREADTH is the part an implementation
+  narrows: a row written only on refusal makes the measurement that found a
+  provider HEALTHY invisible, which is exactly what an operator asks while a
+  chain is waiting, and an absent row reads downstream as a probe nobody ran.
+  One stage with the ending as a field, so a fold over the journal asks a
+  single question. "Where observable" is about the MEASUREMENT and not about
+  the key: the row carries an explicit null beside a stated flag, because an
+  omitted key is what a row from a build predating cost looks like and zero is
+  a measured figure. `confirmed` is DERIVED through `probe_confirms` rather
+  than compared, so the journal and the filter cannot disagree about an
+  ending. And the observation ids it names are PROVENANCE — what the probe was
+  FOR — never a claim about what it cleared, which `retired_by_success` derives
+  from the attempt's own instant.
 - The FACTORY-NATIVE OPERATOR CLEARANCE of the same paragraph's "an operator
   clearance by a minimal factory-native record whose recorded outcome carries
   the clearance's exact identity, actor, time, and reason" (`bd-ib-dtfv2p`,

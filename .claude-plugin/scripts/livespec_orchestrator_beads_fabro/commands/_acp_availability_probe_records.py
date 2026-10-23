@@ -56,12 +56,21 @@ else to compute one from; this module passes that refusal through as `None`
 rather than substituting a clock, which is the one substitution the clause's
 "never from ingestion" forbids outright.
 
-THE JOURNAL ROW THIS MODULE WILL ALSO OWN is the other half of the same
-clause -- "Every probe turn is journaled with the candidate identity, outcome,
-occurrence time and, where observable, its cost" -- and it is a separate
-concern from the hold: it is written for EVERY ending, including the five that
-mint nothing and the one that confirms, because a row written only on refusal
-would make the measurement that found a provider HEALTHY invisible.
+THE JOURNAL ROW IS WRITTEN FOR EVERY ENDING, which is the other half of the
+same clause -- "Every probe turn is journaled with the candidate identity,
+outcome, occurrence time and, where observable, its cost" -- and the breadth is
+the part an implementation narrows. A row written only on refusal makes the
+measurement that found a provider HEALTHY invisible, which is exactly what an
+operator asks while a chain is waiting, and an absent row reads downstream as a
+probe nobody ran. So the five endings that mint nothing and the one that
+confirms are all recorded, under one stage, with the ending itself as a field.
+
+"WHERE OBSERVABLE" IS A STATEMENT ABOUT THE MEASUREMENT AND NOT ABOUT THE KEY.
+The engine reports no cost figure on many runs, so the row carries an explicit
+null beside a stated observability flag rather than omitting the key: an
+omitted key is what a row from a build predating cost looks like, and the
+repository's own cost gate is fail-closed on exactly that distinction. Zero is
+a MEASURED figure and reads as observable.
 """
 
 from __future__ import annotations
@@ -74,6 +83,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_availability_probe import (
 from livespec_orchestrator_beads_fabro.commands._acp_availability_probe_outcome import (
     PROBE_REFUSED,
     AcpProbeObservation,
+    probe_confirms,
     probe_ending,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
@@ -88,13 +98,21 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_class
 
 __all__: list[str] = [
     "PROBE_EVIDENCE_KIND",
+    "PROBE_JOURNAL_STAGE",
     "probe_eligible_failure",
     "probe_hold_record",
+    "probe_journal_record",
 ]
 
 # The closed-set evidence kind a refused confirmation turn is admitted under.
 # See the module docstring for why it is this one and not a new member.
 PROBE_EVIDENCE_KIND = "candidate-attempt"
+
+# The ONE journal stage every confirmation turn is recorded under, whatever it
+# ended as. One stage rather than one per ending, so a reader folding the
+# journal for "every probe of this account" asks a single question and reads the
+# ending off a field -- the same shape `HOLD_STAGE` takes for observations.
+PROBE_JOURNAL_STAGE = "acp-availability-confirmation"
 
 
 def probe_eligible_failure(
@@ -161,3 +179,53 @@ def probe_hold_record(
         node=AVAILABILITY_PROBE_NODE,
     )
     return None if isinstance(built, str) else built
+
+
+def probe_journal_record(  # noqa: PLR0913 — kw-only record fields, each one of the four the clause enumerates or one half of the run identity it is recorded against; grouping any pair into a carrier would invent a relationship the row does not have.
+    *,
+    candidate: AcpCandidate,
+    ending: str,
+    occurred_at: str,
+    factory: str,
+    run_id: str | None,
+    cost_usd_micros: int | None,
+    observation_ids: tuple[str, ...] = (),
+) -> dict[str, object]:
+    """The one journal row this confirmation turn is recorded as.
+
+    Total: every ending produces a row. `confirmed` is derived through
+    `probe_confirms` rather than compared here, so the journal and the filter
+    cannot disagree about whether an ending confirmed -- the failure mode being
+    a row that reads `confirmed: true` beside a candidate the filter skipped.
+
+    `observation_ids` are the expired records this probe was run to satisfy, and
+    they are PROVENANCE rather than a decision. Which records a successful
+    confirmation actually satisfies is derived by `retired_by_success` from the
+    attempt's own instant, so the row says what the probe was FOR and never
+    what it cleared -- a row claiming the latter could not know which records
+    expired while the probe ran.
+
+    The identity is rendered field by field rather than as one joined key,
+    because a domain hold is scoped by the availability key ALONE and a query
+    for "every probe that spent this account" must not have to take a pair
+    apart to ask it. An identity-less candidate -- which
+    `availability_probe_refusal` refuses before any run exists -- contributes
+    nulls rather than an invented entitlement, because a row naming an
+    entitlement nobody declared reads host-wide as evidence about it.
+    """
+    identity = candidate.identity
+    return {
+        "stage": PROBE_JOURNAL_STAGE,
+        "availability_key": None if identity is None else identity.availability_key,
+        "candidate_key": None if identity is None else identity.candidate_key,
+        "display_name": None if identity is None else identity.display_name,
+        "node": AVAILABILITY_PROBE_NODE,
+        "outcome": ending,
+        "confirmed": probe_confirms(ending=ending),
+        "occurred_at": occurred_at,
+        "factory": factory,
+        "run_id": run_id,
+        "cost_usd_micros": cost_usd_micros,
+        "cost_observable": cost_usd_micros is not None,
+        "satisfies_observation_ids": list(observation_ids),
+    }
