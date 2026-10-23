@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.240.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.239.3...v0.240.0) (2026-10-23)
+
+
+### Features
+
+* a registry-backed factory takes its client settings from the registry ([4e67085](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4e6708552aed21f878a8656912fd48c97a4ade0c))
+* a repository naming the fleet default resolves it from the factory registry ([0f6c2b4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0f6c2b4261e2488ad15e3c76d823ef1537909129))
+
+
+### Bug Fixes
+
+* a client-setting refusal names the source that supplied the value ([e3c9ab6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e3c9ab6c39fa696bcc502f5f018555e177f63f53))
+
 ## [0.239.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.239.2...v0.239.3) (2026-10-23)
 
 
