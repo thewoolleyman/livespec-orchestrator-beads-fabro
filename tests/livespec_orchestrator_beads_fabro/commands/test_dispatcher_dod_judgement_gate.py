@@ -57,6 +57,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
     dod_gate_prompt_path,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
+    unjudged_governing_heading,
+)
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -208,6 +211,18 @@ def _judge(
     stage: str = STAGE_PRE_ADMISSION,
     item: WorkItem | None = None,
 ) -> DodJudgementDecision:
+    """One taking, with the spec-stated component held out of the measurement.
+
+    Every `runner.calls` reading in this module is about the RUBRIC judge: the
+    caps these cases assert are "the judgement was not run again" and "no second
+    comment was appended", and since `bd-ib-m76p2n` a taking also consults the
+    spec-stated judgement for its governing-heading verdict. That component is a
+    second model call through the same runner, so leaving it in would make every
+    count here a sum of two spends and a reuse that stopped working would still
+    read as a plausible number. It is covered on its own by
+    `test_dod_governing_heading_gate.py`, where it is the subject rather than a
+    term.
+    """
     return judge_definition_of_done(
         item=_item() if item is None else item,
         repo=_repo(tmp_path=tmp_path),
@@ -216,6 +231,7 @@ def _judge(
         append=ledger.append,
         runner=runner,
         payload_root=_payload(tmp_path=tmp_path),
+        governing_heading=unjudged_governing_heading,
     )
 
 
@@ -325,6 +341,7 @@ def test_the_store_bound_entry_reads_and_appends_through_the_ledger(tmp_path: Pa
         stage=STAGE_PRE_ADMISSION,
         runner=runner,
         payload_root=_payload(tmp_path=tmp_path),
+        governing_heading=unjudged_governing_heading,
     )
 
     assert decision.outcome == JUDGEMENT_HELD
@@ -337,6 +354,7 @@ def test_the_store_bound_entry_reads_and_appends_through_the_ledger(tmp_path: Pa
         stage=STAGE_PRE_ADMISSION,
         runner=runner,
         payload_root=_payload(tmp_path=tmp_path),
+        governing_heading=unjudged_governing_heading,
     )
     assert reused.reused is True
     assert runner.calls == 1

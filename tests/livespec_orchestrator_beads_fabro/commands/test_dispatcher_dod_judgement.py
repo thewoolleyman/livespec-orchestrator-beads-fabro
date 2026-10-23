@@ -236,3 +236,51 @@ def test_subject_carries_the_goal_fields_the_rubric_grades(tmp_path: Path) -> No
     assert "livespec-dod-judgement-unavailable" not in rendered
     assert "feat/bd-ib-7f66ar" not in subject
     assert judgement.judgement_subject(item=item, cwd=tmp_path, comments=(rider,)) == subject
+
+
+def test_the_ratified_spec_identity_moves_with_the_tree_and_names_an_unreadable_one(
+    tmp_path: Path,
+) -> None:
+    """The half of the reuse digest an item's own text cannot see.
+
+    Since `bd-ib-m76p2n` the governing-heading verdict is a reading of the WHOLE
+    ratified tree, so a scenario the item cites NOWHERE can become the clause
+    that governs it. The subject carries only the bodies of the headings the
+    reference line names, so the tree's own identity is what retires a verdict
+    across that change.
+
+    The unreadable arm answers a SELF-DESCRIBING word rather than the digest of
+    nothing, because an empty digest reads as a tree that exists and is empty —
+    which would make every unreadable reading agree with every other one and
+    reuse a verdict across a change nobody could see. It is reached with a
+    DIRECTORY named like a spec file rather than by clearing mode bits: this
+    suite runs as root, which bypasses them, so a `chmod` fixture reads
+    successfully and the case passes against an implementation with no
+    read-failure arm at all.
+    """
+    module_path = (
+        Path(__file__).parents[3]
+        / ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands"
+        / "_dispatcher_dod_judgement.py"
+    )
+    assert module_path.is_file()
+    judgement = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement"
+    )
+    spec = tmp_path / "SPECIFICATION"
+    spec.mkdir()
+    scenarios = spec / "scenarios.md"
+    _ = scenarios.write_text("## Scenario 1 — One\n\nBody.\n", encoding="utf-8")
+
+    before = judgement.spec_tree_identity(cwd=tmp_path)
+    _ = scenarios.write_text(
+        "## Scenario 1 — One\n\nBody.\n\n## Scenario 2 — Two\n\nAdded.\n", encoding="utf-8"
+    )
+    after = judgement.spec_tree_identity(cwd=tmp_path)
+
+    assert before != after
+    assert judgement.spec_tree_identity(cwd=tmp_path / "absent") == "unreadable"
+
+    (spec / "unreadable.md").mkdir()
+
+    assert judgement.spec_tree_identity(cwd=tmp_path) == "unreadable"

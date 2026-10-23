@@ -31,9 +31,13 @@ from livespec_orchestrator_beads_fabro._store_comments import (
     append_work_item_comment,
     read_work_item_comments,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    definition_of_done,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_HELD,
     JUDGEMENT_UNAVAILABLE,
+    DodJudgement,
     first_remedy,
     judgement_subject_digest,
     rubric_digest,
@@ -49,6 +53,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
     CAUSE_PROMPT_UNREADABLE,
     judgement_rubric,
     run_dod_judgement,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    GoverningHeadingVerdict,
+    governing_heading_findings,
+)
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
+    GoverningHeadingReader,
+    host_governing_heading_reader,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
@@ -117,6 +130,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
     append: Callable[..., None],
     runner: CommandRunner | None = None,
     payload_root: Path | None = None,
+    governing_heading: GoverningHeadingReader | None = None,
 ) -> DodJudgementDecision:
     """Reuse the recorded verdict, else take the judgement and record it.
 
@@ -133,6 +147,16 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
     unreadable rubric records a did-not-run with that cause and takes no
     judgement, which is the behaviour this module had when it read the file one
     layer down.
+
+    THE SPEC-STATED JUDGEMENT IS TAKEN ONLY AFTER THE REUSE READ HAS FAILED,
+    which is the same cheap-first order the rubric call sits in and matters for
+    the same reason: it is a second model call over a prompt carrying the whole
+    ratified tree, so taking it before the reuse read would spend it on every
+    item of every pass that changed nothing. `governing_heading` defaults to
+    this host's own reader rather than to the absent one, because a gate that
+    silently took no spec-stated judgement would report a clean citation for an
+    item whose reference line governs nothing — the fail-open direction the
+    hygiene listing needs and the one a refusing wall must not have.
     """
     rubric = judgement_rubric(payload_root=payload_root)
     digest = judgement_subject_digest(item=item, cwd=repo, comments=comments)
@@ -154,13 +178,24 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
         return DodJudgementDecision(
             work_item_id=item.id, outcome=reused.outcome, findings=reused.findings, reused=True
         )
-    verdict = run_dod_judgement(
+    reader = (
+        host_governing_heading_reader(runner=ShellCommandRunner() if runner is None else runner)
+        if governing_heading is None
+        else governing_heading
+    )
+    governing = reader(item=item, repo=repo)
+    verdict = _with_governing_findings(
         item=item,
-        cwd=repo,
-        comments=comments,
-        rubric=rubric,
-        runner=runner,
-        payload_root=payload_root,
+        verdict=run_dod_judgement(
+            item=item,
+            cwd=repo,
+            comments=comments,
+            rubric=rubric,
+            runner=runner,
+            payload_root=payload_root,
+            governing=governing,
+        ),
+        governing=governing,
     )
     if verdict.outcome == JUDGEMENT_UNAVAILABLE:
         return _unavailable(
@@ -179,6 +214,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
             digest=digest,
             rubric_digest=rubric_bytes_digest,
             judgement=verdict,
+            governing=governing,
         )
     )
     return DodJudgementDecision(
@@ -186,7 +222,37 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
     )
 
 
-def judge_item_definition_of_done(
+def _with_governing_findings(
+    *, item: WorkItem, verdict: DodJudgement, governing: GoverningHeadingVerdict | None
+) -> DodJudgement:
+    """The rubric's verdict, with the governing-heading verdict's findings folded in.
+
+    The spec-stated judgement is a COMPONENT rather than a replacement, so the
+    rubric's own findings are kept in full and the mechanical ones are APPENDED:
+    an item whose citation does not govern is held whatever the rubric made of
+    the rest, and an item the rubric already holds keeps every remedy it named.
+
+    A judgement that DID NOT RUN is returned untouched, and that is the one arm
+    worth reading twice. Such a verdict records that nothing was decided, so
+    attaching a finding to it would publish a hold the gate is about to report
+    as an outage — a did-not-run record carrying remedies an operator would act
+    on while the judgement that was supposed to produce them never happened.
+    """
+    if verdict.outcome == JUDGEMENT_UNAVAILABLE:
+        return verdict
+    findings = governing_heading_findings(
+        item=item,
+        section=definition_of_done(description=item.description),
+        verdict=governing,
+    )
+    if not findings:
+        return verdict
+    return DodJudgement(
+        outcome=JUDGEMENT_HELD, findings=verdict.findings + findings, cause=verdict.cause
+    )
+
+
+def judge_item_definition_of_done(  # noqa: PLR0913 - each argument is an independent seam input.
     *,
     item: WorkItem,
     repo: Path,
@@ -194,6 +260,7 @@ def judge_item_definition_of_done(
     stage: str,
     runner: CommandRunner | None = None,
     payload_root: Path | None = None,
+    governing_heading: GoverningHeadingReader | None = None,
 ) -> DodJudgementDecision:
     """The decision above, bound to this item's own ledger comment sidecar.
 
@@ -220,6 +287,7 @@ def judge_item_definition_of_done(
         append=append,
         runner=runner,
         payload_root=payload_root,
+        governing_heading=governing_heading,
     )
 
 
