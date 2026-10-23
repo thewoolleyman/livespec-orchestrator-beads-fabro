@@ -359,3 +359,28 @@ Scenario Outline: The committed-declaration exceptions still refuse an implicitl
     | a set LIVESPEC_FABRO_FACTORY         |
     | an entry of dispatcher.overflow_factories |
 ```
+
+**Amendment after independent review (gpt-6-astra round 9, BLOCKERS 1):**
+
+17. An unresolvable recorded-target factory stays in availability participation. Amendment 16's availability sentence ("and every recorded-target factory the registry still resolves", and the sentence after it) is struck. Amendment 15's availability consequence stands as written: every recorded-target factory participates. A participating factory whose evidence cannot be read, including a recorded-target factory the registry no longer resolves, has the existing unavailable-evidence treatment: the failed read is surfaced, unavailable evidence is not an empty hold set, and a candidate is not confirmed unheld on evidence that excludes it. Losing a factory's address does not retire a hold recorded there. This proposal adds no other way for a recorded-target factory to leave participation; its holds retire only through the confirmations and operator clearances that section already defines.
+
+Amendment 15's Scenario 212 Given line reads instead: "Given repository R does not declare factory F, F is not R's resolved fleet default, and F has no recorded-target standing for R".
+
+Add to Scenario 241:
+
+```gherkin
+Scenario: A hold on an old fleet default still binds after the registry stops resolving it
+  Given dispatcher.default_factory is "fleet" and an earlier dispatch of this repository reached "petri" through the fleet default
+  And a live domain hold covering credential "C" is recorded on "petri"
+  And the registry's default has since moved to "next", whose node candidate uses credential "C"
+  And the registry no longer has a "petri" entry
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the Dispatcher surfaces that availability evidence from "petri" could not be read
+  And it does not treat the candidate using "C" as unheld on evidence that excludes "petri"
+
+Scenario: A superseded fleet-derived dispatch keeps the factory surveyed
+  Given an item whose first dispatch reached "petri" through the fleet default and whose later dispatch reached "next"
+  And only the dispatch journal still records the "petri" dispatch
+  When the standalone reconcile-runs sweep runs
+  Then it surveys "petri" as well as "next"
+```
