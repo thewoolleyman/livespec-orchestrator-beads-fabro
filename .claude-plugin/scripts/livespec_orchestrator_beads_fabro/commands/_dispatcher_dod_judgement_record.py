@@ -214,21 +214,35 @@ def did_not_run_comment(
 def reusable_verdict(
     *, comments: Sequence[str], digest: str, rubric_digest: str
 ) -> RecordedJudgement | None:
-    """The most recent TAKEN verdict, when BOTH digests still equal these.
+    """The EARLIEST TAKEN verdict whose two digests both equal these.
 
-    A did-not-run record is passed over rather than treated as the most recent
-    verdict: it records that no judgement happened, so reading it as one would
-    make an outage permanent — the item would reuse "nothing was decided"
-    forever and the judgement would never run again.
+    THE EARLIEST AND NOT THE NEWEST, which is the reading an implementation
+    falls into and which this one held until `bd-ib-m76p2n`. Scenario 240 says
+    so in as many words — "Reuse selects the earliest record among those
+    matching the current digests" — and the purpose behind it is that "the
+    first verdict on a Definition of Done stands until its text or rubric
+    changes": a subject edited and then RESTORED must come back to the verdict
+    it already had rather than to whichever re-judgement happened in between.
 
-    A record naming no RUBRIC digest is not reusable either, for the reason the
-    module docstring gives about the subject digest: it cannot say which rubric
-    it was taken under, so reusing it is reusing a verdict against rules that may
-    since have changed. Such a record is what every verdict written before the
-    rubric digest existed looks like, so the fail-closed reading retires each of
-    them once rather than honouring them forever.
+    The newest-first walk was wrong in a second, quieter way, and that is the
+    one that cost a model call per pass. It stopped at the newest record, so a
+    timeline whose newest verdict was taken on some OTHER subject reported that
+    NOTHING was reusable — and the item was re-judged every pass, which is the
+    spend the whole rule exists to avoid.
+
+    A did-not-run record is passed over rather than treated as a verdict: it
+    records that no judgement happened, so reading it as one would make an
+    outage permanent — the item would reuse "nothing was decided" forever and
+    the judgement would never run again.
+
+    A record naming no digest is passed over too, and oldest-first that is a
+    SKIP rather than a refusal. Such a record is what every verdict written
+    before these fields existed looks like; it supports no comparison, so it can
+    neither match nor stand in the way, and ending the scan on it — the
+    fail-closed reading of the newest-first walk — would let one pre-digest
+    record permanently retire every verdict recorded after it.
     """
-    for body in reversed(tuple(comments)):
+    for body in comments:
         if comment_marker(body=body) != JUDGEMENT_COMMENT_MARKER:
             continue
         fields = _fields_of(body=body)
@@ -236,9 +250,9 @@ def reusable_verdict(
         recorded_rubric = fields.get(_RUBRIC_DIGEST_FIELD)
         outcome = fields.get(_OUTCOME_FIELD)
         if recorded is None or recorded_rubric is None or outcome is None:
-            return None
+            continue
         if (recorded, recorded_rubric) != (digest, rubric_digest):
-            return None
+            continue
         return RecordedJudgement(
             outcome=outcome,
             digest=recorded,
