@@ -89,6 +89,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_records import (
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 
 __all__: list[str] = [
+    "CONFIRMATION_ENDINGS_FIELD",
     "GOVERNING_CONDITION_PRECEDENCE",
     "UNAVAILABLE_EVIDENCE",
     "AvailabilityWait",
@@ -97,6 +98,11 @@ __all__: list[str] = [
     "availability_wait_delay_seconds",
     "availability_wait_refusal_fields",
 ]
+
+# The refusal field naming the ending each confirmation turn reached. Named
+# rather than spelled at the one call site, so the writer and every reader
+# joining on it cannot drift into two spellings of one key.
+CONFIRMATION_ENDINGS_FIELD = "confirmation_turn_endings"
 
 # The condition a refusal names when no skip on the emptied node named one, and
 # the condition an unavailable evidence source names when it emptied one itself.
@@ -179,6 +185,16 @@ class AvailabilityWait:
     actually recorded. It is `None` on every other condition — including a
     `legacy-provider-hold` whose skip recorded no key — because a blanket whose
     vendor nothing substantiates is one no valve can be pointed at.
+
+    `confirmation_endings` is the ending each CONFIRMATION TURN reached on the
+    named node, and it answers the one question the governing condition cannot:
+    whether the Dispatcher ASKED. A node emptied because no probe seam was
+    supplied and a node emptied because every probe was TERMINATED both render
+    as an outstanding confirmation, and they have different remedies — the
+    first waits out the cadence, the second says the turns are being killed. It
+    is EMPTY when no turn was run, which is deliberately distinct from a turn
+    whose ending happened not to confirm: a filled-in ending would report a
+    measurement nobody took.
     """
 
     node: str | None
@@ -188,6 +204,7 @@ class AvailabilityWait:
     holds: tuple[GoverningHold, ...]
     unobservable_observations: int
     legacy_provider: str | None = None
+    confirmation_endings: tuple[str, ...] = ()
 
 
 def availability_wait(
@@ -235,6 +252,7 @@ def availability_wait(
         holds=governing,
         unobservable_observations=len(verdict.unobservable),
         legacy_provider=_legacy_provider(emptied=emptied),
+        confirmation_endings=_confirmation_endings(emptied=emptied),
     )
 
 
@@ -252,11 +270,17 @@ def availability_wait_refusal_fields(*, wait: AvailabilityWait | None) -> dict[s
     observations "when present" -- an empty list says the question was asked and
     the answer was none, while a missing key is what a record from a build
     predating this decision looks like.
+
+    `CONFIRMATION_ENDINGS_FIELD` is a LIST on the same reasoning: empty says no
+    confirmation turn was run on the named node, which is a different state
+    from a turn that ran and did not confirm, and an absent key would make both
+    indistinguishable from a build that never ran turns at all.
     """
     if wait is None:
         return {}
     return {
         "governing_condition": wait.governing_condition,
+        CONFIRMATION_ENDINGS_FIELD: list(wait.confirmation_endings),
         "admission_required_node": wait.node,
         "admission_required_nodes_lacking_candidate": list(wait.nodes),
         "scheduled_reevaluation_at": wait.reevaluate_at,
@@ -339,6 +363,29 @@ def _legacy_provider(*, emptied: tuple[NodePreflight, ...]) -> str | None:
         if skip.reason == LEGACY_HOLD_SKIP and skip.hold_key is not None
     ]
     return keys[0] if keys else None
+
+
+def _confirmation_endings(*, emptied: tuple[NodePreflight, ...]) -> tuple[str, ...]:
+    """The ending each confirmation turn reached on the FIRST emptied chain.
+
+    Scoped to that one node for the reason `_governing_condition` is: the
+    refusal names ONE admission-required node, and an ending taken from a later
+    node would report a turn that was never run for the named one.
+
+    DEDUPLICATED, IN FIRST-SEEN ORDER. Three candidates whose turns were all
+    terminated are ONE condition rather than three rows of the same word, and
+    the order is the chain's own so a reader sees what the primary did first.
+
+    EMPTY when no turn was run, which the skip records as a `condition` of
+    `None` -- see `AvailabilityWait.confirmation_endings` for why that absence
+    is kept rather than filled in.
+    """
+    found: dict[str, None] = {}
+    for preflight in emptied[:1]:
+        for skip in preflight.skipped:
+            if skip.reason == OUTSTANDING_CONFIRMATION_SKIP and skip.condition is not None:
+                found.setdefault(skip.condition, None)
+    return tuple(found)
 
 
 def _governing_holds(

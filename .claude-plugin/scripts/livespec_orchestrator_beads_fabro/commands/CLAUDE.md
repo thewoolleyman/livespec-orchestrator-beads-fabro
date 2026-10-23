@@ -1645,6 +1645,19 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   typed cause comes to be written onto an ephemeral skip, after which a
   credential merely rate-limited on this host is indistinguishable, downstream,
   from an entitlement the provider revoked.
+  `_acp_availability_wait` gained the OTHER half of the probe clause with it —
+  "If no candidate remains eligible, the Dispatcher MUST retry automatically
+  after `dispatcher.credential_reprobe_interval_seconds`; it MUST NOT
+  busy-loop". The cadence arm was already correct, because an EXPIRED record
+  carries no live expiry for `_reevaluate_at` to take; what was missing was
+  whether the Dispatcher ASKED. A node emptied because no probe seam was
+  supplied and a node emptied because every turn was TERMINATED both rendered
+  as `outstanding-availability-confirmation`, and the remedies differ — the
+  first waits out the cadence, the second says the turns are being killed. So
+  `confirmation_endings` / `CONFIRMATION_ENDINGS_FIELD` names the ending each
+  turn reached on the FIRST emptied node, deduplicated in chain order (three
+  terminated probes are one condition), and is EMPTY when no turn was run,
+  which must not be filled in with a plausible ending.
 - The FACTORY-NATIVE OPERATOR CLEARANCE of the same paragraph's "an operator
   clearance by a minimal factory-native record whose recorded outcome carries
   the clearance's exact identity, actor, time, and reason" (`bd-ib-dtfv2p`,
