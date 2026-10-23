@@ -57,15 +57,20 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "SPEC_CHANGE_TIER_MARKER",
+    "SPEC_CHANGE_TIER_UNAVAILABLE_MARKER",
     "STAGE_DISPATCH",
     "STAGE_FILING",
     "STAGE_GROOM",
     "RecordedSpecChangeTier",
+    "classification_did_not_run_comment",
+    "recorded_did_not_run_causes",
     "recorded_spec_change_tier",
+    "reusable_spec_change_tier",
     "spec_change_tier_comment",
 ]
 
 SPEC_CHANGE_TIER_MARKER = "livespec-spec-change-tier"
+SPEC_CHANGE_TIER_UNAVAILABLE_MARKER = "livespec-spec-change-tier-unavailable"
 
 # The three cadence points the clause names, as self-describing values rather
 # than numbered positions: the record says WHERE the classification happened,
@@ -85,8 +90,19 @@ _LINKED_TOPIC_FIELD = "linked-proposal-topic"
 _SPEC_VERSION_FIELD = "spec-version"
 _DIGEST_FIELD = "behaviour-digest"
 _RATIONALE_FIELD = "rationale"
+# Deliberately NOT the bare `cause`. The did-not-run scan below walks back over
+# whatever comments sit between the newest record and the last taken
+# classification — operator riders among them — and a field name a rider could
+# plausibly carry would let that rider suppress a did-not-run record, hiding a
+# classifier outage behind a comment that has nothing to do with it.
+_CAUSE_FIELD = "spec-change-classification-unavailable-cause"
 _FIELD_SEPARATOR = ": "
 _ABSENT_VALUE = "(none)"
+# What the record says where the judgement was never TAKEN, which is every
+# exempt classification. It is distinct from `(none)` on purpose: that marks a
+# field a taken judgement left empty, and reading the two as one would report an
+# item nobody judged as one judged to name no clause.
+_NOT_TAKEN = "(not taken)"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -129,9 +145,16 @@ def spec_change_tier_comment(
     `partial` verdict that released on its second judgement leaves a reader
     asking which clause the first one named, and the record is the only place
     that answer survives.
+
+    A decision carrying NO verdict — an exempt classification, which owes no
+    judgement — records `(not taken)` rather than an absent or empty field, so a
+    reader can tell "nobody asked the specification about this item" from "the
+    judgement was taken and named no clause".
     """
     verdict = decision.verdict
-    target = _rendered(value=verdict.generalization_target)
+    kind = _NOT_TAKEN if verdict is None else verdict.kind
+    rationale = _NOT_TAKEN if verdict is None else verdict.rationale
+    target = _rendered(value=None if verdict is None else verdict.generalization_target)
     topic = _rendered(value=decision.linked_proposal_topic)
     return "\n".join(
         (
@@ -141,12 +164,12 @@ def spec_change_tier_comment(
             f"{_STAGE_FIELD}{_FIELD_SEPARATOR}{stage}",
             f"{_TIER_FIELD}{_FIELD_SEPARATOR}{decision.tier}",
             f"{_CLASSIFICATION_FIELD}{_FIELD_SEPARATOR}{decision.classification}",
-            f"{_VERDICT_KIND_FIELD}{_FIELD_SEPARATOR}{verdict.kind}",
+            f"{_VERDICT_KIND_FIELD}{_FIELD_SEPARATOR}{kind}",
             f"{_GENERALIZATION_TARGET_FIELD}{_FIELD_SEPARATOR}{target}",
             f"{_LINKED_TOPIC_FIELD}{_FIELD_SEPARATOR}{topic}",
             f"{_SPEC_VERSION_FIELD}{_FIELD_SEPARATOR}{spec_version}",
             f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
-            f"{_RATIONALE_FIELD}{_FIELD_SEPARATOR}{verdict.rationale}",
+            f"{_RATIONALE_FIELD}{_FIELD_SEPARATOR}{rationale}",
         )
     )
 
@@ -169,6 +192,65 @@ def recorded_spec_change_tier(*, comments: Sequence[str]) -> RecordedSpecChangeT
             continue
         return _recorded_from(body=body)
     return None
+
+
+def classification_did_not_run_comment(
+    *, item_id: str, stage: str, spec_version: str, digest: str, cause: str
+) -> str:
+    """The ledger comment recording that the classification did not run, and why.
+
+    The clause requires intake to "record that on the item and route it as it
+    would without the classification", so this record is what makes the absence
+    of a tier legible rather than indistinguishable from an item nobody filed
+    through the gate at all.
+    """
+    return "\n".join(
+        (
+            SPEC_CHANGE_TIER_UNAVAILABLE_MARKER,
+            "",
+            f"The {stage} spec-change-tier classification did not run for this item.",
+            "",
+            f"{_WORK_ITEM_FIELD}{_FIELD_SEPARATOR}{item_id}",
+            f"{_STAGE_FIELD}{_FIELD_SEPARATOR}{stage}",
+            f"{_SPEC_VERSION_FIELD}{_FIELD_SEPARATOR}{spec_version}",
+            f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
+            f"{_CAUSE_FIELD}{_FIELD_SEPARATOR}{cause}",
+        )
+    )
+
+
+def reusable_spec_change_tier(
+    *, comments: Sequence[str], spec_version: str, digest: str
+) -> RecordedSpecChangeTier | None:
+    """The newest recorded classification, when it was taken against THIS pair.
+
+    `None` whenever the newest record names a different specification version or
+    a different behaviour digest, which is the reuse rule the module docstring
+    quotes: such a record is evidence about an item or a specification that no
+    longer exists, so the caller must take the classification again.
+    """
+    recorded = recorded_spec_change_tier(comments=comments)
+    if recorded is None:
+        return None
+    if (recorded.spec_version, recorded.digest) != (spec_version, digest):
+        return None
+    return recorded
+
+
+def recorded_did_not_run_causes(*, comments: Sequence[str]) -> frozenset[str]:
+    """Every did-not-run cause recorded SINCE the classification last ran.
+
+    The walk stops at the first taken classification, because a cause recorded
+    before it describes an outage that classification itself disproves — and
+    letting it suppress a fresh occurrence would silence an item about a
+    classifier that has stopped working.
+    """
+    causes: set[str] = set()
+    for body in reversed(tuple(comments)):
+        if _marker_of(body=body) == SPEC_CHANGE_TIER_MARKER:
+            break
+        causes.add(_fields_of(body=body).get(_CAUSE_FIELD, ""))
+    return frozenset(causes - {""})
 
 
 def _recorded_from(*, body: str) -> RecordedSpecChangeTier | None:
