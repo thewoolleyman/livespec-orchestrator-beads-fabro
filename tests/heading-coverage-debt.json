@@ -471,20 +471,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 27 \u2014 next ranks ready items by rank",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-06-29"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 28 \u2014 append_work_item registers and lands a custom status in two steps",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-06-29"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 29 \u2014 Factory GitHub App token on the dispatch path",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-02"

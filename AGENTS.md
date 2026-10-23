@@ -936,11 +936,17 @@ runs it directly from `~/.fabro/bin/fabro`. Measured 2026-10-01: `hp` runs
 ACP fallback chain (`bd-ib-mujvyn`, fork PR 9) and the in-protocol model and
 effort selection (`bd-ib-afcn3d`, fork PR 10); S7a of plan `bd-ib-jxvgq5`
 (`bd-ib-q32gs5`) deployed it with `fabro.4b8cc85-pre-s7.bak` retained. `vps`
-is a RETIRED factory — its unit has been stopped and disabled since
-2026-09-11 by maintainer direction (`bd-ib-3ysb6k`) and it is absent from
-`.livespec.jsonc` `factories` — but its on-disk `~/.fabro/bin/fabro` was
-re-pinned to the same build (`fabro.977cb67-pre-s7.bak` retained) so the
-Dispatcher's local client matches the hp engine. The `dispatcher.minimum_release`
+is a RETIRED factory in the sense that it is absent from `.livespec.jsonc`
+`factories` (`bd-ib-3ysb6k`, 2026-09-11), so no dispatch is routed to it.
+**Its units are NOT stopped**, although this paragraph said so until
+2026-10-23: measured that day, `fabro-server` and `fabro-server-mi-homelab`
+were both enabled and active since 2026-10-19 13:04 CEST, and both start
+`~/.fabro/bin/fabro`. Since 2026-10-23 that file is declared in
+livespec-dev-tooling's `ansible/inventory/host_vars/vps.yml` as the 0.254.0
+8869e88 web-prod build (sha256 `199407ce…`, byte-identical to hp's legacy
+engine), staged by the `fabro-hosts.yml` play without a restart. So a change
+to that file changes two live servers' engine at their next restart, and the
+host PATH client must not share it (`bd-ib-zb2hso` step 2). The `dispatcher.minimum_release`
 floor and the end-to-end fallback proof are S7b (`bd-ib-jamtsf`). Both builds come from
 **`factory-integration`** — the ONE standing branch in our fork
 (`thewoolleyman/fabro`) that carries every fabro fix the factory needs but

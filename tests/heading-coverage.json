@@ -506,16 +506,16 @@
     "heading": "## Scenario 27 \u2014 next ranks ready items by rank",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it.",
+    "test": "tests.integration.test_next_rank_ordering_scenario27.test_scenario27_next_returns_ready_candidates_in_rank_order",
+    "reason": "Integration-tier acceptance for the rank ordering authority `next` composes: the tenant is seeded through the real store seam against the in-memory FakeBeadsClient (the hermetic CI backend) and the ordering is read off `next.main`'s own `--json` envelope, so the bound node id asserts the candidate list an operator receives rather than a sort key's return value. The bound node is the heading's first `Then` (ranks \"a2\", \"a0\", \"a1\" come back ranked \"a0\", \"a1\", \"a2\", over ids whose lexicographic order is the exact reverse); the second `Then` (equal-rank ties break by id lexicographic order, seeded so neither insertion order nor the older durable `ready_since` can produce it) is the sibling test in the same module. The aging tier that shares the same key is bound separately by tests.integration.test_ready_aging_tiebreak_scenario123.",
     "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 28 \u2014 append_work_item registers and lands a custom status in two steps",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it.",
+    "test": "tests.integration.test_append_two_step_custom_status_scenario28.test_scenario28_a_file_create_lands_open_then_updates_to_the_custom_backlog_status",
+    "reason": "Integration-tier acceptance for the 2-step custom-status filing: the tenant is provisioned through the store's own `register_custom_statuses` and the item is filed through the real `append_work_item` seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id observes the WRITES rather than the end state, because both heading `Then` clauses are about them and a one-step create landing `backlog` directly would leave an indistinguishable record: a recording overlay delegating to the fake's real write verbs shows the create landing the beads-native `open` and the following update setting the custom `backlog` status. The end state alone stays bound by tests.livespec_orchestrator_beads_fabro.test_store_mutations.test_append_lands_custom_status_via_two_step.",
     "work_item": "bd-ib-heat"
   },
   {
