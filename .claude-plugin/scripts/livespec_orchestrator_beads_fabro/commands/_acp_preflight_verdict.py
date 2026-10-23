@@ -300,8 +300,16 @@ def _graded(
         )
     required = derive_admission_required(graph=graph, start=critical.start)
     assessed: dict[str, str] = {}
+    # ONE confirmation-turn memo for the whole evaluation, beside the credential
+    # one and for a sharper reason: a confirmation turn is a real factory run
+    # spending a real allowance, and the contract lets one entitlement be
+    # "repeated across nodes when that identity is truly shared" -- so a
+    # per-node memo would probe one candidate once per node it appears on.
+    confirmed: dict[str, str] = {}
     preflights = tuple(
-        filter_node_candidates(chain=chains[node], inputs=inputs, assessed=assessed)
+        filter_node_candidates(
+            chain=chains[node], inputs=inputs, assessed=assessed, confirmed=confirmed
+        )
         for node in sorted(chains)
     )
     return AcpPreflightVerdict(
