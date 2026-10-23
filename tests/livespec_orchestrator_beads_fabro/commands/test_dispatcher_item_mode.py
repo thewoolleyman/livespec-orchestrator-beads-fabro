@@ -290,10 +290,19 @@ def test_loop_with_item_dispatches_requested_not_top_ranked(
     assert recording.calls == ["b-2"]
 
 
-def test_dispatch_records_factory_and_retry_reuses_it(
+def test_dispatch_records_its_factory_and_a_later_fresh_dispatch_does_not_reuse_it(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The record is written per dispatch, and a FRESH dispatch does not read it.
+
+    The second invocation names no factory and recovery routing assigns it no
+    resume route, so it is a fresh dispatch — and "a fresh dispatch MUST NOT read
+    the item's recorded factory as a pin", which lands it on this repository's own
+    ambient default rather than back on the factory the first run used. Both halves
+    are asserted together because the WRITE is what makes the read tempting: the
+    record stays, for every surface that locates an item's earlier run through it.
+    """
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item(id="factory-pinned")
     append_work_item(path=_config(), item=item)
@@ -335,8 +344,10 @@ def test_dispatch_records_factory_and_retry_reuses_it(
     comments = read_work_item_comments(path=_config(), work_item_id="factory-pinned")
     assert first_exit == 0
     assert second_exit == 0
-    assert recording.factories == ["remote", "remote"]
-    assert [comment.text for comment in comments].count("livespec-dispatch-factory: remote") == 1
+    assert recording.factories == ["remote", "default"]
+    texts = [comment.text for comment in comments]
+    assert texts.count("livespec-dispatch-factory: remote") == 1
+    assert texts.count("livespec-dispatch-factory: default") == 1
 
 
 def test_loop_dry_run_plans_selection_without_dispatch_or_ledger_mutation(
