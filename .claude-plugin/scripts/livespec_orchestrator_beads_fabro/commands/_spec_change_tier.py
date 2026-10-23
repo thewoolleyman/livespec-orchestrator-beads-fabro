@@ -49,6 +49,7 @@ the hold at a stem that does not exist.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
@@ -67,7 +68,9 @@ __all__: list[str] = [
     "SPEC_CHANGE_TIER",
     "SpecChangeTierDecision",
     "asked_for_behaviour",
+    "behaviour_digest",
     "decide_spec_change_tier",
+    "exempt_decision",
     "proposal_topic_for",
 ]
 
@@ -105,6 +108,14 @@ class SpecChangeTierDecision:
     held item's operator needs the generalization target and the rationale to
     write the proposal, and `tier` alone names neither.
 
+    `verdict` is `None` exactly when NO judgement was taken, which is the whole
+    of what an EXEMPT classification earns: a `bug`, a `chore` and a
+    `non_functional` item "is never spec-change tier" whatever the ratified text
+    says, so asking is spend with no possible effect on the answer. `None` is
+    recorded as such rather than as a plausible verdict, because a synthesized
+    one would read off the item as a judgement that was taken and returned
+    `stated` — which is a claim about the specification nobody made.
+
     `linked_proposal_topic` is `None` exactly for a decision that is not
     spec-change tier. An item nothing holds owes no proposal, and recording a
     topic for it would advertise a deposit nobody should make.
@@ -112,7 +123,7 @@ class SpecChangeTierDecision:
 
     tier: Literal["spec-change", "none"]
     classification: ItemClass
-    verdict: SpecStatedVerdict
+    verdict: SpecStatedVerdict | None
     linked_proposal_topic: str | None
 
     @property
@@ -146,6 +157,20 @@ def asked_for_behaviour(*, item: WorkItem) -> str:
     )
 
 
+def behaviour_digest(*, item: WorkItem) -> str:
+    """The identity of one item's asked-for behaviour, for the reuse condition.
+
+    A verdict is reusable only "while its input ... [is] unchanged since it was
+    taken", and the input of both the classification and the judgement is the
+    statement `asked_for_behaviour` renders — so the digest is taken over THAT
+    text rather than over the fields it is assembled from. A digest of the
+    fields would disagree with the statement the moment the renderer changed,
+    and the disagreement would be invisible: every verdict would read as
+    reusable against a statement nobody had judged.
+    """
+    return hashlib.sha256(asked_for_behaviour(item=item).encode("utf-8")).hexdigest()
+
+
 def decide_spec_change_tier(
     *,
     item: WorkItem,
@@ -174,6 +199,21 @@ def decide_spec_change_tier(
         classification=classification,
         verdict=verdict,
         linked_proposal_topic=linked_proposal_topic or proposal_topic_for(item=item),
+    )
+
+
+def exempt_decision(*, classification: ItemClass) -> SpecChangeTierDecision:
+    """The tier of an item the classification exempts, with NO judgement taken.
+
+    The clause exempts three of the four classes outright, so this is the answer
+    for every one of them — and it is a separate entry point rather than a
+    `verdict=None` arm of `decide_spec_change_tier`, because a decision function
+    accepting an absent verdict would accept one for a FEATURE too, where the
+    verdict is the whole of the decision and its absence would silently release
+    the item.
+    """
+    return SpecChangeTierDecision(
+        tier=NO_TIER, classification=classification, verdict=None, linked_proposal_topic=None
     )
 
 
