@@ -67,6 +67,7 @@ __all__: list[str] = [
     "AnchorNotConfigured",
     "DetectionRun",
     "DetectionRunRecords",
+    "attempt_record_present",
     "completed_coverage_is_claimable",
     "completed_coverage_point",
     "detection_coverage_anchor",
@@ -83,6 +84,7 @@ COMPLETED_MARKER_PREFIX = "livespec-detection-completed: "
 
 _ANCHOR_KEY = "detection_coverage_anchor"
 _OPERATION_FIELD = "operation"
+_SCOPE_FIELD = "scope"
 _COVERAGE_POINT_FIELD = "coverage_point"
 
 
@@ -241,19 +243,8 @@ def completed_coverage_point(
     anchor at record time must fail loudly at the caller's supervisor boundary,
     because silently swallowing it would drop the record the contract requires.
     """
-    if anchor is None or anchor.strip() == "":
-        return None
-    comments = attempt(
-        action=lambda: read_work_item_comments(path=path, work_item_id=anchor),
-        exceptions=(BeadsMappingError,),
-    )
-    if isinstance(comments, AttemptFailure):
-        return None
     point: str | None = None
-    for comment in comments:
-        if not comment.text.startswith(COMPLETED_MARKER_PREFIX):
-            continue
-        fields = _decode(payload=comment.text.removeprefix(COMPLETED_MARKER_PREFIX))
+    for fields in _anchor_records(path=path, anchor=anchor, prefix=COMPLETED_MARKER_PREFIX):
         if fields.get(_OPERATION_FIELD) != operation:
             continue
         recorded = fields.get(_COVERAGE_POINT_FIELD)
@@ -262,10 +253,74 @@ def completed_coverage_point(
     return point
 
 
+def attempt_record_present(
+    *,
+    path: StoreConfig,
+    anchor: str | None,
+    operation: str,
+    scope: str,
+) -> bool:
+    """Whether an ATTEMPT record for `operation` over exactly `scope` is on record.
+
+    The question a caller asks before re-recording a state that cannot have
+    changed since it last recorded it. `bd comments` offers neither edit nor
+    delete, so a record appended once per tick of a ten-minute timer is
+    permanent noise; a caller able to recognise its own previous record can
+    write that record once instead.
+
+    MATCHED ON THE DECLARED SCOPE, and on nothing else the record carries. The
+    scope is what a record is a record OF, and it is the only field that is
+    identical across two invocations describing one unchanged repository state:
+    an invoker differs between the host timer and an operator, and an outcome
+    is the very thing a caller de-duplicating an inert state is disputing. So a
+    caller matches against a scope string it WRITES verbatim rather than
+    against a shape it has to reconstruct.
+
+    FAIL-SOFT EXACTLY AS THE COMPLETED READ ABOVE IS, and in the same
+    direction: an absent anchor, or comments this cannot read, answers False,
+    so the caller RECORDS rather than skips. The opposite default would let one
+    blinded read suppress the record the contract does owe, which is the
+    expensive direction — a suppressed record is permanent in the same way an
+    appended one is.
+    """
+    return any(
+        fields.get(_OPERATION_FIELD) == operation and fields.get(_SCOPE_FIELD) == scope
+        for fields in _anchor_records(path=path, anchor=anchor, prefix=ATTEMPT_MARKER_PREFIX)
+    )
+
+
+def _anchor_records(
+    *,
+    path: StoreConfig,
+    anchor: str | None,
+    prefix: str,
+) -> tuple[dict[str, Any], ...]:
+    """Every decoded record of one marker kind on the anchor, oldest first.
+
+    The ONE read behind both public readings above, so the fail-soft rule each
+    of them documents is applied once rather than restated. A second walk of
+    the same comments would be a second place for that rule to be got wrong,
+    and it would be got wrong silently: both readings would still answer.
+    """
+    if anchor is None or anchor.strip() == "":
+        return ()
+    comments = attempt(
+        action=lambda: read_work_item_comments(path=path, work_item_id=anchor),
+        exceptions=(BeadsMappingError,),
+    )
+    if isinstance(comments, AttemptFailure):
+        return ()
+    return tuple(
+        _decode(payload=comment.text.removeprefix(prefix))
+        for comment in comments
+        if comment.text.startswith(prefix)
+    )
+
+
 def _attempt_fields(*, run: DetectionRun) -> dict[str, Any]:
     return {
         _OPERATION_FIELD: run.operation,
-        "scope": run.scope,
+        _SCOPE_FIELD: run.scope,
         "invoker": run.invoker,
         "outcome": run.outcome,
         "exit_code": run.exit_code,
@@ -278,7 +333,7 @@ def _completed_fields(*, run: DetectionRun) -> dict[str, Any]:
     return {
         _OPERATION_FIELD: run.operation,
         _COVERAGE_POINT_FIELD: run.coverage_point,
-        "scope": run.scope,
+        _SCOPE_FIELD: run.scope,
         "invoker": run.invoker,
     }
 
