@@ -321,3 +321,41 @@ Scenario: Sandbox image enumeration reports an undeclared fleet default's regist
   Then it reports source catalog_environment with environment "E" naming R, not factory_undeclared
   And when R's committed "petri" entry declares the environment "E2", it reports "E2"
 ```
+
+**Amendment after independent review (gpt-6-astra round 8, BLOCKERS 1):**
+
+16. A recorded-target factory's standing is durable. In amendment 15's rule, replace "A factory a repository's dispatch-factory record names because a dispatch reached it through `fleet`, a RECORDED-TARGET factory, is treated the same way while that repository has a non-closed item whose dispatch-factory record names it, so an earlier fleet default keeps its declared standing for as long as any work recorded on it can still be resumed, recovered or observed." with:
+
+"A factory that any dispatch of the repository reached through `fleet`, as named by any dispatch-factory record or dispatch journal record of that repository, including one on a closed item and one a later dispatch superseded, is a RECORDED-TARGET factory and is treated the same way. Its standing does not lapse when the items recording it close, because closing a ledger item is not evidence that its run terminated: every reconciliation surface, the standalone `reconcile-runs` sweep included, MUST keep surveying it. A recorded-target factory the registry no longer resolves stays in every survey and is reported unobservable, naming it and the registry path; it is never dropped silently."
+
+In amendment 15's availability consequence, "and every recorded-target factory" reads "and every recorded-target factory the registry still resolves". A recorded-target factory the registry no longer resolves leaves availability participation, because it can receive no new dispatch and holds no evidence a new dispatch could act on.
+
+In the final prose, amendment 12's phrase "it is not declared by this proposal" is struck.
+
+Add to Scenario 241:
+
+```gherkin
+Scenario: The standalone sweep keeps surveying an old fleet default after its last item is hand-closed
+  Given dispatcher.default_factory is "fleet" and an item's dispatch reached "petri" through the fleet default
+  And the registry's default has since moved to "next"
+  And the item is hand-closed while no Dispatcher is alive and its run on "petri" is still non-terminal
+  When the standalone reconcile-runs sweep runs
+  Then it surveys "petri" and finds the run
+  And it releases the run exactly as an item closed by any route releases its non-terminal run
+
+Scenario: An old fleet default the registry no longer resolves is reported, not dropped
+  Given the same closed item and the registry no longer has a "petri" entry
+  When the standalone reconcile-runs sweep runs
+  Then it reports "petri" unobservable, naming it and the registry path
+  And it does not treat "petri" as holding no runs
+
+Scenario Outline: The committed-declaration exceptions still refuse an implicitly declared factory
+  Given dispatcher.default_factory is "fleet", the registry's default is "petri", and "petri" is not committed in dispatcher.factories
+  When <use> names "petri"
+  Then it is refused as an undeclared name, before any claim
+  Examples:
+    | use                                  |
+    | an explicit --factory                |
+    | a set LIVESPEC_FABRO_FACTORY         |
+    | an entry of dispatcher.overflow_factories |
+```
