@@ -2834,6 +2834,55 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   clause whose body the condensation withheld still encloses the subsections
   the specification states it through.
 
+- The ATTEMPT-COST RECORD of `contracts.md` §"Factory-configurable ACP fallback
+  priority" → "Cost follows every attempt" (`bd-ib-a2rhtt`, Scenarios 45 and
+  127) — one observation per provider-limit-released run and per availability
+  confirmation turn, and the per-item sequence total built from them. Four
+  cohesive pieces, and the dependency direction reads bottom-up:
+  `_dispatcher_cost_attempts` gains the RECORD (its stage, its two sources, its
+  stable identity, and the per-attempt entries) beside the per-attempt
+  arithmetic it already owned; `_dispatcher_cost_sequence` (PURE: the per-item
+  fold, its dedupe, and the sequence total with its labelled subtotal) →
+  `_dispatcher_released_run_cost` (the one impure reading: a released run's own
+  record on its own factory) and `_acp_availability_probe_records`'
+  `probe_attempt_cost_record`. `_dispatcher_provider_limit_disposition` and
+  `_acp_availability_probe_run` are the two writers.
+  Seven properties an editor must not invert. The record GATES NOTHING, which
+  holds structurally rather than carefully: neither record module can import
+  `_dispatcher_cost`, `_dispatcher_cost_gate` or `_dispatcher_cost_wave`, so
+  neither can produce a verdict whatever its fields are called, and the
+  fail-closed gate keeps reading only successful runs with a confirmed run
+  record. The identity is REPRODUCIBLE AND DISCRIMINATING and neither half is
+  worth anything alone — a constant collapses two releases of one item onto one
+  observation and loses a real charge, while a counter or a clock makes every
+  replay a second observation and double-counts the sequence. The whole-run
+  figure is the ENGINE'S OWN and is never taken from the host cost sink: that
+  sink accrues per WORK ITEM rather than per run, so a second release of one
+  item would have the first run's calls attributed to the second run's attempt
+  windows and the fold would count that spend twice. A row whose identity
+  cannot be read is CARRIED rather than dropped, because dropping it
+  under-reports a real charge while leaving a well-formed row behind — and it
+  costs nothing, since such a row states no figure either. One unobservable
+  figure darkens the WHOLE total while the subtotal survives labelled, the
+  final run being one term of the same sum rather than a separately guarded
+  one. The two released-run reads fail INDEPENDENTLY — a refused `events`
+  leaves the engine's figure readable and a refused `ps` leaves the attempts
+  readable — and a record is owed for EVERY released run, so no arm returns
+  nothing. And the confirmation turn's record is charged to exactly ONE item,
+  which is the whole of "a shared availability probe MUST NOT be charged in
+  full to multiple items": nothing downstream divides a charge, so the peers'
+  folds see nothing at all rather than a share or a zero.
+  TWO FIGURES ARE STATED ABSENT PER ATTEMPT RATHER THAN OMITTED OR ZEROED. No
+  engine this fleet runs reports a per-node usage struct, so an entry carries
+  the engine's own elapsed measurement and explicit nulls for the token use and
+  the per-attempt price; an omitted key is what a record from a build predating
+  the clause looks like, and a zero is a MEASURED figure everywhere else here.
+  `_acp_availability_probe_reading` is the cohesion split that made room for the
+  turn's third record: reading one ENDED probe run moved out of
+  `_acp_availability_probe_run`, which was at its file LLOC ceiling, and the run
+  module COMPOSES that one reading — a second copy would be two readings of one
+  run that can disagree about whether it confirmed, each well-formed.
+
 Rules an agent editing this tree must follow:
 
 - `main()` is the only place `sys.stdout.write` / `sys.stderr.write`

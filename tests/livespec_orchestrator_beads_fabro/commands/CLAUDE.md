@@ -679,6 +679,36 @@ Tests for the thin-transport command modules under
   so a tighter budget legitimately yields a LONGER tree and a character count
   would report the design working as the design failing.
 
+- The six `test_dispatcher_attempt_cost_*`, `test_dispatcher_cost_sequence*`,
+  `test_dispatcher_released_run_cost` and
+  `test_acp_availability_probe_attempt_cost` modules cover the attempt-cost
+  record (`bd-ib-a2rhtt`), split by the one assertion each one can fail on.
+  Five things to know before editing. EVERY FIGURE IN EVERY SEQUENCE FIXTURE IS
+  DISTINCT, which is what makes the totals evidence: three equal figures add to
+  the same total whether a replayed observation was counted once, twice or
+  dropped, so a fixture that reused a figure would pass against every wrong
+  fold. The two POSTURE modules are explicitly sets of CONTROLS — nothing in
+  them could have failed before the record existed — and both drive the
+  STRICTEST posture, `enforce` on an unattended drain, because in `report` mode
+  the gate refuses nothing and a record that DID gate would be invisible; each
+  one's green-and-resolvable case refuses, which is what makes its absences
+  evidence rather than consistent with a gate that had stopped working.
+  `..._gates_nothing` asserts its central claim over the IMPORT GRAPH of a
+  stated scope, with a positive control that the named gate modules really are
+  the gate, since an absence over a population that does not contain the thing
+  is no evidence. `..._cost_gate_scope_unchanged` drives each non-green status
+  with a CONFIRMED run record, because with the record absent as well the same
+  absence would be equally consistent with the skip arm, and its absent-record
+  fixture carries ANOTHER repository's run rather than an empty listing. And
+  `..._released_run_cost` states its expectations PER ARM rather than
+  collapsing them: a refused event stream leaves the engine's figure readable
+  and a refused `ps` leaves the attempts readable, so an arm asserting both
+  dark would pass against an implementation that darkens on any fault.
+  `..._probe_attempt_cost`'s two timed-out arms are likewise not one case
+  repeated — a turn this Dispatcher REAPED and one whose run it could not even
+  name both spent an allowance, and the second is the arm where every other
+  field of the record is absent.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr
