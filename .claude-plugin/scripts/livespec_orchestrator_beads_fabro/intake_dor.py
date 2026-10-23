@@ -142,6 +142,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_ADMISSION_POLICY,
     effective_admission_policy,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import STAGE_FILING
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_wall import (
+    classify_and_hold,
+)
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
 from livespec_orchestrator_beads_fabro.store import (
     INTAKE_TRIAGED_LABEL,
@@ -319,9 +323,43 @@ def apply_intake_dor(
         # reports `holds` False, so the item routes exactly as it did before
         # this clause existed while the record on it says the judgement did not
         # happen.
+        # THE SPEC-CHANGE TIER IS CLASSIFIED HERE, which is the clause's FILING
+        # cadence point, and a held item is then withheld from `ready` — "The
+        # item MUST be held out of `ready` until BOTH hold".
+        #
+        # IT RUNS UNCONDITIONALLY rather than as a conjunct of the condition
+        # below, and that is the one thing about its placement worth reading
+        # twice. The clause's cadence is "every implement-kind item MUST be
+        # classified", with no exemption for an item whose admission policy
+        # happens to be `manual` — and the release arm it also serves is stated
+        # for BOTH policies: `auto` routes a released item to `ready` and
+        # `manual` rests it at `pending-approval`. Folded into the condition it
+        # would sit behind `policy == _AUTO_ADMISSION`, so a manual item would
+        # never be classified at all: its tier would never be recorded, the
+        # plan-child disposition and the pre-dispatch wall would both read a
+        # missing datum, and its hold could never be released because nothing
+        # would ever re-judge it. Measured while writing this: the manual case
+        # of Scenario 206 found NO ledger comment on the item.
+        #
+        # The RELEASE needs no pass of its own, which is why there is none: the
+        # classification is reused only while the specification it was taken
+        # against is unchanged, so the revision that ratifies the linked topic
+        # retires the record, the classification is re-taken against the
+        # ratified tree, returns `stated`, and the hold simply stops standing.
+        # The item then routes exactly as its own `admission_policy` decides.
+        #
+        # It is spent even where a MECHANICAL finding already withholds `ready`,
+        # unlike the Definition-of-Done judgement below. The two differ in what
+        # the spend buys: that judgement's verdict is consumed only by this
+        # routing decision, while the tier record is read later by the
+        # pre-dispatch wall and by plan-child disposition — so an item repaired
+        # and re-filed arrives already classified, and the reuse makes the
+        # second filing free.
+        spec_change = classify_and_hold(item=item, repo=repo_root, path=path, stage=STAGE_FILING)
         if (
             policy == _AUTO_ADMISSION
             and not findings.withholds_ready
+            and spec_change is None
             and not judge_item_definition_of_done(
                 item=item, repo=repo_root, path=path, stage=STAGE_PRE_ADMISSION
             ).holds

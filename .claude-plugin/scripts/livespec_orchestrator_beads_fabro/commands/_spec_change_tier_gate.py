@@ -63,6 +63,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellComma
 from livespec_orchestrator_beads_fabro.commands._drift_run_judge import drift_judge
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
     FEATURE_CLASS,
+    SPEC_DIRNAME,
     asked_for_behaviour,
     behaviour_digest,
     decide_spec_change_tier,
@@ -75,7 +76,6 @@ from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import 
     reusable_spec_change_tier,
     spec_change_tier_comment,
 )
-from livespec_orchestrator_beads_fabro.commands._spec_change_tier_wall import SPEC_DIRNAME
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     judge_within_ceiling,
 )

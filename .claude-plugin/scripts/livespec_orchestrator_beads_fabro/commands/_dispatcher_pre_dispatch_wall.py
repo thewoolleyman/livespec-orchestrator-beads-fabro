@@ -366,7 +366,9 @@ def _refusing_sequence(
             False,
         ),
         (
-            lambda: spec_change_tier_refusal(repo=repo, items=items),
+            lambda: spec_change_tier_refusal(
+                repo=repo, items=items, workflow_name=args.workflow_name
+            ),
             EXIT_UNGRADEABLE_CRITERIA,
             False,
         ),
