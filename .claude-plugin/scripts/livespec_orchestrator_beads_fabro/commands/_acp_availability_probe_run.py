@@ -9,10 +9,12 @@ Probe execution MUST be bounded by the committed-configuration-only
 
 The IMPURE half of the probe, and the only one that reaches a factory.
 `_acp_availability_probe` owns the shape, `_acp_availability_probe_outcome`
-grades the ending, `_acp_availability_probe_records` builds the two records,
-and this module launches the run, observes it, and hands those three their
-inputs. Nothing here decides what an ending MEANS or what a record SAYS, which
-is what keeps every one of those decisions exercisable with no factory at all.
+grades the ending, `_acp_availability_probe_records` builds the three records,
+`_acp_availability_probe_reading` reads an ended run off the factory, and this
+module launches the run, bounds it, reaps unfinished work and hands those four
+their inputs. Nothing here decides what an ending MEANS or what a record SAYS,
+which is what keeps every one of those decisions exercisable with no factory at
+all.
 
 THE TURN IS PLACED IN THE FACTORY'S DECLARED ENVIRONMENT, which is the fourth
 of the four execution properties the clause names and the only one that is a
@@ -55,14 +57,6 @@ be read reaps nothing, which is reported as `terminated=False` rather than
 silently: there is unfinished work on the factory and this Dispatcher cannot
 name it, and a record claiming otherwise would be the one lie that matters.
 
-THE PROMPT BOUNDARY IS READ FROM THE EVENT AND NOT FROM A PARSED CHAIN START.
-`scan_acp_events` requires `candidate_index` and `primary_generation` before it
-will admit an `agent.acp.started`, deliberately, because its own consumer must
-not assume which candidate ran. This read asks a strictly weaker question --
-did the attempt cross the prompt boundary at all -- which the adapter-launch
-clause answers from the event's PRESENCE, so a pre-chain engine's start still
-tells a created session from an adapter that exited before the protocol.
-
 TWO REFUSALS RETURN BEFORE ANY RUN EXISTS, and both are the clause's "any other
 probe failure": the candidate the probe cannot faithfully run (see
 `availability_probe_refusal`), and a repository with no participating factory to
@@ -79,13 +73,11 @@ from __future__ import annotations
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_availability_probe import (
     AVAILABILITY_PROBE_GOAL,
     AVAILABILITY_PROBE_GRAPH_FILE,
     AVAILABILITY_PROBE_MANIFEST,
-    AVAILABILITY_PROBE_NODE,
     availability_probe_graph,
     availability_probe_labels,
     availability_probe_refusal,
@@ -95,12 +87,16 @@ from livespec_orchestrator_beads_fabro.commands._acp_availability_probe_outcome 
     probe_confirms,
     probe_ending,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_availability_probe_reading import (
+    PROBE_READ_TIMEOUT_SECONDS,
+    probe_run_observation,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_availability_probe_records import (
+    probe_attempt_cost_record,
     probe_hold_record,
     probe_journal_record,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
-from livespec_orchestrator_beads_fabro.commands._acp_fallback_event_types import ACP_STARTED_EVENT
 from livespec_orchestrator_beads_fabro.commands._config import (
     resolve_fabro_bin,
     resolve_fabro_factory,
@@ -122,14 +118,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import 
     ShellCommandRunner,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
-from livespec_orchestrator_beads_fabro.commands._fabro_port_node_outcomes import (
-    fabro_node_outcomes,
-    fabro_stage_node,
-)
-from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
-    fabro_inspect_record,
-    fabro_run_summaries_from_payload,
-)
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroRunner
 
 __all__: list[str] = [
@@ -141,16 +129,6 @@ __all__: list[str] = [
 # `ShellCommandRunner`'s own mapping of a timed-out command. Named here so the
 # bound's own test reads the runner's value rather than a literal beside it.
 PROBE_LAUNCH_TIMEOUT_EXIT_CODE = 124
-
-# The statuses that are a run CANCELLATION, both spellings the engine uses.
-_CANCELLED_STATUS_KINDS: frozenset[str] = frozenset({"cancelled", "canceled"})
-_SUCCEEDED_STATUS = "succeeded"
-
-# Generous for one `inspect` or `events` read against a reachable factory, and
-# bounded so an unresponsive one leaves the probe unconfirmed instead of
-# holding the evaluation open. It is NOT the probe's own bound: that governs
-# the TURN, and these are reads about a turn that has already ended.
-_READ_TIMEOUT_SECONDS = 60.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -164,9 +142,15 @@ class AcpAvailabilityProbeResult:
     cannot name.
 
     `hold_record` is the appendable observation an eligible refusal mints and
-    `None` for every other ending; `journal_record` is written for all six. The
-    caller appends them -- this result carries no journal and no ledger, so the
-    one place that decides WHEN a record lands stays the caller's.
+    `None` for every other ending; `journal_record` and `attempt_cost_record`
+    are both written for all six. The caller appends them -- this result carries
+    no journal and no ledger, so the one place that decides WHEN a record lands
+    stays the caller's.
+
+    `attempt_cost_record` is the cost clause's own record, which is why it is a
+    FIELD rather than a key of the journal row beside it: the sequence fold
+    selects on its stage and its item, so a cost observation buried inside
+    another stage's row would be invisible to the one surface that counts it.
     """
 
     ending: str
@@ -176,6 +160,7 @@ class AcpAvailabilityProbeResult:
     terminated: bool
     hold_record: dict[str, object] | None
     journal_record: dict[str, object]
+    attempt_cost_record: dict[str, object]
 
     @property
     def confirmed(self) -> bool:
@@ -258,7 +243,9 @@ def _performed(  # noqa: PLR0913 — the same kw-only probe inputs as above plus
     timed_out = launch[1] == PROBE_LAUNCH_TIMEOUT_EXIT_CODE
     terminated = _terminated(port=port, run_id=run_id) if timed_out else False
     observation, cost = (
-        (_timed_out_observation(), None) if timed_out else _observed(port=port, run_id=run_id)
+        (_timed_out_observation(), None)
+        if timed_out
+        else probe_run_observation(port=port, run_id=run_id)
     )
     ending = probe_ending(observation=observation)
     return AcpAvailabilityProbeResult(
@@ -283,6 +270,13 @@ def _performed(  # noqa: PLR0913 — the same kw-only probe inputs as above plus
             run_id=run_id,
             cost_usd_micros=cost,
             observation_ids=observation_ids,
+        ),
+        attempt_cost_record=probe_attempt_cost_record(
+            work_item_id=work_item_id,
+            occurred_at=now_iso,
+            factory=factory,
+            run_id=run_id,
+            cost_usd_micros=cost,
         ),
     )
 
@@ -326,7 +320,7 @@ def _terminated(*, port: FabroPort, run_id: str | None) -> bool:
     """
     if run_id is None:
         return False
-    reaped = port.rm(run_id=run_id, timeout_seconds=_READ_TIMEOUT_SECONDS)
+    reaped = port.rm(run_id=run_id, timeout_seconds=PROBE_READ_TIMEOUT_SECONDS)
     return reaped.command.exit_code == 0
 
 
@@ -346,104 +340,3 @@ def _timed_out_observation() -> AcpProbeObservation:
         timed_out=True,
         failure=None,
     )
-
-
-def _observed(*, port: FabroPort, run_id: str | None) -> tuple[AcpProbeObservation, int | None]:
-    """Read one ended probe run, as `(observation, cost)`.
-
-    A launch whose run id could not be read is observed as a PROCESS EXIT with
-    no cost, which is the honest reading: no run was named, so no turn
-    completed, no session was recorded and nothing refused anything.
-    """
-    if run_id is None:
-        return (
-            AcpProbeObservation(
-                turn_completed=False,
-                acp_started=False,
-                cancelled=False,
-                timed_out=False,
-                failure=None,
-            ),
-            None,
-        )
-    inspected = port.inspect(run_id=run_id, timeout_seconds=_READ_TIMEOUT_SECONDS)
-    events = port.events(run_id=run_id, timeout_seconds=_READ_TIMEOUT_SECONDS)
-    record = fabro_inspect_record(payload=inspected.payload)
-    return (
-        AcpProbeObservation(
-            turn_completed=_turn_completed(record=record),
-            acp_started=_acp_started(payload=events.payload),
-            cancelled=(inspected.status_kind or "") in _CANCELLED_STATUS_KINDS,
-            timed_out=False,
-            failure=inspected.failure,
-        ),
-        _cost(payload=inspected.payload),
-    )
-
-
-def _turn_completed(*, record: dict[str, Any] | None) -> bool:
-    """Whether the factory recorded the probe node's own attempt as SUCCEEDED.
-
-    Keyed through `fabro_stage_node`, so a Petri-era visit-qualified stage key
-    (`confirm@1`) and a pinned-engine node id both resolve: comparing the node
-    id against the raw key silently matched nothing, which is the one reading
-    that would report every successful probe as unconfirmed.
-    """
-    if record is None:
-        return False
-    outcomes = fabro_node_outcomes(record=record, checkpoint=_newest_checkpoint(record=record))
-    return any(
-        fabro_stage_node(stage=stage) == AVAILABILITY_PROBE_NODE
-        and outcome.get("status") == _SUCCEEDED_STATUS
-        for stage, outcome in outcomes.items()
-    )
-
-
-def _newest_checkpoint(*, record: dict[str, Any]) -> dict[str, Any]:
-    """The newest checkpoint this record carries, or an empty one.
-
-    Empty is what sends `fabro_node_outcomes` to the record's own `stages` map,
-    which is the Petri-era shape; a pinned-engine record answers from its
-    checkpoint instead. One reading serves both.
-    """
-    raw = record.get("checkpoints")
-    if not isinstance(raw, list):
-        return {}
-    entries: list[dict[str, Any]] = [
-        cast("dict[str, Any]", one) for one in cast("list[object]", raw) if isinstance(one, dict)
-    ]
-    return entries[-1] if entries else {}
-
-
-def _acp_started(*, payload: object) -> bool:
-    """Whether the probe node's attempt crossed the prompt boundary.
-
-    The EVENT's presence is the whole reading, per the module docstring: this
-    asks a strictly weaker question than `scan_acp_events` does, so a pre-chain
-    engine's start still answers it.
-    """
-    if not isinstance(payload, list):
-        return False
-    for entry in cast("list[object]", payload):
-        if not isinstance(entry, dict):
-            continue
-        event = cast("dict[str, Any]", entry)
-        node = event.get("node")
-        if event.get("type") == ACP_STARTED_EVENT and (
-            not isinstance(node, str) or fabro_stage_node(stage=node) == AVAILABILITY_PROBE_NODE
-        ):
-            return True
-    return False
-
-
-def _cost(*, payload: object) -> int | None:
-    """What this probe cost, or `None` when the engine reported no figure.
-
-    Read through the ordinary run-summary parser rather than off the record by
-    hand, so a probe's cost and a dispatch's cost come from one reading. `None`
-    is the ORDINARY answer on this fleet -- the engine's `total_usd_micros` is
-    null on every run of the pinned build -- which is exactly why the clause
-    says "where observable" and the journal row states the observability.
-    """
-    summaries = fabro_run_summaries_from_payload(payload=payload)
-    return summaries[0].total_usd_micros if summaries else None
