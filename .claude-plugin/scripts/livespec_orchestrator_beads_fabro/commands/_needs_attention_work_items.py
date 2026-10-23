@@ -28,6 +28,14 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
 from livespec_orchestrator_beads_fabro.commands._needs_attention_answer_disposition import (
     answer_disposition_summary,
 )
+
+# Re-exported for the same reason `provider_exhaustion_items` below is: this is
+# where the composition reaches for every work-item-scoped lane, and the
+# availability wait is the sibling of that legacy one inside the SAME
+# enumerated-wait clause.
+from livespec_orchestrator_beads_fabro.commands._needs_attention_availability_wait import (
+    availability_wait_items,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
     ConformanceContext,
 )
@@ -52,6 +60,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "auto_admission_items",
+    "availability_wait_items",
     "host_only_items",
     "human_valves",
     "impl_next",

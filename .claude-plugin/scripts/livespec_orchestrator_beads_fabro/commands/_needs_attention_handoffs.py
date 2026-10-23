@@ -19,6 +19,7 @@ from livespec_orchestrator_beads_fabro.commands.plan import handoff_timeline_fin
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = [
+    "availability_wait_journal_command",
     "dispatcher_loop_command",
     "drive_command",
     "host_only_command",
@@ -35,6 +36,14 @@ __all__: list[str] = [
 _PLUGIN_NAME = "livespec-orchestrator-beads-fabro"
 
 _DISPATCH_JOURNAL_SUBPATH = "tmp/fabro-dispatch-journal.jsonl"
+
+# The two append-only stages an availability wait is reconstructible from: the
+# observed-hold records the filter skipped candidates on, and the containment
+# refusals that recorded the wait those skips produced. Both are needed, and in
+# opposite directions -- an UNAVAILABLE evidence source empties a chain while
+# recording no hold at all, so a pattern naming only the hold stage prints
+# nothing for exactly the condition an operator cannot otherwise see.
+_AVAILABILITY_WAIT_STAGES = "acp-availability-observed|acp-preflight-refusal"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -182,6 +191,21 @@ def model_fallback_journal_command(*, project_root: Path, node: str) -> str:
     journal = shlex.quote(f"{project_root}/{_DISPATCH_JOURNAL_SUBPATH}")
     node_field = shlex.quote(json.dumps({"node": node})[1:-1])
     return f"grep -F acp-model-fallback {journal} | grep -F {node_field}"
+
+
+def availability_wait_journal_command(*, project_root: Path) -> str:
+    """Show the recorded availability wait and the observations behind it.
+
+    The INSPECTION handoff the wait item carries when no live hold is its
+    target: "Otherwise its handoff MUST inspect the recorded wait and
+    unavailable or failed observation; it MUST NOT advertise clearance of a
+    nonexistent live hold." Read-only by construction, exactly as
+    `model_fallback_journal_command` beside it is -- an operator reading this
+    row cannot clear anything, because there is nothing live to clear, so the
+    handoff must offer evidence rather than an act.
+    """
+    journal = shlex.quote(f"{project_root}/{_DISPATCH_JOURNAL_SUBPATH}")
+    return f"grep -E {shlex.quote(_AVAILABILITY_WAIT_STAGES)} {journal}"
 
 
 def pr_view_command(*, project_root: Path, pr_number: int) -> str:
