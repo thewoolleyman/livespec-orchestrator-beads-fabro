@@ -73,13 +73,22 @@ def dispatch_factory_targets(
 ) -> tuple[FactoryTarget, ...]:
     """Every distinct factory target this selection would dispatch to, UNRECORDED.
 
-    The same precedence `resolve_dispatch_factory_target` applies — explicit
-    flag, else the environment, else the item's own recorded pin, else the
-    configured default — with the WRITE deliberately absent. A pre-claim gate
-    must leave the ledger exactly as it found it: the clause requires currency
-    to be evaluated before
+    Explicit flag, else the environment, else the item's own recorded pin, else
+    the configured default — with the WRITE deliberately absent. A pre-claim
+    gate must leave the ledger exactly as it found it: the clause requires
+    currency to be evaluated before
     any ledger mutation, so recording a factory here would be the mutation the
     refusal is supposed to precede.
+
+    THE RECORDED PIN IS STILL READ HERE, which is the one place this resolution
+    differs from a dispatch's own. The pin is a RESUME-only layer, and the route
+    is assigned by recovery routing, which the clause places AFTER the
+    pre-dispatch wall this gate runs inside — so at this point no item has a
+    route and the question "is this a resume" has no answer yet. Reading the pin
+    keeps the gate's target set exactly what it was before that layer narrowed,
+    which is deliberate: this clause governs which factory a dispatch is stamped
+    with and submitted to, and says nothing about which factories the
+    `dispatcher.minimum_release` floor is graded against.
 
     DISTINCT BY NAME, in first-appearance order. One wave can carry items pinned
     to two factories, and each must be evaluated against its own serving commit;
@@ -101,7 +110,13 @@ def dispatch_factory_targets(
     config = _pin_store(repo=repo)
     explicit = explicit_dispatch_factory(args=args)
     pinned = [
-        _unrecorded_pin(repo=repo, config=config, work_item_id=work_item_id, explicit=explicit)
+        _unrecorded_pin(
+            repo=repo,
+            config=config,
+            work_item_id=work_item_id,
+            explicit=explicit,
+            resume=True,
+        )
         for work_item_id in work_item_ids
     ]
     selection = _ranking(repo=repo, unpinned=any(name is None for name in pinned))
@@ -116,6 +131,7 @@ def unrecorded_dispatch_factory_target(
     *,
     repo: Path,
     work_item_id: str,
+    resume: bool = False,
     explicit: str | None = None,
 ) -> FactoryTarget:
     """ONE item's factory target under the dispatch precedence, UNRECORDED.
@@ -128,6 +144,17 @@ def unrecorded_dispatch_factory_target(
     by `resolve_fabro_factory`'s own environment layer, which an unpinned
     placement no longer reaches.
 
+    `resume` is the ROUTE recovery routing assigned this item before the
+    admission valve ran, which the clause makes the stamp's own input: "The
+    admission claim stamp MUST apply the same order, using the route recovery
+    routing assigned before the admission valve". It defaults to the FRESH
+    answer because that is what the clause makes every other dispatch — "Every
+    other dispatch is a FRESH dispatch, whatever entry point carries it" — and
+    because the default has to fail in the safe direction: a caller that states
+    nothing never reads the pin, which is a dispatch sent to the repository's
+    own default, whereas a resume-by-default would send a fresh dispatch to a
+    factory the item merely used to run on.
+
     Both forms route through `_unrecorded_pin`, so the precedence exists once:
     a second spelling of "explicit, else environment, else pin, else default"
     is how two callers come to disagree about which factory an item dispatches
@@ -139,6 +166,7 @@ def unrecorded_dispatch_factory_target(
         config=_pin_store(repo=repo),
         work_item_id=work_item_id,
         explicit=explicit,
+        resume=resume,
     )
     return _placement(
         repo=repo,
@@ -153,6 +181,7 @@ def _unrecorded_pin(
     config: StoreConfig | None,
     work_item_id: str,
     explicit: str | None,
+    resume: bool,
 ) -> str | None:
     """One item's pinned factory under the PRE-CLAIM read discipline, or `None`.
 
@@ -160,15 +189,24 @@ def _unrecorded_pin(
     itself: a pre-claim caller reads the recorded pin DEFENSIVELY, through
     `_recorded_pin`, while the dispatch resolution reads it unwrapped from a
     row it knows exists. Both then apply one precedence.
+
+    `resume` is REQUIRED here rather than defaulted, unlike on the two public
+    entry points: the two callers of this function answer the route question
+    differently — the pre-dispatch wall precedes routing and the admission stamp
+    follows it — and a default would let whichever caller is written next
+    inherit the other one's answer silently.
     """
     return _pinned_factory(
         repo=repo,
         explicit=explicit,
         recorded=_recorded_pin(config=config, work_item_id=work_item_id),
+        resume=resume,
     )
 
 
-def _pinned_factory(*, repo: Path, explicit: str | None, recorded: str | None) -> str | None:
+def _pinned_factory(
+    *, repo: Path, explicit: str | None, recorded: str | None, resume: bool
+) -> str | None:
     """What PINS this dispatch, or `None` when nothing does and the ranking decides.
 
     The precedence itself, and it is the RATIFIED one in one place: the explicit
@@ -178,6 +216,21 @@ def _pinned_factory(*, repo: Path, explicit: str | None, recorded: str | None) -
     that holds an `argparse.Namespace` and one that does not — admission holds
     none, and when its order differed the disagreement was a claim stamped with
     a factory the dispatch never reaches.
+
+    THE RECORDED PIN IS A RESUME-ONLY LAYER, which is what `resume` decides:
+    "for a resume only, the item's recorded factory", and "a fresh dispatch MUST
+    NOT read the item's recorded factory as a pin. When no explicit selection is
+    made it MUST proceed as an unpinned dispatch, so changing
+    `dispatcher.default_factory` re-routes the next fresh dispatch of every item
+    onto the new default factory". A resume is the one route that CONTINUES the
+    run lineage the recorded factory belongs to; every other dispatch starts a
+    lineage of its own, and reading the pin there sends an item back to whichever
+    factory it last ran on however far the repository's default has since moved.
+    Measured 2026-10-23 on `tdd-proof-lv352h`, whose repository defaults to
+    `petri`: a probe launched with nothing pinned resolved
+    `--server https://hp-xubuntu.perch-rudd.ts.net:32276`, because the item's
+    metadata still recorded `legacy` from an earlier failed run — and fifteen
+    open items across seven tenants were in that state.
 
     THE VARIABLE OUTRANKS THE RECORDED PIN, which is the whole point of its
     position: a pinned item is pinned by its OWN dispatch history, while the
@@ -194,6 +247,8 @@ def _pinned_factory(*, repo: Path, explicit: str | None, recorded: str | None) -
     the environment pin is the one that reached the ranking when the layer below
     was `resolve_fabro_factory`'s rather than this one.
     """
+    if not resume:
+        return explicit or _env_factory()
     return explicit or _env_factory() or _usable_recorded_factory(repo=repo, recorded=recorded)
 
 
@@ -297,6 +352,7 @@ def resolve_dispatch_factory_target(
     args: argparse.Namespace,
     repo: Path,
     work_item_id: str,
+    resume: bool = False,
 ) -> FactoryTarget:
     """Resolve and persist the Fabro factory target for one dispatch.
 
@@ -310,11 +366,17 @@ def resolve_dispatch_factory_target(
     is why the precedence is applied to a value rather than reached through
     `_unrecorded_pin`: this runs after admission, where the row is known to
     exist, so a fault is a bug rather than an item with no pin.
+
+    `resume` is this item's assigned ROUTE, carried from the launch path on that
+    item's own copy of the arguments, and it defaults to the FRESH answer for
+    the reason `unrecorded_dispatch_factory_target` gives: that is what the
+    clause makes every other dispatch, and it is the direction a forgotten
+    statement fails safely in.
     """
     config = store_config(repo=repo)
     explicit = explicit_dispatch_factory(args=args)
     recorded = dispatch_factory_for(path=config, work_item_id=work_item_id)
-    pinned = _pinned_factory(repo=repo, explicit=explicit, recorded=recorded)
+    pinned = _pinned_factory(repo=repo, explicit=explicit, recorded=recorded, resume=resume)
     placement = _placement(
         repo=repo, pinned=pinned, selection=_ranking(repo=repo, unpinned=pinned is None)
     )
@@ -347,6 +409,7 @@ def args_with_dispatch_factory_target(
     args: argparse.Namespace,
     repo: Path,
     work_item_id: str,
+    resume: bool = False,
 ) -> argparse.Namespace:
     """Return an args clone carrying the ledger-pinned factory target.
 
@@ -355,12 +418,21 @@ def args_with_dispatch_factory_target(
     cannot talk to the legacy server, so a clone carrying the new target beside
     the old factory's binary would send one factory's client at another
     factory's engine — with nothing in the record to say so.
+
+    `resume` is this item's ROUTE and is passed straight through, because the
+    route is a property of the ITEM and this is the per-item step that applies
+    its pins. It must never be inferred from the resume ATTRIBUTES a caller
+    sets on the clone — `recovery_launch_args` resolves the factory before it
+    writes them, and a `seeded` route sets a head of its own — so a reader of
+    those attributes would answer the route question for the wrong routes in
+    both directions.
     """
     cloned = argparse.Namespace(**vars(args))
     target = resolve_dispatch_factory_target(
         args=args,
         repo=repo,
         work_item_id=work_item_id,
+        resume=resume,
     )
     cloned.fabro_factory_target = target
     effective = factory_effective_fabro_bin(args=args, factory=target)
