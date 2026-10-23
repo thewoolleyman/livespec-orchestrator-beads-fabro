@@ -28,6 +28,55 @@ AN UNPRICEABLE COMPONENT POISONS THE WHOLE TOTAL, deliberately. The alternative
 -- summing what could be priced -- produces a number smaller than the truth
 that reads exactly like a complete observation. A `None` total is the only
 honest answer, and it is what routes the run through the fail-closed cost gate.
+
+THE ATTEMPT-COST RECORD BELOW IS THE SAME SECTION'S "Cost follows every
+attempt" paragraph, which widens the accounting past the successful run this
+module opened with: "For every run released under 'Provider-limit release and
+re-dispatch', and for every availability confirmation turn, the Dispatcher MUST
+journal one attempt-cost record carrying the attempt's token use and elapsed
+time per node attempt wherever the run record exposes them, priced under the
+rules below, or marked cost-unobservable. ... Each run or probe cost
+observation MUST have a stable identity and MUST be counted at most once across
+reconciliation and resume. ... Attempt-cost records are observations only and
+never yield a gate verdict."
+
+IT IS A RECORD AND NOT A GATE, which is the one property every reader of it
+depends on. `_dispatcher_cost_sequence` folds these rows into a sequence total
+and returns no verdict; the fail-closed gate of section "Fail-closed cost gate
+(keyed on `--item` presence)" keeps reading only successful runs with a
+confirmed run record, and nothing here reaches it. A record that could refuse a
+dispatch would make a terminally unsuccessful run -- the only kind that is
+released -- gateable, which the same paragraph forbids in as many words.
+
+THE RECORD IS RENDERED HERE AND APPENDED BY ITS TWO CALLERS, the same
+decide/record/perform split `_acp_failure_classifier` /
+`_acp_hold_records` / `_acp_hold_ledger` take: this module stays pure, so every
+field below is exercisable with no journal, no factory and no provider, while
+`_dispatcher_provider_limit_disposition` and the availability confirmation turn
+each decide WHEN one lands.
+
+TWO FIGURES ARE STATED ABSENT PER ATTEMPT RATHER THAN OMITTED OR ZEROED, and
+that is the clause's "wherever the run record exposes them" read honestly. No
+engine this fleet runs reports a per-node usage struct -- `fabro inspect`'s
+per-node `usage` slot is null on every node and `total_usd_micros` is null on
+every run of the pinned build -- so an entry carries the engine's OWN elapsed
+measurement and explicit nulls for the token use and the per-attempt price. An
+omitted key is what a record from a build predating this clause looks like, so a
+reader could not tell an engine that exposed nothing from a record minted before
+anyone asked; a zero would be worse again, because zero is a MEASURED figure
+everywhere else in this tree and reads as observable.
+
+THE WHOLE-RUN FIGURE IS THE ENGINE'S OWN AND IS NEVER TAKEN FROM THE HOST COST
+SINK, which is the decision most likely to be "improved" into a double count.
+The sink accrues per WORK ITEM rather than per run -- `cost_lookup_keys` keys on
+`work.item.id` first and `CostSink.observations` answers from the first key that
+accrued -- so an item released twice would have its first run's calls attributed
+to the second run's attempt windows by `_window_for`'s preceding-window arm, and
+the sequence fold would then count that spend twice. "MUST be counted at most
+once across reconciliation and resume" forbids exactly that, so the record
+reports the engine's figure or nothing. It becomes priced the moment the engine
+populates `total_usd_micros`, with no change here, exactly as
+`observe_run_cost` reads the same field.
 """
 
 from __future__ import annotations
@@ -43,12 +92,30 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_pricing import 
 )
 
 __all__: list[str] = [
+    "ATTEMPT_COST_CONFIRMATION_TURN",
+    "ATTEMPT_COST_RELEASED_RUN",
+    "ATTEMPT_COST_STAGE",
     "AttemptCost",
     "AttemptPricer",
     "ChainCost",
     "CostObservation",
+    "attempt_cost_identity",
+    "attempt_cost_record",
     "chain_cost",
 ]
+
+# The ONE journal stage every attempt-cost record is appended under, whatever
+# produced it. One stage rather than one per source, so a fold asking "what did
+# this item's released attempts cost" asks a single question and reads the
+# source off a field -- the same shape `HOLD_STAGE` takes for observations.
+ATTEMPT_COST_STAGE = "attempt-cost"
+
+# The two things the clause says yield a record. They are FIELD VALUES rather
+# than two stages for the reason above, and they are part of the identity below
+# because a release and a confirmation turn are different attempts even when
+# they somehow name one run.
+ATTEMPT_COST_RELEASED_RUN = "provider-limit-released-run"
+ATTEMPT_COST_CONFIRMATION_TURN = "availability-confirmation-turn"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -286,6 +353,89 @@ def _add(*, left: TokenVector | None, right: TokenVector) -> TokenVector:
         cache_write=left.cache_write + right.cache_write,
         cache_read=left.cache_read + right.cache_read,
     )
+
+
+def attempt_cost_identity(
+    *, source: str, factory: str, run_id: str | None, node_attempt: str
+) -> str:
+    """The stable identity one attempt-cost observation is counted under.
+
+    REPRODUCIBLE AND DISCRIMINATING, and neither half is worth anything alone.
+    A constant reproduces perfectly and collapses two releases of one item onto
+    one observation, losing a real charge; a counter or a clock discriminates
+    perfectly and makes every replay a second observation, double-counting the
+    sequence the dedupe exists to protect. So the identity is derived from the
+    attempt's own four facts and from nothing else, which is also what lets
+    reconciliation re-derive it from the same terminal.
+
+    The three run fields are exactly the `factory:run:node attempt` triple
+    `ProviderLimitRelease.release_key` is keyed by, which is the key the clause
+    makes a release's own replay idempotent on -- so a release and its
+    attempt-cost record cannot come to disagree about which attempt they
+    describe.
+    """
+    return f"{source}:{factory}:{run_id}:{node_attempt}"
+
+
+def attempt_cost_record(  # noqa: PLR0913 — kw-only record fields: the attempt's four identifying facts, the item it is charged to, the instant, what the run record exposed per attempt, and the engine's own figure. Grouping any pair into a carrier would invent a relationship the row does not have.
+    *,
+    source: str,
+    work_item_id: str,
+    factory: str,
+    run_id: str | None,
+    node_attempt: str,
+    occurred_at: str,
+    windows: tuple[AcpAttemptWindow, ...],
+    usd_micros: int | None,
+) -> dict[str, object]:
+    """The one appendable row one released run or confirmation turn is costed as.
+
+    `work_item_id` is the ONE item this attempt is charged to, which is the
+    clause's "A shared availability probe MUST NOT be charged in full to
+    multiple items": a confirmation turn run inside one item's admission
+    evaluation establishes availability every peer then benefits from, and the
+    record names only the item that spent it, so `_dispatcher_cost_sequence`'s
+    per-item fold counts it once and no peer's sequence counts it at all.
+
+    `usd_micros` is the engine's whole-run figure or `None`, and
+    `cost_observable` states which -- never inferred by a reader from the value,
+    because a figure of zero is a measured figure and reads as observable.
+    """
+    return {
+        "stage": ATTEMPT_COST_STAGE,
+        "observation_id": attempt_cost_identity(
+            source=source, factory=factory, run_id=run_id, node_attempt=node_attempt
+        ),
+        "source": source,
+        "work_item_id": work_item_id,
+        "factory": factory,
+        "run_id": run_id,
+        "node_attempt": node_attempt,
+        "occurred_at": occurred_at,
+        "attempts": [_attempt_entry(window=window) for window in windows],
+        "usd_micros": usd_micros,
+        "cost_observable": usd_micros is not None,
+    }
+
+
+def _attempt_entry(*, window: AcpAttemptWindow) -> dict[str, object]:
+    """One node attempt, as the run record exposes it.
+
+    `elapsed_ms` is the engine's OWN measurement and is `None` for the attempt
+    nothing bounded, which `AcpAttemptWindow` is careful never to back-fill from
+    the window's boundaries. `token_use` and `usd_micros` are stated absent per
+    the module docstring: no engine this fleet runs exposes either per node
+    attempt, and omitting the keys or writing zeros would both report that
+    absence as something else.
+    """
+    return {
+        "node": window.node,
+        "node_visit": window.node_visit,
+        "candidate_index": window.candidate_index,
+        "elapsed_ms": window.elapsed_ms,
+        "token_use": None,
+        "usd_micros": None,
+    }
 
 
 def _spent_tokens(*, tokens: TokenVector) -> bool:
