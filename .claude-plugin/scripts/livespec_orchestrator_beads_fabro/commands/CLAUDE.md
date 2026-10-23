@@ -2932,6 +2932,64 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `_acp_availability_probe_run`, which was at its file LLOC ceiling, and the run
   module COMPOSES that one reading — a second copy would be two readings of one
   run that can disagree about whether it confirmed, each well-formed.
+- The SPEC-CHANGE TIER of the autonomy-tier bullet of
+  `SPECIFICATION/contracts.md` (`bd-ib-57ss2n`, Scenario 206, absorbing
+  `bd-ib-yykjko`) lives in FIVE cohesive modules plus one groom-side leaf, and
+  the dependency direction reads bottom-up: `_spec_change_tier` (PURE: the
+  decision — `feature` AND a `partial`/`unstated` verdict — the asked-for
+  behaviour statement, its reuse digest, the derived proposal topic, and
+  `SPEC_DIRNAME`) -> `_spec_change_tier_record` (the ledger record, render and
+  parse together) and `_spec_change_tier_hold` (PURE: whether a recorded tier
+  still HOLDS the item, and which of its three reasons) ->
+  `_spec_change_tier_gate` (the composed classify-then-judge-then-record, with
+  the reuse read first) -> `_spec_change_tier_wall` (the pre-dispatch wall's
+  exit-`5` row, the drain's filter, and `classify_and_hold`, the one
+  composition the armed cadence points take). `_groom_spec_change_classification`
+  is the groom-side peer; `_dispatcher_spec_commitments.ratified_proposal_topics`
+  is the model-free ratification read, which lives there because that module
+  already walks the same revision records through the same front-matter parse.
+  Ten properties an editor must not invert. THE TIER IS A CONJUNCTION and both
+  halves matter: dropping the classification holds every bug whose fix the spec
+  happens not to state, and dropping the verdict holds every feature for ever.
+  `partial` IS HELD beside `unstated` (research note 005, finding 6). The STORED
+  TYPE never reaches the decision — it is evidence the CLASSIFIER weighs, and
+  the audit behind this plan measured 22 of 29 actionable ungoverned items typed
+  `bug`. `spec_commitment_hint` NEVER decides anything: the plan-child
+  disposition clause of `SPECIFICATION/constraints.md` says the two "are
+  near-opposites", so the two predicates that read it gated the wrong set in
+  BOTH directions — refusing every ratified follow-up and admitting every
+  unratified feature — and both now read the recorded classification.
+  PRESENCE IS NOT RATIFICATION: a `reject` revision archives its proposal under
+  the same path as an `accept` one, so the read walks the revision records
+  (note 005, finding 1). The LINKED TOPIC is derived from the ITEM and never
+  from the verdict, because the generalization target is the judgement's own
+  answer and moves between judgements, which would point the hold at a stem
+  nobody will ever write a revision record for. THE RELEASE NEEDS NO PASS OF ITS
+  OWN, and that is the design rather than an omission: the record names the spec
+  version it was taken against, so the revision that ratifies the topic retires
+  it, the classification is re-taken against the ratified tree, returns `stated`
+  and records tier `none` — a second mechanism would be a second authority on
+  when a hold ends. The hold READS THE LEDGER after classifying, never the
+  classification's own return value, because a did-not-run must leave a standing
+  record governing — otherwise one unavailable model releases every held item in
+  the tenant and the release reads exactly like a ratification. An EXEMPT
+  classification owes NO judgement and its record says `(not taken)` rather than
+  a synthesized verdict, which would read as a judgement that returned `stated`.
+  And the two absences are taken in OPPOSITE directions by design: the wall and
+  the drain filter PROCEED on an item with no recorded classification (its own
+  clause makes `dod_gate` the backstop, and holding would empty the queue),
+  while plan-child disposition REFUSES — "where it cannot determine a child's
+  autonomy tier from that recorded classification, it MUST refuse the
+  disposition and surface it".
+  TWO EXEMPTIONS ARE LOAD-BEARING. A GROOM-kind variant is exempt at both wall
+  surfaces through the shared `criteria_wall_variant`, because a groom target
+  reaches that door BECAUSE it is not yet decomposed: judging it holds the groom
+  door shut on the one run that could open it. And an EMPTY spec tree is treated
+  exactly as an unreadable one, which is the arm most easily left out because the
+  reader does not fail on it — `rglob` over an absent directory yields nothing,
+  so a missing spec tree reads back as a well-formed snapshot carrying no files
+  and every feature in such a repository would be held for a proposal against a
+  specification that does not exist.
 
 Rules an agent editing this tree must follow:
 
