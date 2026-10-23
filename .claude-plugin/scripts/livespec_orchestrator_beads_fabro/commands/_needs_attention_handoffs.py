@@ -47,13 +47,16 @@ _DISPATCH_JOURNAL_SUBPATH = "tmp/fabro-dispatch-journal.jsonl"
 # nothing for exactly the condition an operator cannot otherwise see.
 _AVAILABILITY_WAIT_STAGES = "acp-availability-observed|acp-preflight-refusal"
 
-# The one field of either clearance valve the Dispatcher cannot supply, rendered
-# as a placeholder the operator replaces. A clearance "asserts the entitlement is
+# NO `--reason` IS RENDERED INTO EITHER CLEARANCE VALVE, and the omission is the
+# justification rather than a gap in it. A clearance "asserts the entitlement is
 # available again, which no observation supports", so the reason is the human act
-# the valve exists to record and inventing one here would make the valve a second
-# automatic-expiry path -- which is exactly what both commands refuse a blank
-# `--reason` to prevent.
-_CLEARANCE_REASON_PLACEHOLDER = "<state why this entitlement is available again>"
+# the valve exists to record -- but both valves refuse only a BLANK one, so a
+# rendered placeholder is ACCEPTED: an operator running the advertised handoff
+# verbatim performs the irreversible clearance and persists the placeholder
+# itself as the recorded justification, which is a clearance whose audit record
+# states nothing. `--reason` is `required=True` in both argparse surfaces, so
+# omitting it yields a usage error naming the flag, which is what makes the
+# operator state one -- exactly as the omitted `--invoker` already does.
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -218,21 +221,21 @@ def clear_acp_availability_hold_command(
     supplies it, is refused outright. So the key is rendered when and only when
     the record carries one.
 
-    NO `--invoker` IS RENDERED, and the omission is the attribution rather than
-    a gap in it. The valve resolves the invoker itself and refuses any
-    invocation that resolves to the unattributed mark, naming both the flag and
-    the environment variable that satisfy it — so an operator who runs this
-    verbatim without an identity is told exactly that, while a rendered
-    placeholder identity would be ACCEPTED and would record a clearance
-    attributed to nobody.
+    NEITHER `--invoker` NOR `--reason` IS RENDERED, and both omissions are the
+    attribution rather than a gap in it. The valve resolves the invoker itself
+    and refuses any invocation that resolves to the unattributed mark, and it
+    requires a `--reason` it refuses only when blank — naming, in each case,
+    exactly what satisfies the requirement. So an operator who runs this
+    verbatim without an identity or a justification is told exactly that, while
+    a rendered placeholder for either would be ACCEPTED and would record a
+    clearance attributed to nobody, or justified by the placeholder itself.
     """
     exact = f"--scope {shlex.quote(scope)} --hold-key {shlex.quote(hold_key)}"
     if candidate_key is not None:
         exact = f"{exact} --candidate-key {shlex.quote(candidate_key)}"
     return (
         f"python3 {_quote(path=_wrapper_path(name='dispatcher.py'))} "
-        f"clear-acp-availability-hold --repo {_quote(path=project_root)} {exact} "
-        f"--reason {shlex.quote(_CLEARANCE_REASON_PLACEHOLDER)}"
+        f"clear-acp-availability-hold --repo {_quote(path=project_root)} {exact}"
     )
 
 
@@ -245,12 +248,15 @@ def clear_provider_exhaustion_command(*, project_root: Path, provider: str) -> s
     satisfied for one. The two write different journal stages, and neither scan
     reads the other's, so offering the wrong valve here would advertise a
     clearance that retires nothing.
+
+    It renders no `--reason` either, for the reason the module comment above
+    gives: this valve carries the identical blank-only refusal, so a placeholder
+    rendered here would be accepted just as readily.
     """
     return (
         f"python3 {_quote(path=_wrapper_path(name='dispatcher.py'))} "
         f"clear-provider-exhaustion --repo {_quote(path=project_root)} "
-        f"--provider {shlex.quote(provider)} "
-        f"--reason {shlex.quote(_CLEARANCE_REASON_PLACEHOLDER)}"
+        f"--provider {shlex.quote(provider)}"
     )
 
 
