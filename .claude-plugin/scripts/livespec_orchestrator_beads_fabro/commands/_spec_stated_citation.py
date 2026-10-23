@@ -218,16 +218,17 @@ def _resolved_response(
         ]
     target = payload.get(_GENERALIZATION_TARGET)
     if isinstance(target, str):
-        payload[_GENERALIZATION_TARGET] = _resolved(
-            citation=target, governing=governing, enclosing=enclosing
-        )
+        resolved_target = _resolved(citation=target, governing=governing, enclosing=enclosing)
+        payload[_GENERALIZATION_TARGET] = resolved_target
+        if _is_unresolvable(citation=resolved_target, governing=governing, enclosing=enclosing):
+            _refuse_target_through_stated_by(payload=payload, target=resolved_target)
     return json.dumps(payload)
 
 
 def _refused_headings(
     *, text: str, governing: Mapping[str, str], enclosing: Mapping[str, str]
 ) -> tuple[str, ...]:
-    """The first response's unresolvable `stated_by` citations, if readable."""
+    """The first response's unresolvable citation fields, if readable."""
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError:
@@ -238,13 +239,17 @@ def _refused_headings(
     cited = payload.get(_STATED_BY)
     if not isinstance(cited, list):
         return ()
-    valid = frozenset(governing.values())
     refused = [
         citation
         for citation in cast("list[object]", cited)
         if isinstance(citation, str)
-        and _resolved(citation=citation, governing=governing, enclosing=enclosing) not in valid
+        and _is_unresolvable(citation=citation, governing=governing, enclosing=enclosing)
     ]
+    target = payload.get(_GENERALIZATION_TARGET)
+    if isinstance(target, str) and _is_unresolvable(
+        citation=target, governing=governing, enclosing=enclosing
+    ):
+        refused.append(target)
     return tuple(dict.fromkeys(refused))
 
 
@@ -254,7 +259,8 @@ def _correction_prompt(*, prompt: str, refused: tuple[str, ...], headings: tuple
     heading_list = "\n".join("- " + heading for heading in headings)
     instruction = " ".join(
         (
-            "Reply once with a replacement JSON verdict whose stated_by only cites",
+            "Reply once with a replacement JSON verdict whose stated_by and",
+            "generalization_target only cite",
             "these valid H2 headings:",
         )
     )
@@ -274,6 +280,28 @@ def _resolved(*, citation: str, governing: Mapping[str, str], enclosing: Mapping
     """One citation read at the level that governs, or carried through as it is."""
     key = _citation_key(heading=citation)
     return governing.get(key, enclosing.get(key, citation))
+
+
+def _is_unresolvable(
+    *, citation: str, governing: Mapping[str, str], enclosing: Mapping[str, str]
+) -> bool:
+    """Whether a citation cannot name one governing H2 after resolution."""
+    return (
+        _resolved(citation=citation, governing=governing, enclosing=enclosing)
+        not in governing.values()
+    )
+
+
+def _refuse_target_through_stated_by(*, payload: dict[str, object], target: str) -> None:
+    """Keep an invalid target on the shared parser's existing unreadable path.
+
+    The shared parser deliberately validates only ``stated_by`` against the
+    spec tree. This consumer promises the stricter, two-citation reading, so
+    after its one correction request it projects a still-invalid target there:
+    the shared parser then refuses the same unknown heading rather than
+    returning a verdict whose target no consumer can open.
+    """
+    payload[_STATED_BY] = [target]
 
 
 def _level_of(*, heading: str) -> int:

@@ -107,6 +107,44 @@ def test_an_unreadable_citation_is_reasked_with_the_valid_clause_inventory() -> 
     assert _GOVERNING in model.prompts[1]
 
 
+def test_an_unreadable_generalization_target_is_reasked_with_the_valid_clause_inventory() -> None:
+    """An invalid target receives the same one correction opportunity as stated_by."""
+    refused = "## A heading that is nowhere"
+    model = _Responses(
+        responses=(
+            json.dumps(
+                {
+                    "kind": "unstated",
+                    "stated_by": [_GOVERNING],
+                    "generalization_target": refused,
+                    "rationale": "first answer",
+                }
+            ),
+            json.dumps(
+                {
+                    "kind": "unstated",
+                    "stated_by": [_GOVERNING],
+                    "generalization_target": _GOVERNING,
+                    "rationale": "corrected answer",
+                }
+            ),
+        )
+    )
+
+    verdict = judge_within_ceiling(
+        spec_tree=_TREE,
+        statement=_STATEMENT,
+        run_model=model,
+        ceiling=20_000,
+    )
+
+    assert is_successful(verdict)
+    assert verdict.unwrap().generalization_target == _GOVERNING
+    assert len(model.prompts) == 2
+    assert refused in model.prompts[1]
+    assert _GOVERNING in model.prompts[1]
+
+
 def test_a_second_unreadable_citation_is_refused_without_a_third_reask() -> None:
     """A bounded correction retains the shared parser's unreadable verdict."""
     refused = "## A heading that is nowhere"
@@ -123,6 +161,30 @@ def test_a_second_unreadable_citation_is_refused_without_a_third_reask() -> None
             for _ in range(3)
         )
     )
+
+    verdict = judge_within_ceiling(
+        spec_tree=_TREE,
+        statement=_STATEMENT,
+        run_model=model,
+        ceiling=20_000,
+    )
+
+    assert not is_successful(verdict)
+    assert len(model.prompts) == 2
+
+
+def test_a_second_unreadable_generalization_target_is_refused_without_a_third_reask() -> None:
+    """A still-invalid target stays unreadable after its one correction request."""
+    refused = "## A heading that is nowhere"
+    response = json.dumps(
+        {
+            "kind": "unstated",
+            "stated_by": [_GOVERNING],
+            "generalization_target": refused,
+            "rationale": "still invalid",
+        }
+    )
+    model = _Responses(responses=(response, response, response))
 
     verdict = judge_within_ceiling(
         spec_tree=_TREE,
