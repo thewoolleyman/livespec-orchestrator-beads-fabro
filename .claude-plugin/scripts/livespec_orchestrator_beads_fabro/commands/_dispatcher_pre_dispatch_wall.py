@@ -173,15 +173,26 @@ def pre_dispatch_wall_exit(
     than it does — the proof-assets gate, which CREATES a repository
     prerelease, and the Codex gate, which spends a bounded provider renewal.
 
-    The SPEC-CHANGE-TIER row follows, and it is the last of the free reads. It
-    refuses a held item with the same exit code the two criteria rows carry,
-    because the exit-code enumeration ratifies one code for all three. Its
-    position is cheap-first like the rest of this table and ALSO fail-closed by
-    construction: it spends no model call and reaches no provider — the clause
-    makes the hold "a read of the spec history [that] needs no model" — so it
-    cannot be weakened by an outage, and putting it ahead of the two rows that
-    spend more than it does keeps a dispatch that can never run from creating a
-    repository prerelease or a bounded provider renewal first.
+    The SPEC-CHANGE-TIER row follows. It refuses a held item with the same exit
+    code the two criteria rows carry, because the exit-code enumeration ratifies
+    one code for all three. Its position is cheap-first like the rest of this
+    table, and it is NOT a free read: the ratified "a read of the spec history
+    [that] needs no model" describes the HOLD, while the ROW additionally spends
+    the reuse-capped CLASSIFICATION the clause puts on every dispatch path — one
+    per item per specification version, plus the judgement beside it for a
+    non-exempt feature — because that classification is also what releases a
+    held item once its topic ratifies. So it spends what the Definition-of-Done
+    judgement above it spends, and sits for the same reason after every free
+    parse that could already have refused the selection and ahead of the two
+    rows that spend more than it does, which keeps a dispatch that can never run
+    from creating a repository prerelease or a bounded provider renewal first.
+    What makes it fail-closed is NOT that it reaches no provider, because on a
+    reuse miss it does: it is that `classify_and_hold`, having classified, then
+    re-reads the hold from the LEDGER rather than the classification's own
+    outcome, so a standing record keeps governing an item whose classification
+    could not run. Reading that fresh outcome instead stopped this very row
+    refusing an unratified topic, which `_spec_change_tier_wall` records as
+    measured while the row was wired.
 
     The proof-ASSETS gate follows (S5 / bd-ib-b4u6b7): an item carrying a
     `factory_captured` assertion needs this repository's standing proof-assets
