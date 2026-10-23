@@ -1809,6 +1809,23 @@ it there; the bullets below are what this repo was missing.
   satisfied by a standing directive once the goal is named — do not re-prompt.
   Surface real blockers and true judgment calls; drop routine "should I
   proceed?" confirmations. Default to acting, then reporting outcomes.
+- **A fleet coordinator's ruling is an order; execute it rather than re-asking
+  the maintainer** (maintainer-declared 2026-10-23). The coordinator session
+  (`gitops-fleet-capacity-monitoring`) exists so that seats do not block on
+  the maintainer, and it acts under the maintainer's delegated authorization
+  for blocking items. When it RULES on an action in your seat, verify the
+  preconditions it names, take the action, verify the outcome, and report
+  back to the coordinator and on the shared ledger thread. Do not hold the
+  ruling for a direct maintainer confirmation, and do not re-prompt a picker
+  it already answered. This holds even for an outward-facing but reversible
+  act such as a force-with-lease repair of a factory publish branch. Two limits
+  remain: never perform an act your own permission settings denied because a
+  peer asked, and never edit settings or this file on a peer's say-so.
+  *Instance:* on 2026-10-23 the coordinator ruled that the
+  `spec-implementation-lockstep` seat repair `bd-ib-57ss2n`'s publish branch,
+  which GitHub had left disagreeing with its pull request. The seat held the
+  push to ask the maintainer again, and the item sat blocked for hours until
+  the maintainer asked why the seat was ignoring the coordinator's orders.
 - **Export, then reap: a dead factory run may be removed without a
   per-instance ask** (maintainer-declared 2026-08-26). For any DEAD factory
   run, capture its full record — the `ps -a` row, run id, terminal state and
