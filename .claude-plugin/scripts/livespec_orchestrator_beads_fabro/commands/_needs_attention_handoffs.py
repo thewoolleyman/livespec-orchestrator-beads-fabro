@@ -20,6 +20,8 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = [
     "availability_wait_journal_command",
+    "clear_acp_availability_hold_command",
+    "clear_provider_exhaustion_command",
     "dispatcher_loop_command",
     "drive_command",
     "host_only_command",
@@ -44,6 +46,14 @@ _DISPATCH_JOURNAL_SUBPATH = "tmp/fabro-dispatch-journal.jsonl"
 # recording no hold at all, so a pattern naming only the hold stage prints
 # nothing for exactly the condition an operator cannot otherwise see.
 _AVAILABILITY_WAIT_STAGES = "acp-availability-observed|acp-preflight-refusal"
+
+# The one field of either clearance valve the Dispatcher cannot supply, rendered
+# as a placeholder the operator replaces. A clearance "asserts the entitlement is
+# available again, which no observation supports", so the reason is the human act
+# the valve exists to record and inventing one here would make the valve a second
+# automatic-expiry path -- which is exactly what both commands refuse a blank
+# `--reason` to prevent.
+_CLEARANCE_REASON_PLACEHOLDER = "<state why this entitlement is available again>"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -191,6 +201,57 @@ def model_fallback_journal_command(*, project_root: Path, node: str) -> str:
     journal = shlex.quote(f"{project_root}/{_DISPATCH_JOURNAL_SUBPATH}")
     node_field = shlex.quote(json.dumps({"node": node})[1:-1])
     return f"grep -F acp-model-fallback {journal} | grep -F {node_field}"
+
+
+def clear_acp_availability_hold_command(
+    *,
+    project_root: Path,
+    scope: str,
+    hold_key: str,
+    candidate_key: str | None,
+) -> str:
+    """Retire ONE typed observed-availability record, by its exact identity.
+
+    The EXACT target is what the clause asks for — "exact scope/key clearance
+    for current records" — and the valve enforces it: a candidate-scoped
+    clearance that omits its `--candidate-key`, or a domain-scoped one that
+    supplies it, is refused outright. So the key is rendered when and only when
+    the record carries one.
+
+    NO `--invoker` IS RENDERED, and the omission is the attribution rather than
+    a gap in it. The valve resolves the invoker itself and refuses any
+    invocation that resolves to the unattributed mark, naming both the flag and
+    the environment variable that satisfy it — so an operator who runs this
+    verbatim without an identity is told exactly that, while a rendered
+    placeholder identity would be ACCEPTED and would record a clearance
+    attributed to nobody.
+    """
+    exact = f"--scope {shlex.quote(scope)} --hold-key {shlex.quote(hold_key)}"
+    if candidate_key is not None:
+        exact = f"{exact} --candidate-key {shlex.quote(candidate_key)}"
+    return (
+        f"python3 {_quote(path=_wrapper_path(name='dispatcher.py'))} "
+        f"clear-acp-availability-hold --repo {_quote(path=project_root)} {exact} "
+        f"--reason {shlex.quote(_CLEARANCE_REASON_PLACEHOLDER)}"
+    )
+
+
+def clear_provider_exhaustion_command(*, project_root: Path, provider: str) -> str:
+    """Retire the LEGACY provider-wide exhaustion record for one vendor.
+
+    The sibling of the valve above and deliberately not interchangeable with
+    it: a legacy record is scoped to a whole vendor and carries no scope, hold
+    key or candidate key, so the typed valve's exactness refusal could never be
+    satisfied for one. The two write different journal stages, and neither scan
+    reads the other's, so offering the wrong valve here would advertise a
+    clearance that retires nothing.
+    """
+    return (
+        f"python3 {_quote(path=_wrapper_path(name='dispatcher.py'))} "
+        f"clear-provider-exhaustion --repo {_quote(path=project_root)} "
+        f"--provider {shlex.quote(provider)} "
+        f"--reason {shlex.quote(_CLEARANCE_REASON_PLACEHOLDER)}"
+    )
 
 
 def availability_wait_journal_command(*, project_root: Path) -> str:
