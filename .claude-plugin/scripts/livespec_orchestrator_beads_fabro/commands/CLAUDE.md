@@ -1535,6 +1535,30 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   model, and calling it a confirmation would confirm a model nobody ran. Each is
   the clause's "any other probe failure": skip for this evaluation, no hold,
   selection continues.
+- `_acp_availability_probe_outcome.py` — WHAT one confirmation turn's ending
+  MEANS: "Session creation, process exit alone, timeout, cancellation, and an
+  ACP refusal do not confirm availability." PURE, and the grading only; the
+  vocabulary is CLOSED (`PROBE_ENDINGS`) so a consumer can exhaust it, and
+  exactly one member confirms.
+  THE FIVE UNCONFIRMED ENDINGS ARE KEPT APART rather than collapsed into one
+  boolean, which is the decision an editor is most likely to undo on the
+  grounds that the clause treats them alike. It does not: downstream they take
+  THREE routes — an eligible REFUSAL mints a hold at the probe's own occurrence
+  time, a TIMEOUT must mint nothing because a turn the Dispatcher terminated
+  measured no provider, and a process exit, a bare session and a cancellation
+  are neither. One boolean makes a terminated probe indistinguishable from a
+  measured outage.
+  THREE PRECEDENCE STEPS ARE LOAD-BEARING. The BOUND is read FIRST, before any
+  recorded text: a killed turn's record can carry the provider's last sentence,
+  so a text-first grader would mint a hold from a measurement it interrupted.
+  The COMPLETED TURN is read SECOND, ahead of every failure arm, because a
+  run-level failure block legitimately names something other than the turn. And
+  the bare SESSION is told from a PROCESS EXIT by the `agent.acp.started` event
+  alone — the adapter-launch clause's own prompt-boundary reading — never by a
+  message. The `turn.final_output` reclassification ("a provider refusal booked
+  as a successful turn is a failed attempt") is deliberately NOT graded here:
+  this module sees no turn output, which is what keeps the "never an arbitrary
+  exec-output tail" rule structural.
 - The FACTORY-NATIVE OPERATOR CLEARANCE of the same paragraph's "an operator
   clearance by a minimal factory-native record whose recorded outcome carries
   the clearance's exact identity, actor, time, and reason" (`bd-ib-dtfv2p`,
