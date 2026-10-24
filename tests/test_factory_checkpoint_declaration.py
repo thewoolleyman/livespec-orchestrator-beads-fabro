@@ -208,11 +208,27 @@ therefore guards the configuration rather than the graph, and the EXACT pin on
 the allowance is what keeps a graph widening from passing unremarked: it fails
 and forces a re-measurement, which is the step that was skipped in v175.
 
-This repository routes NO factory node to Codex (`.livespec.jsonc`'s `acp_nodes`
-put every node on a Claude adapter), so nothing here is refused by it; a
-repository that does route one and raises its node timeouts should expect that
-gate to bite, and the remedy is the gate's own -- a shorter configured timeout
-or a fresher credential -- not a visit cap sized below what the graph can reach.
+THE 2026-10-24 CANARY RAISED `fix` FROM 3600 TO 7200 AND IS THE FIRST
+WIDENING THE WINDOW ABSORBS, which is exactly the case the exact pin exists to
+surface, so it is stated here rather than passed. The maintainer ruling recorded
+on livespec-dev-tooling-dfixhe (delegated to plan bd-ib-jxvgq5) routes
+`implement`, `fix`, `review`, both proof nodes, `pr` and `disposition` to Codex
+and matches `fix`'s ceiling to `review_fix`. Re-measured against this tree:
+931755 shipped and 1444755 at the retired `"15m"` -- both up 28800, eight
+billed `fix` visits at the extra 3600 s each -- so the bound of 1000000 holds,
+with 68245 seconds of headroom. The SHIPPED ALLOWANCE NOW EXCEEDS the 864000-second
+fresh-credential lifetime, the line v175 crossed. It no longer refuses a fresh
+token, and the reason is the v177 rule and nothing else: the worker's run budget
+is the smaller of this allowance and the 108000-second credential-use window, so
+the freshness gate still demands 111600 seconds. Read the consequence plainly:
+from this tree on, the credential ceiling case below is protected ONLY by that
+window. Removing the smaller-of-two rule, or raising the window past 860400,
+reprices a fresh credential out of every Codex dispatch.
+
+This repository now routes most of its factory nodes to Codex, so the
+freshness gate applies to its dispatches; the remedy for a refusal is the
+gate's own -- a shorter configured timeout or a fresher credential -- not a
+visit cap sized below what the graph can reach.
 """
 
 from __future__ import annotations
@@ -242,7 +258,7 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # 15m figure exactly, because that one is the thing being moved away from and a
 # drifting comparand would hide the move.
 _ALLOWANCE_BOUND_SECONDS = 1_000_000
-_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_415_955
+_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_444_755
 
 # The execution ALLOWANCE the shipped payload resolves, the lifetime the
 # freshness gate actually demands of a credential, and the lifetime of a FRESH
@@ -255,7 +271,7 @@ _ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_415_955
 # comparand is what let v175's widened graph cross the credential ceiling while
 # every case here still passed, and an exact pin forces the re-measurement that
 # was skipped.
-_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 902_955
+_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 931_755
 _SHIPPED_FRESHNESS_REQUIREMENT_SECONDS = 111_600
 _FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS = 864_000
 
