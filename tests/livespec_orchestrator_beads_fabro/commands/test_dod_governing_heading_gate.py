@@ -24,8 +24,10 @@ that heading whatever the judgement said.
 
 from __future__ import annotations
 
+import stat
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_advisories import (
     advisory_definition_of_done_findings,
 )
@@ -269,10 +271,63 @@ def test_the_filing_advisory_names_the_judgement_heading_in_place_of_a_candidate
 def test_the_filing_display_renders_that_remedy_under_the_advisory_leader(
     tmp_path: Path,
 ) -> None:
-    """Filing supplies the reader, so the filer meets the same heading as the wall."""
+    """Given a verdict, the filer meets the same heading as the wall."""
     repo = _repo(tmp_path=tmp_path)
 
     rendered = filing_display(item=_item(), cwd=repo, governing=_reader(verdict=_VERDICT))
 
     assert f"{ADVISORY_FINDING_PREFIX} " in rendered
     assert _GOVERNING in rendered
+
+
+def _install_judge(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stand the judge in AT THE EXECUTABLE, as both Scenario 174 modules do.
+
+    The display's taking is the spec-stated judgement and nothing else, so one
+    unconditional reply answers it, and standing the judge in here rather than
+    handing the display a verdict is the whole of the case below: a reader
+    passed in cannot tell a surface that TAKES the judgement from one that
+    merely accepts a verdict somebody else took.
+    """
+    script = tmp_path / "fake-judge"
+    _ = script.write_text(
+        "#!/bin/sh\n"
+        f'printf "%s\\n" "{{\\"kind\\": \\"stated\\", \\"stated_by\\": [\\"{_GOVERNING}\\"],'
+        ' \\"generalization_target\\": null, \\"rationale\\": \\"It states it.\\"}"\n',
+        encoding="utf-8",
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH", str(script))
+
+
+def test_the_filing_display_takes_the_judgement_with_no_reader_supplied(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Driven exactly as the four front-ends drive it: no `governing=` argument.
+
+    The front-ends call `filing_display(item=..., cwd=Path.cwd())`, so a display
+    whose verdict arrives only when a caller hands one in renders the lexical
+    candidate at every production filing surface while the pre-admission
+    judgement holds the item for a different heading — the divergence the whole
+    assertion exists to close, and one no hand-fed case can detect.
+    """
+    repo = _repo(tmp_path=tmp_path)
+    _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch)
+
+    rendered = filing_display(item=_item(), cwd=repo)
+
+    assert f"{ADVISORY_FINDING_PREFIX} " in rendered
+    assert _GOVERNING in rendered
+    assert _REMEDY in rendered
+
+
+def test_the_filing_display_names_no_judgement_heading_when_none_could_be_taken(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control: the heading above comes from the judgement, not from the item."""
+    repo = _repo(tmp_path=tmp_path)
+    monkeypatch.setenv("LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH", str(tmp_path / "no-such-judge"))
+
+    rendered = filing_display(item=_item(), cwd=repo)
+
+    assert _GOVERNING not in rendered

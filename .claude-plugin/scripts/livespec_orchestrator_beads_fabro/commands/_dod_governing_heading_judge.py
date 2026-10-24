@@ -21,13 +21,22 @@ nobody could read.
 
 FOUR PROPERTIES AN EDITOR MUST NOT INVERT.
 
-THE READER IS AN INJECTED SEAM DEFAULTING TO ABSENT, exactly as
-`attachment_digest_reader` defaults to `unverified_attachment`. The surfaces
-that consult the governing-heading verdict do not all have a model call to
-spare: the `needs-attention` hygiene lane grades every item in the tenant, and
-a default that reached for a judge would turn one listing into a model call per
-item. The default therefore answers "no verdict", which every consumer reads as
-the absence of evidence and none reads as a clean citation.
+THE READER IS AN INJECTED SEAM, AND ITS ABSENT ARM IS NAMED RATHER THAN
+DEFAULTED, exactly as `attachment_digest_reader`'s `unverified_attachment` is.
+The surfaces that consult the governing-heading verdict do not all have a model
+call to spare: the `needs-attention` hygiene lane grades every item in the
+tenant, and a reader that reached for a judge there would turn one listing into
+a model call per item. So `unjudged_governing_heading` exists for the caller
+that must not spend one, and answers "no verdict" — which every consumer reads
+as the absence of evidence and none reads as a clean citation.
+
+BUT A REFUSING SURFACE DEFAULTS TO THE HOST READER, not to that arm. Both the
+pre-admission/pre-dispatch gate and the filing display grade ONE item and are
+read as the authority on whether its reference line governs, so a default that
+silently took no judgement would report a clean citation for an item the other
+surface holds. The two walls therefore name this host's reader as their own
+default and let a caller pass the absent arm explicitly, which is the opposite
+of what a seam defaulting to absent would give them.
 
 EVERY FAILURE IS AN ABSENT VERDICT RATHER THAN AN EXCEPTION. The three ways
 this can fail — an unreadable spec tree, a judge that will not run, a response
