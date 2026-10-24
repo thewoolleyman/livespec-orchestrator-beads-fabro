@@ -520,13 +520,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 41 \u2014 standalone analysis lands in a plan, not a root research tree",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-08-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 43 \u2014 loop drains the ranked queue by default",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-14"

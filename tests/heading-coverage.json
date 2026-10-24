@@ -648,9 +648,8 @@
     "heading": "## Scenario 41 \u2014 standalone analysis lands in a plan, not a root research tree",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Analysis-placement scenario for the no-root-research-tree invariant, renamed to plan vocabulary by the planning-lane-realization-core-v197-v198 proposal; the covering test is the bd-ib-mrqoy2.3 plan-operation implementation follow-up and must land at the integration tier or above per the scenario-tier rule.",
-    "work_item": "bd-ib-heat"
+    "test": "tests.integration.test_standalone_analysis_plan_placement_scenario41",
+    "reason": "Analysis-placement scenario for the no-root-research-tree invariant, renamed to plan vocabulary by the planning-lane-realization-core-v197-v198 proposal. Bound at the integration tier by the three tests of tests/integration/test_standalone_analysis_plan_placement_scenario41.py: test_scenario41_standalone_analysis_lands_as_write_once_plan_research, test_scenario41_no_root_research_tree_is_created_anywhere, and test_scenario41_no_mutable_plan_state_file_is_created. They drive the plan package's create_thread through its real store seam against the in-memory FakeBeadsClient and grade the filesystem it leaves behind. The bd-ib-mrqoy2.3 follow-up the previous reason named as the owner is done, so bd-ib-pziqbf re-owned the row and landed the tests."
   },
   {
     "heading": "## Scenario 42 \u2014 list-plans enumerates unarchived plans",
