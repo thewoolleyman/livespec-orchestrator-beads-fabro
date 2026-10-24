@@ -501,6 +501,83 @@ def test_an_incoming_change_outside_the_inert_classes_reproves(
     assert "incoming-path-outside-inert-classes: module.py" in posted[0]
 
 
+def _reproved_once(*, fixture: dict[str, object], tmp_path: Path) -> dict[str, object]:
+    """Drive one re-proving refresh, and return the run as its re-proof leaves it.
+
+    The first refresh brings in a non-inert path, so it MUST re-prove — which is
+    asserted here rather than assumed, because the cases below are only about a
+    run that has re-proved once if the first decision really said so. The
+    returned fixture is the state the run's second `pr_refresh` meets: its
+    verified head and previous published head are both the re-proved head.
+    """
+    moved = _rebase_onto(fixture=fixture, paths={"module.py": "value = 1\n"})
+    code, _, _, posted = _call(fixture=moved, tmp_path=tmp_path / "first")
+    assert code == 1
+    assert "— reproof_required —" in posted[0]
+    reproved = dict(moved)
+    reproved["verified_head"] = moved["new_head"]
+    reproved["previous_head"] = moved["new_head"]
+    reproved["previous_base"] = moved["new_base"]
+    return reproved
+
+
+def test_after_one_reproof_a_non_overlapping_refresh_carries_forward(
+    inert_refresh: dict[str, object], tmp_path: Path
+) -> None:
+    """Scenario 229's first case: a re-proved run stops chasing the default branch.
+
+    The second refresh brings in a Python module that is neither an item path nor
+    in the observation scope. Before v177 that re-proved on every base advance;
+    after one re-proof it carries forward, and the record says why, because a
+    carried_forward record whose incoming paths are not all inert would otherwise
+    read as a misclassification.
+    """
+    reproved = _reproved_once(fixture=inert_refresh, tmp_path=tmp_path)
+    second = _rebase_onto(fixture=reproved, paths={"second.py": "value = 2\n"})
+
+    code, _, err, posted = _call(fixture=second, tmp_path=tmp_path / "second")
+
+    assert code == 0, err
+    assert len(posted) == 1
+    record = posted[0]
+    assert "— carried_forward —" in record
+    assert f"Verified head: {reproved['verified_head']}" in record
+    assert f"New head: {second['new_head']}" in record
+    assert "Incoming paths: second.py" in record
+    assert (
+        "Inert classes: not every incoming path is inert; " "the run's one re-proof covered them"
+    ) in record
+
+
+def test_after_one_reproof_an_overlapping_refresh_still_reproves(
+    inert_refresh: dict[str, object], tmp_path: Path
+) -> None:
+    """Scenario 229's second case: the widening never reaches the observation scope.
+
+    The second refresh changes the one file the proof reads. The scope, blob and
+    replay checks all still run after a re-proof, so the record names the path
+    and the run re-enters proof_capture.
+    """
+    reproved = _reproved_once(fixture=inert_refresh, tmp_path=tmp_path)
+    repo = reproved["repo"]
+    assert isinstance(repo, Path)
+    reads = {_SCOPED_INERT: _worktree_identity(repo=repo, path=_SCOPED_INERT)}
+    second = _rebase_onto(fixture=reproved, paths={_SCOPED_INERT: "the note changed\n"})
+
+    code, _, _, posted = _call(
+        fixture=second,
+        tmp_path=tmp_path / "second",
+        steps=[f"cat {_SCOPED_INERT}"],
+        proofs=[["a plan note"]],
+        reads=reads,
+    )
+
+    assert code == 1
+    assert "— reproof_required —" in posted[0]
+    assert f"incoming-path-in-observation-scope: {_SCOPED_INERT}" in posted[0]
+    assert f"blob-identity-differs: {_SCOPED_INERT}" in posted[0]
+
+
 @pytest.mark.parametrize(
     "inert",
     ["plan/topic/note2.md", "SPEC/history/v2/spec.md", "SPEC/templates/one/history/v2/spec.md"],
