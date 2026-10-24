@@ -34,10 +34,72 @@ THE DOMAIN NAMES ARE THE LEGACY PROVIDER ALIASES (`anthropic`, `codex`)
 that `_acp_builtin_candidates` already assigns by provenance. Reusing
 them is what lets an unexpired legacy provider record keep covering a
 built-in candidate until retirement, which the contract requires.
+
+ONE TABLE, KEYED TWO WAYS, because a candidate reaches its own measured
+diagnostics by two independent provenance routes and neither is a
+generalization of the other. `effective_signatures` owns the union:
+
+- RENDERED BYTES. `_acp_builtin_candidates` keys on the exact adapter
+  strings this build renders, so it answers for a MANUAL-form candidate
+  whose command was never overridden. Its lookup key is the candidate's
+  own `availability_key`, which on that route IS the provenance-assigned
+  compatibility alias.
+- RESOLVED AGENT. A STRUCTURED candidate renders through the catalogs,
+  so its `candidate_key` is the canonical `<agent>/<provider>/<model>`
+  triple rather than a digest of bytes, and it is absent from the byte
+  table by construction. Its table is reached through `agent_id` -- the
+  catalog entry it resolved THROUGH, which is resolved provenance and
+  never parsed out of command text -- AND through `shipped_agent`, which
+  says that entry was this build's own. Both halves are required, and
+  the second is what the first cannot supply: `resolve_agent_catalog`
+  lets a repository REPLACE a shipped entry wholesale, so an adapter
+  this fleet has never run still carries the id `claude-acp`. Keyed on
+  the id alone, the route lent such a candidate all four Anthropic
+  sentences -- the loose `("org", "spend limit")` conjunction being
+  plausibly matchable by another vendor's ordinary billing prose -- and
+  every one of them is availability-domain scoped, so a single false
+  match mints a domain hold that strands every sibling candidate on that
+  operator's own domain and releases a run over a ceiling nobody hit.
+  `shipped_agent` is therefore the agent route's exact counterpart of
+  the byte route's `builtin`: both ask whether THIS BUILD produced the
+  thing being classified, which is the only question that licenses
+  lending it this build's own measurements.
+
+THE SECOND ROUTE IS NOT AN EXTENSION; IT IS THE MEASURED SET'S OWN KEY.
+The contract names the forms BY AGENT -- "for `claude-acp`, the
+session-limit form ... for `codex-acp`, the structured usage-limit field"
+-- so a build attaching them on the byte route alone applied them to no
+structured node at all. Measured 2026-10-24: every ACP node of this
+repository's graph resolves structured, and a `claude-acp` proof node
+whose five-hour account emptied mid-run answered `session/prompt` with
+"Internal error: You've hit your session limit · resets 3:40pm (UTC)",
+which reached `unmatched` -- non-eligible, so no typed hold was minted
+and the release fell through to the legacy cause-text arm.
+
+AND THE AGENT ROUTE IS NARROWER THAN "BUILT IN". Its keys are the two
+agents whose diagnostics the contract records as MEASURED, which is a
+different question from `_acp_agent_catalog.BUILTIN_AGENT_IDS` -- that
+set says which catalog entries owe no recorded verification run. The two
+coincide today and are deliberately not derived from one another: a
+registry-seeded agent, or a built-in one whose diagnostics nobody has
+observed, is lent no table at all, exactly as an unknown
+`availability_key` is.
+
+NOTE THAT MEMBERSHIP IN `BUILTIN_AGENT_IDS` IS NOT THE PROVENANCE TEST
+EITHER, and conflating the two is the specific mistake this module's
+second route made. That set is keyed on the ID, so a replaced
+`claude-acp` entry is in it; `shipped_agent` is computed from the
+resolved ENTRY, so a replaced one is not shipped. The narrowing above is
+about WHICH agents were measured and the flag is about WHOSE adapter
+ran, and a candidate needs both answers to be lent a table.
 """
 
 from __future__ import annotations
 
+from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import (
+    CLAUDE_AGENT_ID,
+    CODEX_AGENT_ID,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import (
     ANTHROPIC_DOMAIN,
     CODEX_DOMAIN,
@@ -184,6 +246,15 @@ _BUILTIN_SIGNATURES: dict[str, tuple[AcpAvailabilitySignature, ...]] = {
     ),
 }
 
+# WHICH DOMAIN'S TABLE EACH MEASURED AGENT'S DIAGNOSTICS SIT IN -- the second
+# key into the one table above, never a second copy of it. The forms are the
+# same measurements whichever route reaches them, and two tuples of them is how
+# a registry comes to disagree with itself about what was measured.
+_MEASURED_AGENT_DOMAINS: dict[str, str] = {
+    CLAUDE_AGENT_ID: ANTHROPIC_DOMAIN,
+    CODEX_AGENT_ID: CODEX_DOMAIN,
+}
+
 
 def builtin_availability_signatures(
     *, availability_key: str
@@ -203,24 +274,70 @@ def effective_signatures(
 ) -> tuple[AcpAvailabilitySignature, ...]:
     """The signatures that actually classify this candidate's failures.
 
+    BOTH PROVENANCE ROUTES ARE CONSULTED, for the reason the module
+    docstring gives: a structured candidate is absent from the
+    rendered-bytes table by construction, so the byte route alone reaches
+    none of them.
+
     `builtin` is supplied by the caller -- which already holds the
     rendered-bytes table `_acp_builtin_candidates` produces -- and is NEVER
     derived from the candidate's keys here. Reading built-in-ness out of a
     key's spelling is inference from text, the one thing that table was
     built to avoid, and a repository is free to choose `availability_key:
-    "codex"` for an adapter this build did not render.
+    "codex"` for an adapter this build did not render. `agent_id` plus
+    `shipped_agent` is the mirror of that discipline on the other route:
+    the first is the catalog entry the candidate RESOLVED THROUGH and the
+    second says that entry was this build's own, so between them they
+    infer nothing either. `agent_id` ALONE is exactly as weak as reading
+    built-in-ness out of an `availability_key` would be, because a
+    repository may REPLACE the shipped `claude-acp` entry wholesale --
+    keeping the id while rendering any adapter it likes.
 
-    Configured signatures come FIRST so an operator's own measurement of a
-    built-in adapter is visible to the ambiguity rule rather than silently
-    losing to, or overriding, the shipped one. Two signatures that match
-    the same diagnostic with different dispositions must surface as
-    ambiguous; ordering them to make one win is the first-match choice the
-    contract forbids.
+    NO IDENTITY MEANS NO TABLE ON EITHER ROUTE. A typed hold needs an
+    `(availability_key, candidate_key)` pair to be scoped by, so an
+    identity-less adapter keeps the conservative legacy posture whatever it
+    resolved through -- and an entitlement nobody declared is exactly what
+    lending it a table would mint.
+
+    EACH MEASURED FORM APPEARS ONCE however many routes reached it, because
+    the effective answer is a registry claim a reader counts. Configured
+    signatures are deliberately OUTSIDE that dedupe and come FIRST, so an
+    operator's own measurement of a built-in adapter is visible to the
+    ambiguity rule rather than silently losing to, or overriding, the
+    shipped one. Two signatures that match the same diagnostic with
+    different dispositions must surface as ambiguous; ordering them to make
+    one win is the first-match choice the contract forbids.
     """
     identity = candidate.identity
-    if not builtin or identity is None:
+    if identity is None:
         return candidate.signatures
-    return (
-        *candidate.signatures,
-        *builtin_availability_signatures(availability_key=identity.availability_key),
+    byte_matched = (
+        builtin_availability_signatures(availability_key=identity.availability_key)
+        if builtin
+        else ()
     )
+    agent_matched = _measured_agent_signatures(
+        agent_id=candidate.agent_id, shipped=candidate.shipped_agent
+    )
+    return (*candidate.signatures, *dict.fromkeys((*byte_matched, *agent_matched)))
+
+
+def _measured_agent_signatures(
+    *, agent_id: str | None, shipped: bool
+) -> tuple[AcpAvailabilitySignature, ...]:
+    """The measured table for one SHIPPED resolved agent, or none for every other.
+
+    `None` is an ANSWER rather than a missing input: a manual-form candidate
+    resolved through no catalog entry at all, which is the route the byte
+    table answers for.
+
+    `shipped` is the second half of the same question and is read FIRST,
+    because an agent id is the one part of a catalog entry a repository
+    override keeps. A candidate resolved through a replaced entry is given no
+    table at all -- the same answer an unknown agent gets, and for the same
+    reason: this build has never seen that adapter emit these diagnostics.
+    """
+    if not shipped:
+        return ()
+    domain = None if agent_id is None else _MEASURED_AGENT_DOMAINS.get(agent_id)
+    return () if domain is None else builtin_availability_signatures(availability_key=domain)

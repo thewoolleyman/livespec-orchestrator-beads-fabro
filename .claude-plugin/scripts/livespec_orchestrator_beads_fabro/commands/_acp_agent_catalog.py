@@ -96,6 +96,7 @@ __all__: list[str] = [
     "REGISTRY_SNAPSHOT_DIGEST",
     "agent_catalog_digest",
     "builtin_agent_catalog",
+    "is_shipped_agent_entry",
     "registry_entries_naming_a_verification_run",
     "resolve_agent_catalog",
 ]
@@ -318,6 +319,29 @@ def resolve_agent_catalog(*, block: Mapping[str, Any]) -> Mapping[str, AcpAgentE
             return parsed
         catalog[agent_id] = parsed
     return catalog
+
+
+def is_shipped_agent_entry(*, entry: AcpAgentEntry) -> bool:
+    """Whether one resolved agent entry IS this build's own shipped entry.
+
+    The agent-route counterpart of the rendered-bytes `builtin` flag: both ask
+    whether THIS BUILD produced the thing being classified, which is the only
+    question that licenses lending it a measurement taken against this build's
+    own adapters. An agent ID cannot answer it, because `resolve_agent_catalog`
+    lets a repository REPLACE a shipped entry wholesale -- so `claude-acp` may
+    name an adapter this fleet has never run, and a consumer keyed on the id
+    alone would lend it Anthropic's measured diagnostics.
+
+    The comparison is whole-ENTRY equality rather than a check on which keys a
+    repository happened to override, and that is what makes it answer the right
+    question: `parse_agent_entry` requires a COMPLETE entry, so an override is
+    never a patch over the snapshot, and an entry that differs in any field
+    this build renders from is one this build did not produce. A repository
+    that re-declares the shipped entry byte-for-byte is answered `True`, which
+    is correct rather than a leak -- it has written exactly what this build
+    renders, so the measured diagnostics are about its adapter too.
+    """
+    return builtin_agent_catalog().get(entry.agent_id) == entry
 
 
 def agent_catalog_digest(*, catalog: Mapping[str, AcpAgentEntry]) -> str:
