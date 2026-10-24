@@ -149,6 +149,25 @@ class SpecChangeTierOutcome:
         return self.recorded is not None and self.recorded.is_spec_change
 
 
+@dataclass(frozen=True, kw_only=True)
+class _DidNotRunContext:
+    """The stable inputs used to record one classification that did not run.
+
+    The recorder writes an item-scoped ledger entry, so its item identity,
+    cadence, specification identity, behaviour digest and comment reader/writer
+    are one cohesive operation context.  Keeping them together means the
+    recorder accepts the actual decision input rather than a suppressed list of
+    unrelated parameters.
+    """
+
+    item: WorkItem
+    stage: str
+    spec_version: str
+    digest: str
+    comments: Sequence[str]
+    append: Callable[..., None]
+
+
 def classify_spec_change_tier(
     *,
     item: WorkItem,
@@ -176,13 +195,15 @@ def classify_spec_change_tier(
     digest = behaviour_digest(item=item)
     if snapshot is None:
         return _did_not_run(
-            item=item,
-            stage=stage,
-            spec_version="",
-            digest=digest,
+            context=_DidNotRunContext(
+                item=item,
+                stage=stage,
+                spec_version="",
+                digest=digest,
+                comments=comments,
+                append=append,
+            ),
             cause=CAUSE_SPEC_TREE_UNREADABLE,
-            comments=comments,
-            append=append,
         )
     spec_version = str(snapshot.version)
     reused = reusable_spec_change_tier(comments=comments, spec_version=spec_version, digest=digest)
@@ -198,13 +219,15 @@ def classify_spec_change_tier(
     )
     if not is_successful(classification):
         return _did_not_run(
-            item=item,
-            stage=stage,
-            spec_version=spec_version,
-            digest=digest,
+            context=_DidNotRunContext(
+                item=item,
+                stage=stage,
+                spec_version=spec_version,
+                digest=digest,
+                comments=comments,
+                append=append,
+            ),
             cause=CAUSE_CLASSIFICATION_UNREADABLE,
-            comments=comments,
-            append=append,
         )
     item_class = classification.unwrap()
     if item_class != FEATURE_CLASS:
@@ -221,13 +244,15 @@ def classify_spec_change_tier(
     )
     if not is_successful(verdict):
         return _did_not_run(
-            item=item,
-            stage=stage,
-            spec_version=spec_version,
-            digest=digest,
+            context=_DidNotRunContext(
+                item=item,
+                stage=stage,
+                spec_version=spec_version,
+                digest=digest,
+                comments=comments,
+                append=append,
+            ),
             cause=CAUSE_VERDICT_UNREADABLE,
-            comments=comments,
-            append=append,
         )
     standing = recorded_spec_change_tier(comments=comments)
     return _recorded(
@@ -337,25 +362,16 @@ def _recorded(
     )
 
 
-def _did_not_run(  # noqa: PLR0913 - each argument is one field of the record it writes.
-    *,
-    item: WorkItem,
-    stage: str,
-    spec_version: str,
-    digest: str,
-    cause: str,
-    comments: Sequence[str],
-    append: Callable[..., None],
-) -> SpecChangeTierOutcome:
+def _did_not_run(*, context: _DidNotRunContext, cause: str) -> SpecChangeTierOutcome:
     """Record that the classification did not run, unless this cause already stands."""
-    if cause not in recorded_did_not_run_causes(comments=comments):
-        append(
+    if cause not in recorded_did_not_run_causes(comments=context.comments):
+        context.append(
             body=classification_did_not_run_comment(
-                item_id=item.id,
-                stage=stage,
-                spec_version=spec_version,
-                digest=digest,
+                item_id=context.item.id,
+                stage=context.stage,
+                spec_version=context.spec_version,
+                digest=context.digest,
                 cause=cause,
             )
         )
-    return SpecChangeTierOutcome(work_item_id=item.id, recorded=None, cause=cause)
+    return SpecChangeTierOutcome(work_item_id=context.item.id, recorded=None, cause=cause)

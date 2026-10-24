@@ -213,3 +213,8 @@ def test_an_exempt_decision_records_that_no_judgement_was_taken() -> None:
     # must stay distinguishable: one says nobody asked, the other says the
     # answer named no clause.
     assert "generalization-target: (none)" in body
+
+
+def test_the_did_not_run_record_keeps_its_write_inputs_in_one_context() -> None:
+    """The recorder takes one cohesive record context, not a suppressed arg list."""
+    assert hasattr(gate, "_DidNotRunContext")
