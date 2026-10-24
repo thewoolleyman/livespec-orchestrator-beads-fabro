@@ -36,12 +36,20 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
     resolved_stored_factory_size_decision,
 )
-from livespec_orchestrator_beads_fabro.commands._drive_valve_predicates import can_approve_item
+from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display import (
+    MECHANICAL_FINDING_PREFIX,
+)
+from livespec_orchestrator_beads_fabro.commands._drive_valve_predicates import (
+    awaits_dispatcher_admission,
+    can_approve_item,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
     invalid_source_state,
     valve_refusal,
     valve_success,
 )
+from livespec_orchestrator_beads_fabro.errors import BeadsMappingError
+from livespec_orchestrator_beads_fabro.intake_dor import filing_findings
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -56,12 +64,9 @@ def _definition_of_done_refusal(
 ) -> dict[str, Any] | None:
     """Both halves of the entry-to-`ready` Definition-of-Done gate, as one answer.
 
-    The MECHANICAL half consumes the SAME shared eligibility decision the
-    pre-dispatch wall does, so an item this valve admits is one the dispatch
-    path will accept — the two disagreeing is exactly what that clause's single
-    decision prevents. The SEMANTIC half ("Judged before admission") runs
-    second, because it is a model call and spending one on an item the free
-    parse already refuses buys nothing.
+    The effective acceptance-criteria wall runs before the SEMANTIC half
+    ("Judged before admission"), because the judgement is a model call and
+    spending one on an item the free parse already refuses buys nothing.
 
     Neither refusal WRITES a status: the item rests at `pending-approval`
     rather than being routed to `backlog` or `blocked` on these grounds. The
@@ -103,18 +108,40 @@ def _definition_of_done_refusal(
     return None
 
 
-def approve_item(
+def _auto_item_was_held_for_mechanical_definition_of_done(
+    *, repo: Path, config: StoreConfig, item: WorkItem
+) -> bool:
+    """Whether intake left this auto-admission item at its mechanical hold."""
+    if not awaits_dispatcher_admission(item=item, cwd=repo):
+        return False
+    try:
+        comments = store.read_work_item_comments(path=config, work_item_id=item.id)
+    except BeadsMappingError:
+        return False
+    return any(comment.text.startswith(MECHANICAL_FINDING_PREFIX) for comment in comments)
+
+
+def _auto_recheck_refusal(
     *, repo: Path, config: StoreConfig, item: WorkItem, action_id: str
-) -> dict[str, Any]:
-    if item.status != "pending-approval":
-        return invalid_source_state(aid=action_id, item=item, expected="pending-approval")
-    if not can_approve_item(item=item, cwd=repo):
-        return valve_refusal(
-            aid=action_id,
-            wid=item.id,
-            err="invalid-source-state",
-            msg="approve requires an effective-manual pending-approval item.",
-        )
+) -> dict[str, Any] | None:
+    """Re-run intake's mechanical wall and retain its finding on refusal."""
+    findings = filing_findings(item=item, repo_root=repo)
+    if not findings.withholds_ready:
+        return None
+    for body in findings.comment_bodies():
+        store.append_work_item_comment(path=config, work_item_id=item.id, body=body)
+    return valve_refusal(
+        aid=action_id,
+        wid=item.id,
+        err="definition-of-done-held",
+        msg=f"approve refused: {'; '.join(findings.mechanical)}",
+    )
+
+
+def _factory_size_refusal(
+    *, repo: Path, config: StoreConfig, item: WorkItem, action_id: str
+) -> dict[str, Any] | None:
+    """Route an unreadable or oversized item before any ready admission."""
     size_result = resolved_stored_factory_size_decision(
         cwd=repo,
         path_factory=lambda: config,
@@ -129,15 +156,45 @@ def approve_item(
             msg=failure.detail,
         )
     size = unsafe_perform_io(size_result.unwrap())
-    if size.disposition == "decompose":
-        reason = cast("str", size.reason)
-        route_factory_size_decomposition(path=config, work_item_id=item.id, reason=reason)
+    if size.disposition != "decompose":
+        return None
+    reason = cast("str", size.reason)
+    route_factory_size_decomposition(path=config, work_item_id=item.id, reason=reason)
+    return valve_refusal(
+        aid=action_id,
+        wid=item.id,
+        err="size-decomposition",
+        msg=reason,
+    ) | {"target_status": "backlog", "message": reason}
+
+
+def approve_item(
+    *, repo: Path, config: StoreConfig, item: WorkItem, action_id: str
+) -> dict[str, Any]:
+    if item.status != "pending-approval":
+        return invalid_source_state(aid=action_id, item=item, expected="pending-approval")
+    manual_approval = can_approve_item(item=item, cwd=repo)
+    auto_recheck = False
+    if not manual_approval:
+        auto_recheck = _auto_item_was_held_for_mechanical_definition_of_done(
+            repo=repo,
+            config=config,
+            item=item,
+        )
+    if not manual_approval and not auto_recheck:
         return valve_refusal(
             aid=action_id,
             wid=item.id,
-            err="size-decomposition",
-            msg=reason,
-        ) | {"target_status": "backlog", "message": reason}
+            err="invalid-source-state",
+            msg="approve requires an effective-manual pending-approval item.",
+        )
+    if auto_recheck:
+        held = _auto_recheck_refusal(repo=repo, config=config, item=item, action_id=action_id)
+        if held is not None:
+            return held
+    size_refusal = _factory_size_refusal(repo=repo, config=config, item=item, action_id=action_id)
+    if size_refusal is not None:
+        return size_refusal
     held = _definition_of_done_refusal(repo=repo, config=config, item=item, action_id=action_id)
     if held is not None:
         return held
