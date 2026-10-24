@@ -233,27 +233,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 122 \u2014 An attention item's answer disposition governs who may answer it",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-09-06"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 124 \u2014 The human answer lands as a marked ledger comment before the transition, and a poisoned answer is refused",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-09-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 125 \u2014 The needs-attention valve item carries the terminated run's account and fails soft",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-09-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 128 \u2014 An unrunnable ready item is visible but never advertised for dispatch",
     "work_item": "livespec-n33rwg.10",
     "first_seen": "2026-09-12"
