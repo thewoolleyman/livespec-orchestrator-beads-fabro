@@ -55,13 +55,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
     EffectiveCriteria,
     effective_criteria,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_capabilities import (
     UNPUBLISHED_REPORT,
     mirrored_sandbox_capabilities,
 )
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
     GoverningHeadingReader,
-    unjudged_governing_heading,
+    host_governing_heading_reader,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import LivespecConfigUnreadableError
@@ -106,7 +107,7 @@ UNDECLARED_PROOF_MODE_REPORT = "undeclared"
 
 
 def filing_display(
-    *, item: WorkItem, cwd: Path, governing: GoverningHeadingReader = unjudged_governing_heading
+    *, item: WorkItem, cwd: Path, governing: GoverningHeadingReader | None = None
 ) -> str:
     """The whole pre-confirmation display for one item, as lines of text.
 
@@ -120,20 +121,35 @@ def filing_display(
     `bd-ib-tbgxm4`). The two reported different counts for the same item before
     that, and nothing structural prevented it.
 
-    `governing` is how this display takes the governing-heading verdict, and it
-    is a SEAM rather than a fixed call because filing is one item at a time
-    while the hygiene listing that shares the advisory is every item in the
-    tenant. It defaults to the reader that takes no judgement, so a caller that
-    has not decided to spend one renders the lexical candidate exactly as this
-    display did before the judgement existed; the filing front-end supplies the
-    host reader, which is what makes the remedy a filer reads here the same
-    heading the pre-admission judgement will hold the item for.
+    `governing` DEFAULTS TO THIS HOST'S OWN READER rather than to the absent
+    one, exactly as `judge_definition_of_done`'s does and for the same reason:
+    all four front-ends call this as `filing_display(item=..., cwd=Path.cwd())`
+    and none passes a reader, so a default that took no judgement would render
+    the lexical candidate at every production filing surface while the
+    pre-admission judgement held the item for the heading the spec-stated
+    judgement returned. Those are the two surfaces a filer compares, and nothing
+    announces the divergence because each keeps producing a well-formed finding.
+
+    It stays a SEAM so that a caller may name the component instead — the
+    absent reader `unjudged_governing_heading`, or a fixed verdict — which is
+    what makes the taking exercisable at all. What changed is only which way
+    round the default falls: a surface that owes the verdict no longer depends
+    on being handed one, and a caller that must not spend a judgement says so.
+
+    The hygiene listing, which grades every item in the tenant and must not
+    turn one listing into a model call per item, does not reach here: it holds
+    the advisory directly, through `advisory_definition_of_done_findings`.
     """
+    reader = (
+        host_governing_heading_reader(runner=ShellCommandRunner())
+        if governing is None
+        else governing
+    )
     resolved = effective_criteria(item=item)
     lines = [assertion_count_of(criteria=resolved).parse_display]
     lines.extend(_assertion_lines(criteria=resolved))
     lines.append(_capability_line(cwd=cwd))
-    lines.extend(_finding_lines(item=item, cwd=cwd, governing=governing(item=item, repo=cwd)))
+    lines.extend(_finding_lines(item=item, cwd=cwd, governing=reader(item=item, repo=cwd)))
     return "\n".join(lines)
 
 
