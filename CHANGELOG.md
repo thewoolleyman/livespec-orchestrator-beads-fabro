@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.241.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.241.1...v0.241.2) (2026-10-24)
+
+
+### Bug Fixes
+
+* make the DoD preflight take the spec-stated judgement the gate takes ([a06be8d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a06be8d68bcce41c8f11433a77a383cf67767ce9))
+
 ## [0.241.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.241.0...v0.241.1) (2026-10-24)
 
 
