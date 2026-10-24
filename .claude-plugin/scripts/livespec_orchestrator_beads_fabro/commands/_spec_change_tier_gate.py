@@ -43,16 +43,14 @@ factory with no work.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
     item_comment_bodies,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
-from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
-    read_dispatch_labels,
-)
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
     SPECIFICATION_DIRNAME,
 )
@@ -69,6 +67,14 @@ from livespec_orchestrator_beads_fabro.commands._spec_change_tier_judge import (
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_ratification import (
     topic_is_ratified,
 )
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
+from livespec_orchestrator_beads_fabro.errors import (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsCredentialMissingError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -83,6 +89,13 @@ __all__: list[str] = [
     "standing_spec_change_hold",
 ]
 
+_LEDGER_READ_ERRORS = (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsCredentialMissingError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
+)
 _NO_TOPIC = "no linked proposed-change topic"
 _NO_TARGET = "no existing heading to generalize"
 
@@ -160,7 +173,7 @@ def spec_change_tier_hold(
     standing = standing_spec_change_hold(item=item, repo=repo, comments=comments)
     if standing is not None:
         return standing
-    verdict = _classified(item=item, repo=repo, runner=runner, reader=reader)
+    verdict = _classified(item=item, repo=repo, path=path, runner=runner, reader=reader)
     if verdict is None:
         return _recorded_hold(item=item, comments=comments)
     append_work_item_comment(
@@ -175,17 +188,12 @@ def _classified(
     *,
     item: WorkItem,
     repo: Path,
+    path: StoreConfig,
     runner: CommandRunner | None,
     reader: SpecChangeTierReader | None,
 ) -> SpecChangeTierVerdict | None:
-    """One fresh classification, with the item's own linked topic resolved.
-
-    The label read is routed as DATA: a failure to read the labels is the same
-    absence an unlabelled item presents, so the classification proceeds with no
-    linked topic rather than refusing a dispatch over a transient ledger fault.
-    """
-    labels = read_dispatch_labels(repo=repo, item=item)
-    topic = None if isinstance(labels, str) else linked_proposal_topic(raw_labels=labels)
+    """One fresh classification, with the item's own linked topic resolved."""
+    topic = _declared_topic(path=path, item=item)
     read = (
         host_spec_change_tier_reader(runner=ShellCommandRunner() if runner is None else runner)
         if reader is None
@@ -197,6 +205,35 @@ def _classified(
         linked_topic=topic,
         topic_ratified=topic_is_ratified(spec_root=repo / SPECIFICATION_DIRNAME, topic=topic),
     )
+
+
+def _declared_topic(*, path: StoreConfig, item: WorkItem) -> str | None:
+    """The proposed-change topic this item's labels declare, or `None` for none.
+
+    Read through the CONNECTION THE CALLER ALREADY HOLDS rather than through
+    `read_dispatch_labels`, which resolves one from the repository root. Both
+    callers reach this with a `StoreConfig` in hand — intake was handed one and
+    the wall resolved one before it read a single item — so re-resolving would
+    be a second reading of the same configuration that can disagree with the
+    first, and it raises outright on a repository whose `connection.prefix` is
+    unset, which is a bug-class escape through the intake router.
+
+    Every failure is routed as DATA for the reason the clause gives the
+    classification: a failure to read the labels is the same absence an
+    unlabelled item presents, so the classification proceeds with no linked
+    topic rather than refusing over a transient ledger fault.
+    """
+    record = attempt(
+        action=lambda: make_beads_client(config=path).show_issue(issue_id=item.id),
+        exceptions=_LEDGER_READ_ERRORS,
+    )
+    if isinstance(record, AttemptFailure):
+        return None
+    labels = record.get("labels")
+    if not isinstance(labels, list):
+        return None
+    raw = cast("list[object]", labels)
+    return linked_proposal_topic(raw_labels=[one for one in raw if isinstance(one, str)])
 
 
 def _recorded_hold(*, item: WorkItem, comments: Sequence[str]) -> SpecChangeHold | None:
