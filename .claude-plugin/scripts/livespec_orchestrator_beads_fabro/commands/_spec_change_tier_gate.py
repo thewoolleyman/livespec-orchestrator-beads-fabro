@@ -58,7 +58,9 @@ from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
     SpecChangeTierVerdict,
     linked_proposal_topic,
     recorded_spec_change_tier,
+    recorded_tier_causes,
     spec_change_tier_comment,
+    spec_change_tier_did_not_run_comment,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_judge import (
     SpecChangeTierReader,
@@ -84,10 +86,21 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = [
+    "CAUSE_CLASSIFICATION_UNAVAILABLE",
     "SpecChangeHold",
     "spec_change_tier_hold",
     "standing_spec_change_hold",
 ]
+
+# The ONE condition this seam can MEASURE. The clause enumerates three — "no
+# eligible model, a timeout, or an unparseable verdict" — and the shared
+# judgement reaches a model through a bare `ModelRunner` callable, so none of
+# the three is distinguishable from the others at this boundary: every one of
+# them arrives as a reader that returned no classification. A cause naming one
+# of the three would be an invented measurement, and the record exists to be
+# acted on. One stable string, because the record is capped per distinct cause
+# and a cause carrying a varying detail would make every attempt distinct.
+CAUSE_CLASSIFICATION_UNAVAILABLE = "classification-unavailable"
 
 _LEDGER_READ_ERRORS = (
     BeadsCommandError,
@@ -175,6 +188,7 @@ def spec_change_tier_hold(
         return standing
     verdict = _classified(item=item, repo=repo, path=path, runner=runner, reader=reader)
     if verdict is None:
+        _record_did_not_run(path=path, item=item, stage=stage, comments=comments)
         return _recorded_hold(work_item_id=item.id, comments=comments)
     append_work_item_comment(
         path=path,
@@ -182,6 +196,27 @@ def spec_change_tier_hold(
         body=spec_change_tier_comment(item_id=item.id, stage=stage, verdict=verdict),
     )
     return _hold_of(item_id=item.id, verdict=verdict)
+
+
+def _record_did_not_run(
+    *, path: StoreConfig, item: WorkItem, stage: str, comments: Sequence[str]
+) -> None:
+    """Record that the classification did not run, unless this cause stands.
+
+    The cap is read off the comments ALREADY in hand rather than re-read, so
+    the record this writes is capped against the same sidecar the decision was
+    made from — a second read could see a comment appended between them and
+    cap against a timeline the decision never saw.
+    """
+    if CAUSE_CLASSIFICATION_UNAVAILABLE in recorded_tier_causes(comments=comments):
+        return
+    append_work_item_comment(
+        path=path,
+        work_item_id=item.id,
+        body=spec_change_tier_did_not_run_comment(
+            item_id=item.id, stage=stage, cause=CAUSE_CLASSIFICATION_UNAVAILABLE
+        ),
+    )
 
 
 def _classified(

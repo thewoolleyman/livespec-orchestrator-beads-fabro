@@ -2853,6 +2853,45 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   the bare entry point would not take a bigger judgement but NO judgement, and
   the refusal surfaces as a verdict that could not be read. That entry point
   also composes the citation resolution below, for the same reason.
+- The SPEC-CHANGE TIER of the autonomy-tier bullet in `contracts.md` section
+  "Grooming and slice-size calibration" (`bd-ib-57ss2n`, Scenario 206), which
+  absorbs `bd-ib-yykjko`. FIVE cohesive modules, and the dependency direction
+  reads bottom-up: `_spec_change_tier` (PURE: the decision, and the ledger
+  record that carries it) and `_spec_change_tier_ratification` (the governed
+  history read) -> `_spec_change_tier_judge` (the two model calls) ->
+  `_spec_change_tier_gate` (the composed decision, and the did-not-run record)
+  -> `_spec_change_tier_wall` (the pre-dispatch refusal and the drain filter).
+  The three consumers are `_dispatcher_pre_dispatch_wall` (exit `5`),
+  `_dispatcher_loop_candidates` and `intake_dor`.
+  Seven properties an editor must not invert. `spec_commitment_hint` IS NOT AN
+  INPUT, anywhere: the clause makes the tier "never read off" that field, which
+  "marks an implementation follow-up to an already ratified change" — so the two
+  predicates that read it as the tier (`_dispatcher_policy_overrides`' admission
+  floor and `_plan_disposition`'s refusal) were INVERTED, each singling out the
+  one item the tier is never about, and both are retired rather than narrowed.
+  The CLASSIFICATION fails OPEN and the HOLD fails CLOSED, which is why they are
+  composed in one gate: a call site composing them itself gets the directions
+  the wrong way round in exactly one arm, and both arms produce a well-formed
+  answer. A `stated` verdict is NOT on its own a release — the clause holds
+  "until BOTH", so a feature whose own proposal was rejected stays held even
+  once the ratified tree states its behaviour, and that arm is the one most
+  easily deleted as redundant. The MECHANICAL hold is taken before any model
+  call, because nothing a fresh judgement could return releases an item whose
+  linked topic has not ratified; a held item whose topic HAS ratified is
+  re-judged instead, and a gate that kept holding there would make every hold
+  permanent. The drain filter therefore DROPS the first and KEEPS the second,
+  which is the opposite of what a filter keyed on the recorded tier alone would
+  do. An exempt class (`bug`, `chore`, `non_functional`) takes NO behaviour
+  judgement at all, so its record's `stated_kind` is `None` — "no kind was
+  measured", never "the behaviour is stated". And the did-not-run cause is ONE
+  string: the clause enumerates three conditions, the shared judgement reaches a
+  model through a bare `ModelRunner`, and none of the three is distinguishable
+  at that seam — a cause naming one of them would be an invented measurement.
+  The LINKED TOPIC rides a `proposal-topic:<topic>` beads label and is read
+  through the connection the caller already holds, never by re-resolving one
+  from the repository root: both callers have a `StoreConfig` in hand, and
+  `read_dispatch_labels` raises outright on a repository whose
+  `connection.prefix` is unset.
 - `_spec_stated_citation.py` — the clause a spec-stated judgement CITED, read
   at the level that governs (`bd-ib-n2drk5`). PURE. The ratified text cites its
   own SUBSECTIONS by name, so a model that reads a clause correctly names the

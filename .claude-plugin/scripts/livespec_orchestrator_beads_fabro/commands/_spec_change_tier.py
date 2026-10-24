@@ -62,12 +62,15 @@ __all__: list[str] = [
     "KIND_STATED",
     "LINKED_TOPIC_LABEL_PREFIX",
     "SPEC_CHANGE_TIER_COMMENT_MARKER",
+    "SPEC_CHANGE_TIER_UNAVAILABLE_MARKER",
     "TIER_NONE",
     "TIER_SPEC_CHANGE",
     "SpecChangeTierVerdict",
     "linked_proposal_topic",
     "recorded_spec_change_tier",
+    "recorded_tier_causes",
     "spec_change_tier_comment",
+    "spec_change_tier_did_not_run_comment",
 ]
 
 TIER_SPEC_CHANGE = "spec-change"
@@ -87,6 +90,7 @@ KIND_STATED = "stated"
 LINKED_TOPIC_LABEL_PREFIX = "proposal-topic:"
 
 SPEC_CHANGE_TIER_COMMENT_MARKER = "livespec-spec-change-tier"
+SPEC_CHANGE_TIER_UNAVAILABLE_MARKER = "livespec-spec-change-tier-unavailable"
 
 _WORK_ITEM_FIELD = "work-item"
 _STAGE_FIELD = "stage"
@@ -96,6 +100,13 @@ _KIND_FIELD = "stated-kind"
 _GENERALIZATION_FIELD = "generalization-target"
 _TOPIC_FIELD = "linked-proposal-topic"
 _RATIFIED_FIELD = "topic-ratified"
+# Deliberately NOT the bare `cause`, for the reason the Definition-of-Done
+# record gives for its own: the did-not-run scan walks back over whatever
+# comments sit between the newest record and the last classification —
+# operator riders among them — and a field name a rider could plausibly carry
+# would let that rider suppress a record of an outage it has nothing to do
+# with, which hides the outage behind a comment nobody connected to it.
+_CAUSE_FIELD = "spec-change-tier-unavailable-cause"
 _FIELD_SEPARATOR = ": "
 _TRUE = "true"
 _FALSE = "false"
@@ -169,6 +180,37 @@ def spec_change_tier_comment(*, item_id: str, stage: str, verdict: SpecChangeTie
             f"{_RATIFIED_FIELD}{_FIELD_SEPARATOR}{_TRUE if verdict.topic_ratified else _FALSE}",
         )
     )
+
+
+def spec_change_tier_did_not_run_comment(*, item_id: str, stage: str, cause: str) -> str:
+    """The ledger comment recording that the classification did not run, and why."""
+    return "\n".join(
+        (
+            SPEC_CHANGE_TIER_UNAVAILABLE_MARKER,
+            "",
+            f"The {stage} spec-change-tier classification did not run for this item.",
+            "",
+            f"{_WORK_ITEM_FIELD}{_FIELD_SEPARATOR}{item_id}",
+            f"{_STAGE_FIELD}{_FIELD_SEPARATOR}{stage}",
+            f"{_CAUSE_FIELD}{_FIELD_SEPARATOR}{cause}",
+        )
+    )
+
+
+def recorded_tier_causes(*, comments: Sequence[str]) -> frozenset[str]:
+    """Every did-not-run cause recorded SINCE the classification last ran.
+
+    The walk stops at the first recorded classification, because a cause
+    recorded before it describes an outage that classification disproves, and
+    letting it suppress a fresh occurrence would silence an item about a
+    judging path that has since stopped working.
+    """
+    causes: set[str] = set()
+    for body in reversed(tuple(comments)):
+        if _marker_of(body=body) == SPEC_CHANGE_TIER_COMMENT_MARKER:
+            break
+        causes.add(_fields_of(body=body).get(_CAUSE_FIELD, ""))
+    return frozenset(causes - {""})
 
 
 def recorded_spec_change_tier(*, comments: Sequence[str]) -> SpecChangeTierVerdict | None:
