@@ -1583,12 +1583,14 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   commented second leaves a `ready` item carrying the identical comment. The
   order is read off a recording overlay on the fake's two write verbs that
   DELEGATES to the real implementations — nothing is stubbed, so removing the
-  overlay changes no behaviour — and only a status-bearing `update_issue` is
-  recorded, since that verb is a partial update reached for several independent
-  reasons and a recorder counting every call would make the ORDER claim depend on
-  which unrelated field some later build writes alongside. The header is matched
-  field by field rather than as a prefix, and the answer is two lines, because a
-  single-line answer cannot tell a verbatim copy from one the writer reflowed.
+  overlay changes no behaviour — and EVERY call of either verb is recorded,
+  UNFILTERED, so that the assertion is "exactly these two writes, in this
+  order". Keeping only the status-bearing `update_issue` calls would read the
+  same way on a build that slipped an unrelated write between the comment and
+  the transition, which is the one thing a sequence assertion is for; do not
+  narrow the recorder. The header is matched field by field rather than as a
+  prefix, and the answer is two lines, because a single-line answer cannot tell
+  a verbatim copy from one the writer reflowed.
   THE POISON CASE READS THE TENANT for the same reason the refusals above do, and
   reads it three ways: the payload names the cause, NO write of either verb was
   made, and the item is still `blocked` on `needs-human` with an empty comment
