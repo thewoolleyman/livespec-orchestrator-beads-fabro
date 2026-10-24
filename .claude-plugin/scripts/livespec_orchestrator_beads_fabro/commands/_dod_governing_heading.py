@@ -73,6 +73,7 @@ __all__: list[str] = [
     "GoverningHeadingVerdict",
     "governing_heading_block",
     "governing_heading_findings",
+    "governing_heading_holds",
     "governing_heading_statement",
 ]
 
@@ -150,6 +151,24 @@ def governing_heading_findings(
         for heading in verdict.stated_by
         if _title_of(heading=heading) not in named
     )
+
+
+def governing_heading_holds(
+    *, section: DefinitionOfDone, verdict: GoverningHeadingVerdict | None
+) -> bool:
+    """Whether the omitted-heading findings HOLD the item rather than advise.
+
+    They hold only when the reference line names NONE of the headings the
+    verdict returns. The judgement can name different governing headings for one
+    unchanged subject, so a hold on a PARTIAL omission makes admission
+    non-convergent — each repair invites the next demand — while a line that
+    already cites one governing clause is anchored to ratified text and the rest
+    is advice (`contracts.md`, the `dod_gate` reference-coverage rule).
+    """
+    if verdict is None or verdict.kind == _UNSTATED_KIND or not verdict.stated_by:
+        return False
+    named = {_title_of(heading=reference) for reference in section.references}
+    return not any(_title_of(heading=heading) in named for heading in verdict.stated_by)
 
 
 def governing_heading_block(*, verdict: GoverningHeadingVerdict | None) -> str:

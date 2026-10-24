@@ -154,9 +154,18 @@ Path(f"{side}.governing").write_text("\n".join(report) + "\n", encoding="utf-8")
 findings = governing_heading_findings(
     item=item, section=definition_of_done(description=item.description), verdict=governing
 )
+# The omission HOLDS only when the reference line names none of the headings the
+# verdict returns, which is exactly when every one of them is omitted. Otherwise
+# each finding is advisory: printed with its remedy, holding nothing. Derived
+# from `governing_heading_findings` rather than `governing_heading_holds`, so
+# the script runs against a registered build that predates the latter.
+holds = governing is not None and bool(findings) and len(findings) == len(set(governing.stated_by))
 Path(f"{side}.findings").write_text(
-    "".join(f"finding: {finding}\n" for finding in findings), encoding="utf-8"
+    "".join(f"finding: {finding}\n" for finding in findings) if holds else "", encoding="utf-8"
 )
+if not holds:
+    with Path(f"{side}.governing").open("a", encoding="utf-8") as advisory:
+        advisory.writelines(f"advisory: {finding}\n" for finding in findings)
 sys.stdout.write(
     judgement_prompt(
         gate_prompt=rubric,
@@ -167,11 +176,13 @@ PROMPT_PY
 [ -s "$judgement_input" ] || exit 2
 [ -f "$judgement_input.governing" ] || exit 2
 cat "$judgement_input.governing"
-# A check 6 finding holds the item at the gate whatever the rubric says, so the
-# candidate legs would spend two model calls to change nothing.
+# A check 6 finding that HOLDS — the References line names no governing heading —
+# holds the item at the gate whatever the rubric says, so the candidate legs
+# would spend two model calls to change nothing. An advisory one was printed with
+# the verdict above and holds nothing.
 if [ -s "$judgement_input.findings" ]; then
   cat "$judgement_input.findings"
-  echo "dod-preflight: FAILED — the References line omits a governing heading the spec-stated judgement returned; add it verbatim and re-run"
+  echo "dod-preflight: FAILED — the References line names none of the governing headings the spec-stated judgement returned; add them verbatim and re-run"
   exit 1
 fi
 
