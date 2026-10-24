@@ -97,9 +97,9 @@
     "heading": "## Planning Lane realization",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "test": "TODO",
-    "reason": "Added by the planning-lane-realization revise pass (epic livespec-zs22, increment 3a / work-items livespec-zs22.5 + livespec-zs22.3). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; the plan front-end's behavior is exercised by the e2e-cli fixture and the handoff self-sufficiency gate rather than a unit test, so a real test id is populated by the governed propose-change/revise resulting_files[] mechanism once this heading gains an exercising test.",
-    "work_item": "bd-ib-heat"
+    "test": "tests.integration.test_plan_archive_completeness_review_scenario55.test_scenario55_archive_commissions_and_requires_complete_durable_review",
+    "reason": "Bound by bd-ib-h5jr5x to an integration-tier scenario test that creates a real plan and closed child through the plan package, proves the archive entry point commissions a supplied fresh completeness reviewer when no durable evidence exists, refuses a review that withholds coverage for a deferred research requirement, and archives only after valid independent evidence is durable.",
+    "work_item": "bd-ib-h5jr5x"
   },
   {
     "heading": "## Dispatch-time baseline conformance gate",
@@ -771,9 +771,9 @@
     "heading": "## Scenario 55 \u2014 plan archive commissions a missing independent completeness review",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the automatic-archive-completeness-review revision. The behavior requires an integration-tier or higher exercising test because it coordinates a real plan, ledger evidence, and archive state; the implementation slice bd-ib-ydjf7k supplies that binding.",
-    "work_item": "bd-ib-heat"
+    "test": "tests.integration.test_plan_archive_completeness_review_scenario55.test_scenario55_archive_commissions_and_requires_complete_durable_review",
+    "reason": "Bound by bd-ib-h5jr5x to an integration-tier scenario test that creates a real plan and closed child through the plan package, proves the archive entry point commissions a supplied fresh completeness reviewer when no durable evidence exists, refuses a review that withholds coverage for a deferred research requirement, and archives only after valid independent evidence is durable.",
+    "work_item": "bd-ib-h5jr5x"
   },
   {
     "heading": "## Not-human-gated decision constraints",
