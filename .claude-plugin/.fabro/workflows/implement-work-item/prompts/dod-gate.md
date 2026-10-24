@@ -232,6 +232,12 @@ question of fact — the spec tree above all.
    referenced scenario governs the proof, and the capture stage is told to
    follow that scenario's own steps.
 
+   The decision input is the governing scenario's own Given/When/Then text,
+   never its title. When that text states an assertion's behaviour, the
+   scenario heading must also be named verbatim on the reference line. A
+   non-scenario H2 is sufficient only when no scenario's Given/When/Then text
+   states the assertion's behaviour. Do not choose by reading a scenario's title.
+
    **TAKE THE GOVERNING-HEADING VERDICT FROM THE BLOCK THE SUBJECT CARRIES,
    NOT FROM YOUR OWN RECOLLECTION.** The subject carries a
    `## Governing-heading verdict (from the spec-stated judgement)` block. It

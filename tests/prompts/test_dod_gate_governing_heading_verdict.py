@@ -51,6 +51,11 @@ _NODE_BLOCK = re.compile(
 )
 _PROMPT_ATTRIBUTE = re.compile(r'prompt="@prompts/(?P<filename>[\w.-]+\.md)"')
 _DOD_GATE_NODE = "dod_gate"
+_CHECK_SIX = re.compile(
+    r"^6\. \*\*Each assertion names BEHAVIOUR, and its reference names the scenario"
+    r".*?(?=^## What you must not do)",
+    re.DOTALL | re.MULTILINE,
+)
 
 
 def _dod_gate_prompt() -> str:
@@ -71,6 +76,14 @@ def _dod_gate_prompt() -> str:
 
     assert filenames == ["dod-gate.md"]
     return (_PROMPTS_DIRECTORY / filenames[0]).read_text(encoding="utf-8")
+
+
+def _check_six() -> str:
+    """Check 6 alone, so its rule cannot be satisfied by unrelated prompt prose."""
+    match = _CHECK_SIX.search(_dod_gate_prompt())
+
+    assert match is not None, "check 6 of the Definition-of-Done gate prompt did not parse"
+    return match.group(0)
 
 
 def test_the_gate_reads_the_governing_heading_verdict_the_dispatcher_writes() -> None:
@@ -132,3 +145,19 @@ def test_a_surplus_citation_is_still_not_a_finding_of_its_own() -> None:
 
     assert "valid reference for an assertion no" in prompt
     assert "a reference the verdict did not return is not a" in prompt
+
+
+def test_the_non_scenario_reference_rule_uses_scenario_steps_not_titles() -> None:
+    """One deterministic rule decides when a generic H2 citation is sufficient.
+
+    A scenario title is a label, not the behaviour the scenario specifies. The
+    gate therefore decides from the governing scenario's own Given/When/Then
+    text: a scenario that states the assertion makes its heading mandatory,
+    while a non-scenario H2 remains enough only when no scenario states it.
+    """
+    check_six = _check_six()
+
+    assert "decision input is the governing scenario's own Given/When/Then text" in check_six
+    assert "scenario heading must also be named verbatim on the reference line" in check_six
+    assert "non-scenario H2 is sufficient only when no scenario's Given/When/Then text" in check_six
+    assert "Do not choose by reading a scenario's title." in check_six
