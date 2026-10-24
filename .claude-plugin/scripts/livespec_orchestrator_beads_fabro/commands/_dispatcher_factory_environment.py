@@ -42,6 +42,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_registry import (
     factory_registry_refusal,
+    registry_sourced_path,
+)
+from livespec_orchestrator_beads_fabro.commands._factory_client_source import (
+    client_key_source,
+)
+from livespec_orchestrator_beads_fabro.commands._factory_environment import (
+    FACTORY_ENVIRONMENT_KEY,
 )
 
 __all__: list[str] = [
@@ -77,18 +84,28 @@ def factory_environment_refusal(*, factory: FactoryTarget | None) -> str | None:
     that never ran the dispatch preamble — the needs-attention and standalone
     reconcile surfaces build their own arguments — has no target to consult,
     and that is the pre-key behaviour rather than a fault.
+
+    The message NAMES THE SOURCE for the reason the `bin` refusal's does: a
+    registry-supplied `environment` lands on this same reading, so a refusal
+    naming only the committed key sends the operator to a line their
+    `.livespec.jsonc` does not carry.
     """
     if factory is None or not factory.environment.declared:
         return None
     if factory.environment.environment_id is not None:
         return None
+    source = client_key_source(
+        factory=factory.name,
+        key=FACTORY_ENVIRONMENT_KEY,
+        registry_path=registry_sourced_path(factory=factory, key=FACTORY_ENVIRONMENT_KEY),
+    )
     return (
         f"ERROR: factory {factory.name} declares"
-        f" dispatcher.factories.{factory.name}.environment, which must be a"
+        f" {source.name}{source.location}, which must be a"
         " non-empty string naming an environment in that factory's server"
         f" catalog; name one of factory {factory.name}'s catalog environments,"
-        " or remove the key so the run intent carries none and that factory's"
-        " server selects as it does today\n"
+        f" or remove {source.remedy} so the run intent carries none and that"
+        " factory's server selects as it does today\n"
     )
 
 

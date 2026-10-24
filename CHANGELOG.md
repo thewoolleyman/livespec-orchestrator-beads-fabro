@@ -1,5 +1,113 @@
 # Changelog
 
+## [0.241.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.240.0...v0.241.0) (2026-10-24)
+
+
+### Features
+
+* **dod:** share one governing-heading verdict across the citation checks ([1658bee](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1658bee77fb11823ee5c613026efd57edf99f0ba))
+
+
+### Bug Fixes
+
+* **dod:** reuse the earliest verdict matching the current digests ([7454027](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/745402709c6a664719eb9654b617c48ad2a1a4c8))
+* **dod:** take the governing verdict at the filing display itself ([cd7ed7c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cd7ed7c16b557daf55e703290f65ec27423b886f))
+
+## [0.240.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.239.3...v0.240.0) (2026-10-23)
+
+
+### Features
+
+* a registry-backed factory takes its client settings from the registry ([4e67085](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4e6708552aed21f878a8656912fd48c97a4ade0c))
+* a repository naming the fleet default resolves it from the factory registry ([0f6c2b4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0f6c2b4261e2488ad15e3c76d823ef1537909129))
+
+
+### Bug Fixes
+
+* a client-setting refusal names the source that supplied the value ([e3c9ab6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e3c9ab6c39fa696bcc502f5f018555e177f63f53))
+
+## [0.239.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.239.2...v0.239.3) (2026-10-23)
+
+
+### Bug Fixes
+
+* **dispatcher:** key the sandbox env table on the factory's catalog environment ([24255db](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/24255db67029ca15474c80b5b9a262741785d738))
+
+## [0.239.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.239.1...v0.239.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* a fresh dispatch must not read the item's recorded factory as a pin ([952bbbb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/952bbbb93561c65cfffc3a7f752adc206d39648e))
+* a resume-routed dispatch is submitted to the item's recorded factory ([b24819f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b24819f0cfd4d129856899d23220b64a1a928e16))
+* the currency gate grades the factory a fresh dispatch would reach ([b726d38](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b726d38a1085a43bc9d76be4b5b337739bf796cb))
+
+## [0.239.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.239.0...v0.239.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **dispatcher:** scrub the target wrapper's Fabro credential from the currency probe ([8520a26](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8520a26a53ab7fccc6903f5e0e8aee00881dbd3a))
+
+## [0.239.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.238.0...v0.239.0) (2026-10-23)
+
+
+### Features
+
+* cost every provider-limit-released run on its own factory, once ([8f6a231](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8f6a231c89f82cb18f7f82d8822949af3ac34508))
+* darken a sequence total on any unobservable attempt, and label it ([7ce9293](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7ce9293a0a6eda5670ec9a568e0923b171dba5f0))
+* journal one attempt-cost record per attempt, stably identified ([7dd3715](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7dd371525f674eb360a3e7e2a588823ddeb4bb2d))
+* sum an item's sequence cost from its records and the final run ([ab58a4f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ab58a4f37057970f75dcbe28557c6f6622507d89))
+* yield one attempt-cost record per confirmation turn, charged once ([86016b7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/86016b766ee21327dbafb7a5bd71fc6210555463))
+
+## [0.238.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.237.0...v0.238.0) (2026-10-23)
+
+
+### Features
+
+* **dispatcher:** verify the serving App reaches an adopter target before launch ([abb964e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/abb964e265560e45cb3013cedaeb7ec6e3765c89))
+
+## [0.237.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.236.1...v0.237.0) (2026-10-23)
+
+
+### Features
+
+* **acp:** grade one confirmation turn's ending, so only a completed turn confirms ([88ce136](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/88ce1364096773a3444561eb40a63ac969e84aca))
+* **acp:** journal every confirmation turn, whatever it ended as ([f523abc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f523abc1bda66c0a4dc8ddd630d0714830e31dd5))
+* **acp:** mint one refused confirmation turn's hold from the probe's own instant ([8313e86](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8313e860b7b66d140b391ff24bd5e8693a1b8bc3))
+* **acp:** run the availability confirmation turn as a bounded minimal factory run ([fb5f317](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fb5f317f5b7d466b7f5495a6eb4cb01a198da9d9))
+* **acp:** schedule the reprobe cadence and name the ending each turn reached ([c52aa83](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c52aa83e59e445cc57f0ab0e4961d619a9cbd86c))
+* **acp:** terminate a probe past its bound, skip its candidate, select the fallback ([e79f727](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e79f727dd3f0a3af3d1d5e9221a201127b9938df))
+
+
+### Bug Fixes
+
+* **acp:** place the confirmation turn in the factory declared environment ([73f74a3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/73f74a3708685a1bfa3ab3b9181efb0164cb0e85))
+
+## [0.236.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.236.0...v0.236.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **drift-lane:** record the inert state once, not once per reconcile tick ([0853afe](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0853afe42474c6f44dfed89af905901e0a8ed765))
+* **reconcile-runs:** report the drift lane in the pass's own output ([e2e2edb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e2e2edb82b60b71c49e4c5daf72bda7f54381280))
+
+## [0.236.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.235.2...v0.236.0) (2026-10-23)
+
+
+### Features
+
+* declare the read-only engine verbs a snapshot composition may spend ([edb88c3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/edb88c312cc57cd8aa5f41c5af784f2c5b628997))
+* hold the availability wait's evaluation time fixed across two compositions ([06cbf53](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/06cbf53f8d5cf7563e203fb4afa233dccc0eb9c0))
+* name the governing condition and reevaluation instant on the availability wait row ([b4f8c6a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b4f8c6a38d3e3de02385895cd6ea62bd889438fc))
+* offer the exact clearance valve the availability wait's own condition sanctions ([642b609](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/642b609b3e68f4c8804913b13da5b22fec2b4f1f))
+* read factory availability evidence through the production run reader ([5cd7d87](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5cd7d87e10b519f597bc3ea24573587feacd4f15))
+
+
+### Bug Fixes
+
+* omit the placeholder reason from the advertised clearance handoff ([11fcdae](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/11fcdae89aa58583f032bd5f3ab7be39688e6453))
+
 ## [0.235.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.235.1...v0.235.2) (2026-10-23)
 
 

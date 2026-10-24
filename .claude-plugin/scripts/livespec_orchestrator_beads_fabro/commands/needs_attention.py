@@ -51,9 +51,6 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_idle_slot impor
 from livespec_orchestrator_beads_fabro.commands._needs_attention_merge_hold import (
     merge_hold_items,
 )
-from livespec_orchestrator_beads_fabro.commands._needs_attention_missing_pointer import (
-    missing_proof_pointer_items,
-)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_model_fallback import (
     model_fallback_items,
 )
@@ -61,9 +58,7 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_orphan_runs imp
     orphan_run_items,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_proof import (
-    pending_host_leg_items,
-    pending_human_attestation_items,
-    stale_proof_pointer_items,
+    proof_hygiene_items,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_ready_aging import (
     ReadyAgingContext,
@@ -88,6 +83,7 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_untriaged_backl
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_work_items import (
     auto_admission_items,
+    availability_wait_items,
     host_only_items,
     human_valves,
     impl_next,
@@ -205,6 +201,13 @@ def build_attention(
     ) + (
         auto_admission_items(project_root=project_root, repo=repo_name, items=materialized)
         + provider_exhaustion_items(project_root=project_root, repo=repo_name, items=materialized)
+        # The LEGACY wait's sibling in the same enumerated-wait clause, and the
+        # one no other lane here can report: an item an admission-required ACP
+        # chain holds rests in `ready` with no claim and no blocked reason, so
+        # nothing is stranded, nothing is aging past a bound, and the
+        # idle-factory row deliberately clears — a factory held back by an
+        # exhausted chain is waiting rather than idle.
+        + availability_wait_items(project_root=project_root, repo=repo_name, items=materialized)
         + host_only_items(project_root=project_root, repo=repo_name, items=materialized)
         + stranded_dispatch_items(
             project_root=project_root,
@@ -257,24 +260,15 @@ def build_attention(
         + held_definition_of_done_items(
             project_root=project_root, repo=repo_name, items=materialized
         )
-        # The three Proof of Done hygiene rows. A parked item awaiting its host
-        # replay or its human attestation is otherwise indistinguishable from any
-        # other parked acceptance, and a stale pointer is silent on every lane
-        # here, so without these the first two are visible only by reading the
-        # item's Definition of Done and the third only by reading its pull
-        # request. The two pending legs are SEPARATE rows because different
-        # parties clear them: an agent session on an operator host captures and a
-        # second session replays the host leg, while a human attests the other.
-        + pending_host_leg_items(project_root=project_root, repo=repo_name, items=materialized)
-        + pending_human_attestation_items(
-            project_root=project_root, repo=repo_name, items=materialized
-        )
-        + stale_proof_pointer_items(project_root=project_root, repo=repo_name, items=materialized)
-        # The THIRD pointer row, and the one neither of the two above can produce:
-        # both read a pointer the item already carries, so an item with none is
-        # invisible to them — which is exactly the state the first merged
-        # proof-chain item has rested in since 2026-10-01.
-        + missing_proof_pointer_items(project_root=project_root, repo=repo_name, items=materialized)
+        # The four Proof of Done hygiene rows, reached through the one entry
+        # point that owns their grouping. A parked item awaiting its host replay
+        # or its human attestation is otherwise indistinguishable from any other
+        # parked acceptance, a stale pointer is silent on every lane here, and an
+        # item carrying NO pointer is invisible even to those two — which is
+        # exactly the state the first merged proof-chain item rested in from
+        # 2026-10-01. Why each of the four is its own row is recorded beside
+        # them, in `_needs_attention_proof.proof_hygiene_items`.
+        + proof_hygiene_items(project_root=project_root, repo=repo_name, items=materialized)
         # A run the ledger disowns holds a factory scheduler slot, and no
         # surface keyed on THIS repo's records can see it: the projection is
         # the reconciler's own dry run, so the lane and the remedy it prints

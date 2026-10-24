@@ -136,6 +136,7 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
     enforce_cap: bool,
     rework: ReworkPass | None = None,
     explicit_factory: str | None = None,
+    resume_ids: frozenset[str] = frozenset(),
 ) -> Admission:
     """Run the admission valve over the rank-sorted candidate set.
 
@@ -175,6 +176,16 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
     the dispatch goes where the flag said, so the claim names a factory the run
     never runs on. Every dispatch path reads the flag through
     `explicit_dispatch_factory` and hands the name here.
+
+    `resume_ids` is the other half of that same precedence: the item's recorded
+    factory is a RESUME-only pin, so the stamp needs this item's assigned route,
+    which recovery routing decided before this valve ran. It is a SET because
+    the valve is handed a WAVE — "The classification is per item and per pass, so
+    one loop wave may carry a resume beside fresh dispatches" — and the empty
+    default is the FRESH answer for every item, which is what every dispatch is
+    unless routing says otherwise: a caller supplying nothing therefore stamps
+    the factory each item's dispatch will reach rather than one it used to run
+    on.
     """
     accounting = claimed_active_accounting(repo=repo, items=items, journal=journal)
     rework_pass = rework if rework is not None else ReworkPass()
@@ -240,6 +251,7 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
             work_item_id=item.id,
             dispatch_id=dispatch_id,
             journal=journal,
+            resume=item.id in resume_ids,
             explicit_factory=explicit_factory,
         )
         update_work_item_status(

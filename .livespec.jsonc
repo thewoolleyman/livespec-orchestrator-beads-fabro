@@ -196,7 +196,7 @@
       // contract-version-compatibility invariant fires `warn` against
       // "master" pins; that is expected during bootstrap.
       "livespec": ">=0.1.0,<1.0.0",
-      "pinned": "v0.42.1"
+      "pinned": "v0.43.0"
     },
     // Per-repo beads tenant CONNECTION block. These keys are read by
     // commands/_config.py and overlaid by the LIVESPEC_BD_PATH /
@@ -931,14 +931,22 @@
       // reach the named daemon; while they do not, the pass says so on every
       // sweep record instead of reporting a clean factory.
       "factories": {
+        // legacy submits through the pinned 0.254 8869e88 client whose bytes match hp's
+        // declared engine, staged by the livespec-dev-tooling dev-host play (bd-ib-zb2hso).
         "legacy": {
-          "registry": true
+          "registry": true,
+          "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-legacy-v0.254-8869e88/fabro"
         },
         "petri": {
           "registry": true,
           "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro",
           "secret_channel": "native_secrets",
-          "environment": "livespec-ci"
+          // livespec-ci -> livespec-ci-k8s: the fleet Kubernetes cutover (coordinator
+          // gitops-fleet-capacity-monitoring, maintainer direction 2026-10-24), the same
+          // per-repo key livespec-dev-tooling PR #2792 switched. livespec-ci-k8s is
+          // livespec-ci's twin on gmktec, run as a pod by the kubernetes sandbox driver;
+          // the one-step rollback to Docker is setting it back to livespec-ci.
+          "environment": "livespec-ci-k8s"
         }
       },
       // The priority-epic idle-slot audit (contracts.md, "Priority-epic

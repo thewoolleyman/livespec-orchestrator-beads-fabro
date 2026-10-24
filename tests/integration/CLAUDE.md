@@ -1545,6 +1545,66 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   signalling-only fixture reports every stale lease as live and the case passes
   against an implementation that never asked.
 
+- `test_list_work_items_lane_scenario26.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 26 — list-work-items emits lane and
+  lane_reason", whose registry row owed an integration-tier test "exercising
+  user-observable Dispatcher/store behavior against the in-memory
+  `FakeBeadsClient`". The scenario's three `Then`s are ONE case over ONE
+  `--json` payload, deliberately: a lane is DERIVED, so the ready item's lane
+  depends on the state of the other item it depends on, and a reading that
+  seeded each item into its own tenant would pass against a build that never
+  consulted a dependency — the ready item would have had none to consult.
+  Nothing is stood in; `main` resolves its own tenant out of a committed
+  `.livespec.jsonc` as an operator's invocation does. The two blocked rows are
+  what make the reason discriminating: both emit lane `blocked`, and a
+  projection emitting one constant reason satisfies neither assertion. The
+  per-lane cases stay at the unit tier in
+  `tests/livespec_orchestrator_beads_fabro/commands/test_list_work_items.py`.
+- `test_acp_node_layer_resolution_scenarios87_88.py` — binds
+  `SPECIFICATION/scenarios.md` Scenarios 87 and 88 through `prepare_acp_nodes`,
+  the one function a dispatch calls, from a committed `.livespec.jsonc` on disk
+  against this repository's OWN committed `workflow.toml`. That join is the
+  tier: `tests/livespec_orchestrator_beads_fabro/commands/test_acp_node_layers.py`
+  grades the merge against overlays handed to it, and a correct merge nothing
+  wires to the operator's configuration — or to the record a triager reads —
+  looks identical. The workflow layer is the real committed one because a
+  fixture would keep every assertion true while the shipped workflow stopped
+  declaring an adapter input for a node, which is how a node becomes
+  unconfigurable while the journal still reports the adapter it was told to run.
+  NO ASSERTION NAMES AN AGENT OR A MODEL (`tests/conftest.py`
+  `_no_test_reads_the_committed_acp_routing`, maintainer ruling 2026-10-18): the
+  claims are read structurally — which layer supplied each field, per env KEY,
+  and that the env segment is sorted and precedes the command — which is also
+  what the two scenarios actually say. The rendered bytes are asserted as a
+  SUFFIX rather than whole, because a repository entry supplying a `command`
+  still merges the workflow default's env over which it sits, so the full string
+  necessarily carries the committed dial's values. `_ROUTER_ENV` is declared out
+  of sorted order on purpose, so a render preserving declaration or mapping
+  order fails rather than coinciding with the answer; and the unknown-node case
+  asserts the journal carries no ACP record, since a refusal that still
+  journaled a resolved node set reads afterwards exactly like an admitted
+  dispatch.
+- `test_heading_gap_enumeration_scenario205.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 205 — Gap detection enumerates headings
+  without an exercising test" by carrying ONE uncovered heading from the shipped
+  `detect-impl-gaps --json` entry point, over a real spec tree and coverage
+  registry on disk, through the filing composition and the REAL store write to
+  the labels read back off the beads seam. The gap-id the filed record is
+  asserted to carry is the one the DETECTION emitted rather than a value
+  recomputed here, because that identity is the only thing holding the two
+  halves together: a renamed heading or a changed hash leaves each half
+  internally consistent while the filed label stops naming a heading anybody can
+  find. Two controls carry it. The fixture's second heading names an EXISTING,
+  RESOLVABLE test node — materialized as a real module with a real function,
+  since "names an existing test" is a claim about the tree — and must produce
+  neither a gap nor a finding, without which "exactly one gap" is equally
+  consistent with a build that enumerates everything. And four MUST/SHOULD
+  clauses sit under the uncovered heading, so "no clause is enumerated" is a
+  reading the fixture can actually falsify. The dangling-entry case is the same
+  registry shape with an unresolvable node, which must be both a gap and a
+  finding. Its unit-tier counterpart with the frozen golden gap-ids is
+  `tests/livespec_orchestrator_beads_fabro/commands/test_detect_impl_gaps.py`.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

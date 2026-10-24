@@ -498,24 +498,24 @@
     "heading": "## Scenario 26 \u2014 list-work-items emits lane and lane_reason",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it.",
+    "test": "tests.integration.test_list_work_items_lane_scenario26.test_scenario26_lane_and_lane_reason_are_computed_from_lane_of",
+    "reason": "Bound to an integration-tier test, per the heading taxonomy's pyramid-tier requirement: `tests/integration/test_list_work_items_lane_scenario26.py` seeds the scenario's three items into one in-memory tenant through the production `append_work_item` and reads `lane` / `lane_reason` back off one real `list-work-items --json` payload, so the derivation has the whole population it is defined over. Filed by bd-ib-tghmyn; the unit-tier cases in `tests/livespec_orchestrator_beads_fabro/commands/test_list_work_items.py` remain the per-lane coverage beneath it.",
     "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 27 \u2014 next ranks ready items by rank",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it.",
+    "test": "tests.integration.test_next_rank_ordering_scenario27.test_scenario27_next_returns_ready_candidates_in_rank_order",
+    "reason": "Integration-tier acceptance for the rank ordering authority `next` composes: the tenant is seeded through the real store seam against the in-memory FakeBeadsClient (the hermetic CI backend) and the ordering is read off `next.main`'s own `--json` envelope, so the bound node id asserts the candidate list an operator receives rather than a sort key's return value. The bound node is the heading's first `Then` (ranks \"a2\", \"a0\", \"a1\" come back ranked \"a0\", \"a1\", \"a2\", over ids whose lexicographic order is the exact reverse); the second `Then` (equal-rank ties break by id lexicographic order, seeded so neither insertion order nor the older durable `ready_since` can produce it) is the sibling test in the same module. The aging tier that shares the same key is bound separately by tests.integration.test_ready_aging_tiebreak_scenario123.",
     "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 28 \u2014 append_work_item registers and lands a custom status in two steps",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it.",
+    "test": "tests.integration.test_append_two_step_custom_status_scenario28.test_scenario28_a_file_create_lands_open_then_updates_to_the_custom_backlog_status",
+    "reason": "Integration-tier acceptance for the 2-step custom-status filing: the tenant is provisioned through the store's own `register_custom_statuses` and the item is filed through the real `append_work_item` seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id observes the WRITES rather than the end state, because both heading `Then` clauses are about them and a one-step create landing `backlog` directly would leave an indistinguishable record: a recording overlay delegating to the fake's real write verbs shows the create landing the beads-native `open` and the following update setting the custom `backlog` status. The end state alone stays bound by tests.livespec_orchestrator_beads_fabro.test_store_mutations.test_append_lands_custom_status_via_two_step.",
     "work_item": "bd-ib-heat"
   },
   {
@@ -538,8 +538,8 @@
     "heading": "## Scenario 32 \u2014 Adopter-target dispatch compatibility",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the github-app-auth-adopter-dispatch revise pass (maintainer-ordered spec wave, openbrain adopter dogfood 2026-07-03): per-tenant engine identity + App-reach/workflows-grant preflight, target-local workflow with target-toolchain prepare steps, and default-branch pull-primary resolution. Will be bound to integration/consumer-tier tests exercising the dispatcher preflight, workflow-override, and janitor default-branch seams against hermetic fakes, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node ids populated via the governed propose-change/revise resulting_files[] loop when the implementing work-items (bd-ib-z2ctra, bd-ib-hkzcfb, bd-ib-w4iaaf) bind them.",
+    "test": "tests.integration.test_adopter_dispatch_app_reach_scenario32.test_scenario32_an_unreachable_adopter_target_refuses_before_any_run_exists, tests.integration.test_adopter_dispatch_prepare_steps_scenario32.test_scenario32_an_adopter_carrying_its_own_workflow_runs_its_own_prepare_chain, tests.integration.test_adopter_dispatch_pull_primary_scenario32.test_scenario32_the_pull_primary_stage_pulls_the_targets_own_default_branch",
+    "reason": "Bound by bd-ib-7fcmla, which re-owned this entry under coordinator ruling R662 (gitops-fleet-capacity-monitoring, 2026-10-22): every owner the previous reason named (bd-ib-z2ctra, bd-ib-hkzcfb, bd-ib-w4iaaf) is done, so the entry had no live owner and check-no-todo-registry could not see the debt. One integration-tier node id per gherkin block, each driving production code against the committed adopter fixture: the App-reach preflight through the REAL pre-dispatch wall, so \"refuses BEFORE launching\" is observable as a refusal that reached no admission; the target-local workflow resolution plus the prepare-parameter projection, because the steps that run come from the dispatched workflow AND from the typed values it reads and either alone can smuggle a fleet constant; and the post-merge janitor's pull-primary stage through the REAL post_merge, since the argv builder alone cannot show the flow reaches it. Each module carries its own positive control, because every assertion here is an ABSENCE and an absence reported by an instrument that cannot return a hit is not evidence.",
     "work_item": "bd-ib-heat"
   },
   {
@@ -561,8 +561,8 @@
     "heading": "## Dispatcher policy settings",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "test": "TODO",
-    "reason": "Dispatcher-policy-settings revise, retitled by the v100 consensus-gated-automated-groom-cut revise: the wire surface of the FOUR policy settings of '### The four policy settings' (auto_approve_ready, acceptance_mode, merge_on_review_cap, and groom_cut_approval, whose per-item label may only LOWER an item to human), the THREE rework caps of '### The three rework caps' (review_fix_cap, acceptance_rework_cap, automated_regroom_cap), the per-item merge hold, the no-per-item-override wip_cap, the always-escalate-needs-human floor, the per-disposition audit journal, and the API-configurable completeness principle. The two v100 settings are parsed and manifested by bd-ib-v6nexg and stay inert there; the integration-tier test id is populated as the clause->scenario->test binding lands, and the behaviors are exercised by Scenarios 33-37.",
+    "test": "tests.livespec_orchestrator_beads_fabro.commands.test_dispatcher_policy_settings.test_raw_boolean_false_label_beats_true_global",
+    "reason": "Bound to a unit-tier test, which this heading may take: the pyramid-tier requirement applies to `scenarios.md` headings alone, and the behaviours this contract describes are exercised at the integration tier by Scenarios 33-37. The bound case drives the committed `dispatcher.merge_on_review_cap` wire setting together with the per-item label that may only LOWER it, which is the precedence this section fixes. Bound by bd-ib-tghmyn; the spec.md entry for the same heading names no owner and stays TODO.",
     "work_item": "bd-ib-heat"
   },
   {
@@ -764,8 +764,8 @@
     "heading": "## Scenario 54 \u2014 Host-side dispatch runs a released payload, never the working tree",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified with the pin-host-direct-dispatch-to-release proposal (bd-ib-4zif.1): host-side dispatch executes a released payload rather than a working tree, self-update triggers on a running-release vs latest-release comparison, and every promotion is gated on a canary of the candidate artifact. Per the test-pyramid tier requirement this scenario binds to an INTEGRATION-tier test (never unit-tier); the exercising test lands with the implementation slice bd-ib-4zif.2 and this entry is bound to its real node id in that change.",
+    "test": "tests.bin.test_payload_canary_subject_is_the_candidate.test_a_broken_candidate_fails_the_canary_and_keeps_the_last_known_good",
+    "reason": "Bound to an integration-tier test (`tests.bin` is in this repository's declared `scenario_tiers` allowlist), per the heading taxonomy's pyramid-tier requirement: `tests/bin/test_payload_canary_subject_is_the_candidate.py` drives the exported `self_update_after_release` boundary with a real bounded subprocess and a recording journal, and observes that a failing canary keeps the last-known-good payload running, alarms a human, and leaves the running Dispatcher's own execution artifact unmoved. Its sibling case is the healthy-candidate control. Bound by bd-ib-tghmyn.",
     "work_item": "bd-ib-heat"
   },
   {
@@ -1019,17 +1019,17 @@
     "heading": "## Scenario 87 \u2014 A node's adapter resolves through three layers and the record names the supplying layer",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
+    "test": "tests.integration.test_acp_node_layer_resolution_scenarios87_88.test_scenario87_a_repository_entry_overrides_the_workflow_default_for_one_node_only",
     "work_item": "bd-ib-heat",
-    "reason": "Ratified by the commission item B revise (plan homelab-loop-hardening-orchestrator): layered adapter resolution and the journaled supplying layer; bd-ib-tsna lands the exercising integration test."
+    "reason": "Bound to an integration-tier test, per the heading taxonomy's pyramid-tier requirement: `tests/integration/test_acp_node_layer_resolution_scenarios87_88.py` drives `prepare_acp_nodes` \u2014 the one function a dispatch calls \u2014 from a committed `.livespec.jsonc` on disk against this repository's own committed `workflow.toml`, and reads the supplying layer per node and per env key off the journal record. Its siblings in the same module carry the per-dispatch override, the environment-is-not-a-layer control and the unknown-node refusal. Bound by bd-ib-tghmyn."
   },
   {
     "heading": "## Scenario 88 \u2014 An arbitrary adapter with an env map and args renders without a code change",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
+    "test": "tests.integration.test_acp_node_layer_resolution_scenarios87_88.test_scenario88_an_env_map_renders_in_sorted_key_order_ahead_of_the_command",
     "work_item": "bd-ib-heat",
-    "reason": "Ratified by the commission item B revise (plan homelab-loop-hardening-orchestrator): arbitrary adapters with env maps and args, proven hermetically; bd-ib-tsna lands the exercising integration test."
+    "reason": "Bound to an integration-tier test, per the heading taxonomy's pyramid-tier requirement: `tests/integration/test_acp_node_layer_resolution_scenarios87_88.py` renders an arbitrary command with a deliberately out-of-order env map through the real committed-configuration and three-layer-merge seams, and asserts the env segment is sorted and precedes the command; its sibling case asserts a node's args render after the command in declaration order. Bound by bd-ib-tghmyn."
   },
   {
     "heading": "## Scenario 89 \u2014 Node timeouts resolve from configuration and land as literal durations",
@@ -1139,9 +1139,9 @@
     "heading": "## Scenario 99 \u2014 Empty-diff acceptance integrity: a zero-change merge is ungradeable, not delivered",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
+    "test": "tests.integration.test_dispatcher_acceptance_needs_attention.test_scenario99_a_zero_change_merge_parks_needs_attention_on_the_empty_diff_leg",
     "work_item": "bd-ib-heat",
-    "reason": "Ratified with the empty-diff-acceptance-integrity revision (plan epic bd-ib-xmom). For a change-implying item an empty merged diff resolves the merged-diff leg ungradeable and the acceptance pass returns NEEDS_ATTENTION (never PASS, never NO_CHANGE_NEEDED) parking one attention item whose summary names the empty-diff leg; a file-scoped check matching zero files reports a distinct vacuous-match outcome a gate counts toward neither passing nor failing; a real-change merge still grades normally; and a declared change-optional item with an empty diff is not misclassified. Awaits the integration-tier binding test delivered by the four impl_followups children (acceptance-empty-diff-refusal, scoped-check-vacuous-match, dispatcher-empty-diff-composition, change-implying-criteria-default); real test ID to follow."
+    "reason": "Bound to an integration-tier test, per the heading taxonomy's pyramid-tier requirement: `tests/integration/test_dispatcher_acceptance_needs_attention.py` dispatches a change-implying item through the real `dispatcher.main(argv=[\"dispatch\", ...])` CLI to a green merged run whose diff is empty, and reads the NEEDS_ATTENTION verdict, the named empty-diff evidence leg and the single parking record off the real ledger and dispatch journal. Its control in the same module is the identical item with only the diff non-empty. Bound by bd-ib-tghmyn; the verdict function's three empty-diff arms and the vacuous-match outcome keep their unit-tier coverage in `test_dispatcher_acceptance_ai.py` and `test_dispatcher_scoped_check_vacuity.py`."
   },
   {
     "heading": "## Scenario 100 \u2014 The repository integration contract resolves once and projects identically to every seam",
@@ -1974,8 +1974,8 @@
     "heading": "## Scenario 205 \u2014 Gap detection enumerates headings without an exercising test",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified in v167 with proposal gap-signal-from-heading-coverage, and the owning work-item bd-ib-4dlokv lands the integration-tier test that binds this entry.",
+    "test": "tests.integration.test_heading_gap_enumeration_scenario205.test_scenario205_the_uncovered_heading_is_the_one_gap_and_files_naming_its_entry",
+    "reason": "Bound to an integration-tier test, per the heading taxonomy's pyramid-tier requirement: `tests/integration/test_heading_gap_enumeration_scenario205.py` carries one uncovered heading from the shipped `detect-impl-gaps --json` entry point over a real spec tree and coverage registry through to the filed work-item's labels, read back off the real store seam, with a covered heading naming a resolvable test as the control. Bound by bd-ib-tghmyn, which supersedes bd-ib-4dlokv's ownership of this row.",
     "work_item": "bd-ib-4dlokv"
   },
   {
@@ -2212,8 +2212,8 @@
     "heading": "## Scenario 236 \u2014 A staged Fabro source checkout carries the ratified worktree and branch names",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "A unit-tier test is owed for this heading: ratified with proposal fabro-source-worktree-name, and the owning work-item bd-ib-7pags adds a test that stages a run's source and fails unless the checkout directory is fabro-source- plus 32 lowercase hexadecimal characters under the repository's directory and the branch is livespec/source/ plus the same characters, together with the test that binds this entry.",
+    "test": "tests.integration.test_source_staging_names_scenario236.test_scenario236_the_staged_source_checkout_carries_the_ratified_names",
+    "reason": "Integration-tier acceptance for the staged source checkout's ratified names, implemented by bd-ib-7pags: the staging runs for real against a real Git repository with a real origin, only the engine launch is stood in, and the directory and branch are read off the checkout the runner actually created, inside the launch, because cleanup removes both as soon as it returns. The parent is compared against the dispatching repository's own `repo.name` rather than against the fixture's literal directory name, and the branch's 32 characters are EXTRACTED from the directory name rather than matched by a second regex, because two independent shape assertions are satisfied by a runner that mints a fresh identifier per name -- which defeats a worktree reaper from the other direction, since it could no longer name the branch a recognised worktree belongs to.",
     "work_item": "bd-ib-7pags"
   },
   {
@@ -2247,5 +2247,11 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal dod-judgement-verdict-binding, and the owning work-item bd-ib-8zyan makes a recorded Definition-of-Done verdict bind every host taking on identical digests and journals opposite verdicts, together with the test that binds this entry.",
     "work_item": "bd-ib-8zyan"
+  },
+  {
+    "heading": "## Scenario 241 \u2014 A repository naming the fleet default dispatches to the factory the registry designates, and moving the fleet default re-routes it with no repository commit",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "tests.integration.test_fleet_default_factory_scenario241::test_a_fleet_default_resolves_to_the_factory_the_registry_designates"
   }
 ]

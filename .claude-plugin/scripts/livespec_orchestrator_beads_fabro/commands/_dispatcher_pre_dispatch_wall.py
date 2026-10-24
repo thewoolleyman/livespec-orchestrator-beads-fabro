@@ -8,7 +8,7 @@ what required every new refusal to be wired twice. It moved out when the Codex
 credential gate became the fourth refusal in each and pushed the single-dispatch
 command module past its file LLOC ceiling — the seam was already there.
 
-WHAT THE WALL IS. Five refusals sharing one POSITION and one guarantee: each runs
+WHAT THE WALL IS. A table of refusals sharing one POSITION and one guarantee: each runs
 after selection and BEFORE admission, so a refused item is never claimed, no
 `active` row is left behind, and no factory run exists to reap. Reading them as one
 decision is also what keeps each command entry point's return count honest — the
@@ -45,6 +45,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibili
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
     implementation_pr_override_refusal,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_app_reach_preflight import (
+    app_reach_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_credential_gate import (
     codex_credential_refusal_for_items,
 )
@@ -66,9 +69,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requireme
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper import (
     credential_wrapper_text,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
-    read_dispatch_labels,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_workflow import (
     definition_of_done_workflow_refusal,
 )
@@ -81,6 +81,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency_gate 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
+    read_dispatch_labels,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_overrides import (
     effective_review_fix_cap,
@@ -133,14 +136,24 @@ def pre_dispatch_wall_exit(
     publication is scripted. A groom selection stays eligible because its `pr`
     node still publishes a filing plan through ACP.
 
+    The APP-REACH preflight is next, and it precedes the currency gate for a
+    RELEVANCE reason rather than a cost one — the two spend comparably. Its
+    answer is a property of the (serving App, target repository) PAIR, so like
+    the currency gate nothing about the selection has to be read before it can be
+    settled; and where the currency gate asks whether the serving ENGINE is
+    admissible, this asks whether that server can reach the target AT ALL. An
+    engine's currency is moot on a server whose App cannot see the repository, so
+    grading currency first pays a forge read and an engine read to answer a
+    question about a server that cannot serve this dispatch either way.
+
     The FABRO CURRENCY gate is next, and its position is load-bearing rather
-    than tidy. It is the only refusal here whose answer is a property of the
-    FACTORY rather than of the items, so nothing about the selection has to be
-    read before it can be settled; and the two refusals that would otherwise
-    precede it both SPEND something — the proof-assets gate creates a repository
-    prerelease, the Codex credential gate spends a bounded provider renewal — so
-    refusing an unadmissible ENGINE after either would pay for a dispatch that
-    could never run on it.
+    than tidy. It is a refusal whose answer is a property of the FACTORY rather
+    than of the items, so nothing about the selection has to be read before it
+    can be settled; and the two refusals that would otherwise precede it both
+    SPEND something — the proof-assets gate creates a repository prerelease, the
+    Codex credential gate spends a bounded provider renewal — so refusing an
+    unadmissible ENGINE after either would pay for a dispatch that could never
+    run on it.
 
     The criteria wall follows and is variant-aware: it is handed this dispatch's
     explicit `--workflow-name`, resolves which graph the selection would run, and
@@ -311,6 +324,11 @@ def _refusing_sequence(
             ),
             EXIT_PRECONDITION_ERROR,
             True,
+        ),
+        (
+            lambda: app_reach_refusal(repo=repo, items=items, journal=journal),
+            EXIT_PRECONDITION_ERROR,
+            False,
         ),
         (
             lambda: fabro_currency_refusal(args=args, repo=repo, items=items, journal=journal),

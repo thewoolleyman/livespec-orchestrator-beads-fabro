@@ -601,7 +601,7 @@ Tests for the thin-transport command modules under
   unreadable source moves rather than as a constant; the concrete 0-and-non-zero
   readings stay on the sibling cases whose arrays are the fixture's alone.
 
-- The seven `test_drift_*` modules cover the per-merge drift run
+- The eight `test_drift_*` modules cover the per-merge drift run
   (`bd-ib-yvjxo4`). Scenario 207 is bound at the integration tier by
   `tests/integration/test_per_merge_drift_run_scenario207.py`, which also
   carries Scenario 82's re-bound drift case; these cover what that tier cannot
@@ -630,6 +630,31 @@ Tests for the thin-transport command modules under
   that never advanced would satisfy every other assertion in the module; its
   no-baseline case asserts ZERO git reads, which is the only observation that
   distinguishes "judged nothing" from "judged the whole branch".
+  `..._lane_inert_record_dedup` sits beside it on the one arm that records at
+  most once (`bd-ib-yfn7ht`), and it is the module most easily weakened: its
+  count is read on EVERY tick rather than after the last, because a lane that
+  recorded nothing at all satisfies a final-state reading exactly as well as one
+  that recorded once, and its baselined case is the positive control for the
+  same reason in the opposite direction. The count is scoped to the DRIFT
+  operation with a gap-capture record seeded on the same anchor, since one
+  anchor carries both operations' bookkeeping and a de-duplication graded on
+  every record there would be graded on the wrong population. And its
+  report-on-every-tick case is what keeps the de-duplication from buying silence:
+  the lane's own report is what the pass renders, so a tick that recorded nothing
+  AND said nothing reads as a lane that had advanced.
+
+- `test_reconcile_pass_drift_report.py` covers the other half of that repair
+  (`bd-ib-yfn7ht`): the pass's own output, which is now where the lane's state
+  lives between the first inert tick and whenever an operator next reads the
+  anchor. Its two subject cases drive the REAL lane end to end, because a
+  constructed outcome cannot fail for the reason the defect existed — the pass
+  discarded the lane's return value, so a hand-built one is satisfied by a
+  command that never calls the lane. Its third case is the rendering CONTROL and
+  is the only one that patches the lane: without a lane that ADVANCED rendering
+  differently, a renderer printing a constant line satisfies both subject cases
+  while telling an operator nothing. It also asserts the drift line is the FIRST
+  line, which is what pins it ahead of the zero-factory early return — the one
+  place a drift report is silently lost to the other lane's refusal.
 
 - The three `test_spec_tree_condensation_*` modules cover the condensed spec
   tree a spec-stated judgement is taken against (`bd-ib-a2bfp3`), split by what
@@ -653,6 +678,36 @@ Tests for the thin-transport command modules under
   characters — the marker standing in for a body is longer than a short body,
   so a tighter budget legitimately yields a LONGER tree and a character count
   would report the design working as the design failing.
+
+- The six `test_dispatcher_attempt_cost_*`, `test_dispatcher_cost_sequence*`,
+  `test_dispatcher_released_run_cost` and
+  `test_acp_availability_probe_attempt_cost` modules cover the attempt-cost
+  record (`bd-ib-a2rhtt`), split by the one assertion each one can fail on.
+  Five things to know before editing. EVERY FIGURE IN EVERY SEQUENCE FIXTURE IS
+  DISTINCT, which is what makes the totals evidence: three equal figures add to
+  the same total whether a replayed observation was counted once, twice or
+  dropped, so a fixture that reused a figure would pass against every wrong
+  fold. The two POSTURE modules are explicitly sets of CONTROLS — nothing in
+  them could have failed before the record existed — and both drive the
+  STRICTEST posture, `enforce` on an unattended drain, because in `report` mode
+  the gate refuses nothing and a record that DID gate would be invisible; each
+  one's green-and-resolvable case refuses, which is what makes its absences
+  evidence rather than consistent with a gate that had stopped working.
+  `..._gates_nothing` asserts its central claim over the IMPORT GRAPH of a
+  stated scope, with a positive control that the named gate modules really are
+  the gate, since an absence over a population that does not contain the thing
+  is no evidence. `..._cost_gate_scope_unchanged` drives each non-green status
+  with a CONFIRMED run record, because with the record absent as well the same
+  absence would be equally consistent with the skip arm, and its absent-record
+  fixture carries ANOTHER repository's run rather than an empty listing. And
+  `..._released_run_cost` states its expectations PER ARM rather than
+  collapsing them: a refused event stream leaves the engine's figure readable
+  and a refused `ps` leaves the attempts readable, so an arm asserting both
+  dark would pass against an implementation that darkens on any fault.
+  `..._probe_attempt_cost`'s two timed-out arms are likewise not one case
+  repeated — a turn this Dispatcher REAPED and one whose run it could not even
+  name both spent an allowance, and the second is the arm where every other
+  field of the record is absent.
 
 Conventions:
 

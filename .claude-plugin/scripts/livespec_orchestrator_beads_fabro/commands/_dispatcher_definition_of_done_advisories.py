@@ -68,11 +68,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done i
     DefinitionOfDone,
     definition_of_done,
 )
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    governing_heading_findings,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+        GoverningHeadingVerdict,
+    )
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -215,7 +221,9 @@ def _section(*, heading: str, body: list[str]) -> _ScenarioSection:
     )
 
 
-def advisory_definition_of_done_findings(*, item: WorkItem, cwd: Path) -> tuple[str, ...]:
+def advisory_definition_of_done_findings(
+    *, item: WorkItem, cwd: Path, governing: GoverningHeadingVerdict | None = None
+) -> tuple[str, ...]:
     """Every advisory Definition-of-Done finding for one item, or an empty tuple.
 
     An item with NO section returns early with nothing: the absent section is the
@@ -225,6 +233,20 @@ def advisory_definition_of_done_findings(*, item: WorkItem, cwd: Path) -> tuple[
     One assertion may carry more than one recognised form, and each is reported:
     collapsing them would hide whichever rule matched second, and the remedies
     are different edits.
+
+    `governing` is the spec-stated judgement's own verdict about which clauses
+    govern these assertions, and where a caller supplies one it REPLACES the
+    lexical candidate rule below rather than standing beside it. The two answer
+    the same question — which heading governs this assertion — and the
+    judgement's answer is the one Scenario 206 makes the remedy, so reporting
+    both would hand a filer two headings to add and no way to tell which surface
+    will hold the item for the other.
+
+    It DEFAULTS to absent, and the default is a spend decision rather than an
+    oversight: the `needs-attention` hygiene lane composes this over every item
+    in the tenant, and a judgement taken here would turn one listing into a
+    model call per item. With no verdict the lexical candidate stands, which is
+    exactly what this surface reported before the judgement existed.
     """
     section = definition_of_done(description=item.description)
     if not section.present:
@@ -232,7 +254,10 @@ def advisory_definition_of_done_findings(*, item: WorkItem, cwd: Path) -> tuple[
     findings: list[str] = []
     for assertion in section.assertions:
         findings.extend(_form_findings(item=item, assertion=assertion.text))
-    findings.extend(_scenario_reference_findings(item=item, section=section, cwd=cwd))
+    if governing is None:
+        findings.extend(_scenario_reference_findings(item=item, section=section, cwd=cwd))
+    else:
+        findings.extend(governing_heading_findings(item=item, section=section, verdict=governing))
     return tuple(findings)
 
 

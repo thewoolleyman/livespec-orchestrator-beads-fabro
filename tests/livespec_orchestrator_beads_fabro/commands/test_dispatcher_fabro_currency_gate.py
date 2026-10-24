@@ -354,3 +354,52 @@ def test_an_explicit_factory_choice_overrides_every_items_recorded_pin(
 
     assert refusal is not None
     assert [record["target"] for record in _records(journal_path=journal_path)] == ["vps"]
+
+
+def test_a_recorded_pin_does_not_hide_the_factory_a_fresh_dispatch_would_reach(
+    tmp_path: Path,
+) -> None:
+    """The item records the CURRENT factory; the repository's default is the stale one.
+
+    The route is undecided at the wall — recovery routing assigns it AFTER the
+    pre-dispatch wall this gate runs inside — so the gate has to grade every
+    target the selection could reach, which is the recorded pin a resume would
+    take AND the placement a fresh dispatch would take. Grading only the pin
+    admits a dispatch onto exactly the unadmissible engine this gate exists to
+    refuse: the fresh dispatch is submitted to `dispatcher.default_factory` while
+    the gate reported on a factory the item merely used to run on.
+
+    The fixture is inverted relative to every other case here — the PIN is
+    current and the DEFAULT is stale — because that is the only arrangement a
+    pin-only gate fails on. With the stale target pinned, a pin-only gate and a
+    union gate both refuse, and the fixture would agree with the defect.
+    """
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+    from livespec_orchestrator_beads_fabro.store import append_work_item, record_dispatch_factory
+
+    repo = _repo(
+        tmp_path=tmp_path,
+        default="vps",
+        factories={
+            "hp": {"server": _HP_SERVER, "bin": _HP_BIN},
+            "vps": {"server": _VPS_SERVER, "bin": _VPS_BIN},
+        },
+    )
+    config = store_config(repo=repo)
+    hp_item = _item(item_id="bd-ib-hp")
+    append_work_item(path=config, item=hp_item)
+    record_dispatch_factory(path=config, work_item_id=hp_item.id, factory="hp")
+    journal_path = tmp_path / "journal.jsonl"
+
+    refusal = gate.fabro_currency_refusal(
+        args=_args(repo=repo),
+        repo=repo,
+        items=[hp_item],
+        journal=JournalFile(path=journal_path),
+        runner=_two_target_runner(),
+        now=_NOW,
+    )
+
+    assert refusal is not None
+    assert "vps" in refusal
+    assert [record["target"] for record in _records(journal_path=journal_path)] == ["vps"]

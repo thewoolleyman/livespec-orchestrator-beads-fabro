@@ -105,6 +105,7 @@ def stamp_pending_claim(
     work_item_id: str,
     dispatch_id: str,
     journal: JournalWriter,
+    resume: bool = False,
     explicit_factory: str | None = None,
 ) -> None:
     """Replace this item's claim stamp with one naming THIS dispatch and no run.
@@ -115,6 +116,15 @@ def stamp_pending_claim(
     would stamp the row with a factory the run never runs on, which the
     reconcile pass then holds the claim against while reporting the stamp
     faithfully.
+
+    `resume` is this item's assigned ROUTE, which the clause makes an input of
+    the stamp rather than of the dispatch alone: "The admission claim stamp MUST
+    apply the same order, using the route recovery routing assigned before the
+    admission valve, so a fresh dispatch is stamped with the factory it will
+    reach and a resume with the factory selected by that same order." It is what
+    decides whether the item's recorded factory is a layer at all, and it
+    defaults to the FRESH answer, which is what every dispatch is unless routing
+    says otherwise.
 
     `explicit_factory` is the TOP layer, the `--factory` flag's name, and it
     arrives as an argument because admission holds no `argparse.Namespace` to
@@ -133,6 +143,7 @@ def stamp_pending_claim(
             repo=repo,
             work_item_id=work_item_id,
             dispatch_id=dispatch_id,
+            resume=resume,
             explicit_factory=explicit_factory,
         )
     )
@@ -183,11 +194,16 @@ def stamp_run_claim(
 
 
 def _write_pending_stamp(
-    *, repo: Path, work_item_id: str, dispatch_id: str, explicit_factory: str | None
+    *,
+    repo: Path,
+    work_item_id: str,
+    dispatch_id: str,
+    resume: bool,
+    explicit_factory: str | None,
 ) -> None:
     """The admission-moment write. Reads no prior stamp: it replaces one wholesale."""
     target = unrecorded_dispatch_factory_target(
-        repo=repo, work_item_id=work_item_id, explicit=explicit_factory
+        repo=repo, work_item_id=work_item_id, resume=resume, explicit=explicit_factory
     )
     record_claim_stamp(
         path=store_config(repo=repo),

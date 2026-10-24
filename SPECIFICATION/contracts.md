@@ -3686,9 +3686,11 @@ review-fix round, and the engine visit limit of `review` MUST admit the
 review-fix budget's visits plus the two recapture laps. A verdict with no
 blocking finding keeps the approval route unchanged. `proof_capture`
 entered on a recapture verdict MUST receive the verdict's findings by two
-routes, the engine's preamble of preceding stage output and the review
-record on the pull request, MUST read that review record when the
-preamble carries no finding, and MUST publish a new captured record,
+routes: the engine's preamble of preceding stage output, and the issuing
+visit's record on the pull request — the review record for a recapture
+verdict from `review`, and the `not_reproduced` record that
+`proof_verify` visit published for a fidelity verdict. It MUST read that
+record when the preamble carries no finding, and MUST publish a new captured record,
 current for the publish head, that addresses each finding. A verdict that
 carries at least one blocking finding about the tree is a fix verdict: it
 routes through `disposition` and `review_fix` and is bounded by the
@@ -3703,12 +3705,34 @@ the tree it receives, and MUST NOT modify the tree, the steps, or the
 Definition of Done. It MUST publish its own record per §"Proof of Done
 record" with the verdict `verified` when every `factory_captured`
 assertion reproduced, or `not_reproduced` naming each assertion that did
-not; the record header renders the verdict verbatim. `verified` routes to
-`proof_grade`, which routes to `pr_refresh` as above; `not_reproduced` routes to `fix` while the node's own visit count is
-below three, and the third `not_reproduced` routes to the existing
-`non_converged` terminal. A `not_reproduced` proof loop re-enters `review`, and those
-review visits count toward the review-fix budget like any other; a
-`proof_grade` retry is bounded as stated above instead. The
+not; the record header renders the verdict verbatim. For each assertion
+it names as not reproduced, the record MUST classify the difference as
+either FIDELITY, where the replay's observable behavioural result equals
+the captured one and only the record's rendering differs (the
+interleaving or ordering of output streams, whitespace, or formatting),
+or BEHAVIOUR, where the behavioural result differs or cannot be compared.
+A difference the node cannot positively show to be fidelity MUST be
+classified behaviour. `verified` routes to `proof_grade`, which routes to
+`pr_refresh` as above. A `not_reproduced` verdict whose every classified
+difference is fidelity is a FIDELITY verdict: it MUST end `proof_verify`
+with `preferred_label=recapture`, which MUST route to `proof_capture`
+with the record's per-assertion findings as the recapture work order,
+and MUST NOT route to `fix`. It counts against the same two-lap
+recapture bound as a review recapture verdict, so the third recapture in
+one run, from either source, MUST route to the existing `non_converged`
+terminal. Any other `not_reproduced` is a BEHAVIOUR verdict. The first
+and second behaviour `not_reproduced` verdicts in one run MUST route to
+`fix`, and the third behaviour `not_reproduced` in one run routes to the
+existing `non_converged` terminal; a fidelity verdict MUST NOT advance
+that count. A behaviour `not_reproduced` proof loop re-enters `review`,
+and those review visits count toward the review-fix budget like any
+other. A fidelity verdict, and any `review` visit it leads back to, MUST
+consume only the shared two-lap recapture allowance and MUST NOT count
+toward the behaviour `not_reproduced` bound or the review-fix budget.
+Where a fidelity verdict and the recapture bound both apply, the
+recapture bound decides: a fidelity verdict that would be the run's
+third recapture routes to `non_converged`. A `proof_grade` retry is
+bounded as stated above instead. The
 `review` node's ship-on-review-cap edge MUST target `proof_verify`, never
 `pr`, so `merge_on_review_cap` (§"Dispatcher policy settings") skips only
 the reviewer's approval and never the replay. No edge MAY route from
@@ -3724,23 +3748,28 @@ constraints these nodes MUST honour are in `constraints.md` §"Fabro
 runtime constraints".
 
 **Proof findings are the fix stage's work order.** When `proof_capture`
-ends with `preferred_label=fix`, or `proof_verify` publishes
-`not_reproduced`, the finding — the assertion, what was observed, and
+ends with `preferred_label=fix`, or `proof_verify` publishes a first or
+second behaviour `not_reproduced` and so routes to `fix`, the finding — the assertion, what was observed, and
 what the proof needs — MUST reach the `fix` node as its work order by
 two routes: the engine's preamble of preceding stage output (no
 templated node attribute and no `inputs.*` edge condition is introduced,
 per `constraints.md` §"Fabro runtime constraints"), AND the stage's own
 record on the pull request (`not_captured` or `not_reproduced`), so the
 finding survives the run. The `fix` prompt MUST treat a proof finding as
-a first-class reason for entry beside a red janitor, and MUST read the
-latest proof record on the pull request when the preamble carries no
-finding. A `fix` visit entered on a proof finding MUST end either with a
+a first-class reason for entry beside a red janitor, and MUST take as
+its work order the record the entering stage graded in that visit: on
+entry from `proof_verify`, the `not_reproduced` record that visit
+published; on entry from `proof_capture`, that visit's `not_captured`
+record. When the preamble carries no finding, it MUST read the latest
+proof record on the pull request. A finding from a capture that a later
+`proof_capture` visit superseded MUST NOT be presented to `fix` as its
+work order. A `fix` visit entered on a proof finding MUST end either with a
 tree change addressing the finding or through the structured needs-human
 ending stating why the finding is wrong; it MUST NOT end succeeded with
 an unchanged tree. A `fix` visit entered from a red janitor is unchanged
 and receives the janitor's failure output as before. The proof loops
-stay bounded by the two visit caps above — the third
-`preferred_label=fix` from `proof_capture` and the third
+stay bounded by the two finding-count bounds above — the third
+`preferred_label=fix` from `proof_capture` and the third behaviour
 `not_reproduced` from `proof_verify` each route to `non_converged`.
 Scenario 137, Scenario 138 and Scenario 141 in `scenarios.md` exercise
 the capture, replay and fix duties added to this section.
@@ -4528,7 +4557,9 @@ from the earlier run's record on the factory the earlier dispatch names;
 when that factory answers that it no longer holds the run, the Dispatcher
 MUST derive the stage from the verdict of the latest record carrying the
 earlier run's identifier — `verified`: `pr_refresh`; `captured`: `review`;
-`not_captured` or `not_reproduced`: `fix`; no such record:
+`not_captured` or a behaviour `not_reproduced`: `fix`; a fidelity
+`not_reproduced`: `proof_capture`, read from the record's own
+classification of each difference; no such record:
 `proof_capture` — and the resume record MUST name which source decided
 it. When the earlier run terminated through `exit` after `pr` armed auto-merge, the resumed-at stage is `pr_refresh`, and the resume record MUST name the factory record as the source that decided it. An authoritative not-found answer from the factory observes the run
 as not live; only an unanswered or errored query is unobservable.
@@ -4539,10 +4570,10 @@ subject to every dispatch-eligibility rule of §"Dispatcher admission, WIP
 cap, and post-merge acceptance" and §"Dispatcher loop invocation surface"
 (dependencies, the WIP cap, `admission_policy`, `factory_safety`,
 `rework:pending`), hold the dispatch-scoped ownership lock, run the
-host-side mechanical wall of §"Effective acceptance criteria", resolve
-its factory as `dispatch --item` does (the selection order of §"Factory
-addresses resolved from a host registry", including `LIVESPEC_FABRO_FACTORY`
-and factory overflow selection), declare a dispatch
+host-side mechanical wall of §"Effective acceptance criteria", resolve its factory through the selection order of §"Factory
+addresses resolved from a host registry", taking that order's resume-only
+recorded-factory step, and including `LIVESPEC_FABRO_FACTORY` and factory
+overflow selection, declare a dispatch
 id to the sandbox, and journal exactly as a dispatch does — including the
 §"Fail-closed cost gate (keyed on `--item` presence)" record, under
 the hand-picked posture. It MUST
@@ -5839,7 +5870,10 @@ NOT imply the Orchestrator enforces it.
 The ONE exception is factory overflow selection (§"Factory overflow
 selection"). It MAY read a candidate factory server's own
 `max_concurrent_runs` and that server's own non-terminal run count, solely to
-choose which declared factory receives an unpinned dispatch. That read MUST
+choose which candidate of §"Factory overflow selection" receives an unpinned
+dispatch; the candidates are the resolved default factory, including a registry
+fleet default the repository does not commit, and the declared entries of
+`dispatcher.overflow_factories`. That read MUST
 NOT refuse, defer, hold or count a dispatch. It MUST NOT be reported as an
 Orchestrator bound, and it MUST NOT feed any admission, gating or
 capacity-reporting surface. The tenant-scope clause below does not govern it.
@@ -7073,8 +7107,10 @@ place a human decision waits. A factory run is never that place.
   hold verbatim: the decision stays in the ledger and reaches a human.
 - Every reconciliation surface (loop, preamble, standalone sweep,
   `needs-attention`) MUST address each factory by its declared server
-  target; a read against an undeclared or default target is not a
-  reconciliation of that factory.
+  target, where an implicitly declared or recorded-target factory
+  (§"Factory addresses resolved from a host registry") counts as declared and is
+  addressed by the server the registry resolves for its name; a read against an
+  undeclared or default target is not a reconciliation of that factory.
 
 Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
 `plan/ledger-is-the-only-gate/research/001-design-and-slice-plan.md`.
@@ -7087,7 +7123,7 @@ Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
 - **Only the owning host recovers a claim.** Ledger writers may run on any number of hosts and share nothing but the Beads server, so no reconciler can observe another host's processes. A reconciler MUST therefore act on a claim only when the claim's stamp names the reconciler's own host. A claim stamped by another host, or by none, MUST be held. This confines every writer of a given claim's recovery to the one host where the owning Dispatcher's liveness is observable.
 - **Survey.** Every reconciliation surface named in §"A factory run never awaits a human" (the loop tick, the dispatch preamble, and the standalone `reconcile-runs` sweep) MUST also survey the ledger's `active` items assigned `fabro`, and every stale assignee as "Stale assignee clearance" below defines one. An item carrying `rework:pending` or a `merge-hold:` label MUST NOT be surveyed, per §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Stranded-state discrimination". For each surveyed claim the Dispatcher MUST take these measurements, and an unobservable measurement MUST NOT be read as a negative answer:
   - *Attribution*: the run id, factory and dispatching host, read from the item's ledger run stamp.
-  - *Run state*: that factory's answer for that run, asked by the factory's declared server target.
+  - *Run state*: that factory's answer for that run, asked by the factory's declared server target, or, for a recorded-target factory (§"Factory addresses resolved from a host registry"), by the server the registry resolves for its recorded name.
   - *Owner liveness*: whether a dispatch-scoped ownership lock for the item (§"Dispatcher loop invocation surface") is held by a live process in any checkout of the tenant's repository on this host. "No live owner" is established only when every such lock location was read and each is either absent or names a process that is not alive. An unreadable lock is not an absent lock.
   - *Predecessor history*: for an absent run, whether the item's preceding dispatch, in the sense of §"Factory-configurable ACP fallback priority" → "Adapter launch release and re-dispatch", ended in an absent-run release. A confirmed first dispatch has no predecessor. Unavailable history is not proof of no predecessor.
 - **Recovery is exclusive on its host and convergent.** Before writing any recovery effect, the reconciler MUST acquire the item's dispatch-scoped ownership lock at ONE canonical location per host: the lock path inside the tenant's primary checkout (the checkout `livespec.primaryPath` names). Taking that lock in whatever checkout the reconciler happens to run from is not enough, because each checkout's lock path excludes only its own callers. The canonical lock serializes recoveries with one another. It does not serialize the human valves or admission, which do not take it. While holding the lock, the reconciler MUST re-read the item and write nothing unless the item is still `active`, assigned `fabro`, and stamped (not pending) with the same run. The effects MUST be written in this order: the journal record, then the ledger comment, then the status transition last, so that the item becomes dispatchable only after its audit trail exists. IMMEDIATELY before the status transition, after the journal record and the comment, the reconciler MUST re-read the item's ledger run stamp again and MUST write the transition only if the stamped run id still equals the run it recovered and the item is still `active` and assigned `fabro`; otherwise the claim is held as `claim-changed` and the transition is not written. Each effect is keyed by item and run. A recovery that finds an effect already present MUST NOT write it again and MUST continue from the first missing effect. An effect whose presence cannot be read is unavailable: the claim is held as `effect-unobservable` and observed again on the next pass, and the effect MUST NOT be written blind.
@@ -7116,7 +7152,7 @@ Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
 
   Every stale assignee that is not cleared MUST be left exactly as it is and listed in the pass's `held` output with the reason of the first condition that applies, graded in this order: `claim-unattributable`, `attribution-pending`, `owner-elsewhere`, `factory-unobservable`, `run-live`, `liveness-unobservable`, `dispatch-live`, `claim-changed`, `effect-unobservable`. Each reason has the meaning the hold list below gives it, except that `claim-changed` means that a re-read before writing found the item no longer `ready`, no longer assigned `fabro`, carrying a pending stamp, or stamped with a different run. A held stale assignee whose run stamp names a run remains released for recovery, so the safety of its next dispatch is decided by recovery routing's own measurements, not by this hold. A stale assignee whose run stamp is pending, or that carries no readable run stamp, names no run for recovery routing to measure: it is not released for recovery, it is held as `attribution-pending` or `claim-unattributable`, and its admission is unchanged by this clause, so its next admission replaces its stamp exactly as any admission of a `ready` item does.
 - **Holds.** Every surveyed claim that is neither released nor completed MUST be left exactly as it is. It MUST be listed in the pass's `held` output with the reason of the FIRST condition below that applies, graded in this order:
-  1. `claim-unattributable`: the item carries no readable run stamp, or the stamp names no declared factory.
+  1. `claim-unattributable`: the item carries no readable run stamp, or the stamp names a factory that is neither declared nor a recorded-target factory. A stamp naming a recorded-target factory whose name the registry no longer resolves is held `factory-unobservable`, naming the factory and the registry path.
   2. `attribution-pending`: the item carries a pending stamp, because its newest dispatch has not yet learned its run. This includes a dispatch that died before its run existed. This subsection never releases such a claim, because a dispatch between admission and taking its ownership lock is indistinguishable from a dead one. Its held entry MUST name the operator `move` valve as the remedy.
   3. `owner-elsewhere`: the stamp names another host, or names no dispatching host.
   4. `factory-unobservable`: the factory could not be reached, or its answer could not be read.
@@ -7284,7 +7320,7 @@ this subsection.
 
 The Dispatcher MUST provide a read-only subcommand, `dispatcher.py sandbox-images --factory <name> [--repo <path>]... [--json]`, that enumerates the sandbox image sources of every dispatch to the named factory that does not pass an explicit `--workflow` path, across the repository and executing-build sets defined below, using the command process's own environment at invocation time. A dispatch that passes an explicit `--workflow` path, and another process's environment overrides, are outside this enumeration. The command MUST NOT create, modify or delete any file, including any lease file, and MUST NOT write a ledger record or a dispatch-journal row. It MUST NOT create a Fabro run, and it MUST NOT pull, build or tag an image.
 
-**Repositories.** Without `--repo`, the command MUST enumerate every repository whose root is the `projectPath` of an install record of this plugin in the host's Claude Code install registry (`~/.claude/plugins/installed_plugins.json`). When one or more `--repo` arguments are given, it MUST enumerate exactly those repositories instead. A repository whose committed `dispatcher.factories` declares no entry of the named factory MUST be reported with source `factory_undeclared` and no image, and that report alone MUST NOT make the command exit non-zero.
+**Repositories.** Without `--repo`, the command MUST enumerate every repository whose root is the `projectPath` of an install record of this plugin in the host's Claude Code install registry (`~/.claude/plugins/installed_plugins.json`). When one or more `--repo` arguments are given, it MUST enumerate exactly those repositories instead. A repository that neither declares the named factory in its committed `dispatcher.factories` nor has it as an implicitly declared or recorded-target factory (§"Factory addresses resolved from a host registry") MUST be reported with source `factory_undeclared` and no image; for an implicitly declared or recorded-target factory the entries are decided by the same resolution functions dispatch calls, so a registry-supplied catalog environment, or a committed per-key override of it, is reported exactly as dispatch would use it, and that report alone MUST NOT make the command exit non-zero.
 
 **Executing builds.** The executing-build set is host-wide. It MUST consist of: the build named by each enumerated repository's registered install record; every plugin-cache build that holds an `.in_use` lease whose recorded process is alive; and the payload of every running Dispatcher process. A lease whose recorded process has exited MUST NOT contribute its build to the executing-build set; such a build MUST still be enumerated when it is reached through a registered install record, another live lease or a running Dispatcher process. A build reached by more than one route MUST be enumerated once.
 
@@ -7334,6 +7370,36 @@ value that is present but is not a string non-empty after trimming is refused
 like an invalid `server`. Other entries in the registry are not validated by
 that resolution and do not affect it.
 
+The factory registry MAY designate a FLEET DEFAULT: a top-level `default` key
+whose value is a string naming one of the registry's factory entries. The key is
+reserved, so no factory may be named `default`, and a registry carrying a
+factory entry named `default` MUST be refused as invalid, naming the reserved
+key. A repository whose committed `dispatcher.default_factory` is the reserved
+value `fleet` MUST resolve its default factory to the registry's fleet default.
+A `dispatcher.default_factory` that names a factory keeps its existing meaning
+and overrides the fleet default for that repository. An ABSENT
+`dispatcher.default_factory` keeps its existing treatment, so an adopter
+repository outside the fleet, which has no registry, is unaffected. A factory
+reached through the fleet default that the repository's `dispatcher.factories`
+does not declare MUST be treated as a registry-backed entry of that name, so
+moving the fleet default to a factory no repository has declared needs no
+repository commit. Every factory selected through `fleet` MUST resolve its
+server and container-daemon address through the registry, including a factory
+the repository also declares; a committed `dispatcher.factories` entry of that
+name that carries `server` or `docker_host` MUST be refused before any ledger
+write, naming the factory, because two addresses for one selected factory are a
+conflict, not a precedence question.
+
+A registry factory entry MAY carry `bin`, `secret_channel` and `environment`,
+each with exactly the meaning that key has on a committed `dispatcher.factories`
+entry. For a registry-backed factory, each of the three MUST be taken from the
+committed entry when the committed entry declares it, and otherwise from the
+registry entry; a key declared in neither keeps its existing absent-key
+treatment. Every validation and refusal a committed value of those keys
+receives MUST apply equally to a registry-supplied value, at the same point and
+with the same effects, naming the registry path as its source. A factory's dev
+token stays keyed by the factory name, unchanged.
+
 The Dispatcher MUST refuse, before any claim, ledger write of any kind (status,
 metadata or comment) or Fabro run creation, a dispatch whose resolved factory
 is registry-backed when the registry file is absent or unreadable, does not
@@ -7349,7 +7415,13 @@ or to any other factory in either case. A repository that declares no
 `dispatcher.factories` keeps its implicit single-factory default target. An
 entry declaring `"registry": true`
 together with `server` or `docker_host` MUST be refused the same way, naming
-the factory.
+the factory. The Dispatcher MUST equally refuse, before any
+claim, ledger write or Fabro run creation, a dispatch that resolves its default
+through `fleet` when the registry file is absent or unreadable, has no `default`
+key, or has a `default` value that is not a string naming a registry factory
+entry. That refusal MUST name the registry path and what it lacked, and the
+Dispatcher MUST NOT fall back to the ambient local target, to any committed
+factory, or to any other registry entry.
 
 Every surface that turns a declared factory into an address MUST use this one
 resolution, and every surface whose behaviour depends on whether a factory is
@@ -7370,42 +7442,113 @@ address in the item's dispatch-factory record exactly as a `server` entry does.
 A factory's per-name settings — its dev token, its secret-channel declaration,
 its `bin` and its `environment` — stay keyed by the factory name, unchanged.
 
-The registry refusal applies only to resolving a DECLARED, registry-backed
-entry, and the undeclared-name refusal only to an EXPLICIT selection. Neither
-changes the factory selection order: an explicit
+The registry refusal applies to resolving a DECLARED, registry-backed entry, a
+factory reached through the reserved default value `fleet`, and a preserved
+fleet-derived recorded factory selected by a resume; the fleet-default refusal
+above applies to every dispatch that resolves its default through `fleet`. The
+undeclared-name refusal applies only to an EXPLICIT selection: an explicit
+`--factory` or a set and non-empty `LIVESPEC_FABRO_FACTORY` MUST still name an
+entry of a committed `dispatcher.factories`, and a registry entry the repository
+does not commit is NOT selectable explicitly. For factory SELECTION, a fresh
+dispatch MUST NOT validate, resolve or refuse on the item's recorded factory;
+the readers this section preserves, and recovery routing's measurements of an
+earlier run, still read it.
+
+When a repository's `dispatcher.default_factory` is `fleet`, the factory the
+registry's fleet default names is an IMPLICITLY DECLARED factory of that
+repository: every rule of this specification that refers to a factory declared
+under `dispatcher.factories`, to a declared factory or its declared server
+target, or to a factory name `dispatcher.factories` declares MUST treat it as a
+declared, registry-backed entry of that name, whose client settings resolve as
+this section states. A factory that any dispatch of the repository reached
+through `fleet`, as named by any dispatch-factory record or dispatch journal
+record of that repository, including one on a closed item and one a later
+dispatch superseded, is a RECORDED-TARGET factory and is treated the same way.
+Its standing does not lapse when the items recording it close, because closing
+a ledger item is not evidence that its run terminated: every reconciliation
+surface, the standalone `reconcile-runs` sweep included, MUST keep surveying
+it. A recorded-target factory the registry no longer resolves stays in every
+survey and is reported unobservable on every surface, naming it and the
+registry path; it is never dropped silently and never treated as holding no
+runs. Exactly two rules are excepted and still require a committed
+`dispatcher.factories` entry: an explicit selection (`--factory`, or a set and
+non-empty `LIVESPEC_FABRO_FACTORY`), and an entry of
+`dispatcher.overflow_factories`.
+
+Neither changes the factory selection order: an explicit
 `--factory` is taken first, then `LIVESPEC_FABRO_FACTORY` when it is set and
-non-empty; then the
-item's recorded factory; then factory overflow selection (§"Factory overflow
-selection") when `dispatcher.overflow_factories` is non-empty, and otherwise
-`dispatcher.default_factory`. A recorded factory
-name that `dispatcher.factories` no longer declares keeps its existing
-treatment: when no explicit selection is made it is ignored and the dispatch
-proceeds as an unpinned one, so renaming a factory re-routes the later
-unpinned dispatches of every item that recorded the old name onto the default
-factory, or through factory overflow selection when it is configured. A `dispatcher.default_factory` that names no declared entry
-keeps its existing treatment as well; this clause does not govern it.
+non-empty; then, for a resume only, the item's recorded factory; then factory
+overflow selection (§"Factory overflow selection") when
+`dispatcher.overflow_factories` is non-empty, and otherwise the resolved default factory: the named `dispatcher.default_factory`, or the
+registry's fleet default when it is `fleet`. A *resume* here is a dispatch whose route is
+`resume`: an invocation of §"Resume from a published pull request
+(`resume --item`)", or a `dispatch` or `loop` pass whose recovery routing
+(§"Factory-configurable ACP fallback priority" → "Recovery from the failed
+run's preserved work") routes the item `resume`. It is the one route that
+continues the run lineage the item's recorded factory belongs to. Every other
+dispatch is a FRESH dispatch, whatever entry point carries it: a
+`dispatch --item`, a `drive` action `impl:<id>` or a loop drain whose item
+recovery routing routes `seeded` or `fresh`, an item not released for
+recovery, and an item reopened for rework. The classification is per item and
+per pass, so one loop wave may carry a resume beside fresh dispatches. A fresh
+dispatch MUST NOT read the item's recorded factory as a pin. When no explicit
+selection is made it MUST proceed as an unpinned dispatch, so changing
+`dispatcher.default_factory` re-routes the next fresh dispatch of every item
+onto the new default factory, or through factory overflow selection when it is
+configured. The admission claim stamp MUST apply the same order, using the
+route recovery routing assigned before the admission valve, so a fresh
+dispatch is stamped with the factory it will reach and a resume with the
+factory selected by that same order. Every dispatch MUST still write the item's dispatch-factory
+record, and every surface that locates an item's live or earlier run through
+that record or through the run's own recorded target MUST keep reading it
+unchanged: the reconcile survey, a liveness read, the claim stamp's run
+target, adapter launch evidence, the acceptance pass, and a resume's read of
+its earlier run. A recorded factory name that `dispatcher.factories` no longer declares keeps
+its existing treatment for a resume: when no explicit selection is made it is
+ignored and the resume proceeds as an unpinned one, so renaming a factory
+re-routes the later resumes of every item that recorded the old name onto the
+default factory, or through factory overflow selection when it is configured.
+A recorded factory name the dispatch reached through `fleet` is the exception: on
+a resume it MUST continue to resolve, by that recorded name, as a registry-backed
+entry even when the repository does not declare it and even after the
+registry's fleet default moves to another factory. A resume carrying such a pin
+MUST go to the recorded factory, MUST NOT be silently re-routed to the current
+fleet default, and MUST be refused before any claim, naming the factory and the
+registry path, when the registry no longer resolves that name. An explicit
+selection still takes precedence over it exactly as over any recorded factory. A
+fresh dispatch of an item whose recorded factory was reached through `fleet`
+resolves the current resolved default factory, or factory overflow selection
+when it is configured, and its fleet-derived record pins nothing. A `dispatcher.default_factory`, other than the reserved value `fleet`, that names no
+declared entry keeps its existing treatment as well; this clause does not govern it.
 
 A factory name SHOULD name the Fabro server instance it addresses and SHOULD
-stay the same for that instance's whole life. Which instance serves a
-repository by default MUST be carried only by `dispatcher.default_factory`, so
-that moving the default from one instance to another changes that one key and
-renames nothing.
+stay the same for that instance's whole life. A fleet member repository SHOULD
+set `dispatcher.default_factory` to `fleet` and SHOULD NOT commit `bin`,
+`secret_channel` or `environment` for a registry-backed factory, so that moving
+the fleet's default from one instance to another, or changing how that instance
+is spoken to, is a change to the provisioning inventory alone. A repository that
+names a factory in `dispatcher.default_factory` opts out of that move by design.
 
 ### Factory overflow selection
 
 `dispatcher.overflow_factories` is an OPTIONAL committed array of factory
 names. Each entry MUST name an entry of `dispatcher.factories`, MUST NOT
-repeat, and MUST NOT name `dispatcher.default_factory`. An entry that violates
+repeat, and MUST NOT name the resolved default factory: `dispatcher.default_factory`, or the
+registry's fleet default when it is `fleet`. An entry that violates
 this MUST be refused before any item is claimed, with a configuration finding
 naming the offending value. The key is committed-only: it is NOT declared
 API-configurable. When it is absent or empty, selection is exactly the order
 of §"Factory addresses resolved from a host registry", and nothing in this
 section applies.
 
-Overflow selection applies ONLY to a dispatch, including a resume, that has no
-explicit `--factory`, no non-empty `LIVESPEC_FABRO_FACTORY`, and no recorded
-factory that `dispatcher.factories` still declares. For such a dispatch the
-candidates are `dispatcher.default_factory` followed by each entry of
+Overflow selection applies ONLY to a dispatch that has no explicit `--factory`
+and no non-empty `LIVESPEC_FABRO_FACTORY`, and that is either a fresh dispatch
+or a resume carrying neither a recorded factory that `dispatcher.factories` still
+declares nor a preserved fleet-derived recorded factory, whether or not the
+repository declares that name (§"Factory addresses resolved from a host
+registry"). A resume carrying a preserved fleet-derived recorded factory is
+pinned, takes no overflow ranking, and goes to its recorded factory. For an overflow-eligible dispatch the
+candidates are the resolved default factory followed by each entry of
 `dispatcher.overflow_factories`, in that order. For each candidate the
 Dispatcher MUST read, from that candidate's own Fabro server at selection
 time, its non-terminal run count and its own `max_concurrent_runs`. A
@@ -7416,18 +7559,19 @@ A candidate whose read fails, times out, is unparseable, or reports a
 The Dispatcher MUST place the dispatch on the candidate with a free slot whose
 count divided by its `max_concurrent_runs` is smallest; ties go to the earlier
 candidate. When no candidate has a free slot, the dispatch MUST be placed on
-`dispatcher.default_factory`. Selection MUST NOT refuse, defer, hold, delay or
+the resolved default factory. Selection MUST NOT refuse, defer, hold, delay or
 count a dispatch on capacity grounds: a dispatch whose chosen factory has no
 free slot proceeds to submission on it, where that factory's scheduler queues
 it as §"Host concurrency belongs to the Fabro scheduler" sanctions. Selection
 does not relax any other requirement: the chosen factory, including a default
 factory reached by fallback, is resolved and admitted exactly as an explicitly
-selected one, so a registry-backed default the registry cannot resolve is
-refused under §"Factory addresses resolved from a host registry".
+selected one, except that the committed-declaration requirement binds only an
+actual explicit selection and not an overflow winner, so a registry-backed
+default the registry cannot resolve is refused under §"Factory addresses resolved from a host registry".
 
 The chosen factory MUST be recorded as the item's dispatch-factory record
-exactly as an explicit choice is, so that a later resume, reconcile or
-acceptance pass of the same dispatch follows it. A registry-backed candidate
+exactly as an explicit choice is, so that a later resume, reconcile or acceptance pass of the same dispatch follows it; a later
+fresh dispatch of the item does not. A registry-backed candidate
 MUST be resolved through the host registry before its server is read. A
 candidate the registry cannot resolve counts as having no free slot for
 selection; this does not relax the registry refusal for a dispatch that names
@@ -8144,8 +8288,14 @@ entitlement, occurrence time, and typed availability outcome. Hold observations
 and their retirement evidence MUST remain reconstructible after any
 repository-local dispatch journal is removed. Dispatch journals MAY record audit
 references but MUST NOT be the sole authority for holds. The participating
-factory instances are every factory declared under `dispatcher.factories`; each
-Dispatcher MUST read availability evidence from every declared factory, so an
+factory instances are every factory declared under `dispatcher.factories`, every
+implicitly declared factory, and every recorded-target factory (§"Factory
+addresses resolved from a host registry"); each Dispatcher MUST read
+availability evidence from every participating factory. A participating factory
+whose evidence cannot be read, including a recorded-target factory the registry
+no longer resolves, has the existing unavailable-evidence treatment: losing a
+factory's address does not retire a hold recorded there, and its holds retire
+only through the confirmations and operator clearances this section defines, so an
 observation made by any repository's run on a participating factory is visible
 to every repository that dispatches to it. Observations, successful availability
 confirmations, and operator clearances MUST each be recorded as a factory-native

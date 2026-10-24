@@ -22,6 +22,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_credential_env,
     _dispatcher_credential_wrapper,
     _dispatcher_credentials,
+    _dispatcher_item_ledger_reads,
     _dispatcher_ledger_close,
     _dispatcher_plan,
     dispatcher,
@@ -114,10 +115,23 @@ def test_credentials_cluster_importable_from_new_module_and_private_names_remove
     credential_public_names = {
         "fetch_fleet_manifest_text",
         "materialize_overlay",
-        "read_dispatch_comments",
-        "read_dispatch_labels",
         "resolve_sibling_clones",
     }
+    # The ITEM's own ledger readings, split out by cohesion the way the
+    # credential-wrapper reader below was: this cluster PROJECTS credentials and
+    # sibling clones into a sandbox overlay, while those two read the dispatched
+    # work-item's ledger record — the operator riders its brief must carry, and
+    # the raw beads labels its per-item policy overrides ride on. Pinned here,
+    # and pinned as GONE from the module they left, so the move cannot regress
+    # into a re-export shim.
+    item_ledger_read_public_names = {
+        "read_dispatch_comments",
+        "read_dispatch_labels",
+    }
+    assert set(_dispatcher_item_ledger_reads.__all__) == item_ledger_read_public_names
+    for name in item_ledger_read_public_names:
+        assert hasattr(_dispatcher_item_ledger_reads, name)
+        assert not hasattr(_dispatcher_credentials, name)
     # The HOST-ENVIRONMENT half, split out by cohesion: these ask whether the
     # machine running the Dispatcher holds a usable credential, while the
     # cluster above PROJECTS one into a sandbox overlay. The typed assessment is

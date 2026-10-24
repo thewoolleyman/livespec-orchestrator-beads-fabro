@@ -64,12 +64,23 @@ a probe or a reading said. For headroom that is the clause's own requirement --
 reason it holds here is structural rather than careful: this module is handed no
 journal to write to.
 
-A HEADROOM SKIP IS CARRIED SEPARATELY FROM BOTH OTHER KINDS, in `headroom` and
-`headroom_floor_percent`, because the clause forbids representing it as an
-observed hold and because a reading is only interpretable beside the floor it
-was graded against. The READING RIDES ALONG rather than being re-taken by a
-consumer: the refusal and the selection record must both name the same
-measurement, and a second read would be a second measurement.
+THE VALUES THIS DECISION IS MADE OF LIVE IN `_acp_preflight_skips`, split out
+by cohesion: what a skip IS, the three disjoint field sets the three kinds
+populate, the factory for each, and the two carriers one node's filtering reads
+and returns. The reason a headroom skip is carried apart from both other kinds
+is recorded there, where the fields are. This module keeps the DECISION -- which
+filter a candidate fails, and in what order -- and re-exports those values, so
+every caller's import is unchanged.
+
+A SIXTH FILTER NOW SITS INSIDE THE OUTSTANDING-CONFIRMATION ONE, and it is the
+only filter that can make a candidate MORE selectable rather than less. "A
+candidate covered by an expired domain or candidate hold carries an outstanding
+availability confirmation", and `_confirmation_turn` is the seam that runs the
+turn which satisfies it (`_acp_availability_probe_run`). It is ABSENT by
+default, which keeps every snapshot composer reaching no factory and leaves the
+skip standing exactly as it did before the seam existed -- the clause's "MUST
+NOT treat an unobserved candidate as confirmed unheld", satisfied by doing
+nothing.
 
 WHY THE CREDENTIAL IS KEYED ON `availability_key`. That key names the account or
 router a candidate authenticates against; `candidate_key` names the model or
@@ -83,11 +94,12 @@ containment path, which is the whole reason it is allowed to carry no identity.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._acp_availability_confirmation import (
-    AcpAvailabilityConfirmation,
     outstanding_confirmation_holds,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_availability_probe_outcome import (
+    probe_confirms,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import ResolvedAcpChain
@@ -96,9 +108,23 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_coverage import (
     hold_covers_candidate,
     legacy_record_covers_candidate,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_hold_records import AcpAvailabilityHold
+from livespec_orchestrator_beads_fabro.commands._acp_preflight_skips import (
+    HEADROOM_SKIP,
+    LEGACY_HOLD_SKIP,
+    OUTSTANDING_CONFIRMATION_SKIP,
+    PROBE_SKIP,
+    PROVIDER_LIMIT_CONDITIONS,
+    TYPED_HOLD_SKIP,
+    UNAVAILABLE_EVIDENCE_SKIP,
+    HeadroomShortfall,
+    NodePreflight,
+    PreflightInputs,
+    SkippedCandidate,
+    confirmation_skip,
+    ephemeral_skip,
+    record_skip,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
-    SessionHeadroomPolicy,
     SessionHeadroomReading,
     headroom_covers_candidate,
 )
@@ -126,146 +152,13 @@ __all__: list[str] = [
     "filter_node_candidates",
 ]
 
-# The five reasons a candidate leaves the selectable set, as stable machine
-# tokens so a verdict's explanation is greppable rather than prose-matched.
-TYPED_HOLD_SKIP = "typed-availability-hold"
-OUTSTANDING_CONFIRMATION_SKIP = "outstanding-availability-confirmation"
-LEGACY_HOLD_SKIP = "legacy-provider-hold"
-PROBE_SKIP = "credential-probe-refusal"
-HEADROOM_SKIP = "session-headroom-shortfall"
-
-# The ONE token that is also a governing condition the contract spells, which
-# is why it is defined here rather than beside the wait that reports it: "it
-# MUST name the outstanding confirmation, unavailable evidence source,
-# admission-time credential-probe skip, or admission session-headroom skip".
-# `_acp_availability_wait` imports it as `UNAVAILABLE_EVIDENCE`, so the skip a
-# filter records and the condition a refusal names cannot drift apart into two
-# spellings of one fact.
-UNAVAILABLE_EVIDENCE_SKIP = "unavailable-availability-evidence"
-
-# The ONLY probe conditions that produce an ephemeral skip. Every other refusal
-# -- absent, revoked, denied, unassessable -- is a fault no fallback repairs, so
-# it is left to the dispatch path's own refusal exactly as before. Widening this
-# set would convert a misconfigured wrapper into a silent chain exhaustion.
-PROVIDER_LIMIT_CONDITIONS: frozenset[str] = frozenset({"exhausted", "rate_limited"})
-
-
-@dataclass(frozen=True, kw_only=True)
-class SkippedCandidate:
-    """One candidate that will not be selected, and the typed reason why.
-
-    `cause`, `scope` and `hold_key` carry the TYPED availability cause when a
-    durable record supplied one. They are what a reached empty chain terminates
-    with, so they are recorded at the moment the skip is decided rather than
-    re-derived later from a ledger that may since have moved.
-
-    `condition` is the SEPARATE field an ephemeral probe refusal reports under,
-    and the separation is the point: a probe condition is a local, this-
-    evaluation-only observation about a credential, not one of the eight typed
-    availability causes an observed provider outage carries. Writing it into
-    `cause` would make a credential that is merely rate-limited on this host
-    indistinguishable, downstream, from an entitlement the provider revoked.
-
-    `headroom` and `headroom_floor_percent` are the THIRD such separation, for
-    the same reason one level on: a session-headroom shortfall is a measurement
-    of a usage window, not a provider refusal of any kind, and the clause
-    forbids representing it as an observed hold. The floor travels with the
-    reading because neither is interpretable without the other.
-
-    `headroom_horizon_minutes` and `headroom_skip_kind` complete that triple
-    for the PROJECTED half. The horizon is the second governing dial and is no
-    more interpretable apart from the reading than the floor is -- a reader
-    seeing an exhaustion two hours out cannot say whether it was refused
-    without knowing what horizon was in force. The kind is recorded at the
-    moment the skip is decided rather than re-derived later from the reading,
-    because the two shortfalls are not exclusive: a reading can sit below the
-    floor AND project an exhaustion inside the horizon, and only the filter
-    knows which test actually stopped the candidate.
-    """
-
-    availability_key: str | None
-    candidate_key: str | None
-    reason: str
-    cause: str | None = None
-    scope: str | None = None
-    hold_key: str | None = None
-    condition: str | None = None
-    headroom: SessionHeadroomReading | None = None
-    headroom_floor_percent: int | None = None
-    headroom_horizon_minutes: int | None = None
-    headroom_skip_kind: str | None = None
-    confirmation_observation_ids: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True, kw_only=True)
-class _HeadroomShortfall:
-    """The four facts ONE headroom skip is recorded from, as one value.
-
-    Grouped rather than passed as four parameters because they are one
-    measurement and its two governing dials: a caller holding three of them is
-    holding an incomplete account, and the ephemeral-skip factory serves the
-    probe refusal too, which carries none of them.
-    """
-
-    reading: SessionHeadroomReading
-    floor_percent: int
-    horizon_minutes: int
-    kind: str
-
-
-@dataclass(frozen=True, kw_only=True)
-class NodePreflight:
-    """One node's surviving candidates in configured order, and what left.
-
-    `assessments` is every DISTINCT session-headroom reading this node's filter
-    took, skipped or not. The clause requires the reading to be journaled for
-    each affected work-item whether or not it refused anything, so a reading
-    reported only through `skipped` would vanish on exactly the admitted case
-    the journal exists to record.
-    """
-
-    node: str
-    enabled: bool
-    candidates: tuple[AcpCandidate, ...]
-    skipped: tuple[SkippedCandidate, ...]
-    assessments: tuple[SessionHeadroomReading, ...] = ()
-
-    @property
-    def exhausted(self) -> bool:
-        """Whether no candidate remains for this node."""
-        return not self.candidates
-
-
-@dataclass(frozen=True, kw_only=True)
-class PreflightInputs:
-    """Everything the filter reads, resolved ONCE at a fixed evaluation time.
-
-    Holding the live records as a value rather than a reader is what makes the
-    contract's "at one fixed evaluation time" a property of the type: two nodes
-    filtered from one `PreflightInputs` cannot see a ledger that moved between
-    them.
-    """
-
-    holds: tuple[AcpAvailabilityHold, ...] = ()
-    expired_holds: tuple[AcpAvailabilityHold, ...] = ()
-    confirmations: tuple[AcpAvailabilityConfirmation, ...] = ()
-    legacy_providers: frozenset[str] = frozenset()
-    builtin_pairs: frozenset[tuple[str, str]] = frozenset()
-    probe: Callable[[str], str] | None = None
-    headroom: SessionHeadroomPolicy | None = None
-    # The domain hold keys an UNREAD evidence source leaves unconfirmed. It is
-    # a key set rather than the unobservable entries themselves because the
-    # question asked of it is a coverage test, and because an entry's shape
-    # belongs to the read that produced it: a filter interpreting one would be
-    # the second reader of a record this module never sees.
-    unconfirmed_keys: frozenset[str] = frozenset()
-
 
 def filter_node_candidates(
     *,
     chain: ResolvedAcpChain,
     inputs: PreflightInputs,
     assessed: dict[str, str],
+    confirmed: dict[str, str] | None = None,
 ) -> NodePreflight:
     """Filter this node's chain, retaining configured order.
 
@@ -274,14 +167,28 @@ def filter_node_candidates(
     than module state on purpose: two concurrent evaluations must not share one
     another's probe answers, and a memo that outlived an evaluation would make
     an ephemeral skip durable by the back door.
+
+    `confirmed` is the same memo for the CONFIRMATION TURN, and it matters more
+    than the credential one does: a confirmation turn is a real factory run
+    spending a real allowance, so a candidate repeated across several nodes --
+    which the contract explicitly permits, "MAY be repeated across nodes when
+    that identity is truly shared" -- must be probed ONCE per evaluation and not
+    once per node. It defaults to ABSENT, which gives this call its own
+    per-node memo, so a caller filtering one node in isolation needs no
+    bookkeeping it has nowhere to keep.
     """
     ordered = (chain.primary, *chain.fallbacks)
     selectable: list[AcpCandidate] = []
     skipped: list[SkippedCandidate] = []
     assessments: list[SessionHeadroomReading] = []
+    turns: dict[str, str] = {} if confirmed is None else confirmed
     for candidate in ordered:
         skip = _skip_for(
-            candidate=candidate, inputs=inputs, assessed=assessed, assessments=assessments
+            candidate=candidate,
+            inputs=inputs,
+            assessed=assessed,
+            assessments=assessments,
+            confirmed=turns,
         )
         if skip is None:
             selectable.append(candidate)
@@ -302,11 +209,12 @@ def _skip_for(
     inputs: PreflightInputs,
     assessed: dict[str, str],
     assessments: list[SessionHeadroomReading],
+    confirmed: dict[str, str],
 ) -> SkippedCandidate | None:
     """The first filter this candidate fails, or `None` when it survives all five."""
     for hold in inputs.holds:
         if hold_covers_candidate(hold=hold, candidate=candidate):
-            return _record_skip(
+            return record_skip(
                 candidate=candidate,
                 reason=TYPED_HOLD_SKIP,
                 cause=hold.cause,
@@ -319,16 +227,45 @@ def _skip_for(
         candidate=candidate,
     )
     if outstanding:
-        return _confirmation_skip(candidate=candidate, holds=outstanding)
+        ending = _confirmation_turn(candidate=candidate, inputs=inputs, confirmed=confirmed)
+        if ending is None or not probe_confirms(ending=ending):
+            return confirmation_skip(candidate=candidate, holds=outstanding, condition=ending)
     legacy = _legacy_provider(candidate=candidate, inputs=inputs)
     if legacy is not None:
-        return _record_skip(candidate=candidate, reason=LEGACY_HOLD_SKIP, hold_key=legacy)
+        return record_skip(candidate=candidate, reason=LEGACY_HOLD_SKIP, hold_key=legacy)
     if _evidence_unconfirmed(candidate=candidate, inputs=inputs):
-        return _ephemeral_skip(candidate=candidate, reason=UNAVAILABLE_EVIDENCE_SKIP)
+        return ephemeral_skip(candidate=candidate, reason=UNAVAILABLE_EVIDENCE_SKIP)
     probed = _probe_skip(candidate=candidate, probe=inputs.probe, assessed=assessed)
     if probed is not None:
         return probed
     return _headroom_skip(candidate=candidate, inputs=inputs, assessments=assessments)
+
+
+def _confirmation_turn(
+    *, candidate: AcpCandidate, inputs: PreflightInputs, confirmed: dict[str, str]
+) -> str | None:
+    """The ending one confirmation turn reached for this candidate, or `None`.
+
+    `None` means NO turn was run: either no seam was supplied, or the candidate
+    carries no identity to key a memo on -- and an identity-less candidate never
+    reaches here anyway, since `outstanding_confirmation_holds` leaves it owing
+    no confirmation at all.
+
+    MEMOISED PER EVALUATION, on the entitlement PAIR rather than on the
+    availability key alone. One allowance can carry several candidates -- a
+    different model on the same account -- and the clause confirms "the
+    candidate's pinned adapter version, requested model and effort", so a turn
+    through one of them says nothing about its sibling. Keying on the account
+    would have the first candidate's turn answer for every later one and
+    confirm a model nobody ran.
+    """
+    identity = candidate.identity
+    if inputs.confirm is None or identity is None:
+        return None
+    key = f"{identity.availability_key}\x00{identity.candidate_key}"
+    if key not in confirmed:
+        confirmed[key] = inputs.confirm(candidate)
+    return confirmed[key]
 
 
 def _legacy_provider(*, candidate: AcpCandidate, inputs: PreflightInputs) -> str | None:
@@ -376,7 +313,7 @@ def _probe_skip(
     condition = assessed[key]
     if condition not in PROVIDER_LIMIT_CONDITIONS:
         return None
-    return _ephemeral_skip(candidate=candidate, reason=PROBE_SKIP, condition=condition)
+    return ephemeral_skip(candidate=candidate, reason=PROBE_SKIP, condition=condition)
 
 
 def _headroom_skip(
@@ -415,82 +352,13 @@ def _headroom_skip(
     kind = headroom_skip_kind(reading=reading, floor_percent=policy.floor_percent)
     if kind is None:
         return None
-    return _ephemeral_skip(
+    return ephemeral_skip(
         candidate=candidate,
         reason=HEADROOM_SKIP,
-        shortfall=_HeadroomShortfall(
+        shortfall=HeadroomShortfall(
             reading=reading,
             floor_percent=policy.floor_percent,
             horizon_minutes=policy.horizon_minutes,
             kind=kind,
         ),
     )
-
-
-def _record_skip(
-    *,
-    candidate: AcpCandidate,
-    reason: str,
-    cause: str | None = None,
-    scope: str | None = None,
-    hold_key: str | None = None,
-) -> SkippedCandidate:
-    """A skip a DURABLE record decided, carrying its typed availability cause."""
-    availability_key, candidate_key = _skip_identity(candidate=candidate)
-    return SkippedCandidate(
-        availability_key=availability_key,
-        candidate_key=candidate_key,
-        reason=reason,
-        cause=cause,
-        scope=scope,
-        hold_key=hold_key,
-    )
-
-
-def _confirmation_skip(
-    *, candidate: AcpCandidate, holds: tuple[AcpAvailabilityHold, ...]
-) -> SkippedCandidate:
-    """Record the exact expired observations a candidate must re-confirm."""
-    availability_key, candidate_key = _skip_identity(candidate=candidate)
-    return SkippedCandidate(
-        availability_key=availability_key,
-        candidate_key=candidate_key,
-        reason=OUTSTANDING_CONFIRMATION_SKIP,
-        confirmation_observation_ids=tuple(hold.observation_id for hold in holds),
-    )
-
-
-def _ephemeral_skip(
-    *,
-    candidate: AcpCandidate,
-    reason: str,
-    condition: str | None = None,
-    shortfall: _HeadroomShortfall | None = None,
-) -> SkippedCandidate:
-    """A skip THIS EVALUATION decided, carrying no typed availability cause.
-
-    Kept apart from `_record_skip` rather than folded into one factory with
-    every field: the two populate disjoint field sets, and one factory taking
-    all of them is how a durable cause comes to be written onto an ephemeral
-    skip -- which is exactly the conflation both separations above exist to
-    prevent.
-    """
-    availability_key, candidate_key = _skip_identity(candidate=candidate)
-    return SkippedCandidate(
-        availability_key=availability_key,
-        candidate_key=candidate_key,
-        reason=reason,
-        condition=condition,
-        headroom=None if shortfall is None else shortfall.reading,
-        headroom_floor_percent=None if shortfall is None else shortfall.floor_percent,
-        headroom_horizon_minutes=None if shortfall is None else shortfall.horizon_minutes,
-        headroom_skip_kind=None if shortfall is None else shortfall.kind,
-    )
-
-
-def _skip_identity(*, candidate: AcpCandidate) -> tuple[str | None, str | None]:
-    """The candidate's `(availability_key, candidate_key)`, or both `None`."""
-    identity = candidate.identity
-    if identity is None:
-        return (None, None)
-    return (identity.availability_key, identity.candidate_key)

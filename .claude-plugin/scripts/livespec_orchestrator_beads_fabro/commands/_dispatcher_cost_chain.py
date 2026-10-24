@@ -83,6 +83,7 @@ from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
     "chain_costs",
+    "run_attempt_windows",
     "run_chain_cost",
 ]
 
@@ -149,7 +150,7 @@ def run_chain_cost(
     runner: CommandRunner | None = None,
 ) -> ChainCost | None:
     """One run's per-attempt cost, or None when the events establish no chain."""
-    windows = _windows(
+    windows = run_attempt_windows(
         repo=repo,
         run_id=run_id,
         factory=factory,
@@ -186,7 +187,7 @@ def _resolved_factory(
     return resolved
 
 
-def _windows(
+def run_attempt_windows(
     *, repo: Path, run_id: str, factory: FactoryTarget, runner: CommandRunner
 ) -> tuple[AcpAttemptWindow, ...]:
     """The run's attempt windows, read server-qualified, or `()`.
@@ -195,6 +196,12 @@ def _windows(
     invocation answers for the LOCAL server, where this run does not exist --
     a clean, plausible, wrong answer with no error, which here would read as
     "this run executed no chain".
+
+    PUBLIC because `_dispatcher_released_run_cost` needs the same reading for a
+    run that did NOT succeed, and a second account of it would be a second
+    chance to take it unqualified -- the exact wrong answer the paragraph above
+    exists to prevent. What differs between the two callers is what they do
+    with the windows, not how the stream is read.
     """
     scan = attempt(
         action=lambda: _scan(repo=repo, run_id=run_id, factory=factory, runner=runner),

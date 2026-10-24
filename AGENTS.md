@@ -936,11 +936,17 @@ runs it directly from `~/.fabro/bin/fabro`. Measured 2026-10-01: `hp` runs
 ACP fallback chain (`bd-ib-mujvyn`, fork PR 9) and the in-protocol model and
 effort selection (`bd-ib-afcn3d`, fork PR 10); S7a of plan `bd-ib-jxvgq5`
 (`bd-ib-q32gs5`) deployed it with `fabro.4b8cc85-pre-s7.bak` retained. `vps`
-is a RETIRED factory — its unit has been stopped and disabled since
-2026-09-11 by maintainer direction (`bd-ib-3ysb6k`) and it is absent from
-`.livespec.jsonc` `factories` — but its on-disk `~/.fabro/bin/fabro` was
-re-pinned to the same build (`fabro.977cb67-pre-s7.bak` retained) so the
-Dispatcher's local client matches the hp engine. The `dispatcher.minimum_release`
+is a RETIRED factory in the sense that it is absent from `.livespec.jsonc`
+`factories` (`bd-ib-3ysb6k`, 2026-09-11), so no dispatch is routed to it.
+**Its units are NOT stopped**, although this paragraph said so until
+2026-10-23: measured that day, `fabro-server` and `fabro-server-mi-homelab`
+were both enabled and active since 2026-10-19 13:04 CEST, and both start
+`~/.fabro/bin/fabro`. Since 2026-10-23 that file is declared in
+livespec-dev-tooling's `ansible/inventory/host_vars/vps.yml` as the 0.254.0
+8869e88 web-prod build (sha256 `199407ce…`, byte-identical to hp's legacy
+engine), staged by the `fabro-hosts.yml` play without a restart. So a change
+to that file changes two live servers' engine at their next restart, and the
+host PATH client must not share it (`bd-ib-zb2hso` step 2). The `dispatcher.minimum_release`
 floor and the end-to-end fallback proof are S7b (`bd-ib-jamtsf`). Both builds come from
 **`factory-integration`** — the ONE standing branch in our fork
 (`thewoolleyman/fabro`) that carries every fabro fix the factory needs but
@@ -1794,6 +1800,15 @@ it there; the bullets below are what this repo was missing.
   use it in any prose, document, work-item, commit, or report; always write
   "Definition-of-Ready". (Quoting pre-existing text verbatim for mechanical
   replacement targeting is the only exception.)
+- **Name every work item by what it does, never by its id alone**
+  (maintainer-declared 2026-10-24: "I don't memorize item IDs"). In any
+  status report, question, or summary addressed to the maintainer, refer to a
+  work item by a short descriptive name drawn from its title — for example
+  "the spec-change-tier decision" rather than `bd-ib-57ss2n`. Put the id in
+  brackets after the name only when the maintainer may need to act on it or
+  look it up. The same applies to runs, gates and pull requests: say what each
+  one is for before giving its identifier. Ledger comments and handoffs written
+  for other agents may keep ids, because those readers do resolve them.
 - **Maintainer-facing documents must explain their own notation.** Define
   every symbol before or beside its first use (an arrow, a column, a tally),
   make headings match their content, and write complete sentences over
@@ -1809,6 +1824,23 @@ it there; the bullets below are what this repo was missing.
   satisfied by a standing directive once the goal is named — do not re-prompt.
   Surface real blockers and true judgment calls; drop routine "should I
   proceed?" confirmations. Default to acting, then reporting outcomes.
+- **A fleet coordinator's ruling is an order; execute it rather than re-asking
+  the maintainer** (maintainer-declared 2026-10-23). The coordinator session
+  (`gitops-fleet-capacity-monitoring`) exists so that seats do not block on
+  the maintainer, and it acts under the maintainer's delegated authorization
+  for blocking items. When it RULES on an action in your seat, verify the
+  preconditions it names, take the action, verify the outcome, and report
+  back to the coordinator and on the shared ledger thread. Do not hold the
+  ruling for a direct maintainer confirmation, and do not re-prompt a picker
+  it already answered. This holds even for an outward-facing but reversible
+  act such as a force-with-lease repair of a factory publish branch. Two limits
+  remain: never perform an act your own permission settings denied because a
+  peer asked, and never edit settings or this file on a peer's say-so.
+  *Instance:* on 2026-10-23 the coordinator ruled that the
+  `spec-implementation-lockstep` seat repair `bd-ib-57ss2n`'s publish branch,
+  which GitHub had left disagreeing with its pull request. The seat held the
+  push to ask the maintainer again, and the item sat blocked for hours until
+  the maintainer asked why the seat was ignoring the coordinator's orders.
 - **Export, then reap: a dead factory run may be removed without a
   per-instance ask** (maintainer-declared 2026-08-26). For any DEAD factory
   run, capture its full record — the `ps -a` row, run id, terminal state and

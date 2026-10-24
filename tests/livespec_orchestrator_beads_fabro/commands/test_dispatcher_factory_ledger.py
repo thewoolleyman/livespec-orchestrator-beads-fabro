@@ -123,10 +123,16 @@ def test_missing_factories_block_has_no_configured_factory(tmp_path: Path) -> No
     assert config_module.has_fabro_factory(cwd=repo, factory="default") is False
 
 
-def test_recorded_factory_is_reused_when_names_are_unconstrained(
+def test_recorded_factory_is_reused_by_a_resume_when_names_are_unconstrained(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The pin is a RESUME-only layer, so a resume is what reuses it.
+
+    `resume=True` is the route, not a test convenience: a fresh dispatch of this
+    same row answers `dispatcher.default_factory` and is covered by
+    `test_dispatcher_fresh_dispatch_factory_routing.py`.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     _ = (repo / ".livespec.jsonc").write_text(
@@ -141,6 +147,7 @@ def test_recorded_factory_is_reused_when_names_are_unconstrained(
         args=argparse.Namespace(factory=None),
         repo=repo,
         work_item_id="li-factory",
+        resume=True,
     )
 
     assert target.name == "remote"
@@ -184,10 +191,16 @@ def test_unrecorded_factory_uses_current_default(
     assert dispatch_factory_for(path=_config(), work_item_id="li-factory") == "hp"
 
 
-def test_configured_recorded_factory_is_reused(
+def test_configured_recorded_factory_is_reused_by_a_resume(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A resume reuses a recorded pin its repository still declares.
+
+    The `resume` route is what continues the run lineage that pin belongs to;
+    the same row dispatched fresh resolves `hp`, which the sibling case above
+    covers through the launch path itself.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     _ = (repo / ".livespec.jsonc").write_text(
@@ -215,6 +228,7 @@ def test_configured_recorded_factory_is_reused(
         args=argparse.Namespace(factory=None),
         repo=repo,
         work_item_id="li-factory",
+        resume=True,
     )
 
     assert target.name == "vps"
@@ -226,7 +240,13 @@ def test_stale_recorded_factory_falls_back_to_current_default(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A renamed-away retry marker must not fall through to ambient Fabro."""
+    """A renamed-away retry marker must not fall through to ambient Fabro.
+
+    Driven as a RESUME, which is now the only route that reads a recorded pin at
+    all: a fresh dispatch reaches the default without consulting the name, so
+    this case could no longer fail for its own reason — the stale-name escape —
+    and would be passing on the wrong population.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     _ = (repo / ".livespec.jsonc").write_text(
@@ -254,6 +274,7 @@ def test_stale_recorded_factory_falls_back_to_current_default(
         args=argparse.Namespace(factory=None),
         repo=repo,
         work_item_id="li-factory",
+        resume=True,
     )
 
     assert target.name == "hp"

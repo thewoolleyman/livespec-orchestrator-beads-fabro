@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -39,13 +40,25 @@ class FabroCommand(Protocol):
 
 
 class FabroRunner(Protocol):
+    """The subprocess seam every engine invocation of this family runs through.
+
+    `env` is the child's environment DELTA against this process, exactly as
+    `CommandRunner`'s is: a string value SETS the variable and a `None` value
+    REMOVES it. The removal arm is what lets an invocation ask for a child
+    WITHOUT a variable this process carries, which a mapping merged over
+    `os.environ` cannot express -- and `FabroPort.version` needs exactly that,
+    because the probe must address the selected factory with that factory's own
+    client settings rather than with whatever Fabro credential the dispatching
+    environment happens to carry.
+    """
+
     def run(
         self,
         *,
         argv: list[str],
         cwd: Path,
         timeout_seconds: float,
-        env: dict[str, str] | None = None,
+        env: Mapping[str, str | None] | None = None,
         stdin: int | None = None,
     ) -> FabroCommand: ...
 

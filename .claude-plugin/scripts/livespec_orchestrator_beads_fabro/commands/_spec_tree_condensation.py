@@ -206,7 +206,13 @@ def _sections_of(*, path: str, text: str) -> list[_Section]:
     """One file split at its H2 headings, preamble first when it carries one."""
     matches = list(_H2_HEADING.finditer(text))
     starts = [match.start() for match in matches]
-    ends = [*starts[1:], len(text)]
+    # One end per MATCH, so a file carrying no H2 at all pairs nothing rather
+    # than pairing an end with a heading that does not exist. A governed tree
+    # legitimately holds such a file — a README, an index, a file whose whole
+    # content is its preamble — and the unconditional form raised from inside
+    # the strict zip below, which reaches every caller of the judgement as an
+    # unhandled error rather than as a verdict that could not be read.
+    ends = [*starts[1:], len(text)] if starts else []
     preamble = text[: starts[0]] if starts else text
     sections = (
         [_section(path=path, index=0, full=preamble, elided=f"{ELIDED_BODY_MARKER}\n")]

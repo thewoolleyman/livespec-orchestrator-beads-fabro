@@ -55,9 +55,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
     EffectiveCriteria,
     effective_criteria,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_capabilities import (
     UNPUBLISHED_REPORT,
     mirrored_sandbox_capabilities,
+)
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
+    GoverningHeadingReader,
+    host_governing_heading_reader,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import LivespecConfigUnreadableError
@@ -65,6 +70,9 @@ from livespec_orchestrator_beads_fabro.errors import LivespecConfigUnreadableErr
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+        GoverningHeadingVerdict,
+    )
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -98,7 +106,9 @@ NO_ASSERTIONS_REPORT = "assertions: none"
 UNDECLARED_PROOF_MODE_REPORT = "undeclared"
 
 
-def filing_display(*, item: WorkItem, cwd: Path) -> str:
+def filing_display(
+    *, item: WorkItem, cwd: Path, governing: GoverningHeadingReader | None = None
+) -> str:
     """The whole pre-confirmation display for one item, as lines of text.
 
     The parse line is FIRST and unconditional, because it is the line that says
@@ -110,12 +120,36 @@ def filing_display(*, item: WorkItem, cwd: Path) -> str:
     count, the source and the line from ONE projection (plan slice S4,
     `bd-ib-tbgxm4`). The two reported different counts for the same item before
     that, and nothing structural prevented it.
+
+    `governing` DEFAULTS TO THIS HOST'S OWN READER rather than to the absent
+    one, exactly as `judge_definition_of_done`'s does and for the same reason:
+    all four front-ends call this as `filing_display(item=..., cwd=Path.cwd())`
+    and none passes a reader, so a default that took no judgement would render
+    the lexical candidate at every production filing surface while the
+    pre-admission judgement held the item for the heading the spec-stated
+    judgement returned. Those are the two surfaces a filer compares, and nothing
+    announces the divergence because each keeps producing a well-formed finding.
+
+    It stays a SEAM so that a caller may name the component instead — the
+    absent reader `unjudged_governing_heading`, or a fixed verdict — which is
+    what makes the taking exercisable at all. What changed is only which way
+    round the default falls: a surface that owes the verdict no longer depends
+    on being handed one, and a caller that must not spend a judgement says so.
+
+    The hygiene listing, which grades every item in the tenant and must not
+    turn one listing into a model call per item, does not reach here: it holds
+    the advisory directly, through `advisory_definition_of_done_findings`.
     """
+    reader = (
+        host_governing_heading_reader(runner=ShellCommandRunner())
+        if governing is None
+        else governing
+    )
     resolved = effective_criteria(item=item)
     lines = [assertion_count_of(criteria=resolved).parse_display]
     lines.extend(_assertion_lines(criteria=resolved))
     lines.append(_capability_line(cwd=cwd))
-    lines.extend(_finding_lines(item=item, cwd=cwd))
+    lines.extend(_finding_lines(item=item, cwd=cwd, governing=reader(item=item, repo=cwd)))
     return "\n".join(lines)
 
 
@@ -171,7 +205,9 @@ def _capability_line(*, cwd: Path) -> str:
     return f"{CAPABILITIES_PREFIX} {', '.join(resolved)}"
 
 
-def _finding_lines(*, item: WorkItem, cwd: Path) -> list[str]:
+def _finding_lines(
+    *, item: WorkItem, cwd: Path, governing: GoverningHeadingVerdict | None
+) -> list[str]:
     """Every finding the host-side wall can detect, labelled by kind.
 
     The mechanical ones lead, because they are the ones that withhold `ready`: a
@@ -183,7 +219,7 @@ def _finding_lines(*, item: WorkItem, cwd: Path) -> list[str]:
     ]
     lines.extend(
         f"{ADVISORY_FINDING_PREFIX} {finding}"
-        for finding in advisory_definition_of_done_findings(item=item, cwd=cwd)
+        for finding in advisory_definition_of_done_findings(item=item, cwd=cwd, governing=governing)
     )
     if not lines:
         return [FINDINGS_NONE_REPORT]

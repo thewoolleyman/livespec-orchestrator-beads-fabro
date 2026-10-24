@@ -915,6 +915,56 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   asked". The record's `sandbox_image` argument is REQUIRED for the mirror
   reason: a default is how one dispatch's record silently reports the
   no-declaration answer for a dispatch that had a declaration.
+  THE TWO `[environments.<id>.*]` TABLES THE OVERLAY RENDERS ARE KEYED ON
+  DIFFERENT IDS, and the asymmetry is a correctness requirement rather than an
+  oversight (`bd-ib-kyeor4`). The ENV table follows the catalog environment the
+  resolved FACTORY declares, because the engine reads an overlay only from
+  `[environments.<selected id>]` and the id-less `[run.environment]` — so once
+  the dispatch began passing `--environment <that id>`, a factory environment
+  spelled differently from the committed `[run.environment] id` made the engine
+  resolve an EMPTY `env` and silently drop every projected variable and every
+  credential (measured on gmktec run 01M5MH0JBKGJ2HRW7VCBP3PGK4, which died in
+  preparation with an empty `CODEX_HOME`, against a Docker run on the same
+  server under the committed id that resolved 37 keys). The IMAGE table stays
+  keyed on the COMMITTED id, because on a registered-provider environment Petri
+  refuses an image found under the selected id and the image is the catalog's to
+  supply — so that is where `resolve_sandbox_image` finds the committed
+  declaration and WITHHOLDS it. Moving both tables together reads as correct at
+  the env table while leaving the committed pin standing under a key the engine
+  does read, overriding the catalog. The id is the SAME
+  `factory_environment_id` projection `fabro run --environment` is rendered
+  from, threaded from the plan through `materialize_overlay` rather than
+  re-resolved: a second resolution can key the table away from the environment
+  the launch selected, and both readings are well-formed. `None` is a factory
+  declaring none, which is the pinned-engine posture and keys the env table
+  exactly where every dispatch keyed it before the parameter existed.
+- `_dispatcher_overlay_input_tokens.py` — rendering the committed run config's
+  `{{ inputs.<name> }}` prepare-command tokens HOST-SIDE, because the pinned
+  engine renders `inputs.*` in graph node attributes and leaves `run.prepare`
+  verbatim. Moved out of `_dispatcher_overlay` by cohesion when the env-table
+  keying above needed room under that file's LLOC ceiling: the overlay ASSEMBLES
+  a run config, while this is the TOML-string surgery one of its inputs needs.
+  Entry point only — the TOML escaper stays private inside it, because importing
+  a `_`-prefixed name across modules is what pyright strict's
+  `reportPrivateUsage` and the `private_calls` check both reject — and NO
+  re-export shim was left behind, for the reason `_dispatcher_minijinja_escape`
+  records. An input name the mapping does not carry is LEFT ALONE rather than
+  blanked, so an unresolved premise fails visibly at its own step instead of
+  quietly becoming a no-op.
+- `_dispatcher_item_ledger_reads.py` — the ONE item's own ledger readings a
+  dispatch needs before it can decide: the operator riders its goal brief must
+  carry, and the raw beads labels its per-item policy overrides ride on. Moved
+  out of `_dispatcher_credentials` by cohesion for the same reason, and for the
+  same reason the credential-wrapper reader left it: that module PROJECTS
+  credentials and sibling clones into a sandbox overlay, and neither of these is
+  a credential. Both route their failure as DATA rather than raising, and the two
+  reasons differ — a brief assembled WITHOUT comments silently drops binding
+  scope nothing else announces, so a failed read refuses the dispatch, while an
+  unreadable label record is the same absence an unlabelled one is, so that read
+  answers the empty tuple for a record carrying no labels and a refusal only for
+  a read that could not be taken. `_LEDGER_READ_ERRORS` moved WITH them: a copy
+  left behind would be a second account of which beads failures are routable as
+  data.
 - `_dispatcher_proof_budget.py` — the declared size budget every proof record is
   measured against before it is posted (`bd-ib-555xcd`). PURE, and the ONE place
   the three figures are named: the MEASURED forge comment ceiling, the record
@@ -1490,8 +1540,8 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   on the headroom reading alone, read by no decision.
   `dispatcher.availability_probe_timeout_seconds`
   (`_dispatcher_policy_settings`, committed-only, positive integer, default
-  120) bounds the confirmation TURN, which this item deliberately does not
-  build: `bd-ib-n3pzcl` consumes the key.
+  120) bounds the confirmation TURN, which `_acp_availability_probe` below
+  builds and `bd-ib-n3pzcl` consumes the key for.
   THE GOVERNING-CONDITION PRECEDENCE PUTS IT BELOW BOTH HOLDS, which is the
   one place that tuple follows the CLAUSE's ordering rather than the filter's —
   the filter consults the confirmation before the legacy blanket, while "when
@@ -1500,6 +1550,180 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   substantiated no listed condition and fell through to
   `unavailable-availability-evidence`, reporting an unreadable factory for a
   chain whose evidence had been read perfectly well.
+- `_acp_availability_probe.py` — the TURN the entry above had nothing to run
+  (`bd-ib-n3pzcl`, Scenarios 60 and 127): "Availability is confirmed only by a
+  successfully completed ACP prompt turn using the candidate's pinned adapter
+  version, requested model and effort, and projected worker credential
+  identity. ... otherwise the probe MUST be a minimal factory run. The probe
+  sends one fixed minimal prompt." PURE, and the shape only: the fixed prompt,
+  the one-ACP-node graph, the run labels, and the two candidates no turn can
+  confirm. A HOST-SIDE probe is not available to us — the clause permits one
+  only when its outcome is "durably observable through the same authoritative
+  evidence source", and that source is the factory's own run records, which
+  nothing host-side writes.
+  Four properties an editor must not invert. `acp.command` is `render_adapter`
+  over the candidate's OWN adapter, which is the one function the dispatch
+  renders a node's adapter through, and that byte equality IS the equivalence
+  claim the clause rests on — a probe rendering anything else exercised a
+  neighbour. ONE adapter-bearing node is the whole of "minimal": a second would
+  spend a second allowance per probe, and a script node would put a recorded
+  success on a node that launched no adapter, which the succeeded-attempt
+  reader would then read as a confirmation of an allowance nothing spent. The
+  LABELS are the mechanism rather than a decoration — `_acp_factory_hold_
+  evidence._successes` derives its observation only where a run's labels record
+  an entitlement for that node's own id, so labelling the probe node is what
+  makes the confirmation host-wide with no peer list and no sidecar. And the
+  OBSERVATION IDS are deliberately NOT in a label: which expired records a
+  confirmation satisfies is DERIVED by `retired_by_success` from the attempt's
+  start instant, so a label naming them would be a second account that cannot
+  know which records expired while the probe ran.
+  TWO CANDIDATES ARE REFUSED BEFORE ANY RUN EXISTS, both conservatively. An
+  identity-less candidate belongs to no typed domain, so no observation is about
+  it and its legacy blanket governs it. An IN-PROTOCOL candidate carries its
+  requested model and effort in `config_options` and nothing in its adapter, and
+  no build renders those into a run — so a turn would not use the requested
+  model, and calling it a confirmation would confirm a model nobody ran. Each is
+  the clause's "any other probe failure": skip for this evaluation, no hold,
+  selection continues.
+- `_acp_availability_probe_outcome.py` — WHAT one confirmation turn's ending
+  MEANS: "Session creation, process exit alone, timeout, cancellation, and an
+  ACP refusal do not confirm availability." PURE, and the grading only; the
+  vocabulary is CLOSED (`PROBE_ENDINGS`) so a consumer can exhaust it, and
+  exactly one member confirms.
+  THE FIVE UNCONFIRMED ENDINGS ARE KEPT APART rather than collapsed into one
+  boolean, which is the decision an editor is most likely to undo on the
+  grounds that the clause treats them alike. It does not: downstream they take
+  THREE routes — an eligible REFUSAL mints a hold at the probe's own occurrence
+  time, a TIMEOUT must mint nothing because a turn the Dispatcher terminated
+  measured no provider, and a process exit, a bare session and a cancellation
+  are neither. One boolean makes a terminated probe indistinguishable from a
+  measured outage.
+  THREE PRECEDENCE STEPS ARE LOAD-BEARING. The BOUND is read FIRST, before any
+  recorded text: a killed turn's record can carry the provider's last sentence,
+  so a text-first grader would mint a hold from a measurement it interrupted.
+  The COMPLETED TURN is read SECOND, ahead of every failure arm, because a
+  run-level failure block legitimately names something other than the turn. And
+  the bare SESSION is told from a PROCESS EXIT by the `agent.acp.started` event
+  alone — the adapter-launch clause's own prompt-boundary reading — never by a
+  message. The `turn.final_output` reclassification ("a provider refusal booked
+  as a successful turn is a failed attempt") is deliberately NOT graded here:
+  this module sees no turn output, which is what keeps the "never an arbitrary
+  exec-output tail" rule structural.
+- `_acp_availability_probe_records.py` — the RECORDS one confirmation turn
+  leaves: "An eligible refusal creates a new occurrence-time-scoped hold. Any
+  other probe failure skips that candidate for the current evaluation, creates
+  no hold". PURE, and the records only.
+  THE EVIDENCE KIND IS `candidate-attempt`, which is a CONTRACT claim rather
+  than a convenience: `hold_observation_record` refuses any kind outside its
+  closed set precisely so a credential probe, a catalog read or a provider's
+  reset claim cannot mint a hold — and the clause forbidding those is the same
+  one that names a refused confirmation turn an actual attempt, on the stated
+  ground that it "runs the candidate's own adapter". So a refused probe is
+  admitted through the existing door rather than by widening the set.
+  THE REFUSAL ARM IS THE ONLY ARM, and it is a lookup on the ENDING rather than
+  on the recorded text: a terminated turn's record can carry the provider's
+  last sentence, so a builder reading the text first mints a hold from a
+  measurement the Dispatcher interrupted. The ending is graded INSIDE
+  `probe_hold_record` rather than accepted as a parameter, so exactly one route
+  decides when an allowance is held.
+  THE SIGNAL DIFFERS FROM THE TERMINAL-READING ONE IN ONE FIELD.
+  `provider_limit_signal` is REUSED, because its own docstring carries the two
+  measurements behind putting a recorded cause on the protocol MESSAGE and a
+  second account here would be a second authority on whether a signature can
+  ever match; what a probe knows and a terminal reading does not is that the
+  turn STARTED, since the refusal ending is reachable only through
+  `agent.acp.started`. An unreadable occurrence instant mints NOTHING rather
+  than substituting a clock — the one substitution "never from ingestion"
+  forbids outright.
+  THE JOURNAL ROW BESIDE IT IS WRITTEN FOR EVERY ENDING — "Every probe turn is
+  journaled with the candidate identity, outcome, occurrence time and, where
+  observable, its cost" — and the BREADTH is the part an implementation
+  narrows: a row written only on refusal makes the measurement that found a
+  provider HEALTHY invisible, which is exactly what an operator asks while a
+  chain is waiting, and an absent row reads downstream as a probe nobody ran.
+  One stage with the ending as a field, so a fold over the journal asks a
+  single question. "Where observable" is about the MEASUREMENT and not about
+  the key: the row carries an explicit null beside a stated flag, because an
+  omitted key is what a row from a build predating cost looks like and zero is
+  a measured figure. `confirmed` is DERIVED through `probe_confirms` rather
+  than compared, so the journal and the filter cannot disagree about an
+  ending. And the observation ids it names are PROVENANCE — what the probe was
+  FOR — never a claim about what it cleared, which `retired_by_success` derives
+  from the attempt's own instant.
+- `_acp_availability_probe_run.py` — PERFORMING the turn, and the only half that
+  reaches a factory. A HOST-SIDE probe is not available to us, which is why
+  this is a run: the clause permits one "only when these execution properties
+  are equivalent and its outcome is durably observable through the same
+  authoritative evidence source", and that source is the factory's own run
+  records.
+  THE TURN IS PLACED IN THE FACTORY'S DECLARED ENVIRONMENT, which is the fourth
+  of the four execution properties the clause names and the only one that is a
+  property of the SANDBOX rather than of the adapter: `_acp_availability_probe`
+  argues the first three from `render_adapter`'s byte equality, and the
+  "projected worker credential identity" is whatever the server-catalog
+  environment supplies. A target built from the server alone omits
+  `--environment` and lands the turn in the server's DEFAULT environment, which
+  is wrong in both directions and announces itself in neither — with no
+  credential there no healthy provider can ever earn a confirmation and the
+  post-expiry stall persists unchanged, and with one the turn confirms a
+  credential identity nobody dispatches with. The id is the dispatch path's own
+  `factory_environment_id` projection rather than a second read, so the probe
+  and a dispatch to the same factory cannot disagree about where they ran, and
+  an unusable declaration reduces to None here exactly as it does there —
+  safe for the same reason, since `factory_declaration_refusal` has already
+  refused the invocation.
+  TERMINATION IS PERFORMED BEFORE ANYTHING IS READ, which is the mechanics
+  worth reading twice. The bound must include "termination of unfinished probe
+  work", so a probe past it is reaped FIRST — `fabro rm -f`, the watchdog's own
+  verb — and its cost reported unobservable. Reading first would buy one cost
+  figure at the price of leaving an adapter running against a provider, and a
+  terminated probe's cost is the one figure nobody acts on.
+  FOUR READINGS AN EDITOR MUST NOT LOOSEN. A timed-out launch is exit 124,
+  which is `ShellCommandRunner`'s OWN mapping and is exported so the bound's
+  test reads that value rather than a literal beside it. The run id is read off
+  a PARTIAL launch deliberately, because `fabro run` prints it early and it is
+  the only thing that can reap the work — and a launch carrying none reports
+  `terminated=False`, since there is unfinished work this Dispatcher cannot
+  name and a record claiming otherwise is the one lie a later reader cannot
+  check. The prompt boundary is read from the `agent.acp.started` EVENT'S
+  PRESENCE rather than through `scan_acp_events`, which requires
+  `candidate_index` before it admits a start: this asks the strictly weaker
+  question the adapter-launch clause answers, so a pre-chain engine's start
+  still tells a created session from an adapter that exited. And the node
+  outcome is keyed through `fabro_stage_node`, so the Petri-era `confirm@1` and
+  a pinned-engine `confirm` both resolve — comparing the node id against the
+  raw key matches nothing, which would report every successful probe as
+  unconfirmed.
+  TWO REFUSALS RETURN BEFORE ANY RUN EXISTS: the candidate the probe cannot
+  faithfully run, and a repository declaring no participating factory — which
+  is NOT a fallback to a host-side probe, because such a repository has no
+  authoritative source for the confirmation to become evidence in.
+- `_acp_preflight_skips.py` — the VALUES one preflight evaluation is made of,
+  split out of `_acp_candidate_preflight` by cohesion when the confirmation
+  seam took that module past the LLOC ceiling: what a skip IS, the three
+  disjoint field sets the three kinds populate, the factory for each, and the
+  two carriers one node's filtering reads and returns. The filter imports these
+  and re-exports the public names, so every caller's import is unchanged; every
+  name crossing the boundary is PUBLIC, because a cross-module private import
+  is rejected by pyright strict and the `private_calls` check alike. THE THREE
+  KINDS KEEP DISJOINT FIELDS, which is why there are three factories and not
+  one taking every field: one factory accepting all of them is how a durable
+  typed cause comes to be written onto an ephemeral skip, after which a
+  credential merely rate-limited on this host is indistinguishable, downstream,
+  from an entitlement the provider revoked.
+  `_acp_availability_wait` gained the OTHER half of the probe clause with it —
+  "If no candidate remains eligible, the Dispatcher MUST retry automatically
+  after `dispatcher.credential_reprobe_interval_seconds`; it MUST NOT
+  busy-loop". The cadence arm was already correct, because an EXPIRED record
+  carries no live expiry for `_reevaluate_at` to take; what was missing was
+  whether the Dispatcher ASKED. A node emptied because no probe seam was
+  supplied and a node emptied because every turn was TERMINATED both rendered
+  as `outstanding-availability-confirmation`, and the remedies differ — the
+  first waits out the cadence, the second says the turns are being killed. So
+  `confirmation_endings` / `CONFIRMATION_ENDINGS_FIELD` names the ending each
+  turn reached on the FIRST emptied node, deduplicated in chain order (three
+  terminated probes are one condition), and is EMPTY when no turn was run,
+  which must not be filled in with a plausible ending.
 - The FACTORY-NATIVE OPERATOR CLEARANCE of the same paragraph's "an operator
   clearance by a minimal factory-native record whose recorded outcome carries
   the clearance's exact identity, actor, time, and reason" (`bd-ib-dtfv2p`,
@@ -2580,6 +2804,19 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   because all three facts are readings of the one committed anchor that function
   already resolves; it subtracts the FILED set, since the hold records are
   append-only and a filed finding would otherwise sit in the inbox for ever.
+  THAT INERT ARM RECORDS ONCE RATHER THAN ONCE PER TICK (`bd-ib-yfn7ht`), and
+  the three properties of the de-duplication are in
+  `_dispatcher_reconcile_drift_lane`'s own docstring. The one worth knowing
+  before editing either module: the record is de-duplicated and the REPORT is
+  not, so `withheld_reason` carries the state on every pass while `records` is
+  None on a skipped one — a tick that recorded nothing and said nothing reads as
+  a lane that had advanced, which is the one reading a withheld frontier must
+  never produce. `_detection_coverage.attempt_record_present` is the reader that
+  makes it possible, matched on the DECLARED SCOPE because that is the only
+  field two invocations describing one unchanged repository state agree on, and
+  fail-soft onto False so a blinded read records rather than suppresses. The
+  reporting half is `_dispatcher_reconcile_runs_command`'s `drift` key and
+  `DRIFT` line, written BEFORE its zero-factory early return.
 - `_spec_tree_condensation.py` — the spec tree a spec-stated judgement is
   actually taken against, and the ONE entry point every consumer of that
   judgement in this repository goes through (`bd-ib-a2bfp3`). PURE.
@@ -2646,6 +2883,55 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   map is built from the GOVERNED tree and not the condensed one, because a
   clause whose body the condensation withheld still encloses the subsections
   the specification states it through.
+
+- The ATTEMPT-COST RECORD of `contracts.md` §"Factory-configurable ACP fallback
+  priority" → "Cost follows every attempt" (`bd-ib-a2rhtt`, Scenarios 45 and
+  127) — one observation per provider-limit-released run and per availability
+  confirmation turn, and the per-item sequence total built from them. Four
+  cohesive pieces, and the dependency direction reads bottom-up:
+  `_dispatcher_cost_attempts` gains the RECORD (its stage, its two sources, its
+  stable identity, and the per-attempt entries) beside the per-attempt
+  arithmetic it already owned; `_dispatcher_cost_sequence` (PURE: the per-item
+  fold, its dedupe, and the sequence total with its labelled subtotal) →
+  `_dispatcher_released_run_cost` (the one impure reading: a released run's own
+  record on its own factory) and `_acp_availability_probe_records`'
+  `probe_attempt_cost_record`. `_dispatcher_provider_limit_disposition` and
+  `_acp_availability_probe_run` are the two writers.
+  Seven properties an editor must not invert. The record GATES NOTHING, which
+  holds structurally rather than carefully: neither record module can import
+  `_dispatcher_cost`, `_dispatcher_cost_gate` or `_dispatcher_cost_wave`, so
+  neither can produce a verdict whatever its fields are called, and the
+  fail-closed gate keeps reading only successful runs with a confirmed run
+  record. The identity is REPRODUCIBLE AND DISCRIMINATING and neither half is
+  worth anything alone — a constant collapses two releases of one item onto one
+  observation and loses a real charge, while a counter or a clock makes every
+  replay a second observation and double-counts the sequence. The whole-run
+  figure is the ENGINE'S OWN and is never taken from the host cost sink: that
+  sink accrues per WORK ITEM rather than per run, so a second release of one
+  item would have the first run's calls attributed to the second run's attempt
+  windows and the fold would count that spend twice. A row whose identity
+  cannot be read is CARRIED rather than dropped, because dropping it
+  under-reports a real charge while leaving a well-formed row behind — and it
+  costs nothing, since such a row states no figure either. One unobservable
+  figure darkens the WHOLE total while the subtotal survives labelled, the
+  final run being one term of the same sum rather than a separately guarded
+  one. The two released-run reads fail INDEPENDENTLY — a refused `events`
+  leaves the engine's figure readable and a refused `ps` leaves the attempts
+  readable — and a record is owed for EVERY released run, so no arm returns
+  nothing. And the confirmation turn's record is charged to exactly ONE item,
+  which is the whole of "a shared availability probe MUST NOT be charged in
+  full to multiple items": nothing downstream divides a charge, so the peers'
+  folds see nothing at all rather than a share or a zero.
+  TWO FIGURES ARE STATED ABSENT PER ATTEMPT RATHER THAN OMITTED OR ZEROED. No
+  engine this fleet runs reports a per-node usage struct, so an entry carries
+  the engine's own elapsed measurement and explicit nulls for the token use and
+  the per-attempt price; an omitted key is what a record from a build predating
+  the clause looks like, and a zero is a MEASURED figure everywhere else here.
+  `_acp_availability_probe_reading` is the cohesion split that made room for the
+  turn's third record: reading one ENDED probe run moved out of
+  `_acp_availability_probe_run`, which was at its file LLOC ceiling, and the run
+  module COMPOSES that one reading — a second copy would be two readings of one
+  run that can disagree about whether it confirmed, each well-formed.
 
 Rules an agent editing this tree must follow:
 

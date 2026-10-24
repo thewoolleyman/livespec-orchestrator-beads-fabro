@@ -128,13 +128,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "heading": "## Dispatcher policy settings",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-07-13"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
     "heading": "## Grooming and slice-size calibration",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-19"
@@ -457,27 +450,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 26 \u2014 list-work-items emits lane and lane_reason",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-06-29"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 27 \u2014 next ranks ready items by rank",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-06-29"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 28 \u2014 append_work_item registers and lands a custom status in two steps",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-06-29"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 29 \u2014 Factory GitHub App token on the dispatch path",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-02"
@@ -486,13 +458,6 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 30 \u2014 Dispatch-time baseline conformance gate",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-07-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 32 \u2014 Adopter-target dispatch compatibility",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-02"
   },
@@ -618,13 +583,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 54 \u2014 Host-side dispatch runs a released payload, never the working tree",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-08-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 55 \u2014 plan archive commissions a missing independent completeness review",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-16"
@@ -674,20 +632,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 87 \u2014 A node's adapter resolves through three layers and the record names the supplying layer",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-08-25"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 88 \u2014 An arbitrary adapter with an env map and args renders without a code change",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-08-25"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 92 \u2014 Dry-run reports why a ready item was not picked",
     "work_item": "bd-ib-nt3cjv",
     "first_seen": "2026-08-29"
@@ -705,13 +649,6 @@
     "heading": "## Scenario 94 \u2014 A provider's availability claim does not extend an exhaustion record's expiry",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-29"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 99 \u2014 Empty-diff acceptance integrity: a zero-change merge is ungradeable, not delivered",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-08-30"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -831,13 +768,6 @@
     "heading": "## Scenario 200 \u2014 A refresh whose conflicts lie only in declared record files merges them without a repair round",
     "work_item": "bd-ib-davaxq",
     "first_seen": "2026-10-18"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 205 \u2014 Gap detection enumerates headings without an exercising test",
-    "work_item": "bd-ib-4dlokv",
-    "first_seen": "2026-10-20"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1020,13 +950,6 @@
     "heading": "## Scenario 235 \u2014 A captured comment that does not parse as a record is a proof-record finding",
     "work_item": "bd-ib-f7lrks",
     "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 236 \u2014 A staged Fabro source checkout carries the ratified worktree and branch names",
-    "work_item": "bd-ib-7pags",
-    "first_seen": "2026-10-22"
   },
   {
     "spec_root": "SPECIFICATION",

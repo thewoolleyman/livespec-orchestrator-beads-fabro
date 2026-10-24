@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -27,7 +28,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_run_launch import (
     launch_fabro_run,
-    server_env,
+    version_probe_env,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import (
     FabroCommand,
@@ -279,11 +280,15 @@ class FabroPort:
         reads whichever server the host's ambient configuration names, which on a
         two-factory host is a fleet-global surrogate for a per-target question —
         and the currency predicate is required to be target-aware.
+
+        AND IT AUTHENTICATES AS THE SELECTED FACTORY'S OWN CLIENT, which is why
+        that environment is a SCRUB and not merely a binding:
+        `version_probe_env` carries the measurement.
         """
         command = self._run(
             argv=[self.fabro_bin, "version", "--json"],
             timeout_seconds=timeout_seconds,
-            env=self._server_env(),
+            env=version_probe_env(server_url=self.target.server_url),
         )
         return FabroVersionResult(command=command, text=command.stdout)
 
@@ -305,7 +310,7 @@ class FabroPort:
         *,
         argv: list[str],
         timeout_seconds: float,
-        env: dict[str, str] | None = None,
+        env: Mapping[str, str | None] | None = None,
     ) -> FabroCommand:
         if env is None:
             return self.runner.run(argv=argv, cwd=self.cwd, timeout_seconds=timeout_seconds)
@@ -322,9 +327,6 @@ class FabroPort:
         if self.target.server_url is None:
             return []
         return ["--server", self.target.server_url]
-
-    def _server_env(self) -> dict[str, str] | None:
-        return server_env(server_url=self.target.server_url)
 
 
 def fabro_port_for_plan(*, plan: Any, runner: FabroRunner) -> FabroPort:

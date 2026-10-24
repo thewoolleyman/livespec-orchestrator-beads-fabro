@@ -13,14 +13,16 @@ an item dispatched fifteen times to one factory and then routed elsewhere. A
 case with no recorded pin passes against a resolution that consults nothing but
 the pin, because there is then nothing for the pin to win.
 
-THE UNROUTED CASE IS THE CONTROL and is not ceremony: a resolution that had
-stopped consulting the recorded pin at all satisfies both routed cases exactly
-as well as a correct one, and would re-route every ordinary re-dispatch of a
-pinned item onto the configured default. It could not fail before the two cases
-above landed, so it rides the suite-green leg; it is what pins the pin's own
-layer underneath them. Measured by mutation on 2026-10-19, dropping
-`_usable_recorded_factory` from `_pinned_factory` reds this case alone of the
-three.
+THE UNROUTED CASE IS THE CONTROL and is not ceremony: without it, a resolution
+that had stopped consulting the routing inputs at all would satisfy both routed
+cases by coincidence, because the answer it fell through to would be the same
+name. What it establishes changed with the spec revision that made the item's
+recorded factory a RESUME-only layer: it used to establish that an unrouted
+re-dispatch went back to the recorded pin, and now establishes that it reaches
+`dispatcher.default_factory` instead, because "a fresh dispatch MUST NOT read
+the item's recorded factory as a pin". The pin's own surviving layer — a resume
+— is covered in `test_dispatcher_fresh_dispatch_factory_routing.py`, where the
+route can be handed to the launch path.
 """
 
 from __future__ import annotations
@@ -55,10 +57,13 @@ _ITEM_ID = "bd-ib-routedfactory"
 _HOST = "admitting-host"
 _ENV_FACTORY_VAR = "LIVESPEC_FABRO_FACTORY"
 
-# The pin is the DEFAULT factory and the routed one is not, which is what makes
-# a routed case able to fail for the right reason: a resolution that fell
-# through to `dispatcher.default_factory` would answer the pin's name too.
+# In the two ROUTED cases the pin is the DEFAULT factory and the routed name is
+# not, which is what makes each able to fail for the right reason: a resolution
+# that fell through to `dispatcher.default_factory` would answer the pin's name
+# too. The UNROUTED case inverts the pairing — it records `_ROUTED` as the pin
+# and expects the default — for the same reason read in the other direction.
 _PINNED = "hp"
+_DEFAULT_SERVER = "https://hp-xubuntu.perch-rudd.ts.net:32276"
 _ROUTED = "petri"
 _ROUTED_SERVER = "https://gmktec-xubuntu.perch-rudd.ts.net:32276"
 
@@ -237,20 +242,20 @@ def test_a_flag_routed_dispatch_stamps_the_flag_factory_over_the_pin(
     assert stamp.factory_server == _ROUTED_SERVER
 
 
-def test_an_unrouted_dispatch_of_a_pinned_item_stamps_the_recorded_pin(
+def test_an_unrouted_dispatch_of_a_pinned_item_stamps_the_configured_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With nothing routing it, the item's own recorded pin is what the stamp names.
+    """With nothing routing it, the configured default is what the stamp names.
 
-    The CONTROL for the two cases above, and the reason the pin keeps its layer
-    rather than losing it: an ordinary re-dispatch of a pinned item carries no
-    flag and no variable, and it must go back to the factory the item has been
-    running on. A resolution that answered the routed cases by ignoring the pin
-    would land every such re-dispatch on `dispatcher.default_factory` instead.
+    The CONTROL for the two cases above: an ordinary re-dispatch of a pinned
+    item carries no flag and no variable and is a FRESH dispatch, so the pin has
+    no layer to win on and the stamp must name `dispatcher.default_factory`.
+    Without this case a resolution that read none of the routing inputs would
+    satisfy both cases above, since the pin they overcome is itself the default.
 
-    The pin here is deliberately NOT the configured default, so a resolution
-    that reached the default by falling through fails rather than agreeing by
-    coincidence — which is also why this case cannot share the other two's pin.
+    The item's recorded pin here is deliberately NOT the configured default, so
+    a build that still read the pin fails rather than agreeing by coincidence —
+    which is also why this case cannot share the other two's pin.
     """
     repo = _repo(tmp_path=tmp_path)
     append_work_item(path=store_config(repo=repo), item=_item())
@@ -262,5 +267,5 @@ def test_an_unrouted_dispatch_of_a_pinned_item_stamps_the_recorded_pin(
     assert [item.id for item in admitted.admitted] == [_ITEM_ID]
     stamp = _stamp_now(repo=repo)
     assert stamp is not None
-    assert stamp.factory_name == _ROUTED
-    assert stamp.factory_server == _ROUTED_SERVER
+    assert stamp.factory_name == _PINNED
+    assert stamp.factory_server == _DEFAULT_SERVER

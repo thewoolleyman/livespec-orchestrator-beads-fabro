@@ -4189,7 +4189,7 @@ Feature: Proof of Done is captured and independently reproduced before publicati
     Then it posts one new Proof of Done verified comment and routes to pr_refresh
     And the pr node marks the pull request ready and arms auto-merge
   Scenario: A non-reproducible proof routes to fix
-    Given the proof_verify replay fails to reproduce one assertion
+    Given the proof_verify replay fails to reproduce one assertion with a behaviour difference, as the run's first or second behaviour not_reproduced verdict
     When the node ends
     Then it posts a not_reproduced record naming that assertion and routes to fix
     And no edge routes the run to pr_refresh or pr
@@ -4540,7 +4540,7 @@ Feature: Proof exercises the delivered behaviour through its real surface
     Then the engine preamble of preceding stage output carries the findings
     And the review record on the pull request carries the same findings
   Scenario: proof_capture reads the review record when the preamble is empty
-    Given a recapture entry whose engine preamble carries no review finding
+    Given a recapture entry from review whose engine preamble carries no review finding
     And a review record on the pull request carrying a proof-record finding
     When the proof_capture node runs
     Then it reads that review record
@@ -4595,6 +4595,30 @@ Feature: Proof exercises the delivered behaviour through its real surface
     Given a review verdict with no blocking finding
     When the review node ends
     Then the run takes the approval route and does not route to proof_capture
+  Scenario: A replay that differs only in record fidelity is re-captured, not fixed
+    Given a captured record whose replay differs from the capture only in the interleaving of stdout and stderr, with the same behavioural result
+    When proof_verify replays it
+    Then the record classifies the difference as fidelity
+    And the run routes to proof_capture with preferred_label recapture
+    And the run does not enter fix on that verdict
+  Scenario: A replay whose behavioural result differs routes to fix
+    Given a replay whose behavioural result differs from the capture
+    When proof_verify replays it
+    Then the record classifies the difference as behaviour
+    And the run routes to fix with that visit's not_reproduced record as its work order
+  Scenario: A fidelity verdict does not count toward the behaviour bound
+    Given a run whose proof_verify has already published two behaviour not_reproduced verdicts and whose recapture allowance is not exhausted
+    When the third proof_verify visit publishes a fidelity verdict
+    Then the run routes to proof_capture with preferred_label recapture and not to non_converged
+  Scenario: The fix-entry guard counts behaviour verdicts, not visits
+    Given a run whose first proof_verify verdict was fidelity and whose second was a behaviour not_reproduced
+    When the third proof_verify visit publishes a second behaviour not_reproduced
+    Then the run routes to fix and not to non_converged
+  Scenario: A fidelity recapture reads the proof_verify record when the preamble is empty
+    Given a recapture entry from a proof_verify fidelity verdict whose engine preamble carries no finding
+    When the proof_capture node runs
+    Then it reads that proof_verify visit's not_reproduced record
+    And the new captured record addresses each fidelity finding
 ```
 
 ## Scenario 138 — A proof finding reaches the fix stage, and a parked acceptance verdict is recorded with its reason and its pointer
@@ -4663,6 +4687,11 @@ Feature: The proof chain does not lose what it found
     When the acceptance pass looks for the merging run's verified record
     Then the record is attributed to the merging run and each factory-captured assertion is graded from it
     And the pointer is written naming that record
+  Scenario: The fix stage receives the record proof_verify graded, not a superseded capture
+    Given a run in which proof_capture published a capture and a later proof_capture visit superseded it
+    And proof_verify then published not_reproduced with a behaviour difference
+    When the fix node starts
+    Then the finding fix receives names that proof_verify record and not the superseded capture
 ```
 
 ## Scenario 139 — The gate checks each proof mode against the capabilities the sandbox image publishes
@@ -6754,7 +6783,8 @@ Feature: Factory addresses come from a host registry, not from committed configu
     When dispatcher.default_factory is changed from "petri" to "next"
     And both items are dispatched with no --factory flag
     Then the unpinned item is dispatched to "next"
-    And the item recorded to "petri" is dispatched to "petri"
+    And the item recorded to "petri" is dispatched to "next", because a fresh dispatch reads no recorded factory
+    And when the item recorded to "petri" is instead resumed with resume --item, the resume is dispatched to "petri"
 ```
 
 ## Scenario 183 — A checkpoint-failed run whose tree nothing else carries is published to a preservation ref
@@ -7611,10 +7641,61 @@ Scenario: With no free slot anywhere the dispatch goes to the default factory an
   And the dispatch is neither refused nor deferred
 
 Scenario: A pinned dispatch reads no capacity and journals no selection
-  Given the dispatch is invoked with --factory "A", or LIVESPEC_FABRO_FACTORY names "A", or the item's recorded factory is "A"
+  Given the dispatch is invoked with --factory "A", or LIVESPEC_FABRO_FACTORY names "A", or the item's route is resume and its recorded factory is "A"
   When the Dispatcher dispatches the item
   Then the run is submitted to factory "A" without reading either server's run count or max_concurrent_runs
   And no overflow-selection journal record is written
+
+Scenario: A fresh dispatch ignores the item's recorded factory
+  Given dispatcher.default_factory names factory "A" and dispatcher.overflow_factories is empty
+  And dispatcher.factories declares factories "A" and "B"
+  And the item's recorded factory is "B" from an earlier run
+  And the item is not released for recovery, as for an item reopened for rework
+  And no explicit factory is selected
+  When the Dispatcher dispatches the item with dispatch --item, the drive action impl, or a loop drain
+  Then the admission claim stamp names factory "A"
+  And the run is submitted to factory "A"
+  And the item's dispatch-factory record names factory "A"
+
+Scenario: An explicit resume keeps the item's recorded factory
+  Given the same configuration and the item's recorded factory is "B"
+  And no explicit factory is selected
+  When the Dispatcher resumes the item with resume --item
+  Then the resumed run is submitted to factory "B"
+  And no overflow-selection journal record is written
+
+Scenario: A recovery-routed resume keeps the item's recorded factory
+  Given the same configuration and the item's recorded factory is "B"
+  And the item is released for recovery and recovery routing routes it resume
+  And no explicit factory is selected
+  When the Dispatcher dispatches the item with dispatch --item or a loop drain
+  Then the admission claim stamp names factory "B"
+  And the resumed run is submitted to factory "B"
+
+Scenario: A seeded recovery dispatch goes to the default factory
+  Given the same configuration and the item's recorded factory is "B"
+  And the item is released for recovery and recovery routing routes it seeded
+  And no explicit factory is selected
+  When the Dispatcher dispatches the item
+  Then the admission claim stamp names factory "A"
+  And the seeded run is submitted to factory "A"
+
+Scenario: One loop wave carries a resume and a fresh dispatch
+  Given the same configuration
+  And item "R" records factory "B" and recovery routing routes it resume
+  And item "F" records factory "B" and is not released for recovery
+  When one loop wave dispatches both items with no explicit factory
+  Then item "R" is stamped with and submitted to factory "B"
+  And item "F" is stamped with and submitted to factory "A"
+
+Scenario: A fresh dispatch of a previously pinned item takes overflow selection
+  Given dispatcher.default_factory names factory "A" and dispatcher.overflow_factories is ["B"]
+  And the item's recorded factory is "A" from an earlier run
+  And the item is not released for recovery
+  And no explicit factory is selected
+  When the Dispatcher dispatches the item with dispatch --item
+  Then the Dispatcher reads both candidates' run counts and max_concurrent_runs
+  And one overflow-selection journal record is written for the dispatch
 ```
 
 ## Scenario 204 — An implement turn that reports its work incomplete fails the implement stage
@@ -8082,7 +8163,7 @@ Feature: Read-only sandbox image enumeration
     When the command runs with --repo R3 --repo R4
     Then it enumerates exactly R3 and R4
   Scenario: An undeclared factory is a successful report
-    Given repository R does not declare factory F
+    Given repository R does not declare factory F, F is not R's resolved fleet default, and F has no recorded-target standing for R
     When the command runs for F and R
     Then it reports source factory_undeclared naming R with no image
     And it exits zero
@@ -9058,4 +9139,228 @@ Feature: A judge that flips on unchanged input cannot flip a recorded verdict
     And the item carries one node record naming the run and the refusal
     And the dispatch journal carries one dod-judgement-disagreement row naming the run and the repository preflight
     And the item rests at blocked with blocked_reason needs-human exactly as any dod_gate refusal rests it
+```
+
+## Scenario 241 — A repository naming the fleet default dispatches to the factory the registry designates, and moving the fleet default re-routes it with no repository commit
+
+```gherkin
+Feature: The factory registry designates the fleet default factory and carries its client settings
+  As a maintainer moving the whole fleet from one Fabro instance to another
+  I want each repository to name the fleet default rather than a factory
+  So that moving the default is a change to the provisioning inventory alone
+
+Background:
+  Given the factory registry maps "petri" and "next" to server addresses
+  And the registry gives "petri" a bin, a secret_channel and an environment
+  And dispatcher.factories is declared, declares "legacy" as a factory with a committed server, and does not declare "petri" or "next" unless a case says so
+
+Scenario: An undeclared registry default receives a fresh dispatch
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri"
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the admission claim stamp names "petri"
+  And the Fabro run is created on petri's registry server with petri's registry bin, secret_channel and environment
+  And the item's dispatch-factory record names "petri"
+
+Scenario: Moving the fleet default re-routes the next fresh dispatch with no repository commit
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri"
+  And an item whose dispatch was recorded on "petri" through the fleet default
+  When only the registry's default is changed to "next"
+  And the item is dispatched with no explicit factory and its route is fresh
+  Then the run is created on "next" and the claim stamp and dispatch-factory record name "next"
+  And the repository's committed configuration is unchanged
+
+Scenario: A named default overrides the fleet default
+  Given dispatcher.default_factory is "legacy"
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the run is created on "legacy" whatever the registry's default names
+
+Scenario: An absent default keeps its existing treatment outside the fleet
+  Given dispatcher.default_factory is absent and no factory registry exists on the host
+  When an item is dispatched with no explicit factory
+  Then the dispatch resolves its target exactly as it did before this revision
+
+Scenario Outline: A committed client setting outranks the registry's, key by key
+  Given dispatcher.default_factory is <default>, which resolves to the registry-backed factory "petri"
+  And the committed "petri" entry declares only <key>
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the run uses the committed <key> and the registry's value for each other client key
+  Examples:
+    | default                                                       | key            |
+    | "fleet", with the registry's default "petri"                  | bin            |
+    | "fleet", with the registry's default "petri"                  | secret_channel |
+    | "fleet", with the registry's default "petri"                  | environment    |
+    | "petri", declared in dispatcher.factories with registry true  | bin            |
+    | "petri", declared in dispatcher.factories with registry true  | secret_channel |
+    | "petri", declared in dispatcher.factories with registry true  | environment    |
+
+Scenario: A client key neither source declares keeps its absent-key treatment
+  Given dispatcher.default_factory is "fleet" and the registry's default is "next"
+  And neither the registry nor the repository gives "next" an environment
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the run is created with the absent-environment treatment a committed entry without that key receives
+
+Scenario: An invalid registry-supplied client setting is refused as a committed one would be, naming the registry
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri"
+  And the committed "petri" entry declares no secret_channel
+  And the registry gives "petri" a secret_channel value a committed entry would be refused for
+  When an item is dispatched
+  Then the dispatch receives the same refusal, at the same point and with the same effects, as a committed secret_channel of that value receives
+  And the refusal names the registry path as the source of the value
+
+Scenario Outline: A fleet default the registry cannot supply is refused before any claim
+  Given dispatcher.default_factory is "fleet"
+  And <registry state>
+  When an item is dispatched
+  Then the dispatch is refused before any claim, ledger write or Fabro run, naming the registry path and what it lacked
+  And the Dispatcher falls back to no committed factory, no other registry entry and no ambient local target
+  Examples:
+    | registry state                                         |
+    | the registry file is absent                            |
+    | the registry file is unreadable                        |
+    | the registry has no default key                        |
+    | the registry's default is not a string                 |
+    | the registry's default names no registry factory entry |
+
+Scenario: The reserved key cannot name a factory
+  Given the factory registry carries a factory entry named "default"
+  When an item is dispatched through the fleet default
+  Then the registry is refused as invalid, naming the reserved key
+
+Scenario Outline: A committed address for a fleet-selected factory is a conflict
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri"
+  And the committed "petri" entry carries <address key>
+  When an item is dispatched
+  Then the dispatch is refused before any ledger write, naming "petri"
+  Examples:
+    | address key |
+    | server      |
+    | docker_host |
+
+Scenario: A resume keeps a fleet-derived pin after the fleet default moves
+  Given dispatcher.default_factory is "fleet"
+  And an item whose dispatch was recorded on "petri" through the fleet default
+  And the registry's default has since moved to "next"
+  When the item's route is resume, through resume --item or recovery routing's resume route
+  Then the resume is submitted to "petri", resolved through the registry
+  And no overflow-selection journal record is written, even when dispatcher.overflow_factories is non-empty
+
+Scenario: A resume whose fleet-derived pin the registry no longer resolves is refused
+  Given the same item and the registry no longer has a "petri" entry
+  When the item's route is resume
+  Then the resume is refused before any claim, naming "petri" and the registry path
+  And it is not re-routed to the current fleet default
+
+Scenario: A fresh dispatch ignores an unresolvable fleet-derived pin for factory selection
+  Given the same item and the registry no longer has a "petri" entry
+  And the availability evidence for the selected candidates is independently complete
+  When the item is dispatched with no explicit factory and its route is fresh
+  Then the run is created on the registry's current default "next"
+  And factory selection refuses nothing on account of the recorded "petri"
+
+Scenario Outline: An explicit selection outranks a fleet-derived pin on a resume
+  Given dispatcher.default_factory is "fleet"
+  And an item whose dispatch was recorded on "petri" through the fleet default, whose route is resume
+  When the resume is made with <explicit selection> naming "legacy"
+  Then the resume is submitted to "legacy"
+  Examples:
+    | explicit selection           |
+    | --factory                    |
+    | a set LIVESPEC_FABRO_FACTORY |
+
+Scenario: A fresh fleet dispatch takes overflow selection and records its winner
+  Given dispatcher.default_factory is "fleet", the registry's default is "petri", and dispatcher.overflow_factories is ["legacy"]
+  And "petri" reports no free slot and "legacy" has a free slot
+  And an item whose dispatch was recorded on "petri" through the fleet default
+  When the item is dispatched with no explicit factory and its route is fresh
+  Then one overflow-selection journal record lists "petri" and "legacy" and names chosen "legacy"
+  And the admission claim stamp, the submitted run and the dispatch-factory record all name "legacy"
+
+Scenario: An undeclared fleet default wins overflow selection
+  Given dispatcher.default_factory is "fleet", the registry's default is "petri", and "petri" is not declared
+  And dispatcher.overflow_factories is ["legacy"]
+  And "petri" reports 1 of 4 non-terminal runs and "legacy" reports 3 of 4
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then one overflow-selection journal record lists "petri" and "legacy" and names chosen "petri", reason least-utilized-free-slot
+  And the admission claim stamp, the submitted run and the dispatch-factory record all name "petri"
+  And the capacity reads refuse, defer, hold and count nothing
+
+Scenario: Overflow may not name the resolved default factory
+  Given dispatcher.factories declares "petri" as a registry-backed factory
+  And dispatcher.default_factory is "fleet", the registry's default is "petri", and dispatcher.overflow_factories is ["petri"]
+  When an item is dispatched
+  Then the configuration is refused before any item is claimed, naming "petri"
+
+Scenario Outline: The committed-declaration exceptions still refuse an implicitly declared factory
+  Given dispatcher.default_factory is "fleet", the registry's default is "petri", and "petri" is not committed in dispatcher.factories
+  When <use> names "petri"
+  Then it is refused as an undeclared name, before any claim
+  Examples:
+    | use                                       |
+    | an explicit --factory                     |
+    | a set LIVESPEC_FABRO_FACTORY              |
+    | an entry of dispatcher.overflow_factories |
+
+Scenario: A stranded claim on a fleet-derived factory is recovered after the fleet default moves
+  Given dispatcher.default_factory is "fleet"
+  And an item active and assigned fabro whose run stamp names "petri", reached through the fleet default, and this host
+  And the registry's default has since moved to "next" while its "petri" entry remains
+  And the run on "petri" has terminated and no live process owns the item
+  When the reconcile pass surveys the claim
+  Then the run state is read from the server the registry resolves for "petri"
+  And the claim is not held as claim-unattributable
+
+Scenario: A stranded claim on a fleet-derived factory the registry no longer resolves is held unobservable
+  Given the same claim and the registry no longer has a "petri" entry
+  When the reconcile pass surveys the claim
+  Then the claim is held as factory-unobservable, naming "petri" and the registry path
+  And it is not treated as holding no run
+
+Scenario: The standalone sweep keeps surveying an old fleet default after its last item is hand-closed
+  Given dispatcher.default_factory is "fleet" and an item's dispatch reached "petri" through the fleet default
+  And the registry's default has since moved to "next"
+  And the item is hand-closed while no Dispatcher is alive and its run on "petri" is still non-terminal
+  When the standalone reconcile-runs sweep runs
+  Then it surveys "petri" and finds the run
+  And it releases the run exactly as an item closed by any route releases its non-terminal run
+
+Scenario: An old fleet default the registry no longer resolves is reported, not dropped
+  Given the same closed item and the registry no longer has a "petri" entry
+  When the standalone reconcile-runs sweep runs
+  Then it reports "petri" unobservable, naming it and the registry path
+  And it does not treat "petri" as holding no runs
+
+Scenario: A superseded fleet-derived dispatch keeps the factory surveyed
+  Given an item whose first dispatch reached "petri" through the fleet default and whose later dispatch reached "next"
+  And only the dispatch journal still records the "petri" dispatch
+  When the standalone reconcile-runs sweep runs
+  Then it surveys "petri" as well as "next"
+
+Scenario: A first fresh dispatch to an undeclared fleet default honours another repository's hold there
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri", which this repository does not declare and has never dispatched to
+  And another repository's run on "petri" recorded a live domain hold covering this node's only eligible candidate's provider allowance
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the Dispatcher reads availability evidence from "petri"
+  And it does not select the held candidate
+
+Scenario: Moving the fleet default keeps the old factory's evidence
+  Given dispatcher.default_factory is "fleet" and an earlier dispatch of this repository reached "petri" through the fleet default
+  And the registry's default has since moved to "next"
+  And a live hold is recorded on "petri"
+  When any item is dispatched
+  Then the Dispatcher reads availability evidence from both "next" and "petri"
+
+Scenario: A hold on an old fleet default still binds after the registry stops resolving it
+  Given dispatcher.default_factory is "fleet" and an earlier dispatch of this repository reached "petri" through the fleet default
+  And a live domain hold covering credential "C" is recorded on "petri"
+  And the registry's default has since moved to "next", whose node candidate uses credential "C"
+  And the registry no longer has a "petri" entry
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the Dispatcher surfaces that availability evidence from "petri" could not be read
+  And it does not treat the candidate using "C" as unheld on evidence that excludes "petri"
+
+Scenario: Sandbox image enumeration reports an undeclared fleet default's registry environment
+  Given repository R's dispatcher.default_factory is "fleet", the registry's default is "petri", R does not declare "petri", and the registry gives "petri" the catalog environment "E"
+  When the sandbox-images command runs for "petri" and R
+  Then it reports source catalog_environment with environment "E" naming R, not factory_undeclared
+  And when R's committed "petri" entry declares the environment "E2", it reports "E2"
 ```

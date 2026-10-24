@@ -33,11 +33,40 @@ lookup, so the message cannot name a file the resolution did not use.
 from __future__ import annotations
 
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
+from livespec_orchestrator_beads_fabro.commands._factory_registry import (
+    FLEET_DEFAULT_FACTORY,
+)
 
 __all__: list[str] = [
     "factory_registry_refusal",
     "factory_registry_unobservable",
+    "registry_sourced_path",
 ]
+
+
+def registry_sourced_path(*, factory: FactoryTarget, key: str) -> str | None:
+    """The registry file that supplied one client key's value, or None for the committed entry.
+
+    The reading the `bin` and `environment` grades name their source from. Both
+    facts come off the resolved target — which keys the registry supplied, and
+    which file was read — rather than from a second configuration read, so a
+    refusal cannot name a file this resolution did not use or a source this
+    merge did not take.
+
+    It lives HERE, with the registry reading's other grades, because the pair it
+    joins is the registry's: the per-key decision `_factory_client_settings`
+    made, and the path `_factory_registry` read. `_factory_client_source`, which
+    renders the refusal's words, deliberately takes neither — it is a pure
+    renderer shared with the transport grade, which holds no `FactoryTarget` at
+    all.
+
+    `None` for a committed key rather than a separate answer for "no source
+    declared it": a key no source declared is never graded, so every caller has
+    already returned by the time it could ask.
+    """
+    if key not in factory.registry_sourced_client_keys:
+        return None
+    return factory.registry.path
 
 
 def factory_registry_unobservable(*, factory: FactoryTarget) -> str | None:
@@ -110,6 +139,8 @@ def factory_registry_refusal(*, factory: FactoryTarget | None) -> str | None:
         return _conflict_refusal(factory=factory)
     if factory.registry.detail is None:
         return None
+    if factory.registry.fleet:
+        return _fleet_refusal(factory=factory)
     return (
         f"ERROR: factory {factory.name} declares"
         f" dispatcher.factories.{factory.name}.registry, so its server address"
@@ -118,6 +149,29 @@ def factory_registry_refusal(*, factory: FactoryTarget | None) -> str | None:
         " host, or point LIVESPEC_FABRO_FACTORY_REGISTRY at the file that"
         f" carries it; this dispatch is refused rather than sent to whichever"
         " Fabro this host runs\n"
+    )
+
+
+def _fleet_refusal(*, factory: FactoryTarget) -> str:
+    """The refusal a dispatch resolving its default through `fleet` earns.
+
+    Separate from the message above because the remedy is in a different place:
+    that one tells an operator to provision the entry their own
+    `dispatcher.factories` names, while here the repository has committed only
+    the reserved value and every fact the operator needs — which file, and what
+    it lacked — is the registry's. A message naming
+    `dispatcher.factories.<name>.registry` would point at a key no fleet
+    repository commits, and on the designation-unresolved arm `<name>` is the
+    reserved value itself, so it would name a factory nobody declared.
+    """
+    return (
+        f"ERROR: dispatcher.default_factory is {FLEET_DEFAULT_FACTORY!r}, so this"
+        " dispatch's factory must come from the factory registry at"
+        f" {factory.registry.path} — and {factory.registry.detail}. Designate a"
+        " fleet default in that registry, or point"
+        " LIVESPEC_FABRO_FACTORY_REGISTRY at the file that carries one; this"
+        " dispatch is refused rather than sent to whichever Fabro this host"
+        " runs\n"
     )
 
 

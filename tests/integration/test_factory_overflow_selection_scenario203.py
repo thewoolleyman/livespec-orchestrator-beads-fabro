@@ -377,13 +377,23 @@ def _resolve(
     monkeypatch: pytest.MonkeyPatch,
     boards: dict[str, _Board],
     factory: str | None = None,
+    resume: bool = False,
 ) -> tuple[argparse.Namespace, _Runner]:
-    """Drive the production unpinned-dispatch resolution once."""
+    """Drive the production unpinned-dispatch resolution once.
+
+    `resume` is the ROUTE recovery routing assigns, and the recorded pin is the
+    one layer that depends on it: the clause makes the item's recorded factory a
+    resume-only pin, so the recorded case below must drive a resume to be a
+    pinned dispatch at all. Every other case is a fresh dispatch, which is what
+    this clause makes every dispatch that is not a resume.
+    """
     runner = _Runner(boards=boards)
     _install_runner(monkeypatch=monkeypatch, runner=runner)
     args = _dispatch_args(cwd=cwd, factory=factory)
     return (
-        args_with_dispatch_factory_target(args=args, repo=cwd, work_item_id=_WORK_ITEM_ID),
+        args_with_dispatch_factory_target(
+            args=args, repo=cwd, work_item_id=_WORK_ITEM_ID, resume=resume
+        ),
         runner,
     )
 
@@ -595,6 +605,11 @@ def test_a_pinned_dispatch_reads_no_capacity_and_journals_no_selection(
     together and an implementation can honour one and miss another — the recorded
     pin especially, since it arrives from the ledger rather than from the command
     line.
+
+    The RECORDED row drives a resume, which is what the clause makes that pin:
+    "for a resume only, the item's recorded factory". Dispatched fresh the same
+    row carries no pin at all and overflow selection applies to it, which is
+    exactly what the unpinned cases above measure.
     """
     _write_config(cwd=tmp_path)
     _seed_item()
@@ -614,6 +629,7 @@ def test_a_pinned_dispatch_reads_no_capacity_and_journals_no_selection(
             _OVERFLOW_SERVER: _Board(runs=2, ceiling=_OVERFLOW_CEILING),
         },
         factory=_OVERFLOW_FACTORY if case == "explicit-flag" else None,
+        resume=case == "recorded",
     )
 
     assert resolved.fabro_factory_target.name == _OVERFLOW_FACTORY
