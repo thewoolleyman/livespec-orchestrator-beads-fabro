@@ -96,6 +96,9 @@ EM_DASH = "—"
 REPLAY_LOCALE = "C.UTF-8"
 UNAVAILABLE = "unavailable"
 TREE_MODE = "040000"
+REPROVED_MARKER = "livespec-carry-forward-reproved"
+WIDENED_STATEMENT = ("Inert classes: not every incoming path is inert; the run's "
+                     "one re-proof covered them")
 REGULAR_FILE_MODES = ("100644", "100755")
 
 
@@ -183,6 +186,16 @@ def inert_prefixes(head, root):
         if name:
             prefixes.append(name + "/history/")
     return prefixes
+
+
+def reproved_marker(root):
+    """Where this run records that one changed-head refresh has re-proved.
+
+    In the clone's own git directory, beside the record staging file, because
+    the fact belongs to THIS run: a new sandbox starts without it and so falls
+    back to the all-inert rule, which is the conservative direction.
+    """
+    return os.path.join(root, ".git", REPROVED_MARKER)
 
 
 def beneath_any(path, prefixes):
@@ -388,10 +401,14 @@ def check_captured_proofs(steps, findings):
                             + " fenced text blocks")
 
 
-def check_incoming(incoming, prefixes, scope, item_paths, findings):
-    """Classify every incoming path against the inert classes, the scope and the item."""
+def check_incoming(incoming, prefixes, scope, item_paths, findings, reproved):
+    """Classify every incoming path against the inert classes, the scope and the item.
+
+    After one re-proof (v177) a non-inert incoming path is no longer a finding
+    by itself; the scope and item-path tests below it still are.
+    """
     for path in incoming:
-        if not beneath_any(path, prefixes):
+        if not reproved and not beneath_any(path, prefixes):
             findings.append("incoming-path-outside-inert-classes: " + path)
         if scope is not None and path in scope:
             findings.append("incoming-path-in-observation-scope: " + path)
@@ -439,7 +456,7 @@ def decide(args):
              "incoming_range": args["previous_base"] + ".." + args["new_base"],
              "incoming_paths": None, "observation_scope": None,
              "verified_patch_identity": UNAVAILABLE,
-             "new_patch_identity": UNAVAILABLE}
+             "new_patch_identity": UNAVAILABLE, "widened": False}
     findings = []
     try:
         root = repository_root()
@@ -472,7 +489,10 @@ def decide(args):
                                       args["new_head"], findings)
         facts["observation_scope"] = scope
         check_captured_proofs(steps, findings)
-        check_incoming(incoming, prefixes, scope, item_paths, findings)
+        reproved = os.path.exists(reproved_marker(root))
+        facts["widened"] = reproved and not all(
+            beneath_any(path, prefixes) for path in incoming)
+        check_incoming(incoming, prefixes, scope, item_paths, findings, reproved)
         if facts["verified_patch_identity"] != facts["new_patch_identity"]:
             findings.append("patch-identity-differs: the verified diff is "
                             + facts["verified_patch_identity"]
@@ -508,6 +528,8 @@ def render(verdict, findings, facts, timestamp, run_identity):
     lines.append("Observation scope: " + _listed(facts["observation_scope"]))
     lines.append("Verified patch identity: " + facts["verified_patch_identity"])
     lines.append("New patch identity: " + facts["new_patch_identity"])
+    if facts["widened"] and verdict == VERDICT_CARRIED_FORWARD:
+        lines.append(WIDENED_STATEMENT)
     if findings:
         lines.extend(["", "## Inputs that decided it", ""])
         lines.extend("- " + finding for finding in findings)
@@ -575,15 +597,22 @@ def main(argv):
                          + "\n")
         return 1
     if verdict == VERDICT_CARRIED_FORWARD:
+        classes = ("is outside the item's paths, the run having re-proved once,"
+                   if facts["widened"] else "is beneath an inert class")
         sys.stderr.write("LIVESPEC_CARRY_FORWARD_CARRIED: the verified proof on "
                          + facts["verified_head"] + " covers the new head "
                          + facts["new_head"] + ", because every incoming path of "
-                         + facts["incoming_range"] + " is beneath an inert class "
+                         + facts["incoming_range"] + " " + classes + " "
                          "and outside the observation scope, both patch "
                          "identities are " + facts["new_patch_identity"]
                          + ", and the mechanical replay reproduced every "
                            "captured proof; proceeding to pr\n")
         return 0
+    try:
+        with open(reproved_marker(root), "w", encoding="utf-8") as handle:
+            handle.write(facts["new_head"] + "\n")
+    except OSError:
+        pass
     sys.stderr.write("LIVESPEC_CARRY_FORWARD_REPROOF: the verified proof does "
                      "not cover " + facts["new_head"] + "; the inputs that "
                      "decided it are:\n")
