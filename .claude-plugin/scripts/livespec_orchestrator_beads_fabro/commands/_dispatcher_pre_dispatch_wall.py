@@ -100,6 +100,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_reclaim import (
     reclaim_stale_publish_branches,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_wall import (
+    spec_change_tier_refusal,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     ConnectionPrefixMissingError,
@@ -186,6 +189,16 @@ def pre_dispatch_wall_exit(
     grades are the ones the overlay will actually read. That declaration is
     repository-level, so one refusal covers the whole selection, while the
     journal records are written per item.
+
+    The SPEC-CHANGE TIER refusal follows, sharing the criteria wall's exit code
+    because the clause ratifies `5` for it too. It is here rather than beside
+    the Definition-of-Done judgement above because the two spend differently: a
+    held item is refused by a read of its recorded classification and the spec
+    history, with NO model call at all, and only an item no hold already stands
+    against is classified. Its position still precedes the two rows that spend
+    more than any model call does — the proof-assets gate, which CREATES a
+    repository prerelease, and the Codex gate, which spends a bounded provider
+    renewal.
 
     The Codex credential gate closes the refusing sequence (bd-ib-tyqklx) and is
     the newest of the four for a reason worth recording: its decision was already
@@ -350,6 +363,11 @@ def _refusing_sequence(
         (
             lambda: definition_of_done_workflow_refusal(args=args, repo=repo, items=items),
             EXIT_PRECONDITION_ERROR,
+            False,
+        ),
+        (
+            lambda: spec_change_tier_refusal(repo=repo, items=items),
+            EXIT_UNGRADEABLE_CRITERIA,
             False,
         ),
         (

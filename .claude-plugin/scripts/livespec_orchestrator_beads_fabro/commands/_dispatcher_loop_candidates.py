@@ -22,6 +22,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_wall i
     dod_unrefused_candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import ready_items
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_wall import (
+    spec_change_unheld_candidates,
+)
 
 if TYPE_CHECKING:
     import argparse
@@ -55,6 +58,14 @@ def candidates(
     implement-kind item and a groom candidate exempted by one of them while the
     other dropped it would be invisible to the drain either way.
 
+    It then drops every row the SPEC-CHANGE TIER mechanically holds out of
+    `ready` — a recorded classification of spec-change tier whose linked
+    proposed-change topic has not ratified. That third filter spends nothing
+    either, and for a sharper reason than the second: the clause makes the hold
+    "a read of the spec history" that "needs no model", so a row whose topic HAS
+    ratified is deliberately KEPT and decided by the wall's own fresh
+    classification instead.
+
     A NAMED id is narrowed to and deliberately NOT filtered. The clause keeps the
     hand-picked path protected by the wall "even when candidate enumerations
     filtered the item earlier", and that only holds if the named row still
@@ -66,9 +77,13 @@ def candidates(
     requested = set(args.items or [])
     if requested:
         return [item for item in ranked if item.id in requested]
-    return dod_unrefused_candidates(
-        items=acceptance_eligible_candidates(
-            items=ranked, cwd=repo, workflow_name=args.workflow_name
+    return spec_change_unheld_candidates(
+        items=dod_unrefused_candidates(
+            items=acceptance_eligible_candidates(
+                items=ranked, cwd=repo, workflow_name=args.workflow_name
+            ),
+            repo=repo,
+            workflow_name=args.workflow_name,
         ),
         repo=repo,
         workflow_name=args.workflow_name,
