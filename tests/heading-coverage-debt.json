@@ -569,13 +569,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 53 \u2014 A dispatch proceeds when the host is busy; the scheduler queues it",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-07-30"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 55 \u2014 plan archive commissions a missing independent completeness review",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-16"

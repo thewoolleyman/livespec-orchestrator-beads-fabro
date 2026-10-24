@@ -1,12 +1,13 @@
-"""Scenario 203 — an unpinned dispatch goes to the least-utilized free-slot factory.
+"""Scenarios 53 and 203 — factory placement never turns host load into a refusal.
 
-Binds `SPECIFICATION/scenarios.md` Scenario 203 and the factory-overflow-selection
-clause of `SPECIFICATION/contracts.md`. Every case starts from a `.livespec.jsonc`
-ON DISK and drives the production configuration read, the capacity read, the
-selection, the ledger stamp and the launch argv; the only things stood in are the
-`fabro` CLI (a recording runner, so each factory's run board and scheduler ceiling
-are scripted without a server and every argv is observable) and the ledger,
-through this repository's own hermetic `FakeBeadsClient`.
+Binds `SPECIFICATION/scenarios.md` Scenarios 53 and 203 and the
+factory-overflow-selection clause of `SPECIFICATION/contracts.md`. Every case
+starts from a `.livespec.jsonc` ON DISK and drives the production configuration
+read, the capacity read, the selection, the ledger stamp and the launch argv; the
+only things stood in are the `fabro` CLI (a recording runner, so each factory's
+run board and scheduler ceiling are scripted without a server and every argv is
+observable) and the ledger, through this repository's own hermetic
+`FakeBeadsClient`.
 
 WHY THE CHOSEN FACTORY IS ASSERTED AT THE ARGV AND AT THE LEDGER, not at the
 selection. A selection that answers `petri` proves the ranking; it does not prove
@@ -57,6 +58,9 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     reset_fake_singleton,
 )
 from livespec_orchestrator_beads_fabro._store_dispatch_claim import claim_row_for
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
+    admit_and_select,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_stamp import (
     stamp_pending_claim,
 )
@@ -69,7 +73,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import build_plan
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
 from livespec_orchestrator_beads_fabro.commands.dispatcher import dispatch_preamble
-from livespec_orchestrator_beads_fabro.store import record_dispatch_factory
+from livespec_orchestrator_beads_fabro.store import (
+    materialize_work_items,
+    read_work_items,
+    record_dispatch_factory,
+)
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _COMMANDS_DIR = Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
@@ -246,6 +254,10 @@ def _install_runner(*, monkeypatch: pytest.MonkeyPatch, runner: _Runner) -> None
         return real_reader(repo=repo, runner=runner)
 
     monkeypatch.setattr(capacity, "FactoryRunReader", _reader)
+    admission = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_admission"
+    )
+    monkeypatch.setattr(admission, "FactoryRunReader", _reader)
 
 
 def _store() -> StoreConfig:
@@ -274,6 +286,7 @@ def _seed_item(*, work_item_id: str = _WORK_ITEM_ID) -> None:
             description="## Definition of Done\n\n- The dispatch lands on the free slot.\n",
             assignee=None,
             created_at="2026-10-19T00:00:00Z",
+            acceptance_criteria="The Dispatcher submits this item to Fabro.",
         )
     )
 
@@ -300,6 +313,7 @@ def _write_config(
     cwd: Path,
     overflow: object = (_OVERFLOW_FACTORY,),
     overflow_entry: dict[str, Any] | None = None,
+    wip_cap: int | None = None,
 ) -> None:
     dispatcher: dict[str, Any] = {
         "default_factory": _DEFAULT_FACTORY,
@@ -311,6 +325,8 @@ def _write_config(
         },
         "overflow_factories": list(overflow) if isinstance(overflow, tuple) else overflow,
     }
+    if wip_cap is not None:
+        dispatcher["wip_cap"] = wip_cap
     _ = (cwd / ".livespec.jsonc").write_text(
         json.dumps(
             {
@@ -346,6 +362,40 @@ def _selection_records(*, cwd: Path) -> list[dict[str, Any]]:
         if record.get("stage") == _SELECTION_STAGE
         or record.get("record", {}).get("stage") == _SELECTION_STAGE
     ]
+
+
+def _ready_item() -> Any:
+    """Move the fixture to `ready` and read the real admission input back."""
+    _fake().update_issue(issue_id=_WORK_ITEM_ID, status="ready", metadata={"rank": "a0"})
+    return materialize_work_items(records=read_work_items(path=_store()))[_WORK_ITEM_ID]
+
+
+def _admit_and_resolve(
+    *,
+    cwd: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    boards: dict[str, _Board],
+) -> tuple[Any, argparse.Namespace, _Runner]:
+    """Drive the ready-to-active admission and its Fabro-target resolution."""
+    runner = _Runner(boards=boards)
+    _install_runner(monkeypatch=monkeypatch, runner=runner)
+    item = _ready_item()
+    admission = admit_and_select(
+        repo=cwd,
+        items=[item],
+        candidates=[item],
+        journal=JournalFile(path=cwd / "admission.jsonl"),
+        enforce_cap=True,
+    )
+    assert [admitted.id for admitted in admission.admitted] == [_WORK_ITEM_ID]
+    assert admission.deferred == []
+    assert admission.refused == []
+    args = _dispatch_args(cwd=cwd)
+    return (
+        admission.admitted[0],
+        args_with_dispatch_factory_target(args=args, repo=cwd, work_item_id=_WORK_ITEM_ID),
+        runner,
+    )
 
 
 def _launch_argv(*, cwd: Path, runner: _Runner, args: argparse.Namespace) -> list[str]:
@@ -396,6 +446,69 @@ def _resolve(
         ),
         runner,
     )
+
+
+# ---------------------------------------------------------------------------
+# Scenario 53 — host load belongs to Fabro's scheduler, not Dispatcher refusal.
+# ---------------------------------------------------------------------------
+
+
+def test_scenario53_admits_a_free_wip_item_and_submits_while_other_runs_are_in_flight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A free WIP slot admits and submits despite work already running on a factory.
+
+    The admission assertion and the submission assertion are both needed. A
+    placement-only test would miss a host-capacity gate that refuses before the
+    row becomes active; an active-row-only test would pass for a Dispatcher that
+    claims the work but never asks Fabro to run it.
+    """
+    _write_config(cwd=tmp_path, wip_cap=1)
+    _seed_item()
+
+    admitted, resolved, runner = _admit_and_resolve(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        boards={
+            _DEFAULT_SERVER: _Board(runs=5, ceiling=_DEFAULT_CEILING),
+            _OVERFLOW_SERVER: _Board(runs=0, ceiling=_OVERFLOW_CEILING),
+        },
+    )
+
+    assert admitted.status == "active"
+    assert _fake().show_issue(issue_id=_WORK_ITEM_ID)["status"] == "active"
+    assert any(_server_of(argv=argv) == _DEFAULT_SERVER for argv in runner.capacity_argvs())
+    assert _launch_argv(cwd=tmp_path, runner=runner, args=resolved)[-2:] == [
+        "--server",
+        _OVERFLOW_SERVER,
+    ]
+
+
+def test_scenario53_submits_an_admitted_item_when_the_scheduler_is_at_its_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A saturated board selects the default and still submits a scheduler-queued run."""
+    _write_config(cwd=tmp_path, wip_cap=1)
+    _seed_item()
+
+    admitted, resolved, runner = _admit_and_resolve(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        boards={
+            _DEFAULT_SERVER: _Board(runs=_DEFAULT_CEILING, ceiling=_DEFAULT_CEILING),
+            _OVERFLOW_SERVER: _Board(runs=_OVERFLOW_CEILING, ceiling=_OVERFLOW_CEILING),
+        },
+    )
+
+    assert admitted.status == "active"
+    assert _fake().show_issue(issue_id=_WORK_ITEM_ID)["status"] == "active"
+    assert _selection_records(cwd=tmp_path)[-1]["reason"] == _REASON_NO_CANDIDATE
+    assert _launch_argv(cwd=tmp_path, runner=runner, args=resolved)[-2:] == [
+        "--server",
+        _DEFAULT_SERVER,
+    ]
 
 
 def test_the_less_utilized_overflow_factory_receives_the_dispatch(
