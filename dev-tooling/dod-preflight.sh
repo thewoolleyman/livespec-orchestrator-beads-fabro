@@ -84,9 +84,18 @@ PY
 # `judgement_prompt` over `judgement_rubric` and `judgement_subject`, which is
 # the one assembly every host taking uses. A second copy here is a second set of
 # rules, and the node reads neither of them.
+#
+# THE SPEC-STATED JUDGEMENT IS TAKEN HERE TOO, through the gate's own reader. The
+# pre-dispatch gate composes it into its verdict twice: its governing-heading
+# verdict rides in the subject the rubric grades, and `governing_heading_findings`
+# holds an item whose References line omits a heading it returned (check 6).
+# Without it this preflight PASSED items the gate then refused at exit 5 — three
+# measured on 2026-10-24, each costing a launch slot for the whole pre-launch
+# (bd-ib-tka3wb). The verdict and any check 6 findings go to a side file, because
+# stdout here is the prompt.
 judgement_input=$(mktemp)
-trap 'rm -f "$judgement_input" "$judgement_input.last"' EXIT
-python3 - "$install_root" "$repo_root" "$item" "$override" > "$judgement_input" <<'PROMPT_PY'
+trap 'rm -f "$judgement_input" "$judgement_input.last" "$judgement_input.governing" "$judgement_input.findings"' EXIT
+python3 - "$install_root" "$repo_root" "$item" "$override" "$judgement_input" > "$judgement_input" <<'PROMPT_PY'
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -95,8 +104,18 @@ sys.path.insert(0, f"{sys.argv[1]}/scripts")
 sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
 
 from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    definition_of_done,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     judgement_subject,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    governing_heading_findings,
+)
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
+    host_governing_heading_reader,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
     judgement_prompt,
@@ -105,7 +124,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 
-install_root, repo_root, item_id, override = sys.argv[1:5]
+install_root, repo_root, item_id, override, side = sys.argv[1:6]
 repo = Path(repo_root)
 config = store_config(repo=repo)
 items = materialize_work_items(records=read_work_items(path=config))
@@ -122,14 +141,39 @@ comments = tuple(
 rubric = judgement_rubric(payload_root=Path(install_root))
 if rubric is None:
     sys.exit(f"dod-preflight: the registered build ships no readable rubric under {install_root}")
+# `None` means the judgement could not be taken, and it fails open exactly as it
+# does at the gate: no finding is raised on an outage no edit could clear.
+governing = host_governing_heading_reader(runner=ShellCommandRunner())(item=item, repo=repo)
+report = (
+    ["governing-heading-kind: unobserved"]
+    if governing is None
+    else [f"governing-heading-kind: {governing.kind}"]
+    + [f"governing-heading: {heading}" for heading in governing.stated_by]
+)
+Path(f"{side}.governing").write_text("\n".join(report) + "\n", encoding="utf-8")
+findings = governing_heading_findings(
+    item=item, section=definition_of_done(description=item.description), verdict=governing
+)
+Path(f"{side}.findings").write_text(
+    "".join(f"finding: {finding}\n" for finding in findings), encoding="utf-8"
+)
 sys.stdout.write(
     judgement_prompt(
         gate_prompt=rubric,
-        subject=judgement_subject(item=item, cwd=repo, comments=comments),
+        subject=judgement_subject(item=item, cwd=repo, comments=comments, governing=governing),
     )
 )
 PROMPT_PY
 [ -s "$judgement_input" ] || exit 2
+[ -f "$judgement_input.governing" ] || exit 2
+cat "$judgement_input.governing"
+# A check 6 finding holds the item at the gate whatever the rubric says, so the
+# candidate legs would spend two model calls to change nothing.
+if [ -s "$judgement_input.findings" ]; then
+  cat "$judgement_input.findings"
+  echo "dod-preflight: FAILED — the References line omits a governing heading the spec-stated judgement returned; add it verbatim and re-run"
+  exit 1
+fi
 
 # The claude leg authenticates as the account a dispatch would, through the
 # Dispatcher's own selector, not as whatever bare CLAUDE_CODE_OAUTH_TOKEN the
