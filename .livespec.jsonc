@@ -561,6 +561,33 @@
       // inspected and none is held — which is the escape hatch for a factory
       // whose parked runs must be left strictly alone.
       "blocked_run_grace_seconds": 1800,
+      // AMENDED 2026-10-24 (maintainer ruling ~18:0xZ, recorded on
+      // livespec-dev-tooling-dfixhe, delegated by the coordinator to plan
+      // bd-ib-jxvgq5): this REVERSES the 2026-10-19 direction "switch the
+      // implement back to Opus" as a six-dispatch canary. implement is
+      // codex-acp / gpt-5.6-terra / high PRIMARY with claude-opus-5 high as its
+      // fallback; fix stays Terra high and its turn ceiling rises 3600 -> 7200
+      // s, matching review_fix. The light nodes go Codex-primary with Claude
+      // fallbacks: pr and disposition on gpt-5.6-luna low, proof_capture and
+      // proof_verify on gpt-5.6-terra medium, and review on gpt-5.6-terra high
+      // (a cross-family review of a Terra implement). dod_gate and review_fix
+      // stay on claude-opus-5 high. Only terra and luna are used, because the
+      // ChatGPT-account Codex refuses gpt-6-sol and gpt-6-luna with HTTP 400.
+      //
+      // WHY: the factory was Claude-bound that day (two credential-exhaustion
+      // failures, a launch hold, the fleet cap cut from 6 to 5) while Codex sat
+      // at about 90% of its allowance left. The 10-19 "Terra 0 for 3" evidence
+      // was not a quality signal: bd-ib-sufca7 died on a CLAUDE session limit at
+      // proof_verify, and bd-ib-davaxq and bd-ib-quzpge hit fix's 3600 s ACP
+      // turn ceiling (transient_infra) on hp at load 15-23 and cap 10; Terra was
+      // already at effort high. The 10-20 R273 partial-progress signature below
+      // is the failure mode this canary watches for.
+      //
+      // CANARY RULE: the next six orchestrator dispatches after release and
+      // binding are journaled on dfixhe. Keep (and extend to the fleet) if at
+      // least 4 of 6 merge with no Terra quality failure; revert this change if
+      // 2 or more fail on quality.
+      //
       // AMENDED 2026-10-20 (coordinator R273, stability): implement is back on
       // claude-acp / claude-opus-5 / high PRIMARY with codex-acp / gpt-5.6-terra /
       // high as its fallback. Codex-Terra implement failed 3 of 4 runs with one
@@ -768,14 +795,14 @@
       },
       "acp_nodes": {
         "dod_gate": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "implement": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
+        "implement": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
         "fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
         "review_fix": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "proof_capture": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "medium" }] },
-        "proof_verify": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "medium" }] },
-        "review": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "pr": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low" }] },
-        "disposition": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low" }] }
+        "proof_capture": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "medium", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" }] },
+        "proof_verify": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "medium", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" }] },
+        "review": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
+        "pr": { "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" }] },
+        "disposition": { "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" }] }
       },
       // `review_fix` is a DIFFERENT node from `fix` and was absent here, so it
       // fell to the 1800 s default. Measured 2026-10-09/10 on run
@@ -843,7 +870,7 @@
         "implement": 14400,
         "implement_completion": 600,
         "janitor": 4340,
-        "fix": 3600,
+        "fix": 7200,
         "review_fix": 7200,
         "publish_draft": 3600,
         "pr_refresh": 3600,
