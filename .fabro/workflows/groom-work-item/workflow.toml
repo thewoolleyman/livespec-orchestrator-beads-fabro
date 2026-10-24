@@ -173,6 +173,7 @@ merge_hold = false
 # never given as a real one.
 sandbox_check_suite = "sh -c 'echo LIVESPEC_INPUT_NOT_RENDERED: sandbox_check_suite was not supplied by the Dispatcher >&2; exit 1'"
 prepare_toolchain_mise = ""
+prepare_toolchain_python_sync = ""
 prepare_toolchain_lefthook = ""
 conformance_hook_install = ""
 conformance_verify_commit_refuse_hook = ""
@@ -259,10 +260,17 @@ script = "git fetch --unshallow --quiet"
 script = "set -- {{ inputs.prepare_toolchain_mise }}; test $# -eq 0 || \"$@\""
 
 [[run.prepare.steps]]
-script = "uv sync --all-groups"
+# Toolchain premise #2 — the Python dependency sync that populates the
+# sandbox's project environment; no-op for a repository that declares none.
+# A bare constant here assumed a `pyproject.toml` the governed repository may
+# not carry, which killed preparation before any agent turn (bd-ib-xti6q).
+# Its POSITION is unchanged: after the version-manager install that resolves
+# the sync tool, before the hook-manager install and the conformance gate that
+# both run through the environment it populates.
+script = "set -- {{ inputs.prepare_toolchain_python_sync }}; test $# -eq 0 || \"$@\""
 
 [[run.prepare.steps]]
-# Toolchain premise #2 — the hook-manager install.
+# Toolchain premise #3 — the hook-manager install.
 script = "set -- {{ inputs.prepare_toolchain_lefthook }}; test $# -eq 0 || \"$@\""
 
 [[run.prepare.steps]]

@@ -104,6 +104,8 @@ __all__: list[str] = [
     "PREPARE_TOOLCHAIN_LEFTHOOK_KEY",
     "PREPARE_TOOLCHAIN_MISE_FIELD",
     "PREPARE_TOOLCHAIN_MISE_KEY",
+    "PREPARE_TOOLCHAIN_PYTHON_SYNC_FIELD",
+    "PREPARE_TOOLCHAIN_PYTHON_SYNC_KEY",
     "SANDBOX_CHECK_SUITE_FIELD",
     "SANDBOX_EXEMPT_MARKER_FIELD",
     "SANDBOX_EXEMPT_MARKER_KEY",
@@ -134,6 +136,15 @@ MERGE_MODE_KEY = "dispatcher.merge_mode"
 SANDBOX_EXEMPT_MARKER_KEY = "dispatcher.sandbox_exempt_marker"
 PREPARE_TOOLCHAIN_MISE_KEY = "dispatcher.prepare_toolchain.mise"
 PREPARE_TOOLCHAIN_LEFTHOOK_KEY = "dispatcher.prepare_toolchain.lefthook"
+# The PYTHON DEPENDENCY SYNC premise, named for what it establishes rather than
+# for the tool that establishes it: the step populates the sandbox's project
+# environment, and every repository reaches that through its own tooling. It was
+# a bare constant in the committed run configs until a dispatch of a governed
+# repository carrying no `pyproject.toml` died in preparation on it, before any
+# agent turn, which is the silent-degrade shape the
+# factory-sandbox-toolchain-disposition clause forbids and the shape its two
+# neighbours had already been given a premise for.
+PREPARE_TOOLCHAIN_PYTHON_SYNC_KEY = "dispatcher.prepare_toolchain.python_sync"
 
 # The three DISPATCH-TIME BASELINE CONFORMANCE premises: installing the
 # commit-refuse Mechanism in the sandbox, and the two Verifiers that prove the
@@ -217,6 +228,14 @@ PREPARE_TOOLCHAIN_MISE_FIELD = IntegrationField(
     attribute="prepare_toolchain_mise",
     key=PREPARE_TOOLCHAIN_MISE_KEY,
     path=PREPARE_TOOLCHAIN_MISE_KEY,
+    shape=SHAPE_ARGV,
+    fleet_default=TOOLCHAIN_NO_OP,
+)
+
+PREPARE_TOOLCHAIN_PYTHON_SYNC_FIELD = IntegrationField(
+    attribute="prepare_toolchain_python_sync",
+    key=PREPARE_TOOLCHAIN_PYTHON_SYNC_KEY,
+    path=PREPARE_TOOLCHAIN_PYTHON_SYNC_KEY,
     shape=SHAPE_ARGV,
     fleet_default=TOOLCHAIN_NO_OP,
 )
@@ -308,6 +327,7 @@ INTEGRATION_FIELDS: tuple[IntegrationField, ...] = (
     CORE_REPO_URL_FIELD,
     CORE_PINNED_REF_FIELD,
     PREPARE_TOOLCHAIN_MISE_FIELD,
+    PREPARE_TOOLCHAIN_PYTHON_SYNC_FIELD,
     PREPARE_TOOLCHAIN_LEFTHOOK_FIELD,
     CONFORMANCE_HOOK_INSTALL_FIELD,
     CONFORMANCE_VERIFY_COMMIT_REFUSE_HOOK_FIELD,
