@@ -1800,6 +1800,15 @@ it there; the bullets below are what this repo was missing.
   use it in any prose, document, work-item, commit, or report; always write
   "Definition-of-Ready". (Quoting pre-existing text verbatim for mechanical
   replacement targeting is the only exception.)
+- **Name every work item by what it does, never by its id alone**
+  (maintainer-declared 2026-10-24: "I don't memorize item IDs"). In any
+  status report, question, or summary addressed to the maintainer, refer to a
+  work item by a short descriptive name drawn from its title — for example
+  "the spec-change-tier decision" rather than `bd-ib-57ss2n`. Put the id in
+  brackets after the name only when the maintainer may need to act on it or
+  look it up. The same applies to runs, gates and pull requests: say what each
+  one is for before giving its identifier. Ledger comments and handoffs written
+  for other agents may keep ids, because those readers do resolve them.
 - **Maintainer-facing documents must explain their own notation.** Define
   every symbol before or beside its first use (an arrow, a column, a tally),
   make headings match their content, and write complete sentences over
