@@ -183,6 +183,31 @@
       "github_url": "https://github.com/thewoolleyman/livespec-tdd-proof",
       "local_clone": "/data/projects/livespec-tdd-proof",
       "default_branch": "master"
+    },
+    "livespec-runtime": {
+      "github_url": "https://github.com/thewoolleyman/livespec-runtime",
+      "local_clone": "/data/projects/livespec-runtime",
+      "default_branch": "master"
+    },
+    "livespec-driver-claude": {
+      "github_url": "https://github.com/thewoolleyman/livespec-driver-claude",
+      "local_clone": "/data/projects/livespec-driver-claude",
+      "default_branch": "master"
+    },
+    "livespec-orchestrator-git-jsonl": {
+      "github_url": "https://github.com/thewoolleyman/livespec-orchestrator-git-jsonl",
+      "local_clone": "/data/projects/livespec-orchestrator-git-jsonl",
+      "default_branch": "master"
+    },
+    "resume": {
+      "github_url": "https://github.com/thewoolleyman/resume",
+      "local_clone": "/data/projects/resume",
+      "default_branch": "master"
+    },
+    "openbrain": {
+      "github_url": "https://github.com/thewoolleyman/openbrain",
+      "local_clone": "/data/projects/openbrain",
+      "default_branch": "main"
     }
   },
   "livespec-orchestrator-beads-fabro": {
