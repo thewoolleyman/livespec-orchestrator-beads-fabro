@@ -7708,14 +7708,45 @@ Feature: An incomplete implement turn is not recorded as a success
 
   Scenario: A turn that reports partial progress fails the stage
     Given an implement turn whose final output's completion field reports the Definition of Done incomplete
+    And the turn left nothing staged
     When the implement stage ends
     Then the stage outcome is failed with a cause naming partial progress
     And the run takes the implement stage's failure edge, and the dispatch outcome detail carries that cause
 
-  Scenario: A turn with no completion field is treated as incomplete
-    Given an implement turn whose final output carries no completion field
+  Scenario: An incomplete turn whose staged changes the commit hook accepts fails as partial progress
+    Given an implement turn whose final output's completion field reports the Definition of Done incomplete
+    And the turn left changes staged that the repository's commit hook accepts
     When the implement stage ends
     Then the stage outcome is failed with a cause naming partial progress
+
+  Scenario: A turn whose commit the hook refused re-enters implement while its retry budget remains
+    Given an implement turn whose final output's completion field reports the Definition of Done incomplete
+    And the turn left changes staged that the repository's commit hook refuses, naming failed targets
+    And the implement node's retry budget is not exhausted
+    When the implement stage ends
+    Then the run re-enters the implement stage instead of failing it
+    And the re-entered turn's brief carries the refused commit's failed target names and the hook's own error lines, taken from the hook's recorded output
+
+  Scenario: A hook-refused turn with its retry budget exhausted fails naming the failed targets
+    Given an implement turn whose final output's completion field reports the Definition of Done incomplete
+    And the turn left changes staged that the repository's commit hook refuses, naming failed targets
+    And the implement node's retry budget is exhausted
+    When the implement stage ends
+    Then the stage outcome is failed with a cause naming the hook's failed targets
+    And the dispatch outcome detail carries that cause
+
+  Scenario: A turn with no completion field is treated as incomplete
+    Given an implement turn whose final output carries no completion field
+    And the turn left nothing staged
+    When the implement stage ends
+    Then the stage outcome is failed with a cause naming partial progress
+
+  Scenario: A turn with no completion field whose commit the hook refused re-enters implement
+    Given an implement turn whose final output carries no completion field
+    And the turn left changes staged that the repository's commit hook refuses, naming failed targets
+    And the implement node's retry budget is not exhausted
+    When the implement stage ends
+    Then the run re-enters the implement stage instead of failing it
 
   Scenario: A turn that reports its work complete keeps its routing
     Given an implement turn whose final output's completion field reports the Definition of Done complete
