@@ -188,13 +188,7 @@ def _resolve_blocked_entry(*, entries: list[dict[str, object]], item_id: str) ->
 def test_scenario122_an_automated_press_is_refused_and_a_human_press_lands_the_answer(
     tmp_path: Path,
 ) -> None:
-    """The control pair: one input differs — the role the press asserted.
-
-    Both halves are asserted on what the press LEFT BEHIND rather than on its
-    status word alone: the refused item is still parked with no comment, and the
-    admitted one carries the operator's answer on the ledger, which is the only
-    channel the next dispatch's brief reads.
-    """
+    """The role is the only differing input between refused and admitted presses."""
     repo = _repo(tmp_path=tmp_path, answer_disposition=None)
     _parked(item_id="bd-ib-s122-auto", label=None)
     _parked(item_id="bd-ib-s122-human", label=None)
@@ -213,6 +207,19 @@ def test_scenario122_an_automated_press_is_refused_and_a_human_press_lands_the_a
     assert admitted["target_status"] == "ready"
     [comment] = read_work_item_comments(path=_config(), work_item_id="bd-ib-s122-human")
     assert _ANSWER in comment.text
+
+
+def test_scenario122_a_human_press_is_admitted_and_writes_its_answer(tmp_path: Path) -> None:
+    """The admitted human answer is durable ledger text, not merely a green result."""
+    repo = _repo(tmp_path=tmp_path, answer_disposition=None)
+    _parked(item_id="bd-ib-s122-human", label=None)
+
+    admitted = _press(repo=repo, item_id="bd-ib-s122-human", invoker=_HUMAN_INVOKER)
+
+    assert admitted["status"] == "green"
+    assert admitted["target_status"] == "ready"
+    [comment] = read_work_item_comments(path=_config(), work_item_id="bd-ib-s122-human")
+    assert comment.text.endswith(_ANSWER)
 
 
 def test_scenario122_a_per_item_human_label_outranks_a_consensus_default(
@@ -243,13 +250,29 @@ def test_scenario122_a_per_item_human_label_outranks_a_consensus_default(
 
     assert _HUMAN_SENTENCE in str(lowered["summary"])
     assert _CONSENSUS_SENTENCE in str(inherits["summary"])
-    handoff = lowered["handoff"]
-    assert isinstance(handoff, dict)
-    assert handoff["action_id"] == "resolve-blocked:bd-ib-s122-lowered:ready"
-    assert "--answer" not in str(handoff["command"])
     # The enforcer agrees with what the advertiser reported for this item.
     assert refused["domain_error"] == "answer-disposition-refused"
     assert "disposition for bd-ib-s122-lowered is human" in str(refused["summary"])
+
+
+def test_scenario122_a_human_answer_lane_advertises_no_answer_handoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An advertised human-only valve never offers automation an answer command."""
+    repo = _repo(tmp_path=tmp_path, answer_disposition="consensus")
+    _parked(item_id="bd-ib-s122-handoff", label="human")
+
+    entry = _resolve_blocked_entry(
+        entries=_snapshot(repo=repo, monkeypatch=monkeypatch, capsys=capsys),
+        item_id="bd-ib-s122-handoff",
+    )
+
+    handoff = entry["handoff"]
+    assert isinstance(handoff, dict)
+    assert handoff["action_id"] == "resolve-blocked:bd-ib-s122-handoff:ready"
+    assert "--answer" not in str(handoff["command"])
 
 
 def test_scenario122_consensus_refuses_an_automated_press_exactly_as_human_does(
@@ -338,5 +361,36 @@ def test_scenario122_every_parked_entry_of_the_json_snapshot_carries_its_disposi
         "valve:resolve-blocked:bd-ib-s122-json-lowered",
         "valve:resolve-blocked:bd-ib-s122-json-open",
     ]
-    assert _HUMAN_SENTENCE in parked["valve:resolve-blocked:bd-ib-s122-json-lowered"]
-    assert _CONSENSUS_SENTENCE in parked["valve:resolve-blocked:bd-ib-s122-json-open"]
+    assert "valve:resolve-blocked:bd-ib-s122-json-ready" not in parked
+
+
+def test_scenario122_json_snapshot_reports_the_per_item_human_disposition(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = _repo(tmp_path=tmp_path, answer_disposition="consensus")
+    _parked(item_id="bd-ib-s122-json-human", label="human")
+
+    entry = _resolve_blocked_entry(
+        entries=_snapshot(repo=repo, monkeypatch=monkeypatch, capsys=capsys),
+        item_id="bd-ib-s122-json-human",
+    )
+
+    assert _HUMAN_SENTENCE in str(entry["summary"])
+
+
+def test_scenario122_json_snapshot_reports_the_consensus_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = _repo(tmp_path=tmp_path, answer_disposition="consensus")
+    _parked(item_id="bd-ib-s122-json-consensus", label=None)
+
+    entry = _resolve_blocked_entry(
+        entries=_snapshot(repo=repo, monkeypatch=monkeypatch, capsys=capsys),
+        item_id="bd-ib-s122-json-consensus",
+    )
+
+    assert _CONSENSUS_SENTENCE in str(entry["summary"])

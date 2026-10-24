@@ -54,7 +54,6 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 _PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
 _INVOKER = "human:cwoolley"
 _INVOKER_SOURCE = "flag"
-_ACTION_ID = "resolve-blocked:bd-ib-s124-clean:ready"
 # Two lines, because "the answer follows the marker line verbatim" is a claim
 # about the WHOLE answer: a reader that kept only the first line would satisfy a
 # single-line fixture.
@@ -152,6 +151,65 @@ def _utc_second() -> datetime:
     return datetime.now(timezone.utc).replace(microsecond=0)
 
 
+def _clean_answer(*, tmp_path: Path, item_id: str) -> tuple[dict[str, object], str]:
+    """Apply one clean answer and return its result plus the persisted comment text."""
+    repo = _repo(tmp_path=tmp_path)
+    _parked(item_id=item_id)
+    result = _press(repo=repo, item_id=item_id, answer=_ANSWER)
+    [comment] = read_work_item_comments(path=_config(), work_item_id=item_id)
+    return result, comment.text
+
+
+def test_scenario124_a_clean_answer_transitions_the_item_to_ready(tmp_path: Path) -> None:
+    result, _ = _clean_answer(tmp_path=tmp_path, item_id="bd-ib-s124-ready")
+
+    assert result["status"] == "green"
+    assert result["target_status"] == "ready"
+    assert _fake().show_issue(issue_id="bd-ib-s124-ready")["status"] == "ready"
+
+
+def test_scenario124_a_clean_answer_comment_opens_with_the_marker(tmp_path: Path) -> None:
+    _, comment = _clean_answer(tmp_path=tmp_path, item_id="bd-ib-s124-marker")
+
+    header = comment.split("\n", 1)[0]
+    assert header.startswith(f"{ANSWER_COMMENT_MARKER} (")
+    assert header.endswith("):")
+
+
+def test_scenario124_the_marker_names_the_invoker_and_source(tmp_path: Path) -> None:
+    _, comment = _clean_answer(tmp_path=tmp_path, item_id="bd-ib-s124-identity")
+
+    header = comment.split("\n", 1)[0]
+    assert f"{_INVOKER} via {_INVOKER_SOURCE}" in header
+
+
+def test_scenario124_the_marker_names_the_answering_action(tmp_path: Path) -> None:
+    _, comment = _clean_answer(tmp_path=tmp_path, item_id="bd-ib-s124-action")
+
+    assert answering_action_id(text=comment) == "resolve-blocked:bd-ib-s124-action:ready"
+
+
+def test_scenario124_the_marker_carries_the_write_instant(tmp_path: Path) -> None:
+    before = _utc_second()
+    _, comment = _clean_answer(tmp_path=tmp_path, item_id="bd-ib-s124-instant")
+    after = _utc_second()
+
+    header = comment.split("\n", 1)[0]
+    instant = header.rstrip("):").rsplit(", ", 2)[-2]
+    assert (
+        before
+        <= datetime.strptime(instant, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        <= after
+    )
+
+
+def test_scenario124_the_answer_follows_its_marker_verbatim(tmp_path: Path) -> None:
+    _, comment = _clean_answer(tmp_path=tmp_path, item_id="bd-ib-s124-verbatim")
+
+    _, _, body = comment.partition("\n")
+    assert body == _ANSWER
+
+
 def test_scenario124_the_marked_comment_lands_before_the_status_transition(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -162,8 +220,9 @@ def test_scenario124_the_marked_comment_lands_before_the_status_transition(
     writer was entered. The wrapper delegates, so the transition itself is
     production code and the end state is the real one.
     """
+    item_id = "bd-ib-s124-clean"
     repo = _repo(tmp_path=tmp_path)
-    _parked(item_id="bd-ib-s124-clean")
+    _parked(item_id=item_id)
     production_writer = _drive_policy_valves.write_blocked_state_and_reconcile
     observed: list[tuple[str, ...]] = []
 
@@ -181,32 +240,13 @@ def test_scenario124_the_marked_comment_lands_before_the_status_transition(
         _drive_policy_valves, "write_blocked_state_and_reconcile", _observing_writer
     )
 
-    before = _utc_second()
-    result = _press(repo=repo, item_id="bd-ib-s124-clean", answer=_ANSWER)
-    after = _utc_second()
+    result = _press(repo=repo, item_id=item_id, answer=_ANSWER)
 
     assert result["status"] == "green"
-    [comment] = read_work_item_comments(path=_config(), work_item_id="bd-ib-s124-clean")
-    header, _, body = comment.text.partition("\n")
-    # The marker OPENS the comment, so the goal brief's verbatim render tells a
-    # re-dispatched implementer that what follows is the operator's answer.
-    assert header.startswith(f"{ANSWER_COMMENT_MARKER} (")
-    assert header.endswith("):")
-    assert f"{_INVOKER} via {_INVOKER_SOURCE}" in header
-    assert answering_action_id(text=comment.text) == _ACTION_ID
-    # The write instant, read back through the one surface that carries it and
-    # bounded by the press rather than compared to a literal.
-    instant = header.rstrip("):").rsplit(", ", 2)[-2]
-    assert (
-        before
-        <= datetime.strptime(instant, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-        <= after
-    )
-    # The answer follows the marker line VERBATIM — both of its lines.
-    assert body == _ANSWER
+    [comment] = read_work_item_comments(path=_config(), work_item_id=item_id)
     # The ledger already carried that same comment when the transition began.
     assert observed == [(comment.text,)]
-    assert _fake().show_issue(issue_id="bd-ib-s124-clean")["status"] == "ready"
+    assert _fake().show_issue(issue_id=item_id)["status"] == "ready"
 
 
 def test_scenario124_a_poisoned_answer_is_refused_with_nothing_written(
