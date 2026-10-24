@@ -82,6 +82,31 @@ def test_an_agent_session_publishes_under_its_own_session_id() -> None:
     assert runner.argvs == []
 
 
+def test_a_nested_codex_session_wins_over_an_inherited_claude_session() -> None:
+    """A child session publishes as itself rather than as its launching session.
+
+    A Codex verifier launched by Claude inherits the Claude environment, but its
+    own ``CODEX_SESSION_ID`` is the identity that distinguishes its replay from
+    the host capture. Reading the inherited value first turns that independent
+    replay into a self-replay and refuses it.
+    """
+    child = "01M44CHILDCODEX"
+    parent = "01M44PARENTCLAUDE"
+
+    identity = computed_publishing_identity(
+        repo=_REPO,
+        env={
+            "CLAUDE_CODE_SESSION_ID": parent,
+            "CODEX_SESSION_ID": child,
+        },
+        runner=_Runner(result=_result()),
+    )
+
+    assert identity == PublishingIdentity(
+        kind=SESSION_KIND, identity=child, source="CODEX_SESSION_ID"
+    )
+
+
 def test_every_declared_agent_session_variable_is_consulted() -> None:
     """Each runtime in the declared set resolves, so no runtime is silently human.
 
