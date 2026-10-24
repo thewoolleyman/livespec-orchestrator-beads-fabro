@@ -33,6 +33,9 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro._store_description import (
+    update_work_item_description,
+)
 from livespec_orchestrator_beads_fabro.commands.drive import run_action
 from livespec_orchestrator_beads_fabro.intake_dor import (
     DefinitionOfReadyChecklist,
@@ -50,6 +53,12 @@ _HEADING = "## Effective acceptance criteria"
 _HELD_FINDING = "bd-ib-174: the References line omits the governing scenario; add that heading."
 _HELD_REPLY = '{"outcome": "failed", "failure_reason": "' + _HELD_FINDING + '"}'
 _PASS_REPLY = '{"outcome": "passed"}'
+_UNRESOLVED_REFERENCE = "## Missing acceptance heading"
+_UNRESOLVED_FINDING = (
+    "work-item bd-ib-174: the Definition of Done reference "
+    "'## Missing acceptance heading' does not resolve to an H2 heading of the "
+    "governed spec tree; correct the heading text to match the spec tree verbatim"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -225,3 +234,55 @@ def test_scenario174_the_approve_valve_admits_an_item_the_judgement_passes(
 
     assert result["status"] == "green"
     assert _stored(repo=repo).status == "ready"
+
+
+def test_scenario174_the_approve_valve_rechecks_a_repaired_auto_mechanical_hold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch, reply=_PASS_REPLY)
+    config = _config(repo=repo)
+    held = _item(
+        description=_item().description.replace(_HEADING, _UNRESOLVED_REFERENCE),
+    )
+    append_work_item(path=config, item=held)
+    routed = unsafe_perform_io(
+        apply_intake_dor(path=config, item_id=held.id, checklist=_CHECKLIST).unwrap()
+    )
+    assert routed == "pending-approval"
+
+    update_work_item_description(
+        path=config,
+        item_id=held.id,
+        description=_item().description,
+    )
+
+    result = run_action(repo=repo, action_id="approve:bd-ib-174")
+
+    assert result["status"] == "green"
+    assert _stored(repo=repo).status == "ready"
+
+
+def test_scenario174_the_approve_valve_records_an_unrepaired_auto_mechanical_hold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch, reply=_PASS_REPLY)
+    config = _config(repo=repo)
+    held = _item(
+        description=_item().description.replace(_HEADING, _UNRESOLVED_REFERENCE),
+    )
+    append_work_item(path=config, item=held)
+    routed = unsafe_perform_io(
+        apply_intake_dor(path=config, item_id=held.id, checklist=_CHECKLIST).unwrap()
+    )
+    assert routed == "pending-approval"
+    assert _comments(repo=repo).count(_UNRESOLVED_FINDING) == 1
+
+    result = run_action(repo=repo, action_id="approve:bd-ib-174")
+
+    assert result["status"] == "failed"
+    assert result["domain_error"] == "definition-of-done-held"
+    assert _UNRESOLVED_FINDING in result["summary"]
+    assert _stored(repo=repo).status == "pending-approval"
+    assert _comments(repo=repo).count(_UNRESOLVED_FINDING) == 2
