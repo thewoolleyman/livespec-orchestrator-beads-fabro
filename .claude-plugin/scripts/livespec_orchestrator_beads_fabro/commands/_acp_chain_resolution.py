@@ -150,6 +150,12 @@ def _attach_one(
         # admission session-headroom clause -- whose coverage is keyed on exactly
         # that id -- then assesses nothing a repository's own nodes actually run.
         agent_id=chain.agent_id,
+        # And whether that entry was this build's OWN, which the id cannot
+        # stand in for: a repository override keeps the id while replacing the
+        # adapter the measured diagnostic tables were measured against. Dropped
+        # here, every structured primary reads as repository-supplied and the
+        # measured tables reach no node in the fleet.
+        shipped_agent=chain.shipped_agent,
         signatures=chain.signatures,
         pricing=chain.pricing,
         # The requested session options the chain declared for its primary. A

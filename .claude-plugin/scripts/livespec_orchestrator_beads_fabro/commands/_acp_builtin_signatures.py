@@ -49,7 +49,21 @@ generalization of the other. `effective_signatures` owns the union:
   triple rather than a digest of bytes, and it is absent from the byte
   table by construction. Its table is reached through `agent_id` -- the
   catalog entry it resolved THROUGH, which is resolved provenance and
-  never parsed out of command text.
+  never parsed out of command text -- AND through `shipped_agent`, which
+  says that entry was this build's own. Both halves are required, and
+  the second is what the first cannot supply: `resolve_agent_catalog`
+  lets a repository REPLACE a shipped entry wholesale, so an adapter
+  this fleet has never run still carries the id `claude-acp`. Keyed on
+  the id alone, the route lent such a candidate all four Anthropic
+  sentences -- the loose `("org", "spend limit")` conjunction being
+  plausibly matchable by another vendor's ordinary billing prose -- and
+  every one of them is availability-domain scoped, so a single false
+  match mints a domain hold that strands every sibling candidate on that
+  operator's own domain and releases a run over a ceiling nobody hit.
+  `shipped_agent` is therefore the agent route's exact counterpart of
+  the byte route's `builtin`: both ask whether THIS BUILD produced the
+  thing being classified, which is the only question that licenses
+  lending it this build's own measurements.
 
 THE SECOND ROUTE IS NOT AN EXTENSION; IT IS THE MEASURED SET'S OWN KEY.
 The contract names the forms BY AGENT -- "for `claude-acp`, the
@@ -70,6 +84,14 @@ coincide today and are deliberately not derived from one another: a
 registry-seeded agent, or a built-in one whose diagnostics nobody has
 observed, is lent no table at all, exactly as an unknown
 `availability_key` is.
+
+NOTE THAT MEMBERSHIP IN `BUILTIN_AGENT_IDS` IS NOT THE PROVENANCE TEST
+EITHER, and conflating the two is the specific mistake this module's
+second route made. That set is keyed on the ID, so a replaced
+`claude-acp` entry is in it; `shipped_agent` is computed from the
+resolved ENTRY, so a replaced one is not shipped. The narrowing above is
+about WHICH agents were measured and the flag is about WHOSE adapter
+ran, and a candidate needs both answers to be lent a table.
 """
 
 from __future__ import annotations
@@ -262,9 +284,14 @@ def effective_signatures(
     derived from the candidate's keys here. Reading built-in-ness out of a
     key's spelling is inference from text, the one thing that table was
     built to avoid, and a repository is free to choose `availability_key:
-    "codex"` for an adapter this build did not render. `agent_id` is the
-    mirror of that discipline on the other route: it is the catalog entry
-    the candidate RESOLVED THROUGH, so asking it infers nothing either.
+    "codex"` for an adapter this build did not render. `agent_id` plus
+    `shipped_agent` is the mirror of that discipline on the other route:
+    the first is the catalog entry the candidate RESOLVED THROUGH and the
+    second says that entry was this build's own, so between them they
+    infer nothing either. `agent_id` ALONE is exactly as weak as reading
+    built-in-ness out of an `availability_key` would be, because a
+    repository may REPLACE the shipped `claude-acp` entry wholesale --
+    keeping the id while rendering any adapter it likes.
 
     NO IDENTITY MEANS NO TABLE ON EITHER ROUTE. A typed hold needs an
     `(availability_key, candidate_key)` pair to be scoped by, so an
@@ -289,16 +316,28 @@ def effective_signatures(
         if builtin
         else ()
     )
-    agent_matched = _measured_agent_signatures(agent_id=candidate.agent_id)
+    agent_matched = _measured_agent_signatures(
+        agent_id=candidate.agent_id, shipped=candidate.shipped_agent
+    )
     return (*candidate.signatures, *dict.fromkeys((*byte_matched, *agent_matched)))
 
 
-def _measured_agent_signatures(*, agent_id: str | None) -> tuple[AcpAvailabilitySignature, ...]:
-    """The measured table for one RESOLVED agent, or none for every other.
+def _measured_agent_signatures(
+    *, agent_id: str | None, shipped: bool
+) -> tuple[AcpAvailabilitySignature, ...]:
+    """The measured table for one SHIPPED resolved agent, or none for every other.
 
     `None` is an ANSWER rather than a missing input: a manual-form candidate
     resolved through no catalog entry at all, which is the route the byte
     table answers for.
+
+    `shipped` is the second half of the same question and is read FIRST,
+    because an agent id is the one part of a catalog entry a repository
+    override keeps. A candidate resolved through a replaced entry is given no
+    table at all -- the same answer an unknown agent gets, and for the same
+    reason: this build has never seen that adapter emit these diagnostics.
     """
+    if not shipped:
+        return ()
     domain = None if agent_id is None else _MEASURED_AGENT_DOMAINS.get(agent_id)
     return () if domain is None else builtin_availability_signatures(availability_key=domain)

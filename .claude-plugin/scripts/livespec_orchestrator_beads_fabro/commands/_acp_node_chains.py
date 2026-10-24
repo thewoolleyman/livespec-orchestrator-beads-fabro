@@ -93,6 +93,15 @@ class AcpNodeChain:
     explicitly or it is silently dropped -- and a coverage clause keyed on the
     resolved agent id would then see `None` on every primary in the fleet.
 
+    `shipped_agent` rides along for exactly that reason and with exactly that
+    failure mode, one field over: it says whether the primary resolved through
+    THIS BUILD'S OWN catalog entry, and a rebuilt primary that dropped it would
+    report every structured primary as repository-supplied -- withdrawing the
+    measured built-in diagnostic tables from every node in the fleet, so the
+    measured session-limit sentence reaches `unmatched` and mints no typed
+    hold. That is the conservative direction, which is exactly why it would not
+    announce itself; dropping `agent_id` fails conservatively too.
+
     `config_options` is the PRIMARY's requested ACP session options, and it is
     non-empty only for a STRUCTURED entry whose agent declares the `protocol`
     mechanism. It rides the chain rather than the adapter because that is where
@@ -104,6 +113,7 @@ class AcpNodeChain:
 
     identity: AcpCandidateIdentity | None = None
     agent_id: str | None = None
+    shipped_agent: bool = False
     signatures: tuple[AcpAvailabilitySignature, ...] = ()
     pricing: AcpCandidatePricing | None = None
     fallbacks: tuple[AcpCandidate, ...] = ()
@@ -216,6 +226,7 @@ def _structured_chain(
     return AcpNodeChain(
         identity=candidate.identity,
         agent_id=candidate.agent_id,
+        shipped_agent=candidate.shipped_agent,
         signatures=candidate.signatures,
         pricing=candidate.pricing,
         fallbacks=fallbacks,

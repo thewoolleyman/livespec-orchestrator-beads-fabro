@@ -29,6 +29,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import is_shipped_agent_entry
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_forms import (
     candidate_form_refusal,
     parse_partial_identity,
@@ -85,6 +86,12 @@ def parse_structured_candidate(
         adapter=rendered.adapter,
         identity=derived_identity(resolved=rendered, override=override),
         agent_id=rendered.agent.agent_id,
+        # Whether the entry this resolved THROUGH is the one this build ships,
+        # graded here because this is the one place holding the resolved entry
+        # itself. A downstream reader holds only the id, and the id is exactly
+        # what a repository override keeps while replacing everything the
+        # measured tables were measured against.
+        shipped_agent=is_shipped_agent_entry(entry=rendered.agent),
         signatures=metadata.signatures or rendered.model.signatures,
         pricing=metadata.pricing or rendered.model.pricing,
         config_options=rendered.config_options,

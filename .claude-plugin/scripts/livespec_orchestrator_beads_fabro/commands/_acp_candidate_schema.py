@@ -111,6 +111,17 @@ class AcpCandidate:
     resolved agent id" (the admission session-headroom filter) ask the question
     without inferring an answer from a spelling.
 
+    `shipped_agent` says whether that entry was THIS BUILD'S OWN, and it is a
+    separate field rather than something a reader derives from `agent_id`
+    because the id cannot answer it: `resolve_agent_catalog` lets a repository
+    REPLACE a shipped entry wholesale, so a candidate rendering an adapter this
+    fleet has never seen still carries the id `claude-acp`. It is the agent
+    route's counterpart of the rendered-bytes `builtin` flag, and it exists for
+    the same reason that flag is supplied rather than inferred -- a measurement
+    taken against this build's adapters may only be lent to this build's
+    adapters, and anything else is the inference-from-text defect arriving
+    through a catalog key instead of through a command string.
+
     `config_options` is the ACP session config options the rendered CHAIN
     carries for a candidate whose agent declares the `protocol` mechanism. It is
     never configuration -- `_acp_candidate_forms` refuses the key in a committed
@@ -123,6 +134,7 @@ class AcpCandidate:
     adapter: AcpAdapter
     identity: AcpCandidateIdentity | None = None
     agent_id: str | None = None
+    shipped_agent: bool = False
     signatures: tuple[AcpAvailabilitySignature, ...] = ()
     pricing: AcpCandidatePricing | None = None
     config_options: Mapping[str, str] = field(default_factory=dict)

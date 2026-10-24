@@ -32,7 +32,7 @@ run 01M5PZY50N7J failed at `proof_capture@1`, each with the agent answering
 `session/prompt` with "Internal error: You've hit your session limit · resets
 3:40pm (UTC)".
 
-TWO CONTROLS, POINTED IN OPPOSITE DIRECTIONS, and neither is optional. A
+THREE CONTROLS, POINTED IN OPPOSITE DIRECTIONS, and none is optional. A
 REGISTRY-SEEDED agent must still match nothing: the measured tables belong to
 the two agents whose diagnostics were measured, never to every agent a catalog
 declares, and lending Claude's measurements to an adapter nobody has seen emit
@@ -40,6 +40,31 @@ them is the same defect as inferring identity from command text. And a
 candidate resolved through NO agent must stay exactly where it was -- the
 conservative legacy posture the contract keeps covered by every unexpired
 legacy provider record, whose only route out is declaring explicit identity.
+
+THE THIRD CONTROL IS THE ONE THE OTHER TWO CANNOT REACH, and it is pointed at
+the agent route's own key rather than at an agent the route does not carry.
+`resolve_agent_catalog` lets a repository REPLACE a shipped entry wholesale --
+its own docstring says so: "overriding `claude-acp` cannot silently change what
+`codex-acp` renders" -- so a candidate resolved through a replaced entry keeps
+the agent id `claude-acp` while rendering an adapter this fleet has never seen.
+A route admitting the table on that id ALONE lends it all four Anthropic
+sentences, which is the registry-seeded defect above arriving through the one
+door that control cannot watch: that one names a DIFFERENT agent, so it passes
+whether the route keys on the id or on provenance.
+
+MEASURED IN THIS SANDBOX 2026-10-24, against the build this control was authored
+for. A repository entry declaring `command: "acme-acp --serve"` and
+`account_domain: "acme"` resolved, and the measured session-limit sentence then
+graded as an `availability-domain` quota failure holding `acme` -- a domain hold
+minted from Anthropic's refusal, over an allowance nothing had spent, stranding
+every sibling candidate on that operator's own router. The loose `("org",
+"spend limit")` conjunction makes that reachable from another vendor's ordinary
+billing prose, so the exposure is not confined to the sentence measured here.
+
+SO THE TABLE FOLLOWS THE SHIPPED ENTRY RATHER THAN THE ID, which is the agent
+route's counterpart of the `builtin` flag the byte route already carries: both
+ask whether THIS BUILD produced the thing being classified, and neither infers
+it from a spelling an operator controls.
 
 THE CANDIDATES BELOW ARE RESOLVED THROUGH THE REAL CATALOGS rather than
 hand-written, because the identity a structured entry derives is the whole
@@ -75,7 +100,11 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_signatures import
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_structured import (
     parse_structured_candidate,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_catalogs import builtin_catalogs
+from livespec_orchestrator_beads_fabro.commands._acp_catalogs import (
+    AcpCatalogs,
+    builtin_catalogs,
+    resolve_acp_catalogs,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import RenderedCandidate
 from livespec_orchestrator_beads_fabro.commands._acp_failure_classifier import (
     DOMAIN_SCOPE,
@@ -149,13 +178,24 @@ def _fresh_tenant(monkeypatch: pytest.MonkeyPatch) -> object:
     reset_fake_singleton()
 
 
-def _structured(*, agent: str, model: str, effort: str | None = None) -> AcpCandidate:
-    """One structured candidate, resolved through the real built-in catalogs."""
+def _structured(
+    *, agent: str, model: str, effort: str | None = None, catalogs: AcpCatalogs | None = None
+) -> AcpCandidate:
+    """One structured candidate, resolved through the real catalogs.
+
+    `catalogs` defaults to the shipped snapshot, which is what every case but
+    the replaced-entry control wants. That control supplies a resolution of its
+    own rather than editing a shipped entry in place, because the question it
+    asks is exactly whether the repository-override PATH yields a candidate the
+    measured tables may reach.
+    """
     entry: dict[str, object] = {"agent": agent, "model": model}
     if effort is not None:
         entry["effort"] = effort
     candidate = parse_structured_candidate(
-        entry=entry, key="dispatcher.acp_nodes.probe", catalogs=builtin_catalogs()
+        entry=entry,
+        key="dispatcher.acp_nodes.probe",
+        catalogs=builtin_catalogs() if catalogs is None else catalogs,
     )
     assert isinstance(candidate, AcpCandidate), candidate
     return candidate
@@ -172,6 +212,35 @@ def _codex() -> AcpCandidate:
 def _registry_seeded() -> AcpCandidate:
     """A catalog agent that is NOT one of the two whose diagnostics were measured."""
     return _structured(agent="opencode", model="anthropic/claude-opus-5")
+
+
+def _replaced_claude() -> AcpCandidate:
+    """`claude-acp` resolved through a repository entry that REPLACED the shipped one.
+
+    Everything a repository is permitted to write, written: the command is an
+    adapter this build has never rendered and the account domain is the
+    operator's own router. `provider` stays `anthropic` so the model reference
+    resolves exactly as the shipped entry's does -- the ONE thing that differs
+    from `_claude()` is the provenance of the agent entry, which is the whole
+    subject, and a fixture that also moved the model would let a route keyed on
+    anything else pass for the wrong reason.
+    """
+    catalogs = resolve_acp_catalogs(
+        block={
+            "agent_catalog": {
+                "claude-acp": {
+                    "display_name": "Acme ACP",
+                    "account_domain": "acme",
+                    "provider": "anthropic",
+                    "version": "1.0.0",
+                    "command": "acme-acp --serve",
+                    "mechanism": {"kind": "env", "model": "ACME_MODEL"},
+                }
+            }
+        }
+    )
+    assert isinstance(catalogs, AcpCatalogs), catalogs
+    return _structured(agent="claude-acp", model="claude-opus-5", catalogs=catalogs)
 
 
 def _manual() -> AcpCandidate:
@@ -342,6 +411,32 @@ def test_a_registry_seeded_agent_is_lent_no_measured_table() -> None:
     assert verdict.reason == "unmatched"
     assert verdict.original_identity == "proof_verify|deterministic|acp turn failed"
     assert effective_signatures(candidate=_registry_seeded(), builtin=False) == ()
+
+
+def test_a_replaced_builtin_agent_entry_is_lent_no_measured_table() -> None:
+    """CONTROL: the table follows the SHIPPED entry, never the agent id alone.
+
+    A repository may replace a shipped catalog entry wholesale, so an adapter
+    this build never rendered can carry the id `claude-acp`. Lending it the
+    four Anthropic sentences mints a domain hold over an allowance nothing
+    spent -- `acme` here, the operator's own router -- which strands every
+    sibling candidate drawing on it.
+
+    The SHIPPED candidate is asserted in the same breath, and it is what makes
+    the absence evidence: a route that had stopped attaching the measured table
+    to anyone would satisfy the first half of this control exactly as well as a
+    correctly provenance-keyed one.
+    """
+    replaced = _replaced_claude()
+    assert replaced.agent_id == "claude-acp"
+    assert replaced.adapter.command == "acme-acp --serve"
+    assert effective_signatures(candidate=replaced, builtin=False) == ()
+    assert effective_signatures(candidate=_claude(), builtin=False) == (
+        builtin_availability_signatures(availability_key=ANTHROPIC_DOMAIN)
+    )
+    verdict = _verdict(candidate=replaced, message=_RECORDED_SESSION_LIMIT)
+    assert isinstance(verdict, AcpNonEligibleFailure)
+    assert verdict.reason == "unmatched"
 
 
 def test_a_candidate_resolved_through_no_agent_keeps_the_legacy_posture() -> None:
