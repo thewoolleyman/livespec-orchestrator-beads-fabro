@@ -8270,6 +8270,42 @@ Feature: The Dispatcher's Fabro event reads cannot become unbounded factory load
     When one reconcile-runs pass executes
     Then it issues at most one fabro events read for that run
 
+  Scenario Outline: A dispatch pass parses the dispatch journal once however long the run history is
+    Given a dispatch journal holding records for <earlier> earlier runs on the target factory
+    And the pre-launch readers for hold evidence, availability confirmation, selection replay, cost sequence and session-headroom baseline each consult the journal
+    When one dispatch pass runs from the start of the item's dispatch to its fabro run submission
+    Then the dispatch journal is read and parsed exactly once in that pass
+    And every one of those readers receives the same parsed snapshot
+
+    Examples:
+      | earlier |
+      | 1       |
+      | 50      |
+
+  Scenario: A dispatch pass inspects each factory run at most once
+    Given the target factory holds three earlier runs that the hold-evidence, availability-confirmation and selection-replay readers each need
+    When one dispatch pass evaluates those readers before submitting fabro run
+    Then exactly one fabro inspect is issued for each of the three runs
+    And each reader receives that run's single inspect result
+
+  Scenario: Records the pass appends are visible without re-reading the journal
+    Given a dispatch pass that journals a session-headroom assessment before a later reader consults the journal
+    When the later reader consults the journal in the same pass
+    Then it sees the appended assessment
+    And the dispatch journal file is still read only once in that pass
+
+  Scenario: A failed inspect is not reissued within the pass
+    Given a fabro inspect of an earlier run fails during a dispatch pass
+    When two further readers in the same pass need that run's state
+    Then no second fabro inspect of that run is issued in the pass
+    And each of those readers treats the run as unobservable under its own existing rule
+
+  Scenario: Each loop pass reads afresh
+    Given dispatcher.py loop dispatches two work-items in succession
+    When the second item's dispatch pass starts
+    Then it reads the dispatch journal once for itself rather than reusing the first pass's snapshot
+    And it issues its own fabro inspect for each run it needs rather than reusing the first pass's results
+
   Scenario: Concurrent reads are capped across processes on one host
     Given two fabro events reads against one factory are already in flight from different Dispatcher processes on this host
     When another Dispatcher process needs to read a run on that factory

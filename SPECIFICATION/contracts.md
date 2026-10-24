@@ -1774,6 +1774,33 @@ Every `fabro events` read the Dispatcher issues — from the progress watchdog, 
 
 **Concurrency.** One `reconcile-runs` pass MUST issue at most one `fabro events` read per run. Across every Dispatcher process on one host, at most two `fabro events` reads against one factory MUST be in flight at the same time; a read that cannot start within its caller's timeout because the bound is full MUST be treated as a failed events read for backoff purposes.
 
+**Pre-launch reads.** The same bounded-read principle governs the reads the
+Dispatcher makes before it launches a run. A dispatch pass is the work one
+Dispatcher invocation does for one work-item from the start of that item's
+dispatch until it submits `fabro run` for it, or until it refuses, defers or
+abandons the dispatch without submitting; under `dispatcher.py loop` each
+item the loop dispatches is its own pass. Within one dispatch pass the
+Dispatcher MUST read and parse the dispatch journal at most once, and every
+reader that consults the journal during that pass — the ACP hold-evidence,
+availability-confirmation and selection-replay readers, the cost-sequence
+reader, the session-headroom baseline, and any other — MUST consume that one
+parsed snapshot rather than reading the file again. A record the pass itself
+appends to the journal MUST be visible to the pass's later readers without a
+second read of the file. Within one dispatch pass the Dispatcher MUST issue
+at most one `fabro inspect` for each distinct pair of factory and run id, and
+every reader that needs that run's state during the pass MUST consume that
+one result. A `fabro inspect` that fails, or whose answer cannot be
+interpreted, MUST NOT be reissued within the same pass; each reader MUST
+apply to it the rule it already applies to an unobservable read of that
+run. The number of dispatch-journal reads in one dispatch pass MUST NOT grow
+with the number of earlier runs, warnings, ACP candidates or attempts the
+pass evaluates. The number of `fabro inspect` calls in one dispatch pass
+MUST NOT exceed the number of distinct pairs of factory and run id the pass
+needs, and MUST NOT grow with the number of warnings, ACP candidates or
+attempts it evaluates for those runs. A parsed snapshot or an inspect
+result MUST NOT be carried from one dispatch pass into the next, so each
+pass makes its own first read of the journal and of each run it needs.
+
 Scenario 227 in `scenarios.md` exercises this subsection.
 
 ### Calibration telemetry and the single Fabro tweak
