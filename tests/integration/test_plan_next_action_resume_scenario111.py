@@ -334,10 +334,14 @@ def test_scenario111_resume_reads_the_fresh_pointer_after_an_accepted_handoff(
         progress_checked = True
         return evaluate_progress(config=config, epic_id=epic_id, now=now)
 
+    def _pointer_reader(*, config: StoreConfig) -> _PointerRead:
+        _ = config
+        return _PointerRead()
+
     monkeypatch.setattr(
         _plan_resume,
         "make_beads_client",
-        lambda *, config: _PointerRead(),
+        _pointer_reader,
     )
     monkeypatch.setattr(_plan_resume, "evaluate_resume_progress", _evaluate)
 
