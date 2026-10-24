@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.241.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.241.0...v0.241.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* make the sandbox Python dependency sync a declared prepare premise ([521b1dc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/521b1dcfb21a8393bab34226c9bf42d22945f179))
+
 ## [0.241.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.240.0...v0.241.0) (2026-10-24)
 
 
