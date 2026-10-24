@@ -38,7 +38,13 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 import pytest
-from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro._beads_client import (
+    FakeBeadsClient,
+    IssueDraft,
+    make_beads_client,
+    reset_fake_singleton,
+)
+from livespec_orchestrator_beads_fabro.commands import _plan_resume
 from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
     PlanDefinitionOfDone,
 )
@@ -233,3 +239,111 @@ def test_scenario111_an_attended_resume_asks_even_carrying_a_dispatchable_pointe
     assert directive.next_action is None
     assert directive.reason == "interactive resume"
     assert directive.picker_default == f"impl:{_IMPL_REF}"
+
+
+def test_scenario111_resume_reads_the_fresh_pointer_after_an_accepted_handoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A chain-confirmed handoff cannot be overwritten by a prior pointer read."""
+    monkeypatch.setenv(UNATTENDED_ENV_VAR, "1")
+    created = create_thread(
+        project_root=tmp_path,
+        config=_config(),
+        slug="fresh-handoff-pointer",
+        title="Fresh handoff pointer",
+        research_filename="001-charter.md",
+        research_text="Charter for the fresh handoff pointer.\n",
+        now=_NOW,
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the fresh pointer survives resume.",
+            assertions=("The fresh pointer survives resume.",),
+        ),
+    )
+    epic_id = created["epic_id"]
+    client = make_beads_client(config=_config())
+    assert isinstance(client, FakeBeadsClient)
+    old_result = "bd-ib-prior-result"
+    new_result = "bd-ib-fresh-result"
+    for item_id in (old_result, new_result):
+        _ = client.create_issue(
+            draft=IssueDraft(
+                issue_id=item_id,
+                issue_type="task",
+                title=item_id,
+                description="A result observed by the plan.",
+                assignee=None,
+                created_at=_NOW,
+            )
+        )
+    old_action = NextAction(
+        kind="impl",
+        ref=old_result,
+        text="Dispatch the prior result.",
+        required_result={
+            "repo": "livespec-orchestrator-beads-fabro",
+            "item_status": {"item_id": old_result, "status": "closed"},
+        },
+        budget={"deadline": "2099-09-04T18:00:00Z", "max_handoffs": 3},
+    )
+    assert (
+        set_next_action(
+            config=_config(),
+            epic_id=epic_id,
+            action=old_action,
+            session=_SESSION,
+            now=_NOW,
+        )
+        is None
+    )
+    client.close_issue(issue_id=old_result, reason="the prior result is satisfied")
+    stale_record = client.show_issue(issue_id=epic_id)
+    fresh_action = NextAction(
+        kind="impl",
+        ref=new_result,
+        text="Dispatch the fresh result.",
+        required_result={
+            "repo": "livespec-orchestrator-beads-fabro",
+            "item_status": {"item_id": new_result, "status": "closed"},
+        },
+        budget={"deadline": "2099-09-05T18:00:00Z", "max_handoffs": 3},
+    )
+    assert (
+        append_handoff(
+            config=_config(),
+            epic_id=epic_id,
+            body="The prior result is complete; dispatch the fresh result.",
+            author=_SESSION,
+            now=_NOW,
+            next_action=fresh_action,
+        )
+        is None
+    )
+
+    progress_checked = False
+    evaluate_progress = _plan_resume.evaluate_resume_progress
+
+    class _PointerRead:
+        def show_issue(self, *, issue_id: str) -> dict[str, object]:
+            if not progress_checked:
+                return stale_record
+            return client.show_issue(issue_id=issue_id)
+
+    def _evaluate(*, config: StoreConfig, epic_id: str, now: str):
+        nonlocal progress_checked
+        progress_checked = True
+        return evaluate_progress(config=config, epic_id=epic_id, now=now)
+
+    monkeypatch.setattr(
+        _plan_resume,
+        "make_beads_client",
+        lambda *, config: _PointerRead(),
+    )
+    monkeypatch.setattr(_plan_resume, "evaluate_resume_progress", _evaluate)
+
+    directive = _resume(epic_id=epic_id)
+
+    assert progress_checked
+    assert directive.next_action == f"impl:{new_result}"
+    pointer = client.show_issue(issue_id=epic_id)["metadata"]["next_action"]
+    assert pointer["ref"] == new_result
