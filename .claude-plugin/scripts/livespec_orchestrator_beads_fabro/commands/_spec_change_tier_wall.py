@@ -148,4 +148,4 @@ def _is_held(*, item: WorkItem, repo: Path, config: StoreConfig) -> bool:
     bodies = item_comment_bodies(path=config, work_item_id=item.id)
     if bodies is None:
         return False
-    return standing_spec_change_hold(item=item, repo=repo, comments=bodies) is not None
+    return standing_spec_change_hold(work_item_id=item.id, repo=repo, comments=bodies) is not None

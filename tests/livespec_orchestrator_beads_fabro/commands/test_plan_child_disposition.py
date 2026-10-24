@@ -10,8 +10,8 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro.commands import _plan_disposition
 from livespec_orchestrator_beads_fabro.commands._plan_disposition import (
-    PlanDispositionRefusedError,
     close_plan_child,
     reparent_plan_child,
 )
@@ -134,40 +134,36 @@ def test_reparenting_leaves_an_unrelated_edge_alone() -> None:
     assert {"depends_on_id": "bd-ib-blocker", "type": "blocks"} in edges
 
 
-def test_a_spec_change_tier_child_refuses_closure() -> None:
+def _unreadable_sidecar(*, path: StoreConfig, work_item_id: str) -> tuple[str, ...] | None:
+    """A comment read that could not be taken, which is not an empty one."""
+    _ = (path, work_item_id)
+    return None
+
+
+def test_a_commitment_bearing_child_is_disposable() -> None:
+    """A `spec_commitment_hint` marks a RATIFIED follow-up, never the tier.
+
+    This case asserted the opposite until `bd-ib-yykjko`: the autonomy-tier
+    bullet says the tier is "never read off `spec_commitment_hint` (which marks
+    an implementation follow-up to an already ratified change)" and ends
+    "Plan-child disposition ... admits an implementation follow-up", so the one
+    child the old predicate refused is the one the clause names as disposable.
+    The refusal that replaces it is keyed on the recorded spec-change-tier
+    classification, and lives in
+    `test_spec_commitment_hint_is_not_the_tier.py`.
+    """
     _seed_plan(spec_id="spec:contracts-dispatcher-admission")
 
-    with pytest.raises(PlanDispositionRefusedError) as refusal:
-        close_plan_child(
-            config=_config(),
-            epic_id="bd-ib-epic",
-            child_id="bd-ib-child",
-            rationale="Tidying the epic.",
-            author=_AUTHOR,
-            now=_NOW,
-        )
+    close_plan_child(
+        config=_config(),
+        epic_id="bd-ib-epic",
+        child_id="bd-ib-child",
+        rationale="Tidying the epic.",
+        author=_AUTHOR,
+        now=_NOW,
+    )
 
-    assert "bd-ib-child" in str(refusal.value)
-    assert _fake().show_issue(issue_id="bd-ib-child")["status"] != "closed"
-    assert _comment_bodies(issue_id="bd-ib-child") == []
-
-
-def test_a_spec_change_tier_child_refuses_reparenting() -> None:
-    _seed_plan(spec_id="spec:contracts-dispatcher-admission")
-
-    with pytest.raises(PlanDispositionRefusedError):
-        reparent_plan_child(
-            config=_config(),
-            epic_id="bd-ib-epic",
-            child_id="bd-ib-child",
-            new_parent_id="bd-ib-other",
-            rationale="Tidying the epic.",
-            author=_AUTHOR,
-            now=_NOW,
-        )
-
-    edges = _fake().show_issue(issue_id="bd-ib-child")["dependencies"]
-    assert {"depends_on_id": "bd-ib-epic", "type": EDGE_PARENT_CHILD} in edges
+    assert _fake().show_issue(issue_id="bd-ib-child")["status"] == "closed"
 
 
 def test_a_plan_anchored_child_is_disposable() -> None:
@@ -203,23 +199,25 @@ def test_a_plan_anchored_child_is_reparentable() -> None:
     assert {"depends_on_id": "bd-ib-other", "type": EDGE_PARENT_CHILD} in edges
 
 
-def test_a_real_spec_clause_commitment_still_refuses_closure() -> None:
-    """The true-positive arm: this narrowing must not become a removal."""
+def test_a_real_spec_clause_commitment_is_disposable_too() -> None:
+    """The bare-slug commitment shape, admitted for the same reason.
+
+    It is kept beside the prefixed shape above because the two were the whole
+    point of the retired predicate's narrowing, and the clause now admits both:
+    neither spelling of a RATIFIED commitment says anything about the tier.
+    """
     _seed_plan(spec_id=_SPEC_CLAUSE_COMMITMENT)
 
-    with pytest.raises(PlanDispositionRefusedError) as refusal:
-        close_plan_child(
-            config=_config(),
-            epic_id="bd-ib-epic",
-            child_id="bd-ib-child",
-            rationale="Tidying the epic.",
-            author=_AUTHOR,
-            now=_NOW,
-        )
+    close_plan_child(
+        config=_config(),
+        epic_id="bd-ib-epic",
+        child_id="bd-ib-child",
+        rationale="Tidying the epic.",
+        author=_AUTHOR,
+        now=_NOW,
+    )
 
-    assert "bd-ib-child" in str(refusal.value)
-    assert _fake().show_issue(issue_id="bd-ib-child")["status"] != "closed"
-    assert _comment_bodies(issue_id="bd-ib-child") == []
+    assert _fake().show_issue(issue_id="bd-ib-child")["status"] == "closed"
 
 
 def test_removing_an_absent_dependency_is_a_no_op() -> None:
@@ -229,3 +227,28 @@ def test_removing_an_absent_dependency_is_a_no_op() -> None:
 
     edges = _fake().show_issue(issue_id="bd-ib-child")["dependencies"]
     assert {"depends_on_id": "bd-ib-epic", "type": EDGE_PARENT_CHILD} in edges
+
+
+def test_a_child_whose_comments_cannot_be_read_is_still_disposable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unreadable sidecar admits the disposition rather than refusing it.
+
+    The recorded classification is the only thing that can establish the tier,
+    so a read that could not be taken is the absence of evidence that a hold
+    stands. Refusing there would reinstate the archive deadlock this module
+    exists to break, on nothing but a transient ledger fault.
+    """
+    _seed_plan()
+    monkeypatch.setattr(_plan_disposition, "item_comment_bodies", _unreadable_sidecar)
+
+    close_plan_child(
+        config=_config(),
+        epic_id="bd-ib-epic",
+        child_id="bd-ib-child",
+        rationale="The sidecar is unreachable; the child is still ours to close.",
+        author=_AUTHOR,
+        now=_NOW,
+    )
+
+    assert _fake().show_issue(issue_id="bd-ib-child")["status"] == "closed"

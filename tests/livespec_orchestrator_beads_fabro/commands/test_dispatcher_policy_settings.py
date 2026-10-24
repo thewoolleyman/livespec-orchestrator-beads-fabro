@@ -8,7 +8,6 @@ from typing import TypeVar
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_policy_settings
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_overrides import (
-    _is_spec_change_tier,
     effective_acceptance_rework_cap,
     effective_admission_policy,
     effective_merge_on_review_cap,
@@ -16,7 +15,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_overrides imp
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     DEFAULT_ACCEPTANCE_REWORK_CAP,
-    DEFAULT_ADMISSION_POLICY,
     DEFAULT_MERGE_ON_REVIEW_CAP,
     DEFAULT_REVIEW_FIX_CAP,
     resolve_auto_approve_ready,
@@ -203,19 +201,24 @@ def test_invalid_raw_labels_with_config_fall_back_to_global_values(tmp_path: Pat
     )
 
 
-def test_spec_change_tier_is_the_commitment_not_the_plan_anchor() -> None:
-    """A plan anchor marker rides the same field; only a real commitment is that tier."""
-    assert _is_spec_change_tier(item=_item(spec_commitment_hint=_PLAN_ANCHOR_MARKER)) is False
-    assert _is_spec_change_tier(item=_item(spec_commitment_hint=_SPEC_CLAUSE_COMMITMENT)) is True
+def test_neither_value_sharing_the_spec_id_column_floors_the_admission_policy() -> None:
+    """Both readings of that column keep the item's own policy (`bd-ib-yykjko`).
 
+    The plan ANCHOR MARKER never was the tier, and the retired predicate said
+    so. The COMMITMENT is the case that changed: the autonomy-tier bullet makes
+    the tier "never read off `spec_commitment_hint` (which marks an
+    implementation follow-up to an already ratified change)", so flooring one
+    to `manual` held a ratified follow-up out of the auto lane for ever. A
+    genuinely spec-change-tier item is now held out of `ready` altogether,
+    which is a stronger condition than an admission floor.
 
-def test_a_plan_anchored_item_keeps_its_own_admission_policy() -> None:
-    """The routing consequence: only a real commitment is pinned to the manual floor."""
+    The two are asserted beside an item carrying NEITHER, so "the policy came
+    back" is not satisfied by a resolver that ignores the item's own label.
+    """
     anchored = _item(spec_commitment_hint=_PLAN_ANCHOR_MARKER, admission_policy="auto")
     committed = _item(spec_commitment_hint=_SPEC_CLAUSE_COMMITMENT, admission_policy="auto")
+    plain = _item(admission_policy="auto")
 
     assert _read(effective_admission_policy(item=anchored, cwd=_NO_CONFIG_CWD)) == "auto"
-    assert (
-        _read(effective_admission_policy(item=committed, cwd=_NO_CONFIG_CWD))
-        == DEFAULT_ADMISSION_POLICY
-    )
+    assert _read(effective_admission_policy(item=committed, cwd=_NO_CONFIG_CWD)) == "auto"
+    assert _read(effective_admission_policy(item=plain, cwd=_NO_CONFIG_CWD)) == "auto"

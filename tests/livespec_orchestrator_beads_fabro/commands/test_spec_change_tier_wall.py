@@ -176,7 +176,9 @@ def test_the_hold_names_the_unratified_topic_and_the_generalization_target(
 ) -> None:
     """What the refusal has to say for an operator to act on it."""
     repo = _repo(tmp_path=tmp_path)
-    hold = standing_spec_change_hold(item=_item(), repo=repo, comments=(_held_record(),))
+    hold = standing_spec_change_hold(
+        work_item_id="bd-ib-57ss2n", repo=repo, comments=(_held_record(),)
+    )
 
     assert hold is not None
     assert _TOPIC in hold.detail
@@ -187,7 +189,9 @@ def test_the_hold_names_the_unratified_topic_and_the_generalization_target(
 def test_a_held_item_linking_no_topic_is_refused_naming_the_absence(tmp_path: Path) -> None:
     """An item that has not deposited its proposal yet, which is the first state."""
     repo = _repo(tmp_path=tmp_path)
-    hold = standing_spec_change_hold(item=_item(), repo=repo, comments=(_held_record(topic=None),))
+    hold = standing_spec_change_hold(
+        work_item_id="bd-ib-57ss2n", repo=repo, comments=(_held_record(topic=None),)
+    )
 
     assert hold is not None
     assert hold.linked_proposal_topic is None
@@ -244,9 +248,7 @@ def test_an_item_with_no_recorded_tier_is_classified_and_the_verdict_recorded(
     assert reader.calls == 1
     assert (
         standing_spec_change_hold(
-            item=_item(),
-            repo=repo,
-            comments=(_held_record(),),
+            work_item_id="bd-ib-57ss2n", repo=repo, comments=(_held_record(),)
         )
         is not None
     )

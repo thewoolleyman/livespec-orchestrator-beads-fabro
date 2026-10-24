@@ -12,20 +12,40 @@ session takes itself with a recorded rationale. The rationale is written to the
 ledger BEFORE the mutation, so a failed mutation leaves an explained intent
 rather than a silent disposition.
 
-One refusal remains. A child carrying a spec commitment is design-human-gated
-by routing, and this module refuses to dispose it, naming the child. That
-refusal asks `is_spec_commitment` rather than testing `spec_id` for presence:
-a plan ANCHOR MARKER shares that column with a genuine commitment, so refusing
-on presence alone refused every plan child there is — reinstating the exact
-deadlock the paragraphs above describe.
+One refusal remains, and `bd-ib-yykjko` INVERTED it. The autonomy-tier bullet
+of `SPECIFICATION/contracts.md` section "Grooming and slice-size calibration"
+ends "Plan-child disposition refuses a held spec-change-tier child and admits
+an implementation follow-up", and it says in the same breath that the tier is
+"never read off `spec_commitment_hint` (which marks an implementation follow-up
+to an already ratified change)". So the field this refusal used to key on marks
+exactly the child the clause says to ADMIT.
+
+The refusal now asks the one authority the clause names: the item's own
+recorded spec-change-tier classification, held out of `ready` while its linked
+proposed-change topic carries no ratifying revision record. That read is the
+SHARED `standing_spec_change_hold`, never a second account of it — two
+spellings of one hold is how a child refused here comes to be admitted by the
+dispatch wall in the same minute.
+
+A child whose comments cannot be read is ADMITTED rather than refused, which is
+the same fail-open direction the hold takes everywhere else: the record is the
+only thing that can establish the tier, and refusing every disposition on a
+transient ledger fault reinstates the exact deadlock the paragraphs above
+describe.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._beads_client import EDGE_PARENT_CHILD, make_beads_client
-from livespec_orchestrator_beads_fabro.commands._plan_anchor import is_spec_commitment
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
+    item_comment_bodies,
+)
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_gate import (
+    standing_spec_change_hold,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
@@ -45,9 +65,9 @@ class PlanDispositionRefusedError(Exception):
     """Expected refusal raised when a session may not dispose a plan child."""
 
     @classmethod
-    def spec_change_tier(cls, *, child_id: str) -> PlanDispositionRefusedError:
-        detail = "human-gated by routing and is not session-disposable"
-        return cls(f"{child_id} carries a spec commitment; a spec-change-tier child is {detail}")
+    def spec_change_tier(cls, *, child_id: str, detail: str) -> PlanDispositionRefusedError:
+        held = f"{child_id} is held out of ready by the spec-change tier"
+        return cls(f"{held} and is not session-disposable until that hold releases.\n{detail}")
 
 
 def close_plan_child(
@@ -61,7 +81,7 @@ def close_plan_child(
 ) -> None:
     """Close one plan child, recording why, with no human valve."""
     client = make_beads_client(config=config)
-    _refuse_spec_change_tier(client=client, child_id=child_id)
+    _refuse_spec_change_tier(config=config, child_id=child_id)
     _record_disposition(
         client=client,
         epic_id=epic_id,
@@ -86,7 +106,7 @@ def reparent_plan_child(  # noqa: PLR0913 — one kw-only argument per recorded 
 ) -> None:
     """Move one plan child to another parent, recording why, with no human valve."""
     client = make_beads_client(config=config)
-    _refuse_spec_change_tier(client=client, child_id=child_id)
+    _refuse_spec_change_tier(config=config, child_id=child_id)
     _record_disposition(
         client=client,
         epic_id=epic_id,
@@ -100,11 +120,25 @@ def reparent_plan_child(  # noqa: PLR0913 — one kw-only argument per recorded 
     client.add_dependency(from_id=child_id, to_id=new_parent_id, edge_type=EDGE_PARENT_CHILD)
 
 
-def _refuse_spec_change_tier(*, client: BeadsClient, child_id: str) -> None:
-    record = client.show_issue(issue_id=child_id)
-    spec_id = record.get("spec_id")
-    if isinstance(spec_id, str) and is_spec_commitment(spec_id=spec_id):
-        raise PlanDispositionRefusedError.spec_change_tier(child_id=child_id)
+def _refuse_spec_change_tier(*, config: StoreConfig, child_id: str) -> None:
+    """Refuse a child the recorded spec-change-tier classification HOLDS.
+
+    The repository root is what the ratification half of the hold is read
+    against, and a connection descriptor carrying none cannot reach a spec
+    history at all — so `topic_is_ratified` answers False for every topic and
+    the hold stands, which is the fail-closed direction that half owns.
+    """
+    bodies = item_comment_bodies(path=config, work_item_id=child_id)
+    if bodies is None:
+        return
+    repo = config.repo_root
+    hold = standing_spec_change_hold(
+        work_item_id=child_id,
+        repo=Path() if repo is None else repo,
+        comments=bodies,
+    )
+    if hold is not None:
+        raise PlanDispositionRefusedError.spec_change_tier(child_id=child_id, detail=hold.detail)
 
 
 def _record_disposition(  # noqa: PLR0913 — one kw-only argument per recorded disposition field.

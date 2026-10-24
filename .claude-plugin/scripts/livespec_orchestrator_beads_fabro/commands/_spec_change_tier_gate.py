@@ -138,7 +138,7 @@ class SpecChangeHold:
 
 
 def standing_spec_change_hold(
-    *, item: WorkItem, repo: Path, comments: Sequence[str]
+    *, work_item_id: str, repo: Path, comments: Sequence[str]
 ) -> SpecChangeHold | None:
     """The mechanical hold, taking no judgement at all.
 
@@ -148,7 +148,7 @@ def standing_spec_change_hold(
     still change the answer, so the decision passes to the composed gate rather
     than being made here.
     """
-    recorded = _recorded_hold(item=item, comments=comments)
+    recorded = _recorded_hold(work_item_id=work_item_id, comments=comments)
     if recorded is None:
         return None
     ratified = topic_is_ratified(
@@ -170,12 +170,12 @@ def spec_change_tier_hold(
     comments = item_comment_bodies(path=path, work_item_id=item.id)
     if comments is None:
         return None
-    standing = standing_spec_change_hold(item=item, repo=repo, comments=comments)
+    standing = standing_spec_change_hold(work_item_id=item.id, repo=repo, comments=comments)
     if standing is not None:
         return standing
     verdict = _classified(item=item, repo=repo, path=path, runner=runner, reader=reader)
     if verdict is None:
-        return _recorded_hold(item=item, comments=comments)
+        return _recorded_hold(work_item_id=item.id, comments=comments)
     append_work_item_comment(
         path=path,
         work_item_id=item.id,
@@ -236,12 +236,18 @@ def _declared_topic(*, path: StoreConfig, item: WorkItem) -> str | None:
     return linked_proposal_topic(raw_labels=[one for one in raw if isinstance(one, str)])
 
 
-def _recorded_hold(*, item: WorkItem, comments: Sequence[str]) -> SpecChangeHold | None:
-    """The hold the item's NEWEST recorded classification stands for, or `None`."""
+def _recorded_hold(*, work_item_id: str, comments: Sequence[str]) -> SpecChangeHold | None:
+    """The hold the item's NEWEST recorded classification stands for, or `None`.
+
+    Keyed on the ID rather than on a whole `WorkItem`, because the id is all a
+    hold carries and the plan-child disposition reaches this with a beads
+    record rather than a materialized item — a `WorkItem` parameter there would
+    be a second materialization taken only to be discarded.
+    """
     recorded = recorded_spec_change_tier(comments=comments)
     if recorded is None:
         return None
-    return _hold_of(item_id=item.id, verdict=recorded)
+    return _hold_of(item_id=work_item_id, verdict=recorded)
 
 
 def _hold_of(*, item_id: str, verdict: SpecChangeTierVerdict) -> SpecChangeHold | None:
