@@ -418,16 +418,25 @@ def test_effective_admission_policy_honors_explicit_in_both_directions(tmp_path:
     )
 
 
-def test_effective_admission_policy_never_auto_approves_spec_change_tier(
+def test_effective_admission_policy_honours_a_commitment_bearing_items_own_label(
     tmp_path: Path,
 ) -> None:
+    """A `spec_commitment_hint` no longer floors admission to manual.
+
+    It asserted the floor until `bd-ib-yykjko`. The autonomy-tier bullet makes
+    that field the mark of "an implementation follow-up to an already ratified
+    change" and forbids reading the tier off it, so the floor held exactly the
+    items the clause routes "as it would any other item". A genuinely
+    spec-change-tier item is held out of `ready` by `_spec_change_tier_gate`
+    instead, which an admission floor could never have reached anyway.
+    """
     cwd = _write_config(
         tmp_path=tmp_path,
         text='{"livespec-orchestrator-beads-fabro": {"dispatcher": {"auto_approve_ready": true}}}',
     )
     item = _item(admission_policy="auto", spec_commitment_hint="SC-1")
 
-    assert _read(effective_admission_policy(item=item, cwd=cwd)) == "manual"
+    assert _read(effective_admission_policy(item=item, cwd=cwd)) == "auto"
 
 
 def test_effective_acceptance_policy_inherits_global_mode_when_unlabeled(tmp_path: Path) -> None:

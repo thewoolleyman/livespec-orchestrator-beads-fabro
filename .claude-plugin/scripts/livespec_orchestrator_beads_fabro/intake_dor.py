@@ -142,6 +142,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_ADMISSION_POLICY,
     effective_admission_policy,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_gate import (
+    spec_change_tier_hold,
+)
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
 from livespec_orchestrator_beads_fabro.store import (
     INTAKE_TRIAGED_LABEL,
@@ -153,6 +156,9 @@ from livespec_orchestrator_beads_fabro.store import (
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from livespec_orchestrator_beads_fabro.commands._spec_change_tier_judge import (
+        SpecChangeTierReader,
+    )
     from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = [
@@ -268,6 +274,7 @@ def apply_intake_dor(
     path: StoreConfig,
     item_id: str,
     checklist: DefinitionOfReadyChecklist,
+    spec_change_reader: SpecChangeTierReader | None = None,
 ) -> IOResult[Verdict, WorkItemNotFoundError | PolicySettingUnreadable]:
     """Evaluate the checklist and route a filed item into its lifecycle state.
 
@@ -319,12 +326,30 @@ def apply_intake_dor(
         # reports `holds` False, so the item routes exactly as it did before
         # this clause existed while the record on it says the judgement did not
         # happen.
+        #
+        # THE SPEC-CHANGE TIER runs last of the three and is the one condition
+        # that is NOT about this item's own text. "The item MUST be held out of
+        # `ready` until BOTH hold" — its linked topic's revision record carries
+        # decision `accept` or `modify`, and the judgement returns `stated` —
+        # and this is the surface that would otherwise approve it onward, so
+        # intake is where that hold lands. The release needs no human valve and
+        # is nothing more than the same call answering `None`: the item then
+        # routes exactly as its effective admission policy decides, which is
+        # the branch it is already standing in.
         if (
             policy == _AUTO_ADMISSION
             and not findings.withholds_ready
             and not judge_item_definition_of_done(
                 item=item, repo=repo_root, path=path, stage=STAGE_PRE_ADMISSION
             ).holds
+            and spec_change_tier_hold(
+                item=item,
+                repo=repo_root,
+                path=path,
+                stage=STAGE_PRE_ADMISSION,
+                reader=spec_change_reader,
+            )
+            is None
         ):
             status = _READY_STATUS
 

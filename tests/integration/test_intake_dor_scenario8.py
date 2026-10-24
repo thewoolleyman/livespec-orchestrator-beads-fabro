@@ -227,9 +227,19 @@ def test_manual_label_holds_pending_despite_global_auto_approve(tmp_path: Path) 
     assert _item(issue_id="li-manual").status == "pending-approval"
 
 
-def test_spec_change_tier_holds_pending_despite_auto_label_and_global_auto(
+def test_a_commitment_bearing_item_is_routed_by_its_own_admission_label(
     tmp_path: Path,
 ) -> None:
+    """A `spec_commitment_hint` no longer holds an item at `pending-approval`.
+
+    This case asserted the hold until `bd-ib-yykjko`. The autonomy-tier bullet
+    makes that field the mark of "an implementation follow-up to an already
+    ratified change" and forbids reading the spec-change tier off it, so an
+    item carrying one routes exactly as every other item does. The hold that
+    replaces it is keyed on the recorded spec-change-tier classification and is
+    bound by `tests/livespec_orchestrator_beads_fabro/
+    test_intake_dor_spec_change_tier.py`.
+    """
     _write_dispatcher_config(repo_root=tmp_path, setting='"auto_approve_ready": true')
     _seed_issue(issue_id="li-spec", labels=["admission:auto"], spec_id="SC-1")
 
@@ -239,8 +249,8 @@ def test_spec_change_tier_holds_pending_despite_auto_label_and_global_auto(
         ).unwrap()
     )
 
-    assert verdict == "pending-approval"
-    assert _item(issue_id="li-spec").status == "pending-approval"
+    assert verdict == "ready"
+    assert _item(issue_id="li-spec").status == "ready"
 
 
 # --------------------------------------------------------------------------

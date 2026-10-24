@@ -16,8 +16,18 @@ rather than pattern-matching:
 - The three rework caps and `merge_on_review_cap` take the label's value
   whenever it parses, in either direction, and fall through to the global
   when it does not.
-- `admission_policy` is floored: a design-human-gated (spec-change-tier)
-  item takes the manual default whatever its label says.
+- `admission_policy` carries NO spec-change floor any more, and its absence is
+  the point. It used to pin every item carrying a `spec_commitment_hint` to the
+  manual default whatever its own label said, on the reading that such an item
+  was spec-change tier. The autonomy-tier bullet of
+  `SPECIFICATION/contracts.md` section "Grooming and slice-size calibration"
+  says the opposite outright — the tier is "never read off
+  `spec_commitment_hint` (which marks an implementation follow-up to an already
+  ratified change)" — so that floor held exactly the items the clause routes
+  "as it would any other item", for ever. A genuinely spec-change-tier item is
+  now held OUT OF `ready` altogether by `_spec_change_tier_gate`, which is a
+  stronger condition than an admission floor and subsumes it: the floor could
+  only have reached an item that had already been admitted.
 - `groom_cut_approval` is ASYMMETRIC. Its label MAY only LOWER an item to
   `human` and MUST NOT raise one to `consensus`, so a repository opts INTO
   the automated groom cut once, in committed configuration a reviewer can
@@ -57,7 +67,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     resolve_merge_on_review_cap,
     resolve_review_fix_cap,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_anchor import is_spec_commitment
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -108,8 +117,6 @@ def effective_admission_policy(
     *, item: WorkItem, cwd: Path
 ) -> IOResult[str, PolicySettingUnreadable]:
     """The item's effective admission policy with per-item-over-global precedence."""
-    if _is_spec_change_tier(item=item):
-        return IOSuccess(DEFAULT_ADMISSION_POLICY)
     if item.admission_policy is not None:
         return IOSuccess(item.admission_policy)
     return resolve_auto_approve_ready(cwd=cwd).map(
@@ -231,11 +238,3 @@ def _positive_int_label_value(*, value: str | None) -> int | None:
     if parsed > 0:
         return parsed
     return None
-
-
-def _is_spec_change_tier(*, item: WorkItem) -> bool:
-    # A plan ANCHOR MARKER shares `spec_commitment_hint` with a genuine
-    # commitment to ratified spec text, so presence is not the question: a
-    # plan-anchored item pinned to the manual admission floor here is a
-    # misrouting, not a gate.
-    return is_spec_commitment(spec_id=item.spec_commitment_hint)
