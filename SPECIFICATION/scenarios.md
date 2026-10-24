@@ -9400,3 +9400,40 @@ Scenario: Sandbox image enumeration reports an undeclared fleet default's regist
   Then it reports source catalog_environment with environment "E" naming R, not factory_undeclared
   And when R's committed "petri" entry declares the environment "E2", it reports "E2"
 ```
+
+## Scenario 242 — The provisional fleet launch check fails the build on a broken launcher
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: a broken provisional launcher cannot reach master
+  Scenario: the harness exercises every launch gate against stubs
+    Given fleet-launch/config.sh values overridden to stub factory boards and throwaway directories
+    When just check runs check-fleet-launch
+    Then shellcheck runs over every shell script under fleet-launch/
+    And the harness reads a stub board, refuses a launch at the shared fleet cap, launches two queued tickets in FIFO order, holds a launch while the hold file exists, and counts a retired factory's board as zero
+
+  Scenario: a defect in a launcher turns the check red
+    Given a change that makes the launcher count a retired factory's board as unknown
+    When just check runs check-fleet-launch
+    Then check-fleet-launch exits non-zero
+    And just check exits non-zero
+
+  Scenario: every provisional script carries its banner
+    Given the shell and Python scripts under fleet-launch/
+    When each script's opening comment block is read with its comment markers removed
+    Then each one marks itself PROVISIONAL and EXPERIMENTAL
+    And each one names the livespec console application and the launch-loop tool bd-ib-jr6w7v as its first-class replacement
+
+  Scenario: host values are declared once and overridable
+    Given a host value a fleet-launch script reads, such as a factory server URL, the fleet-cap file, a queue, lock or in-flight directory, or the fabro binary path
+    When the scripts are searched for where that value is assigned
+    Then it is assigned only in fleet-launch/config.sh or in the single constants block at the head of a Python script
+    And setting the corresponding FLEET_LAUNCH_ environment variable before a script runs changes the value that script uses
+
+  Scenario: the directory is retired once nothing launches through it
+    Given every factory launch on the operator host is made by the livespec console application or by the committed launch-loop tool
+    And no seat runs a fleet-launch script
+    When the retirement condition is evaluated
+    Then fleet-launch/ is deleted from the repository
+```
