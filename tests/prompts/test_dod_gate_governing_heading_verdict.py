@@ -98,8 +98,22 @@ def test_the_gate_names_the_returned_heading_as_the_remedy() -> None:
     """One remedy across four surfaces: add the heading to the reference line."""
     prompt = _dod_gate_prompt()
 
-    assert "the reference line does not name verbatim is a" in prompt
-    assert "name that heading and give the remedy, which is to add it to" in prompt
+    assert "If the reference line names NONE of them verbatim, that is a" in prompt
+    assert "finding**: name every one of them and give the remedy, which is to add it" in prompt
+
+
+def test_an_omission_beside_a_governing_citation_is_advisory() -> None:
+    """The v210 rule: a partial omission is named with its remedy, never held on.
+
+    The judgement can name different governing headings for one unchanged
+    subject, so a hold on a partial omission makes admission non-convergent
+    (work-item `bd-ib-52zhw`).
+    """
+    prompt = _dod_gate_prompt()
+
+    assert "BUT ONLY WHEN THE LINE NAMES NONE OF THE GOVERNING HEADINGS." in prompt
+    assert "every other omitted governing heading is **ADVISORY**" in prompt
+    assert "needs-human ending for it." in prompt
 
 
 def test_an_unstated_verdict_raises_no_reference_line_finding() -> None:

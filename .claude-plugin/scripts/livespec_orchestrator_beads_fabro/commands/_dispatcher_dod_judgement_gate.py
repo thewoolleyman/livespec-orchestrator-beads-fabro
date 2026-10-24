@@ -58,6 +58,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellComma
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     GoverningHeadingVerdict,
     governing_heading_findings,
+    governing_heading_holds,
 )
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
     GoverningHeadingReader,
@@ -240,16 +241,18 @@ def _with_governing_findings(
     """
     if verdict.outcome == JUDGEMENT_UNAVAILABLE:
         return verdict
-    findings = governing_heading_findings(
-        item=item,
-        section=definition_of_done(description=item.description),
-        verdict=governing,
-    )
+    section = definition_of_done(description=item.description)
+    findings = governing_heading_findings(item=item, section=section, verdict=governing)
     if not findings:
         return verdict
-    return DodJudgement(
-        outcome=JUDGEMENT_HELD, findings=verdict.findings + findings, cause=verdict.cause
+    # An omission beside a governing citation is ADVISORY: its findings ride in
+    # the record with their remedy, and the rubric's own outcome stands.
+    outcome = (
+        JUDGEMENT_HELD
+        if governing_heading_holds(section=section, verdict=governing)
+        else verdict.outcome
     )
+    return DodJudgement(outcome=outcome, findings=verdict.findings + findings, cause=verdict.cause)
 
 
 def judge_item_definition_of_done(  # noqa: PLR0913 - each argument is an independent seam input.
