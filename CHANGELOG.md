@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.241.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.240.0...v0.241.0) (2026-10-24)
+
+
+### Features
+
+* **dod:** share one governing-heading verdict across the citation checks ([1658bee](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1658bee77fb11823ee5c613026efd57edf99f0ba))
+
+
+### Bug Fixes
+
+* **dod:** reuse the earliest verdict matching the current digests ([7454027](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/745402709c6a664719eb9654b617c48ad2a1a4c8))
+* **dod:** take the governing verdict at the filing display itself ([cd7ed7c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cd7ed7c16b557daf55e703290f65ec27423b886f))
+
 ## [0.240.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.239.3...v0.240.0) (2026-10-23)
 
 
