@@ -257,9 +257,9 @@
       // before this table named factories instead of machines, so this rename
       // changed no routing. The cutover (bd-ib-iud52v) then moved the default
       // to `petri`, the gmktec-xubuntu :32276 Petri-era instance, and carried
-      // nothing else. An item already dispatched keeps its own recorded pin,
-      // so in-flight `legacy` work stays on hp; a recorded pin naming the
-      // retired `hp` name now falls back to `petri`.
+      // nothing else. `legacy` was then retired and removed on 2026-10-24 (plan
+      // fabro-currency); a recorded pin naming it, or the retired `hp` name,
+      // now falls back to `petri`.
       "default_factory": "petri",
       // THE DELIBERATE OPERATOR FLOOR, and the only currency form with any
       // blocking authority at admission: a dispatch refuses before claim when
@@ -826,9 +826,8 @@
       // The names are the registry's, not ours to choose: an entry whose name
       // that file does not declare resolves to no address, which is REFUSED
       // before the item is claimed rather than quietly sent to whichever Fabro
-      // the dispatching host runs. `legacy` is the hp-xubuntu :32276 instance
-      // on the pinned 0.254 engine and `petri` is the gmktec-xubuntu :32276
-      // Petri-era server (livespec-dev-tooling-txadim renders both).
+      // the dispatching host runs. `petri` is the gmktec-xubuntu :32276
+      // Petri-era server (livespec-dev-tooling-txadim renders it).
       //
       // `"registry": true` is the one ratified spelling and it is tested for
       // that value, not for the key's presence: any other value leaves the
@@ -844,7 +843,7 @@
       // explicit `--fabro-bin`), because it states a COMPATIBILITY constraint
       // rather than a preference -- a Petri-era client cannot talk to a 0.254
       // server, nor the reverse -- and it is what makes an upgrade candidate
-      // runnable BESIDE production on one host. Omit it, as `legacy` does,
+      // runnable BESIDE production on one host. Omit it,
       // and that factory resolves the global binary exactly as before the key
       // existed. A `bin` naming no file, or a file with no execute bit, is
       // refused before the item is claimed.
@@ -858,7 +857,7 @@
       // environment was selected). A run intent naming none sends `default`,
       // so a dispatch to such a server landed in `buildpack-deps:noble` with
       // no `mise` on PATH and died in a prepare step -- a failure that names
-      // nothing about the placement. Omit it, as `legacy` does, and NO flag
+      // nothing about the placement. Omit it, and NO flag
       // is emitted at all: the pinned 0.254 engine has no such flag and keeps
       // selecting from the workflow, so an unconditional one would kill every
       // dispatch to that engine at argument parsing. A declared `environment`
@@ -898,7 +897,7 @@
       // and every `reconcile-runs` pass surveys each entry; `secret_channel`
       // `native_secrets`; and `environment` `livespec-ci`. Its two addresses
       // — the server url and the sandbox-sweep `docker_host` — come from the
-      // factory registry, as `legacy`'s do (bd-ib-fubkcv, then bd-ib-3now6p
+      // factory registry, as every registry-backed entry's do (bd-ib-fubkcv, then bd-ib-3now6p
       // switched this table over). The `bin` path is the operator host's,
       // which is where every dispatch and reconcile pass of this repository
       // runs. The server authenticates through the host's
@@ -931,12 +930,6 @@
       // reach the named daemon; while they do not, the pass says so on every
       // sweep record instead of reporting a clean factory.
       "factories": {
-        // legacy submits through the pinned 0.254 8869e88 client whose bytes match hp's
-        // declared engine, staged by the livespec-dev-tooling dev-host play (bd-ib-zb2hso).
-        "legacy": {
-          "registry": true,
-          "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-legacy-v0.254-8869e88/fabro"
-        },
         "petri": {
           "registry": true,
           "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro",
@@ -954,14 +947,14 @@
       // concurrency value by design. The set is the fleet capacity
       // coordinator's ruling of 2026-10-19 (the maintainer's R226 priorities on
       // livespec-dev-tooling-dfixhe): gmktec/petri, the Kubernetes sandbox
-      // backend and Fabro currency, audited against `legacy` — the hp-xubuntu
-      // instance, which holds most of the factory slots. `petri` is to be
-      // added as a second audited factory once its scheduler fix lands. The
+      // backend and Fabro currency, audited first against `legacy`, the hp-xubuntu
+      // instance, and against `petri` since `legacy` was retired on 2026-10-24
+      // (plan fabro-currency). The
       // name must be one `dispatcher.factories` above declares: it is
       // validated there rather than at the board read, so that a name naming
       // no entry is a configuration refusal and not a factory outage.
       "idle_slot_audit": {
-        "factory": "legacy",
+        "factory": "petri",
         "priority": [
           { "repo": ".", "epic": "bd-ib-fyozyd" },
           { "repo": ".", "epic": "bd-ib-nmuyjc" },

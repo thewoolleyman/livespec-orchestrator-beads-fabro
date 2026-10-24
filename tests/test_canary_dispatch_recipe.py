@@ -171,7 +171,7 @@ def test_an_undeclared_factory_name_would_resolve_to_the_ambient_local_engine() 
     everything or nothing, and the text assertions could not tell the difference.
     """
     assert has_fabro_factories(cwd=_REPO_ROOT) is True
-    assert has_fabro_factory(cwd=_REPO_ROOT, factory="legacy") is True
+    assert has_fabro_factory(cwd=_REPO_ROOT, factory="petri") is True
     assert has_fabro_factory(cwd=_REPO_ROOT, factory="hp-candidate") is False
 
 
@@ -201,7 +201,7 @@ def test_the_recipe_refuses_an_undeclared_factory_before_filing_anything() -> No
     assert "hp-candidate is not a factory this repository declares" in completed.stderr
     # The declared set is named, because a refusal an operator cannot act on
     # sends them to the config file to work out what they should have typed.
-    assert "declared factories: legacy, petri" in completed.stderr
+    assert "declared factories: petri" in completed.stderr
     # Nothing was filed: the refusal says so, and the filing narration that the
     # successful path prints is absent.
     assert "nothing was filed and nothing was dispatched" in completed.stderr

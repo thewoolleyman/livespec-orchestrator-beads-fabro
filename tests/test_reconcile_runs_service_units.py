@@ -53,15 +53,13 @@ def test_the_host_timer_surveys_only_the_live_factories() -> None:
     """A retired backend must not remain in the timer's active inventory.
 
     `petri` is the live Petri-era instance declared by maintainer direction
-    on 2026-10-19 (plan `petri-factory-on-gmktec`); the retired `vps` is not.
-    `legacy` is the hp-xubuntu :32276 instance under the name the control
-    node's factory registry declares for it — the same instance the entry
-    called `hp` addressed before the table became registry-backed, so the
-    timer surveys exactly what it surveyed before.
+    on 2026-10-19 (plan `petri-factory-on-gmktec`); the retired `vps` is not,
+    and neither is `legacy`, the hp-xubuntu :32276 instance retired and
+    removed from the table on 2026-10-24 (plan fabro-currency).
     """
     configured = dispatcher_block(cwd=_REPO_ROOT)
 
-    assert declared_factory_names(block=configured) == ("legacy", "petri")
+    assert declared_factory_names(block=configured) == ("petri",)
 
 
 def test_the_timer_fires_every_ten_minutes_and_catches_up_after_downtime() -> None:
