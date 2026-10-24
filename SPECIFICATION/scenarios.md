@@ -8609,6 +8609,78 @@ Feature: A weekly-exhausted account is never dispatched into a refusal
     Then no seven-day skip applies and the reading is still journaled
 ```
 
+## Scenario 243 — Admission skips a Codex candidate whose usage window is short of headroom
+
+```gherkin
+Feature: A Codex-primary chain falls back before a run meets the Codex limit
+  As an operator running Codex-routed factory nodes
+  I want admission to read the Codex usage window before it selects a candidate
+  So that a run is not launched on a Codex account the provider is about to refuse
+
+  Scenario: A Codex window below the floor selects the fallback
+    Given dispatcher.session_headroom_floor_percent is 20
+    And an admission-required node whose primary is a covered codex-acp candidate and whose fallback is an eligible claude-acp candidate
+    And the Codex usage read reports a primary window used_percent of 85
+    When admission assesses the node
+    Then the codex-acp candidate is skipped by a floor skip naming provider codex
+    And per-node selection selects the claude-acp fallback
+
+  Scenario: A limit-reached Codex account is skipped even with credits
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports rate_limit.limit_reached true and a positive credit balance
+    When admission assesses the candidate
+    Then the candidate is skipped by a Codex limit skip
+    And the journal carries a not-projected result with reason codex-limit
+
+  Scenario: A not-allowed Codex account is skipped
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports rate_limit.allowed false, rate_limit.limit_reached false, and a primary window used_percent of 10
+    When admission assesses the candidate
+    Then the candidate is skipped by a Codex limit skip
+    And the journal carries a not-projected result with reason codex-limit
+
+  Scenario: A malformed window makes the whole reading unobservable
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports a valid primary window used_percent of 10 and a secondary window whose used_percent is not a number
+    When admission assesses the candidate
+    Then the candidate is skipped by a floor skip on an unobservable reading
+    And the valid primary window is not used to admit it
+
+  Scenario: A projected Codex exhaustion inside the horizon is skipped
+    Given dispatcher.session_headroom_floor_percent is 20 and dispatcher.session_headroom_horizon_minutes is 180
+    And a covered codex-acp candidate whose primary window passes the floor
+    And an in-window baseline assessment of the same credential and window length whose drain rate projects exhaustion within 180 minutes
+    When admission assesses the candidate
+    Then the candidate is skipped by a projection skip and the journal carries the projection for that window
+
+  Scenario: A secondary window's projection governs when the primary window is healthy
+    Given dispatcher.session_headroom_floor_percent is 20 and dispatcher.session_headroom_horizon_minutes is 180
+    And a covered codex-acp candidate whose usage read reports a primary window and a secondary window of different lengths, both above the floor
+    And in-window baselines of the same credential for each window length, where only the secondary window's drain rate projects exhaustion within 180 minutes
+    When admission assesses the candidate
+    Then the candidate is skipped by a projection skip naming the secondary window
+
+  Scenario: A baseline of one window length is never used for another
+    Given dispatcher.session_headroom_floor_percent is 20 and dispatcher.session_headroom_horizon_minutes is 180
+    And a covered codex-acp candidate whose current reading has only a primary window above the floor
+    And the only in-window baseline of the same credential was recorded for a window of a different length
+    When admission assesses the candidate
+    Then the projection for the primary window is unavailable with its reason and the candidate is not skipped by a projection skip
+
+  Scenario: An unobservable Codex reading is skipped and journaled
+    Given dispatcher.session_headroom_floor_percent is 20
+    And the Codex usage read for a covered codex-acp candidate times out
+    When admission assesses the candidate
+    Then the candidate is skipped by a floor skip on an unobservable reading
+    And the journal records the reading as unobservable rather than as a number
+
+  Scenario: A floor of 0 disables every Codex headroom skip
+    Given dispatcher.session_headroom_floor_percent is 0
+    And the Codex usage read reports rate_limit.limit_reached true for a covered candidate
+    When admission assesses the candidate
+    Then no Codex headroom skip applies and the reading is still journaled
+```
+
 ## Scenario 215 — A tracks edge links a record to its epic on every surface
 
 ```gherkin
