@@ -4785,9 +4785,15 @@ Feature: The Definition of Done rules are applied where the item is filed
 Feature: Proof steps are tied to the scenario that states the behaviour
   Scenario: A generic reference where a scenario exists is a gate finding
     Given an item whose assertion names a behaviour that a scenario heading of scenarios.md states
-    And whose reference line names only a non-scenario heading
+    And whose reference line names only a non-scenario heading that the spec-stated judgement returns as governing none of the item's assertions
     When the dod_gate node evaluates the rendered goal
     Then the run ends through the structured needs-human ending naming the scenario heading that governs the assertion
+  Scenario: A governing generic reference where a scenario also governs is an advisory finding
+    Given an item whose assertion names a behaviour that a scenario heading of scenarios.md states
+    And whose reference line names only a non-scenario heading that the spec-stated judgement returns as governing that assertion
+    When the dod_gate node evaluates the rendered goal
+    Then the node reports the scenario heading verbatim with the remedy of adding it to the reference line
+    And the run falls through to implement
   Scenario: A non-scenario reference is valid when no scenario states the behaviour
     Given an item whose assertion names a behaviour no scenario heading states and whose reference line names a contracts heading
     When the dod_gate node evaluates the rendered goal
@@ -6045,11 +6051,17 @@ Feature: The watchdog's poll cost does not grow with the factory's run history
 ```gherkin
 Feature: A judged Definition-of-Done defect is found before a dispatch is spent on it
   Scenario: An item the judgement would rest at needs-human is held out of ready
-    Given an implement-kind item whose References line omits the scenario that governs its assertion
+    Given an implement-kind item whose References line omits the scenario that governs its assertion and names no heading that governs any of its assertions
     When intake routes the item toward ready
     Then the pre-admission judgement runs against its effective criteria and referenced headings
     And the item is not routed to ready
     And its verdict, with each remedy, is appended to the item as a ledger comment
+  Scenario: An item whose References line omits only some governing headings moves to ready with an advisory finding
+    Given an implement-kind item whose References line names a heading that governs one of its assertions
+    And omits another heading the spec-stated judgement returns as governing one of its assertions
+    When intake routes the item toward ready
+    Then the item moves to ready
+    And the verdict appended to the item as a ledger comment names the omitted heading verbatim with the remedy of adding it
   Scenario: An item the judgement admits moves to ready as before
     Given an implement-kind item whose Definition of Done the judgement admits
     When intake routes the item toward ready
@@ -6064,7 +6076,7 @@ Feature: A judged Definition-of-Done defect is found before a dispatch is spent 
     When needs-attention composes hygiene facts
     Then a hygiene fact names the item and its verdict's first remedy
   Scenario: An item that reached ready without admission is judged before dispatch
-    Given an implement-kind item released to ready through resolve-blocked whose References line omits the scenario that governs its assertion
+    Given an implement-kind item released to ready through resolve-blocked whose References line omits the scenario that governs its assertion and names no heading that governs any of its assertions
     When the Dispatcher selects the item for a dispatch
     Then the Definition-of-Done judgement runs before any claim is taken
     And the dispatch is refused before any factory run is created, naming the judgement's finding text
@@ -9146,11 +9158,23 @@ Feature: A Definition of Done passed before dispatch is graded in-run by the sam
     And the node's rendered goal for a dispatch of that item carries the rider and omits the verdict comment
     And appending the new verdict comment leaves the item's subject digest unchanged
 
-  Scenario Outline: A reference line missing one of several governing headings is refused by every host taking
+  Scenario Outline: A reference line missing one of several governing headings is reported as advisory by every host taking
     Given an item whose reference line names one of the two scenario headings that state its first assertion's behaviour
     And a non-scenario H2 of contracts.md whose clauses govern its second assertion is not on its reference line
     When the <taking> judgement is taken
-    Then it refuses the item naming the omitted scenario heading and that H2 verbatim, each with the remedy of adding it
+    Then it reports the omitted scenario heading and that H2 verbatim, each with the remedy of adding it
+    And the item is not held on reference coverage
+
+    Examples:
+      | taking               |
+      | repository preflight |
+      | pre-admission        |
+      | pre-dispatch         |
+
+  Scenario Outline: A reference line naming no governing heading is refused by every host taking
+    Given an item whose reference line names only headings the spec-stated judgement returns as governing none of its assertions
+    When the <taking> judgement is taken
+    Then it refuses the item naming each governing heading the judgement returned verbatim, each with the remedy of adding it
     And no factory run is created
 
     Examples:
@@ -9165,7 +9189,7 @@ Feature: A Definition of Done passed before dispatch is graded in-run by the sam
     And the item's effective criteria and referenced heading bodies are unchanged
     When the pre-dispatch judgement is taken
     Then the governing-heading verdict is taken again rather than reused
-    And a reference line that omits the newly governing heading is refused naming it
+    And a reference line that names none of the newly governing headings is refused naming them
 
   Scenario: A change to an unreferenced governing scenario invalidates an admission verdict
     Given an item admitted by its pre-admission verdict
