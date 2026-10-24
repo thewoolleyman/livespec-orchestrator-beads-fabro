@@ -1557,6 +1557,63 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   finding. Its unit-tier counterpart with the frozen golden gap-ids is
   `tests/livespec_orchestrator_beads_fabro/commands/test_detect_impl_gaps.py`.
 
+- `test_answer_disposition_press_scenario122.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 122 — An attention item's answer
+  disposition governs who may answer it", whose four gherkin scenarios are the
+  four cases, driven through the public `drive.run_action` press and through the
+  composed `build_attention` envelope rendered to JSON. The two surfaces are the
+  ratified advertiser-and-enforcer pair, which is why neither is read in
+  isolation: a case calling `answer_press_refusal` directly could show that the
+  gate computes a verdict and could not show that `drive` consults it. EVERY
+  REFUSAL CASE ALSO READS THE TENANT, because a refusal is a claim about what did
+  not happen and the payload cannot carry it — a build that refused the press
+  AFTER writing the comment returns the identical dictionary, so each refused
+  press asserts the item is still `blocked` and the ledger still carries no
+  comment. And the two consensus cases run against a `consensus` GLOBAL with a
+  `human` LABEL on one of two rows in ONE tenant, so the labelled row reading
+  `human` and the unlabelled row reading `consensus` is the same snapshot
+  disagreeing with itself — which neither a label-blind nor a global-blind build
+  can produce, while a `human` global would have made one of the two answers
+  indistinguishable from doing nothing.
+- `test_answer_comment_route_scenario124.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 124 — The human answer lands as a marked
+  ledger comment before the transition, and a poisoned answer is refused". THE
+  CLEAN CASE OBSERVES THE WRITE SEQUENCE and not only the end state, because the
+  end state is the same for both orderings: a build that transitioned first and
+  commented second leaves a `ready` item carrying the identical comment. The
+  order is read off a recording overlay on the fake's two write verbs that
+  DELEGATES to the real implementations — nothing is stubbed, so removing the
+  overlay changes no behaviour — and only a status-bearing `update_issue` is
+  recorded, since that verb is a partial update reached for several independent
+  reasons and a recorder counting every call would make the ORDER claim depend on
+  which unrelated field some later build writes alongside. The header is matched
+  field by field rather than as a prefix, and the answer is two lines, because a
+  single-line answer cannot tell a verbatim copy from one the writer reflowed.
+  THE POISON CASE READS THE TENANT for the same reason the refusals above do, and
+  reads it three ways: the payload names the cause, NO write of either verb was
+  made, and the item is still `blocked` on `needs-human` with an empty comment
+  list.
+- `test_needs_human_valve_run_account_scenario125.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 125 — The needs-attention valve item
+  carries the terminated run's account and fails soft" through the COMPOSED
+  envelope rather than through the enrichment function, because the two claims
+  are properties of the valve ITEM: that its summary carries the account, and
+  that the item is still THERE when the factory is not. An enrichment read in
+  isolation can show the first and structurally cannot show the second — an
+  absent lane and an unenriched lane are the same return value once the row that
+  would have carried it is gone. THE FAIL-SOFT DIRECTION IS THE EXPENSIVE ONE: a
+  lane that vanished on a network fault reads downstream as a decision already
+  made, so the human being asked is never asked again. That case asserts EVERY
+  field of the account absent plus the clause that joins it, not merely the run
+  id, because a half-written account is the shape that reads as an answer while
+  carrying none; and it asserts the factory WAS addressed, which is the only
+  place an unreachable host is distinguishable from one the read never contacted.
+  The unreachable factory is modelled as a REFUSED CONNECTION raised by the
+  process seam rather than as a non-zero exit, which is the arm a real
+  unreachable host takes. Its unit-tier counterpart, covering the attribution
+  precedence and the per-field degradations, is
+  `tests/livespec_orchestrator_beads_fabro/commands/test_needs_attention_needs_human_question.py`.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
