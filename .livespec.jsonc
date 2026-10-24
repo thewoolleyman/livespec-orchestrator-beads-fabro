@@ -378,16 +378,34 @@
         "verify_commit_refuse_hook": { "mode": "internal_livespec_dev_tooling" },
         "verify_plugin_resolution": { "mode": "internal_livespec_dev_tooling" }
       },
-      // The two TOOLCHAIN premises the sandbox prepare chain establishes
+      // The three TOOLCHAIN premises the sandbox prepare chain establishes
       // before the conformance gate above — fields
-      // `dispatcher.prepare_toolchain.mise` (the version-manager install) and
+      // `dispatcher.prepare_toolchain.mise` (the version-manager install),
+      // `dispatcher.prepare_toolchain.python_sync` (the Python dependency sync
+      // that populates the sandbox's project environment) and
       // `dispatcher.prepare_toolchain.lefthook` (the hook-manager install).
       // Each is an argv the Dispatcher resolves ONCE and renders into the
       // workflow payload's prepare steps as `inputs.prepare_toolchain_*`; the
       // committed payload spells NO fleet tool of its own (the
       // fleet-toolchain literal ban scans it), so the fleet member's actual
-      // commands live HERE. An adopter without either tool declares nothing
-      // and the step resolves to the ratified explicit no-op.
+      // commands live HERE. An adopter without one of these tools declares
+      // nothing for it and the step resolves to the ratified explicit no-op.
+      //
+      // WHY `python_sync` IS A PREMISE AND NOT A CONSTANT (work-item
+      // bd-ib-xti6q, measured 2026-10-24 01:19Z on run 01M5NQVKAENN): the
+      // committed payload used to run this fleet's dependency sync
+      // unconditionally, so a dispatch of a governed repository carrying no
+      // `pyproject.toml` — a JavaScript repository with `package.json` and
+      // `mise.toml`, and no target-local workflow — exited 2 in preparation
+      // with `error: No pyproject.toml found in current directory or any
+      // parent directory`, before any agent turn. Both neighbouring premises
+      // were already declarable; this one was the last fleet-toolchain prepare
+      // constant the factory-sandbox-toolchain-disposition clause forbids.
+      // THIS repository MUST keep declaring it: the sandbox venv it populates
+      // is what the `internal_livespec_dev_tooling` conformance Verifiers
+      // above, the `install-worktree-pack` recipe and every check node run
+      // through, so an absent declaration here is a silently unprovisioned
+      // sandbox rather than a visibly skipped step.
       //
       // WHY THE VERSION-MANAGER INSTALL IS ANONYMOUS (work-item bd-ib-bic7hb,
       // root-caused 2026-07-26 by live capture inside the sandbox image):
@@ -416,6 +434,7 @@
       // into the sandbox image) remains open on bd-ib-bic7hb behind bd-ib-dwv.
       "prepare_toolchain": {
         "mise": ["sh", "-c", "mise trust && env -u GITHUB_TOKEN -u GH_TOKEN -u GITHUB_API_TOKEN mise install --quiet"],
+        "python_sync": ["uv", "sync", "--all-groups"],
         "lefthook": ["uv", "run", "lefthook", "install"]
       },
       // WHERE the post-merge janitor runs its fresh-checkout check suite

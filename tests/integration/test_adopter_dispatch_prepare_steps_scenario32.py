@@ -24,9 +24,11 @@ of the constants the scenario names, so the same instrument that finds nothing i
 the adopter's chain is shown finding `uv`, `lefthook` and `livespec_dev_tooling`
 in the chain an adopter would otherwise inherit. The bundled run config is read
 in the same breath because the two halves cover each other — the projection is
-where `livespec_dev_tooling` reaches a sandbox, and the bundled SCRIPTS are where
-`uv` is invoked outright rather than through an input — so a control built on
-either alone finds two of the three.
+where every fleet constant now reaches a sandbox, and the bundled SCRIPTS are
+where one of them used to be invoked outright rather than through an input.
+Since work-item bd-ib-xti6q retired that last constant into the `python_sync`
+premise, the payload-side half asserts the command-position scan finds NOTHING,
+which is the repair; the three-constant evidence is carried by the projection.
 
 THE THREE TOKENS ARE SPELLED HERE RATHER THAN BORROWED, deliberately. The
 `check-no-fleet-toolchain-literals` matcher is the right instrument for the
@@ -73,6 +75,13 @@ from tests.integration.governed_repo_fixtures import (
 _FLEET_PREPARE_CONSTANTS: frozenset[str] = frozenset({"uv", "lefthook", "livespec_dev_tooling"})
 _SUBSTRING_CONSTANTS: tuple[str, ...] = ("lefthook", "livespec_dev_tooling")
 _UV_IN_COMMAND_POSITION = re.compile(r"(?:^|[;&|(]|\bthen\b|\bdo\b|\|\|)\s*uv\b")
+# The one fleet-toolchain prepare CONSTANT the committed payload used to carry,
+# held here so the command-position matcher keeps a positive case after
+# bd-ib-xti6q retired it into the `python_sync` premise. Without it that matcher
+# has no input it can hit at all, and a scan that silently stopped matching
+# would report every chain clean — the failure mode this module's own header
+# names, arriving by attrition rather than by borrowing the wrong matcher.
+_RETIRED_UNCONDITIONAL_SYNC = "uv sync --all-groups"
 # The adopter's own toolchain: `make` targets, as its committed declaration
 # already spells every other integration point.
 _ADOPTER_TOOLCHAIN = ("make", "toolchain")
@@ -181,6 +190,7 @@ def _projected_argv(*, parameters: ContractPrepareParameters) -> tuple[str, ...]
     """Every token the prepare projection hands a sandbox, as one argv."""
     return (
         *parameters.toolchain_mise,
+        *parameters.toolchain_python_sync,
         *parameters.toolchain_lefthook,
         *parameters.conformance_hook_install,
         *parameters.conformance_verify_commit_refuse_hook,
@@ -257,19 +267,29 @@ def test_scenario32_a_fleet_member_names_all_three_constants_through_the_same_se
     equally consistent with a scan that cannot return a hit at all — which, for
     `uv`, is exactly what borrowing the literal-ban matcher would have produced.
 
-    The bundled run config is read in the same breath because the two halves
-    cover each other: the projection is where `livespec_dev_tooling` reaches a
-    sandbox, and the bundled SCRIPTS are where `uv` is invoked outright rather
-    than through an input.
+    THE BUNDLED PAYLOAD NO LONGER INVOKES ANY OF THEM, and that is the subject
+    of work-item bd-ib-xti6q rather than a weakening of this control. `uv sync
+    --all-groups` was the last fleet-toolchain prepare CONSTANT in the committed
+    run config, and a dispatch of a governed repository carrying no
+    `pyproject.toml` died on it in preparation; it is now the `python_sync` arm
+    of `dispatcher.prepare_toolchain`, so a member's `uv` reaches a sandbox
+    through the PROJECTION — which the first assertion measures — and through
+    nothing else. The command-position scan is therefore asserted EMPTY over the
+    payload, which is the repair itself; the one remaining substring hit is the
+    INPUT NAME `inputs.prepare_toolchain_lefthook`, a token this payload reads
+    rather than a tool it runs.
     """
     member = resolve_repo_integration_contract(
         config_text=(REPO_ROOT / ".livespec.jsonc").read_text(encoding="utf-8"),
         default_branch=PROBED_DEFAULT_BRANCH,
     )
     projected = _projected_argv(parameters=contract_prepare_parameters(resolved=member))
+    scripts = _prepare_scripts(run_config=PAYLOAD_RUN_CONFIG)
 
     assert _constants_in_argv(argv=projected) == _FLEET_PREPARE_CONSTANTS
-    assert _constants_in_scripts(scripts=_prepare_scripts(run_config=PAYLOAD_RUN_CONFIG)) == {
-        "uv",
-        "lefthook",
-    }
+    # The matcher's own positive control, run on the retired command line: it is
+    # what makes the empty payload reading below evidence of the repair rather
+    # than of a scan that can no longer return a hit for anything.
+    assert _constants_in_scripts(scripts=(_RETIRED_UNCONDITIONAL_SYNC,)) == {"uv"}
+    assert [line for line in scripts if _UV_IN_COMMAND_POSITION.search(line) is not None] == []
+    assert _constants_in_scripts(scripts=scripts) == {"lefthook"}

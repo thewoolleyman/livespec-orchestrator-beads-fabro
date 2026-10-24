@@ -63,6 +63,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_schema i
     MERGE_MODE_FIELD,
     PREPARE_TOOLCHAIN_LEFTHOOK_FIELD,
     PREPARE_TOOLCHAIN_MISE_FIELD,
+    PREPARE_TOOLCHAIN_PYTHON_SYNC_FIELD,
     SANDBOX_CHECK_SUITE_FIELD,
     SANDBOX_EXEMPT_MARKER_FIELD,
 )
@@ -89,6 +90,7 @@ __all__: list[str] = [
 CONTRACT_INPUT_NAMES: Mapping[str, str] = {
     SANDBOX_CHECK_SUITE_FIELD.attribute: "sandbox_check_suite",
     PREPARE_TOOLCHAIN_MISE_FIELD.attribute: "prepare_toolchain_mise",
+    PREPARE_TOOLCHAIN_PYTHON_SYNC_FIELD.attribute: "prepare_toolchain_python_sync",
     PREPARE_TOOLCHAIN_LEFTHOOK_FIELD.attribute: "prepare_toolchain_lefthook",
     CONFORMANCE_HOOK_INSTALL_FIELD.attribute: "conformance_hook_install",
     CONFORMANCE_VERIFY_COMMIT_REFUSE_HOOK_FIELD.attribute: (
@@ -174,6 +176,7 @@ class ContractPrepareParameters:
 
     sandbox_exempt_marker: str
     toolchain_mise: tuple[str, ...]
+    toolchain_python_sync: tuple[str, ...]
     toolchain_lefthook: tuple[str, ...]
     conformance_hook_install: tuple[str, ...]
     conformance_verify_commit_refuse_hook: tuple[str, ...]
@@ -221,6 +224,7 @@ def contract_prepare_parameters(
     return ContractPrepareParameters(
         sandbox_exempt_marker=contract.sandbox_exempt_marker,
         toolchain_mise=contract.prepare_toolchain_mise,
+        toolchain_python_sync=contract.prepare_toolchain_python_sync,
         toolchain_lefthook=contract.prepare_toolchain_lefthook,
         conformance_hook_install=contract.conformance_hook_install,
         conformance_verify_commit_refuse_hook=contract.conformance_verify_commit_refuse_hook,
