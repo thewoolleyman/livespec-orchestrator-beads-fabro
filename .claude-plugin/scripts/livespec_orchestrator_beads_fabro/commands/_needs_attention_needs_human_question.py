@@ -35,9 +35,13 @@ catalogues: it returns cleanly and finds nothing.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import AbstractContextManager, contextmanager, nullcontext
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro._store_dispatch_factory import read_dispatch_factories
 from livespec_orchestrator_beads_fabro.commands._config import (
     resolve_fabro_bin,
     resolve_fabro_factory,
@@ -56,6 +60,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_transport_fault import (
     transport_fault_clause,
     transport_fault_from_cause,
 )
+from livespec_orchestrator_beads_fabro.commands._run_attribution import RunAttribution
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -67,10 +72,16 @@ from livespec_orchestrator_beads_fabro.errors import (
     LivespecConfigUnreadableError,
 )
 from livespec_orchestrator_beads_fabro.store import dispatch_factory_for
+from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "NeedsHumanRunHandle",
+    "NeedsHumanSnapshot",
+    "current_needs_human_snapshot",
     "needs_human_question_summary",
+    "needs_human_snapshot",
+    "needs_human_snapshot_scope",
+    "snapshot_run_attribution",
 ]
 
 _INSPECT_TIMEOUT_SECONDS = 60.0
@@ -101,6 +112,73 @@ class NeedsHumanRunHandle:
     run_id: str
     factory_name: str
     factory_server_url: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class NeedsHumanSnapshot:
+    """The two snapshot-wide reads every resolve-blocked valve summary shares.
+
+    `repo_run_attribution` reads the entire dispatch journal and the ledger's
+    run-id metadata on every call: 19.6 s on the orchestrator repo's 150 MB,
+    197,541-line journal (2026-10-25). Reading it once per blocked item, as this
+    gather did, cost 42 items x ~18 s and was the 900 s timeout (bd-ib-tzbdd3);
+    beside it, each item cost a guarded `bd show` for a factory marker the
+    snapshot's own `bd list` already carries. Both are properties of the
+    SNAPSHOT, so the composer takes them once and every item reads them here.
+    """
+
+    attribution: RunAttribution
+    dispatch_factories: Mapping[str, str]
+
+
+_SNAPSHOT: ContextVar[NeedsHumanSnapshot | None] = ContextVar("needs_human_snapshot", default=None)
+
+
+def snapshot_run_attribution(*, project_root: Path) -> RunAttribution:
+    """The repository's run attribution, read ONCE for a whole attention snapshot."""
+    return repo_run_attribution(repo=project_root)
+
+
+def needs_human_snapshot(*, project_root: Path) -> NeedsHumanSnapshot:
+    """Both snapshot-wide reads, taken now."""
+    return NeedsHumanSnapshot(
+        attribution=snapshot_run_attribution(project_root=project_root),
+        dispatch_factories=read_dispatch_factories(path=store_config(repo=project_root)),
+    )
+
+
+@contextmanager
+def needs_human_snapshot_scope(*, snapshot: NeedsHumanSnapshot) -> Iterator[None]:
+    """Serve every summary rendered inside the block from `snapshot`.
+
+    A CONTEXT rather than new parameters, so the composer's call to
+    `needs_human_question_summary` keeps the three-keyword shape its seams and
+    tests already bind; a lone caller outside any scope still takes the per-item
+    reads, which are correct and merely slow.
+    """
+    token = _SNAPSHOT.set(snapshot)
+    try:
+        yield
+    finally:
+        _SNAPSHOT.reset(token)
+
+
+def current_needs_human_snapshot() -> NeedsHumanSnapshot | None:
+    """The snapshot the enclosing scope installed, or None outside one."""
+    return _SNAPSHOT.get()
+
+
+def needs_human_snapshot_scope_for(
+    *, project_root: Path, items: Iterable[WorkItem]
+) -> AbstractContextManager[None]:
+    """The composer's one-line entry: a real scope only when an item will use it.
+
+    Taking the snapshot costs the whole-journal read, so a pass with no blocked
+    needs-human item gets a no-op scope and pays nothing.
+    """
+    if any(item.status == "blocked" and item.blocked_reason == "needs-human" for item in items):
+        return needs_human_snapshot_scope(snapshot=needs_human_snapshot(project_root=project_root))
+    return nullcontext()
 
 
 def needs_human_question_summary(
@@ -150,12 +228,21 @@ def _question(
 
 def _run_handle(*, project_root: Path, item_id: str) -> NeedsHumanRunHandle | None:
     """The run the ledger names for this item, on the factory it was sent to."""
-    run_id = _stamped_run_id(project_root=project_root, item_id=item_id)
+    snapshot = _SNAPSHOT.get()
+    run_id = _stamped_run_id(
+        project_root=project_root,
+        item_id=item_id,
+        attribution=None if snapshot is None else snapshot.attribution,
+    )
     if run_id is None:
         return None
     factory = resolve_fabro_factory(
         cwd=project_root,
-        factory=_stamped_factory_name(project_root=project_root, item_id=item_id),
+        factory=(
+            _stamped_factory_name(project_root=project_root, item_id=item_id)
+            if snapshot is None
+            else snapshot.dispatch_factories.get(item_id)
+        ),
     )
     if factory.server is None:
         return None
@@ -166,7 +253,9 @@ def _run_handle(*, project_root: Path, item_id: str) -> NeedsHumanRunHandle | No
     )
 
 
-def _stamped_run_id(*, project_root: Path, item_id: str) -> str | None:
+def _stamped_run_id(
+    *, project_root: Path, item_id: str, attribution: RunAttribution | None = None
+) -> str | None:
     """This item's newest run id, ledger metadata first and journal second.
 
     Both maps are keyed by RUN id — the direction that stays single-valued —
@@ -175,7 +264,8 @@ def _stamped_run_id(*, project_root: Path, item_id: str) -> str | None:
     while the append-only journal can name several, so the journal leg takes
     the LAST match: a later record cannot describe an earlier run.
     """
-    attribution = repo_run_attribution(repo=project_root)
+    if attribution is None:
+        attribution = repo_run_attribution(repo=project_root)
     for run_id, owner in attribution.metadata_run_ids.items():
         if owner == item_id:
             return run_id
