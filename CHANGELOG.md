@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.2...v0.243.3) (2026-10-25)
+
+
+### Bug Fixes
+
+* rank merged PR resolution candidates ([d3f75a1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d3f75a14b0c463a4a78b913cc12f166a1e89967d))
+
 ## [0.243.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.1...v0.243.2) (2026-10-25)
 
 
