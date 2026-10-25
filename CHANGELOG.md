@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.241.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.241.4...v0.241.5) (2026-10-25)
+
+
+### Bug Fixes
+
+* carry a verified proof forward across a non-overlapping refresh once the run has re-proved (bd-ib-6sb5cn) ([590a51b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/590a51b43da155742ffbaa37a8fed627f6520b52))
+
 ## [0.241.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.241.3...v0.241.4) (2026-10-25)
 
 
