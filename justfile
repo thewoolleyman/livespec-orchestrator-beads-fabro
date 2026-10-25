@@ -468,6 +468,7 @@ check:
         check-no-workflow-edits
         check-fresh-clone-setup
         check-doctor-static
+        check-fleet-launch
     )
     LIVESPEC_AGGREGATE_TARGETS
     bash dev-tooling/just-check.sh
@@ -883,6 +884,23 @@ install-ci-fabro:
 # heals the track; on a clean tree it never fires.
 check-doctor-static:
     bash dev-tooling/just-check-doctor-static.sh
+
+# `check-fleet-launch` — the gate over the PROVISIONAL `fleet-launch/` launch
+# scripts, required by SPECIFICATION/contracts.md §"Provisional fleet launch
+# scripts" and bound by scenarios.md "Scenario 242". Two legs: a ShellCheck pass
+# over every shell script under `fleet-launch/` (`find`, so `wrappers/` is
+# covered too), and a hermetic harness that drives the real
+# `fleet-launch/dispatch-dual.sh` against stub factory boards, a stub fabro
+# client and throwaway queue, lock, in-flight and state directories. The clause
+# forbids treating a syntax check alone as satisfying the obligation, because
+# every expensive launcher defect — a refusal that stops refusing, an empty board
+# counted as unreadable, a FIFO queue that starves everything behind its head —
+# is ShellCheck-clean. Repo-local (no canonical checks/<slug>.py behind it); its
+# CI venue is declared in pyproject.toml `repo_local_ci_skips` pending a
+# maintainer-landed workflow entry, and it runs on the doc-only pre-push path
+# because a `fleet-launch/` edit is a zero-`.py` changeset.
+check-fleet-launch:
+    bash dev-tooling/just-check-fleet-launch.sh
 
 # ---------------------------------------------------------------
 # Canonical structural checks (shared from livespec-dev-tooling).

@@ -21,6 +21,11 @@ targets=(
     # one whose absence has twice taken the factory down: a `workflow.fabro` edit
     # is a zero-.py changeset, so this is the only pre-commit path it takes.
     check-fabro-graph-validity
+    # The provisional fleet-launch gate, for exactly that reason once more: every
+    # file it gates is shell, so a change to a launcher takes THIS path and no
+    # other. Absent from here, the one changeset class it exists to catch is the
+    # one class it would never see.
+    check-fleet-launch
 )
 authored_unowned_heading_coverage_todo() {
     uv run python - <<'PY'

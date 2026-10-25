@@ -2247,17 +2247,13 @@
     "heading": "## Provisional fleet launch scripts",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "test": "TODO",
-    "reason": "Owed: an integration-tier test exercising check-fleet-launch end to end (shellcheck plus the hermetic launcher harness) is the binding for this heading, delivered by plan provisional-fleet-launch child bd-ib-nz4av6. TODO until that item merges and names the exercising test node; never a unit-tier test.",
-    "work_item": "bd-ib-nz4av6"
+    "test": "tests.integration.test_fleet_launch_check_scenario242::test_the_harness_covers_every_case_the_clause_enumerates"
   },
   {
     "heading": "## Scenario 242 \u2014 The provisional fleet launch check fails the build on a broken launcher",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Owed: an integration-tier test exercising check-fleet-launch end to end (shellcheck plus the hermetic launcher harness) is the binding for this heading, delivered by plan provisional-fleet-launch child bd-ib-nz4av6. TODO until that item merges and names the exercising test node; never a unit-tier test.",
-    "work_item": "bd-ib-nz4av6"
+    "test": "tests.integration.test_fleet_launch_check_scenario242::test_a_launcher_that_counts_a_retired_board_as_unknown_turns_the_check_red"
   },
   {
     "heading": "## Scenario 243 \u2014 Admission skips a Codex candidate whose usage window is short of headroom",
