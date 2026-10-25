@@ -54,6 +54,15 @@ def _invocation_argv(*, config: StoreConfig, argv: list[str]) -> list[str]:
     return [*config.credential_wrapper, *argv]
 
 
+def _missing_executable_detail(*, config: StoreConfig) -> str:
+    """Explain which executable was unavailable for one target-tenant read."""
+    details = (
+        f"bd binary not found at {config.bd_path}",
+        f"credential wrapper {list(config.credential_wrapper)!r} could not be executed",
+    )
+    return details[bool(config.credential_wrapper)]
+
+
 # Tier 2: the same positive verifications, cached ACROSS processes. ~82% of the
 # fleet's observed `bd config` traffic comes from one-shot CLI wrapper processes
 # (scripts/bin/*.py) that spawn, make one or two bd calls, and exit, so the
@@ -156,7 +165,7 @@ def invoke(*, config: StoreConfig, argv: list[str]) -> subprocess.CompletedProce
             cwd=repo_root,
         )
     except FileNotFoundError as exc:  # pragma: no cover
-        raise BeadsConnectionError(detail=f"bd binary not found at {config.bd_path}") from exc
+        raise BeadsConnectionError(detail=_missing_executable_detail(config=config)) from exc
     raise_for_status(completed=completed, argv=argv, tenant=config.database)  # pragma: no cover
     return completed  # pragma: no cover
 
@@ -221,7 +230,7 @@ def read_bd_config_value(*, config: StoreConfig, repo_root: Path, key: str) -> s
             cwd=repo_root,
         )
     except FileNotFoundError as exc:  # pragma: no cover
-        raise BeadsConnectionError(detail=f"bd binary not found at {config.bd_path}") from exc
+        raise BeadsConnectionError(detail=_missing_executable_detail(config=config)) from exc
     raise_for_status(completed=completed, argv=argv, tenant=config.database)  # pragma: no cover
     return completed.stdout.strip()
 

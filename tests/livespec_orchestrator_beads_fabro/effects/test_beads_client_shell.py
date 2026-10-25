@@ -146,6 +146,22 @@ def test_invoke_prefixes_the_target_credential_wrapper_and_keeps_the_target_cwd(
     ]
 
 
+def test_an_unexecutable_target_credential_wrapper_names_the_wrapper(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root, config_path = _server_mode_repo(tmp_path=tmp_path)
+    _ = config_path.write_text("dolt.mode: server\n", encoding="utf-8")
+    wrapper = ("./missing-independent-wrapper", "--")
+    config = replace(_tenant_config(repo_root=repo_root), credential_wrapper=wrapper)
+    monkeypatch.delenv("BEADS_DOLT_PASSWORD", raising=False)
+    shell.reset_tenant_verification_memo()
+
+    with pytest.raises(BeadsConnectionError) as raised:
+        shell.invoke(config=config, argv=[config.bd_path, "list"])
+
+    assert repr(list(wrapper)) in str(raised.value)
+
+
 def test_run_json_surfaces_zero_exit_stderr(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
