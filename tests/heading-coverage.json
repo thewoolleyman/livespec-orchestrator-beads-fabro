@@ -2281,5 +2281,11 @@
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_reconcile_merged_locally_built_item_scenario245",
     "reason": "Integration-tier acceptance for this heading, completed by bd-ib-acxptq (v216). The module drives the real reconcile-merged supervisor over the in-memory ledger for every sub-scenario: a pending-approval item with a merged branch pull request and a plain ready item with a merged title match each move to acceptance and through the acceptance pass; a body mention alone refuses as no merged PR found and keeps the resting status for both statuses; a red janitor keeps a pending-approval item where it rested. An active item resolving a hand-carried body mention is the control that the body-only refusal is scoped to the locally built entry."
+  },
+  {
+    "heading": "## Scenario 246 \u2014 A refresh that brings in only release bookkeeping carries the proof forward whatever its steps",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "tests.integration.test_pr_refresh_carry_forward_scenario178.test_a_refresh_bringing_in_only_release_bookkeeping_carries_forward_whatever_the_proof"
   }
 ]
