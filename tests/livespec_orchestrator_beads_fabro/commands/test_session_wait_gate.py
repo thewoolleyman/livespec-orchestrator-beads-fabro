@@ -20,6 +20,15 @@ from livespec_orchestrator_beads_fabro.commands.session_wait import (
 def test_running_gate_is_observed_from_its_frozen_directory_without_commands(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monotonic_now = 0.0
+
+    def monotonic() -> float:
+        return monotonic_now
+
+    def sleeper(*, seconds: float) -> None:
+        nonlocal monotonic_now
+        monotonic_now += seconds
+
     run_dir = tmp_path / "tmp/gate-runs/running"
     run_dir.mkdir(parents=True)
     (run_dir / "started_at").write_text("generation-one\n", encoding="utf-8")
@@ -50,7 +59,7 @@ def test_running_gate_is_observed_from_its_frozen_directory_without_commands(
             wait_id="running",
             session_id="files",
             repository=tmp_path,
-            deadline_seconds=0.05,
+            deadline_seconds=1.0,
             targets=(target,),
         ),
         launcher=RoutingLauncher(
@@ -58,6 +67,8 @@ def test_running_gate_is_observed_from_its_frozen_directory_without_commands(
             pane=HerdrPaneLauncher(),
         ),
         wait_store_root=tmp_path / "tmp/session-waits",
+        monotonic=monotonic,
+        sleeper=sleeper,
     )
     observation = observe_gate_target(target=target, observed_at=123.0)
     assert calls == [], "observing a gate must never start a command"
