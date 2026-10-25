@@ -77,13 +77,27 @@ def _item() -> WorkItem:
 
 
 def _repo(*, tmp_path: Path) -> Path:
-    spec = tmp_path / "repo" / "SPECIFICATION"
+    repo = tmp_path / "repo"
+    spec = repo / "SPECIFICATION"
     spec.mkdir(parents=True, exist_ok=True)
     _ = (spec / "scenarios.md").write_text(
         f"# Scenarios\n\n{_CITED}\n\nIt states one half.\n\n{_OMITTED}\n\nThe other half.\n",
         encoding="utf-8",
     )
-    return tmp_path / "repo"
+    _ = (repo / ".livespec.jsonc").write_text(
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "acp_nodes": {
+        "dod_gate": {"agent": "claude-acp", "model": "claude-opus-5"}
+      }
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    return repo
 
 
 def _payload(*, tmp_path: Path) -> Path:

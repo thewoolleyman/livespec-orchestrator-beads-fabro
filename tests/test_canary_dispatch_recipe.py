@@ -49,7 +49,7 @@ def _canary() -> Any:
     return canary
 
 
-def _config() -> StoreConfig:
+def _config(*, repo_root: Path = _REPO_ROOT) -> StoreConfig:
     return StoreConfig(
         tenant="livespec-orch-beads-fabro",
         prefix="bd-ib",
@@ -57,8 +57,24 @@ def _config() -> StoreConfig:
         database="livespec-orch-beads-fabro",
         bd_path="bd",
         fake=True,
-        repo_root=_REPO_ROOT,
+        repo_root=repo_root,
     )
+
+
+def _fixture_repo(*, tmp_path: Path) -> Path:
+    """A canary fixture in a test-owned repository configuration."""
+    canary = _canary()
+    fixture = tmp_path / canary.CANARY_FIXTURE_RELATIVE_PATH
+    fixture.parent.mkdir(parents=True)
+    fixture.write_text(
+        (_REPO_ROOT / canary.CANARY_FIXTURE_RELATIVE_PATH).read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
+    return tmp_path
 
 
 @pytest.fixture(autouse=True)
@@ -91,12 +107,13 @@ def test_the_recipe_script_files_from_the_fixture_then_dispatches_to_that_factor
     assert 'item="$(' in script
 
 
-def test_filing_mints_a_fresh_item_carrying_the_fixture_brief() -> None:
+def test_filing_mints_a_fresh_item_carrying_the_fixture_brief(tmp_path: Path) -> None:
     canary = _canary()
-    fixture = canary.read_canary_fixture(repo=_REPO_ROOT)
-    config = _config()
+    repo = _fixture_repo(tmp_path=tmp_path)
+    fixture = canary.read_canary_fixture(repo=repo)
+    config = _config(repo_root=repo)
 
-    filed = canary.file_canary_work_item(repo=_REPO_ROOT, config=config, now_iso=_NOW)
+    filed = canary.file_canary_work_item(repo=repo, config=config, now_iso=_NOW)
 
     assert isinstance(filed, str), filed
     assert filed.startswith("bd-ib-")
@@ -108,23 +125,25 @@ def test_filing_mints_a_fresh_item_carrying_the_fixture_brief() -> None:
     assert record["status"] == "ready"
 
 
-def test_two_canaries_are_two_items() -> None:
+def test_two_canaries_are_two_items(tmp_path: Path) -> None:
     canary = _canary()
-    config = _config()
+    repo = _fixture_repo(tmp_path=tmp_path)
+    config = _config(repo_root=repo)
 
-    first = canary.file_canary_work_item(repo=_REPO_ROOT, config=config, now_iso=_NOW)
-    second = canary.file_canary_work_item(repo=_REPO_ROOT, config=config, now_iso=_NOW)
+    first = canary.file_canary_work_item(repo=repo, config=config, now_iso=_NOW)
+    second = canary.file_canary_work_item(repo=repo, config=config, now_iso=_NOW)
 
     assert first != second
 
 
 def test_the_subcommand_prints_the_filed_id_and_nothing_else(
-    *, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    *, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _ = _canary()
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
+    repo = _fixture_repo(tmp_path=tmp_path)
 
-    exit_code = dispatcher.main(argv=["file-canary", "--repo", str(_REPO_ROOT)])
+    exit_code = dispatcher.main(argv=["file-canary", "--repo", str(repo)])
 
     assert exit_code == 0
     printed = capsys.readouterr().out

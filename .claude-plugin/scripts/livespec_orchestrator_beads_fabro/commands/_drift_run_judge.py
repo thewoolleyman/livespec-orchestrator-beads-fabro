@@ -22,12 +22,11 @@ The temporary file is deleted as the context manager closes, after the child
 has exited, which is what keeps a 1.36 MB prompt from accumulating on the host
 across the ten-minute ticks of the root reconcile timer.
 
-WHERE THE EXECUTABLE AND THE CREDENTIAL COME FROM IS NOT THIS MODULE'S
-DECISION. Both are read through the Definition-of-Done judge's own resolvers —
-`resolve_judge_path` and `select_factory_credential` — because this is the same
-headless call on the same host, and a second account of "where is `claude`" or
-"which credential does this host judge with" would drift from the first on the
-next change to either, with both answers looking perfectly plausible.
+WHICH EXECUTABLE, MODEL AND CREDENTIAL APPLY IS NOT THIS MODULE'S DECISION.
+The Definition-of-Done chain resolves them through the configured `dod_gate`
+candidate, so this taking has the same Codex-first order and the same fallback
+behaviour as host Definition-of-Done judgements rather than a second provider
+or model policy of its own.
 
 A NON-ZERO EXIT ANSWERS THE EMPTY STRING, deliberately. The shared judgement's
 parser treats a reply it cannot read as a `Failure`, and the drift pass maps
@@ -39,22 +38,15 @@ merge's finding with it.
 
 from __future__ import annotations
 
+import json
 import os
-import sys
-import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from livespec_runtime import spec_stated
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
-    CLAUDE_OAUTH_TOKEN_ENV,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
-    resolve_judge_path,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
-    select_factory_credential,
+    run_dod_gate_prompt,
 )
 from livespec_orchestrator_beads_fabro.effects import FloatParseFailure, parse_float
 
@@ -62,26 +54,14 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 
 __all__: list[str] = [
-    "DEFAULT_DRIFT_JUDGE_MODEL",
     "DEFAULT_DRIFT_JUDGE_TIMEOUT_SECONDS",
-    "DRIFT_JUDGE_MODEL_ENV",
     "DRIFT_JUDGE_TIMEOUT_ENV",
     "drift_judge",
-    "resolve_drift_judge_model",
     "resolve_drift_judge_timeout_seconds",
 ]
 
-DRIFT_JUDGE_MODEL_ENV = "LIVESPEC_DRIFT_JUDGE_MODEL"
 DRIFT_JUDGE_TIMEOUT_ENV = "LIVESPEC_DRIFT_JUDGE_TIMEOUT_SECONDS"
-DEFAULT_DRIFT_JUDGE_MODEL = "claude-opus-4-8"
 DEFAULT_DRIFT_JUDGE_TIMEOUT_SECONDS = 600.0
-
-_PROMPT_FILE_PREFIX = "livespec-drift-judge-"
-
-
-def resolve_drift_judge_model(*, environ: dict[str, str]) -> str:
-    """The judging model: the env override, else the committed default."""
-    return environ.get(DRIFT_JUDGE_MODEL_ENV, "").strip() or DEFAULT_DRIFT_JUDGE_MODEL
 
 
 def resolve_drift_judge_timeout_seconds(*, environ: dict[str, str]) -> float:
@@ -97,7 +77,9 @@ def resolve_drift_judge_timeout_seconds(*, environ: dict[str, str]) -> float:
     return parsed if parsed > 0 else DEFAULT_DRIFT_JUDGE_TIMEOUT_SECONDS
 
 
-def drift_judge(*, project_root: Path, runner: CommandRunner) -> spec_stated.ModelRunner:
+def drift_judge(
+    *, project_root: Path, runner: CommandRunner, payload_root: Path | None = None
+) -> spec_stated.ModelRunner:
     """A `ModelRunner` that puts one rendered prompt to the headless judge.
 
     Returned as a closure rather than a class so that the model, the time box
@@ -105,29 +87,14 @@ def drift_judge(*, project_root: Path, runner: CommandRunner) -> spec_stated.Mod
     not re-read the environment ten times, where two readings of one variable
     could disagree while both looked healthy.
     """
-    environ = dict(os.environ)
-    credential = select_factory_credential(
-        environ=environ, home=Path.home(), warn=lambda message: sys.stderr.write(f"{message}\n")
-    )
-    judge_environ = dict(environ)
-    judge_environ[CLAUDE_OAUTH_TOKEN_ENV] = environ.get(credential.env_name, "")
-    argv = [
-        resolve_judge_path(environ=environ),
-        "-p",
-        "--model",
-        resolve_drift_judge_model(environ=environ),
-    ]
-    timeout_seconds = resolve_drift_judge_timeout_seconds(environ=environ)
+    del payload_root
     # A LAMBDA over a keyword-only helper, because `ModelRunner` is the shared
     # runtime's own type and `spec_stated.judge` calls it POSITIONALLY: the one
     # positional parameter here is fixed by a caller outside this repository,
     # and everything this module itself defines stays keyword-only.
     return lambda prompt: _judged(
         prompt=prompt,
-        argv=argv,
         cwd=project_root,
-        judge_environ=judge_environ,
-        timeout_seconds=timeout_seconds,
         runner=runner,
     )
 
@@ -135,22 +102,27 @@ def drift_judge(*, project_root: Path, runner: CommandRunner) -> spec_stated.Mod
 def _judged(
     *,
     prompt: str,
-    argv: list[str],
     cwd: Path,
-    judge_environ: dict[str, str],
-    timeout_seconds: float,
     runner: CommandRunner,
 ) -> str:
-    """One prompt put to the headless judge on standard input, and its reply."""
-    with tempfile.TemporaryDirectory(prefix=_PROMPT_FILE_PREFIX) as scratch:
-        prompt_path = Path(scratch) / "prompt.txt"
-        _ = prompt_path.write_text(prompt, encoding="utf-8")
-        with prompt_path.open("rb") as handle:
-            result = runner.run(
-                argv=argv,
-                cwd=cwd,
-                timeout_seconds=timeout_seconds,
-                env=judge_environ,
-                stdin=handle.fileno(),
-            )
-    return "" if result.exit_code != 0 else result.stdout
+    """One prompt through the shared chain, or no reply when every candidate fails."""
+    reply, _cause = run_dod_gate_prompt(
+        prompt=prompt,
+        cwd=cwd,
+        runner=runner,
+        is_verdict=lambda text: _looks_like_spec_stated_verdict(text=text),
+        timeout_seconds=resolve_drift_judge_timeout_seconds(environ=dict(os.environ)),
+    )
+    return reply or ""
+
+
+def _looks_like_spec_stated_verdict(*, text: str) -> bool:
+    """Whether a reply has the minimum parseable shape of a spec-stated verdict."""
+    try:
+        decoded: object = json.loads(text)
+    except ValueError:
+        return False
+    if not isinstance(decoded, dict):
+        return False
+    kind = cast("dict[str, object]", decoded).get("kind")
+    return isinstance(kind, str) and kind in {"stated", "unstated"}

@@ -28,18 +28,52 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._drift_run_judge import (
-    DEFAULT_DRIFT_JUDGE_MODEL,
     DEFAULT_DRIFT_JUDGE_TIMEOUT_SECONDS,
-    DRIFT_JUDGE_MODEL_ENV,
     DRIFT_JUDGE_TIMEOUT_ENV,
+    _looks_like_spec_stated_verdict,
     drift_judge,
-    resolve_drift_judge_model,
     resolve_drift_judge_timeout_seconds,
 )
 
 # The kernel's own single-argv-entry ceiling, which is what makes the stdin
 # route a correctness requirement rather than a preference.
 _ARGV_ENTRY_CEILING = 131072
+
+
+def _project_root(*, tmp_path: Path) -> tuple[Path, Path]:
+    """A fixture chain, never the repository's committed ACP-node table."""
+    project = tmp_path / "project"
+    project.mkdir()
+    _ = (project / ".livespec.jsonc").write_text(
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "acp_nodes": {
+        "dod_gate": {
+          "agent": "codex-acp",
+          "model": "gpt-5.6-terra",
+          "effort": "high",
+          "fallbacks": [{
+            "agent": "claude-acp",
+            "model": "claude-opus-5",
+            "effort": "high"
+          }]
+        }
+      }
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    payload = tmp_path / "payload"
+    workflow = payload / ".fabro" / "workflows" / "implement-work-item"
+    workflow.mkdir(parents=True)
+    _ = (workflow / "workflow.toml").write_text(
+        "[run.inputs]\\n" 'dod_gate_adapter = "ANTHROPIC_MODEL=claude-opus-5 claude-acp"\\n',
+        encoding="utf-8",
+    )
+    return project, payload
 
 
 def _read_whole(*, fd: int) -> str:
@@ -82,8 +116,9 @@ def test_a_prompt_past_the_argv_ceiling_reaches_the_child_on_standard_input(
 ) -> None:
     runner = _Runner()
     prompt = "x" * (_ARGV_ENTRY_CEILING + 1)
+    project, payload = _project_root(tmp_path=tmp_path)
 
-    reply = drift_judge(project_root=tmp_path, runner=runner)(prompt)
+    reply = drift_judge(project_root=project, payload_root=payload, runner=runner)(prompt)
 
     assert reply == '{"kind": "stated"}'
     assert runner.stdin_text == [prompt]
@@ -94,40 +129,40 @@ def test_a_prompt_past_the_argv_ceiling_reaches_the_child_on_standard_input(
 
 def test_the_judge_is_invoked_headless_with_no_prompt_argument(tmp_path: Path) -> None:
     runner = _Runner()
+    project, payload = _project_root(tmp_path=tmp_path)
 
-    _ = drift_judge(project_root=tmp_path, runner=runner)("a prompt")
+    _ = drift_judge(project_root=project, payload_root=payload, runner=runner)("a prompt")
 
     argv = runner.argvs[0]
-    assert argv[1] == "-p"
-    assert "--model" in argv
-    # `claude -p` reads the prompt from stdin precisely because no prompt
-    # argument follows the flag.
-    assert argv[argv.index("-p") + 1] == "--model"
+    assert argv[:4] == ["codex", "exec", "-m", "gpt-5.6-terra"]
+    assert "a prompt" not in argv
 
 
 def test_a_non_zero_exit_answers_the_empty_string(tmp_path: Path) -> None:
     runner = _Runner(exit_code=126, reply="whatever the shell said")
+    project, payload = _project_root(tmp_path=tmp_path)
 
-    assert drift_judge(project_root=tmp_path, runner=runner)("a prompt") == ""
+    assert drift_judge(project_root=project, payload_root=payload, runner=runner)("a prompt") == ""
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [pytest.param("not JSON"), pytest.param("[]"), pytest.param('{"kind": 3}')],
+)
+def test_only_a_mapping_with_a_text_spec_kind_is_a_drift_verdict(reply: str) -> None:
+    assert not _looks_like_spec_stated_verdict(text=reply)
 
 
 def test_the_prompt_file_does_not_outlive_the_call(tmp_path: Path) -> None:
     runner = _Runner()
     before = sorted(Path(os.environ.get("TMPDIR", "/tmp")).glob("livespec-drift-judge-*"))
+    project, payload = _project_root(tmp_path=tmp_path)
 
-    _ = drift_judge(project_root=tmp_path, runner=runner)("a prompt")
+    _ = drift_judge(project_root=project, payload_root=payload, runner=runner)("a prompt")
 
     # A 1.36 MB prompt per merge, on a timer firing every ten minutes, is what
     # makes the cleanup a property rather than tidiness.
     assert sorted(Path(os.environ.get("TMPDIR", "/tmp")).glob("livespec-drift-judge-*")) == before
-
-
-def test_the_model_defaults_and_is_overridable() -> None:
-    assert resolve_drift_judge_model(environ={}) == DEFAULT_DRIFT_JUDGE_MODEL
-    assert resolve_drift_judge_model(environ={DRIFT_JUDGE_MODEL_ENV: "  "}) == (
-        DEFAULT_DRIFT_JUDGE_MODEL
-    )
-    assert resolve_drift_judge_model(environ={DRIFT_JUDGE_MODEL_ENV: "m"}) == "m"
 
 
 @pytest.mark.parametrize(
@@ -143,7 +178,8 @@ def test_a_bad_time_box_falls_back_rather_than_hanging(case: str, raw: str) -> N
 def test_a_positive_time_box_is_honoured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(DRIFT_JUDGE_TIMEOUT_ENV, "12.5")
     runner = _Runner()
+    project, payload = _project_root(tmp_path=tmp_path)
 
-    _ = drift_judge(project_root=tmp_path, runner=runner)("a prompt")
+    _ = drift_judge(project_root=project, payload_root=payload, runner=runner)("a prompt")
 
     assert runner.timeouts == [12.5]

@@ -91,7 +91,17 @@ def _repo(*, tmp_path: Path) -> Path:
     spec = repo / "SPECIFICATION"
     spec.mkdir(parents=True, exist_ok=True)
     _ = (repo / ".livespec.jsonc").write_text(
-        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "connection": {"prefix": "bd-ib"},
+    "dispatcher": {
+      "acp_nodes": {
+        "dod_gate": {"agent": "claude-acp", "model": "claude-opus-5"}
+      }
+    }
+  }
+}
+""",
         encoding="utf-8",
     )
     _ = (spec / "contracts.md").write_text(
@@ -107,15 +117,16 @@ def _repo(*, tmp_path: Path) -> Path:
 def _install_judge(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """One executable answering both takings, told apart by their own argv.
 
-    The spec-stated judgement's argv ends `-p --model <model>` and its prompt
-    arrives on standard input; the rubric judgement's second argument IS the
-    prompt. So `$2 = --model` is the discriminator, and it is the production
-    difference rather than a flag this fixture invented.
+    Both judgements use the configured candidate's same argv and receive their
+    prompts on standard input. The spec-stated prompt alone names its
+    `generalization_target` field, so the fixture classifies the bytes the
+    production runner actually supplies rather than relying on argv shape.
     """
     script = tmp_path / "fake-judge"
     _ = script.write_text(
         "#!/bin/sh\n"
-        'if [ "$2" = "--model" ]; then\n'
+        'prompt="$(cat)"\n'
+        'if printf "%s" "$prompt" | grep -q generalization_target; then\n'
         f'  printf "%s\\n" "{_SPEC_STATED_REPLY}"\n'
         "else\n"
         f'  printf "%s\\n" "{_PASS_REPLY}"\n'
