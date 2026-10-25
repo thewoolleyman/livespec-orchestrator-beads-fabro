@@ -31,6 +31,7 @@ class _Port:
     """A FabroPort replacement that records the command-facing contract."""
 
     calls: ClassVar[list[_PortCall]] = []
+    exports: ClassVar[list[tuple[str, Path]]] = []
 
     def __init__(self, *, fabro_bin: str, target: object, runner: object, cwd: Path) -> None:
         _ = (runner, cwd)
@@ -49,6 +50,11 @@ class _Port:
         return SimpleNamespace(
             command=SimpleNamespace(exit_code=0, stdout='{"run_id": "01PETRI"}\n', stderr="")
         )
+
+    def dump(self, *, output_dir: Path, run_id: str, timeout_seconds: float) -> SimpleNamespace:
+        _ = timeout_seconds
+        self.exports.append((run_id, output_dir))
+        return SimpleNamespace(command=SimpleNamespace(exit_code=0, stdout="", stderr=""))
 
 
 def test_inspect_reads_a_named_run_through_its_factory_client_and_server(
@@ -85,3 +91,34 @@ def test_inspect_reads_a_named_run_through_its_factory_client_and_server(
             run_id="01PETRI",
         )
     ]
+
+
+def test_inspect_exports_a_named_run_through_its_factory_client_and_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The output flag delegates to the same factory-targeted reader."""
+    command = importlib.import_module(_COMMAND_MODULE)
+    dispatcher = importlib.import_module("livespec_orchestrator_beads_fabro.commands.dispatcher")
+    target = FactoryTarget(
+        name="petri",
+        server="https://gmktec.example",
+        dev_token=None,
+        fabro_bin="/opt/fabro-petri",
+    )
+    output_dir = Path("exported-run")
+
+    def _resolve(*, cwd: Path, factory: str | None = None) -> FactoryTarget:
+        assert cwd == Path.cwd()
+        assert factory == "petri"
+        return target
+
+    _Port.exports = []
+    monkeypatch.setattr(command, "resolve_fabro_factory", _resolve)
+    monkeypatch.setattr(command, "FabroPort", _Port)
+
+    exit_code = dispatcher.main(
+        argv=["inspect", "--factory", "petri", "01PETRI", "-o", str(output_dir)]
+    )
+
+    assert exit_code == 0
+    assert _Port.exports == [("01PETRI", output_dir)]
