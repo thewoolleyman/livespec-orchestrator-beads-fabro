@@ -905,7 +905,7 @@ def test_reconcile_merged_refuses_ambiguous_body_search_candidates(
     assert "#20 multi2" in err
 
 
-def test_parse_merged_pr_list_accepts_branch_or_title_and_rejects_unusable_shapes(
+def test_parse_merged_pr_list_prefers_the_head_ref_tier_and_rejects_unusable_shapes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _assert_reconcile_command_registered(capsys=capsys)
@@ -941,7 +941,7 @@ def test_parse_merged_pr_list_accepts_branch_or_title_and_rejects_unusable_shape
         default_branch="trunk",
     )
 
-    assert [(match.number, match.merge_sha) for match in matches] == [(4, "ddd"), (5, "eee")]
+    assert [(match.number, match.merge_sha) for match in matches] == [(4, "ddd")]
 
 
 def test_parse_merged_pr_list_tiers_body_mentions_below_branch_and_title_matches(

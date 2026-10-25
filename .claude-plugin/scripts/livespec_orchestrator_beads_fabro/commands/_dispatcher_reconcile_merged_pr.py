@@ -136,22 +136,21 @@ def parse_merged_pr_list(
     default_branch: str,
     include_body_mentions: bool = True,
 ) -> tuple[PrView, ...]:
-    """Parse merged PR search results, tiering body mentions below identity matches.
+    """Parse merged PR search results by head-ref, title, then body tier.
 
     A candidate merged onto some OTHER base than `default_branch` is rejected,
     which is what stops a reconcile from disposing an item against a merge into
     someone's long-lived side branch. The branch it compares against is resolved
     for the same reason the search's own `--base` is.
 
-    The two tiers are NOT peers, and the ordering is the resolution rule rather
+    The three tiers are NOT peers, and the ordering is the resolution rule rather
     than a preference. `--search <id>` matches bodies server-side, so an ordinary
     merge that merely MENTIONS the item — a follow-up, a revert, a sibling slice
     naming its predecessor — comes back beside the pull request that carries it.
-    Counting both at once turns a clean title match into an ambiguity refusal:
-    measured over this repository's 400 most recent merges onto master, thirteen
-    ids fall through to this search and have exactly one title/head match plus at
-    least one body-only mention. So a body match is consulted ONLY when no
-    candidate identifies itself by the dispatch branch or by its title.
+    Counting all signals at once turns a clear head-ref or title match into an
+    ambiguity refusal, while treating head refs and titles as peers lets a title
+    mention veto the branch that carried the work. Each lower tier is consulted
+    ONLY when every higher tier is empty.
 
     `include_body_mentions=False` drops the body tier entirely, for an item built
     outside the factory (see `_LOCALLY_BUILT_ENTRY_STATUSES`).
@@ -159,22 +158,27 @@ def parse_merged_pr_list(
     parsed_raw = parse_json(text=stdout)
     if isinstance(parsed_raw, JsonParseFailure) or not isinstance(parsed_raw, list):
         return ()
-    identified: list[PrView] = []
-    mentioned: list[PrView] = []
+    head_matches: list[PrView] = []
+    title_matches: list[PrView] = []
+    body_matches: list[PrView] = []
     for entry_raw in cast("list[object]", parsed_raw):
         candidate = _pr_view_from_list_entry(
             entry_raw=entry_raw, item=item, branch=branch, default_branch=default_branch
         )
         if candidate is None:
             continue
-        view, body_only = candidate
-        if body_only:
-            mentioned.append(view)
+        view, tier = candidate
+        if tier == "head":
+            head_matches.append(view)
+        elif tier == "title":
+            title_matches.append(view)
         else:
-            identified.append(view)
-    if identified or not include_body_mentions:
-        return tuple(identified)
-    return tuple(mentioned)
+            body_matches.append(view)
+    if head_matches:
+        return tuple(head_matches)
+    if title_matches:
+        return tuple(title_matches)
+    return tuple(body_matches) if include_body_mentions else ()
 
 
 def _ambiguous_pr_detail(*, candidates: tuple[PrView, ...]) -> str:
@@ -237,8 +241,8 @@ def _unmerged_branch_detail(*, item: WorkItem, branch: str, state: str, default_
 
 def _pr_view_from_list_entry(
     *, entry_raw: object, item: WorkItem, branch: str, default_branch: str
-) -> tuple[PrView, bool] | None:
-    """Return one candidate view plus whether ONLY its body named the item."""
+) -> tuple[PrView, str] | None:
+    """Return one candidate view plus its strongest work-item naming tier."""
     if not isinstance(entry_raw, dict):
         return None
     entry = cast("dict[str, Any]", entry_raw)
@@ -249,8 +253,8 @@ def _pr_view_from_list_entry(
     base_raw: object = entry.get("baseRefName")
     if isinstance(base_raw, str) and base_raw != default_branch:
         return None
-    identified = _identifies_item(entry=entry, item=item, branch=branch)
-    if not identified and not _body_names_item(entry=entry, item=item):
+    tier = _candidate_tier(entry=entry, item=item, branch=branch)
+    if tier is None:
         return None
     merge_sha = _list_entry_merge_sha(entry=entry)
     if merge_sha is None:
@@ -264,16 +268,20 @@ def _pr_view_from_list_entry(
             merge_sha=merge_sha,
             terminal_required_check_failures=(),
         ),
-        not identified,
+        tier,
     )
 
 
-def _identifies_item(*, entry: dict[str, Any], item: WorkItem, branch: str) -> bool:
-    """Whether the entry names the item where a dispatch or an author puts it."""
+def _candidate_tier(*, entry: dict[str, Any], item: WorkItem, branch: str) -> str | None:
+    """The strongest tier by which one merged PR names the work item."""
+    if entry.get("headRefName") == branch:
+        return "head"
     title_raw: object = entry.get("title")
-    return entry.get("headRefName") == branch or (
-        isinstance(title_raw, str) and item.id in title_raw
-    )
+    if isinstance(title_raw, str) and item.id in title_raw:
+        return "title"
+    if _body_names_item(entry=entry, item=item):
+        return "body"
+    return None
 
 
 def _body_names_item(*, entry: dict[str, Any], item: WorkItem) -> bool:

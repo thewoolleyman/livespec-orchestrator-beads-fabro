@@ -2271,8 +2271,8 @@
     "heading": "## Scenario 244 \u2014 reconcile-merged resolves a merged pull request by head ref, then title, then body mention",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal reconcile-merged-pr-resolution-ranking (v215). The owning work-item bd-ib-ob26ab makes merged-PR resolution rank head ref, then title, then body mention, together with the test that binds this entry.",
+    "test": "tests.integration.test_reconcile_merged_pr_ranking_scenario244",
+    "reason": "Integration-tier acceptance for this heading, completed by bd-ib-ob26ab. The real reconcile-merged supervisor runs over the fake ledger with a forged GitHub seam: a head-ref carrier outranks title and body mentions, a sole title outranks body mentions when the head tier is empty, and a sole body mention resolves when both stronger tiers are empty. A duplicate head tier refuses, lists only its own candidates, and leaves the item active.",
     "work_item": "bd-ib-ob26ab"
   },
   {
