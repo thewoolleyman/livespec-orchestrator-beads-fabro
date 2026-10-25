@@ -57,6 +57,7 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_admission as _admission,
 )
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_journal_file as journal_file
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_recovery_routing as routing,
 )
@@ -143,6 +144,9 @@ class _World:
     name: str
     answers: dict[str, CommandResult]
     route: str
+
+
+_PINNED_AT = "2026-10-24T23:48:20Z"
 
 
 def _open_pull_request() -> CommandResult:
@@ -269,6 +273,10 @@ def _route_once(
     _Shell.answers = dict(world.answers)
     _Shell.calls = []
     monkeypatch.setattr(ShellCommandRunner, "run", _Shell.run)
+    # The two passes run one after the other, so an unpinned journal clock lets
+    # their `recovery-held` rows straddle a second boundary on a loaded host and
+    # differ only in `at` -- measured 2026-10-24 23:48Z, 23:48:21Z against :20Z.
+    monkeypatch.setattr(journal_file, "utc_now_iso", lambda: _PINNED_AT)
 
     routed = routing.route_recovery(
         args=_args(repo=tmp_path, journal=journal),
