@@ -77,7 +77,17 @@ def _repo(*, tmp_path: Path) -> Path:
     spec = repo / "SPECIFICATION"
     spec.mkdir(parents=True, exist_ok=True)
     _ = (repo / ".livespec.jsonc").write_text(
-        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "connection": {"prefix": "bd-ib"},
+    "dispatcher": {
+      "acp_nodes": {
+        "dod_gate": {"agent": "claude-acp", "model": "claude-opus-5"}
+      }
+    }
+  }
+}
+""",
         encoding="utf-8",
     )
     _ = (spec / "contracts.md").write_text(
