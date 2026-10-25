@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.3...v0.243.4) (2026-10-25)
+
+
+### Bug Fixes
+
+* bound successful source ref audit payload ([3394318](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3394318f83a6e31f64e6e4e36ac36e7b8159c407))
+
 ## [0.243.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.2...v0.243.3) (2026-10-25)
 
 
