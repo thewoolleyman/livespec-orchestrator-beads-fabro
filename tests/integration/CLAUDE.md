@@ -1317,6 +1317,37 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   commits no address and a resolution that skipped the registry would read a
   factory with no server and report the candidate unmeasured — which looks
   exactly like a saturated one.
+  THE SAME MODULE ALSO BINDS `SPECIFICATION/scenarios.md` Scenario 53 — a
+  dispatch proceeds when the host is busy and the scheduler queues it — and its
+  two cases are driven DIFFERENTLY from every case above, deliberately. "A
+  dispatch proceeds" is a claim about the admission-to-launch SEQUENCE, not
+  about the answer any one layer gives, so calling the admission valve, the
+  factory resolution and `FabroPort.run` in turn reproduces each answer while
+  skipping everything that could refuse between them: a host-capacity gate
+  anywhere in that sequence, or a wave that claims the row and never reaches
+  the launch, leaves such a case green. Both cases therefore run the real
+  `dispatcher.main(argv=["loop", "--item", ...])` CLI, which is also the only
+  entry point that ENFORCES the per-repo WIP cap the scenario's free-slot
+  premise is about — `dispatch --item` is an operator override and passes
+  `enforce_cap=False`. Only `run_dispatch` is stood in, at the launch seam, by a
+  recorder that assembles the production `fabro run` argv from the plan the real
+  path built, so the submission is observed rather than inferred and the
+  Dispatcher's own exit code is observable too. Three things an editor must not
+  weaken. The admitted status is read AT THE LAUNCH rather than after the
+  invocation, because the post-run dispositions legitimately move an `ai-only`
+  item on from `active`, so a status read afterwards reports the disposition and
+  would pass for a dispatch that claimed the row only once the run had ended.
+  The non-green outcome list is asserted EMPTY beside the exit code, since
+  "neither refused nor deferred" is a negative that a wave which admitted,
+  placed and then refused on capacity grounds would otherwise satisfy. And the
+  Fabro currency gate is ANSWERED rather than removed — it is first in the
+  pre-dispatch wall and refuses an unidentifiable engine, so a target declaring
+  factory servers cannot reach admission until it is satisfied — which keeps the
+  real gate, the real cache read and the real verdict in the path, since a wall
+  arm that can refuse before the launch is exactly what these cases exist to
+  rule out. Mutation-checked 2026-10-25: a wave that admits the row and never
+  reaches `dispatch_one`, and a refusal anywhere in the pre-dispatch wall, each
+  red both cases.
 
 - `test_run_wall_budget_scenario175.py` — binds `SPECIFICATION/scenarios.md`
   Scenario 175 and the `contracts.md` paragraphs it exercises (the Dispatcher
