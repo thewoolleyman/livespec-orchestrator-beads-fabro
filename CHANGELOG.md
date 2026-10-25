@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.242.4...v0.243.0) (2026-10-25)
+
+
+### Features
+
+* hold a Definition of Done on a governing-heading omission only when nothing cited governs ([9072f7f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9072f7faf2de97720b601be1da33a5935240857c))
+
 ## [0.242.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.242.3...v0.242.4) (2026-10-25)
 
 
