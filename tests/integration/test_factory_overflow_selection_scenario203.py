@@ -9,6 +9,30 @@ run board and scheduler ceiling are scripted without a server and every argv is
 observable) and the ledger, through this repository's own hermetic
 `FakeBeadsClient`.
 
+WHY SCENARIO 53 DRIVES THE WHOLE `loop` INVOCATION rather than the three layers
+its claim passes through. "A dispatch proceeds when the host is busy" is a claim
+about the ADMISSION-TO-LAUNCH PATH, and that path is a sequence: the preamble,
+the pre-dispatch wall, recovery routing, the admission valve, the publish-branch
+reclaim and then `dispatch_one`. Calling `admit_and_select`,
+`args_with_dispatch_factory_target` and `FabroPort.run` in turn reproduces the
+ANSWER each layer gives while skipping every layer that could refuse between
+them — so a host-capacity gate anywhere in that sequence, or a wave that admitted
+the row and never reached the launch, leaves such a case green. The cases below
+therefore run the real `dispatcher.main(argv=["loop", "--item", ...])` CLI, which
+is also the only entry point that ENFORCES the per-repo WIP cap the scenario's
+free-slot premise is about: `dispatch --item` is an operator override and passes
+`enforce_cap=False`. Only `run_dispatch` is stood in, at the launch seam, by a
+recorder that assembles the production `fabro run` argv from the plan the real
+path built — so the submission is observed rather than inferred, and the
+Dispatcher's own exit code is observable too.
+
+WHY THE ADMITTED STATUS IS READ AT THE LAUNCH and not afterwards. The claim is
+that the row is `active` when its run is submitted, and the post-run
+dispositions legitimately move an `ai-only` item on from there — so a status read
+after the invocation returns reports the DISPOSITION rather than the admission,
+and would pass for a dispatch that claimed the row only once the run had already
+ended.
+
 WHY THE CHOSEN FACTORY IS ASSERTED AT THE ARGV AND AT THE LEDGER, not at the
 selection. A selection that answers `petri` proves the ranking; it does not prove
 the dispatch LANDS there. The name crosses three hand-offs afterwards — the
@@ -46,7 +70,10 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -58,26 +85,26 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     reset_fake_singleton,
 )
 from livespec_orchestrator_beads_fabro._store_dispatch_claim import claim_row_for
-from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
-    admit_and_select,
-)
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_stamp import (
     stamp_pending_claim,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    CommandResult,
+    DispatchOutcome,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
     args_with_dispatch_factory_target,
     dispatch_factory_targets,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file import JournalFile
-from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import build_plan
-from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
-from livespec_orchestrator_beads_fabro.commands.dispatcher import dispatch_preamble
-from livespec_orchestrator_beads_fabro.store import (
-    materialize_work_items,
-    read_work_items,
-    record_dispatch_factory,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import (
+    DispatchPlan,
+    build_plan,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
+from livespec_orchestrator_beads_fabro.commands.dispatcher import dispatch_preamble, main
+from livespec_orchestrator_beads_fabro.store import record_dispatch_factory
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _COMMANDS_DIR = Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
@@ -124,9 +151,40 @@ _SELECTION_STAGE = "overflow-factory-selection"
 _REASON_LEAST_UTILIZED = "least-utilized-free-slot"
 _REASON_NO_CANDIDATE = "no-candidate-free-default"
 
+# The committed workflow the Scenario 53 legs' dispatch target carries, so the
+# preflight resolves THIS tree's graph rather than the plugin's bundled one.
+_WORKFLOW_DIR = ".fabro/workflows/implement-work-item"
+_WORKFLOW_TOML = '[workflow]\ngraph = "workflow.fabro"\n\n[run.environment]\nid = "fabro-sandbox"\n'
+_GRAPH = (
+    "digraph ImplementWorkItem {\n"
+    "    graph [\n"
+    '        stall_timeout="7200s"\n'
+    "    ]\n"
+    "\n"
+    "    implement [\n"
+    '        timeout="1800s"\n'
+    "    ]\n"
+    "}\n"
+)
+_FLEET_MANIFEST_TEXT = (
+    '{"owner": "thewoolleyman", "members": [{"repo": "repo", "class": "impl-plugin"}]}'
+)
+
+# The Fabro currency gate's hermetic answer — see `_CurrencyRunner`.
+_CURRENCY_GATE_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency_gate"
+_CURRENCY_SOURCES_MODULE = (
+    "livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency_sources"
+)
+_CURRENCY_NOW = datetime(2026, 10, 19, 9, 0, tzinfo=timezone.utc)
+_CURRENCY_TAG = "v0.260.0"
+_SERVING_COMMIT = "8869e88"
+
 
 @pytest.fixture(autouse=True)
-def _hermetic_env(monkeypatch: pytest.MonkeyPatch) -> object:
+def _hermetic_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> object:
     """A fresh in-memory tenant, and neither routing variable inherited.
 
     Both deletions are load-bearing rather than hygiene.
@@ -136,9 +194,29 @@ def _hermetic_env(monkeypatch: pytest.MonkeyPatch) -> object:
     unpinned cases would fail for a reason that has nothing to do with
     selection. The registry path variable is the subject of one case and must
     not be inherited by the others.
+
+    The remaining entries are what a whole `loop` invocation needs to be
+    hermetic: a scratch temporary root, the worker credential the credential
+    projection reads, the forge token supplier, the fleet manifest the sibling
+    clone projection fetches, and no notification topic. They cost the layer
+    cases nothing, which is why one fixture serves both halves of the module.
     """
+    scratch = tmp_path_factory.mktemp("factory-overflow-scenario203")
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
     monkeypatch.setenv("LIVESPEC_INVOKER", "session:factory-overflow-scenario203")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop.selfup.github_token_supplier",
+        lambda: (lambda: "test-github-token"),
+    )
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands."
+        "_dispatcher_sibling_clones.fetch_fleet_manifest_text",
+        lambda: _FLEET_MANIFEST_TEXT,
+    )
+    for topic in ("CLAUDE_NTFY_DISPATCHER_TOPIC", "CLAUDE_NTFY_TOPIC", "CLAUDE_NTFY_SERVER"):
+        monkeypatch.delenv(topic, raising=False)
     monkeypatch.delenv(_FACTORY_SELECTION_ENV_VAR, raising=False)
     monkeypatch.delenv(_REGISTRY_PATH_ENV_VAR, raising=False)
     reset_fake_singleton()
@@ -254,10 +332,14 @@ def _install_runner(*, monkeypatch: pytest.MonkeyPatch, runner: _Runner) -> None
         return real_reader(repo=repo, runner=runner)
 
     monkeypatch.setattr(capacity, "FactoryRunReader", _reader)
-    admission = importlib.import_module(
-        "livespec_orchestrator_beads_fabro.commands._dispatcher_admission"
-    )
-    monkeypatch.setattr(admission, "FactoryRunReader", _reader)
+    # Every module that constructs its OWN reader, so no leg of a whole `loop`
+    # invocation reaches a server: the admission valve's availability evidence,
+    # and the wave's admission-time ACP preflight.
+    for name in (
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_admission",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_wave",
+    ):
+        monkeypatch.setattr(importlib.import_module(name), "FactoryRunReader", _reader)
 
 
 def _store() -> StoreConfig:
@@ -278,15 +360,29 @@ def _fake() -> FakeBeadsClient:
 
 
 def _seed_item(*, work_item_id: str = _WORK_ITEM_ID) -> None:
+    """One item, filed through the store seam, carrying ONE gradeable assertion.
+
+    The criterion is a `- ` bullet ending in a period because the pre-dispatch
+    criteria wall refuses an AI-dispositive item that parses to zero gradeable
+    assertions, and `criteria_lines` segments by CONTENT — a flush-left line
+    with no list marker continues the previous block rather than starting an
+    assertion of its own.
+    """
     _ = _fake().create_issue(
         draft=IssueDraft(
             issue_id=work_item_id,
             issue_type="feature",
             title="Overflow an unpinned dispatch to the least-utilized factory",
-            description="## Definition of Done\n\n- The dispatch lands on the free slot.\n",
+            description=(
+                "## Definition of Done\n"
+                "\n"
+                "- The dispatch lands on the free slot.\n"
+                "\n"
+                "References: ## Effective acceptance criteria\n"
+            ),
             assignee=None,
             created_at="2026-10-19T00:00:00Z",
-            acceptance_criteria="The Dispatcher submits this item to Fabro.",
+            acceptance_criteria="- The Dispatcher submits this item to Fabro.\n",
         )
     )
 
@@ -327,17 +423,30 @@ def _write_config(
     }
     if wip_cap is not None:
         dispatcher["wip_cap"] = wip_cap
+        dispatcher["acceptance_mode"] = "ai-only"
     _ = (cwd / ".livespec.jsonc").write_text(
         json.dumps(
             {
+                "git_author": {
+                    "operator_name": "Chad Woolley",
+                    "operator_email": "thewoolleyman@gmail.com",
+                },
                 "livespec-orchestrator-beads-fabro": {
                     "connection": {"tenant": _TENANT, "prefix": _PREFIX, "fake": True},
                     "dispatcher": dispatcher,
-                }
+                },
             }
         ),
         encoding="utf-8",
     )
+
+
+def _write_target_workflow(*, cwd: Path) -> None:
+    """The dispatch target's own committed reserved workflow."""
+    workflow = cwd / _WORKFLOW_DIR
+    workflow.mkdir(parents=True)
+    _ = (workflow / "workflow.toml").write_text(_WORKFLOW_TOML, encoding="utf-8")
+    _ = (workflow / "workflow.fabro").write_text(_GRAPH, encoding="utf-8")
 
 
 def _dispatch_args(*, cwd: Path, factory: str | None = None) -> argparse.Namespace:
@@ -364,38 +473,194 @@ def _selection_records(*, cwd: Path) -> list[dict[str, Any]]:
     ]
 
 
-def _ready_item() -> Any:
-    """Move the fixture to `ready` and read the real admission input back."""
+def _non_green_outcomes(*, cwd: Path) -> list[dict[str, Any]]:
+    """Every terminal outcome this invocation journaled that is not green.
+
+    ONE reading for both halves of "neither refused nor deferred": a
+    host-capacity refusal and a capacity deferral are both non-green outcome
+    records, and reading only one of them would leave the other invisible.
+    """
+    outcomes = [
+        record.get("outcome")
+        for record in _journal_records(cwd=cwd)
+        if record.get("stage") == "outcome"
+    ]
+    return [one for one in outcomes if isinstance(one, dict) and one.get("status") != "green"]
+
+
+def _make_ready() -> None:
+    """Move the fixture to `ready` so the admission valve has a candidate."""
     _fake().update_issue(issue_id=_WORK_ITEM_ID, status="ready", metadata={"rank": "a0"})
-    return materialize_work_items(records=read_work_items(path=_store()))[_WORK_ITEM_ID]
 
 
-def _admit_and_resolve(
+@dataclass(kw_only=True)
+class _CurrencyRunner:
+    """The Fabro currency gate's own two reads, answered without leaving the process.
+
+    The gate is FIRST in the pre-dispatch wall and refuses an unidentifiable or
+    out-of-window engine, so a `loop` over a target that DECLARES factory servers
+    cannot reach admission at all until it is answered. It is not Scenario 53's
+    subject, so it is answered rather than removed: both declared factories serve
+    a build whose base IS the newest published release, which is the one reading
+    that admits on the ordinary rule with no transition and no cached
+    observation. Keeping the real gate, the real cache read and the real verdict
+    in the path is the point — a wall arm that could refuse between admission and
+    the launch is exactly what these cases exist to rule out.
+    """
+
+    now: Any
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        del cwd, timeout_seconds, env, stdin
+        sources = importlib.import_module(_CURRENCY_SOURCES_MODULE)
+        if "version" in argv:
+            return CommandResult(exit_code=0, stdout=_version_json(), stderr="")
+        if argv == sources.releases_argv():
+            return CommandResult(exit_code=0, stdout=_releases_payload(now=self.now), stderr="")
+        # The ancestry comparison is the LAST read the gate takes, asserted
+        # rather than matched with a non-zero fall-through beside it. An argv
+        # this runner does not recognise must fail the case LOUDLY: answered
+        # non-zero it would degrade the gate into an honest refusal, and a
+        # refusal is indistinguishable at every assertion below from the
+        # host-capacity refusal these cases exist to rule out.
+        assert argv == sources.compare_argv(base=_CURRENCY_TAG, head=_SERVING_COMMIT)
+        return CommandResult(exit_code=0, stdout="identical\n", stderr="")
+
+
+def _version_json() -> str:
+    """`fabro version --json`'s server section, as the engine prints it.
+
+    The SERVER section is what the gate reads; the client section sits beside it
+    and carries the same commit here, so neither reading can be mistaken for the
+    other by accident.
+    """
+    return json.dumps(
+        {
+            "client": {"version": "0.260.0", "git_sha": _SERVING_COMMIT},
+            "server": {"version": "0.260.0", "git_sha": _SERVING_COMMIT},
+        }
+    )
+
+
+def _releases_payload(*, now: Any) -> str:
+    """One published release, one compact object on its own line.
+
+    One release rather than several because the base this build serves IS that
+    release, so the in-window gap is zero and nothing about this fixture depends
+    on the publication-order rule the currency scenario's own module grades.
+    `--paginate --jq` emits a line per release rather than one array, which is
+    why this is not a JSON document.
+    """
+    published = (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return json.dumps({"tag": _CURRENCY_TAG, "published_at": published}) + "\n"
+
+
+def _install_currency_runner(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stand in the gate's ONLY two things that leave the process: shell and clock."""
+    gate = importlib.import_module(_CURRENCY_GATE_MODULE)
+    monkeypatch.setattr(gate, "currency_instant", lambda: _CURRENCY_NOW)
+    monkeypatch.setattr(gate, "ShellCommandRunner", lambda: _CurrencyRunner(now=_CURRENCY_NOW))
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Launch:
+    """One submission the real admission-to-launch path reached.
+
+    `status` is the ledger row's status AT THE MOMENT the run is submitted,
+    which is the instant the admission claim is about — see the module docstring
+    for why it cannot be read after the invocation returns.
+    """
+
+    plan: DispatchPlan
+    status: object
+
+
+def _launching_run_dispatch(
+    *, runner: _Runner, launched: list[_Launch]
+) -> Callable[..., DispatchOutcome]:
+    """The launch seam, replaced by a recorder that still assembles the argv.
+
+    The plan it is handed is the one the real path built, so the `fabro run`
+    argv the production port renders from it is this dispatch's own submission
+    — observable without a server because the recording runner stands exactly
+    where the `fabro` CLI would. Nothing upstream of this seam is stood in.
+    """
+
+    def _run_dispatch(**kwargs: object) -> DispatchOutcome:
+        plan = kwargs["plan"]
+        assert isinstance(plan, DispatchPlan)
+        launched.append(
+            _Launch(plan=plan, status=_fake().show_issue(issue_id=plan.work_item_id)["status"])
+        )
+        _ = fabro_port_for_plan(plan=plan, runner=runner).run(
+            workflow_toml=plan.workflow_toml,
+            goal_file=plan.goal_file,
+            inputs=(),
+            timeout_seconds=42.0,
+        )
+        return DispatchOutcome(
+            work_item_id=plan.work_item_id,
+            status="green",
+            stage="done",
+            pr_number=None,
+            merge_sha=None,
+            detail="dispatched",
+        )
+
+    return _run_dispatch
+
+
+def _loop_dispatch(
     *,
     cwd: Path,
     monkeypatch: pytest.MonkeyPatch,
     boards: dict[str, _Board],
-) -> tuple[Any, argparse.Namespace, _Runner]:
-    """Drive the ready-to-active admission and its Fabro-target resolution."""
+) -> tuple[int, list[_Launch], _Runner]:
+    """Drive one real `loop --item` invocation over this target.
+
+    `loop` rather than `dispatch --item` because the per-repo WIP cap is
+    enforced only on the drain; a targeted dispatch is an operator override and
+    passes `enforce_cap=False`, so it could not exercise the scenario's
+    free-slot premise at all.
+    """
+    _make_ready()
     runner = _Runner(boards=boards)
     _install_runner(monkeypatch=monkeypatch, runner=runner)
-    item = _ready_item()
-    admission = admit_and_select(
-        repo=cwd,
-        items=[item],
-        candidates=[item],
-        journal=JournalFile(path=cwd / "admission.jsonl"),
-        enforce_cap=True,
+    _install_currency_runner(monkeypatch=monkeypatch)
+    launched: list[_Launch] = []
+    monkeypatch.setattr(
+        _dispatcher_loop,
+        "run_dispatch",
+        _launching_run_dispatch(runner=runner, launched=launched),
     )
-    assert [admitted.id for admitted in admission.admitted] == [_WORK_ITEM_ID]
-    assert admission.deferred == []
-    assert admission.refused == []
-    args = _dispatch_args(cwd=cwd)
-    return (
-        admission.admitted[0],
-        args_with_dispatch_factory_target(args=args, repo=cwd, work_item_id=_WORK_ITEM_ID),
-        runner,
-    )
+    argv = [
+        "loop",
+        "--repo",
+        str(cwd),
+        "--item",
+        _WORK_ITEM_ID,
+        "--budget",
+        "1",
+        "--journal",
+        str(cwd / "journal.jsonl"),
+        "--no-close-on-merge",
+    ]
+    return main(argv=argv), launched, runner
+
+
+def _submitted_argv(*, runner: _Runner) -> list[str]:
+    """The ONE `fabro run` argv this dispatch submitted."""
+    submitted = [argv for argv in runner.argvs if argv[1] == "run"]
+    assert len(submitted) == 1
+    return submitted[0]
 
 
 def _launch_argv(*, cwd: Path, runner: _Runner, args: argparse.Namespace) -> list[str]:
@@ -418,7 +683,7 @@ def _launch_argv(*, cwd: Path, runner: _Runner, args: argparse.Namespace) -> lis
         inputs=(),
         timeout_seconds=42.0,
     )
-    return next(argv for argv in runner.argvs if argv[1] == "run")
+    return _submitted_argv(runner=runner)
 
 
 def _resolve(
@@ -453,21 +718,33 @@ def _resolve(
 # ---------------------------------------------------------------------------
 
 
+def _dispatch_target(*, cwd: Path) -> None:
+    """The one-slot dispatch target both Scenario 53 legs drive."""
+    _write_config(cwd=cwd, wip_cap=1)
+    _write_target_workflow(cwd=cwd)
+    _seed_item()
+
+
 def test_scenario53_admits_a_free_wip_item_and_submits_while_other_runs_are_in_flight(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A free WIP slot admits and submits despite work already running on a factory.
 
-    The admission assertion and the submission assertion are both needed. A
-    placement-only test would miss a host-capacity gate that refuses before the
-    row becomes active; an active-row-only test would pass for a Dispatcher that
-    claims the work but never asks Fabro to run it.
+    Five runs are in flight on the default factory, which is exactly the host
+    load the scenario says must not become a refusal. Every assertion is a
+    reading of the ONE real invocation: the Dispatcher's own exit code, the row
+    the launch found `active`, the capacity read that observed the busy host,
+    and the `fabro run` argv the production port rendered from the plan that
+    invocation built. Any one of them alone is satisfiable by a build the
+    scenario forbids — a host-capacity gate refuses before the row becomes
+    `active`, a wave that claimed the row and never reached the launch leaves
+    the argv list empty, and a build that never read a server at all would
+    still place the dispatch somewhere.
     """
-    _write_config(cwd=tmp_path, wip_cap=1)
-    _seed_item()
+    _dispatch_target(cwd=tmp_path)
 
-    admitted, resolved, runner = _admit_and_resolve(
+    exit_code, launched, runner = _loop_dispatch(
         cwd=tmp_path,
         monkeypatch=monkeypatch,
         boards={
@@ -476,24 +753,32 @@ def test_scenario53_admits_a_free_wip_item_and_submits_while_other_runs_are_in_f
         },
     )
 
-    assert admitted.status == "active"
-    assert _fake().show_issue(issue_id=_WORK_ITEM_ID)["status"] == "active"
+    assert exit_code == 0
+    assert [launch.status for launch in launched] == ["active"]
     assert any(_server_of(argv=argv) == _DEFAULT_SERVER for argv in runner.capacity_argvs())
-    assert _launch_argv(cwd=tmp_path, runner=runner, args=resolved)[-2:] == [
-        "--server",
-        _OVERFLOW_SERVER,
-    ]
+    assert _submitted_argv(runner=runner)[-2:] == ["--server", _OVERFLOW_SERVER]
+    assert _non_green_outcomes(cwd=tmp_path) == []
 
 
 def test_scenario53_submits_an_admitted_item_when_the_scheduler_is_at_its_limit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A saturated board selects the default and still submits a scheduler-queued run."""
-    _write_config(cwd=tmp_path, wip_cap=1)
-    _seed_item()
+    """A saturated board selects the default and still submits a scheduler-queued run.
 
-    admitted, resolved, runner = _admit_and_resolve(
+    Both declared factories report their own scheduler ceiling reached, which is
+    the reading a capacity-aware Dispatcher is most tempted to hold or refuse
+    on. The journal reason is what says the saturated reading was MADE, and the
+    exit code plus the argv are what say the dispatch nonetheless proceeded —
+    onto the default, where Fabro's scheduler queues it. The refused-outcome
+    list is asserted EMPTY because "neither refused nor deferred" is a negative
+    the other three readings cannot carry: a wave that admitted the row, placed
+    it, and then reported a capacity refusal alongside would satisfy every one
+    of them.
+    """
+    _dispatch_target(cwd=tmp_path)
+
+    exit_code, launched, runner = _loop_dispatch(
         cwd=tmp_path,
         monkeypatch=monkeypatch,
         boards={
@@ -502,13 +787,11 @@ def test_scenario53_submits_an_admitted_item_when_the_scheduler_is_at_its_limit(
         },
     )
 
-    assert admitted.status == "active"
-    assert _fake().show_issue(issue_id=_WORK_ITEM_ID)["status"] == "active"
+    assert exit_code == 0
+    assert [launch.status for launch in launched] == ["active"]
     assert _selection_records(cwd=tmp_path)[-1]["reason"] == _REASON_NO_CANDIDATE
-    assert _launch_argv(cwd=tmp_path, runner=runner, args=resolved)[-2:] == [
-        "--server",
-        _DEFAULT_SERVER,
-    ]
+    assert _submitted_argv(runner=runner)[-2:] == ["--server", _DEFAULT_SERVER]
+    assert _non_green_outcomes(cwd=tmp_path) == []
 
 
 def test_the_less_utilized_overflow_factory_receives_the_dispatch(
