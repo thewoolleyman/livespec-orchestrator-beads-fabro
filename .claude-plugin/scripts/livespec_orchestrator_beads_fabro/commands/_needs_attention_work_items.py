@@ -45,6 +45,7 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_needs_human_question import (
     needs_human_question_summary,
+    needs_human_snapshot_scope_for,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_stranded_dispatch import (
     stranded_dispatch_items as _stranded_dispatch_items,
@@ -116,66 +117,69 @@ def human_valves(
     answer_labels: Mapping[str, Sequence[str]] = (
         answer_disposition_labels if answer_disposition_labels is not None else {}
     )
-    for item in items:
-        item_id = item.id
-        title = item.title
-        status = item.status
-        lane_reason = lane_of(
-            item=item,
-            index=index,
-            manifest=manifest,
-            sibling_status_lookup=sibling_status_lookup,
-        ).reason
-        if can_approve_item(item=item, cwd=project_root):
-            lanes.append(
-                _valve(
-                    verb="approve",
-                    work_item=item_id,
-                    summary=f"Approve pending work-item {item_id}: {title}",
-                    project_root=project_root,
-                    action_id=f"approve:{item_id}",
-                )
-            )
-        elif status == "acceptance":
-            lanes.append(
-                _valve(
-                    verb="accept",
-                    work_item=item_id,
-                    summary=acceptance_wait_summary(
+    # One snapshot of run attribution and factory markers serves every
+    # resolve-blocked valve below (bd-ib-tzbdd3); a no-op without such items.
+    with needs_human_snapshot_scope_for(project_root=project_root, items=items):
+        for item in items:
+            item_id = item.id
+            title = item.title
+            status = item.status
+            lane_reason = lane_of(
+                item=item,
+                index=index,
+                manifest=manifest,
+                sibling_status_lookup=sibling_status_lookup,
+            ).reason
+            if can_approve_item(item=item, cwd=project_root):
+                lanes.append(
+                    _valve(
+                        verb="approve",
+                        work_item=item_id,
+                        summary=f"Approve pending work-item {item_id}: {title}",
                         project_root=project_root,
-                        item=item,
-                        default_summary=f"Accept completed work-item {item_id}: {title}",
-                    ),
-                    project_root=project_root,
-                    action_id=f"accept:{item_id}",
+                        action_id=f"approve:{item_id}",
+                    )
                 )
-            )
-        elif status == "blocked" and lane_reason == "needs-human":
-            lanes.append(
-                _valve(
-                    verb="resolve-blocked",
-                    work_item=item_id,
-                    # The terminated run's own account of why the loop gave up
-                    # and where the work survived, then WHO may answer the
-                    # question it parked on. Enrichment only: an unreadable run
-                    # leaves the title-only summary standing, because the
-                    # decision is already waiting in the ledger.
-                    summary=answer_disposition_summary(
-                        project_root=project_root,
-                        item=item,
-                        raw_labels=answer_labels.get(item_id, ()),
-                        default_summary=needs_human_question_summary(
+            elif status == "acceptance":
+                lanes.append(
+                    _valve(
+                        verb="accept",
+                        work_item=item_id,
+                        summary=acceptance_wait_summary(
                             project_root=project_root,
-                            item_id=item_id,
-                            default_summary=(
-                                f"Resolve human-needed block for work-item {item_id}: {title}"
+                            item=item,
+                            default_summary=f"Accept completed work-item {item_id}: {title}",
+                        ),
+                        project_root=project_root,
+                        action_id=f"accept:{item_id}",
+                    )
+                )
+            elif status == "blocked" and lane_reason == "needs-human":
+                lanes.append(
+                    _valve(
+                        verb="resolve-blocked",
+                        work_item=item_id,
+                        # The terminated run's own account of why the loop gave up
+                        # and where the work survived, then WHO may answer the
+                        # question it parked on. Enrichment only: an unreadable run
+                        # leaves the title-only summary standing, because the
+                        # decision is already waiting in the ledger.
+                        summary=answer_disposition_summary(
+                            project_root=project_root,
+                            item=item,
+                            raw_labels=answer_labels.get(item_id, ()),
+                            default_summary=needs_human_question_summary(
+                                project_root=project_root,
+                                item_id=item_id,
+                                default_summary=(
+                                    f"Resolve human-needed block for work-item {item_id}: {title}"
+                                ),
                             ),
                         ),
-                    ),
-                    project_root=project_root,
-                    action_id=f"resolve-blocked:{item_id}:ready",
+                        project_root=project_root,
+                        action_id=f"resolve-blocked:{item_id}:ready",
+                    )
                 )
-            )
     return lanes
 
 
