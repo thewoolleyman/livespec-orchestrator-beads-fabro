@@ -62,9 +62,10 @@ __all__: list[str] = [
 SESSION_KIND = "session"
 HUMAN_KIND = "human"
 # The agent-session variable each runtime this fleet dogfoods exports into the
-# session's own environment. Order is irrelevant — a process runs under exactly one
-# of these — so the first non-empty one found is the answer.
-AGENT_SESSION_ENV_VARS = ("CLAUDE_CODE_SESSION_ID", "CODEX_SESSION_ID", "PI_SESSION_ID")
+# session's own environment. A nested Codex verifier inherits Claude's
+# environment from its launcher, so Codex precedes Claude and the nested
+# verifier's own session id wins when both are present.
+AGENT_SESSION_ENV_VARS = ("CODEX_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "PI_SESSION_ID")
 
 _LOGIN_TIMEOUT_SECONDS = 30.0
 
