@@ -24,20 +24,30 @@ needed to import and reach the assertion. The stub must make that
 assertion FAIL; it must never satisfy it. Modifying an existing product
 file outside an open Red is never part of this carveout.
 
-## Re-entered after a refused commit — read the hook's verdict first
+## Re-entered after an incomplete turn — read the previous turn's failing gate first
 
 If this file exists, the previous implement turn of THIS run ended
-incomplete with changes staged that the repository's commit hook
-refused, and the run re-entered this stage to fix them:
+incomplete, and the run re-entered this stage so you can finish it:
 
     cat "$(git rev-parse --git-path livespec-implement-hook-refusal)"
 
-It names the failed targets and carries the hook's own error lines,
-taken from the hook's recorded output. Fix those failures first, then
-commit the staged work through the hooks as the protocol below
-requires, and continue the loop. This is the run's only re-entry: a
-second refused commit ends the stage at `needs_human` naming the failed
-targets. If the file does not exist, this is the run's first implement
+It carries the previous turn's latest failing gate, taken from what the
+run itself recorded rather than from that turn's reply, in this order:
+
+- When the turn left changes staged that the repository's commit hook
+  refused, the hook's failed targets and its own error lines.
+- Otherwise, when the repository's check suite, run by the run over the
+  tree that turn left, failed, its failed targets and its error lines.
+- Otherwise, a statement that the previous turn
+  ended incomplete with no recorded failing gate, beside the completion
+  field it recorded.
+
+Fix any failures it names first, then commit the work through the hooks
+as the protocol below requires, and continue the loop until the
+Definition of Done is complete. This is the run's only re-entry: a
+second incomplete turn ends the stage at `needs_human`, naming the
+hook's failed targets when it refused a commit and partial progress
+otherwise. If the file does not exist, this is the run's first implement
 turn; carry on below.
 
 ## Where you are
