@@ -69,6 +69,7 @@ __all__: list[str] = [
 COMMAND_NODES: tuple[str, ...] = (
     "dead_implementer",
     "implement_completion",
+    "implement_hook_route",
     "implementation_diff",
     "janitor",
     "needs_human",

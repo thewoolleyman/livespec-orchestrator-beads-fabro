@@ -84,6 +84,14 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # `.livespec.jsonc`, which is the credential floor's own documented remedy
 # applied to work that genuinely takes milliseconds.
 #
+# `implement_hook_route` (v208, Scenario 204; work-item bd-ib-y7372n) sits on
+# `implement_completion`'s failure edge and can send an incomplete turn back to
+# `implement` ONCE, when the commit hook refused what the turn left staged. So
+# `implement` is reached by two visits of two attempts each, FOUR, and the route
+# and the completion gate once per visit, TWO. The route runs the repository's
+# pre-commit hook, which can take the better part of its timeout, so it is
+# billed at its full visit count like any node that can spend its ceiling.
+#
 # The three TERMINAL sentinel nodes (`dead_implementer`, `abandon`,
 # `non_converged`) are deliberately absent: each ENDS the run, so they are
 # mutually exclusive with one another and with the tail of the main path,
@@ -148,8 +156,9 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # the only path out, so nothing re-enters it.
 _WORST_CASE_VISITS: Mapping[str, int] = {
     "dod_gate": 2,
-    "implement": 2,
+    "implement": 4,
     "implement_completion": 2,
+    "implement_hook_route": 2,
     "implementation_diff": 2,
     "janitor": 3,
     "fix": 2,

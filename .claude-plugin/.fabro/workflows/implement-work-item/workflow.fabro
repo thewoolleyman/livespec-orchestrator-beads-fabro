@@ -146,6 +146,13 @@ digraph ImplementWorkItem {
     // become fatal"). With needs_human a dead end, no path reaches exit
     // with this gate unsatisfied; the attribute stays to satisfy fabro's
     // goal_gate_has_retry lint alongside the real node-retry budget.
+    //
+    // max_visits=2 (v208; work-item bd-ib-y7372n): `implement_hook_route` can
+    // send an incomplete turn back here ONCE, so two visits is the whole of
+    // it. Node retries re-run the handler inside a visit and do not count.
+    // The route's own counter refuses the second re-entry first, so this cut
+    // is a backstop nothing reaches. It is also the tightest bound the
+    // execution-budget derivation reads for the new cycle.
     implement [
         label="Implement (Red-Green-Replay)"
         backend="acp"
@@ -154,6 +161,7 @@ digraph ImplementWorkItem {
         max_retries=1
         goal_gate=true
         retry_target="implement"
+        max_visits=2
         prompt="@prompts/implement.md"
     ]
 
@@ -220,6 +228,52 @@ digraph ImplementWorkItem {
         shape=parallelogram
         timeout="600s"
         script="record=$(git rev-parse --git-path livespec-implement-completion); cause_path=$(git rev-parse --git-path livespec-stage-cause); rm -f \"$cause_path\"; livespec_partial_progress() { printf 'stage: %s\\ncause: %s\\n' implement \"$1\" > \"$cause_path\"; printf '%s\\n' \"$1\" >&2; }; if test ! -s \"$record\"; then livespec_partial_progress 'LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS: the implement turn stated no completion field, so it never said whether the work-item Definition of Done is complete on the committed branch; an unstated completion is read as partial progress rather than as a success, so this run publishes and proves nothing'; exit 1; fi; if tr -d ' \\t' < \"$record\" | grep -qF '\"definition_of_done_complete\":true'; then echo 'LIVESPEC_IMPLEMENT_COMPLETE: the implement turn completion field states the work-item Definition of Done is complete on the committed branch, so the implement stage succeeded and the run proceeds to implementation_diff' >&2; exit 0; fi; livespec_partial_progress \"LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS: the implement turn completion field does not state the work-item Definition of Done complete on the committed branch, so the implement stage failed rather than publishing and proving partial progress. The recorded field was: $(head -c 500 \"$record\" | tr '\\n' ' ')\"; exit 1"
+    ]
+
+    // Hook-refusal route (v208; Scenario 204; work-item bd-ib-y7372n). Reached
+    // only on `implement_completion`'s failure edge, so it decides between two
+    // endings of an INCOMPLETE turn: re-enter `implement`, or rest at
+    // `needs_human` exactly as before.
+    //
+    // WHY IT EXISTS. Run 01M5QNH88NHN68ST28Y80CZJ48 (bd-ib-8zyan, 2026-10-24):
+    // the turn's Green amend was refused by `check-types` with three pyright
+    // errors, the turn wrote an incomplete completion field about 30 s later
+    // with about 196 minutes of allowance left, and the needs-human cause held
+    // only the turn's own (wrong) account of the hook. bd-ib-idpr32 (coverage)
+    // and bd-ib-3kqdln ended the same way. Each was a fixable gate.
+    //
+    // A REFUSED COMMIT ATTEMPT IS MEASURED, NOT READ FROM THE REPLY. v208
+    // defines it as changes the turn left staged that the repository's commit
+    // hook, run by the run itself, refuses while naming a failed target. So
+    // this node runs `git hook run pre-commit` over the staged tree, records
+    // the output at `$GIT_DIR/livespec-implement-hook-verdict`, and takes the
+    // failed targets from the aggregate's closing `Failed targets (N):` block of
+    // `  - <name>` lines. That block is the only place the pre-commit aggregate
+    // names them. Its per-target headers are bare `::: just <name>` lines, and
+    // the hook runner's terminal adds CR line endings, which are stripped first.
+    // Measured on this item's own refused Green amend, 2026-10-24. A refusal naming no target, an accepting hook, or
+    // nothing staged leaves the partial-progress cause standing and repeats it
+    // on stderr, because this is now the stage whose stderr the Dispatcher puts
+    // on the dispatch outcome detail.
+    //
+    // THE BRIEF IS A FILE, for the reason `implement_completion` gives: no node
+    // sees another node's reply. A re-entry writes the failed targets and the
+    // tail of the hook output to `$GIT_DIR/livespec-implement-hook-refusal`,
+    // which the implement prompt directs the turn to read first, and clears the
+    // previous turn's completion record and partial-progress cause.
+    //
+    // THE BUDGET IS ONE RE-ENTRY, matching `implement`'s `max_retries=1`, and
+    // is counted in `$GIT_DIR/livespec-implement-hook-reentries`. A refusal
+    // after it is spent fails with a cause naming the failed targets.
+    // `max_visits=2`, here and on `implement`, is the engine-enforced cut the
+    // execution-budget derivation needs for the new cycle. The counter fires
+    // first, so nothing reaches it.
+    implement_hook_route [
+        label="Hook-refusal route: did the commit hook refuse what the incomplete turn staged?"
+        shape=parallelogram
+        timeout="1800s"
+        max_visits=2
+        script="refusal=$(git rev-parse --git-path livespec-implement-hook-refusal); verdict=$(git rev-parse --git-path livespec-implement-hook-verdict); reentries=$(git rev-parse --git-path livespec-implement-hook-reentries); cause_path=$(git rev-parse --git-path livespec-stage-cause); rm -f \"$refusal\"; livespec_cause_stands() { echo \"LIVESPEC_IMPLEMENT_NO_REFUSED_COMMIT: $1, so the turn left no refused commit attempt and its cause stands: $(sed -n 's/^cause: //p' \"$cause_path\" 2>/dev/null)\" >&2; exit 1; }; if git diff --cached --quiet; then livespec_cause_stands 'the incomplete implement turn left nothing staged'; fi; git hook run --ignore-missing pre-commit > \"$verdict\" 2>&1 < /dev/null; if test $? -eq 0; then livespec_cause_stands 'the repository commit hook accepts the changes the incomplete implement turn left staged'; fi; targets=$(tr -d '\\r' < \"$verdict\" | sed -n '/^Failed targets (/,/^[^ ]/s/^  - \\([^ ]*\\)$/\\1/p' | tr '\\n' ' ' | sed 's/ $//'); if test -z \"$targets\"; then livespec_cause_stands 'the repository commit hook refused the staged changes without naming a failed target'; fi; count=$(cat \"$reentries\" 2>/dev/null || echo 0); if test \"$count\" -ge 1; then message=\"LIVESPEC_IMPLEMENT_HOOK_REFUSED_BUDGET_EXHAUSTED: the repository commit hook refused the changes the incomplete implement turn left staged, and the implement re-entry budget is spent ($count re-entry already taken); failed targets: $targets\"; printf 'stage: %s\\ncause: %s\\n' implement \"$message\" > \"$cause_path\"; printf '%s\\n' \"$message\" >&2; exit 1; fi; echo $((count + 1)) > \"$reentries\"; { printf 'failed targets: %s\\n\\nThe repository commit hook refused the changes the previous implement turn left staged. Its own error lines (the tail of its recorded output at %s):\\n\\n' \"$targets\" \"$verdict\"; tail -n 80 \"$verdict\"; } > \"$refusal\"; rm -f \"$cause_path\" \"$(git rev-parse --git-path livespec-implement-completion)\"; echo \"LIVESPEC_IMPLEMENT_HOOK_REFUSED_REENTER: the repository commit hook refused the changes the incomplete implement turn left staged, naming failed targets: $targets; re-entering implement with the hook verdict at $refusal\" >&2; exit 0"
     ]
 
     // Dead-implementer circuit breaker (C5 / bd-ib-vdpb): after the
@@ -1882,12 +1936,20 @@ digraph ImplementWorkItem {
 
     // Completion-field routing (v165, Scenario 204). A turn whose field states
     // the Definition of Done incomplete, and a turn that states no field at
-    // all, both reach the SAME needs_human terminal an `outcome=failed`
-    // implement reaches, carrying the partial-progress cause as the recorded
-    // question; a turn that states it complete falls through to the diff
-    // breaker exactly as before this gate existed.
-    implement_completion -> needs_human [label="Partial progress", condition="outcome=failed"]
+    // all, both go to the hook-refusal route. Unless the commit hook refused
+    // what the turn left staged (v208), they reach the SAME needs_human
+    // terminal an `outcome=failed` implement reaches, carrying the
+    // partial-progress cause as the recorded question. A turn that states it
+    // complete falls through to the diff breaker exactly as before this gate
+    // existed.
+    implement_completion -> implement_hook_route [label="Incomplete", condition="outcome=failed"]
     implement_completion -> implementation_diff
+
+    // Hook-refusal routing (v208). An incomplete turn whose staged changes the
+    // commit hook refuses re-enters implement once with the hook's verdict;
+    // every other incomplete turn reaches needs_human as before.
+    implement_hook_route -> implement [label="Hook refused: re-enter", condition="outcome=succeeded"]
+    implement_hook_route -> needs_human
 
     // Changed-tree routing: exit 0 means `git diff --quiet` found a
     // diff, so the existing janitor -> review path remains intact.
