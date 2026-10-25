@@ -54,11 +54,20 @@ _PUBLISH_BRANCH = "feat/bd-ib-xi63mq"
 _NODE = re.compile(r"^\s*publish_draft\s*\[(?P<body>.*?)^\s*\]", re.DOTALL | re.MULTILINE)
 _SCRIPT = re.compile(r'script="(?P<value>(?:[^"\\]|\\.)*)"')
 
-# A limit whose reserve leaves a one-second bound, so the over-limit arm is
-# reached in about a second instead of in about an hour. The figure goes through
-# the SAME arithmetic the Dispatcher uses, so the test cannot pass against a
-# bound the production path would never compute.
-_TEST_LIMIT_SECONDS = 121
+# A limit whose reserve leaves a fifteen-second bound, so the over-limit arm is
+# reached in seconds instead of in about an hour. The figure goes through the
+# SAME arithmetic the Dispatcher uses, so the test cannot pass against a bound
+# the production path would never compute.
+#
+# FIFTEEN, NOT ONE: the bound starts when the publish script starts `git push`,
+# and the observer can only name a hook that is RUNNING when it ends. A
+# one-second bound measured git's own startup as much as the hook. On a
+# saturated host (load 45 on 18 cores, 2026-10-25) the bound fired before git
+# had launched the pre-push hook, so the observer correctly reported that no
+# hook was running and the test failed for a reason that had nothing to do with
+# the behaviour under test. The hook below still sleeps 90 seconds, six times
+# this bound, so it outlives it by a wide margin and the assertion is unchanged.
+_TEST_LIMIT_SECONDS = 135
 
 
 def _git(cwd: Path, *argv: str) -> subprocess.CompletedProcess[str]:
