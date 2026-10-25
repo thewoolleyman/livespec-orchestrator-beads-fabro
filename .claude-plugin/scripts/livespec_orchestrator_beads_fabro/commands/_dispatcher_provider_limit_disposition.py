@@ -120,7 +120,7 @@ not fail-soft and weaken it.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import (
@@ -129,6 +129,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import (
 )
 from livespec_orchestrator_beads_fabro.commands._acp_journal_records import journal_records
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_exhaustion_credential_identity import (
+    journaled_admission_credential_identity,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_classify import (
@@ -235,6 +238,7 @@ def dispose_provider_limit_release(
     release = outcome.provider_limit_release
     if outcome.status != PROVIDER_LIMIT_RELEASE_STATUS or release is None:
         return
+    release = _credential_scoped_release(release=release, item_id=item.id, journal=journal)
     owed = _release_owed(journal=journal, release=release, item=item)
     held = owed.held_reason
     if held is not None:
@@ -255,6 +259,28 @@ def dispose_provider_limit_release(
             record=build(repo=repo, work_item_id=item.id, release=release, occurred_at=now_iso)
         )
     _release_claim(repo=repo, item=item, journal=journal, release=release)
+
+
+def _credential_scoped_release(
+    *, release: ProviderLimitRelease, item_id: str, journal: JournalFile
+) -> ProviderLimitRelease:
+    """Bind a quota hold to the account admission actually projected."""
+    matched = release.matched
+    executed = release.executed
+    if matched is None or executed is None or matched.cause != "quota":
+        return release
+    scoped = attempt(
+        action=lambda: journaled_admission_credential_identity(
+            journal_path=journal.path, work_item_id=item_id
+        ),
+        exceptions=(OSError,),
+    )
+    if isinstance(scoped, AttemptFailure):
+        return release
+    identity = scoped
+    if identity is None:
+        return release
+    return replace(release, matched=replace(matched, hold_key=identity))
 
 
 def _record_hold(
