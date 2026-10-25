@@ -7,11 +7,9 @@
 # under `fleet-launch/`", that it "runs a hermetic harness", and that "A syntax
 # check alone MUST NOT be treated as satisfying this obligation".
 #
-# TWO LEGS, AND THE SECOND IS THE HARD ONE. The lint leg is a severity lever: it
-# runs shellcheck when the binary is present, and when it is ABSENT this says so
-# LOUDLY rather than skipping silently — a minimal runner may lack it, and a silent
-# skip is a lint that reports clean on a file it never opened. The HERMETIC
-# HARNESS always runs and is the gate, because the defect this target exists for
+# TWO LEGS, AND THE SECOND IS THE HARD ONE. ShellCheck is required: a runner that
+# cannot inspect every launcher script cannot claim this check passed. The HERMETIC
+# HARNESS always runs too, because the defect this target exists for
 # passes every syntax check there is: an edit that appended a trailing comment
 # to a multi-statement line silently dropped the mi-homelab board read on
 # 2026-10-24, and the launcher then read the fleet as unknown and launched
@@ -40,13 +38,13 @@ if [ "${#shell_scripts[@]}" -eq 0 ]; then
     exit 1
 fi
 
-if command -v shellcheck >/dev/null 2>&1; then
-    shellcheck --severity=warning "${shell_scripts[@]}"
-    printf 'check-fleet-launch: shellcheck clean over %d shell scripts under fleet-launch/\n' \
-        "${#shell_scripts[@]}"
-else
-    echo "WARNING: shellcheck not found; skipping shell lint over" \
-        "${#shell_scripts[@]} fleet-launch/ scripts (the hermetic harness still runs)" >&2
+if ! command -v shellcheck >/dev/null 2>&1; then
+    echo 'check-fleet-launch: shellcheck is required to inspect fleet-launch/' >&2
+    exit 1
 fi
+
+shellcheck --severity=warning "${shell_scripts[@]}"
+printf 'check-fleet-launch: shellcheck clean over %d shell scripts under fleet-launch/\n' \
+    "${#shell_scripts[@]}"
 
 bash fleet-launch/test/run-tests.sh

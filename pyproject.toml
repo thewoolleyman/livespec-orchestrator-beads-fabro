@@ -591,6 +591,10 @@ destructive_cli_allowlist = [
 #   rewritten. No in-process call can stand in, because the head under decision
 #   does not exist until the shipped shell has produced it. It scrubs the child
 #   env exactly as an allowlisted spawn must, by passing an explicit `env`.
+# - test_fleet_launch_check_scenario242.py drives the committed shell gate and a
+#   mutated launcher copy. The assertion is that the shipped harness detects that
+#   mutation, so no in-process call can substitute; its child environment removes
+#   coverage hooks and its process group is reaped when the check times out.
 #
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables
 # below (same TOML attachment reason as `destructive_cli_allowlist`).
@@ -619,6 +623,7 @@ subprocess_spawn_allowlist = [
     "tests/integration/test_scripted_refresh_execution.py",
     "tests/integration/test_pr_refresh_carry_forward_scenario178.py",
     "tests/integration/test_empty_checkpoint_commits_dropped.py",
+    "tests/integration/test_fleet_launch_check_scenario242.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]

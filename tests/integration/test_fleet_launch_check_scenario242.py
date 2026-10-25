@@ -38,7 +38,9 @@ would be a different measurement from the one that gates master.
 
 from __future__ import annotations
 
+import os
 import shutil
+import signal
 import subprocess
 from pathlib import Path
 
@@ -66,21 +68,45 @@ _REQUIRED_GATE_SECTIONS = (
     "counts a retired factory's board as zero, not as unknown",
 )
 
-# Generous: the harness drives the launcher through real one-second polls and
-# two concurrent FIFO launchers, measured at about 25 seconds, and the mutant
-# arm waits out every refusal deadline rather than short-circuiting.
-_TIMEOUT_SECONDS = 600
+# The green harness drives real one-second polls and two concurrent FIFO
+# launchers, measured at about 25 seconds. The broken-launcher arm shortens its
+# copied harness deadlines, while this parent timeout reaps its process group if
+# a future regression bypasses those bounds.
+_TIMEOUT_SECONDS = 60
 
 
-def _run(*, argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+def _run(
+    *,
+    argv: list[str],
+    cwd: Path,
+    overrides: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if name != "COVERAGE_PROCESS_START" and not name.startswith("COV_CORE_")
+    }
+    environment.update(overrides or {})
+    process = subprocess.Popen(
         argv,
         cwd=cwd,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        check=False,
-        timeout=_TIMEOUT_SECONDS,
+        env=environment,
+        start_new_session=True,
     )
+    try:
+        stdout, stderr = process.communicate(timeout=_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGTERM)
+        try:
+            stdout, stderr = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            stdout, stderr = process.communicate()
+        pytest.fail("timed out while running " + " ".join(argv) + "\n" + stdout + stderr)
+    return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
 
 
 def test_scenario242_the_committed_check_lints_every_shell_script_and_runs_the_harness() -> None:
@@ -128,7 +154,15 @@ def test_scenario242_a_launcher_that_reads_an_idle_board_as_unknown_turns_the_ch
         launcher.read_text(encoding="utf-8").count(_IDLE_BOARD_IS_ZERO) == 0
     ), "the mutation did not land, so a passing harness would say nothing"
 
-    done = _run(argv=["bash", str(copied / "test" / "run-tests.sh")], cwd=tmp_path)
+    done = _run(
+        argv=["bash", str(copied / "test" / "run-tests.sh")],
+        cwd=tmp_path,
+        overrides={
+            "FLEET_LAUNCH_HARNESS_FIFO_MAX_WAIT_S": "4",
+            "FLEET_LAUNCH_HARNESS_FIFO_AWAIT_S": "6",
+            "FLEET_LAUNCH_HARNESS_WAIT_S": "2",
+        },
+    )
     combined = done.stdout + done.stderr
     assert (
         done.returncode != 0

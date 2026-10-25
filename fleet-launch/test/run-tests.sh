@@ -43,6 +43,10 @@ fi
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
+FLEET_LAUNCH_HARNESS_WAIT_S="${FLEET_LAUNCH_HARNESS_WAIT_S:-30}"
+FLEET_LAUNCH_HARNESS_FIFO_MAX_WAIT_S="${FLEET_LAUNCH_HARNESS_FIFO_MAX_WAIT_S:-300}"
+FLEET_LAUNCH_HARNESS_FIFO_AWAIT_S="${FLEET_LAUNCH_HARNESS_FIFO_AWAIT_S:-45}"
+
 PASS=0
 FAIL=0
 pass() { PASS=$((PASS + 1)); printf '  ok:   %s\n' "$1"; }
@@ -396,7 +400,7 @@ new_case fifo
 # a loaded machine, which keeps the case a test of the ticket ORDER rather than
 # of how fast this host happens to be: the short deadline failed under a
 # concurrent test suite while the ordering it asserts was perfectly correct.
-export FLEET_LAUNCH_MAX_WAIT_S=300
+export FLEET_LAUNCH_MAX_WAIT_S="$FLEET_LAUNCH_HARNESS_FIFO_MAX_WAIT_S"
 : > "$BOARD_GMK"
 : > "$BOARD_HL"
 printf '8\n' > "$CAP_FILE"
@@ -405,20 +409,20 @@ LATER_LOG="$CASE_DIR/later.log"
 EARLIER_LOG="$CASE_DIR/earlier.log"
 ONLY_GMK=1 TICKET_NS=200 "$LAUNCHER" bd-ib-later > "$LATER_LOG" 2>&1 &
 later_pid=$!
-if ! wait_for_line "$LATER_LOG" "hold file present" 30; then
+if ! wait_for_line "$LATER_LOG" "hold file present" "$FLEET_LAUNCH_HARNESS_WAIT_S"; then
     fail "the later-ticket launcher never parked on the hold file"
     tail -8 "$LATER_LOG" >&2
 fi
 ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-earlier > "$EARLIER_LOG" 2>&1 &
 earlier_pid=$!
-if wait_for_line "$LATER_LOG" "queued behind an older gmktec ticket" 30; then
+if wait_for_line "$LATER_LOG" "queued behind an older gmktec ticket" "$FLEET_LAUNCH_HARNESS_WAIT_S"; then
     pass "the later ticket queues behind the older one"
 else
     fail "the later ticket never queued behind the older one"
     tail -8 "$LATER_LOG" >&2
 fi
 rm -f "$HOLD_FILE"
-await_both "$earlier_pid" "$later_pid" 45
+await_both "$earlier_pid" "$later_pid" "$FLEET_LAUNCH_HARNESS_FIFO_AWAIT_S"
 earlier_rc=$FIRST_RC; later_rc=$SECOND_RC
 if [ "$(drive_log_items)" = "bd-ib-earlier bd-ib-later" ]; then
     pass "both queued tickets launched, oldest ticket first"
