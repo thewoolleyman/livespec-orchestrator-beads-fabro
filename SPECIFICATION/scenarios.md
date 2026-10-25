@@ -9245,6 +9245,15 @@ Feature: A Definition of Done passed before dispatch is graded in-run by the sam
     Then the dispatch journal carries one dod-judgement-disagreement row naming the run, both digests, the admitting verdict's timestamp and the node's findings
     And the item carries one judgement-record comment with the same facts
     And the item rests at blocked with blocked_reason needs-human exactly as any dod_gate refusal rests it
+
+  Scenario: A host judgement falls back along the resolved dod_gate chain
+    Given a governed repository whose resolved dod_gate chain is a codex-acp primary followed by a claude-acp fallback
+    When the pre-dispatch Definition-of-Done judgement is taken and the primary returns a verdict
+    Then the verdict comes from the codex-acp primary and the claude-acp fallback is not run
+    When the primary instead times out
+    Then the claude-acp fallback is run and its verdict decides the judgement
+    When every candidate fails to return a verdict
+    Then the pre-dispatch taking follows its did-not-run route
 ```
 
 ## Scenario 240 — A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled
