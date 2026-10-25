@@ -60,26 +60,6 @@ Scenario: A freeform bug is filed, implemented, and closed
   And no `gap_id` re-detection runs
 ```
 
-## Scenario 5 — Doctor cross-boundary read
-
-```gherkin
-Feature: Doctor cross-boundary read
-  As a user running doctor in a consumer project
-  I want doctor's cross-boundary phase to read this plugin's query surfaces
-  So that the work-item structural invariants are evaluated deterministically
-
-Scenario: Doctor reads spec directly and invokes the thin-transport query skills
-  Given the user invokes `/livespec:doctor` in a consumer project
-  When doctor's static phase runs
-  Then it reads `<spec-root>/` directly
-  When doctor's cross-boundary phase runs
-  Then it invokes `/livespec-orchestrator-beads-fabro:list-work-items --json` for the work-item structural invariants
-  And the invocation reads the tenant DB through `bd`
-  And completes deterministically with the contract-mandated JSON schema
-  And a missing or malformed plugin surface fires a `fail` finding (no silent skips)
-  And in hermetic / CI contexts the in-memory fake backend stands in for a live tenant DB and satisfies the same schema
-```
-
 ## Scenario 6 — Cross-repo dispatch via the Dispatcher
 
 ```gherkin

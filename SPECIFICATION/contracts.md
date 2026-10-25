@@ -248,11 +248,7 @@ The skill accepts an optional `--spec-commitment-hint <id_hint>` flag.
 When supplied, the resulting work-item's `spec_commitment_hint` MUST
 equal the verbatim `id_hint` (carried on the beads issue's native
 `spec_id` field per §"Work-item beads-issue mapping"); when omitted, the
-hint is absent (the freeform case). This is the surface livespec's
-`unresolved-spec-commitment` doctor invariant queries via
-`list-work-items --json` to verify each declared spec→impl commitment
-maps to a filed work-item (per
-`livespec/SPECIFICATION/contracts.md`).
+hint is absent (the freeform case).
 
 #### `implement`
 
@@ -544,14 +540,13 @@ CLI surface: `list-work-items [--filter <name>] [--with-gap-id=<id>] [--with-spe
 with `--filter` and with `--with-gap-id`.
 
 `--project-root <path>` — override the cross-repo manifest and
-connection-resolution base. Default: `Path.cwd()`. Used by doctor's
-cross-boundary handoffs to invoke this skill from outside the consumer
-project root.
+connection-resolution base. Default: `Path.cwd()`. It lets a caller
+invoke this skill from outside the consumer project root.
 
 `--work-items-path <path>` — repurposed connection-descriptor override.
 The default substrate location is the beads tenant DB resolved from the
 consumer's `.livespec.jsonc` `connection` block; this flag overrides the
-resolved store descriptor (used by tests and by doctor invocations that
+resolved store descriptor (used by tests and by invocations that
 want to scope to a non-default store — e.g. the in-memory fake backend).
 The keyword is retained for call-site parity with the plaintext sibling;
 its value is no longer a filesystem path to a JSONL file.
@@ -653,13 +648,12 @@ candidates to skip from the front of the ranked list before returning.
 Negative values MUST cause the wrapper to exit `2` with a `UsageError`.
 
 `--project-root <path>` — override the cross-repo manifest and
-connection-resolution base. Default: `Path.cwd()`. Used by doctor's
-cross-boundary handoffs to invoke this skill from outside the consumer
-project root.
+connection-resolution base. Default: `Path.cwd()`. It lets a caller
+invoke this skill from outside the consumer project root.
 
 `--work-items-path <path>` — repurposed connection-descriptor override
 (same semantics as for `list-work-items`): overrides the resolved beads
-store descriptor; used by tests and by doctor invocations that want to
+store descriptor; used by tests and by invocations that want to
 scope to a non-default store.
 
 Ranking is a pure function of the materialized work-items read back from
@@ -8998,7 +8992,7 @@ required non-null `rank`, the `admission_policy`/`acceptance_policy`/
 dropped);
 only the on-substrate home of each field differs. The materialized
 work-item the skills read back carries the SAME logical fields the
-plaintext sibling exposes, so cross-boundary consumers (doctor, the
+plaintext sibling exposes, so cross-boundary consumers (the
 ranker, the console) see a consistent shape.
 
 > **Invariants (doctor-checkable; restated for the consumer):**
@@ -9489,8 +9483,6 @@ this plugin participates in these red-edge handoffs:
 
 1. `/livespec-orchestrator-beads-fabro:capture-spec-drift` →
    `/livespec:propose-change` (drift findings).
-2. `/livespec:doctor` → `/livespec-orchestrator-beads-fabro:list-work-items --json`
-   (work-item structural invariants).
 
 The handoff mechanism is namespace invocation (per
 `livespec/SPECIFICATION/contracts.md`) —
