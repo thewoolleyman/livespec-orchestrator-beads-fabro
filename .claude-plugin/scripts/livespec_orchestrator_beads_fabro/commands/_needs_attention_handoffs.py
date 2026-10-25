@@ -114,9 +114,27 @@ def _plan_topic(*, item: WorkItem) -> str | None:
 
 
 def _timeline_findings(*, config: StoreConfig, epic_id: str | None) -> tuple[str, ...]:
+    """One plan's timeline findings; an UNREADABLE timeline is itself the finding.
+
+    `read_timeline` refuses a comment whose header it cannot parse, naming the
+    comment — the right answer for a plan OPERATION, which must not act on a
+    record it cannot read. It is the wrong answer to let out of this gather: the
+    attention surface composes every plan, item and hygiene fact of the
+    repository, and measured 2026-10-25 on four of four fleet repositories, one
+    legacy single-line `plan-handoff-entry (...)` comment on one epic (written
+    before the structured header existed) erased the whole report with a
+    traceback. Scenario 125's rule already governs this surface: the enrichment
+    that cannot be read is omitted and the item is still surfaced — here, as
+    that plan's own high-urgency repair finding, with the comment named so the
+    operator can fix or retire it.
+    """
     if epic_id is None:
         return ()
-    return handoff_timeline_findings(entries=read_timeline(config=config, epic_id=epic_id))
+    try:
+        entries = read_timeline(config=config, epic_id=epic_id)
+    except ValueError as error:
+        return (str(error),)
+    return handoff_timeline_findings(entries=entries)
 
 
 def _plan_thread_output(

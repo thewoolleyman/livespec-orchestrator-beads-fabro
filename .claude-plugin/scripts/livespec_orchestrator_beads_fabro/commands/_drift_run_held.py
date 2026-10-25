@@ -49,7 +49,7 @@ from livespec_orchestrator_beads_fabro.effects import (
     attempt,
     parse_json,
 )
-from livespec_orchestrator_beads_fabro.errors import BeadsMappingError
+from livespec_orchestrator_beads_fabro.errors import BeadsCommandError, BeadsMappingError
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._drift_run_findings import DriftFinding
@@ -130,12 +130,23 @@ def held_findings(*, path: StoreConfig | None, anchor: str | None) -> tuple[Held
     FIRST record of an identity wins, so the hold's own first observation is
     what is reported.
     """
-    if path is None:
+    if path is None or anchor is None or anchor.strip() == "":
+        # The same two absences `record_held_finding` already refuses on. With
+        # no anchor the read used to ask the ledger for comments on the EMPTY
+        # id, which `bd` refuses with exit 1 — measured 2026-10-25 on
+        # livespec-dev-tooling, whose `.livespec.jsonc` declares no
+        # `detection_coverage_anchor`: that BeadsCommandError was not among the
+        # exceptions absorbed below and took the whole needs-attention
+        # composition down after 579 s (bd-ib-m2fb2g).
         return ()
     resolved = path
+    resolved_anchor = anchor
+    # A failing `bd comments` command is the other way this read goes wrong, and
+    # it stays inside this gather for the reason the docstring gives: raising
+    # here takes down the composition this read runs inside.
     comments = attempt(
-        action=lambda: read_work_item_comments(path=resolved, work_item_id=anchor or ""),
-        exceptions=(BeadsMappingError,),
+        action=lambda: read_work_item_comments(path=resolved, work_item_id=resolved_anchor),
+        exceptions=(BeadsCommandError, BeadsMappingError),
     )
     if isinstance(comments, AttemptFailure):
         return ()
