@@ -11,6 +11,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import 
     BaseAdvancedAfterArming,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit import HookOverLimit
+from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_verdict import HookVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_classify import (
     ProviderLimitRelease,
 )
@@ -175,6 +176,12 @@ class DispatchOutcome:
     needs_human_reason: str | None = None
     needs_human_preservation: str | None = None
     hook_over_limit: HookOverLimit | None = None
+    # The recorded verdict of the failing stage's latest hook-running commit
+    # attempt, carried in its OWN field so the journal's outcome row states the
+    # hook's exit status and failed targets beside — never inside — the agent's
+    # failure text (contracts.md "The recorded hook verdict outranks the agent's
+    # account of it", bd-ib-k3nmbi).
+    hook_verdict: HookVerdict | None = None
     base_advanced: BaseAdvancedAfterArming | None = None
     # The provider-limit release this terminal owes, decided ONCE by the
     # terminal mapper and read from here by the disposition that performs it.

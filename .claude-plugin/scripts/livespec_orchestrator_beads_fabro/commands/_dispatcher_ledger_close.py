@@ -360,6 +360,10 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # and is therefore absent from every other outcome for reasons that have
     # nothing to do with hooks.
     "hook_over_limit",
+    # The recorded hook verdict, dropped on the same ATTRIBUTION terms: an
+    # explicit null would read as "this run's latest commit passed its hook",
+    # a positive finding about an observation only a needs-human ending takes.
+    "hook_verdict",
     "needs_human_preservation",
     # The provider-limit release, dropped on the same terms and for the
     # ATTRIBUTION reason in its strongest form: an explicit null here would

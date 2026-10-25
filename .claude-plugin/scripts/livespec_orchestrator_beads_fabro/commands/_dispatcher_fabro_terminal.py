@@ -17,6 +17,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_reattach impor
     inspect_run,
     unobservable_run_outcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_verdict import (
+    hook_verdict_for,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_detail import (
     needs_human_terminal_detail,
     needs_human_terminal_preservation,
@@ -264,6 +267,10 @@ def _needs_human_terminal_outcome(
         needs_human_stages=causal.stages,
         needs_human_reason=needs_human_terminal_reason(text=text),
         needs_human_preservation=needs_human_terminal_preservation(text=text),
+        # The routing stage's RECORDED commit verdict (bd-ib-k3nmbi): on 8zyan the
+        # stage's failure_reason was the agent's own "the Green amend hook did not
+        # complete" while the record held the hook's completed refusal.
+        hook_verdict=hook_verdict_for(inspect=inspect, stages=causal.stages),
         fabro_run_id=run_id,
         fabro_failure_cause=None if failure is None else failure.cause,
         fabro_failure_category=None if failure is None else failure.category,
