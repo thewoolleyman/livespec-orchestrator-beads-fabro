@@ -46,14 +46,19 @@ def next_ready_child_id(*, config: StoreConfig, epic_id: str) -> str | None:
     child_ids = plan_child_ids_from_dependencies(records=records, epic_id=epic_id) | (
         plan_child_ids_from_id_hierarchy(records=records, epic_id=epic_id)
     )
-    items = list(
-        materialize_work_items(records=read_work_items(path=config.work_items_path)).values()
+    materialized_items = materialize_work_items(
+        records=read_work_items(path=config.work_items_path)
     )
+    items = list(materialized_items.values())
     ranked_positions = {
         candidate["work_item_ref"]: position
         for position, candidate in enumerate(rank_candidates(items=items))
     }
-    ready_children = child_ids & ranked_positions.keys()
-    if not ready_children:
+    eligible_children = {
+        child_id
+        for child_id in child_ids & ranked_positions.keys()
+        if materialized_items[child_id].factory_safety is None
+    }
+    if not eligible_children:
         return None
-    return min(ready_children, key=ranked_positions.__getitem__)
+    return min(eligible_children, key=ranked_positions.__getitem__)

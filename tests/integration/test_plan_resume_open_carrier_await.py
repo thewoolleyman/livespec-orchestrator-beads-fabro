@@ -163,6 +163,23 @@ def _item(*, repo: Path, item_id: str, closed: bool) -> None:
         fake.close_issue(issue_id=item_id, reason="the carrier landed")
 
 
+def _ready_child(*, repo: Path, item_id: str, labels: list[str]) -> None:
+    """Create an admission-ready child in the plan's own tenant."""
+    fake = _fake(repo=repo)
+    _ = fake.create_issue(
+        draft=IssueDraft(
+            issue_id=item_id,
+            issue_type="task",
+            title=item_id,
+            description="a ready child of the plan",
+            assignee=None,
+            created_at=_NOW,
+            labels=labels,
+        )
+    )
+    fake.update_issue(issue_id=item_id, status="ready")
+
+
 def _seed_epic(*, repo: Path) -> None:
     """A chain-tracked plan epic whose recorded obligation is already satisfied.
 
@@ -278,6 +295,48 @@ def test_an_open_cross_tenant_carrier_is_awaited_instead_of_the_proof_leg(
         "repo": _CARRIER_REPO,
         "item_status": {"item_id": _OPEN_CARRIER, "status": "closed"},
     }
+
+
+def test_resume_skips_a_factory_safety_child_for_the_next_eligible_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ready host-routed child cannot become an unattended `impl` pointer."""
+    repo = _governed_project(tmp_path=tmp_path)
+    monkeypatch.chdir(repo)
+    _item(repo=repo, item_id=_SATISFIED_ITEM, closed=True)
+    _seed_epic(repo=repo)
+    unsafe_child = f"{_EPIC}.1"
+    eligible_child = f"{_EPIC}.2"
+    _ready_child(
+        repo=repo,
+        item_id=unsafe_child,
+        labels=["factory-safety:needs-host-secrets"],
+    )
+    _ready_child(repo=repo, item_id=eligible_child, labels=[])
+
+    directive = resume_directive(config=_config(repo=repo), epic_id=_EPIC, unattended=True)
+
+    assert directive.next_action == f"impl:{eligible_child}"
+    assert _pointer(repo=repo)["ref"] == eligible_child
+
+
+def test_resume_advances_to_proof_when_its_only_ready_child_is_factory_safety(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The plan-level proof remains derivable when no eligible child remains."""
+    repo = _governed_project(tmp_path=tmp_path)
+    monkeypatch.chdir(repo)
+    _item(repo=repo, item_id=_SATISFIED_ITEM, closed=True)
+    _seed_epic(repo=repo)
+    _ready_child(
+        repo=repo,
+        item_id=f"{_EPIC}.1",
+        labels=["factory-safety:mutates-host-machinery"],
+    )
+
+    directive = resume_directive(config=_config(repo=repo), epic_id=_EPIC, unattended=True)
+
+    assert directive.next_action == f"proof:capture:{_EPIC}"
 
 
 def test_a_carrier_map_whose_carriers_are_all_closed_still_derives_the_proof_leg(
