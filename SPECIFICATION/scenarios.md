@@ -7834,7 +7834,8 @@ Feature: The gap signal is heading coverage, not clause tracking
     Given a live gap-tied item filed under the clause enumeration
     When the change landing this clause runs its migration
     Then the item carries the heading-derived gap-id of the heading its clause sits under
-    And livespec core's gap-tracking-one-to-one and no-stale-gap-tied invariants pass
+    And no gap-id is carried by more than one live gap-tied work-item
+    And every live gap-tied work-item carries a gap-id that detect-impl-gaps --json emits
     And a closed item keeps its historical clause-derived label
 ```
 
