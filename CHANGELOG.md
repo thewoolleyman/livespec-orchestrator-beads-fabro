@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.1...v0.243.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* **needs-attention:** read run attribution and dispatch factories once per snapshot (bd-ib-tzbdd3) ([6055d62](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6055d626c2629ab639236ec8297bf758f3554596))
+
 ## [0.243.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.0...v0.243.1) (2026-10-25)
 
 
