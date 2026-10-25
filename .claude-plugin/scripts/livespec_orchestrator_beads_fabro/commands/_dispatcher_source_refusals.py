@@ -16,6 +16,7 @@ match on, and prose is not matchable.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
@@ -81,7 +82,7 @@ def pass_outcome(
             "reason": _REASON_REACHABLE,
             "head": head,
             "origin_ref": origin_ref,
-            "origin_refs": list(origin_refs),
+            **_origin_ref_inventory_summary(origin_refs=origin_refs),
         },
     )
 
@@ -179,6 +180,15 @@ def _refusing(
 def _identity() -> dict[str, object]:
     """The keys every source-checkout journal record carries, pass or refusal alike."""
     return {"stage": STAGE, "step": SOURCE_CHECKOUT}
+
+
+def _origin_ref_inventory_summary(*, origin_refs: tuple[str, ...]) -> dict[str, object]:
+    """Return a bounded summary of the ordered ref inventory a pass examined."""
+    inventory = "\n".join(origin_refs).encode("utf-8")
+    return {
+        "origin_ref_inventory_count": len(origin_refs),
+        "origin_ref_inventory_sha256": hashlib.sha256(inventory).hexdigest(),
+    }
 
 
 def _push_outcome_text(*, push: CommandResult) -> str:

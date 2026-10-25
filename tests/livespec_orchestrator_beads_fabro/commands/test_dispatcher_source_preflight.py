@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -142,7 +144,43 @@ def test_source_preflight_journals_a_pass_carrying_the_step_identifier(tmp_path:
     assert outcome.record["status"] == "passed"
     assert outcome.record["reason"] == "source-head-origin-reachable"
     assert outcome.record["head"] == "abc123"
-    assert outcome.record["origin_refs"] == ["origin/master"]
+    assert outcome.record["origin_ref"] == "origin/master"
+    assert outcome.record["origin_ref_inventory_count"] == 1
+    assert (
+        outcome.record["origin_ref_inventory_sha256"]
+        == hashlib.sha256(b"origin/master").hexdigest()
+    )
+    assert "origin_refs" not in outcome.record
+
+
+def test_source_preflight_bounds_the_successful_origin_ref_inventory(tmp_path: Path) -> None:
+    """A successful containment witness does not journal every unrelated origin ref."""
+    unrelated = tuple(f"origin/unrelated-{index:04d}" for index in range(1_000))
+    containing = "origin/containing"
+    refs = (*unrelated, containing)
+    results = _base_results() | {
+        ("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"): _result(
+            stdout="\n".join(refs) + "\n"
+        ),
+        **{
+            ("merge-base", "--is-ancestor", "abc123", ref): _result(exit_code=1)
+            for ref in unrelated
+        },
+        ("merge-base", "--is-ancestor", "abc123", containing): _result(),
+    }
+
+    outcome = source_checkout_preflight(repo=tmp_path, runner=_Runner(results=results))
+
+    assert outcome.refusal is None
+    assert outcome.record.get("origin_ref_inventory_count") == len(refs)
+    assert (
+        outcome.record["origin_ref_inventory_sha256"]
+        == hashlib.sha256("\n".join(refs).encode()).hexdigest()
+    )
+    assert outcome.record["origin_ref"] == containing
+    assert outcome.record["head"] == "abc123"
+    assert "origin_refs" not in outcome.record
+    assert len(json.dumps(outcome.record, sort_keys=True)) < 500
 
 
 def test_source_preflight_refuses_a_target_that_is_not_a_git_worktree(tmp_path: Path) -> None:
@@ -258,7 +296,12 @@ def test_preflight_records_the_ref_that_actually_contains_the_pinned_source_head
     outcome = source_checkout_preflight(repo=tmp_path, runner=runner)
     assert outcome.refusal is None
     assert outcome.record["origin_ref"] == "origin/containing"
-    assert outcome.record["origin_refs"] == ["origin/unrelated", "origin/containing"]
+    assert outcome.record["origin_ref_inventory_count"] == 2
+    assert (
+        outcome.record["origin_ref_inventory_sha256"]
+        == hashlib.sha256(b"origin/unrelated\norigin/containing").hexdigest()
+    )
+    assert "origin_refs" not in outcome.record
     assert ("merge-base", "--is-ancestor", "abc123", "origin/containing") in runner.calls
 
 
