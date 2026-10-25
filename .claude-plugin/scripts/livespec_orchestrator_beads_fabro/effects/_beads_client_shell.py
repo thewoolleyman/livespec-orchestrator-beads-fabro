@@ -164,7 +164,7 @@ def invoke(*, config: StoreConfig, argv: list[str]) -> subprocess.CompletedProce
             check=False,
             cwd=repo_root,
         )
-    except FileNotFoundError as exc:  # pragma: no cover
+    except OSError as exc:  # pragma: no cover
         raise BeadsConnectionError(detail=_missing_executable_detail(config=config)) from exc
     raise_for_status(completed=completed, argv=argv, tenant=config.database)  # pragma: no cover
     return completed  # pragma: no cover
@@ -229,7 +229,7 @@ def read_bd_config_value(*, config: StoreConfig, repo_root: Path, key: str) -> s
             check=False,
             cwd=repo_root,
         )
-    except FileNotFoundError as exc:  # pragma: no cover
+    except OSError as exc:  # pragma: no cover
         raise BeadsConnectionError(detail=_missing_executable_detail(config=config)) from exc
     raise_for_status(completed=completed, argv=argv, tenant=config.database)  # pragma: no cover
     return completed.stdout.strip()
