@@ -184,24 +184,20 @@ def test_the_implement_turn_reaches_the_completion_gate_before_any_downstream_sp
     assert [condition for _, condition in gate_onward if condition == ""] == [""]
 
 
-def test_an_incomplete_turn_takes_the_same_failure_edge_as_any_other_implement_failure() -> None:
-    """The gate's failure edge leads to the terminal an `outcome=failed` implement reaches.
+def test_an_explicit_failed_incomplete_turn_reaches_the_hook_route_before_needs_human() -> None:
+    """An `outcome=failed` implement reaches the completion gate, then its hook route.
 
-    The clause asks for the SAME failure edge, so both halves are read off the
-    committed graph: the gate names `needs_human` as its `outcome=failed` route,
-    and `implement` still names that terminal for its own failures. Asserting only
-    the gate's edge would pass for a graph that had meanwhile rerouted the
-    turn's own failures somewhere else, and the claim is that the two endings
-    converge.
-
-    Since v208 the gate's failure edge passes through `implement_hook_route`,
-    whose unconditional fallthrough is that terminal: every incomplete turn
-    whose commit the hook did not refuse still ends there.
-    (`test_implement_hook_refusal_reentry_scenario204.py` owns the re-entry.)
+    The completion field is the authoritative statement of whether the Definition
+    of Done is complete. Therefore an agent's explicit failed outcome cannot
+    bypass the gate that reads that field: the unconditional edge must carry it
+    to `implement_completion`, whose failed edge reaches `implement_hook_route`.
+    That route's own tests execute the hook-refusal and allowance arms; this graph
+    assertion proves the structured ending can reach them at all.
     """
+    assert (_GATE, "") in _targets(source=_IMPLEMENT)
+    assert (_NEEDS_HUMAN, "outcome=failed") not in _targets(source=_IMPLEMENT)
     assert (_HOOK_ROUTE, "outcome=failed") in _targets(source=_GATE)
     assert (_NEEDS_HUMAN, "") in _targets(source=_HOOK_ROUTE)
-    assert (_NEEDS_HUMAN, "outcome=failed") in _targets(source=_IMPLEMENT)
 
 
 def test_a_target_naming_the_completion_gate_in_node_timeouts_is_not_refused() -> None:

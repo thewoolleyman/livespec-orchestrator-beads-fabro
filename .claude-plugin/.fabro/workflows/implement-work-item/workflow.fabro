@@ -140,12 +140,11 @@ digraph ImplementWorkItem {
     // rather than editing this literal; the Dispatcher's own fabro-run
     // subprocess budget is derived from whatever resolves.
     //
-    // retry_target: fires ONLY at exit-node goal-gate enforcement (the
-    // `outcome=failed` edge to the needs_human terminal takes precedence
-    // at node failure — docs.fabro.sh/execution/failures §"When failures
-    // become fatal"). With needs_human a dead end, no path reaches exit
-    // with this gate unsatisfied; the attribute stays to satisfy fabro's
-    // goal_gate_has_retry lint alongside the real node-retry budget.
+    // retry_target: fires ONLY at exit-node goal-gate enforcement. Every
+    // implement outcome reaches implement_completion first, so its structured
+    // completion field decides whether the hook-route retry or the diff breaker
+    // follows. The attribute stays to satisfy fabro's goal_gate_has_retry lint
+    // alongside the real node-retry budget.
     //
     // max_visits=2 (v208, widened v214; work-items bd-ib-y7372n, bd-ib-r4fl2h):
     // `implement_hook_route` can send an incomplete turn back here ONCE, so two visits is the whole of
@@ -1956,20 +1955,17 @@ digraph ImplementWorkItem {
     dod_gate -> needs_human [label="Blocked", condition="outcome=failed"]
     dod_gate -> implement
 
-    // A failed implement (structured needs-human ending, see
-    // prompts/implement.md) routes to the needs_human terminal —
-    // conditional edges take priority over the unconditional fallback;
-    // everything else proceeds to the completion gate and then to the diff
-    // breaker, both before any downstream spend.
-    implement -> needs_human [label="Blocked", condition="outcome=failed"]
+    // Every implement outcome, including an explicit structured failure, reaches
+    // the completion gate before any terminal or downstream spend. The gate's
+    // failure edge reaches implement_hook_route, which can re-enter implement
+    // while its retry budget remains and otherwise falls through to needs_human.
     implement -> implement_completion
 
     // Completion-field routing (v165, Scenario 204). A turn whose field states
     // the Definition of Done incomplete, and a turn that states no field at
     // all, both go to the incomplete-turn route. Once its re-entry budget is
-    // spent (v214) they reach the SAME needs_human terminal an
-    // `outcome=failed` implement reaches, carrying the hook's failed targets
-    // or the partial-progress cause as the recorded question. A turn that states it
+    // spent (v214) they reach needs_human carrying the hook's failed targets or
+    // the partial-progress cause as the recorded question. A turn that states it
     // complete falls through to the diff breaker exactly as before this gate
     // existed.
     implement_completion -> implement_hook_route [label="Incomplete", condition="outcome=failed"]
