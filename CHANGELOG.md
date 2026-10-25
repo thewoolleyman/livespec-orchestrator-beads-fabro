@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.242.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.242.3...v0.242.4) (2026-10-25)
+
+
+### Bug Fixes
+
+* carry a verified proof forward across a refresh that brings in only release bookkeeping ([a2b90fe](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a2b90fe2f1af690986b5e50b5fb24805245116b3))
+
 ## [0.242.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.242.2...v0.242.3) (2026-10-25)
 
 
