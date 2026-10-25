@@ -77,14 +77,17 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from livespec_orchestrator_beads_fabro.commands._acp_fallback_warning_ledger import (
+    ModelFallbackWarningLedger,
+    fold_model_fallback_warnings,
     ingest_model_fallback_warning,
+    ledger_with_appended,
     primary_replacement_records,
     primary_success_clearance_records,
-    read_model_fallback_warnings,
     selection_primary_attempts,
     selection_warning_records,
 )
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import JournalWriter
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_inputs import (
     ReconcileInputs,
     port_for,
@@ -165,13 +168,37 @@ def pass_selection_replays(
     records = read_journal_records(journal_path=inputs.journaled.source_path)
     if not records:
         return
+    ledger = _PassLedger(
+        journal=inputs.journal, ledger=fold_model_fallback_warnings(records=records)
+    )
     for factory in factories:
         port = port_for(inputs=inputs, factory=factory)
         for target in _stamped_runs(records=records, factory=factory, inputs=inputs):
             _replay_one_run(
-                inputs=inputs, factory=factory, port=port, target=target, records=records
+                inputs=inputs,
+                factory=factory,
+                port=port,
+                target=target,
+                records=records,
+                ledger=ledger,
             )
-    _retire_replaced_primaries(inputs=inputs)
+    _retire_replaced_primaries(inputs=inputs, ledger=ledger)
+
+
+@dataclass(kw_only=True)
+class _PassLedger:
+    """The pass's warning ledger, kept current with every record the pass appends.
+
+    Folded ONCE from the records the pass already read, instead of re-reading
+    the journal per warning and per attempt (bd-ib-6bbcda).
+    """
+
+    journal: JournalWriter
+    ledger: ModelFallbackWarningLedger
+
+    def append(self, *, record: dict[str, object]) -> None:
+        self.journal.append(record=record)
+        self.ledger = ledger_with_appended(ledger=self.ledger, record=record)
 
 
 def _replay_one_run(
@@ -181,6 +208,7 @@ def _replay_one_run(
     port: FabroPort,
     target: _StampedRun,
     records: tuple[Mapping[str, object], ...],
+    ledger: _PassLedger,
 ) -> None:
     """Mint this run's warnings and apply the primary attempts it evidences."""
     outcomes = _node_outcomes(port=port, run_id=target.run_id)
@@ -204,11 +232,7 @@ def _replay_one_run(
         )
         or ()
     ):
-        _ = ingest_model_fallback_warning(
-            record=warning,
-            ledger=read_model_fallback_warnings(journal_path=inputs.journaled.source_path),
-            journal=inputs.journal,
-        )
+        _ = ingest_model_fallback_warning(record=warning, ledger=ledger.ledger, journal=ledger)
     for attempt in (
         selection_primary_attempts(
             records=records,
@@ -218,14 +242,11 @@ def _replay_one_run(
         )
         or ()
     ):
-        for clearance in primary_success_clearance_records(
-            ledger=read_model_fallback_warnings(journal_path=inputs.journaled.source_path),
-            attempt=attempt,
-        ):
-            inputs.journal.append(record=clearance)
+        for clearance in primary_success_clearance_records(ledger=ledger.ledger, attempt=attempt):
+            ledger.append(record=clearance)
 
 
-def _retire_replaced_primaries(*, inputs: ReconcileInputs) -> None:
+def _retire_replaced_primaries(*, inputs: ReconcileInputs, ledger: _PassLedger) -> None:
     """Supersede every warning whose primary this repository has since replaced.
 
     The resolution is lazy and fail-soft by construction, so a repository
@@ -245,10 +266,10 @@ def _retire_replaced_primaries(*, inputs: ReconcileInputs) -> None:
     )
 
     for replacement in primary_replacement_records(
-        ledger=read_model_fallback_warnings(journal_path=inputs.journaled.source_path),
+        ledger=ledger.ledger,
         primary_generations=resolve_acp_primary_generations(repo=inputs.repo),
     ):
-        inputs.journal.append(record=replacement)
+        ledger.append(record=replacement)
 
 
 def _stamped_runs(
