@@ -92,6 +92,8 @@ def test_the_defaults_read_the_invoking_session_and_the_working_directory(
     `archive_thread(...)` work for a session that holds no runner of its own.
     """
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("CODEX_SESSION_ID", raising=False)
+    monkeypatch.delenv("PI_SESSION_ID", raising=False)
     monkeypatch.setenv(_SESSION_VAR, "ambient-session")
 
     assert completeness_leg_identity(role=ARCHIVING_PARTY) == "ambient-session"

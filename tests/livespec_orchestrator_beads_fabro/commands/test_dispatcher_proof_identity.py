@@ -82,6 +82,25 @@ def test_an_agent_session_publishes_under_its_own_session_id() -> None:
     assert runner.argvs == []
 
 
+def test_a_nested_codex_session_wins_over_its_inherited_claude_session() -> None:
+    """The child session publishes as itself, not as the parent that launched it."""
+    child = "codex-child-session"
+    parent = "claude-parent-session"
+    identity = computed_publishing_identity(
+        repo=_REPO,
+        env={
+            "CODEX_SESSION_ID": child,
+            "CLAUDE_CODE_SESSION_ID": parent,
+        },
+        runner=_Runner(result=_result()),
+    )
+    assert identity == PublishingIdentity(
+        kind=SESSION_KIND,
+        identity=child,
+        source="CODEX_SESSION_ID",
+    )
+
+
 def test_every_declared_agent_session_variable_is_consulted() -> None:
     """Each runtime in the declared set resolves, so no runtime is silently human.
 
