@@ -45,6 +45,14 @@ def test_running_gate_is_observed_from_its_frozen_directory_without_commands(
     assert calls == [["control"]]
     calls.clear()
     monkeypatch.setattr(ShellCommandRunner, "run", command)
+    clock = [0.0]
+
+    def monotonic() -> float:
+        return clock[0]
+
+    def sleeper(*, seconds: float = 0.0) -> None:
+        clock[0] += seconds
+
     result = run_wait(
         request=WaitRequest(
             wait_id="running",
@@ -58,6 +66,8 @@ def test_running_gate_is_observed_from_its_frozen_directory_without_commands(
             pane=HerdrPaneLauncher(),
         ),
         wait_store_root=tmp_path / "tmp/session-waits",
+        monotonic=monotonic,
+        sleeper=sleeper,
     )
     observation = observe_gate_target(target=target, observed_at=123.0)
     assert calls == [], "observing a gate must never start a command"
