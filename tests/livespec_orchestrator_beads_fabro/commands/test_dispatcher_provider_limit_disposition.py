@@ -265,6 +265,40 @@ def test_the_release_holds_journals_and_returns_the_item_to_ready(tmp_path: Path
     assert released.admission_policy == "auto"
 
 
+def test_claude_monthly_quota_release_holds_the_admission_credential(
+    tmp_path: Path,
+) -> None:
+    """A Claude organization ceiling is held against its one opaque account."""
+    append_work_item(path=_config(), item=_item())
+    journal = _journal(
+        tmp_path=tmp_path,
+        lines=(
+            json.dumps(
+                {
+                    "stage": "acp-session-headroom",
+                    "work_item_id": _ITEM_ID,
+                    "assessments": [{"credential_identity": "cred-exhausted"}],
+                }
+            ),
+        ),
+    )
+
+    _dispose(
+        tmp_path=tmp_path,
+        journal=journal,
+        outcome=_outcome(release=_release(), status="provider-limit-release"),
+    )
+
+    hold = _of_stage(journal=journal, stage="acp-availability-observed")[-1]
+    release = _of_stage(journal=journal, stage="provider-limit-release")[-1]
+    assert hold["hold_key"] == "cred-exhausted"
+    assert hold["scope"] == "availability-domain"
+    assert hold["cause"] == "quota"
+    assert release["hold_key"] == "cred-exhausted"
+    assert release["scope"] == "availability-domain"
+    assert release["cause"] == "quota"
+
+
 def test_the_legacy_arm_releases_the_claim_without_a_typed_hold(tmp_path: Path) -> None:
     """No entitlement was measured, so no hold -- but still a release."""
     append_work_item(path=_config(), item=_item())
