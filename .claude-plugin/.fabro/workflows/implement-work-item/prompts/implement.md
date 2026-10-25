@@ -24,6 +24,22 @@ needed to import and reach the assertion. The stub must make that
 assertion FAIL; it must never satisfy it. Modifying an existing product
 file outside an open Red is never part of this carveout.
 
+## Re-entered after a refused commit — read the hook's verdict first
+
+If this file exists, the previous implement turn of THIS run ended
+incomplete with changes staged that the repository's commit hook
+refused, and the run re-entered this stage to fix them:
+
+    cat "$(git rev-parse --git-path livespec-implement-hook-refusal)"
+
+It names the failed targets and carries the hook's own error lines,
+taken from the hook's recorded output. Fix those failures first, then
+commit the staged work through the hooks as the protocol below
+requires, and continue the loop. This is the run's only re-entry: a
+second refused commit ends the stage at `needs_human` naming the failed
+targets. If the file does not exist, this is the run's first implement
+turn; carry on below.
+
 ## Where you are
 
 You are in an ISOLATED Fabro sandbox clone of the repo, already checked

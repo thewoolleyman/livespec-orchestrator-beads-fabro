@@ -110,6 +110,18 @@ _RECAPTURE_LOOP = _RECAPTURE_ADDED | {
     "proof_verify",
     "proof_grade",
 }
+# The hook-refusal route (v208, Scenario 204; work-item bd-ib-y7372n), kept as
+# its own constant for the same reason. It closes a NEW cycle --
+# `implement -> implement_completion -> implement_hook_route -> implement` --
+# so the nodes it moves are that cycle's members plus the diff breaker the
+# second visit's completion re-earns; everything below the breaker is already
+# attributed to a loop above.
+_HOOK_ROUTE_ADDED = {"implement_hook_route"}
+_HOOK_ROUTE_LOOP = _HOOK_ROUTE_ADDED | {
+    "implement",
+    "implement_completion",
+    "implementation_diff",
+}
 _REFRESH_REPAIR_LOOP = _REFRESH_REPAIR_ADDED | {
     "fix",
     "janitor",
@@ -656,8 +668,9 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
     pre_port = budget(text=_ROLLBACK.read_text(encoding="utf-8"))
 
     # The two new stages, the v134 refresh-repair classifier, the v145 refresh
-    # route, the v156 per-assertion grade, the v165 completion gate and the v175
-    # recapture route are the ONLY nodes added, and nothing was dropped: a node
+    # route, the v156 per-assertion grade, the v165 completion gate, the v175
+    # recapture route and the v208 hook-refusal route are the ONLY nodes added,
+    # and nothing was dropped: a node
     # the ported graph lost would be an executable path missing from a figure
     # still presented as an allowance.
     assert set(ported.node_visits) - set(pre_port.node_visits) == (
@@ -667,6 +680,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _PROOF_GRADE_ADDED
         | _IMPLEMENT_COMPLETION_ADDED
         | _RECAPTURE_ADDED
+        | _HOOK_ROUTE_ADDED
     )
     assert set(pre_port.node_visits) - set(ported.node_visits) == set()
 
@@ -688,6 +702,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _PROOF_GRADE_ADDED
         | _IMPLEMENT_COMPLETION_ADDED
         | _RECAPTURE_LOOP
+        | _HOOK_ROUTE_LOOP
     )
     assert moved <= reachable, sorted(moved - reachable)
     # And the direction is the honest one: the graph grew, so the allowance grew.

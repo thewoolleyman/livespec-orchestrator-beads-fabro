@@ -213,6 +213,18 @@ put every node on a Claude adapter), so nothing here is refused by it; a
 repository that does route one and raises its node timeouts should expect that
 gate to bite, and the remedy is the gate's own -- a shorter configured timeout
 or a fresher credential -- not a visit cap sized below what the graph can reach.
+
+v208'S HOOK-REFUSAL ROUTE (work-item bd-ib-y7372n) WIDENS THE GRAPH AGAIN, and
+the bound is re-chosen for it. An incomplete implement turn whose staged
+changes the commit hook refuses re-enters `implement` once, through
+`implement_hook_route`. `implement` and the route both carry `max_visits=2`, the
+tightest cut the derivation reads, and the derivation bills the second visit
+through everything below the diff breaker as well, though only one visit can
+reach it. Re-measured against this tree, after the Codex-routing canary's
+revert: 976415 shipped and 1518215 at the retired `"15m"`, up from 902955 and
+1415955. The bound of 1000000 still sits between them with 23585 seconds of
+headroom, so it is unchanged. The freshness gate still demands
+111600 seconds, because the window governs it, not the graph.
 """
 
 from __future__ import annotations
@@ -242,7 +254,7 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # 15m figure exactly, because that one is the thing being moved away from and a
 # drifting comparand would hide the move.
 _ALLOWANCE_BOUND_SECONDS = 1_000_000
-_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_415_955
+_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_518_215
 
 # The execution ALLOWANCE the shipped payload resolves, the lifetime the
 # freshness gate actually demands of a credential, and the lifetime of a FRESH
@@ -255,7 +267,7 @@ _ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_415_955
 # comparand is what let v175's widened graph cross the credential ceiling while
 # every case here still passed, and an exact pin forces the re-measurement that
 # was skipped.
-_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 902_955
+_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 976_415
 _SHIPPED_FRESHNESS_REQUIREMENT_SECONDS = 111_600
 _FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS = 864_000
 

@@ -55,6 +55,7 @@ _GATE = "implement_completion"
 _IMPLEMENT = "implement"
 _DIFF = "implementation_diff"
 _NEEDS_HUMAN = "needs_human"
+_HOOK_ROUTE = "implement_hook_route"
 _JANITOR = "janitor"
 
 # The per-clone record the prompt directs the turn to write and this gate reads,
@@ -192,8 +193,14 @@ def test_an_incomplete_turn_takes_the_same_failure_edge_as_any_other_implement_f
     the gate's edge would pass for a graph that had meanwhile rerouted the
     turn's own failures somewhere else, and the claim is that the two endings
     converge.
+
+    Since v208 the gate's failure edge passes through `implement_hook_route`,
+    whose unconditional fallthrough is that terminal: every incomplete turn
+    whose commit the hook did not refuse still ends there.
+    (`test_implement_hook_refusal_reentry_scenario204.py` owns the re-entry.)
     """
-    assert (_NEEDS_HUMAN, "outcome=failed") in _targets(source=_GATE)
+    assert (_HOOK_ROUTE, "outcome=failed") in _targets(source=_GATE)
+    assert (_NEEDS_HUMAN, "") in _targets(source=_HOOK_ROUTE)
     assert (_NEEDS_HUMAN, "outcome=failed") in _targets(source=_IMPLEMENT)
 
 
