@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.242.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.242.1...v0.242.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* fold the model-fallback warning ledger once per reconcile pass (bd-ib-6bbcda) ([38fbf87](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/38fbf870855968fc7384cb85a2b24a5f02014596))
+
 ## [0.242.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.242.0...v0.242.1) (2026-10-25)
 
 
