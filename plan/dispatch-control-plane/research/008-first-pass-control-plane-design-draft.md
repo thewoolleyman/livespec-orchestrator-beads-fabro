@@ -1,4 +1,6 @@
-# 004 — Control-plane design: where the Dispatcher sits among the overseer, plan sessions, a coordinator and the console
+# 008 — First-pass control-plane design draft: where the Dispatcher sits among the overseer, plan sessions, a coordinator and the console
+
+Filed 2026-10-25 at the maintainer's direction, unchanged from the withdrawn draft that was written as "004" before note 004 existed. It predates the second pass and both rulings, so research note 004 governs wherever they differ.
 
 Status: DRAFT FOR MAINTAINER DISCUSSION, 2026-10-25. Written by the plan session from research notes 002 and 003
 and from the ratified texts cited below. Nothing here is a ruling; §9 lists what the maintainer is asked to decide.
