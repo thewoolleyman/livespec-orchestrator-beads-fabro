@@ -458,6 +458,7 @@ check:
         check-codex-plugin-structure
         check-pi-plugin-structure
         check-bd-guard
+        check-fleet-launch
         check-codex-skill-picker
         check-no-fleet-pat-dispatch-surface
         check-spec-governance-default-block
@@ -737,6 +738,20 @@ check-bd-guard:
 # temporary; it never installs or copies a host binary.
 check-bd-guard-candidate:
     bash bd-guard/test/run-v1-1-2-candidate-tests.sh
+
+# `check-fleet-launch` — lint + hermetically test the PROVISIONAL fleet launch
+# scripts (fleet-launch/), the caller-side launch loop that decides only WHEN a
+# caller invokes `drive --action impl:<item>`. SPECIFICATION/contracts.md
+# §"Provisional fleet launch scripts" requires `just check` to run this target,
+# that it shellchecks every shell script under fleet-launch/, and that it runs a
+# hermetic harness exercising the launcher against stub factory boards and
+# throwaway queue, lock, in-flight and state directories — because "A syntax
+# check alone MUST NOT be treated as satisfying this obligation". Pure shell: no
+# beads / no store / no network / no live factory, so it runs in any tier. Same
+# two-leg shape as check-bd-guard. Not a canonical livespec-dev-tooling slug, so
+# it is wired in the private block.
+check-fleet-launch:
+    bash dev-tooling/just-check-fleet-launch.sh
 
 # `check-codex-plugin-structure` — Codex cross-runtime structural check (P3).
 # Validates the orchestrator plugin's Codex surface (per
