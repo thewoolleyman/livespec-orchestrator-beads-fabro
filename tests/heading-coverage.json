@@ -2247,16 +2247,16 @@
     "heading": "## Provisional fleet launch scripts",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "test": "TODO",
-    "reason": "Owed: an integration-tier test exercising check-fleet-launch end to end (shellcheck plus the hermetic launcher harness) is the binding for this heading, delivered by plan provisional-fleet-launch child bd-ib-nz4av6. TODO until that item merges and names the exercising test node; never a unit-tier test.",
+    "test": "tests.integration.test_fleet_launch_check_scenario242.test_scenario242_the_committed_check_lints_every_shell_script_and_runs_the_harness",
+    "reason": "Integration-tier acceptance for this clause's enforcement obligation, delivered by plan provisional-fleet-launch child bd-ib-nz4av6: the bound node drives the shipped `check-fleet-launch` driver (dev-tooling/just-check-fleet-launch.sh) over the real committed tree, asserting that the slug is in the target list `just check` actually executes (read back through dev-tooling/aggregate-targets.sh, the runner's own extractor), that the shellcheck leg covered every tracked shell script under fleet-launch/ (count compared against git ls-files, so a new script cannot escape the lint), and that the hermetic harness ran a case for each of the five launch gates the clause names. The clause's last sentence -- a launcher defect must make the check exit non-zero -- is the sibling broken-launcher node. The banner obligation is a sibling parametrized case over every fleet-launch/ shell script, reading each opening comment block with its comment markers removed. The declared-once-and-FLEET_LAUNCH_-overridable obligation is carried by the harness itself rather than by a separate assertion: every case points the launcher at stub boards and throwaway directories through those variables alone, so a host value that stopped honouring its override would make the case read the real host and fail.",
     "work_item": "bd-ib-nz4av6"
   },
   {
     "heading": "## Scenario 242 \u2014 The provisional fleet launch check fails the build on a broken launcher",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Owed: an integration-tier test exercising check-fleet-launch end to end (shellcheck plus the hermetic launcher harness) is the binding for this heading, delivered by plan provisional-fleet-launch child bd-ib-nz4av6. TODO until that item merges and names the exercising test node; never a unit-tier test.",
+    "test": "tests.integration.test_fleet_launch_check_scenario242.test_scenario242_a_launcher_that_reads_an_idle_board_as_unknown_turns_the_check_red",
+    "reason": "Integration-tier acceptance for Scenario 242, delivered by plan provisional-fleet-launch child bd-ib-nz4av6. The bound node is the scenario's SECOND scenario, 'a defect in a launcher turns the check red', because a green run of a check cannot distinguish a harness that exercises five gates from one that exercises none: it copies the committed fleet-launch/ tree, mutates the launcher to read a retired factory's idle board as UNKNOWN (the 2026-10-24 outage the directory's README records), PROVES the mutation landed by counting the target text before and after, and asserts the committed harness exits non-zero naming the failing case. The harness-exercises-every-gate scenario is the sibling end-to-end node, the banner scenario is a sibling parametrized case over every fleet-launch/ shell script, and the host-value-override scenario is carried by the harness's own hermeticity, which drives every case through FLEET_LAUNCH_ variables. The retirement scenario is a condition on deleting the directory rather than behaviour any build can exercise.",
     "work_item": "bd-ib-nz4av6"
   },
   {

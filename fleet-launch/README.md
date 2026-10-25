@@ -37,6 +37,7 @@ for the Dispatcher's own admission conditions.
 | `resolve-default-factory.sh` | Prints a repository's committed `dispatcher.default_factory` from its origin default branch. |
 | `host-capture-payload.py` | Builds a `host_recorded` Proof-of-Done payload from a registry-resolved capture dispatch; refuses, writing nothing, when any evidence is missing. |
 | `wrappers/` | PATH-keeping shims around each independent tenant's committed credential wrapper, passed as `WRAPPER=` to `dispatch-dual.sh`. `homelab-wrapper.argv` holds parameter-store PATHS, never secret values. |
+| `test/run-tests.sh` | The hermetic harness `just check-fleet-launch` runs. It drives `dispatch-dual.sh` against stub factory boards, a stub credential wrapper, a stub `ssh` and throwaway queue, lock, in-flight and state directories — every launch gate exercised, no real factory and no real dispatch. Each refusal case carries the positive control that opens the one gate it is about. |
 
 ## Running a launch
 

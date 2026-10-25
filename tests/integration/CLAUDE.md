@@ -1616,6 +1616,28 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   precedence and the per-field degradations, is
   `tests/livespec_orchestrator_beads_fabro/commands/test_needs_attention_needs_human_question.py`.
 
+- `test_fleet_launch_check_scenario242.py` — binds `SPECIFICATION/contracts.md`
+  §"Provisional fleet launch scripts" and `scenarios.md` Scenario 242: `just
+  check` runs a `check-fleet-launch` target that shellchecks every shell script
+  under `fleet-launch/` and runs a hermetic harness over the five launch gates
+  the clause names, and a launcher defect makes it exit non-zero. It is the
+  exception to the `livespec_orchestrator_beads_fabro`-package framing above —
+  the subject is this repository's own committed gate, as in the pre-push
+  modules — so the SHIPPED driver is DRIVEN rather than re-implemented: a second
+  account of its two legs would be a different measurement from the one that
+  gates master. Two things carry it. The lint leg's coverage is asserted as a
+  COUNT compared against `git ls-files`, so a new fleet-launch script cannot
+  escape the lint while the case still passes; and the bound Scenario-242 node
+  is the BROKEN-LAUNCHER arm, because a green run of a check cannot distinguish
+  a harness exercising five gates from one exercising none — it copies the
+  committed tree, mutates the launcher to read a retired factory's idle board as
+  UNKNOWN (the 2026-10-24 outage the directory's README records), PROVES the
+  mutation landed by counting the target text before and after, and asserts the
+  committed harness fails naming the case. Without that count a pattern matching
+  nothing leaves the script unmodified and the passing harness is reported as a
+  pass. Nothing is stood in and no tenant is touched; the harness itself is
+  hermetic, so the case spawns `bash` and never a Python child.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

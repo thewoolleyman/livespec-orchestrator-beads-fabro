@@ -953,20 +953,6 @@
   },
   {
     "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
-    "heading": "## Provisional fleet launch scripts",
-    "work_item": "bd-ib-nz4av6",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 242 \u2014 The provisional fleet launch check fails the build on a broken launcher",
-    "work_item": "bd-ib-nz4av6",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 243 \u2014 Admission skips a Codex candidate whose usage window is short of headroom",
     "work_item": "bd-ib-4jdgcw",
