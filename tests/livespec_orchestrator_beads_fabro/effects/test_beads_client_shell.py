@@ -7,6 +7,7 @@ import logging
 import os
 import subprocess
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -114,6 +115,35 @@ def _embedded_repo(*, tmp_path: Path) -> Path:
     config_path.parent.mkdir(parents=True)
     _ = config_path.write_text("dolt.mode: embedded\n", encoding="utf-8")
     return repo_root
+
+
+def test_invoke_prefixes_the_target_credential_wrapper_and_keeps_the_target_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root, config_path = _server_mode_repo(tmp_path=tmp_path)
+    _ = config_path.write_text("dolt.mode: server\n", encoding="utf-8")
+    wrapper = ("./with-target-env.sh", "--")
+    config = replace(_tenant_config(repo_root=repo_root), credential_wrapper=wrapper)
+    calls: list[tuple[list[str], Path | None]] = []
+
+    def run(
+        argv: list[str], *, cwd: Path | None = None, **_: object
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((argv, cwd))
+        stdout = "tenant-db\n" if argv[-3:] == ["config", "get", argv[-1]] else "[]\n"
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout=stdout, stderr="")
+
+    monkeypatch.delenv("BEADS_DOLT_PASSWORD", raising=False)
+    monkeypatch.setattr(shell.subprocess, "run", run)
+    shell.reset_tenant_verification_memo()
+
+    shell.invoke(config=config, argv=[config.bd_path, "list"])
+
+    assert calls == [
+        ([*wrapper, config.bd_path, "config", "get", "dolt.server-user"], repo_root),
+        ([*wrapper, config.bd_path, "config", "get", "dolt.database"], repo_root),
+        ([*wrapper, config.bd_path, "list"], repo_root),
+    ]
 
 
 def test_run_json_surfaces_zero_exit_stderr(
