@@ -45,27 +45,31 @@ would be a second instrument that can disagree with the one that ran, and the
 disagreement would be invisible: both answers are plausible and neither names
 the other.
 
-THE 126 CASE IS THIS CALL'S OWN EXPOSURE rather than a courtesy, because the
-whole prompt travels as ONE argv entry and `judgement_subject` inlines the
-verbatim body of every heading the item's reference line names. Linux caps a
-single entry at 131072 bytes, so an item citing a large governing heading
-renders an entry the kernel refuses, and the runner's generic launch-failure
-arm is what keeps that a `judge-command-failed` did-not-run verdict instead of
-an `OSError` escaping the pre-dispatch wall, the intake routing and the approve
-valve. It is deliberately NOT `no-eligible-model`: the judge resolved, so the
-remedy is a smaller subject rather than an installed binary.
+THE PROMPT FILE REMOVES THE ARGV-SIZE FAILURE from this taking: a subject may
+inline every referenced heading without becoming one oversized argv entry. A
+launch failure can still occur for another operating-system reason, and the
+runner's generic launch-failure arm keeps it a `judge-command-failed`
+did-not-run verdict instead of an `OSError` escaping the pre-dispatch wall, the
+intake routing and the approve valve. It is deliberately NOT
+`no-eligible-model`: the candidate resolved, so the invocation rather than the
+chain is what failed.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
     CLAUDE_OAUTH_TOKEN_ENV,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_gate_candidates import (
+    dod_gate_candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_UNAVAILABLE,
@@ -92,6 +96,7 @@ from livespec_orchestrator_beads_fabro.effects import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -105,9 +110,9 @@ __all__: list[str] = [
     "judgement_argv",
     "judgement_prompt",
     "judgement_rubric",
-    "resolve_judge_model",
     "resolve_judge_path",
     "resolve_judge_timeout_seconds",
+    "run_dod_gate_prompt",
     "run_dod_judgement",
 ]
 
@@ -121,9 +126,7 @@ CAUSE_JUDGE_COMMAND_FAILED = "judge-command-failed"
 CAUSE_PROMPT_UNREADABLE = "dod-gate-prompt-unreadable"
 
 _JUDGE_PATH_ENV = "LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH"
-_MODEL_ENV = "LIVESPEC_DOD_JUDGEMENT_MODEL"
 _TIMEOUT_ENV = "LIVESPEC_DOD_JUDGEMENT_TIMEOUT_SECONDS"
-_DEFAULT_MODEL = "claude-opus-4-8"
 _DEFAULT_TIMEOUT_SECONDS = 600.0
 _JUDGE_EXECUTABLE = "claude"
 _CONVENTIONAL_JUDGE_PATH = "~/.local/bin/claude"
@@ -137,6 +140,9 @@ _ALLOWED_TOOLS = "Read,Grep,Glob"
 # two numbers come from rather than from any convention restated here.
 _EXIT_TIMED_OUT = 124
 _EXIT_EXECUTABLE_ABSENT = 127
+_CODEX_AGENT = "codex-acp"
+_CLAUDE_AGENT = "claude-acp"
+_PROMPT_FILE_PREFIX = "livespec-dod-gate-"
 
 # The ONE thing a host taking appends, and the whole of it: the verdict form.
 # PUBLIC, because the repository preflight appends the identical bytes — a second
@@ -200,12 +206,11 @@ def judgement_prompt(*, gate_prompt: str, subject: str) -> str:
     return f"{gate_prompt}{HOST_ENDING_CONTRACT}{subject}\n"
 
 
-def judgement_argv(*, judge_path: str, prompt: str, model: str) -> list[str]:
-    """The headless judge invocation — a plain `claude -p`, never a Fabro run."""
+def judgement_argv(*, judge_path: str, model: str) -> list[str]:
+    """The Claude host-judge invocation, with its prompt supplied on standard input."""
     return [
         judge_path,
         "-p",
-        prompt,
         "--allowedTools",
         _ALLOWED_TOOLS,
         "--model",
@@ -238,11 +243,6 @@ def resolve_judge_path(
     if local_bin.is_file():
         return str(local_bin)
     return _JUDGE_EXECUTABLE
-
-
-def resolve_judge_model(*, environ: dict[str, str]) -> str:
-    """The judging model: the env override, else the committed default."""
-    return environ.get(_MODEL_ENV, "").strip() or _DEFAULT_MODEL
 
 
 def resolve_judge_timeout_seconds(*, environ: dict[str, str]) -> float:
@@ -298,35 +298,130 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
     gate_prompt = judgement_rubric(payload_root=payload_root) if rubric is None else rubric
     if gate_prompt is None:
         return DodJudgement(outcome=JUDGEMENT_UNAVAILABLE, cause=CAUSE_PROMPT_UNREADABLE)
-    environ = dict(os.environ)
-    credential = select_factory_credential(
-        environ=environ,
-        home=Path.home(),
-        warn=lambda message: sys.stderr.write(f"{message}\n"),
-    )
-    judge_environ = dict(environ)
-    judge_environ[CLAUDE_OAUTH_TOKEN_ENV] = environ.get(credential.env_name, "")
     active_runner = ShellCommandRunner() if runner is None else runner
-    result = active_runner.run(
-        argv=judgement_argv(
-            judge_path=resolve_judge_path(environ=environ),
-            prompt=judgement_prompt(
-                gate_prompt=gate_prompt,
-                subject=judgement_subject(
-                    item=item, cwd=cwd, comments=comments, governing=governing
-                ),
-            ),
-            model=resolve_judge_model(environ=environ),
-        ),
-        cwd=cwd,
-        timeout_seconds=resolve_judge_timeout_seconds(environ=environ),
-        env=judge_environ,
+    prompt = judgement_prompt(
+        gate_prompt=gate_prompt,
+        subject=judgement_subject(item=item, cwd=cwd, comments=comments, governing=governing),
     )
-    if result.exit_code != 0:
-        return DodJudgement(
-            outcome=JUDGEMENT_UNAVAILABLE, cause=_invocation_cause(exit_code=result.exit_code)
+    reply, cause = run_dod_gate_prompt(
+        prompt=prompt,
+        cwd=cwd,
+        runner=active_runner,
+        is_verdict=lambda text: parse_judgement_reply(reply=text).outcome != JUDGEMENT_UNAVAILABLE,
+    )
+    if reply is not None:
+        return parse_judgement_reply(reply=reply)
+    return DodJudgement(outcome=JUDGEMENT_UNAVAILABLE, cause=cause or CAUSE_NO_ELIGIBLE_MODEL)
+
+
+def run_dod_gate_prompt(
+    *,
+    prompt: str,
+    cwd: Path,
+    runner: CommandRunner,
+    is_verdict: Callable[[str], bool],
+    timeout_seconds: float | None = None,
+) -> tuple[str | None, str]:
+    """Run the resolved `dod_gate` candidates in order, closing stdin for each.
+
+    A candidate that cannot run or produces a reply the caller cannot parse
+    advances the ordered fallback chain. The first parseable verdict returns
+    immediately, so no later candidate can run after a judgement is decided.
+    """
+    resolved = dod_gate_candidates(cwd=cwd)
+    if resolved is None:
+        return (None, CAUSE_NO_ELIGIBLE_MODEL)
+    environ = dict(os.environ)
+    resolved_timeout = (
+        resolve_judge_timeout_seconds(environ=environ)
+        if timeout_seconds is None
+        else timeout_seconds
+    )
+    last_cause = CAUSE_NO_ELIGIBLE_MODEL
+    for candidate in resolved:
+        result = _run_candidate(
+            candidate=candidate,
+            prompt=prompt,
+            cwd=cwd,
+            runner=runner,
+            environ=environ,
+            timeout_seconds=resolved_timeout,
         )
-    return parse_judgement_reply(reply=result.stdout)
+        if result.exit_code != 0:
+            last_cause = _invocation_cause(exit_code=result.exit_code)
+            continue
+        if is_verdict(result.stdout):
+            return (result.stdout, "")
+        last_cause = "unparseable-verdict"
+    return (None, last_cause)
+
+
+def _run_candidate(
+    *,
+    candidate: AcpCandidate,
+    prompt: str,
+    cwd: Path,
+    runner: CommandRunner,
+    environ: dict[str, str],
+    timeout_seconds: float,
+):
+    """Run one configured host candidate with a prompt file as its only stdin."""
+    argv, judge_environ = _candidate_command(candidate=candidate, environ=environ)
+    with tempfile.TemporaryDirectory(prefix=_PROMPT_FILE_PREFIX) as scratch:
+        prompt_path = Path(scratch) / "prompt.txt"
+        _ = prompt_path.write_text(prompt, encoding="utf-8")
+        with prompt_path.open("rb") as handle:
+            return runner.run(
+                argv=argv,
+                cwd=cwd,
+                timeout_seconds=timeout_seconds,
+                env=judge_environ,
+                stdin=handle.fileno(),
+            )
+
+
+def _candidate_command(
+    *, candidate: AcpCandidate, environ: dict[str, str]
+) -> tuple[list[str], dict[str, str]]:
+    """The direct host command for one catalog-resolved ACP candidate."""
+    if candidate.agent_id == _CODEX_AGENT:
+        settings = _codex_settings(candidate=candidate)
+        model = settings.get("model", "")
+        effort = settings.get("model_reasoning_effort", "")
+        argv = ["codex", "exec", "-m", model]
+        if effort:
+            argv.extend(("-c", f"model_reasoning_effort={json.dumps(effort)}"))
+        return argv, dict(environ)
+    if candidate.agent_id == _CLAUDE_AGENT:
+        model = candidate.adapter.env.get("ANTHROPIC_MODEL", "")
+        credential = select_factory_credential(
+            environ=environ,
+            home=Path.home(),
+            warn=lambda message: sys.stderr.write(f"{message}\n"),
+        )
+        judge_environ = dict(environ)
+        judge_environ[CLAUDE_OAUTH_TOKEN_ENV] = environ.get(credential.env_name, "")
+        argv = judgement_argv(judge_path=resolve_judge_path(environ=environ), model=model)
+        return argv, judge_environ
+    return [candidate.adapter.command, *candidate.adapter.args], dict(environ)
+
+
+def _codex_settings(*, candidate: AcpCandidate) -> dict[str, str]:
+    """The model and effort rendered into this candidate's catalog adapter."""
+    raw = candidate.adapter.env.get("CODEX_CONFIG", "")
+    try:
+        decoded: object = json.loads(raw)
+    except ValueError:
+        return {}
+    if not isinstance(decoded, dict):
+        return {}
+    payload = cast("dict[str, object]", decoded)
+    settings: dict[str, str] = {}
+    for key in ("model", "model_reasoning_effort"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            settings[key] = value
+    return settings
 
 
 def _invocation_cause(*, exit_code: int) -> str:

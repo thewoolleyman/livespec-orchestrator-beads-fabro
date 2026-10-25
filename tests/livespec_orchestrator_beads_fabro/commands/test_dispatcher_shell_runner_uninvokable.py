@@ -48,12 +48,8 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
-    JUDGEMENT_UNAVAILABLE,
-)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import JUDGEMENT_ADMITTED
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
-    CAUSE_JUDGE_COMMAND_FAILED,
-    CAUSE_NO_ELIGIBLE_MODEL,
     run_dod_judgement,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import (
@@ -96,9 +92,9 @@ def _item() -> WorkItem:
 def _oversized_payload(*, tmp_path: Path) -> Path:
     """A payload whose `dod_gate` prompt alone exceeds one argv entry.
 
-    The prompt file is the REAL input the oversized entry comes from — the
-    judgement reads it off the payload and hands the whole thing to `-p` — so
-    oversizing it reproduces the live condition rather than simulating it.
+    The prompt file is the REAL input the host judgement reads, so this keeps
+    the argv-cap regression under test while proving that the prompt file is
+    supplied through standard input instead.
     """
     root = tmp_path / "payload"
     prompts = root / ".fabro" / "workflows" / "implement-work-item" / "prompts"
@@ -113,6 +109,19 @@ def _repo(*, tmp_path: Path) -> Path:
     spec.mkdir(parents=True, exist_ok=True)
     _ = (spec / "scenarios.md").write_text(
         f"# Scenarios\n\n{_HEADING}\n\nThe judgement runs before admission.\n",
+        encoding="utf-8",
+    )
+    _ = (repo / ".livespec.jsonc").write_text(
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "acp_nodes": {
+        "dod_gate": {"agent": "claude-acp", "model": "claude-opus-5"}
+      }
+    }
+  }
+}
+""",
         encoding="utf-8",
     )
     return repo
@@ -152,18 +161,18 @@ def test_an_absent_executable_is_still_its_own_measurement(tmp_path: Path) -> No
     assert "executable not found: livespec-no-such-binary-xyz" in result.stderr
 
 
-def test_a_prompt_past_the_argv_cap_leaves_the_judgement_fail_soft(
+def test_a_prompt_past_the_argv_cap_reaches_the_configured_judge_on_standard_input(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The regression: the judgement reports it could not run, and does not raise.
-
-    The judge path is PINNED to a real executable so the failure under
-    measurement is the kernel's refusal to launch and not an unresolvable
-    name — with the bare `claude` fallback, whether `ENOENT` or `E2BIG` is
-    reported first is the host's business and the test would be measuring that
-    instead.
-    """
-    monkeypatch.setenv("LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH", sys.executable)
+    """The argv cap does not limit a prompt delivered through a closed file stdin."""
+    seen = tmp_path / "prompt-bytes"
+    judge = tmp_path / "fake-judge"
+    _ = judge.write_text(
+        f"#!/bin/sh\nwc -c > {seen}\nprintf '%s\\n' '{{\"outcome\": \"passed\"}}'\n",
+        encoding="utf-8",
+    )
+    judge.chmod(judge.stat().st_mode | 0o100)
+    monkeypatch.setenv("LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH", str(judge))
 
     verdict = run_dod_judgement(
         item=_item(),
@@ -171,8 +180,5 @@ def test_a_prompt_past_the_argv_cap_leaves_the_judgement_fail_soft(
         payload_root=_oversized_payload(tmp_path=tmp_path),
     )
 
-    assert verdict.outcome == JUDGEMENT_UNAVAILABLE
-    assert verdict.cause == CAUSE_JUDGE_COMMAND_FAILED
-    # Not the missing-judge cause: the judge resolved, so an operator must not
-    # be sent to install one.
-    assert verdict.cause != CAUSE_NO_ELIGIBLE_MODEL
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert int(seen.read_text(encoding="utf-8").strip()) > len(_OVER_THE_ARGV_CAP)

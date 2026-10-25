@@ -100,7 +100,17 @@ def _repo(*, tmp_path: Path) -> Path:
     spec = repo / "SPECIFICATION"
     spec.mkdir(parents=True, exist_ok=True)
     _ = (repo / ".livespec.jsonc").write_text(
-        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "connection": {"prefix": "bd-ib"},
+    "dispatcher": {
+      "acp_nodes": {
+        "dod_gate": {"agent": "claude-acp", "model": "claude-opus-5"}
+      }
+    }
+  }
+}
+""",
         encoding="utf-8",
     )
     _ = (spec / "scenarios.md").write_text(
@@ -143,7 +153,8 @@ class _Judge:
         _ = script.write_text(
             "#!/bin/sh\n"
             f"echo call >> {self._ledger}\n"
-            'if [ "$2" = "--model" ]; then\n'
+            'prompt="$(cat)"\n'
+            'if printf "%s" "$prompt" | grep -q generalization_target; then\n'
             f'  printf "%s\\n" "{_SPEC_STATED_REPLY}"\n'
             "else\n"
             f'  printf "%s\\n" "{_PASS_REPLY}"\n'
