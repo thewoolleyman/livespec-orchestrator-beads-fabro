@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.242.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.242.2...v0.242.3) (2026-10-25)
+
+
+### Bug Fixes
+
+* preserve fresh handoff pointer on resume ([70c39f3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/70c39f3e994dda0415dd4a163c07fe1053970409))
+* skip factory-safety children on plan resume ([01b9674](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/01b9674cbfd4dd8a3a19ca8734904aa469f26c83))
+
 ## [0.242.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.242.1...v0.242.2) (2026-10-25)
 
 
