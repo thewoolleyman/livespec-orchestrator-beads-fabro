@@ -42,10 +42,18 @@ would report the lane clean while the primary was still falling over.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+import pytest
+from livespec_orchestrator_beads_fabro.commands import (
+    _acp_fallback_warning_ledger as warning_ledger,
+)
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_reconcile_acp_selection as selection_lane,
+)
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_reconcile_runs as reconcile
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
@@ -791,3 +799,63 @@ def test_a_fallback_only_edit_leaves_the_warning_standing(tmp_path: Path) -> Non
 
     assert _SUPERSEDED_STAGE not in _stages_written(journal_path=journal_path)
     assert _fact_ids(repo=repo, journal_path=journal_path) == [_FACT_ID]
+
+
+def test_the_pass_folds_the_warning_ledger_from_the_journal_at_most_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """bd-ib-6bbcda: one pass reads the journal for its warning ledger at most once.
+
+    The host profile of 2026-10-24 put 98% of a pre-launch dispatcher's CPU in
+    re-reading a 307 MB journal once per minted warning and once per primary
+    attempt. Three runs here mint warnings and evidence a primary attempt, so a
+    per-warning or per-attempt read is counted more than once. The second pass
+    is the control on correctness: an in-memory ledger that forgot what this
+    pass appended would mint the same warnings again.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-2", index=1, identity="selection-2"),
+            _run_stamp(dispatch_id="dispatch-2", run_id="01SECOND"),
+            _selection(
+                at=_AFTER_WARNING, dispatch_id="dispatch-3", index=0, identity="selection-3"
+            ),
+            _run_stamp(dispatch_id="dispatch-3", run_id=_PRIMARY_RUN, at=_AFTER_WARNING),
+        ),
+    )
+    runner = _Runner(
+        inspect_by_run={_FALLBACK_RUN: _stages(), "01SECOND": _stages(), _PRIMARY_RUN: _stages()}
+    )
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+    reads: list[object] = []
+
+    def counting(
+        original: Callable[..., tuple[Mapping[str, Any], ...]],
+    ) -> Callable[..., tuple[Mapping[str, Any], ...]]:
+        def wrapped(*, journal_path: Path | None) -> tuple[Mapping[str, Any], ...]:
+            reads.append(journal_path)
+            return original(journal_path=journal_path)
+
+        return wrapped
+
+    # Both readers the lane can reach, counted together: the pass's own
+    # snapshot read and the warning-ledger fold.
+    monkeypatch.setattr(warning_ledger, "journal_records", counting(warning_ledger.journal_records))
+    monkeypatch.setattr(
+        selection_lane, "read_journal_records", counting(selection_lane.read_journal_records)
+    )
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+    first = _stages_written(journal_path=journal_path)
+    assert len(reads) <= 1
+    reads.clear()
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert len(reads) <= 1
+    assert first.count(_WARNING_STAGE) >= 1
+    assert _stages_written(journal_path=journal_path).count(_WARNING_STAGE) == first.count(
+        _WARNING_STAGE
+    )
