@@ -9580,3 +9580,74 @@ Feature: a broken provisional launcher cannot reach master
     When the retirement condition is evaluated
     Then fleet-launch/ is deleted from the repository
 ```
+
+## Scenario 244 — reconcile-merged resolves a merged pull request by head ref, then title, then body mention
+
+```gherkin
+Feature: Merged pull request resolution ranks how a candidate names the item
+  As the operator recovering a merged item with reconcile-merged
+  I want a pull request that carries the item to outrank one that merely mentions it
+  So that a follow-up or sibling pull request naming the item cannot make a clear resolution ambiguous
+
+  Scenario: A head-ref match outranks title and body matches
+    Given an item whose merged pull requests on the default branch include one whose head ref is feat/<work-item-id>
+    And others that carry the work-item id in their title or body
+    When reconcile-merged resolves the item's merged pull request
+    Then it resolves the feat/<work-item-id> pull request
+
+  Scenario: A single title match outranks body mentions
+    Given an item with no merged pull request whose head ref is feat/<work-item-id>
+    And exactly one merged pull request whose title carries the work-item id
+    And other merged pull requests that mention the work-item id only in their bodies
+    When reconcile-merged resolves the item's merged pull request
+    Then it resolves the pull request whose title carries the work-item id
+
+  Scenario: A single body mention resolves when nothing identifies the item more strongly
+    Given an item with no merged pull request that identifies it by head ref or title
+    And exactly one merged pull request that mentions the work-item id in its body
+    When reconcile-merged resolves the item's merged pull request
+    Then it resolves that pull request
+
+  Scenario: A tie in the highest tier holding a candidate refuses
+    Given an item whose highest tier holding any merged pull request candidate holds more than one
+    When reconcile-merged resolves the item's merged pull request
+    Then it refuses with an ambiguous-PR error listing every candidate of that tier
+    And the item's status is unchanged
+```
+
+## Scenario 245 — reconcile-merged closes a merged, locally built item resting at pending-approval or ready
+
+```gherkin
+Feature: A merged item built outside the factory has a guarded close path
+  As the operator closing an item that was implemented locally and merged
+  I want reconcile-merged to accept it from the status it rests at
+  So that closing it does not need a hand-written move to active
+
+  Scenario: A pending-approval item with a merged pull request enters acceptance
+    Given an item resting at pending-approval
+    And a merged pull request on the default branch that identifies the item by head ref or title
+    When reconcile-merged runs for the item and its post-merge janitor is green
+    Then the item moves from pending-approval to acceptance
+    And the post-merge acceptance pass runs
+
+  Scenario: A ready item without recovery routing and with a merged pull request enters acceptance
+    Given an item resting at ready with no recovery routing
+    And a merged pull request on the default branch that identifies the item by head ref or title
+    When reconcile-merged runs for the item and its post-merge janitor is green
+    Then the item moves from ready to acceptance
+    And the post-merge acceptance pass runs
+
+  Scenario: A body mention alone does not close a locally built item
+    Given an item resting at pending-approval, or at ready with no recovery routing
+    And a merged pull request on the default branch that mentions the work-item id only in its body
+    And no merged pull request that identifies the item by head ref or title
+    When reconcile-merged runs for the item
+    Then it refuses naming the missing merged pull request
+    And the item stays at the status it rested at
+
+  Scenario: A red janitor leaves a locally built item where it rested
+    Given an item resting at pending-approval or ready with a merged pull request that identifies it
+    When reconcile-merged runs for the item and its post-merge janitor is red
+    Then the item stays at the status it rested at
+    And the refusal names the failing janitor stage
+```
