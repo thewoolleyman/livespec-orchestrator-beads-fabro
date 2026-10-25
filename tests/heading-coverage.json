@@ -2266,5 +2266,21 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal codex-session-headroom (v209), and the owning work-item bd-ib-4jdgcw makes admission read the Codex usage window and skip covered codex-acp candidates, together with the test that binds this entry.",
     "work_item": "bd-ib-4jdgcw"
+  },
+  {
+    "heading": "## Scenario 244 \u2014 reconcile-merged resolves a merged pull request by head ref, then title, then body mention",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal reconcile-merged-pr-resolution-ranking (v215). The owning work-item bd-ib-ob26ab makes merged-PR resolution rank head ref, then title, then body mention, together with the test that binds this entry.",
+    "work_item": "bd-ib-ob26ab"
+  },
+  {
+    "heading": "## Scenario 245 \u2014 reconcile-merged closes a merged, locally built item resting at pending-approval or ready",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal reconcile-merged-locally-built-item-entry (v216). The owning work-item bd-ib-acxptq widens reconcile-merged's accepted statuses to a merged, locally built item resting at pending-approval or ready, together with the test that binds this entry.",
+    "work_item": "bd-ib-acxptq"
   }
 ]

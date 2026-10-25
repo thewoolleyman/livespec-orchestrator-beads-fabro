@@ -4340,7 +4340,18 @@ an operator has confirmed the original dispatcher process is dead,
 refuse unless the named item is currently `active`, rests in `acceptance`, or
 rests at `ready` with recovery routing holding its next dispatch because the
 pull request of its latest dispatch is merged (§"Factory-configurable ACP
-fallback priority" → "Recovery from the failed run's preserved work").
+fallback priority" → "Recovery from the failed run's preserved work"), or rests
+at `pending-approval` or at `ready` without such routing because it was built
+outside the factory and a merged pull request carries it. For such a locally
+built item, the merged pull request MUST resolve from the head-ref or title tier
+of the resolution below; a pull request that only mentions the item in its body
+MUST NOT resolve it, and the valve MUST refuse naming the missing merged pull
+request. The valve then applies every guard and the post-merge disposition below
+exactly as for an `active` item, with the item's resting status in place of
+`active` in each state effect: a green janitor writes `pending-approval ->
+acceptance` or `ready -> acceptance`, and every failed guarded precondition
+leaves the item at its resting status. Scenario 245 in `scenarios.md`
+exercises this entry.
 For an `active` item, and for such a `ready` item, this valve exists for a
 dispatch whose merged PR did not complete post-run disposition. For the `ready`
 item it applies every guard and the post-merge disposition below exactly as for
@@ -4405,12 +4416,17 @@ checkout. The post-merge janitor MAY still hold a per-checkout lock before
 precleaning or provisioning, and that lock MUST continue to block concurrent
 callers that target the same checkout path.
 
-The valve MUST resolve the PR number and merge SHA from GitHub, by the expected
-`feat/<work-item-id>` branch first or a merged PR title/search match carrying the
-work-item id only when that fallback is unambiguous on the default branch. The
-fallback search MUST include a default-branch base filter. If multiple merged PR
-candidates survive filtering, the valve MUST refuse with a clear ambiguous-PR
-error listing the candidates rather than silently choosing the first result. The
+The valve MUST resolve the PR number and merge SHA from GitHub, among pull
+requests merged onto the default branch (the search MUST include a
+default-branch base filter), by ranking the candidates in three tiers: first a
+pull request whose head ref is the expected `feat/<work-item-id>` branch, then
+one whose title carries the work-item id, then one whose body mentions the
+work-item id. The valve MUST resolve from the highest tier that holds any
+candidate and MUST NOT let a candidate of a lower tier make a higher tier's
+resolution ambiguous. If that highest tier holds more than one candidate, the
+valve MUST refuse with a clear ambiguous-PR error listing that tier's candidates
+rather than silently choosing the first result. Scenario 244 in `scenarios.md`
+exercises this ranking. The
 valve MUST NOT require or trust ledger audit metadata for that resolution. After
 a merged PR resolves, the valve MUST NOT launch Fabro and MUST NOT rebuild the
 change; it reruns the same post-merge janitor used by the dispatch engine
@@ -4419,8 +4435,9 @@ existing post-merge acceptance path unchanged, including the `active ->
 acceptance` ledger-complete write, acceptance journal records, and
 policy-governed `acceptance -> done` auto-accept when applicable. A red janitor,
 missing merged PR, wrong source lane, ambiguous merged PR, or held janitor
-checkout lock MUST leave the item `active` and report the failed guarded
-precondition or janitor stage. This is a distinct guarded entry path and does
+checkout lock MUST leave the item `active` (or at its resting status, for an
+item that entered at `pending-approval` or `ready`) and report the failed
+guarded precondition or janitor stage. This is a distinct guarded entry path and does
 not widen the `drive move` target set; `acceptance`, `done`, `pending-approval`,
 and `active` remain forbidden `move` targets.
 

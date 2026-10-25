@@ -971,5 +971,19 @@
     "heading": "## Scenario 243 \u2014 Admission skips a Codex candidate whose usage window is short of headroom",
     "work_item": "bd-ib-4jdgcw",
     "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 244 \u2014 reconcile-merged resolves a merged pull request by head ref, then title, then body mention",
+    "work_item": "bd-ib-ob26ab",
+    "first_seen": "2026-10-25"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 245 \u2014 reconcile-merged closes a merged, locally built item resting at pending-approval or ready",
+    "work_item": "bd-ib-acxptq",
+    "first_seen": "2026-10-25"
   }
 ]
