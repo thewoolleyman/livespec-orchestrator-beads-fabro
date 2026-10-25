@@ -35,6 +35,13 @@ __all__: list[str] = [
 ]
 
 _GH_TIMEOUT_SECONDS = 120.0
+# The resting statuses of an item built OUTSIDE the factory (v216; work-item
+# bd-ib-acxptq). Such an item never dispatched, so no factory branch carries it,
+# and a pull request that only MENTIONS it in its body is a follow-up or a
+# sibling, never its carrier: for these statuses the body tier is not consulted,
+# and a missing identifying match refuses as "no merged PR found". An `active`
+# item keeps the body tier for a hand-carried merge of a dispatched item.
+_LOCALLY_BUILT_ENTRY_STATUSES = frozenset({"pending-approval", "ready"})
 
 
 def resolve_merged_pr(
@@ -83,6 +90,7 @@ def resolve_merged_pr(
         item=item,
         branch=plan.branch,
         default_branch=default_branch,
+        include_body_mentions=item.status not in _LOCALLY_BUILT_ENTRY_STATUSES,
     )
     if len(candidates) == 1:
         return candidates[0]
@@ -121,7 +129,12 @@ def merged_pr_list_argv(*, item: WorkItem, default_branch: str) -> list[str]:
 
 
 def parse_merged_pr_list(
-    *, stdout: str, item: WorkItem, branch: str, default_branch: str
+    *,
+    stdout: str,
+    item: WorkItem,
+    branch: str,
+    default_branch: str,
+    include_body_mentions: bool = True,
 ) -> tuple[PrView, ...]:
     """Parse merged PR search results, tiering body mentions below identity matches.
 
@@ -139,6 +152,9 @@ def parse_merged_pr_list(
     ids fall through to this search and have exactly one title/head match plus at
     least one body-only mention. So a body match is consulted ONLY when no
     candidate identifies itself by the dispatch branch or by its title.
+
+    `include_body_mentions=False` drops the body tier entirely, for an item built
+    outside the factory (see `_LOCALLY_BUILT_ENTRY_STATUSES`).
     """
     parsed_raw = parse_json(text=stdout)
     if isinstance(parsed_raw, JsonParseFailure) or not isinstance(parsed_raw, list):
@@ -156,7 +172,9 @@ def parse_merged_pr_list(
             mentioned.append(view)
         else:
             identified.append(view)
-    return tuple(identified) if identified else tuple(mentioned)
+    if identified or not include_body_mentions:
+        return tuple(identified)
+    return tuple(mentioned)
 
 
 def _ambiguous_pr_detail(*, candidates: tuple[PrView, ...]) -> str:
