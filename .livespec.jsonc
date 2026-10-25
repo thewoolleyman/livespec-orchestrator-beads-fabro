@@ -561,15 +561,15 @@
       // inspected and none is held — which is the escape hatch for a factory
       // whose parked runs must be left strictly alone.
       "blocked_run_grace_seconds": 1800,
-      // CANARY REVERT 2026-10-25 ~20:5xZ (standing revert plan, coordinator
-      // gitops-fleet-capacity-monitoring ruling 19:33Z): implement ONLY is back on
-      // claude-acp / claude-opus-5 / high PRIMARY with codex-acp / gpt-5.6-terra /
-      // high as fallback, on the canary's second implement quality failure
-      // (bd-ib-vswuhz run 01M5T9M1680X: LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS after a
-      // Green amend failed coverage on its own new code). Every other node stays
-      // Codex-first as described below.
+      // RESTORED 2026-10-25 ~21:1xZ (coordinator gitops-fleet-capacity-monitoring
+      // countermand): implement is Codex-first again. The ~20:56Z revert
+      // (ee6ddb6b5) crossed the coordinator's 20:38:47Z NO REVERT ruling: the
+      // bd-ib-vswuhz ending was WORKFLOW-class (implement -> needs_human on
+      // outcome=failed fires ahead of implement_hook_route; fix bd-ib-uk3fop),
+      // not model quality, so it counts toward neither tally. A failure counts
+      // toward the revert only when its measured cause is the model's output.
       //
-      // PRIOR ROUTING (2026-10-25, CODEX-FIRST on every node; maintainer-approved
+      // CURRENT ROUTING (2026-10-25, CODEX-FIRST on every node; maintainer-approved
       // ~13:4xZ "Yes do that", relayed by coordinator gitops-fleet-capacity-monitoring):
       // the Anthropic pool was nearly exhausted (a0 capped, a1/a2/a3/a5 at 3-8%
       // weekly left) while Codex had quota, so each node's primary is the codex-acp
@@ -793,7 +793,7 @@
       },
       "acp_nodes": {
         "dod_gate": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
-        "implement": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
+        "implement": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
         "fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
         "review_fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
         "proof_capture": { "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "medium", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" }] },
