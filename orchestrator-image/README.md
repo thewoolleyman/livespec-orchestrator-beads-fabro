@@ -301,6 +301,22 @@ upstream `main` `50809f9` plus the merge of the topic branch below.
 | --- | --- | --- | --- | --- |
 | `plugin-sandbox-backend` at `91b3c89` (thewoolleyman/petri#1) | `SandboxBackend::Plugin` with embedder-configured `SandboxOptions.plugin`, registered under the plugin's own kind in the router's provider registry; a generic `SandboxOptions.resources` applied to every Docker and plugin container sandbox; `PluginSettings::configured` and `with_launch` (arguments and inherited variables); the Fabro frontend lowering a well-formed third-party provider kind instead of refusing it | the Kubernetes sandbox backend (plan `kubernetes-sandbox-backend`, `bd-ib-n7zj4a`): without it a workflow naming a plugin provider is refused at validation, the engine cannot launch the plugin, and a plugin would receive default resources instead of the workflow's CPU and memory | superseded upstream (2026-10-20): `lithoscomputer/petri#122` (the Petri maintainers' registered external providers) does the plugin-backend half, and `lithoscomputer/petri#131` (issue `#130`), stacked on #122 from topic `plugin-resources-on-registered` `f342550`, carries the per-run resources. This topic stays in `factory-integration` until the next carrier moves to #122 + #131 (plan `kubernetes-sandbox-backend` research note 004) | plan `kubernetes-sandbox-backend` (`bd-ib-nmuyjc`) |
 
+**The serving Petri lineage (measured 2026-10-25).** The build gmktec serves, Fabro
+carrier `carrier-candidate-registered-20261023` at `9f6c38fab`, does NOT patch Petri to
+`factory-integration`. Its `Cargo.toml` `[patch]` points every Petri crate at
+`thewoolleyman/petri` branch **`fabro-integration-registered-20261023`**, and its
+`Cargo.lock` pins `e92b191`. So that branch is the one the next rebuild of the serving
+lineage picks up, and the table above (2026-10-19, `factory-integration` at `9028641`) no
+longer describes what gmktec runs. One patch is carried on it beyond `e92b191`:
+
+| Commit on `fabro-integration-registered-20261023` (fork PR) | What it is | Why the factory needs it | Deployed | Owner |
+| --- | --- | --- | --- | --- |
+| `565ac47` (thewoolleyman/petri#2) | `crates/attractor/steps/src/directive.rs`: `json_objects` resumes its scan one byte past an object still open when the response ends, so an unbalanced opening brace in prose costs only itself, and a trailing routing object is still found | an approved review whose prose quoted a lone opening brace had its `preferred_next_label` dropped and fell through `review`'s unmatched-outcome edge to `needs_human` (run `01M5K7XRYJ0SVDAK1GWCCRVRA4`; control `01M5KCE576P6`) | **NO.** Merged 2026-10-25; gmktec still runs `e92b191` until a rebuild refreshes the Petri lock and gitops redeploys it, which the maintainer's 2026-10-24 hold on further Fabro and Petri upgrades governs. Local gate against `9b8cd29`: fmt, `petri-attractor-steps` nextest 206/206 with the sandbox plugins, clippy `-D warnings` on the pinned 1.97.1 | `bd-ib-7smzwo` (plan `fabro-currency`) |
+
+The patch was based on the serving branch and rebase-merged into it, not cut as a topic
+branch on upstream `main` and merge-committed, as the convention above says. Before it is
+offered upstream, re-cut it as a topic branch on upstream `main`; the change is one file.
+
 **The Kubernetes port's Fabro carries, cut into the 0.389 carrier (2026-10-19).** Plan
 `fabro-currency` cut `carrier-0389` at `bf5a2dc351644fe0d61cf8d2f25193c23553bd06` on
 `thewoolleyman/fabro`. It is upstream `v0.389.0-nightly.0` (`5c90ad2e0`) plus the two
