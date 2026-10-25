@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.242.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.241.6...v0.242.0) (2026-10-25)
+
+
+### Features
+
+* **workflow:** re-enter implement after every incomplete turn while its retry budget remains ([5cab31e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5cab31e4272b6bff28676dbf650eddb1f2effc4c))
+
+
+### Bug Fixes
+
+* release a Petri-era needs-human ending on the routing stage's provider-limit failure (bd-ib-3jboeo) ([d0674cc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d0674cc2daedd7595a6999585693b2608f579dac))
+
 ## [0.241.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.241.5...v0.241.6) (2026-10-25)
 
 
