@@ -24,6 +24,7 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
   dispatcher.py spec-check [--project-root <path>] [--spec-root <path>] [--json]
   dispatcher.py janitor-check [--repo <path>] [--json]
   dispatcher.py idle-slot-audit [--repo <path>] [--json]
+  dispatcher.py inspect --factory <name> <run-id> [-o <dir>]
   dispatcher.py sandbox-images --factory <name> [--repo <path>]... [--json]
   dispatcher.py reconcile-runs [--repo <path>] [--factory <name>]
                                 [--fabro-bin <path>] [--journal <path>]
@@ -324,6 +325,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_args import
     add_dispatch_common,
     add_probe_arguments,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_inspect_command import (
+    add_factory_inspect_arguments,
+    run_factory_inspect_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_cli import (
     add_post_host_record_arguments,
     run_post_host_record_cli,
@@ -439,6 +444,7 @@ __all__: list[str] = [
     "run_clear_provider_exhaustion_command",
     "run_codex_cred_refresh",
     "run_codex_cred_status",
+    "run_factory_inspect_command",
     "run_file_canary_command",
     "run_id",
     "run_idle_slot_audit_command",
@@ -462,6 +468,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "codex-cred-status": run_codex_cred_status,
     "dispatch": run_dispatch_command,
     "file-canary": run_file_canary_command,
+    "inspect": run_factory_inspect_command,
     "idle-slot-audit": run_idle_slot_audit_command,
     "janitor-check": run_janitor_check,
     "ledger-check": run_ledger_check,
@@ -501,6 +508,7 @@ def _build_parser() -> argparse.ArgumentParser:
     add_spec_check_arguments(parser=subparsers.add_parser("spec-check"))
     add_janitor_check_arguments(parser=subparsers.add_parser("janitor-check"))
     add_idle_slot_audit_arguments(parser=subparsers.add_parser("idle-slot-audit"))
+    add_factory_inspect_arguments(parser=subparsers.add_parser("inspect"))
     add_sandbox_images_arguments(parser=subparsers.add_parser("sandbox-images"))
     add_reconcile_runs_arguments(parser=subparsers.add_parser("reconcile-runs"))
     add_reconcile_merged_arguments(parser=subparsers.add_parser("reconcile-merged"))
