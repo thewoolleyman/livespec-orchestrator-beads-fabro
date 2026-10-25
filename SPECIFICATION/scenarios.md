@@ -6579,6 +6579,14 @@ Feature: A factory agent's commit leg is not bounded by one tool call
     Then the wait reports the failed state and the commit process's exit status
     And HEAD is unchanged
 
+  Scenario: A needs-human ending after a hook-refused commit names the hook's recorded verdict
+    Given an implement turn whose latest commit attempt was refused by the commit hook with a recorded non-zero exit status and named failed targets
+    And the turn's own failure text describes that hook as not completed
+    When the run ends at the needs_human terminal
+    Then the needs-human cause comment names the recorded exit status and the failed target names as read from the run's recorded tool output
+    And the dispatch journal's outcome row carries that exit status and those target names in a field separate from the agent's failure text
+    And the cause comment labels the agent's failure text as agent-reported and states the recorded refusal beside it
+
   Scenario: A commit that dies without a verdict is not a commit
     Given a commit started through the sandbox commit runner whose process is ended by a signal before it exits on its own
     When the agent waits on it
