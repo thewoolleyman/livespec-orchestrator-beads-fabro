@@ -22,6 +22,7 @@ build that will execute the dispatch, so two payload roots carrying different
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -94,8 +95,9 @@ class _Runner:
         stdin: int | None = None,
         start_new_session: bool = False,
     ) -> CommandResult:
-        _ = (cwd, timeout_seconds, env, stdin, start_new_session)
-        self.prompts.append(argv[argv.index("-p") + 1])
+        _ = (argv, cwd, timeout_seconds, env, start_new_session)
+        assert stdin is not None
+        self.prompts.append(os.read(stdin, 1_000_000).decode("utf-8"))
         self.calls += 1
         return self.result
 
@@ -151,7 +153,17 @@ def _spec_tree(*, repo: Path) -> Path:
 def _connected_repo(*, tmp_path: Path, name: str = "connected") -> Path:
     repo = _spec_tree(repo=tmp_path / name)
     _ = (repo / ".livespec.jsonc").write_text(
-        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "connection": {"prefix": "bd-ib"},
+    "dispatcher": {
+      "acp_nodes": {
+        "dod_gate": {"agent": "claude-acp", "model": "claude-opus-5"}
+      }
+    }
+  }
+}
+""",
         encoding="utf-8",
     )
     return repo

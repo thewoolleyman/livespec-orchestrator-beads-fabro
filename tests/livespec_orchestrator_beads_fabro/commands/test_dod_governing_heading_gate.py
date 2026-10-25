@@ -106,6 +106,19 @@ def _repo(*, tmp_path: Path) -> Path:
         f"# Scenarios\n\n{_GOVERNING}\n\nIt states the behaviour.\n\n{_CITED}\n\nOther.\n",
         encoding="utf-8",
     )
+    _ = (repo / ".livespec.jsonc").write_text(
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "acp_nodes": {
+        "dod_gate": {"agent": "claude-acp", "model": "claude-opus-5"}
+      }
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
     return repo
 
 

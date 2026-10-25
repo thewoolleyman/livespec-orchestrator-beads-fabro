@@ -22,6 +22,7 @@ was authored, and a Red's test bytes are fixed across its Red-to-Green pair.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -77,8 +78,9 @@ class _Runner:
         stdin: int | None = None,
         start_new_session: bool = False,
     ) -> CommandResult:
-        _ = (cwd, timeout_seconds, env, stdin, start_new_session)
-        self.prompts.append(argv[argv.index("-p") + 1])
+        _ = (argv, cwd, timeout_seconds, env, start_new_session)
+        assert stdin is not None
+        self.prompts.append(os.read(stdin, 1_000_000).decode("utf-8"))
         self.calls += 1
         return self.results[min(self.calls - 1, len(self.results) - 1)]
 
@@ -123,6 +125,19 @@ def _repo(*, tmp_path: Path) -> Path:
     spec.mkdir(parents=True, exist_ok=True)
     _ = (spec / "scenarios.md").write_text(
         f"# Scenarios\n\n{_HEADING}\n\nBody.\n", encoding="utf-8"
+    )
+    _ = (repo / ".livespec.jsonc").write_text(
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "acp_nodes": {
+        "dod_gate": {"agent": "claude-acp", "model": "claude-opus-5"}
+      }
+    }
+  }
+}
+""",
+        encoding="utf-8",
     )
     return repo
 

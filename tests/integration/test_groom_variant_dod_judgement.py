@@ -96,10 +96,11 @@ _FLEET_MANIFEST_TEXT = (
 _GROOM_WORKFLOW_TOML = (
     '[workflow]\ngraph = "workflow.fabro"\n\n'
     '[run.environment]\nid = "fabro-sandbox"\n\n'
-    '[run.inputs]\nworkflow_kind = "groom"\n'
+    '[run.inputs]\nworkflow_kind = "groom"\ndod_gate_adapter = "claude"\n'
 )
 _IMPLEMENT_WORKFLOW_TOML = (
-    '[workflow]\ngraph = "workflow.fabro"\n\n[run.environment]\nid = "fabro-sandbox"\n'
+    '[workflow]\ngraph = "workflow.fabro"\n\n[run.environment]\nid = "fabro-sandbox"\n\n'
+    '[run.inputs]\ndod_gate_adapter = "claude"\n'
 )
 
 _GRAPH = (
@@ -108,9 +109,15 @@ _GRAPH = (
     '        stall_timeout="7200s"\n'
     "    ]\n"
     "\n"
+    "    start [shape=Mdiamond]\n"
+    "    done [shape=Msquare]\n"
+    "\n"
     "    implement [\n"
     '        timeout="1800s"\n'
     "    ]\n"
+    "\n"
+    "    start -> implement\n"
+    "    implement -> done\n"
     "}\n"
 )
 
@@ -223,6 +230,12 @@ def _repo(*, tmp_path: Path) -> Path:
                     "dispatcher": {
                         "wip_cap": 3,
                         "acceptance_mode": "ai-only",
+                        "acp_nodes": {
+                            "dod_gate": {
+                                "agent": "claude-acp",
+                                "model": "claude-opus-5",
+                            }
+                        },
                         "workflows": {
                             _GROOM_VARIANT: _GROOM_DIR,
                             _IMPLEMENT_VARIANT: _IMPLEMENT_DIR,

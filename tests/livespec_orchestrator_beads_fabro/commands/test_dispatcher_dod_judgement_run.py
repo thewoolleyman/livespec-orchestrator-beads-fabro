@@ -30,7 +30,8 @@ already took, not from a probe of our own that could disagree with it.
 from __future__ import annotations
 
 import importlib
-from dataclasses import dataclass, replace
+import os
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
@@ -48,7 +49,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
     CAUSE_PROMPT_UNREADABLE,
     dod_gate_prompt_path,
     judgement_prompt,
-    resolve_judge_model,
     resolve_judge_path,
     resolve_judge_timeout_seconds,
     run_dod_judgement,
@@ -95,6 +95,7 @@ class _Runner:
     argv: list[str] | None = None
     timeout_seconds: float | None = None
     environ: dict[str, str] | None = None
+    stdin_text: list[str] = field(default_factory=list)
 
     def run(
         self,
@@ -109,7 +110,10 @@ class _Runner:
         self.argv = argv
         self.timeout_seconds = timeout_seconds
         self.environ = env
-        _ = (cwd, stdin, start_new_session)
+        _ = (cwd, start_new_session)
+        if stdin is not None:
+            _ = os.lseek(stdin, 0, os.SEEK_SET)
+            self.stdin_text.append(os.read(stdin, 1_000_000).decode("utf-8"))
         return self.result
 
 
@@ -144,6 +148,10 @@ def _payload(*, tmp_path: Path) -> Path:
     prompts = root / ".fabro" / "workflows" / "implement-work-item" / "prompts"
     prompts.mkdir(parents=True, exist_ok=True)
     _ = (prompts / "dod-gate.md").write_text(_GATE_PROMPT, encoding="utf-8")
+    _ = (prompts.parent / "workflow.toml").write_text(
+        "[run.inputs]\n" 'dod_gate_adapter = "ANTHROPIC_MODEL=claude-opus-5 claude-acp"\n',
+        encoding="utf-8",
+    )
     return root
 
 
@@ -154,7 +162,52 @@ def _repo(*, tmp_path: Path) -> Path:
     _ = (spec / "scenarios.md").write_text(
         f"# Scenarios\n\n{_HEADING}\n\nThe judgement runs before admission.\n", encoding="utf-8"
     )
+    _ = (repo / ".livespec.jsonc").write_text(
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "acp_nodes": {
+        "dod_gate": {
+          "agent": "claude-acp",
+          "model": "claude-opus-5",
+          "effort": "high"
+        }
+      }
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
     return repo
+
+
+def _write_codex_first_dod_gate(*, repo: Path) -> None:
+    """Give this test's repository, not the committed config, a judge chain."""
+    _ = (repo / ".livespec.jsonc").write_text(
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "acp_nodes": {
+        "dod_gate": {
+          "agent": "codex-acp",
+          "model": "gpt-5.6-terra",
+          "effort": "high",
+          "fallbacks": [
+            {
+              "agent": "claude-acp",
+              "model": "claude-opus-5",
+              "effort": "high"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
 
 
 def _take(
@@ -217,7 +270,7 @@ def test_the_judge_is_handed_the_executing_builds_rubric_followed_only_by_those_
     )
 
     assert runner.argv is not None
-    prompt = runner.argv[runner.argv.index("-p") + 1]
+    prompt = runner.stdin_text[0]
     rubric = (
         payload / ".fabro" / "workflows" / "implement-work-item" / "prompts" / "dod-gate.md"
     ).read_text(encoding="utf-8")
@@ -243,10 +296,25 @@ def test_a_passing_reply_admits_the_item_and_the_judge_is_given_the_gate_prompt(
 
     assert verdict.outcome == JUDGEMENT_ADMITTED
     assert runner.argv is not None
-    assert "Work through all six checks." in " ".join(runner.argv)
+    assert "Work through all six checks." in runner.stdin_text[0]
     # The referenced heading's own body travels with the subject, because a
     # headless judge reaches no spec tree of its own by default.
-    assert "The judgement runs before admission." in " ".join(runner.argv)
+    assert "The judgement runs before admission." in runner.stdin_text[0]
+
+
+def test_a_codex_primary_verdict_decides_the_host_judgement_without_running_claude(
+    tmp_path: Path,
+) -> None:
+    payload = _payload(tmp_path=tmp_path)
+    repo = _repo(tmp_path=tmp_path)
+    _write_codex_first_dod_gate(repo=repo)
+    runner = _Runner(result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""))
+
+    verdict = run_dod_judgement(item=_item(), cwd=repo, runner=runner, payload_root=payload)
+
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert runner.argv is not None
+    assert runner.argv[:4] == ["codex", "exec", "-m", "gpt-5.6-terra"]
 
 
 def test_the_judge_uses_the_caam_selected_credential_slot(
@@ -376,9 +444,7 @@ def test_the_judge_executable_resolves_by_override_then_path_then_convention(
     )
 
 
-def test_the_model_and_the_time_box_take_their_committed_defaults_unless_overridden() -> None:
-    assert resolve_judge_model(environ={}) == resolve_judge_model(environ={"X": "y"})
-    assert resolve_judge_model(environ={"LIVESPEC_DOD_JUDGEMENT_MODEL": "m"}) == "m"
+def test_the_time_box_takes_its_committed_default_unless_overridden() -> None:
     default = resolve_judge_timeout_seconds(environ={})
     assert default > 0
     assert resolve_judge_timeout_seconds(environ={"LIVESPEC_DOD_JUDGEMENT_TIMEOUT_SECONDS": "30"})
