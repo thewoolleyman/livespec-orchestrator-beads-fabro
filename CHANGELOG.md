@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.241.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.241.5...v0.241.6) (2026-10-25)
+
+
+### Bug Fixes
+
+* **dispatcher:** name the hook's recorded verdict on a needs-human ending after a refused commit ([db389fb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/db389fbe66e254e0de759bdc8d0949e66767683f))
+
 ## [0.241.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.241.4...v0.241.5) (2026-10-25)
 
 
