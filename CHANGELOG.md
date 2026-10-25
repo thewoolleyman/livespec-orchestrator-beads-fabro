@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.241.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.241.2...v0.241.3) (2026-10-25)
+
+
+### Bug Fixes
+
+* make governing scenario references deterministic ([2330cb4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2330cb43aa251b6f3f0c4ae9231786737eb9fdef))
+
 ## [0.241.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.241.1...v0.241.2) (2026-10-24)
 
 
