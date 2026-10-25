@@ -267,6 +267,68 @@ def test_the_hold_reader_runs_once_per_entry_and_only_for_a_ready_child(
     assert result.entries[0].children[1].classification == "DISPATCHABLE-NOW"
 
 
+def test_the_audit_reuses_each_tenant_and_hold_read_once_but_refreshes_next_time(
+    tmp_path: Path,
+) -> None:
+    """Reuse is scoped to one audit, including an unready tenant's no-hold arm."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+    _write_config(
+        tmp_path,
+        priority=[
+            {"repo": "tenant-a", "items": ["a-1"]},
+            {"repo": "tenant-a", "items": ["a-2"]},
+            {"repo": "tenant-b", "items": ["b-1"]},
+        ],
+    )
+    first = {
+        tmp_path / "tenant-a": _reading(items=(_item(id_="a-1"), _item(id_="a-2"))),
+        tmp_path / "tenant-b": _reading(items=(_item(id_="b-1", status="backlog"),)),
+    }
+    second = {
+        tmp_path / "tenant-a": _reading(
+            items=(_item(id_="a-1", status="backlog"), _item(id_="a-2"))
+        ),
+        tmp_path / "tenant-b": _reading(items=(_item(id_="b-1", status="backlog"),)),
+    }
+    phase = [first]
+    tenant_calls: list[Path] = []
+    hold_calls: list[Path] = []
+
+    def _tenant(*, repo: Path) -> object:
+        tenant_calls.append(repo)
+        return phase[0][repo]
+
+    def _holds(*, repo: Path, items: list[WorkItem]) -> dict[str, str]:
+        _ = items
+        hold_calls.append(repo)
+        return {"a-1": "first-audit hold"} if phase[0] is first else {}
+
+    first_result = module.idle_slot_audit(
+        project_root=tmp_path,
+        tenant_reader=_tenant,
+        board_reader=_constant_board(board=_board()),
+        hold_reader=_holds,
+    )
+    phase[0] = second
+    second_result = module.idle_slot_audit(
+        project_root=tmp_path,
+        tenant_reader=_tenant,
+        board_reader=_constant_board(board=_board()),
+        hold_reader=_holds,
+    )
+
+    assert tenant_calls == [
+        tmp_path / "tenant-a",
+        tmp_path / "tenant-b",
+        tmp_path / "tenant-a",
+        tmp_path / "tenant-b",
+    ]
+    assert hold_calls == [tmp_path / "tenant-a", tmp_path / "tenant-a"]
+    assert _classes(first_result)["a-1"] == "HELD"
+    assert _classes(second_result)["a-1"] == "UNADMITTED"
+
+
 def test_the_finding_names_the_factory_its_live_count_and_the_children_in_order(
     tmp_path: Path,
 ) -> None:
