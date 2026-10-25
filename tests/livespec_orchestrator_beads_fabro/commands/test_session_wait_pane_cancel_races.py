@@ -140,6 +140,13 @@ def test_cancelling_a_hung_observation_releases_its_worker(*, tmp_path: Path) ->
         task = probe.task
         assert task is not None
         assert peer.connected.wait(timeout=30.0) is True, "the probe never connected"
+        # A re-poll while the read is still in flight REUSES the running task
+        # rather than starting a second one. The peer never answers, so this
+        # poll is deterministically in flight.
+        assert probe.poll(now=2.0) is None
+        assert probe.task is task
+        time.sleep(_SETTLE_SECONDS)
+        assert len(peer.connections) == 1, "a re-poll opened a second connection"
 
         started = time.monotonic()
         probe.cancel(timeout_seconds=30.0)
