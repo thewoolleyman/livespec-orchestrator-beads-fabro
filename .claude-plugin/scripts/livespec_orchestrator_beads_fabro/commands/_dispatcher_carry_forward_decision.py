@@ -99,6 +99,14 @@ TREE_MODE = "040000"
 REPROVED_MARKER = "livespec-carry-forward-reproved"
 WIDENED_STATEMENT = ("Inert classes: not every incoming path is inert; the run's "
                      "one re-proof covered them")
+# The paths a release-please merge rewrites. The changelog and the release
+# manifest count whole; the two package manifests count only when every line
+# the incoming range changes in them is a version line.
+RELEASE_WHOLE_FILES = (".release-please-manifest.json", "CHANGELOG.md")
+RELEASE_VERSION_FILES = ("pyproject.toml", "uv.lock")
+RELEASE_VERSION_LINE = re.compile(r'^version = "[^"]*"$')
+BOOKKEEPING_STATEMENT = ("Inert classes: every incoming path is release "
+                         "bookkeeping, so no proof step was graded or replayed")
 REGULAR_FILE_MODES = ("100644", "100755")
 
 
@@ -196,6 +204,38 @@ def reproved_marker(root):
     back to the all-inert rule, which is the conservative direction.
     """
     return os.path.join(root, ".git", REPROVED_MARKER)
+
+
+def release_bookkeeping_only(base, head, incoming):
+    """Whether every incoming path of `base..head` is release bookkeeping.
+
+    A package manifest counts only when every added or removed line in its
+    hunks is a `version = "..."` line, so a dependency added beside a version
+    bump is not bookkeeping. Lines before the first hunk header are the diff's
+    own file headers, never content. `--text` overrides a `-diff` attribute,
+    and a manifest whose diff still shows no hunk is a change nobody can
+    inspect, so it is not bookkeeping either.
+    """
+    if not incoming:
+        return False
+    for path in incoming:
+        if path in RELEASE_WHOLE_FILES:
+            continue
+        if path not in RELEASE_VERSION_FILES:
+            return False
+        diff = run_git(["diff", "--no-color", "--no-ext-diff", "--text",
+                        "--unified=0", base, head, "--", path],
+                       "the incoming hunks of " + path)
+        in_hunk = False
+        for line in diff.splitlines():
+            if line.startswith("@@"):
+                in_hunk = True
+            elif in_hunk and line.startswith(("+", "-")):
+                if not RELEASE_VERSION_LINE.match(line[1:]):
+                    return False
+        if not in_hunk:
+            return False
+    return True
 
 
 def beneath_any(path, prefixes):
@@ -456,7 +496,8 @@ def decide(args):
              "incoming_range": args["previous_base"] + ".." + args["new_base"],
              "incoming_paths": None, "observation_scope": None,
              "verified_patch_identity": UNAVAILABLE,
-             "new_patch_identity": UNAVAILABLE, "widened": False}
+             "new_patch_identity": UNAVAILABLE, "widened": False,
+             "bookkeeping": False}
     findings = []
     try:
         root = repository_root()
@@ -473,6 +514,13 @@ def decide(args):
             verified_base, verified_head, "the verified patch identity")
         facts["new_patch_identity"] = patch_identity(
             args["new_base"], args["new_head"], "the new patch identity")
+        if (facts["verified_patch_identity"] == facts["new_patch_identity"]
+                and not set(incoming) & set(item_paths)
+                and release_bookkeeping_only(args["previous_base"],
+                                             args["new_base"], incoming)):
+            facts["bookkeeping"] = True
+            facts["decision"] = VERDICT_CARRIED_FORWARD
+            return VERDICT_CARRIED_FORWARD, findings, facts
         prefixes = inert_prefixes(args["new_head"], root)
         declared_directory = declared_working_directory(body)
         steps = reproduction_steps(body)
@@ -530,6 +578,8 @@ def render(verdict, findings, facts, timestamp, run_identity):
     lines.append("New patch identity: " + facts["new_patch_identity"])
     if facts["widened"] and verdict == VERDICT_CARRIED_FORWARD:
         lines.append(WIDENED_STATEMENT)
+    if facts["bookkeeping"]:
+        lines.append(BOOKKEEPING_STATEMENT)
     if findings:
         lines.extend(["", "## Inputs that decided it", ""])
         lines.extend("- " + finding for finding in findings)
@@ -596,6 +646,15 @@ def main(argv):
                          "returns to proof_capture for " + facts["new_head"]
                          + "\n")
         return 1
+    if facts["bookkeeping"]:
+        sys.stderr.write("LIVESPEC_CARRY_FORWARD_CARRIED: the verified proof on "
+                         + facts["verified_head"] + " covers the new head "
+                         + facts["new_head"] + ", because every incoming path of "
+                         + facts["incoming_range"] + " is release bookkeeping, "
+                         "no incoming path is an item path, and both patch "
+                         "identities are " + facts["new_patch_identity"]
+                         + "; no step was graded or replayed; proceeding to pr\n")
+        return 0
     if verdict == VERDICT_CARRIED_FORWARD:
         classes = ("is outside the item's paths, the run having re-proved once,"
                    if facts["widened"] else "is beneath an inert class")

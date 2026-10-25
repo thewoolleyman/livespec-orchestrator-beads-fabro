@@ -3518,7 +3518,7 @@ decision `reproof_required` naming that path. Any step outside the grammar, and
 any path operand rejected or not naming such a file, makes the decision
 `reproof_required` naming that step.
 
-**The decision.** The decision MUST be `carried_forward` only when all of the
+**The decision.** Except as **Release bookkeeping** below provides, the decision MUST be `carried_forward` only when all of the
 following hold: every step of the verified record is inside the direct-read
 grammar; every incoming path is beneath an inert class, or this run has already re-proved after one changed-head `pr_refresh` and the verified record is that re-proof's own record; no incoming path is in
 the observation scope or among the item paths; the patch identity of `<new
@@ -3566,6 +3566,8 @@ run is still the head of the verified record, so a chain of carry-forwards is
 always measured against the diff that was actually verified. A carry-forward
 consumes no review-fix round and leaves the three-refresh non-convergence bound
 unchanged. Scenario 178 in `scenarios.md` exercises these three paragraphs. A run re-proves after a changed-head `pr_refresh` at most once on the second condition's account. A refresh whose incoming paths overlap the item paths or the observation scope, or whose rebase conflicts in any path that is not a declared record file, MUST still take the re-proof or refresh-repair route this section already requires. A `carried_forward` record written under the second condition MUST say that the incoming paths were not all inert and that the run's one re-proof covered them. Scenario 229 in `scenarios.md` exercises these sentences.
+
+**Release bookkeeping.** When every incoming path is release bookkeeping, no incoming path is among the item paths, and the patch identity of `<new base>..<new head>` equals the patch identity of `<verified base>..<verified head>`, the decision MUST be `carried_forward` whatever the verified record's steps are; the direct-read grammar, observation-scope, blob-identity, read-identity and mechanical-replay conditions of "The decision" do not apply to it. An incoming path is *release bookkeeping* when it is `.release-please-manifest.json` or `CHANGELOG.md`, or when it is `pyproject.toml` or `uv.lock`, `git diff --no-color --no-ext-diff --text --unified=0 <previous base> <new base> -- <path>` prints at least one hunk for it, and every line that command prints as added or removed inside a hunk has the form `version = "<text>"`, so a dependency change made beside a version bump, or a change with no inspectable hunk, is not bookkeeping. A `carried_forward` record written under this rule MUST say that every incoming path is release bookkeeping and that no proof step was graded or replayed. Scenario 246 in `scenarios.md` exercises this paragraph.
 
 `pr` MUST query the exact pull request for the recorded branch, verify its
 current head against the head named by the latest record of this run that is

@@ -9651,3 +9651,26 @@ Feature: A merged item built outside the factory has a guarded close path
     Then the item stays at the status it rested at
     And the refusal names the failing janitor stage
 ```
+
+## Scenario 246 — A refresh that brings in only release bookkeeping carries the proof forward whatever its steps
+
+```gherkin
+Feature: A release does not send in-flight runs back to re-prove
+  As the maintainer of a repository that releases with release-please
+  I want a refresh that brings in only a release commit to keep the run's proof
+  So that every release does not re-prove every run whose proof steps are not direct reads
+
+  Scenario: A version bump, a changelog entry and a release manifest carry forward
+    Given a run with verified record R on head V whose one reproduction step is outside the direct-read grammar
+    And the default branch advanced with a commit that changes only .release-please-manifest.json, CHANGELOG.md and the version line of pyproject.toml
+    When pr_refresh rebases the branch cleanly, the gate passes and the leased push yields head N with an unchanged patch identity
+    Then the pull request carries one carried_forward record naming V and N that says every incoming path is release bookkeeping and no proof step was graded or replayed
+    And the run proceeds from pr_refresh to pr without visiting proof_capture
+
+  Scenario: A manifest change beyond its version line is not bookkeeping
+    Given a run with verified record R on head V whose one reproduction step is outside the direct-read grammar
+    And the default branch advanced with a release commit whose pyproject.toml change also adds a dependency
+    When pr_refresh rebases the branch cleanly and pushes head N
+    Then the pull request carries one reproof_required record naming pyproject.toml as an incoming path outside the inert classes
+    And the run enters proof_capture for head N
+```
