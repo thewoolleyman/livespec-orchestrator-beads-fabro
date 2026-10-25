@@ -561,6 +561,14 @@
       // inspected and none is held — which is the escape hatch for a factory
       // whose parked runs must be left strictly alone.
       "blocked_run_grace_seconds": 1800,
+      // RESTORED 2026-10-25 ~21:1xZ (coordinator gitops-fleet-capacity-monitoring
+      // countermand): implement is Codex-first again. The ~20:56Z revert
+      // (ee6ddb6b5) crossed the coordinator's 20:38:47Z NO REVERT ruling: the
+      // bd-ib-vswuhz ending was WORKFLOW-class (implement -> needs_human on
+      // outcome=failed fires ahead of implement_hook_route; fix bd-ib-uk3fop),
+      // not model quality, so it counts toward neither tally. A failure counts
+      // toward the revert only when its measured cause is the model's output.
+      //
       // CURRENT ROUTING (2026-10-25, CODEX-FIRST on every node; maintainer-approved
       // ~13:4xZ "Yes do that", relayed by coordinator gitops-fleet-capacity-monitoring):
       // the Anthropic pool was nearly exhausted (a0 capped, a1/a2/a3/a5 at 3-8%
