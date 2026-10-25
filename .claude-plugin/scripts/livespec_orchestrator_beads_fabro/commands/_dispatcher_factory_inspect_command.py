@@ -33,6 +33,7 @@ def add_factory_inspect_arguments(*, parser: argparse.ArgumentParser) -> None:
     """Add the factory-addressed run-reader flags."""
     _ = parser.add_argument("--factory", dest="factory", required=True)
     _ = parser.add_argument("run_id")
+    _ = parser.add_argument("-o", "--output", dest="output_dir", type=Path)
 
 
 def run_factory_inspect_command(*, args: argparse.Namespace) -> int:
@@ -49,6 +50,14 @@ def run_factory_inspect_command(*, args: argparse.Namespace) -> int:
         runner=ShellCommandRunner(),
         cwd=Path.cwd(),
     )
+    if args.output_dir is not None:
+        result = port.dump(
+            run_id=args.run_id,
+            output_dir=args.output_dir,
+            timeout_seconds=_FACTORY_INSPECT_TIMEOUT_SECONDS,
+        )
+        write_stdout(text=result.command.stdout)
+        return result.command.exit_code
     result = port.inspect(run_id=args.run_id, timeout_seconds=_FACTORY_INSPECT_TIMEOUT_SECONDS)
     write_stdout(text=result.command.stdout)
     return result.command.exit_code
