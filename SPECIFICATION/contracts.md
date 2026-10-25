@@ -147,7 +147,7 @@ Detection runs are RECORDED, and their recency is COMPUTED, never
 remembered:
 
 - **Records.** Every invocation of `capture-impl-gaps` or
-  `capture-spec-drift`, and every drift run of a reconcile pass or a
+  `capture-spec-drift`, and every drift run of the drift job or a
   post-merge janitor ("The drift run" below), MUST append an attributed ATTEMPT record
   (operation, declared scope, invoker, outcome) to the repository's
   designated detection-coverage anchor — a ledger item provisioned once
@@ -186,13 +186,13 @@ remembered:
   one binding — and exists for the runs Step 13 cannot guarantee: a
   skipped, interrupted, or bypassed post-step. It MUST NOT trigger any
   run itself.
-- **The drift run.** Each reconcile pass of the Dispatcher MUST
+- **The drift run.** Each run of the Dispatcher's drift job MUST
   enumerate every default-branch merge after the recorded frontier, in
   merge order, and MUST run the drift pass over each merge's diff through
   the spec-stated judgement; the post-merge janitor MAY call the same
   primitive after its own merge, and a merge no janitor saw — a hand
   merge, a spec pull request, an externally merged pull request — is
-  processed by the next reconcile pass. For each `partial` or `unstated`
+  processed by the next drift-job run. For each `partial` or `unstated`
   behaviour a merge adds, the pass MUST file one proposed change carrying
   a drift origin and naming the generalization target, through the
   cross-boundary propose-change handoff, with a finding identity derived
@@ -207,7 +207,11 @@ remembered:
   `dispatcher.drift_capture_merge_threshold`, the needs-attention snapshot
   MUST still carry a drift-staleness fact naming the merges after the
   frontier, so an unrun or failing pass is visible; merge counting
-  excludes nothing silently.
+  excludes nothing silently. The drift job is separate from the
+  reconcile pass: a reconcile pass MUST NOT run the drift pass and MUST
+  NOT invoke any model judgement. The drift job MUST run only on a
+  schedule an operator explicitly enables; nothing MAY enable it
+  implicitly.
 - **`dispatcher.drift_capture_merge_threshold`** (sourced from this
   repo's `.livespec.jsonc`, positive integer, default **1**) — the
   merge-count trigger. Declared **API-configurable**: it appears in the console

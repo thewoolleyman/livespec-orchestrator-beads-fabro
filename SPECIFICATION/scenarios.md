@@ -2238,7 +2238,7 @@ Scenario: Merges past the threshold surface the drift fact while the run has not
   Given default-branch merges after the recorded drift frontier at or past the effective threshold
   When needs-attention composes the snapshot
   Then a drift-staleness fact appears naming the merges after the frontier
-  And the fact invokes no detector; the reconcile pass is what runs the drift pass
+  And the fact invokes no detector; the drift job is what runs the drift pass
 ```
 
 ## Scenario 83 — Capacity truth is composed from the accounting, never re-derived
@@ -8079,20 +8079,20 @@ Feature: Implementation that outruns the specification is caught at every merge
 
   Scenario: A merge adding unstated behaviour files one proposal and advances the frontier
     Given a recorded drift frontier and one later default-branch merge whose diff adds a behaviour the spec-stated judgement reports unstated
-    When the reconcile pass runs
+    When the drift job runs
     Then one proposed change with a drift origin is filed naming the generalization target
     And a completed drift coverage record names that merge as the frontier
 
   Scenario: A failed merge stops the frontier under a later success
     Given two merges after the frontier where the pass over the first fails and the pass over the second succeeds
-    When the reconcile pass runs
+    When the drift job runs
     Then the frontier does not advance past the first merge
     And an attempt record names the failed merge
     And the drift-staleness fact still names both merges
 
   Scenario: A retried pass files no duplicate
     Given a merge whose finding was already filed under its finding identity
-    When the reconcile pass processes the merge again
+    When the drift job processes the merge again
     Then no second proposed change is filed for that finding
 
   Scenario: Findings beyond the queue cap are held, not filed
@@ -8104,13 +8104,19 @@ Feature: Implementation that outruns the specification is caught at every merge
 
   Scenario: A merge no janitor saw is processed
     Given a spec pull request merged by hand after the frontier
-    When the next reconcile pass runs
+    When the next drift job runs
     Then that merge is processed exactly as a dispatched merge
 
   Scenario: The pass never accepts a proposal
     Given a drift-origin proposed change filed by the pass
     When the pass completes
     Then the proposal rests under proposed_changes for revise and the pass takes no decision on it
+
+  Scenario: A reconcile pass runs no drift pass
+    Given default-branch merges after the recorded drift frontier
+    When a reconcile pass runs
+    Then no drift pass runs and no model judgement is invoked
+    And the drift frontier and the detection-coverage anchor are unchanged
 ```
 
 ## Scenario 211 — An unmet plan obligation is superseded only by a typed event whose cause verifies, and keeps its original budget
