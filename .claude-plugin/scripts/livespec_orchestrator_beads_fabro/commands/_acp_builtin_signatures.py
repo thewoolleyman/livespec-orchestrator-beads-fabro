@@ -133,6 +133,16 @@ _CODEX_MODEL_NOT_FOUND = AcpAvailabilitySignature(
 #   one arrived with a structured `errorKind` of `rate_limit` and was
 #   classified transient with no provider attributed, because this table
 #   carried no mapping for it.
+# - the WEEKLY ceiling, "You've hit your weekly limit - resets Oct 23, 3pm
+#   (UTC)". Measured 2026-10-18 on gmktec, run 01M580PF02S0 of
+#   `bd-ib-fubkcv`: six hours of work, then `proof_verify@3` refused with
+#   that sentence and `errorKind` `rate_limit`. ITS OWN ENTRY IS REQUIRED
+#   because the vendor put a word in the middle: `hit your limit` is not a
+#   substring of `hit your weekly limit`, so the GENERIC form below cannot
+#   reach it and the attempt classified `unmatched` -- the run routed to
+#   `needs_human`, no release fired, and the item rested for a human. The
+#   fix is this measured literal and NOT a loosening of the generic one,
+#   which is what the contract section quoted above requires.
 # - the GENERIC limit, "You've hit your limit - resets Jul 31, 5am (UTC)",
 #   measured on the Petri-era engine where only the message text survives
 #   (`plan/fabro-currency/research/004-acp-spend-limit-evidence.json`,
@@ -159,6 +169,7 @@ _CODEX_MODEL_NOT_FOUND = AcpAvailabilitySignature(
 # spellings the pinned adapters emit: the August payload carried
 # `usage_limit_exceeded` and the October one carries `usageLimitExceeded`.
 _ANTHROPIC_SESSION_LIMIT = _quota_message(literals=("hit your session limit",))
+_ANTHROPIC_WEEKLY_LIMIT = _quota_message(literals=("hit your weekly limit", "resets"))
 _ANTHROPIC_GENERIC_LIMIT = _quota_message(literals=("hit your limit", "resets"))
 _ANTHROPIC_USAGE_LIMIT = _quota_message(literals=("hit your usage limit",))
 _ANTHROPIC_ORG_SPEND_LIMIT = _quota_message(literals=("org", "spend limit"))
@@ -170,6 +181,7 @@ _CODEX_USAGE_LIMIT_SNAKE_TOKEN = _quota_machine_code(machine_code="usage_limit_e
 _BUILTIN_SIGNATURES: dict[str, tuple[AcpAvailabilitySignature, ...]] = {
     ANTHROPIC_DOMAIN: (
         _ANTHROPIC_SESSION_LIMIT,
+        _ANTHROPIC_WEEKLY_LIMIT,
         _ANTHROPIC_GENERIC_LIMIT,
         _ANTHROPIC_USAGE_LIMIT,
         _ANTHROPIC_ORG_SPEND_LIMIT,
