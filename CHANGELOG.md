@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.0...v0.243.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **needs-attention:** fail soft on a malformed plan-timeline comment and on a missing held-drift anchor (bd-ib-xbll72, bd-ib-m2fb2g) ([657a9d0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/657a9d0dfa177043af06e235478a442ee0248baf))
+
 ## [0.243.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.242.4...v0.243.0) (2026-10-25)
 
 
