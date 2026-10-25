@@ -33,6 +33,18 @@ these rows: each terminal's own record set is its own module's subject, and
 reproducing them here would reintroduce the very difference these cases hold
 constant.
 
+WHAT THE HOLD-RECORD COMPARISON IS DELIBERATELY BLIND TO. The two passes run one
+after the other in one process, and `JournalFile.append` stamps every row it writes
+with `at` off the wall clock at SECONDS precision — so whenever the pair straddles a
+second boundary that field is the ONE thing that differs between their hold records,
+and a whole-row equality then fails for a reason the release class had no part in.
+Measured 2026-10-20: master CI run 39478669876 failed exactly there on commit
+078a69b0 while the very next commit carrying the same change went green, and the
+file passed five times running in isolation. The comparison therefore drops that one
+field and nothing else — `_comparable_held_rows` below, whose own control asserts
+that every OTHER field of a real hold record still separates two rows, so the
+exclusion cannot widen into the record's substance and quietly stop comparing it.
+
 WHY FOUR WORLDS. One world cannot distinguish "the release class is not read" from
 "this world's route is reached whatever the history says" — the `fresh` route in
 particular is also what an UNRELEASED item gets, so a build blind to the
@@ -294,6 +306,25 @@ def _route_once(
     )
 
 
+# The one envelope field `JournalFile.append` stamps off the wall clock, and the only
+# field the comparison below drops. Named once so the exclusion and the control that
+# bounds it cannot drift apart.
+_JOURNAL_CLOCK_FIELD = "at"
+
+
+def _comparable_held_rows(*, rows: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
+    """Each hold record with ONLY the journal's wall-clock stamp dropped.
+
+    The projection is written as an exclusion rather than as a list of the fields
+    worth comparing, which is the whole of its safety: a row gains a field when the
+    production record gains one, and a comparison keyed on an enumeration here would
+    silently stop reading that field while every case in this module still passed.
+    """
+    return tuple(
+        {name: value for name, value in row.items() if name != _JOURNAL_CLOCK_FIELD} for row in rows
+    )
+
+
 @pytest.mark.parametrize("world", _worlds(), ids=lambda one: one.name)
 def test_both_release_classes_route_identically_on_identical_measurements(
     world: _World, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -315,7 +346,44 @@ def test_both_release_classes_route_identically_on_identical_measurements(
     assert stall.route.route == world.route
     assert provider_limit.route == stall.route
     assert provider_limit.calls == stall.calls
-    assert provider_limit.held_rows == stall.held_rows
+    assert _comparable_held_rows(rows=provider_limit.held_rows) == _comparable_held_rows(
+        rows=stall.held_rows
+    )
+
+
+def test_the_hold_record_comparison_drops_the_clock_stamp_and_nothing_else(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The instrument's own control: exactly how much the comparison above forgives.
+
+    The row is the one a REAL pass wrote, not an invented shape, because the claim is
+    about the field set the production writer produces — envelope stamps included. A
+    hand-built row would leave a field this module never compares looking compared.
+
+    Both directions are asserted, and neither means anything alone: a projection that
+    dropped everything satisfies the clock case, and one that dropped nothing
+    satisfies the rest while leaving the flake in place.
+    """
+    held = next(one for one in _worlds() if one.name == "held")
+    rows = _route_once(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, world=held, release_stage=STALL_RELEASE_STAGE
+    ).held_rows
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert _JOURNAL_CLOCK_FIELD in row
+
+    later = {**row, _JOURNAL_CLOCK_FIELD: "2026-10-20T18:53:17Z"}
+    assert later != row
+    assert _comparable_held_rows(rows=(later,)) == _comparable_held_rows(rows=(row,))
+
+    sentinel = "a value no hold record carries"
+    for name in row:
+        if name == _JOURNAL_CLOCK_FIELD:
+            continue
+        assert row[name] != sentinel
+        mutated = {**row, name: sentinel}
+        assert _comparable_held_rows(rows=(mutated,)) != _comparable_held_rows(rows=(row,))
 
 
 def test_the_two_release_stages_under_comparison_are_not_the_same_string() -> None:
