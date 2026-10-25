@@ -30,7 +30,7 @@ one front-end among three) the ruling to record on the plan epic?" Answer: "Yes,
 
 **Ruling 2 — the fleet Dolt database is approved in principle (13:36:23Z).** Question: "is the dedicated fleet Dolt
 database (the only new infrastructure in the shape, with two unverified prerequisites: provisioning of a non-beads
-database, and fenced conditional reservation writes) yours to approve now?" Answer: "Yes, approved in principle". The
+database, and fenced conditional reservation writes) yours to approve now?" Answer: "Yes, approved in principle". Plan-session reading: the
 two prerequisites therefore become named verification work that must pass before any reservation logic ships.
 
 **Direction 3 — performance first (13:37:30Z).** Verbatim: "Also this plan should prioritize fixing the performance
@@ -38,18 +38,18 @@ problems as soon as possible before any other unnecessary buildout is done. If t
 things we can do to stop the size problems of that JSON file, then we should do it." The JSON file is the dispatch
 journal, `tmp/fabro-dispatch-journal.jsonl`. The coordinator measured it on 2026-10-25 at 05:1xZ at 150,548,134 bytes
 and 197,541 lines after a prune, with needs-attention timing out at 900 seconds and each `drive` spending 30 to 55
-minutes of CPU before it lists (part 4, peer message of 05:13:55Z). So the plan's first children are the
+minutes of CPU before it lists (part 4, peer message of 05:13:55Z). Plan-session reading, not the maintainer's words: the plan's first children are the
 performance and size fixes, ahead of the fleet scheduler, the coordinator skill and the diagram work.
 
 **Direction 4 — coordinator jobs are assignable to different agents (13:40:49Z).** Verbatim: "One additional thing I
 want incorporated into this plan for the coordinator's different tasks: we should be able to assign different LLMs
-or subagents or peer agents to the tasks so that one doesn't get overwhelmed with trying to do everything." So each of
+or subagents or peer agents to the tasks so that one doesn't get overwhelmed with trying to do everything." Plan-session reading, not the maintainer's words: each of
 the coordinator's four granted jobs (keep plans moving, cross-plan conflicts, holistic events, decision packets) is a
 separately assignable role. A role names the model, subagent or peer session that holds it, and one session is never
 required to hold all four.
 
 **Direction 5 — minimize token spend (13:41:10Z).** Verbatim: "And another goal should be to minimize token usage
-from the loop and from cross-agent communication because that burns a ton." So the design goal is that the loop
+from the loop and from cross-agent communication because that burns a ton." Plan-session reading, not the maintainer's words: the design goal is that the loop
 spends tokens only when a fact needs judgement. Deterministic work stays in code, as the second pass already
 proposed. Agents exchange compact references to needs-attention facts and ledger records instead of narrative
 messages, and a tick with no new fact costs no model call.
@@ -162,6 +162,9 @@ differs from the second pass in part 4 or from part 1, the second pass and the r
 starting material for the dependency-diagram work the maintainer asked to become part of this plan's Definition of Done.
 
 ## 4. Transcript of the discussion session
+
+Each entry is headed with its speaker and UTC timestamp at heading level four. Headings that the plan session wrote inside its own replies are shown at level five so they cannot be mistaken for parts of this note.
+
 
 #### Plan session (2026-10-25T01:04:42.107Z)
 
@@ -319,7 +322,7 @@ My recommendation combines the first two: the Dispatcher and work-supply timer o
 
 Where do you lean, and is the fleet-wide token budget something the Dispatcher should own, or should it stay a caller-side concern as spec v053 currently rules?
 
-#### Maintainer (2026-10-25T02:32:52.467Z)
+#### Coordinator relay pasted into the plan session's pane (2026-10-25T02:32:52.467Z)
 
 > Coordinator (gitops-fleet-capacity-monitoring), 02:3xZ: the usage-limit stall is over. caam rotated the fleet to anthropic-0 at 02:19Z, so you can run again now; don't wait for 4:40am. Resume your work where you left off. Factory state: hold-gmktec is SET (3 needs-human runs in 17 min, cause being classified) and fleet-cap is 3. Don't launch factory work until the hold lifts. Local work continues. Reply with one line of status on the epic or to me.
 
@@ -350,7 +353,7 @@ Let me ground both answers in the current spec text and skill inventory before e
 
 Here is the picture as the code and the removed prose actually describe it, then what I'd recommend. First, the short answer to your earlier question: "factory-native records" means Fabro's own server-side run store. Every run the Dispatcher submits is labelled with the work-item id and the dispatch id, persists in the factory server's storage, and is readable from any host with `fabro ps -a --server`, `inspect` and `dump`. Spec v127 already requires hold evidence to be reconstructible from those records after the local journal is gone. It is the one store that is neither host-local nor ours to build.
 
-## How the three layers already fit
+##### How the three layers already fit
 
 **The overseer's own charter assumes a Dispatcher beside it.** Its prose describes two modes side by side: a factory that "polls the ledger and runs ready work-items unattended in Fabro", and "several interactive plan tracks moving in parallel", with the overseer automating only wrap-up and restart. It never selects work. It restarts a plan session only on that session's own `ready` declaration and re-kicks it from ledger-held plan state (repo path plus epic id). That is the seam you are asking about, and it is already drawn.
 
@@ -358,7 +361,7 @@ Here is the picture as the code and the removed prose actually describe it, then
 
 **Foreman and supervisor were LLM seats doing the Dispatcher's and the plan skill's jobs by hand.** The foreman was a per-repository bounded operator loop: observe, judge, propose one action per tick through a whitelisted actuator, with singleton lock, heartbeat, tick cadence and durable runtime state under `tmp/overseer/foreman/`, and a consensus panel for human valves. That is a scheduler built out of a session. Its three functions each have a deterministic successor now: per-plan selection lives in the plan skill's typed next action with budget and epoch; per-tenant admission lives in the Dispatcher; fleet-wide budgeting and holds migrated to the coordinator seat by hand. Supervise-plan authored a per-plan supervisor binder as ledger handoff entries; the plan skill's progress tracking, authority chain and independent completeness review absorbed that. You removed both on 2026-09-06, and the research found nothing in them worth resurrecting as a seat. The one residue is the fleet-wide function, which has no owner except a human coordinator and two text files.
 
-## Recommendation, in terms of skills
+##### Recommendation, in terms of skills
 
 1. **Keep the overseer exactly as narrow as it is.** Liveness and restart of plan sessions, nothing more. Do not grow it a scheduler.
 2. **Keep the plan skill as the unit of work and the normal door to the factory.** Its `impl` and `await` actions stay as they are. Its dispatch should leave no state behind that a resumed session on another host cannot see; that is the state migration below.
@@ -379,11 +382,11 @@ If this framing holds for you, the ruling I'd record is: plan skill plus Dispatc
 
 Taking your four points in order.
 
-## 1. What "migrated to the coordinator seat by hand" means
+##### 1. What "migrated to the coordinator seat by hand" means
 
 The coordinator is a Claude session named `gitops-fleet-capacity-monitoring`, driving a plan in livespec-dev-tooling (epic `livespec-dev-tooling-dfixhe`, 2,999 ledger comments as of last night). It runs a self-paced tick loop and does what the foreman prose described, across the whole fleet instead of per repository: it reads the factory boards, classifies failures, decides the fleet-wide in-flight cap, holds a factory when it misbehaves, relays your rulings to specialist seats, and unblocks stranded items. "By hand" is literal. The cap is a number in `tmp/petri-canary/fleet-cap` and the hold is the existence of `tmp/petri-canary/hold-gmktec`; the coordinator edits those files, and every seat's launcher script reads them before calling `drive`. This morning's message to me is an instance: three needs-human runs in seventeen minutes, so it set the hold and lowered the cap to three while classifying the cause. None of that is committed, specified, or visible to anything but scripts on this host.
 
-## 2. You are right, and the correction sharpens the design
+##### 2. You are right, and the correction sharpens the design
 
 I collapsed two scopes. Provider-exhaustion holds and fallback warnings as implemented today are per-repository journal state, so "per-tenant" was true of them but wrong for the rest. The fleet budget and a factory hold are not tenant state at all. The hold is keyed by factory (gmktec), the budget is really keyed by provider account (tokens belong to the Claude account caam is currently rotating, which is exactly what the Dispatcher's session-headroom gate already models per credential), and Fabro owns per-host concurrency by spec v053. So the honest taxonomy is:
 
@@ -393,11 +396,11 @@ I collapsed two scopes. Provider-exhaustion holds and fallback warnings as imple
 
 The per-factory and per-account records need a cross-tenant home. On our infrastructure that is a dedicated fleet-control tenant on the shared Dolt server, named in each repository's committed `.livespec.jsonc` so admission knows where to read. The alternative is the Fabro server itself, which is factory-scoped by nature, but Fabro has no hold or budget primitive and we have ruled against freezing on the fork. One mechanism caveat to carry into the children: `bd` resolves its tenant from the working directory, so reading a second tenant from inside a dispatch needs an explicit connection path, not a `cd`.
 
-## 3. Drive is the wrong home; I'd push back on my own suggestion
+##### 3. Drive is the wrong home; I'd push back on my own suggestion
 
 `drive` is cohesive today: it executes one action on one work item in one tenant (dispatch, valves, admission and acceptance policy). A factory hold or a fleet budget has no work item and no tenant. Putting it in `drive` would also put fleet control in the orchestrator plugin, which is installed per project and reasons per tenant. The fleet-level repository already exists and already holds the two fleet-level concerns we have: livespec-overseer carries caam (account supply) and drain-backlog. So the cohesive answer is a new skill in the overseer plugin, call it `fleet-control` for now, that owns the per-factory and per-account control records: set and release a hold, set the budget, and show the fleet view (in-flight per tenant and factory from the factory's run store, active holds, budget, last pass). The orchestrator's Dispatcher only reads those records at admission. `drive` keeps per-item actions, and a per-tenant pause could reasonably stay there. The console renders and invokes the same records.
 
-## 4. The coordinator is the foreman that worked, and it needs a home
+##### 4. The coordinator is the foreman that worked, and it needs a home
 
 You have named it exactly. The foreman failed as fifteen per-repository seats with tmp runtime state and consensus panels. The coordinator succeeded as one fleet-wide seat with ledger-held rulings, and it does the irreducible job that no deterministic mechanism does: prioritise under token scarcity, judge when a failure pattern warrants a hold, and decide what is worth your attention. The evidence from last night's analysis is that this is where human attention gets its leverage, and that interactive spend is the majority of spend. So I do think two prior decisions need revisiting, and I'd rather say so than route around them:
 
@@ -424,13 +427,13 @@ Agreed on all three, and the second one deserves a straight answer: I have no re
 
 Nothing reached the forge: no remote branch, no pull request. The worktree and local branch are gone. The draft itself is kept only at `/tmp/claude-1000/-data-projects-livespec-orchestrator-beads-fabro/5c44f7c9-8abe-48f4-9195-7eb6f5dc733f/scratchpad/004-control-plane-design.md`, in case you want to read it, and here is its substance for the discussion.
 
-## The state of the diagrams, since you asked
+##### The state of the diagrams, since you asked
 
 - **livespec core** has seven Mermaid blocks in `spec.md`. The one declared "the single source of truth" draws the control plane as the console, labelled "the single human interface", with the edge "HUMAN drives everything via the console". It has no overseer, no long-lived agent session, no factory, no journal, no coordinator, and lists `plan` as a skill the console invokes. Twelve older PlantUML diagrams sit under `archive/`, last touched 2026-07-03, before the overseer, the console and the coordinator existed.
 - **This repository and the overseer** have zero diagrams in their specs. **The console** has sixty-three. **No repository** has a family-level dependency diagram.
 - The console spec says the overseer's roles are "retired" and realised "in the console ONLY". The overseer is the thing you want to lean into. So the ratified picture is wrong on exactly the three points this plan is about: who the control plane is, what a plan session is, and that a deciding agent exists outside every drawn box.
 
-## Answers to the three pieces of feedback
+##### Answers to the three pieces of feedback
 
 **The console.** Agreed: agents drive the API directly, never through the console. The coordinator and plan sessions call `drive` and whatever fleet operation we add. The console's own spec already confines it to rendering facts and recording explicit human commands over the orchestrator's surfaces. What remains for it is a human view across tenants with history and a place to issue the same commands a terminal offers. That is optional. The cheap honest move is to re-word core's canonical diagram from "the single human interface" to one human front-end among three: the coordinator seat acting for you, the skill surface, and the console. Retiring the console or building its GUI can wait until the coordinator exists and its attention cost is measured.
 
@@ -438,7 +441,7 @@ Nothing reached the forge: no remote branch, no pull request. The worktree and l
 
 **Where fleet control lives, with the dependency argument.** The overseer already depends on the orchestrator's published operations. The Dispatcher must read holds and budgets at admission. If the overseer owned those records the orchestrator would depend on the overseer, a cycle. So the record contract and the operation belong in this plugin, as a new sibling of `drive`, not inside it, because `drive` is per item and these records have no item. This corrects what I said earlier about the overseer plugin, and it is the answer to your "brand new skill at the orchestrator level" question: yes.
 
-## The two skills, in enough detail to argue with
+##### The two skills, in enough detail to argue with
 
 **Coordinator (overseer plugin).** One fleet-wide seat, run as a standing plan session so `overseerd` keeps it alive on the cardinal ready-only rule, with its rulings and handoffs on its own epic. Each tick it reads `needs-attention` per tenant, the fleet view, plan progress and account headroom. It acts only through published operations: fleet control for hold, release, budget and priority; `drive` for valves and dispatch; `SendMessage` to seats; a non-blocking line to you. It inherits the foreman's constraints that worked (bounded tick, every mutation attributable, autonomy as committed configuration) and the coordinator's own rulings (never a blocking prompt, audit idle capacity before claiming nothing can use it). Its spec should list each judgement it makes by hand beside the deterministic successor that retires it: the "three needs-human runs in seventeen minutes" hold becomes an auto-hold rule, the cap becomes headroom plus Fabro's ceiling, idle-slot audits become the capacity fact that already exists.
 
@@ -474,7 +477,7 @@ Nothing else is pending on my side. The discussion stands where my previous mess
 
 Digested. The feedback changes the shape in a good way, so here is the second pass, built around the one requirement you put last: steady-state throughput, with whatever capacity the provisioned accounts and, later, local models actually have.
 
-## The reframe: a deterministic scheduler, not a smarter seat
+##### The reframe: a deterministic scheduler, not a smarter seat
 
 Throughput control is a scheduling problem with three inputs and one loop, none of which needs an LLM:
 
@@ -486,7 +489,7 @@ The loop is: every N minutes, for each pool with free capacity, admit the highes
 
 Local free models fit this without special casing: a local pool's availability is free slots, its cost is zero, and routing prefers it for every node the committed routing allows. Back-pressure is queue depth. When local capacity is saturated the same loop spills to quota pools under their headroom. That is the whole "spend what you have" behaviour, and it falls out of the pool abstraction rather than from a cap anyone sets.
 
-## Where the state lives: a Dolt database with tables, not a ledger item with comments
+##### Where the state lives: a Dolt database with tables, not a ledger item with comments
 
 You are right that a comment stream is the wrong structure, and in beads it is worse than slow: `bd comments` has add and list and nothing else, so a ledger item cannot be pruned at all. Any design that puts operational state on a beads item grows forever by construction.
 
@@ -494,7 +497,7 @@ The fit is a dedicated Dolt database on the shared server that is not a beads te
 
 The orchestrator owns the schema and a small writer and reader library, exposed as the `fleet-control` operation. Agents and humans never reach the database directly, by the same rule that keeps them off raw `mysql` today.
 
-## The coordinator, narrowed to judgement
+##### The coordinator, narrowed to judgement
 
 Everything the scheduler can do leaves the coordinator. Caps, idle slots, when to feed a factory, which pool: all deterministic, all fleet-side. Per-item acceptance, answering a run's human gate, deciding rework: those belong to the plan session that owns the item, through `drive`, as you said. What remains for the coordinator is exactly four things:
 
@@ -505,7 +508,7 @@ Everything the scheduler can do leaves the coordinator. Caps, idle slots, when t
 
 For persistence, the coordinator keeps a plan epic for what an epic is good at, rulings and scope events, and nothing else. Its observations go to telemetry, where the family already exports, and its operational state lives in the fleet database. And because comments cannot be pruned, the epic should rotate: close a generation, open the next with a one-screen carry-forward. The current coordinator's epic at about three thousand comments is the measurement that says so.
 
-## What this does to the plan session and the earlier picture
+##### What this does to the plan session and the earlier picture
 
 Today a plan session invokes the Dispatcher directly for each child. Under a fleet supply loop it does not need to. Its job becomes filing ready children with a sound Definition of Done, recording a typed next action, and awaiting results. The default next action for a filed child becomes `await item:<id>`, with a direct `impl` kept as an explicit expedite. The overseer's own prose already describes this split, a factory that drains ready items unattended beside plan tracks that do the thinking. The overseerd daemon is unchanged.
 
@@ -513,7 +516,7 @@ So the earlier fleet-control sketch becomes the CLI over the fleet database, the
 
 Two things I'd want your read on before going further. First, whether a plan session should keep the ability to dispatch directly at all, or whether every launch goes through supply, which is cleaner but slower for an attended plan that wants its child now. Second, whether the fleet database is yours to say yes to now, since it is the one new piece of infrastructure in this design and everything else is rearrangement.
 
-#### Maintainer (2026-10-25T04:00:01.869Z)
+#### Maintainer (2026-10-25T04:00:01.869Z; truncated first send, re-sent complete at 04:02:47Z)
 
 > Okay I'm really liking the direction in which there is a deterministic programmatic component that does not involve an LLM, so we can offload this fleet-wide or more holistic dispatching work. And take all of that out of the coordinator and leave it there
 
@@ -578,7 +581,7 @@ The full second pass follows when note 3 lands.
 
 All three research notes are in and every helper pane is closed. Nothing more to gather, so here is the second pass. It changes four things from the previous one: needs-attention becomes the only attention surface, the scheduler becomes the owner of everything that is measurable, the coordinator shrinks to four jobs with explicit grants, and acceptance capacity joins the constraints. The research turned out to agree on more than I expected, which I note where it matters.
 
-## One attention surface, three consumers
+##### One attention surface, three consumers
 
 Every fact that needs a human, or a decision, exists only as a needs-attention fact with a stable id, an owner, the evidence, and the action that would resolve it. Nothing else is a channel. Three parties consume the same snapshot:
 
@@ -588,7 +591,7 @@ Every fact that needs a human, or a decision, exists only as a needs-attention f
 
 The research adds three refinements to the contract we already have. First, route by required action and time to consequence, not by severity: a fact says whether it interrupts now, waits for a review window, or is informational, and an expected quota wait never interrupts (the SRE pages-versus-tickets split, and Horvitz's cost-of-delay framing). Second, group by cause: one exhausted pool or one held factory is one fact with affected work linked beneath it, never one fact per refused item (Alertmanager's grouping, Gas Town's escalation records). Third, a fact that asks for a ruling carries a decision packet sufficient to decide cold: condition and observation time, affected work, why existing authority cannot resolve it, options, a recommendation, and the cost of waiting (the takeover-readiness finding). The scheduler's own refusals and holds become facts in this same list, which is how both consumers see them. The console's recorded decision to have no snooze or acknowledge survives intact: a fact resolves when its condition is gone, and nothing else resolves it.
 
-## The deterministic fleet scheduler
+##### The deterministic fleet scheduler
 
 This is the piece every production fleet in the research has and we lack: admission, claims, concurrency, holds and recovery in code, with the model nowhere in the loop. Stripe, OpenAI's Symphony, Factory, Gas Town and Cursor all converge on it, and Cursor measured that an LLM integrator in the path collapsed twenty workers to the throughput of three.
 
@@ -600,7 +603,7 @@ This is the piece every production fleet in the research has and we lack: admiss
 
 **Where it runs.** In this plugin, as a sibling of the Dispatcher's loop with the Dispatcher's admission reading the fleet tables, invoked by one fleet-supply timer that replaces the uninstalled per-tenant work-supply timer. The journal stays append-only audit. Per-item state moves onto the item. Run facts stay in the Fabro run store.
 
-## The coordinator, with grants
+##### The coordinator, with grants
 
 Four jobs, each a grant you give, each exercised only through published operations: keep plans moving (wake, restart after an outage, escalate a stalled plan); resolve cross-plan conflicts; handle holistic events (pause and resume the fleet around an outage or rotation); and prepare decision packets for the facts it cannot dispose. It never touches caps, pools, idle slots, per-item acceptance or a run's human question. The authority-by-function finding gives the rule: the right to diagnose a hold is not the right to release it, so grants are scoped per operation and recorded as committed configuration, and the scheduler enforces the grant's limits regardless of what the session concludes.
 
