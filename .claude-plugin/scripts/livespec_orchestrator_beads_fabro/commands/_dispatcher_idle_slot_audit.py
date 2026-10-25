@@ -155,14 +155,16 @@ def idle_slot_audit(
     holds = tenant_hold_reasons if hold_reader is None else hold_reader
 
     def _tenant_once(*, repo: Path) -> TenantReading | None:
-        if repo not in tenant_reads:
-            tenant_reads[repo] = tenant(repo=repo)
-        return tenant_reads[repo]
+        cache_key = repo.resolve()
+        if cache_key not in tenant_reads:
+            tenant_reads[cache_key] = tenant(repo=repo)
+        return tenant_reads[cache_key]
 
     def _holds_once(*, repo: Path, items: list[WorkItem]) -> dict[str, str]:
-        if repo not in hold_reads:
-            hold_reads[repo] = holds(repo=repo, items=items)
-        return hold_reads[repo]
+        cache_key = repo.resolve()
+        if cache_key not in hold_reads:
+            hold_reads[cache_key] = holds(repo=repo, items=items)
+        return hold_reads[cache_key]
 
     readers = _Readers(
         tenant=_tenant_once,

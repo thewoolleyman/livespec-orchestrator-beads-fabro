@@ -329,6 +329,48 @@ def test_the_audit_reuses_each_tenant_and_hold_read_once_but_refreshes_next_time
     assert _classes(second_result)["a-1"] == "UNADMITTED"
 
 
+def test_the_audit_reuses_relative_and_absolute_spellings_of_one_tenant(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    """One checkout has one audit-local tenant and hold reading regardless of spelling."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+    tenant_root = tmp_path / "tenant-a"
+    _write_config(
+        tmp_path,
+        priority=[
+            {"repo": "tenant-a", "items": ["a-1"]},
+            {"repo": str(tenant_root), "items": ["a-2"]},
+        ],
+    )
+    monkeypatch.chdir(tmp_path)
+    reading = _reading(items=(_item(id_="a-1"), _item(id_="a-2")))
+    tenant_calls: list[Path] = []
+    hold_calls: list[Path] = []
+
+    def _tenant(*, repo: Path) -> object:
+        tenant_calls.append(repo)
+        assert repo.resolve() == tenant_root
+        return reading
+
+    def _holds(*, repo: Path, items: list[WorkItem]) -> dict[str, str]:
+        _ = items
+        hold_calls.append(repo)
+        assert repo.resolve() == tenant_root
+        return {"a-1": "held for a reason"}
+
+    result = module.idle_slot_audit(
+        project_root=Path(),
+        tenant_reader=_tenant,
+        board_reader=_constant_board(board=_board()),
+        hold_reader=_holds,
+    )
+
+    assert tenant_calls == [Path("tenant-a")]
+    assert hold_calls == [Path("tenant-a")]
+    assert _classes(result) == {"a-1": "HELD", "a-2": "DISPATCHABLE-NOW"}
+
+
 def test_the_finding_names_the_factory_its_live_count_and_the_children_in_order(
     tmp_path: Path,
 ) -> None:
