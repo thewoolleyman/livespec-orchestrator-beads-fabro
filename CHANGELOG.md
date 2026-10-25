@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.242.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.242.0...v0.242.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **dispatcher:** reconcile-merged closes a merged, locally built item resting at pending-approval or ready (bd-ib-acxptq) ([0568274](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/056827494dd799e8b71e63b17f5e0519f518d2c7))
+
 ## [0.242.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.241.6...v0.242.0) (2026-10-25)
 
 
