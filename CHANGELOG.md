@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.241.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.241.3...v0.241.4) (2026-10-25)
+
+
+### Bug Fixes
+
+* **dispatcher:** read the failing stage's own output for a Petri needs-human cause ([fbc4305](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fbc43053067ff482bd0bf28832b00944f6ed5b54))
+
 ## [0.241.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.241.2...v0.241.3) (2026-10-25)
 
 
