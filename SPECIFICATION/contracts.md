@@ -56,7 +56,7 @@ primitive) are detailed in the subsections that follow.
 Surface spec headings that no test exercises as candidate work-items by
 invoking the sibling `/livespec-orchestrator-beads-fabro:detect-impl-gaps
 --json` thin-transport skill (no in-skill duplication of the detection
-logic; both this skill and doctor consume the same canonical surface).
+logic).
 
 **Naming note.** Despite the `-impl-gaps` name, this operation performs
 NO spec↔impl comparison. `detect-impl-gaps` (below) enumerates the H2
@@ -846,9 +846,13 @@ MUST NOT read this flag's output as a diff of newly-introduced headings.
 the retired clause enumeration carries a clause-derived `gap-id:` label.
 Every live such item MUST be re-labelled with the heading-derived gap-id
 of the heading its clause sits under, and the implementation of this
-clause MUST NOT be reported complete until that re-labelling has run, so
-livespec core's `gap-tracking-one-to-one` and `no-stale-gap-tied`
-invariants pass on this repository against the new enumeration. The
+clause MUST NOT be reported complete until that re-labelling has run and
+both of the following hold on this repository against the new
+enumeration: no gap-id is carried by more than one live gap-tied
+work-item, and every live gap-tied work-item carries a gap-id that
+`detect-impl-gaps --json` emits. These are verified against this
+plugin's own `list-work-items --json` and `detect-impl-gaps --json`
+output; livespec core's doctor no longer carries a gap check. The
 detector change and the live re-labelling MAY land as separate changes,
 in that order. A closed item MUST keep its historical clause-derived
 label.
@@ -879,10 +883,6 @@ path + heading the gap-id derives from.
 The skill is the canonical gap-detection surface for the plugin.
 Consumers:
 
-- `livespec` doctor's `gap-tracking-one-to-one` and `no-stale-gap-tied`
-  invariants subprocess this skill via the
-  `<impl-plugin>:detect-impl-gaps --json` cross-boundary handoff (per
-  upstream §"Cross-boundary handoffs" entry 5).
 - The heavyweight sibling `capture-impl-gaps` invokes this skill as its
   detection step before walking the user through per-gap consent.
 - The heavyweight `implement` skill's gap-tied closure verification is
@@ -9491,9 +9491,6 @@ this plugin participates in these red-edge handoffs:
    `/livespec:propose-change` (drift findings).
 2. `/livespec:doctor` → `/livespec-orchestrator-beads-fabro:list-work-items --json`
    (work-item structural invariants).
-3. `/livespec:doctor` → `/livespec-orchestrator-beads-fabro:detect-impl-gaps --json`
-   (gap-detection invariants `gap-tracking-one-to-one` and
-   `no-stale-gap-tied`).
 
 The handoff mechanism is namespace invocation (per
 `livespec/SPECIFICATION/contracts.md`) —
