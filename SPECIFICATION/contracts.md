@@ -3607,7 +3607,7 @@ declaration is valid under the deliverable policy, and that the
 assertions are coherent with the item's title, description and
 referenced headings — a Definition of Done that a competent engineer
 could not recognise as satisfied or unsatisfied from the referenced
-scenario is incoherent. Under the deliverable policy the node MUST
+scenario is incoherent. The node is an adjudication node: it grades the Definition of Done and changes nothing. It MUST NOT modify the sandbox working tree, create a commit, or run the repository's declared check suite, and its turn MUST leave the working tree clean and HEAD at the commit the node started on. A `dod_gate` turn that modifies the working tree or HEAD MUST end the node with a failed outcome whose failure reason names the mutation, routing through the node's existing Blocked edge to `needs_human` rather than proceeding to `implement`; no new edge, state transition or exit code is introduced. The prompt the node renders MUST state this boundary to the agent. Under the deliverable policy the node MUST
 identify, for every `factory_captured` assertion, the surface its proof
 needs, and MUST report as a Definition-of-Done finding an assertion
 whose surface no capability in a known capability set provides, naming
