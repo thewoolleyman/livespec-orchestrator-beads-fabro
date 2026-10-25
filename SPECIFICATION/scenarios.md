@@ -7706,18 +7706,37 @@ Feature: An incomplete implement turn is not recorded as a success
   I want an implement turn that stops partway to end the implement stage as failed
   So that the run does not publish and prove an incomplete change as if it were finished
 
-  Scenario: A turn that reports partial progress fails the stage
+  Scenario: A turn that reports partial progress re-enters implement while its retry budget remains
     Given an implement turn whose final output's completion field reports the Definition of Done incomplete
-    And the turn left nothing staged
+    And the turn left nothing staged and made no failing run of the repository's check suite
+    And the implement node's retry budget is not exhausted
+    When the implement stage ends
+    Then the run re-enters the implement stage instead of failing it
+    And the re-entered turn's brief states that the previous turn ended incomplete with no recorded failing gate
+
+  Scenario: An incomplete turn whose own check-suite run failed re-enters with that run's failed targets
+    Given an implement turn whose final output's completion field reports the Definition of Done incomplete
+    And the turn left no refused commit attempt
+    And the turn's latest run of the repository's check suite exited non-zero naming failed targets
+    And the implement node's retry budget is not exhausted
+    When the implement stage ends
+    Then the run re-enters the implement stage instead of failing it
+    And the re-entered turn's brief carries those failed target names and that run's error lines, taken from the run's recorded tool output
+
+  Scenario: An incomplete turn whose staged changes the commit hook accepts re-enters implement
+    Given an implement turn whose final output's completion field reports the Definition of Done incomplete
+    And the turn left changes staged that the repository's commit hook accepts
+    And the implement node's retry budget is not exhausted
+    When the implement stage ends
+    Then the run re-enters the implement stage instead of failing it
+
+  Scenario: An incomplete turn with no refused commit and its retry budget exhausted fails as partial progress
+    Given an implement turn whose final output's completion field reports the Definition of Done incomplete
+    And the turn left no refused commit attempt
+    And the implement node's retry budget is exhausted
     When the implement stage ends
     Then the stage outcome is failed with a cause naming partial progress
     And the run takes the implement stage's failure edge, and the dispatch outcome detail carries that cause
-
-  Scenario: An incomplete turn whose staged changes the commit hook accepts fails as partial progress
-    Given an implement turn whose final output's completion field reports the Definition of Done incomplete
-    And the turn left changes staged that the repository's commit hook accepts
-    When the implement stage ends
-    Then the stage outcome is failed with a cause naming partial progress
 
   Scenario: A turn whose commit the hook refused re-enters implement while its retry budget remains
     Given an implement turn whose final output's completion field reports the Definition of Done incomplete
@@ -7735,9 +7754,17 @@ Feature: An incomplete implement turn is not recorded as a success
     Then the stage outcome is failed with a cause naming the hook's failed targets
     And the dispatch outcome detail carries that cause
 
-  Scenario: A turn with no completion field is treated as incomplete
+  Scenario: A turn with no completion field is treated as incomplete and re-enters implement
     Given an implement turn whose final output carries no completion field
     And the turn left nothing staged
+    And the implement node's retry budget is not exhausted
+    When the implement stage ends
+    Then the run re-enters the implement stage instead of failing it
+
+  Scenario: A turn with no completion field and its retry budget exhausted fails as partial progress
+    Given an implement turn whose final output carries no completion field
+    And the turn left nothing staged
+    And the implement node's retry budget is exhausted
     When the implement stage ends
     Then the stage outcome is failed with a cause naming partial progress
 
