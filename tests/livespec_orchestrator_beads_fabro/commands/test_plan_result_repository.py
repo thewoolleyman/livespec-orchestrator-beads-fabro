@@ -146,6 +146,36 @@ def test_the_connection_is_resolved_from_the_target_repositorys_own_clone(
     assert config.tenant == "sib"
 
 
+def test_the_target_connections_declared_credential_wrapper_is_retained(
+    tmp_path: Path,
+) -> None:
+    """A result read must use the target tenant's own credential seam.
+
+    An independent target cannot authenticate with the invoking family's
+    `BEADS_DOLT_PASSWORD`. The target's committed wrapper is therefore part of
+    the resolved connection, alongside its target-root working directory.
+    """
+    sibling = tmp_path / "sibling"
+    sibling.mkdir()
+    wrapper = ("./with-sibling-env.sh", "--")
+    _ = (sibling / ".livespec.jsonc").write_text(
+        json.dumps(
+            {
+                "livespec-orchestrator-beads-fabro": {
+                    "connection": {"prefix": "sib", "tenant": "sib"}
+                },
+                "credential_wrapper": list(wrapper),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = result_store_config(repository=ResultRepository(name="sibling", clone=sibling))
+
+    assert config is not None
+    assert getattr(config, "credential_wrapper", ()) == wrapper
+
+
 def test_an_unreadable_target_configuration_yields_no_connection(tmp_path: Path) -> None:
     """A repository whose configuration declares no create-prefix is unreadable.
 

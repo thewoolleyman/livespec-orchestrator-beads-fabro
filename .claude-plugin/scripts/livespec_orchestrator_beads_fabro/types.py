@@ -119,6 +119,8 @@ class StoreConfig:
       mise shim; resolved from config/env in `commands/_config.py`).
     - `repo_root` — the repository root whose `.beads/config.yaml` must
       route per-command `bd` auto-discovery.
+    - `credential_wrapper` — the target repository's optional command prefix
+      that supplies its tenant credential to `bd` at invocation time.
     - `fake` — hermetic toggle. When True the store talks to an in-memory
       `FakeBeadsClient` (the default CI tier and the no-live-connection
       runtime fallback); when False it shells out to `bd` over the live
@@ -146,6 +148,7 @@ class StoreConfig:
     server_host: str = "127.0.0.1"
     server_port: int = 3307
     socket: str | None = None
+    credential_wrapper: tuple[str, ...] = ()
     fake: bool = False
     repo_root: Path | None = None
 
