@@ -57,9 +57,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_holds impo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_tenants import (
     EntryChildren,
     TenantReader,
+    TenantReading,
     entry_children,
     read_tenant,
 )
+from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "BoardLister",
@@ -147,10 +149,25 @@ def idle_slot_audit(
         return _unconfigured(finding=None)
     if isinstance(resolved, str):
         return _unconfigured(finding=resolved)
+    tenant_reads: dict[Path, TenantReading | None] = {}
+    hold_reads: dict[Path, dict[str, str]] = {}
+    tenant = read_tenant if tenant_reader is None else tenant_reader
+    holds = tenant_hold_reasons if hold_reader is None else hold_reader
+
+    def _tenant_once(*, repo: Path) -> TenantReading | None:
+        if repo not in tenant_reads:
+            tenant_reads[repo] = tenant(repo=repo)
+        return tenant_reads[repo]
+
+    def _holds_once(*, repo: Path, items: list[WorkItem]) -> dict[str, str]:
+        if repo not in hold_reads:
+            hold_reads[repo] = holds(repo=repo, items=items)
+        return hold_reads[repo]
+
     readers = _Readers(
-        tenant=read_tenant if tenant_reader is None else tenant_reader,
+        tenant=_tenant_once,
         board=read_idle_slot_board if board_reader is None else board_reader,
-        holds=tenant_hold_reasons if hold_reader is None else hold_reader,
+        holds=_holds_once,
     )
     board = readers.board(repo=project_root, factory=resolved.factory)
     entries = tuple(
@@ -207,7 +224,7 @@ def _classified(
     if tenant is None:
         return ()
     statuses = {item.id: item.status for item in tenant.items}
-    # ONE hold evaluation per entry, and only when a `ready` child could
+    # ONE hold evaluation per tenant per audit, and only when a `ready` child could
     # consume it: the shared verdict reads the tenant's whole ready set plus
     # its spec tree, so running it per child would re-read both once per row
     # to reach the identical answer.
