@@ -4145,6 +4145,22 @@ Feature: Definition of Done is validated before any implementation spend
     Given a ready item with a well-formed Definition of Done referencing an existing scenario
     When the dod_gate node evaluates it
     Then the run proceeds to the implement node
+  Scenario: A dod_gate turn that edits or commits fails the gate
+    Given a dispatched work-item whose dod_gate turn edits a file in the sandbox working tree or creates a commit
+    When the dod_gate turn ends
+    Then the dod_gate node ends with a failed outcome whose failure reason names the mutation
+    And the run does not enter the implement node
+    And the Dispatcher rests the item at blocked / needs-human
+  Scenario: A dod_gate turn that grades a coherent Definition of Done leaves the tree unchanged
+    Given a dispatched work-item with a coherent Definition of Done whose dod_gate turn finds no Definition-of-Done finding and makes no change
+    When the dod_gate turn ends
+    Then the sandbox working tree is clean and HEAD equals the commit the node started on
+    And the run proceeds to implement exactly as before
+  Scenario: The dod_gate prompt states the no-mutation boundary
+    Given a dispatched work-item reaching the dod_gate node
+    When the node renders its prompt to the agent
+    Then the prompt states that the node grades the Definition of Done and changes nothing
+    And the prompt states that the agent must not modify the sandbox working tree, create a commit, or run the repository's declared check suite
 ```
 
 ## Scenario 132 — A factory-captured proof is captured on a draft pull request, reviewed, replayed and published
