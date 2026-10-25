@@ -37,6 +37,12 @@ _NEVER_SECONDS = 3600.0
 # order of magnitude below the five-second default the freeze used to spend, so
 # a freeze that escaped the budget cannot pass inside it.
 _SLACK_SECONDS = 1.5
+# How long the controlled peer waits for the CLI's request. It bounds only the
+# peer's own read, never a budget under test, so it is generous: at load 44-65
+# a 1.0 s bound let the request arrive after the read had given up, leaving the
+# reply unsent and its line uncovered (measured 2026-10-25 on fabro-currency's
+# Green amend).
+_PEER_REQUEST_WAIT_SECONDS = 30.0
 
 
 _PEER_REPLY = (
@@ -54,7 +60,7 @@ def _answer_after(
 ) -> None:
     """Record one request, then reply only once the delay has passed."""
     with suppress(OSError):
-        connection.settimeout(1.0)
+        connection.settimeout(_PEER_REQUEST_WAIT_SECONDS)
         received.append(connection.recv(_PEER_RECEIVE_BYTES))
         if not stop.wait(timeout=reply_after_seconds):
             connection.sendall(_PEER_REPLY)
