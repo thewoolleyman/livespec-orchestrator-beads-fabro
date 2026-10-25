@@ -98,6 +98,7 @@ __all__: list[str] = [
     "CarrierEvidence",
     "CausalSupersession",
     "DerivingTransition",
+    "ImplementationEvidence",
     "SupersessionEvidence",
     "SupersessionRefusal",
     "validate_causal_supersession",
@@ -182,6 +183,14 @@ class CarrierEvidence:
 
 
 @dataclass(frozen=True, kw_only=True)
+class ImplementationEvidence:
+    """The implementation target's factory-safety label and its recorded instant."""
+
+    factory_safe: bool
+    recorded_at: str | None
+
+
+@dataclass(frozen=True, kw_only=True)
 class SupersessionEvidence:
     """Every ledger reading one cause's verification needs, taken by the caller.
 
@@ -195,6 +204,7 @@ class SupersessionEvidence:
     deriving: DerivingTransition | None
     carrier: CarrierEvidence | None
     plan_level: bool
+    implementation: ImplementationEvidence | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -263,14 +273,7 @@ def _misderived_refusal(
     prior_identity: str,
     replacement: object,
 ) -> SupersessionRefusal | None:
-    """Grade the plan-level arm of the `misderived` cause, one condition at a time."""
-    if not evidence.plan_level:
-        return SupersessionRefusal(
-            detail=(
-                "the superseded obligation's own target is not the plan epic, so it names"
-                " no plan-level step this build can establish was misderived"
-            )
-        )
+    """Grade either ratified arm of the `misderived` cause."""
     if evidence.deriving is None:
         return SupersessionRefusal(
             detail=(
@@ -293,12 +296,45 @@ def _misderived_refusal(
                 f" derivation: the cause is accepted only for {DERIVATION_ACTORS}"
             )
         )
-    return _carrier_refusal(
-        supersession=supersession,
-        evidence=evidence,
-        deriving=evidence.deriving,
-        replacement=replacement,
-    )
+    if evidence.plan_level:
+        return _carrier_refusal(
+            supersession=supersession,
+            evidence=evidence,
+            deriving=evidence.deriving,
+            replacement=replacement,
+        )
+    return _implementation_refusal(evidence=evidence, deriving=evidence.deriving)
+
+
+def _implementation_refusal(
+    *, evidence: SupersessionEvidence, deriving: DerivingTransition
+) -> SupersessionRefusal | None:
+    """Require a factory-safety label recorded no later than the derivation."""
+    implementation = evidence.implementation
+    if implementation is None or not implementation.factory_safe:
+        return SupersessionRefusal(
+            detail=(
+                "the superseded obligation names no implementation target whose ledger"
+                " record carries a factory-safety label"
+            )
+        )
+    if not _recorded_by(recorded_at=implementation.recorded_at, instant=deriving.recorded_at):
+        return SupersessionRefusal(
+            detail=(
+                "the implementation target's factory-safety label was not recorded when"
+                f" the derivation was recorded at {deriving.recorded_at}"
+            )
+        )
+    return None
+
+
+def _recorded_by(*, recorded_at: str | None, instant: str) -> bool:
+    """Whether ledger evidence existed at an instant, failing closed on bad clocks."""
+    if recorded_at is None:
+        return False
+    recorded = _utc(value=recorded_at)
+    derived = _utc(value=instant)
+    return recorded is not None and derived is not None and recorded <= derived
 
 
 def _carrier_refusal(
