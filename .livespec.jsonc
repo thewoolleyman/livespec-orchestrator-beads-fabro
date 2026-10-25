@@ -561,6 +561,23 @@
       // inspected and none is held — which is the escape hatch for a factory
       // whose parked runs must be left strictly alone.
       "blocked_run_grace_seconds": 1800,
+      // CURRENT ROUTING (2026-10-25, CODEX-FIRST on every node; maintainer-approved
+      // ~13:4xZ "Yes do that", relayed by coordinator gitops-fleet-capacity-monitoring):
+      // the Anthropic pool was nearly exhausted (a0 capped, a1/a2/a3/a5 at 3-8%
+      // weekly left) while Codex had quota, so each node's primary is the codex-acp
+      // candidate and claude-acp is its fallback, used only when Codex hits its
+      // limit. implement, dod_gate, review, review_fix: gpt-5.6-terra high ->
+      // claude-opus-5 high. fix: unchanged (already Terra-first). proof_capture,
+      // proof_verify: gpt-5.6-luna medium -> claude-sonnet-5-5 medium. pr,
+      // disposition: gpt-5.6-luna low -> claude-sonnet-5-5 medium. Only Terra and
+      // Luna, the slugs proven reachable on the factory's ChatGPT account. This
+      // re-takes the 2026-10-24 canary (8b79488e, reverted in ba805331b on two
+      // quit-on-a-fixable-gate Terra implement failures) now that the
+      // provider-limit release fix (bd-ib-3jboeo) and the incomplete-turn
+      // re-entry (bd-ib-r4fl2h) shipped in v0.242.0. Counting rule, per node: a
+      // dispatch counts when implement ran codex-acp at selected_index 0; revert
+      // at 2 quality failures, stable at 6. Node timeouts are unchanged.
+      //
       // AMENDED 2026-10-20 (coordinator R273, stability): implement is back on
       // claude-acp / claude-opus-5 / high PRIMARY with codex-acp / gpt-5.6-terra /
       // high as its fallback. Codex-Terra implement failed 3 of 4 runs with one
@@ -568,7 +585,7 @@
       // or the full hook interrupted); it returns to Codex only after the measured
       // root cause is fixed and one clean canary. fix stays on Terra for now.
       //
-      // CURRENT ROUTING (2026-10-20, coordinator R267, maintainer direction to
+      // EARLIER ROUTING (2026-10-20, coordinator R267, maintainer direction to
       // use all available tokens holistically): implement and fix stay
       // codex-acp gpt-5.6-terra high with their Claude Opus fallback; every
       // other node returns to its pre-R261 Claude tier (dod_gate, review,
@@ -767,15 +784,15 @@
         }
       },
       "acp_nodes": {
-        "dod_gate": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "implement": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
+        "dod_gate": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
+        "implement": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
         "fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
-        "review_fix": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "proof_capture": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "medium" }] },
-        "proof_verify": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "medium" }] },
-        "review": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "pr": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low" }] },
-        "disposition": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low" }] }
+        "review_fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
+        "proof_capture": { "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "medium", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" }] },
+        "proof_verify": { "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "medium", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" }] },
+        "review": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
+        "pr": { "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" }] },
+        "disposition": { "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" }] }
       },
       // `review_fix` is a DIFFERENT node from `fix` and was absent here, so it
       // fell to the 1800 s default. Measured 2026-10-09/10 on run

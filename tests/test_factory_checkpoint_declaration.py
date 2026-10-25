@@ -208,11 +208,16 @@ therefore guards the configuration rather than the graph, and the EXACT pin on
 the allowance is what keeps a graph widening from passing unremarked: it fails
 and forces a re-measurement, which is the step that was skipped in v175.
 
-This repository routes NO factory node to Codex (`.livespec.jsonc`'s `acp_nodes`
-put every node on a Claude adapter), so nothing here is refused by it; a
-repository that does route one and raises its node timeouts should expect that
-gate to bite, and the remedy is the gate's own -- a shorter configured timeout
-or a fresher credential -- not a visit cap sized below what the graph can reach.
+Since 2026-10-25 this repository routes EVERY factory node to Codex first
+(`.livespec.jsonc`'s `acp_nodes` make codex-acp each node's primary, with a
+Claude fallback; maintainer-approved, relayed by the coordinator), so the
+freshness gate applies to every dispatch. That routing changed no node timeout,
+so the pins below are unchanged: the worker's run budget is the smaller of this
+allowance and the 108000-second credential-use window (v177), and that window is
+what keeps the demanded lifetime under a fresh credential's. A raised node
+timeout should expect the gate to bite, and the remedy is the gate's own -- a
+shorter configured timeout or a fresher credential -- not a visit cap sized
+below what the graph can reach.
 
 v208'S HOOK-REFUSAL ROUTE (work-item bd-ib-y7372n) WIDENS THE GRAPH AGAIN, and
 the bound is re-chosen for it. An incomplete implement turn whose staged
