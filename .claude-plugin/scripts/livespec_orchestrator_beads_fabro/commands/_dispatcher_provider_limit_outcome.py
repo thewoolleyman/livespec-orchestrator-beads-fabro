@@ -87,10 +87,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_recor
     PROVIDER_LIMIT_RELEASE_STAGE,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_events import (
+    routing_stage_failure,
     terminal_event_output,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import causal_stage_failure
 from livespec_orchestrator_beads_fabro.commands._fabro_executed_candidate import graph_node_id
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroInspectResult
+from livespec_orchestrator_beads_fabro.commands._fabro_port_records import FabroFailureDetail
 from livespec_orchestrator_beads_fabro.commands._fabro_terminal_evidence import terminal_evidence
 
 if TYPE_CHECKING:
@@ -117,17 +120,46 @@ __all__: list[str] = [
 PROVIDER_LIMIT_RELEASE_STATUS = PROVIDER_LIMIT_RELEASE_STAGE
 
 
+def _graded_failure(*, inspect: FabroInspectResult | None) -> FabroFailureDetail | None:
+    """The failing node's recorded failure, which is what the release clause grades.
+
+    On an engine-routed ending the run CONCLUSION describes the terminal's own
+    deliberate exit, so the failure is re-read from the stage that routed the
+    run there -- the same re-read the needs-human mapper takes. On the
+    Petri-era engine that stage output is the ONLY place a provider's refusal
+    is recorded: measured on livespec-dev-tooling-ebtm6t run 01M5RAS2EAWG, the
+    conclusion carried "script exited with status 1" and no provider sentence,
+    so grading it released nothing. A stage that recorded no CAUSE keeps the
+    observed failure: on the pinned engine the re-read of such a stage carries
+    only the provider flag forward, while the conclusion holds the sentence a
+    declared signature matches, so preferring it would demote a typed match
+    to the legacy arm.
+    """
+    if inspect is None:
+        return None
+    causal = causal_stage_failure(evidence=terminal_evidence(payload=inspect.payload))
+    if not causal.stages:
+        return inspect.failure
+    routed = routing_stage_failure(
+        observed=inspect.failure,
+        inspect_payload=inspect.payload,
+        events_payload=inspect.events_payload,
+        stage=causal.stages[-1],
+    )
+    return routed if routed is not None and routed.cause is not None else inspect.failure
+
+
 def _provider_limit_release(
     *,
     plan: DispatchPlan,
     inspect: FabroInspectResult | None,
+    failure: FabroFailureDetail | None,
     run_id: str | None,
     text: str,
 ) -> ProviderLimitRelease | None:
     """The release this terminated run owes, or `None` for an unchanged route."""
     if inspect is None:
         return None
-    failure = inspect.failure
     if failure is None:
         return None
     node = _failing_node(inspect=inspect)
@@ -253,12 +285,18 @@ def provider_limit_release_outcome(
     tree the terminal demonstrably preserved -- measured here on the Petri-era
     fixture, where the sentinel lives only in the structured detail.
     """
-    failure = None if inspect is None else inspect.failure
-    failure_detail = fabro_failure_outcome_detail(failure=failure, fallback=tail(text=stderr))
+    failure = _graded_failure(inspect=inspect)
+    # The recovery source is read off the OBSERVED conclusion, not the graded
+    # failure: the terminal's preservation sentinel lives in its own exit,
+    # which is exactly the record the graded re-read steps past.
+    failure_detail = fabro_failure_outcome_detail(
+        failure=None if inspect is None else inspect.failure, fallback=tail(text=stderr)
+    )
     emitted = terminal_event_output(payload=None if inspect is None else inspect.events_payload)
     release = _provider_limit_release(
         plan=plan,
         inspect=inspect,
+        failure=failure,
         run_id=run_id,
         text=f"{emitted}\n{stderr}\n{failure_detail}",
     )
