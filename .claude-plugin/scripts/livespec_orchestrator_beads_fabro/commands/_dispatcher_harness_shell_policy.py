@@ -126,6 +126,7 @@ _HARNESS_SHELL_ENV: tuple[tuple[str, str], ...] = (
     ("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1"),
     ("BASH_DEFAULT_TIMEOUT_MS", "600000"),
     ("BASH_MAX_TIMEOUT_MS", "3600000"),
+    ("LIVESPEC_TEST_PARALLELISM", "2"),
 )
 
 # The `local` settings source, spelled RELATIVE to the clone root, because the
