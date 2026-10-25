@@ -2279,8 +2279,7 @@
     "heading": "## Scenario 245 \u2014 reconcile-merged closes a merged, locally built item resting at pending-approval or ready",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal reconcile-merged-locally-built-item-entry (v216). The owning work-item bd-ib-acxptq widens reconcile-merged's accepted statuses to a merged, locally built item resting at pending-approval or ready, together with the test that binds this entry.",
-    "work_item": "bd-ib-acxptq"
+    "test": "tests.integration.test_reconcile_merged_locally_built_item_scenario245",
+    "reason": "Integration-tier acceptance for this heading, completed by bd-ib-acxptq (v216). The module drives the real reconcile-merged supervisor over the in-memory ledger for every sub-scenario: a pending-approval item with a merged branch pull request and a plain ready item with a merged title match each move to acceptance and through the acceptance pass; a body mention alone refuses as no merged PR found and keeps the resting status for both statuses; a red janitor keeps a pending-approval item where it rested. An active item resolving a hand-carried body mention is the control that the body-only refusal is scoped to the locally built entry."
   }
 ]
