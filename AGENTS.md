@@ -1721,6 +1721,14 @@ references passes with its guidance orphaned.
   staging an `AGENTS.md` edit, surveying `spec/*` branches, or touching
   `.github/workflows/` — each trap ships a change without its content or
   reports landed work as unlanded.
+- Read `.ai/local-implementation-close-path.md` BEFORE opening a non-factory
+  pull request that touches product `.py`, running `reconcile-merged` or
+  `accept` on an item built in a session, filing follow-up items through the
+  capture seam, or diagnosing `needs_attention.py` exiting 124 at its 900 s
+  budget — the `factory-override` label reaches CI only on a close/reopen
+  event, `approve:` refuses an auto-admission item by design, the filing seam
+  takes five minutes per item, and the two in-process probes that name a
+  per-item `bd` fan-out's call site (paid for 2026-10-25).
 - Read `.ai/gitops-deployment.md` BEFORE any deployment, Ansible, GitOps,
   host-provisioning, `kubectl`, or ssh-to-a-fleet-host action. It carries
   this repository's layer map — which committed artifact deploys each of the
