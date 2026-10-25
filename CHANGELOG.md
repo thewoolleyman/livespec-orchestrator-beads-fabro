@@ -1,6 +1,11 @@
 # Changelog
 
-## [0.241.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.241.4...v0.241.5) (2026-10-25)
+## [0.242.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.241.4...v0.242.0) (2026-10-25)
+
+
+### Features
+
+* **workflow:** re-enter implement when the commit hook refused an incomplete turn's commit ([5abc904](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5abc90469e2f7c23406c3260614aea362e394fc5))
 
 
 ### Bug Fixes
