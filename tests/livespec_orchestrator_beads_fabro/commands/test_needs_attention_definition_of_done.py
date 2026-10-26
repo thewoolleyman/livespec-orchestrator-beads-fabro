@@ -299,3 +299,70 @@ def test_the_held_lane_reports_nothing_when_no_ledger_connection_resolves(
     assert len(held) == 1
     assert "restate assertion 1 as behaviour." in str(held[0].summary)
     assert unresolvable == []
+
+
+def test_the_held_lane_reads_recorded_verdicts_in_one_snapshot_not_per_item(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A snapshot-wide comment read preserves both the holding verdict and silence.
+
+    Most heldable items have no Definition-of-Done receipt.  Reading each sidecar
+    to establish that absence made the lane's ledger subprocess count grow with
+    the backlog.  The single refusing receipt and the otherwise-identical item
+    without one prove that the bulk reading keeps both outcomes intact.
+    """
+    monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
+    reset_fake_singleton()
+    module = importlib.import_module(_MODULE)
+    connected = _repo(tmp_path=tmp_path)
+    _ = (connected / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
+    held_item = _item(description=_section(references=_SCENARIO_HEADING))
+    unjudged_item = _item(id="bd-ib-unjudged", status="backlog")
+    config = StoreConfig(
+        tenant="livespec-impl-beads",
+        prefix="bd-ib",
+        server_user="livespec-impl-beads",
+        database="livespec-impl-beads",
+        bd_path="bd",
+        fake=True,
+        repo_root=connected,
+    )
+    receipt = verdict_comment(
+        item_id=held_item.id,
+        stage=STAGE_PRE_DISPATCH,
+        digest=judgement_subject_digest(item=held_item, cwd=connected),
+        rubric_digest=_executing_rubric_digest(),
+        judgement=DodJudgement(
+            outcome=JUDGEMENT_HELD,
+            findings=("bd-ib-advisory: restate assertion 1 as behaviour.",),
+        ),
+    )
+    calls: list[str] = []
+
+    def per_item_read(*, path: StoreConfig, work_item_id: str) -> tuple[str, ...]:
+        _ = path
+        calls.append(work_item_id)
+        return (receipt,) if work_item_id == held_item.id else ()
+
+    try:
+        append_work_item(path=config, item=held_item)
+        append_work_item(path=config, item=unjudged_item)
+        append_work_item_comment(path=config, work_item_id=held_item.id, body=receipt)
+        monkeypatch.setattr(module, "item_comment_bodies", per_item_read)
+
+        facts = module.held_definition_of_done_items(
+            project_root=connected,
+            repo=_REPO_NAME,
+            items=[held_item, unjudged_item],
+        )
+
+        assert [str(fact.id) for fact in facts] == [
+            "hygiene:held-definition-of-done:bd-ib-advisory"
+        ]
+        assert "restate assertion 1 as behaviour." in str(facts[0].summary)
+        assert calls == []
+    finally:
+        reset_fake_singleton()
