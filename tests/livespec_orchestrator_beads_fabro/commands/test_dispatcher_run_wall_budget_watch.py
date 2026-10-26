@@ -32,6 +32,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_pres
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_records import (
     RUN_WALL_BUDGET_EXCEEDED_STAGE,
+    RUN_WALL_BUDGET_HELD_STAGE,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_clock import (
     RUN_RECORD_SOURCE,
@@ -381,14 +382,8 @@ def test_the_three_verdicts_are_distinct_values() -> None:
     assert len(verdicts) == 3
 
 
-def test_a_failed_export_dump_still_writes_a_pointer_and_cancels(tmp_path: Path) -> None:
-    """A dump that could not run leaves a pointer stating so, and still cancels.
-
-    The export-then-terminate precondition is satisfied by a pointer that was
-    written and read back, not by a successful artifact: a run whose dump
-    failed has a durable record naming the factory and the run, which is what
-    an operator re-dispatching from it reads.
-    """
+def test_a_failed_export_dump_holds_without_writing_a_pointer(tmp_path: Path) -> None:
+    """A dump failure cannot authorize either a pointer write or cancellation."""
     watch = _watch()
     runner = _ScriptedRunner(dump_exit_code=1)
     ledger = _FakeLedger()
@@ -398,6 +393,10 @@ def test_a_failed_export_dump_still_writes_a_pointer_and_cancels(tmp_path: Path)
         ledger=ledger,
         now_epoch=_START_EPOCH + 7200.0,
     )
-    assert verdict == watch.RunWallVerdict.CANCELLED
-    assert ledger.comments[0]["text"].startswith(PRESERVE_POINTER_MARKER)
-    assert [r["stage"] for r in journal.records] == [RUN_WALL_BUDGET_EXCEEDED_STAGE]
+    assert verdict == watch.RunWallVerdict.HELD
+    assert ledger.comments == []
+    assert ledger.reads == []
+    assert ledger.writes == []
+    assert "rm" not in runner.calls
+    assert [record["stage"] for record in journal.records] == [RUN_WALL_BUDGET_HELD_STAGE]
+    assert "fabro dump failed with exit code 1" in str(journal.records[0]["failed_measurement"])

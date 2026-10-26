@@ -78,6 +78,7 @@ class PointerRecord:
     body: str
     digest: str
     artifact_present: bool
+    dump_exit_code: int | None
     run_id: str
     server_url: str
 
@@ -135,6 +136,7 @@ def preserve_checkpointed_work_reference(
                 body=body,
                 digest=digest,
                 artifact_present=False,
+                dump_exit_code=None,
                 run_id=run_id,
                 server_url=server_url,
             ),
@@ -209,6 +211,7 @@ def pointer_record_for_run(
         body=body,
         digest=digest,
         artifact_present=artifact_present,
+        dump_exit_code=dumped.exit_code,
         run_id=run_id,
         server_url=server_url,
     )
