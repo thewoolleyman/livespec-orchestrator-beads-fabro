@@ -116,6 +116,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_checks import
     LedgerFinding,
     run_ledger_checks,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan import workflow_payload_dir
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import ready_items
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
@@ -228,6 +229,16 @@ def test_dispatcher_plan_decomposition_contract() -> None:
     assert (base / "_dispatcher_fabro_argv.py").is_file()
     assert (base / "_dispatcher_run_status.py").is_file()
     assert (base / "_dispatcher_overlay.py").is_file()
+
+
+def test_workflow_payload_directory_encodes_dotted_work_item_ids_injectively() -> None:
+    """Dotted Beads child ids need dot-free, collision-free Fabro directories."""
+    dotted = workflow_payload_dir(work_item_id="bd-ib-abc123.2")
+    hyphenated = workflow_payload_dir(work_item_id="bd-ib-abc123-2")
+
+    assert "." not in dotted.name
+    assert dotted.name == "fabro-workflow-62642d69622d6162633132332e32"
+    assert dotted != hyphenated
 
     from livespec_orchestrator_beads_fabro.commands import (
         _dispatcher_fabro_argv,
@@ -5498,7 +5509,7 @@ def test_dispatch_materializes_mode600_overlay_and_cleans_up(
     # and it is torn down with the overlay when the run returns.
     payload_graph = Path(overlay_text.split('graph = "', 1)[1].split('"', 1)[0])
     assert payload_graph.name == "workflow.fabro"
-    assert payload_graph.parent.name == f"fabro-workflow-{item.id}"
+    assert payload_graph.parent.name == f"fabro-workflow-{item.id.encode('utf-8').hex()}"
     assert payload_graph.parent != workflow.parent
     assert not payload_graph.parent.exists()
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
