@@ -19,6 +19,9 @@ import time
 from collections.abc import Mapping
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
+    guard_script_text,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_adapters import (
     guarded_adapter_commands,
 )
@@ -32,6 +35,7 @@ _PROOF_CAPTURE_HOOKS = (
     / "implement-work-item"
     / "proof-capture-hooks"
 )
+_PROOF_CAPTURE_BIN = _PROOF_CAPTURE_HOOKS.parent / "proof-capture-bin"
 _PROOF_CAPTURE_ADAPTER = "proof_capture_adapter"
 _IMPLEMENT_ADAPTER = "implement_adapter"
 _FIX_ADAPTER = "fix_adapter"
@@ -43,6 +47,7 @@ def test_proof_capture_git_writes_refuse_before_repository_hooks_but_implement_a
 ) -> None:
     """A protected turn refuses quickly; ordinary implementation turns keep hooks."""
     assert _PROOF_CAPTURE_HOOKS.is_dir(), "proof_capture needs its dedicated Git hooks"
+    assert _PROOF_CAPTURE_BIN.is_dir(), "proof_capture needs its dedicated Git launcher"
     commands = guarded_adapter_commands(
         run_inputs=tuple(
             f"{name}={_ADAPTER}"
@@ -60,10 +65,16 @@ def test_proof_capture_git_writes_refuse_before_repository_hooks_but_implement_a
         _PROOF_CAPTURE_HOOKS,
         work / ".claude-plugin/.fabro/workflows/implement-work-item/proof-capture-hooks",
     )
+    guard = _install_proof_capture_launcher(repo=work, tmp_path=tmp_path)
     _install_repository_hook(repo=work, hook="pre-commit", marker=marker)
     _install_repository_hook(repo=work, hook="pre-push", marker=marker)
 
-    _assert_proof_capture_refusals(repo=work, marker=marker, environment=proof_environment)
+    _assert_proof_capture_refusals(
+        repo=work,
+        marker=marker,
+        environment=proof_environment,
+        guard=guard,
+    )
     _assert_ordinary_turns_run_repository_hooks(repo=work, commands=commands)
     assert marker.read_text(encoding="utf-8").splitlines() == [
         "pre-commit",
@@ -103,7 +114,7 @@ def _assert_ordinary_configuration(*, commands: Mapping[str, str]) -> None:
 
 
 def _assert_proof_capture_refusals(
-    *, repo: Path, marker: Path, environment: dict[str, str]
+    *, repo: Path, marker: Path, environment: dict[str, str], guard: Path
 ) -> None:
     """Commit and push both stop before the repository's corresponding hook."""
     _ = (repo / "proof.txt").write_text("proof\n", encoding="utf-8")
@@ -119,6 +130,7 @@ def _assert_proof_capture_refusals(
         repo=repo,
         marker=marker,
         environment=environment,
+        guard=guard,
     )
     _assert_git_write_is_refused(
         argv=(
@@ -131,15 +143,21 @@ def _assert_proof_capture_refusals(
         repo=repo,
         marker=marker,
         environment=environment,
+        guard=guard,
     )
 
 
 def _assert_git_write_is_refused(
-    *, argv: tuple[str, ...], repo: Path, marker: Path, environment: dict[str, str]
+    *,
+    argv: tuple[str, ...],
+    repo: Path,
+    marker: Path,
+    environment: dict[str, str],
+    guard: Path,
 ) -> None:
     """One protected Git write stops before either repository hook can start."""
     started = time.monotonic()
-    refused = _git(*argv, repo=repo, environment=environment)
+    refused = _git(*argv, repo=repo, environment=environment, guard=guard)
     assert time.monotonic() - started < 10
     assert refused.returncode != 0
     assert "proof_capture is read-only" in refused.stderr
@@ -198,12 +216,24 @@ def _install_repository_hook(*, repo: Path, hook: str, marker: Path) -> None:
     _ = path.chmod(0o755)
 
 
+def _install_proof_capture_launcher(*, repo: Path, tmp_path: Path) -> Path:
+    """Materialize the stage's real entry guard and private Git launcher."""
+    shutil.copytree(
+        _PROOF_CAPTURE_BIN,
+        repo / ".claude-plugin/.fabro/workflows/implement-work-item/proof-capture-bin",
+    )
+    guard = tmp_path / "credential-use-guard.sh"
+    _ = guard.write_text(guard_script_text(), encoding="utf-8")
+    _ = guard.chmod(0o755)
+    return guard
+
+
 def _git(
-    *argv: str, repo: Path, environment: Mapping[str, str] | None
+    *argv: str, repo: Path, environment: Mapping[str, str] | None, guard: Path | None = None
 ) -> subprocess.CompletedProcess[str]:
     """Run Git and make every test command's result available to its assertion."""
     return subprocess.run(
-        ["git", *argv],
+        (["/bin/sh", str(guard), "--", "git", *argv] if guard is not None else ["git", *argv]),
         cwd=repo,
         env=environment,
         capture_output=True,
