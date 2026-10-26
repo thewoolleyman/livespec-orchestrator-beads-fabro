@@ -9794,3 +9794,24 @@ Feature: An implement or review_fix turn does not hand the commit hook a test it
     Then the same commit updates the pinning test
     And the turn ran that test and saw it pass before committing
 ```
+
+## Scenario 250 — A work item whose id contains a dot dispatches from a dot-free workflow directory distinct to its id
+
+```gherkin
+Feature: A work-item id never decides whether the engine can find its workflow
+  As the maintainer of a repository whose plan children carry dotted ids
+  I want every work item to dispatch whatever characters its id contains
+  So that a dotted plan child is not stranded at fabro-run before any run exists
+
+  Scenario: A dotted work-item id dispatches
+    Given a ready work item whose id is "bd-ib-abc123.2"
+    When the Dispatcher materializes the workflow for its dispatch
+    Then the materialized directory name contains no "." character
+    And the engine resolves that directory as a local workflow under fabro validate and fabro run
+    And the journal's workflow_toml names the resolved committed path
+
+  Scenario: Ids that differ only by a dot get distinct directories
+    Given two work items whose ids are "bd-ib-abc123.2" and "bd-ib-abc123-2"
+    When the Dispatcher materializes the workflow for each dispatch
+    Then the two materialized directory names differ
+```
