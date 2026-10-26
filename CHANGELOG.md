@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.7...v0.243.8) (2026-10-26)
+
+
+### Bug Fixes
+
+* project four test workers into harness overlays ([1ddc932](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1ddc932fa6e8c7420b5b7e70dbb7dfc2ae3a73e8))
+
 ## [0.243.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.6...v0.243.7) (2026-10-26)
 
 
