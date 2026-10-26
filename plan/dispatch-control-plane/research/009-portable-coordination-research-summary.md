@@ -1,6 +1,7 @@
 # Livespec coordination across hosts, containers and agent tools
 
-Research summary and proposed direction · 26 October 2026  
+Research summary and proposed direction · 26 October 2026; corrected 27 October 2026
+
 Plan: **Dispatch control plane and durable dispatcher state** (`bd-ib-k6dqwc`)
 
 ## What we are trying to achieve
@@ -125,9 +126,9 @@ long-lived even when their workers are short-lived.
 
 **A single shared store should not become a copy of everything.** Beads remains
 responsible for work items and plan rulings; Fabro remains responsible for runs.
-A unified view can combine them without copying their authority. New shared
-storage is justified for records with no adequate owner, such as pending
-coordination decisions and unfinished requests to perform an action. Multiple
+A unified view can combine them without copying their authority. The dedicated non-Beads Dolt database owns cross-tenant coordination, including
+pending decisions and unfinished requests to perform an action. It should reference
+existing work items and runs rather than duplicate their state. Multiple
 copies of the same truth create another reconciliation problem.
 
 **Not every conversation byte needs the new communication system.** Questions,
@@ -170,31 +171,52 @@ secret rotation, quota and rollout failures still need deployment-specific check
 Maintaining two deployment paths costs effort. Running the same contract tests
 and released images in both helps keep that cost bounded.
 
-## The main disagreement: where to save new coordination work
+## Where shared coordination belongs — correction of the first report
 
-Astra recommends a transactional coordination service, with the previously
-approved dedicated non-Beads Dolt database as the first candidate. FABle proposes
-ledger comments for the initial answer flow, introducing the database later with
-fleet scheduling.
+The chosen home is a **dedicated non-Beads Dolt database**. This was already
+approved on 25 October and reaffirmed by the maintainer on 27 October. Beads
+itself uses Dolt, but a repository's Beads ledger and the shared coordination
+database have different purposes and ownership boundaries.
 
-FABle is right to reuse existing records, but too optimistic about what a comment
-proves. Earlier repository experiments found that concurrent comments survive,
-but their read order does not establish commit order; some concurrent metadata
-updates lose changes. “Take the first answer” needs a server-enforced rule, not
-two workers independently reading a list and deciding they won.
+| State | Owner |
+| --- | --- |
+| A plan or work item's status, rulings and history | Its repository's Beads ledger |
+| Factory run facts | Fabro |
+| Cross-tenant questions, answers, delivery, action requests, ownership, holds and reservations | The dedicated coordination database, referencing the owning systems |
 
-The recommendation is to retain Beads/Fabro authority and prove the storage
-guarantees for new coordination before enabling automatic actions. Use the
-separate Dolt database if existing public operations cannot provide those
-guarantees. Do not postpone durability merely to call the first delivery small,
-or build a second database for facts with a reliable existing home.
+A cross-tenant question may concern a particular plan without belonging in that
+plan's ledger as operational communication. Workers from any supported harness
+or host need a common network interface and durable shared records. Saving this
+architectural ruling in the plan ledger is appropriate; making that ledger carry
+the fleet's live coordination is not.
 
-Dolt is a candidate, not a completed prerequisite. The research found optimistic
-transactions and conflict handling, not a basis for assuming PostgreSQL-style
-locking. Test the deployed version with concurrent writers, failed transactions,
-ambiguous responses and restore. Competing reservations must contend on shared
-state; a check followed by unrelated writes is insufficient. Provisioning, grants,
-backup and authenticated pod access also remain to be proved.
+FABle proposed using ledger comments for the initial answer flow and introducing
+the database later. **That proposal conflicts with the approved boundary and is
+not adopted.** The first version of this summary mistakenly made the database
+conditional on existing public ledger operations proving insufficient. That was
+a synthesis error: the earlier ruling was available and had been read, but the
+reviewer's alternative was not checked against it. A reviewer may challenge a
+settled choice; its recommendation does not change that choice without a new
+maintainer ruling.
+
+The objection is about ownership across tenants, not only transaction strength.
+Even perfect comment ordering would not make one repository's plan ledger the
+right home for fleet communication. Existing experiments also found that comment
+read order does not establish commit order and some concurrent metadata updates
+lose changes. Those findings reinforce the need for deliberate concurrency
+controls; they are not the reason to choose between Beads and shared Dolt.
+
+The database choice does not establish its implementation guarantees. Prove
+provisioning, scoped access from hosts and pods, backup and restore, concurrent
+writes and stale-owner fencing against the deployed version. Dolt's optimistic
+transactions require conflict handling; do not assume PostgreSQL-style locking.
+Competing reservations must contend on shared state, with whole-transaction
+retries where required. Failed transactions and ambiguous responses need tests.
+
+These are prerequisites to automatic mutations, not permission to fall back to
+Beads. If a required guarantee fails, report the failed assumption and revise
+the implementation explicitly while preserving the cross-tenant boundary. A
+read-only attention view can arrive while that proof is underway.
 
 ## How work survives a crash
 
@@ -224,8 +246,9 @@ Build a complete, narrow user flow before expanding the role set or scheduler:
 
 1. Show questions from multiple repositories in one attention view, with evidence
    and available actions.
-2. Save one kind of plan question and accept an authorized answer through the same
-   API from Claude, Codex or pi, including on another host.
+2. Save one kind of plan question in the dedicated coordination database and accept
+   an authorized answer through the same API from Claude, Codex or pi, including
+   on another host.
 3. Safely apply that supported action, reject stale answers, and recover if the
    worker dies during the operation.
 4. Let one focused plan-progress role continue from the observed result while
@@ -242,6 +265,52 @@ metered, local-model and factory-slot capacity rules, one fleet-supply schedule,
 queryable per-dispatch model-selection evidence, retirement of obsolete launch
 scripts, and updated component and repository-dependency diagrams. A smaller
 first delivery does not discard those outcomes.
+
+## Coexisting with the current coordinator
+
+The first delivery supports `gitops-fleet-capacity-monitoring`
+(`livespec-dev-tooling-dfixhe`). Its existing long-lived session becomes the first
+client of the new services. Its current obligations include factory migration,
+Kubernetes observability and fleet stability, beyond the original capacity
+charter. Those obligations and its current grants remain in force.
+
+Move responsibility in four stages:
+
+1. **Observe.** The incumbent continues its work. New services assemble facts and
+   compare their results without taking actions.
+2. **Route questions.** The incumbent uses the common API and durable question and
+   answer records. It answers within its existing delegation or asks the human,
+   without depending on another session's terminal picker.
+3. **Delegate one responsibility.** Explicitly transfer a narrow action class.
+   The incumbent stops independently performing that class, and the focused worker
+   uses the shared ownership and target-state checks.
+4. **Expand what works.** Transfer further repetitive responsibilities after proof.
+   The incumbent continues broader judgment, incidents and human conversation.
+
+There must not be two independent paths executing the same responsibility.
+Until handover, the new service can propose actions only. If the legacy path
+cannot be constrained, automatic execution for that class remains disabled.
+Restarting or replacing a worker must not bypass ownership, evidence or authority
+checks at the action target.
+
+The first useful scenario is a plan publishing a durable decision packet, with
+its evidence and allowed answerers. The existing coordinator sees it, answers
+under its delegation or obtains a human answer, and the supported action proceeds
+only while that evidence and authority remain valid. The service records the
+observed result. Prove that restart loses no pending decision and that delegating
+one responsibility creates neither duplicate effects nor gaps in existing work.
+
+Carry current permissions forward with references to their rulings. Do not paste
+the coordinator's entire comment history into every prompt. A broad instruction
+to unblock work does not authorize changing caam policy or overriding another
+owner's restrictions.
+
+The long-lived conversation can remain a useful human interface. Its existence
+while idle is not itself the cost problem; repeated model-driven monitoring,
+context replay and routing are. Services should take over those repetitive tasks
+without requiring the conversation to remain alive. Retiring the session or
+closing its epic requires explicit disposition of its outstanding obligations;
+container deployment alone is not that decision.
 
 ## What would make this convincing
 
@@ -275,7 +344,8 @@ The overseer owns supervision integration; the console renders and submits throu
 public operations; Dolt-server owns database lifecycle; deployment tooling owns
 the applicable shared infrastructure.
 
-Remaining engineering questions include storage implementation, which first action
+Remaining engineering questions include the coordination schema and transaction
+implementation, which first action
 can be made safely repeatable, credential delivery to pods, and reuse of existing
 deployment machinery. The research does not justify a fleet-wide switch of GitOps
 controller. The API needs authenticated callers and scoped permissions; supplying
@@ -289,8 +359,11 @@ is desirable would repeat a settled decision.
 
 ## Evidence and further reading
 
-The latest direction is recorded on plan epic `bd-ib-k6dqwc`, scope comment
-`01a17981-29e0-75da-9e5b-1feecee8bb5c`. Astra and FABle produced their new reports
+The direction is recorded on plan epic `bd-ib-k6dqwc`: the approved second-pass
+ruling of 25 October, scope comment `01a17981-29e0-75da-9e5b-1feecee8bb5c`
+for portability, and the correction and coexistence ruling identified by
+`maintainer-cross-tenant-dolt-and-coordinator-coexistence-20261027`. The last of
+these supersedes the first version of this report on storage. Astra and FABle produced their new reports
 on 26 October 2026. They reviewed source documentation and repository code;
 neither performed a deployment or live transaction proof. This summary resolves
 their differences rather than treating agreement as proof of implementation.
