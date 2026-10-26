@@ -9251,7 +9251,7 @@ Feature: A Definition of Done passed before dispatch is graded in-run by the sam
 
   Scenario: A change to an unreferenced governing scenario invalidates an admission verdict
     Given an item admitted by its pre-admission verdict
-    And a scenario heading the item does not reference is added to the ratified spec tree before dispatch
+    And a scenario the item does not reference is added to the ratified spec tree before dispatch, and the selection for one of the item's assertions now returns it
     When the Dispatcher selects the item for a dispatch
     Then the subject digest differs from the admission verdict's
     And the judgement is taken again against the resolved commit before any claim is taken
@@ -9394,6 +9394,36 @@ Feature: A judge that flips on unchanged input cannot flip a recorded verdict
     And the item carries one node record naming the run and the refusal
     And the dispatch journal carries one dod-judgement-disagreement row naming the run and the repository preflight
     And the item rests at blocked with blocked_reason needs-human exactly as any dod_gate refusal rests it
+
+  Scenario: A spec revision outside the governing clauses leaves the subject digest unchanged
+    Given an item carrying a host record for its current digests, whose assertions' governing-heading verdicts carry clause provenance
+    And the item is not a held spec-change-tier item awaiting release
+    And a new spec revision changes only clauses outside that provenance and outside the headings the item references, and each verdict's selection against it returns the same clauses
+    And the item's goal, the grading set and the rubric are unchanged
+    When the pre-dispatch judgement judges the item
+    Then the subject digest it computes equals the recorded one and the record is reused without running any judge
+
+  Scenario: A spec revision that changes a governing clause changes the subject digest
+    Given an item carrying a host record for its current digests, whose assertions' governing-heading verdicts carry clause provenance
+    And a new spec revision changes the body of a clause in that provenance
+    When the pre-dispatch judgement judges the item
+    Then its subject digest differs from the recorded one and the judgement runs
+
+  Scenario: Without clause provenance the subject keeps the whole-tree digest
+    Given an item one of whose assertions has a governing-heading verdict that did not run
+    When a host taking computes the item's subject digest
+    Then its SPEC IDENTITY is the whole-tree digest and any spec revision changes it
+
+  Scenario: The dod_gate node binds to the pre-dispatch taking's recorded spec identity
+    Given a pre-dispatch taking that passed an item, whether by reusing a record or by appending one, and recorded its SPEC IDENTITY, in either form, in the dispatch journal
+    When a run of the item reaches the dod_gate node
+    Then the node runs and computes its subject digest from the supplied SPEC IDENTITY
+    And when the node refuses the item, the dispatch journal carries a dod-judgement-disagreement row naming the run and the taking that wrote the matching record
+
+  Scenario: A digest comparison that is not a taking runs no model
+    Given a refused item one of whose assertions has no reusable governing-heading verdict after a new spec revision
+    When drain candidate enumeration compares the item's subject digest with the refusing verdict's
+    Then no governing-heading verdict is taken and the digest is treated as differing from the refusing verdict's
 ```
 
 ## Scenario 241 — A repository naming the fleet default dispatches to the factory the registry designates, and moving the fleet default re-routes it with no repository commit
