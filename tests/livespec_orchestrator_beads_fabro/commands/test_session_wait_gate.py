@@ -1,6 +1,7 @@
 """Gate observations read the runner's files without spawning a status command."""
 
 import os
+from itertools import count
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,7 @@ def test_running_gate_is_observed_from_its_frozen_directory_without_commands(
     (run_dir / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
     target = GateTarget.freeze(gate_store_root=run_dir.parent, run_id=run_dir.name)
     calls: list[list[str]] = []
+    sleeps: list[float] = []
 
     def command(
         _self: ShellCommandRunner,
@@ -50,7 +52,7 @@ def test_running_gate_is_observed_from_its_frozen_directory_without_commands(
             wait_id="running",
             session_id="files",
             repository=tmp_path,
-            deadline_seconds=0.05,
+            deadline_seconds=5.0,
             targets=(target,),
         ),
         launcher=RoutingLauncher(
@@ -58,9 +60,14 @@ def test_running_gate_is_observed_from_its_frozen_directory_without_commands(
             pane=HerdrPaneLauncher(),
         ),
         wait_store_root=tmp_path / "tmp/session-waits",
+        # Advance logical time and do not sleep so the RUNNING observation is
+        # recorded before this test's deadline irrespective of host load.
+        monotonic=count(start=0.0, step=0.01).__next__,
+        sleeper=lambda *, seconds: sleeps.append(seconds),
     )
     observation = observe_gate_target(target=target, observed_at=123.0)
     assert calls == [], "observing a gate must never start a command"
+    assert sleeps
     assert result.command_outcome == "deadline"
     assert result.observations[target.identity].state == "RUNNING"
     assert result.observations[target.identity].fresh is False
