@@ -62,9 +62,19 @@ class FakeBeadsClient:
         self._assigned_ids: int = 0
         self.custom_statuses_registered: bool = False
 
-    def list_issues(self) -> list[BeadsRecord]:
+    def list_issues(self, *, include_comments: bool = False) -> list[BeadsRecord]:
+        """Return every issue, mirroring the list command's comment hydration flag."""
+        if not include_comments:
+            return [
+                dict(record)
+                for issue_id, record in self._issues.items()
+                if issue_id not in self._no_history
+            ]
         return [
-            dict(record)
+            {
+                **record,
+                "comments": [dict(comment) for comment in self._comments.get(issue_id, [])],
+            }
             for issue_id, record in self._issues.items()
             if issue_id not in self._no_history
         ]

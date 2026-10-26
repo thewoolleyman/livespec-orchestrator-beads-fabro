@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 
@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "WorkItemComment",
     "append_work_item_comment",
+    "read_work_item_comment_bodies_snapshot",
     "read_work_item_comments",
 ]
 
@@ -63,6 +64,31 @@ def read_work_item_comments(
             )
         )
     return tuple(comments)
+
+
+def read_work_item_comment_bodies_snapshot(*, path: StoreConfig) -> dict[str, tuple[str, ...]]:
+    """Read every item's usable comment bodies through one ledger subprocess.
+
+    `bd list --include-comments --json` keeps the read scoped to one snapshot:
+    a caller evaluating every item can distinguish an empty sidecar from a
+    recorded verdict without issuing one `bd comments` process per item.
+    Malformed embedded comments follow the single-item reader's fail-soft rule.
+    """
+    snapshot: dict[str, tuple[str, ...]] = {}
+    for record in make_beads_client(config=path).list_issues(include_comments=True):
+        work_item_id = record.get("id")
+        comments = record.get("comments")
+        if not isinstance(work_item_id, str) or not isinstance(comments, list):
+            continue
+        embedded_comments: list[object] = cast("list[object]", comments)
+        snapshot[work_item_id] = tuple(
+            text
+            for comment in embedded_comments
+            if isinstance(comment, dict)
+            for text in (cast("dict[str, object]", comment).get("text"),)
+            if isinstance(text, str) and text != ""
+        )
+    return snapshot
 
 
 def append_work_item_comment(*, path: StoreConfig, work_item_id: str, body: str) -> None:

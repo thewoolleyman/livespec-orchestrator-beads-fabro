@@ -91,8 +91,8 @@ class IssueDraft:
 class BeadsClient(Protocol):
     """The backend verbs the store layer needs from `bd`."""
 
-    def list_issues(self) -> list[BeadsRecord]:
-        """Return every issue in the tenant (`bd list --status all --json`)."""
+    def list_issues(self, *, include_comments: bool = False) -> list[BeadsRecord]:
+        """Return every issue, optionally with its comment bodies, in one listing."""
         ...
 
     def show_issue(self, *, issue_id: str) -> BeadsRecord:
@@ -253,8 +253,11 @@ class ShellBeadsClient:
         """Parse `bd --json` stdout."""
         return parse_json_output(stdout=stdout, argv_repr=argv_repr)
 
-    def list_issues(self) -> list[BeadsRecord]:
-        parsed = self._run_json(verb_args=["list", "--status", "all", "--limit", "0", "--json"])
+    def list_issues(self, *, include_comments: bool = False) -> list[BeadsRecord]:
+        """List every issue, with comment bodies only when one caller needs them."""
+        verb_args = ["list", "--status", "all", "--limit", "0", "--json"]
+        verb_args.extend(["--include-comments"] * int(include_comments))
+        parsed = self._run_json(verb_args=verb_args)
         return coerce_record_list(parsed=parsed)
 
     def show_issue(self, *, issue_id: str) -> BeadsRecord:

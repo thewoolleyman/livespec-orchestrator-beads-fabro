@@ -45,6 +45,9 @@ from typing import TYPE_CHECKING
 
 from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
 
+from livespec_orchestrator_beads_fabro._store_comments import (
+    read_work_item_comment_bodies_snapshot,
+)
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_advisories import (
     advisory_definition_of_done_findings,
@@ -58,6 +61,10 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance imp
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
     ConnectionPrefixMissingError,
     LivespecConfigUnreadableError,
 )
@@ -80,6 +87,10 @@ _READY_STATUS = "ready"
 # hold, `ready` for the dispatch refusal — so keying the lane on one of them
 # would make exactly one of the two holds invisible.
 _HELDABLE_STATUSES = frozenset({"backlog", "pending-approval", "ready"})
+
+# This remains an import-level seam for callers that verify the gather does not
+# regress to individual comment reads.
+per_item_comment_bodies = item_comment_bodies
 
 
 def held_definition_of_done_items(
@@ -106,15 +117,25 @@ def held_definition_of_done_items(
         # rather than raising out of a snapshot composed from many lanes.
         return []
     config = resolved
+    comment_snapshot = attempt(
+        action=lambda: read_work_item_comment_bodies_snapshot(path=config),
+        exceptions=(
+            BeadsCommandError,
+            BeadsConnectionError,
+            BeadsMappingError,
+            BeadsTenantMissingError,
+        ),
+    )
+    if isinstance(comment_snapshot, AttemptFailure):
+        return []
     facts: list[AttentionItem] = []
     for item in items:
         if item.status not in _HELDABLE_STATUSES:
             continue
-        bodies = item_comment_bodies(path=config, work_item_id=item.id)
-        recorded = (
-            None
-            if bodies is None
-            else held_judgement(item=item, repo=project_root, comments=bodies)
+        recorded = held_judgement(
+            item=item,
+            repo=project_root,
+            comments=comment_snapshot.get(item.id, ()),
         )
         if recorded is not None:
             facts.append(
