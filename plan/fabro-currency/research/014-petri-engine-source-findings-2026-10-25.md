@@ -86,9 +86,33 @@ for assertion 3, and narrow `bd-ib-odi6dr` to assertions 1 and 2.
 ## 3. A long implement attempt is not a stuck one
 
 Re-dispatched run `01M5SA824TQE` (`bd-ib-j5cwkj`) showed `implement` running for about four
-hours, against the node's 1800 s timeout. Its event tail showed attempt 2 inside a tool
+hours. Its event tail showed attempt 2 inside a tool
 call that was still streaming test-progress dots, one event about every 55 ms. A run whose
 events are still advancing has not stalled. Read the tail with
 `fabro events <run> --server <factory> --json --tail 40`, because a bare `fabro events`
 follows the stream and never returns. Use the 0.393 client: the PATH 0.254 client fails
 against the petri server.
+
+**Correction, 2026-10-26.** The first version of this section said that attempt ran
+"against the node's 1800 s timeout". That was wrong. 1800 s is only the default for a node
+with no configured value. This repository sets
+`dispatcher.node_timeouts.implement = 14400` in `.livespec.jsonc`, and the rendered graph
+carries `timeout="14400s"` on `implement`, so a four-hour implement attempt is inside its
+budget. Read a node's deadline from the run's own `graph.fabro`, never from the default.
+
+The same mistake nearly produced a false engine defect. `bd-ib-vi4tax` read run
+`01M5WT29SV65R9F12B09DG394K` as a `dod_gate` turn that went silent at 19:15:12Z and
+outlived its timeout. The run's events show something else: `dod_gate` (firing 50) was
+recorded `step.finished` with `success` at 19:15:12, and `implement` (firing 51) started in
+the same second and streamed events until the 20:40:25 dump. Evidence filtered to one node
+cannot show that the run moved on. List `step.started` and `step.finished` with their
+firing numbers first.
+
+## 4. An unproven latent risk in ACP termination
+
+`AcpClient::terminate` in `crates/attractor/steps/src/acp/mod.rs` sends SIGTERM, waits for
+the grace period, sends SIGKILL, and then awaits `self.handle.wait()` with no bound. It
+discards both signal results. If a sandbox process handle never reported exit after the
+kill, a timed-out ACP step would hang past its node timeout. No run observed so far shows
+this, including the two above. It is a code-reading risk to check when the Petri carrier
+next moves, not a measured defect.
