@@ -999,5 +999,12 @@
     "heading": "## Scenario 250 \u2014 A work item whose id contains a dot dispatches from a dot-free workflow directory distinct to its id",
     "work_item": "bd-ib-5y25l2",
     "first_seen": "2026-10-26"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 251 \u2014 The out-of-band reflector takes its judgement from the resolved dod_gate chain",
+    "work_item": "bd-ib-c6va2d",
+    "first_seen": "2026-10-26"
   }
 ]

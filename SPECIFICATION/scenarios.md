@@ -9815,3 +9815,35 @@ Feature: A work-item id never decides whether the engine can find its workflow
     When the Dispatcher materializes the workflow for each dispatch
     Then the two materialized directory names differ
 ```
+
+## Scenario 251 — The out-of-band reflector takes its judgement from the resolved dod_gate chain
+
+```gherkin
+Feature: The out-of-band reflector spends only what the repository's candidate chain names
+  As the operator of a factory
+  I want the reflector to judge with the same candidate chain as every other host judgement
+  So that no host judgement keeps a private model path the repository configuration cannot route
+
+  Scenario: The reflector tries the resolved chain in order
+    Given a governed repository whose dod_gate chain resolves to a Codex candidate first and a Claude candidate second
+    And LIVESPEC_REFLECTOR_MODEL is set in the host environment
+    When the reflector judges a merged item's telemetry and the Codex candidate returns a verdict
+    Then the verdict comes from the Codex candidate
+    And the Claude candidate is not run
+    And no claude -p process is launched outside the chain
+    And LIVESPEC_REFLECTOR_MODEL selected nothing
+
+  Scenario: An unparseable reply falls through and an empty findings reply decides
+    Given a governed repository whose dod_gate chain resolves to three candidates
+    When the reflector judges a merged item's telemetry
+    And the first candidate returns a reply that does not parse as findings
+    And the second candidate returns well-formed findings that list no finding
+    Then the judgement is the second candidate's verdict of no findings
+    And the third candidate is not run
+
+  Scenario: A reflector pass whose candidates all fail files nothing
+    Given a governed repository whose every dod_gate candidate times out or returns an unparseable reply
+    When the reflector judges a merged item's telemetry
+    Then the pass records that its judgement did not run and why
+    And the pass files no work item and proposes no lesson
+```
