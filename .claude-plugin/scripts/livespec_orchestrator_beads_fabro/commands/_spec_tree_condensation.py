@@ -84,7 +84,7 @@ __all__: list[str] = [
 # The measured refusal, quoted from the failure this module exists to close:
 # `Input exceeds the maximum length of 1048576 characters (input_too_large,
 # actual_chars 1360329)`.
-PROMPT_CHARACTER_CEILING = 1_048_576
+PROMPT_CHARACTER_CEILING = 200_000
 
 # What stands where an unselected clause's body would be. It NAMES the omission
 # rather than leaving a bare heading, so the model reads the clause as one it

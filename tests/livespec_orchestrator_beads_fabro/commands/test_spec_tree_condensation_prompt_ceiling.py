@@ -53,7 +53,7 @@ _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._spec_tree_condensati
 # The measured Codex refusal, quoted from the failure the work-item records:
 # `Input exceeds the maximum length of 1048576 characters (input_too_large,
 # actual_chars 1360329)`.
-_CODEX_INPUT_CEILING = 1_048_576
+_CODEX_INPUT_CEILING = 200_000
 
 _UNSTATED_REPLY = (
     '{"kind": "unstated", "stated_by": [], '
