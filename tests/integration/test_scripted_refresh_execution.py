@@ -115,6 +115,9 @@ _SHARED_FILE = "shared.txt"
 _RECORD_JSON = "record.json"
 _RECORD_MARKDOWN = "notes.md"
 _DECLARATION_FILE = ".livespec.jsonc"
+_RECORD_JSON_WITH_REMOVABLE_ENTRIES = (
+    '[{"id": "seed"}, {"id": "removed-by-run"}, {"id": "removed-by-default"}]\n'
+)
 _DECLARATION = """{
   "livespec-orchestrator-beads-fabro": {
     "dispatcher": {
@@ -316,7 +319,7 @@ def _commit(*, cwd: Path, path: str, text: str, subject: str) -> str:
     return _git("rev-parse", "HEAD", cwd=cwd).stdout.strip()
 
 
-def _origin_with_default(*, root: Path) -> Path:
+def _origin_with_default(*, root: Path, record_json: str = '[{"id": "seed"}]\n') -> Path:
     """A bare origin whose default branch carries the shared file."""
     origin = root / "origin.git"
     _ = origin.mkdir(parents=True)
@@ -325,9 +328,12 @@ def _origin_with_default(*, root: Path) -> Path:
     _ = seed.mkdir()
     _ = _git("init", "--quiet", f"--initial-branch={_DEFAULT_BRANCH}", cwd=seed)
     _ = (seed / _DECLARATION_FILE).write_text(_DECLARATION, encoding="utf-8")
-    _ = (seed / _RECORD_JSON).write_text('[{"id": "seed"}]\n', encoding="utf-8")
+    _ = (seed / ".gitattributes").write_text(
+        "record.json merge=record-conflict\n", encoding="utf-8"
+    )
+    _ = (seed / _RECORD_JSON).write_text(record_json, encoding="utf-8")
     _ = (seed / _RECORD_MARKDOWN).write_text("- seed entry\n", encoding="utf-8")
-    _ = _git("add", _DECLARATION_FILE, _RECORD_JSON, _RECORD_MARKDOWN, cwd=seed)
+    _ = _git("add", ".gitattributes", _DECLARATION_FILE, _RECORD_JSON, _RECORD_MARKDOWN, cwd=seed)
     _ = _commit(cwd=seed, path=_SHARED_FILE, text="base\n", subject="chore: seed")
     _ = _git("push", "--quiet", str(origin), f"HEAD:refs/heads/{_DEFAULT_BRANCH}", cwd=seed)
     return origin
@@ -365,6 +371,7 @@ def _build(
     armed: bool = False,
     arming_unreadable: bool = False,
     disarm_fails: bool = False,
+    record_json: str = '[{"id": "seed"}]\n',
 ) -> _Refresh:
     """An origin carrying `master` and the publish branch, and a clone on the branch.
 
@@ -376,9 +383,10 @@ def _build(
     which is what makes the stage's later re-entry the ENFORCEMENT arm rather
     than a first recording.
     """
-    origin = _origin_with_default(root=root)
+    origin = _origin_with_default(root=root, record_json=record_json)
     clone = root / "clone"
     _ = _git("clone", "--quiet", str(origin), str(clone), cwd=root)
+    _ = _git("config", "merge.record-conflict.driver", "false", cwd=clone)
     _ = _commit(
         cwd=clone, path=_OWNED_FILE, text="this run's work\n", subject="feat: this run's work"
     )
@@ -926,9 +934,9 @@ def _published_record_conflict(
     [
         (
             _RECORD_JSON,
-            '[{"id": "seed"}, {"id": "run"}]\n',
-            '[{"id": "seed"}, {"id": "default"}]\n',
-            '[\n  {\n    "id": "seed"\n  },\n  {\n    "id": "default"\n  },\n  {\n    "id": "run"\n  }\n]\n',
+            '[{"id": "seed"}, {"id": "removed-by-default"}]\n',
+            '[{"id": "seed"}, {"id": "removed-by-run"}]\n',
+            '[\n  {\n    "id": "seed"\n  }\n]\n',
         ),
         (
             _RECORD_MARKDOWN,
@@ -945,8 +953,8 @@ def test_declared_record_conflicts_complete_refresh_without_repair(
     default_text: str,
     expected: str,
 ) -> None:
-    """Scenario 200 merges JSON entries and Markdown insertions in stage bytes."""
-    box = _build(root=tmp_path)
+    """Scenario 200 preserves independent JSON removals and Markdown insertions."""
+    box = _build(root=tmp_path, record_json=_RECORD_JSON_WITH_REMOVABLE_ENTRIES)
     _ = _published_record_conflict(box=box, path=path, run_text=run_text, default_text=default_text)
 
     result = _run(box=box)
@@ -957,7 +965,7 @@ def test_declared_record_conflicts_complete_refresh_without_repair(
         "LIVESPEC_RECORD_FILE_MERGED: "
         f"path={path} "
         f"format={'json-array' if path == _RECORD_JSON else 'markdown-insertions'} "
-        f"default-count={2 if path == _RECORD_JSON else 1} run-count=1"
+        f"default-count={1} run-count={0 if path == _RECORD_JSON else 1}"
     )
     assert diagnostic in result.stderr
     assert (box.clone / path).read_text(encoding="utf-8") == expected

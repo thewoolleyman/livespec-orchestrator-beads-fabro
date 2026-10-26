@@ -190,7 +190,7 @@ def _publish(*, tmp_path: Path, run: Path) -> _Published:
 
 
 def _record_conflicted_run(*, tmp_path: Path) -> Path:
-    """A draft whose JSON record additions conflict only by concurrent insertions."""
+    """A draft whose JSON record conflict removes distinct base entries."""
     origin = tmp_path / "record-origin.git"
     _git(tmp_path, "init", "--bare", "-b", "master", str(origin))
 
@@ -216,8 +216,14 @@ def _record_conflicted_run(*, tmp_path: Path) -> Path:
     )
     _commit(
         repo=seed,
+        path=".gitattributes",
+        content="record.json merge=record-conflict\n",
+        message="configure record conflict",
+    )
+    _commit(
+        repo=seed,
         path="record.json",
-        content='[{"id": "seed"}]\n',
+        content='[{"id": "seed"}, {"id": "removed-by-run"}, {"id": "removed-by-default"}]\n',
         message="seed record",
     )
     _git(seed, "remote", "add", "origin", str(origin))
@@ -226,11 +232,12 @@ def _record_conflicted_run(*, tmp_path: Path) -> Path:
     run = tmp_path / "record-run"
     _git(tmp_path, "clone", str(origin), str(run))
     _configure(repo=run)
+    _git(run, "config", "merge.record-conflict.driver", "false")
     _git(run, "switch", "-c", "fabro/run/record")
     _commit(
         repo=run,
         path="record.json",
-        content='[{"id": "seed"}, {"id": "run"}]\n',
+        content='[{"id": "seed"}, {"id": "removed-by-default"}]\n',
         message="run record",
     )
 
@@ -240,7 +247,7 @@ def _record_conflicted_run(*, tmp_path: Path) -> Path:
     _commit(
         repo=default,
         path="record.json",
-        content='[{"id": "seed"}, {"id": "default"}]\n',
+        content='[{"id": "seed"}, {"id": "removed-by-run"}]\n',
         message="default record",
     )
     _git(default, "push", "origin", "master")
@@ -270,7 +277,7 @@ def test_stale_base_is_refreshed_before_a_workflow_clean_branch_is_published(
 
 
 def test_declared_record_conflict_is_merged_before_draft_publication(tmp_path: Path) -> None:
-    """Scenario 200 keeps a draft out of refresh repair for independent records."""
+    """Scenario 200 preserves independent removals before draft publication."""
     run = _record_conflicted_run(tmp_path=tmp_path)
 
     published = _publish(tmp_path=tmp_path, run=run)
@@ -280,17 +287,7 @@ def test_declared_record_conflict_is_merged_before_draft_publication(tmp_path: P
         "LIVESPEC_RECORD_FILE_MERGED: path=record.json format=json-array" in published.result.stderr
     )
     assert (run / "record.json").read_text(encoding="utf-8") == (
-        "[\n"
-        "  {\n"
-        '    "id": "seed"\n'
-        "  },\n"
-        "  {\n"
-        '    "id": "default"\n'
-        "  },\n"
-        "  {\n"
-        '    "id": "run"\n'
-        "  }\n"
-        "]\n"
+        "[\n" "  {\n" '    "id": "seed"\n' "  }\n" "]\n"
     )
     assert published.draft_created is True
 
