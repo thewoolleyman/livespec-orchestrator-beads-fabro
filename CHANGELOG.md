@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.243.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.5...v0.243.6) (2026-10-26)
+
+
+### Bug Fixes
+
+* normalize idle-slot audit tenant cache keys ([d3c79ed](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d3c79ed0d946d480da2985de62ce55d2abc87d00))
+* reuse idle-slot audit tenant reads ([ebde488](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ebde4880980cf4cee31bc7f205bbbf7c5da62c66))
+
 ## [0.243.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.4...v0.243.5) (2026-10-26)
 
 
