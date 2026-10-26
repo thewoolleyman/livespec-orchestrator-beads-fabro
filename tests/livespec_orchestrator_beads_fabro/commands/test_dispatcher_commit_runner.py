@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import importlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -21,9 +21,11 @@ class _FakeProcess:
     terminal_at: float
     exit_code: int
     output: str
+    poll_count: int = field(default=0, init=False)
 
     def poll(self, *, now: float) -> int | None:
         del now
+        self.poll_count += 1
         return self.exit_code if self.clock.now >= self.terminal_at else None
 
 
@@ -95,3 +97,28 @@ def test_runner_leaves_an_unfinished_hook_running() -> None:
     assert report.state == "running"
     assert report.exit_code is None
     assert report.failed_targets == ()
+
+
+def test_runner_reuses_a_terminal_verdict_without_polling_again() -> None:
+    """Later waits return the stored verdict instead of re-observing the process."""
+    runner_module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner"
+    )
+    clock = _FakeClock()
+    process = _FakeProcess(
+        clock=clock,
+        terminal_at=0.0,
+        exit_code=0,
+        output="",
+    )
+    runner = runner_module.DetachedCommitRunner(
+        launcher=_FakeLauncher(process=process, commands=[]),
+        clock=clock,
+    )
+
+    run_id = runner.start(command=("git", "commit", "-m", "test"))
+    verdict = runner.wait(run_id=run_id, timeout_seconds=0.0)
+    observed_polls = process.poll_count
+
+    assert runner.wait(run_id=run_id, timeout_seconds=0.0) is verdict
+    assert process.poll_count == observed_polls
