@@ -7142,6 +7142,24 @@ place a human decision waits. A factory run is never that place.
   may terminate the run its own dispatch has just created. Scenario 223 in
   `scenarios.md` exercises this sentence. The export is the precondition, not a courtesy:
   a termination whose export was not read back MUST NOT proceed.
+- Every `fabro dump` the Dispatcher runs to read a run's record — the
+  export behind a preserve-by-reference pointer, the read-back that checks
+  that pointer, and the read of a worker-exit log — MUST be bounded by one
+  shared timeout, the same value at every such call site, so that no call
+  site gives up on a dump another would have completed. The value MUST be
+  sized from measured dump durations on the slowest factory declared under
+  `dispatcher.factories`, as a timeout approximately twice the measured
+  maximum; it is 900 seconds. A dump stopped at the bound is a failed dump,
+  and each call site keeps its own handling of a failed dump. For the
+  preserve-by-reference export specifically: an export that succeeds within
+  the bound MUST yield the pointer a successful export yields, carrying the
+  run's diff digest when the export holds a diff artifact; an export that
+  fails, whether stopped at the bound or exiting non-zero within it, MUST
+  yield a pointer that records the failed dump and its exit code and claims
+  no digest. Measured 2026-10-26 on the petri factory, three Dispatcher
+  dumps timed out at a 300-second bound, while a dump of the same size
+  finished within 600 seconds and another took 465 seconds. Scenario 247 in
+  `scenarios.md` exercises this bullet.
 - Reconciliation runs on every Dispatcher loop tick and in the dispatch
   preamble, and MUST also be runnable standalone (a scheduled sweep) so
   that an item closed by any route while no Dispatcher process is alive —
