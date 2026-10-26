@@ -176,19 +176,22 @@ def test_an_item_missing_orphan_preserves_its_pointer_for_the_journal(tmp_path: 
     assert ledger.verbs == []
 
 
-def test_a_failed_dump_still_records_an_honest_pointer(tmp_path: Path) -> None:
+def test_a_failed_dump_refuses_an_orphan_export_before_termination(tmp_path: Path) -> None:
     ledger = _FakeLedger()
 
     outcome = export.export_orphan_reference(
         orphan=_orphan(work_item_status="closed"),
         repo=tmp_path,
         fabro_bin="fabro",
-        runner=_DumpRunner(exit_code=3),
+        runner=_DumpRunner(exit_code=124),
         ledger=ledger,
     )
 
-    assert outcome.exported is True
-    assert "fabro dump failed with exit code 3" in ledger.comments[0]["text"]
+    assert outcome.exported is False
+    assert outcome.comment_id is None
+    assert outcome.journal_body is None
+    assert outcome.detail == "fabro dump failed with exit code 124"
+    assert ledger.comments == []
 
 
 def test_an_export_that_raises_an_os_error_refuses(

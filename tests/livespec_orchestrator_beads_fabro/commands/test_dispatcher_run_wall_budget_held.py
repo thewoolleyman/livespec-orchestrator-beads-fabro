@@ -71,6 +71,7 @@ class _RecordingJournal:
 @dataclass(kw_only=True)
 class _ScriptedRunner:
     calls: list[str] = field(default_factory=list)
+    dump_exit_code: int = 0
 
     def run(
         self,
@@ -83,7 +84,11 @@ class _ScriptedRunner:
         _ = (cwd, timeout_seconds, env)
         verb = argv[1] if len(argv) > 1 else ""
         self.calls.append(verb)
-        return CommandResult(exit_code=0, stdout=_INSPECT if verb == "inspect" else "", stderr="")
+        return CommandResult(
+            exit_code=self.dump_exit_code if verb == "dump" else 0,
+            stdout=_INSPECT if verb == "inspect" else "",
+            stderr="",
+        )
 
 
 @dataclass(kw_only=True)
@@ -182,6 +187,30 @@ def test_a_pointer_that_does_not_read_back_journals_one_held_record(tmp_path: Pa
     # Not a cancel: no `rm`, and no exceeded record on the journal.
     assert "rm" not in runner.calls
     assert all(r.get("stage") != RUN_WALL_BUDGET_EXCEEDED_STAGE for r in journal.records)
+
+
+def test_a_failed_dump_holds_the_budget_cancel_without_removing_the_run(tmp_path: Path) -> None:
+    """A read-back of a failed export is not a durable export."""
+    runner = _ScriptedRunner(dump_exit_code=124)
+    verdict = _poll(
+        tmp_path=tmp_path,
+        runner=runner,
+        journal=_RecordingJournal(),
+        ledger=_FlakyLedger(),
+    )
+
+    assert verdict == RunWallVerdict.HELD
+    assert "rm" not in runner.calls
+
+
+def test_a_failed_dump_names_its_exit_code_in_the_held_measurement(tmp_path: Path) -> None:
+    """The hold tells an operator precisely which export did not happen."""
+    runner = _ScriptedRunner(dump_exit_code=124)
+    journal = _RecordingJournal()
+    _ = _poll(tmp_path=tmp_path, runner=runner, journal=journal, ledger=_FlakyLedger())
+
+    held = next(record for record in journal.records if record["stage"] == _held_stage())
+    assert held["failed_measurement"] == "fabro dump failed with exit code 124"
 
 
 def test_the_export_is_re_attempted_and_the_second_read_back_cancels(tmp_path: Path) -> None:
