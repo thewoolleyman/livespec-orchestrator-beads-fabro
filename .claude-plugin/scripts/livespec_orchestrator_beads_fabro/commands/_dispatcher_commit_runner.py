@@ -11,9 +11,20 @@ import re
 from dataclasses import dataclass
 from typing import Protocol
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner_program import (
+    COMMIT_RUNNER_PROGRAM_FILENAME,
+    commit_runner_prepare_steps_block,
+    commit_runner_program_path_expansion,
+    commit_runner_program_source,
+)
+
 __all__: list[str] = [
+    "COMMIT_RUNNER_PROGRAM_FILENAME",
     "CommitRunResult",
     "DetachedCommitRunner",
+    "commit_runner_prepare_steps_block",
+    "commit_runner_program_path_expansion",
+    "commit_runner_program_source",
 ]
 
 _FAILED_TARGET = re.compile(r"^[ \t]+-[ \t]+(\S+)[ \t]*$", re.MULTILINE)
@@ -93,6 +104,8 @@ class DetachedCommitRunner:
 
     def _record_terminal_verdict(self, *, run: _CommitRun) -> CommitRunResult | None:
         """Store the process's verdict once, retaining it for all later waits."""
+        if run.result is not None:
+            return run.result
         exit_code = run.process.poll(now=self._clock.now)
         if exit_code is None:
             return None
