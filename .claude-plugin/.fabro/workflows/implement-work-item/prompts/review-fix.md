@@ -27,13 +27,27 @@ runner unless this stage prompt itself names a commit runner.
 1. Read the disposition record from the prior stage context, including any
    visible `finding_dispositions_r<N>` run-context keys and the prior stage
    transcript. Identify every finding marked ACCEPTED.
-2. Fix each ACCEPTED finding in this clone, strictly within the work-item
+2. If every ACCEPTED finding concerns the published Proof of Done record (the
+   disposition lines are all tagged `(proof-record)`), do not edit this clone:
+   a published record is immutable and this node cannot honestly repair it.
+   Return it to the proof-capture owner instead. Do not end with the
+   needs-human protocol, do not perform in-clone fix work, and end your reply
+   with exactly:
+
+       `{"preferred_next_label": "recapture"}`
+
+   The graph routes that label through `recapture_route` to `proof_capture`,
+   where the run posts a superseding corrected record and independently
+   replays it. This is a defensive fallback for a proof-record finding that
+   reached `review_fix`; disposition normally routes the same accepted finding
+   directly to recapture.
+3. Otherwise, fix each ACCEPTED finding in this clone, strictly within the work-item
    scope. Do NOT implement rejected findings, advisories, unrelated cleanup,
    new features, broad refactors, or speculative abstractions.
-3. If an ACCEPTED finding cannot be implemented honestly within scope, that
+4. If an ACCEPTED finding cannot be implemented honestly within scope, that
    is a needs-human `failed` outcome. Do not silently skip it and do not
    reclassify it as rejected here.
-4. Honor every rule from the implement stage: no `--no-verify` (if a hook
+5. Honor every rule from the implement stage: no `--no-verify` (if a hook
    fails, fix the cause or end with the needs-human protocol below,
    reporting its output verbatim); plain `git` for all git writes (the
    installed hooks fire on their own); Red-Green-Replay for any product `.py` change (a test-file
@@ -41,9 +55,9 @@ runner unless this stage prompt itself names a commit runner.
    Green); commit trailer `Co-Authored-By: Claude Fable 5
    <noreply@anthropic.com>`; never create or switch branches, never touch
    `.beads/` or `core.bare`.
-5. Re-run the repository's check suite (`{{ inputs.sandbox_check_suite }}`) yourself until it is green — the
+6. Re-run the repository's check suite (`{{ inputs.sandbox_check_suite }}`) yourself until it is green — the
    janitor re-validates this clone after this stage.
-6. In your final reply, summarize each ACCEPTED finding as
+7. In your final reply, summarize each ACCEPTED finding as
    `FIXED — <what you changed>`. Mention rejected findings only to say
    they were intentionally left untouched per the disposition record.
 
