@@ -70,6 +70,7 @@ class _RecordingJournal:
 
 @dataclass(kw_only=True)
 class _ScriptedRunner:
+    dump_exit_code: int = 0
     calls: list[str] = field(default_factory=list)
 
     def run(
@@ -83,7 +84,11 @@ class _ScriptedRunner:
         _ = (cwd, timeout_seconds, env)
         verb = argv[1] if len(argv) > 1 else ""
         self.calls.append(verb)
-        return CommandResult(exit_code=0, stdout=_INSPECT if verb == "inspect" else "", stderr="")
+        return CommandResult(
+            exit_code=self.dump_exit_code if verb == "dump" else 0,
+            stdout=_INSPECT if verb == "inspect" else "",
+            stderr="timeout after 300.0s" if verb == "dump" and self.dump_exit_code else "",
+        )
 
 
 @dataclass(kw_only=True)
@@ -182,6 +187,26 @@ def test_a_pointer_that_does_not_read_back_journals_one_held_record(tmp_path: Pa
     # Not a cancel: no `rm`, and no exceeded record on the journal.
     assert "rm" not in runner.calls
     assert all(r.get("stage") != RUN_WALL_BUDGET_EXCEEDED_STAGE for r in journal.records)
+
+
+def test_a_failed_dump_holds_the_run_and_names_its_exit_code(tmp_path: Path) -> None:
+    """A failed export is not a pointer that authorizes cancellation."""
+    held_stage = _held_stage()
+    runner = _ScriptedRunner(dump_exit_code=124)
+    journal = _RecordingJournal()
+
+    verdict = _poll(
+        tmp_path=tmp_path,
+        runner=runner,
+        journal=journal,
+        ledger=_FlakyLedger(),
+    )
+
+    assert verdict == RunWallVerdict.HELD
+    held = next(record for record in journal.records if record.get("stage") == held_stage)
+    assert "fabro dump failed with exit code 124" in str(held["failed_measurement"])
+    assert "rm" not in runner.calls
+    assert all(record.get("stage") != RUN_WALL_BUDGET_EXCEEDED_STAGE for record in journal.records)
 
 
 def test_the_export_is_re_attempted_and_the_second_read_back_cancels(tmp_path: Path) -> None:

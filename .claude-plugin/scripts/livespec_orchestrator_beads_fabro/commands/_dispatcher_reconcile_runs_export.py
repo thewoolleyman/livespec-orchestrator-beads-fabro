@@ -166,6 +166,16 @@ def export_run_reference(  # noqa: PLR0913 — kw-only export; the run's identit
             journal_body=None,
             detail=f"fabro export failed with {type(pointer.error).__name__}: {pointer.error}",
         )
+    if pointer.dump_exit_code is not None and pointer.dump_exit_code != 0:
+        return ExportOutcome(
+            exported=False,
+            comment_id=None,
+            journal_body=None,
+            detail=(
+                f"fabro dump failed with exit code {pointer.dump_exit_code}; "
+                "no preserve-by-reference pointer was written"
+            ),
+        )
     if work_item_status is None:
         return ExportOutcome(
             exported=True,

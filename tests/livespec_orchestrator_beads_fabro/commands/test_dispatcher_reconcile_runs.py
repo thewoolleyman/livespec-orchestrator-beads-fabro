@@ -101,6 +101,7 @@ class _Runner:
 
     ps_by_server: dict[str, str] = field(default_factory=dict)
     inspect_by_run: dict[str, str] = field(default_factory=dict)
+    dump_exit_code: int = 0
     failing_servers: frozenset[str] = frozenset()
     calls: list[list[str]] = field(default_factory=list)
     docker_calls: list[list[str]] = field(default_factory=list)
@@ -127,6 +128,12 @@ class _Runner:
         if argv[1] == "inspect":
             return CommandResult(
                 exit_code=0, stdout=self.inspect_by_run.get(argv[2], "[]"), stderr=""
+            )
+        if argv[1] == "dump":
+            return CommandResult(
+                exit_code=self.dump_exit_code,
+                stdout="",
+                stderr="timeout after 300.0s" if self.dump_exit_code else "",
             )
         return CommandResult(exit_code=0, stdout="", stderr="")
 
@@ -611,6 +618,37 @@ def test_an_unverified_export_leaves_the_run_untouched(
     assert [error.reason for error in summary.errors] == ["export-not-verified"]
     assert transport.calls == []
     assert [call[1] for call in runner.calls] == ["ps"]
+    assert [record["stage"] for record in journal.written] == ["orphan-run-reconcile-error"]
+
+
+def test_a_failed_dump_leaves_an_orphan_run_untouched(tmp_path: Path) -> None:
+    """A failed run export cannot authorize the orphan termination route."""
+    runner = _Runner(
+        ps_by_server={_HP.server or "": _ps(run_id="01ORPHAN", kind="blocked")},
+        dump_exit_code=124,
+    )
+    transport = _Transport()
+    journal = _Journal()
+    ledger = _Ledger()
+
+    summary = reconcile.reconcile_runs(
+        inputs=_inputs(
+            tmp_path=tmp_path,
+            runner=runner,
+            transport=transport,
+            journal=journal,
+            ledger=ledger,
+            items=[_item(id="bd-ib-orphan", status="closed")],
+        ),
+        factories=[_HP],
+    )
+
+    assert summary.reconciled == ()
+    assert [error.reason for error in summary.errors] == ["export-not-verified"]
+    assert "fabro dump failed with exit code 124" in summary.errors[0].detail
+    assert transport.calls == []
+    assert ledger.verbs == []
+    assert [call[1] for call in runner.calls] == ["ps", "dump"]
     assert [record["stage"] for record in journal.written] == ["orphan-run-reconcile-error"]
 
 
