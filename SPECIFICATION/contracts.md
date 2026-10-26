@@ -3147,6 +3147,24 @@ integration-input parity "Named workflow variants" below requires of a
 registered variant. The resolved committed path MUST be journaled on
 the dispatch record as `workflow_toml`.
 
+**The materialized workflow directory.** When the Dispatcher materializes a
+per-dispatch copy of the resolved workflow for the engine to run, the name of
+the directory it materializes MUST be one the engine resolves as a local
+workflow, under both `fabro validate` and `fabro run`, for every valid
+work-item id. The name MUST contain no `.` character,
+whatever characters the work-item id contains, and the mapping from work-item
+id to directory name MUST be injective, so two distinct work-item ids,
+including two that differ only where one has a `.` and the other another
+character, never share a materialized directory. This paragraph fixes those
+properties, not an encoding scheme. The `workflow_toml` journal field keeps
+naming the resolved committed path, never the materialized copy. Measured
+2026-10-26 with the petri Fabro client: two byte-identical copies of a working
+materialized workflow directory, named `wf-plain` and `wf-dotted.6`, returned
+`Validation: OK` and `workflow not found` respectively under `fabro validate`,
+and every work item whose id contains a dot, which includes every dotted plan
+child, failed at `fabro-run` before any run existed. Scenario 250 in
+`scenarios.md` exercises this paragraph.
+
 **Named workflow variants.** A dispatch target MAY declare
 `dispatcher.workflows`, a table mapping a variant name to a directory path
 relative to the target repository root, and `dispatcher.default_workflow`, a
