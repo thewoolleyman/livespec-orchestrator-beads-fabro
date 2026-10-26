@@ -47,6 +47,9 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_session_headroom_gate as headroom_gate,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import CLAUDE_AGENT_ID
+from livespec_orchestrator_beads_fabro.commands._acp_availability_probe_outcome import (
+    PROBE_TURN_COMPLETED,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import ANTHROPIC_DOMAIN
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import (
     AcpCandidate,
@@ -71,6 +74,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFil
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _NOW = "2026-10-14T12:00:00Z"
+_EARLIER = "2026-10-14T11:45:00Z"
 _LATER = "2099-01-01T00:00:00Z"
 _FLOOR = 20
 _CLAUDE_PAIR = (ANTHROPIC_DOMAIN, "builtin-anthropic-0123456789abcdef")
@@ -172,14 +176,18 @@ def _filter(
     candidates: tuple[AcpCandidate, ...],
     policy: headroom.SessionHeadroomPolicy | None,
     holds: tuple[AcpAvailabilityHold, ...] = (),
+    expired: tuple[AcpAvailabilityHold, ...] = (),
     probe: Callable[[str], str] | None = None,
+    confirm: Callable[[AcpCandidate], str] | None = None,
 ) -> preflight.NodePreflight:
     return preflight.filter_node_candidates(
         chain=_chain(candidates=candidates),
         inputs=preflight.PreflightInputs(
             holds=holds,
+            expired_holds=expired,
             builtin_pairs=_BUILTIN_PAIRS,
             probe=probe,
+            confirm=confirm,
             headroom=policy,
         ),
         assessed={},
@@ -193,7 +201,7 @@ def _keys(*, node: preflight.NodePreflight) -> list[str | None]:
     ]
 
 
-def _hold(*, hold_key: str) -> AcpAvailabilityHold:
+def _hold(*, hold_key: str, expires_at: str = _LATER) -> AcpAvailabilityHold:
     return AcpAvailabilityHold(
         schema_version=HOLD_SCHEMA_VERSION,
         observation_id="acpobs-seeded",
@@ -202,7 +210,7 @@ def _hold(*, hold_key: str) -> AcpAvailabilityHold:
         candidate_key=None,
         cause="quota",
         occurred_at=_NOW,
-        expires_at=_LATER,
+        expires_at=expires_at,
     )
 
 
@@ -250,6 +258,26 @@ def test_a_quota_hold_on_the_projected_credential_skips_only_that_account() -> N
     assert exhausted.candidates == ()
     assert exhausted.skipped[0].hold_key == "cred-1"
     assert _keys(node=fresh) == [_CLAUDE_PAIR[1]]
+
+
+def test_expired_quota_hold_keeps_its_credential_unavailable_until_confirmed() -> None:
+    """Expiry alone cannot make a monthly-exhausted account selectable again."""
+    expired = _hold(hold_key="cred-1", expires_at=_EARLIER)
+    awaiting_confirmation = _filter(
+        candidates=(_covered_builtin(),),
+        policy=_policy(utilization=10),
+        expired=(expired,),
+    )
+    confirmed = _filter(
+        candidates=(_covered_builtin(),),
+        policy=_policy(utilization=10),
+        expired=(expired,),
+        confirm=lambda _candidate: PROBE_TURN_COMPLETED,
+    )
+
+    assert awaiting_confirmation.candidates == ()
+    assert awaiting_confirmation.skipped[0].reason == preflight.OUTSTANDING_CONFIRMATION_SKIP
+    assert _keys(node=confirmed) == [_CLAUDE_PAIR[1]]
 
 
 def _item(**overrides: object) -> WorkItem:
