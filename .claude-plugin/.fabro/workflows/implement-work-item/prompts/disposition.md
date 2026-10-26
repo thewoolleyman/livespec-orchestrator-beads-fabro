@@ -38,26 +38,39 @@ closed; an absent or malformed `review_findings_r<N>` key is.
    the malformed key. Do not guess, do not ask an unwatched interactive
    question, and do not use prior `finding_dispositions_r*` keys as a
    substitute for the review stage's current input.
-4. For EACH `[BLOCKING]` finding, record exactly one disposition:
-   - `ACCEPTED <file:line or finding reference> — <one-line rationale>`
+4. For EACH `[BLOCKING]` finding, record exactly one disposition. Preserve the
+   finding's classification from review in parentheses, so a later stage can
+   distinguish a repair to the published proof record from a repair to the tree:
+   - `ACCEPTED (proof-record) <file:line or finding reference> — <one-line rationale>`
      when the finding is correct and in scope for this work-item.
-   - `REJECTED <file:line or finding reference> — <one-line rationale>`
+   - `ACCEPTED (tree) <file:line or finding reference> — <one-line rationale>`
+     when the finding is correct and requires an in-clone implementation fix.
+   - `REJECTED (proof-record|tree) <file:line or finding reference> — <one-line rationale>`
      when the finding is out-of-scope, not applicable, factually wrong, or
      would require scope expansion. Do NOT expand scope to satisfy a
      finding: a "fix" that adds features, abstractions, or refactors the
      work-item did not ask for is itself wrong, so prefer rejecting such a
      finding with that rationale.
+   If review did not mark a blocking finding `(proof-record)` or `(tree)`, do
+   not invent a classification: fail closed with the needs-human protocol and
+   name that finding. An unmarked finding cannot safely choose between replacing
+   an immutable proof record and changing this clone.
 5. Determine the round number N for the disposition context key: count prior visible
    run-context keys named `finding_dispositions_r*`, then use the next
    integer. If none are visible, use `finding_dispositions_r1`.
 6. After the disposition lines, end your reply with routing JSON on the
    LAST line:
-   - At least one ACCEPTED finding:
+   - Every ACCEPTED finding is tagged `(proof-record)`:
+     `{"preferred_next_label": "recapture", "context_updates": {"finding_dispositions_r<N>": "<the exact disposition record lines>"}}`
+   - Any ACCEPTED finding is tagged `(tree)`:
      `{"preferred_next_label": "fix", "context_updates": {"finding_dispositions_r<N>": "<the exact disposition record lines>"}}`
    - Every BLOCKING finding rejected:
      `{"preferred_next_label": "all_rejected", "context_updates": {"finding_dispositions_r<N>": "<the exact disposition record lines>"}}`
 
-Use those exact lowercase routing labels. The JSON is best-effort
+Use those exact lowercase routing labels. `recapture` returns directly to
+`recapture_route` and then `proof_capture`, where a superseding Proof of Done
+record can be posted; it MUST NOT send a proof-record-only acceptance to
+`review_fix`, which cannot edit a published record. The JSON is best-effort
 routing text; do not use or request schema-validated structured output.
 
 ## When you cannot proceed (needs-human protocol)
