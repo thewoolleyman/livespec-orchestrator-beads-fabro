@@ -341,16 +341,22 @@ def test_an_implement_amendment_rests_the_item_at_blocked_needs_human_and_publis
     item = _seed(root=tmp_path)
     graph = parse_workflow_graph(text=_dot())
 
-    # LEG 1 — the committed graph. A failed implement outcome is routed by
-    # CONDITION to the terminal, while the ordinary route is the unconditional
-    # fallthrough that conditional edges outrank. Both targets are pinned in
-    # one answer, so an added third route changes it rather than slipping past.
-    # The fallthrough has been Scenario 204's completion gate since v165 —
-    # which routes an incomplete turn to the SAME terminal on the same
-    # condition, so the amendment ending asserted below is unaffected by it.
+    # LEG 1 — the committed graph. Every implement outcome reaches Scenario
+    # 204's completion gate first. Its failed edge reaches the incomplete-turn
+    # route, whose unconditional fallback is the same terminal this amendment
+    # needs; an explicit failed outcome must not bypass that retry decision.
+    # Pin every target and condition, so an added direct terminal route or a
+    # conditional fallthrough changes the answer rather than slipping past.
     assert _edge_conditions(source="implement") == {
-        "needs_human": "outcome=failed",
         "implement_completion": "",
+    }
+    assert _edge_conditions(source="implement_completion") == {
+        "implement_hook_route": "outcome=failed",
+        "implementation_diff": "",
+    }
+    assert _edge_conditions(source="implement_hook_route") == {
+        "implement": "outcome=succeeded",
+        "needs_human": "",
     }
     # Nothing is downstream of the terminal, so nothing it reaches can publish.
     assert _reachable(graph=graph, start="needs_human") == frozenset()
