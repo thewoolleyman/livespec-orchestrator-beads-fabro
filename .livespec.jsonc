@@ -85,13 +85,14 @@
     "critique_mode": "batch",
     "in_flight_alignment": "default-align",
     "revise_decision_mode": "delegated",
-    // ratification_reviewer_model: Opus is the default ratification reviewer. The
-    // model is interchangeable like any other model selection here; fallback
-    // models are permitted once livespec core accepts a list for this key (routed
-    // separately). "auto-spawn" below is inert when this key is null.
-    // History: "sonnet" 2026-08-24, "gpt-6-astra" 2026-10-10, "opus" 2026-10-26 (maintainer).
+    // ratification_reviewer_model: an ordered list. Opus is the primary
+    // ratification reviewer and auto-spawn selects it; gpt-6-astra (Codex) is the
+    // fallback, and a review by EITHER model ratifies. The models are
+    // interchangeable like any other model selection here. "auto-spawn" below is
+    // inert when this key is null.
+    // History: "sonnet" 2026-08-24, "gpt-6-astra" 2026-10-10, "opus" 2026-10-26 (maintainer), ["opus", "gpt-6-astra"] 2026-10-26 (R70).
     "ratification_review": "auto-spawn",
-    "ratification_reviewer_model": "opus",
+    "ratification_reviewer_model": ["opus", "gpt-6-astra"],
     "spec_pr_merge": "auto-on-green"
   },
   // Optional — spec_governance: the complete safe-default reference block.
