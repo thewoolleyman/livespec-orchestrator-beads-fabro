@@ -7395,7 +7395,7 @@ Scenario 212 in `scenarios.md` exercises this subsection.
 
 ### Sandbox test-worker parallelism
 
-The Dispatcher MUST project `LIVESPEC_TEST_PARALLELISM` into every dispatched sandbox's environment, beside the harness shell policy it already projects there. The value MUST be a positive integer that does not exceed the CPU limit of the sandbox it is projected into. This repository projects 2, for its 4-CPU factory sandboxes. A gate run in the sandbox that sizes its test workers from this variable therefore follows the sandbox's CPU limit, not the node's visible CPUs.
+The Dispatcher MUST project `LIVESPEC_TEST_PARALLELISM` into every dispatched sandbox's environment, beside the harness shell policy it already projects there. The value MUST be a positive integer that does not exceed the CPU limit of the sandbox it is projected into. This repository projects 4, for its 4-CPU factory sandboxes. Four workers fit the sandbox's 7630 MiB memory limit: measured on 2026-10-26, a full per-file-coverage gate run at four workers peaked at 2748 MiB of cgroup memory, with no worker above 467 MiB resident. A gate run in the sandbox that sizes its test workers from this variable therefore follows the sandbox's CPU limit, not the node's visible CPUs.
 
 The reason is that a sandbox's CPU limit is a quota, not an affinity mask, so `nproc` inside the sandbox reports every CPU on its node. On 2026-10-25, a gate run in a 4-CPU, 7630 MiB factory pod on a 72-CPU node derived 18 coverage-traced test workers from `nproc`. Six such runs were killed by the pod's memory limit in one day. The projection does not bound a worker count that an agent names explicitly on a command line.
 
