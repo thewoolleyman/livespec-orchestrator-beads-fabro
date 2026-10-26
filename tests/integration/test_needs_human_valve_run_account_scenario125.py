@@ -31,6 +31,7 @@ distinguishable from "it was never addressed".
 
 from __future__ import annotations
 
+import importlib
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -38,11 +39,18 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro._store_comments import (
+    WorkItemComment,
+    append_work_item_comment,
+)
 from livespec_orchestrator_beads_fabro.commands import (
     _needs_attention_needs_human_question as enrichment,
 )
 from livespec_orchestrator_beads_fabro.commands import needs_attention
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_cause import (
+    NEEDS_HUMAN_CAUSE_MARKER,
+)
 from livespec_orchestrator_beads_fabro.commands.needs_attention import (
     build_attention,
     render_json,
@@ -74,6 +82,11 @@ _UNENRICHED = f"Resolve human-needed block for work-item {_ITEM}: {_TITLE}"
 # separates "omitted" from "partially written".
 _ACCOUNT_JOINER = "; fabro run"
 _REFUSED_CONNECTION = ConnectionRefusedError(111, "Connection refused")
+_LEDGER_MODULE_PATH = (
+    Path(__file__).parents[2]
+    / ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands"
+    / "_needs_attention_needs_human_ledger.py"
+)
 
 
 @dataclass(kw_only=True)
@@ -126,6 +139,7 @@ def test_scenario125_the_valve_summary_carries_the_terminated_runs_account(
     what the run reported, the preserved reference, and the available actions."""
     repo = _repo(tmp_path=tmp_path)
     _seed(repo=repo)
+    _record_terminated_run_account()
     runner = _Runner(payload=_terminated_record())
 
     summary = str(_valve_entry(repo=repo, monkeypatch=monkeypatch, runner=runner)["summary"])
@@ -149,10 +163,9 @@ def test_scenario125_the_valve_summary_carries_the_terminated_runs_account(
     assert "leave the item blocked" in summary
     for forbidden in ("fabro attach", "resume"):
         assert forbidden not in summary
-    # The run was inspected on the factory the item was dispatched to, not on
-    # whichever engine the reading host happens to run.
-    assert [call[1] for call in runner.calls] == ["inspect"]
-    assert runner.calls[0][runner.calls[0].index("--server") + 1] == _SERVER
+    # The durable comment already carries the account, so this snapshot does
+    # not re-read the terminated run from its factory.
+    assert runner.calls == []
 
 
 def test_scenario125_an_unreachable_factory_costs_the_enrichment_and_never_the_valve(
@@ -198,10 +211,87 @@ def test_scenario125_an_unreachable_factory_costs_the_enrichment_and_never_the_v
     assert [call[1] for call in runner.calls] == ["inspect"]
 
 
+def test_scenario125_the_durable_reader_selects_this_run_and_maps_preservation() -> None:
+    """Only the current run's terminal comment supplies the valve account."""
+    assert _LEDGER_MODULE_PATH.is_file()
+    ledger = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._needs_attention_needs_human_ledger"
+    )
+    comments = (
+        _comment(
+            text=_record(
+                run_id=_RUN,
+                cause_label="agent-reported cause",
+                preservation="the tree was not pushed to a run-scoped ref",
+            )
+        ),
+        _comment(text=_record(run_id="older-run", preservation=None)),
+        _comment(text="an operator rider that is not a terminal account"),
+    )
+
+    question = ledger.needs_human_question_from_ledger_comments(
+        comments=comments,
+        run_id=_RUN,
+    )
+
+    assert question is not None
+    assert question.prompt == "a provider must be chosen"
+    assert question.reason == "review|deterministic|acp turn failed"
+    assert question.cause == "the operator must choose a provider"
+    assert question.tree_preserved is False
+    assert question.preserved_ref is None
+
+    preserved = ledger.needs_human_question_from_ledger_comments(
+        comments=(
+            _comment(
+                text=_record(
+                    run_id=_RUN,
+                    preservation="the tree was preserved on refs/heads/held",
+                )
+            ),
+        ),
+        run_id=_RUN,
+    )
+    assert preserved is not None
+    assert preserved.tree_preserved is True
+    assert preserved.preserved_ref == "refs/heads/held"
+
+    unrecorded = ledger.needs_human_question_from_ledger_comments(
+        comments=(_comment(text=_record(run_id=_RUN, preservation=None)),),
+        run_id=_RUN,
+    )
+    assert unrecorded is not None
+    assert unrecorded.tree_preserved is True
+    assert unrecorded.preserved_ref is None
+
+    assert ledger.needs_human_question_from_ledger_comments(comments=(), run_id=_RUN) is None
+
+
+def test_scenario125_a_durable_comment_read_failure_defers_to_inspect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unreadable durable account leaves the existing factory fallback available."""
+    assert hasattr(enrichment, "read_work_item_comments")
+    monkeypatch.setattr(enrichment, "read_work_item_comments", _unreadable_comments)
+    repo = _repo(tmp_path=tmp_path)
+    _seed(repo=repo)
+    runner = _Runner(payload=_terminated_record())
+
+    summary = str(_valve_entry(repo=repo, monkeypatch=monkeypatch, runner=runner)["summary"])
+
+    assert [call[1] for call in runner.calls] == ["inspect"]
+    assert _RUN in summary
+
+
 def _no_spec_next(*, project_root: Path) -> SpecNextOutput | None:
     """Stand the cross-plane spec lane down: it answers nothing this heading asks."""
     _ = project_root
     return None
+
+
+def _unreadable_comments(**_: object) -> tuple[WorkItemComment, ...]:
+    """Model a ledger comment read that fails before it returns a snapshot."""
+    raise OSError("tenant temporarily unavailable")
 
 
 def _valve_entry(
@@ -271,6 +361,46 @@ def _seed(*, repo: Path) -> None:
     _ = journal.write_text(
         json.dumps({"work_item_id": _ITEM, "run_id": _RUN}) + "\n", encoding="utf-8"
     )
+
+
+def _record_terminated_run_account() -> None:
+    """Append the durable account the needs-human terminal wrote for this run."""
+    append_work_item_comment(
+        path=_config(),
+        work_item_id=_ITEM,
+        body="\n".join(
+            (
+                NEEDS_HUMAN_CAUSE_MARKER,
+                "",
+                f"work-item: {_ITEM}",
+                f"run id: {_RUN}",
+                "ending: stage_failure",
+                f"failure signature: {_SIGNATURE}",
+                f"terminal reason: {_PROMPT}",
+                "preservation: the tree was preserved on "
+                f"{_PRESERVED_REF} (see the preserve-by-reference pointer on the item for the dump digest)",
+            )
+        ),
+    )
+
+
+def _comment(*, text: str) -> WorkItemComment:
+    """One durable sidecar comment, without unrelated forge metadata."""
+    return WorkItemComment(text=text, author=None, created_at=None)
+
+
+def _record(*, run_id: str, preservation: str | None, cause_label: str = "innermost cause") -> str:
+    lines = [
+        NEEDS_HUMAN_CAUSE_MARKER,
+        f"run id: {run_id}",
+        "failure signature: review|deterministic|acp turn failed",
+        "terminal reason: a provider must be chosen",
+        f"{cause_label}: the operator must choose a provider",
+    ]
+    if preservation is not None:
+        lines.append(f"preservation: {preservation}")
+    lines.append("an unlabelled incidental line")
+    return "\n".join(lines)
 
 
 def _parked() -> WorkItem:
