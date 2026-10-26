@@ -37,6 +37,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config im
     codex_otel_env_lines,
     codex_otel_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner import (
+    commit_runner_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_projection import (
     CredentialUseDeclaration,
     CredentialUseProjection,
@@ -341,6 +344,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
             graph_artifact=graph_artifact, written_graph=resolved_graph, warn=warn
         )
     )
+    commit_runner_steps = commit_runner_prepare_steps_block()
     factory_provenance_steps = factory_run_id_prepare_steps_block(dispatch_id=dispatch_id)
     # Rendered FIRST among the Dispatcher-materialized steps, which puts it
     # immediately after the committed `git fetch --unshallow` whose single-branch
@@ -392,6 +396,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + codex_steps
         + codex_otel_steps
         + plugin_cache_steps
+        + commit_runner_steps
         + resume_checkout_steps
         + credential_use_steps
         # The pull-request body, materialized as a FILE because the stage hands
