@@ -53,6 +53,7 @@ _PROMPT = _PAYLOAD / "prompts" / "implement.md"
 _GATE = "implement_completion"
 _ROUTE = "implement_hook_route"
 _IMPLEMENT = "implement"
+_AMENDMENT_ROUTE = "implement_amendment_route"
 _NEEDS_HUMAN = "needs_human"
 
 _REFUSAL_GIT_PATH = "livespec-implement-hook-refusal"
@@ -129,6 +130,13 @@ def _route_attributes() -> dict[str, str]:
     parsed = parse_dot_graph(text=_GRAPH.read_text(encoding="utf-8"))
     assert not isinstance(parsed, str), parsed
     return dict(parsed.nodes.get(_ROUTE, {}))
+
+
+def _node_script(*, node: str) -> str:
+    """The committed command bytes for one workflow node."""
+    parsed = parse_dot_graph(text=_GRAPH.read_text(encoding="utf-8"))
+    assert not isinstance(parsed, str), parsed
+    return parsed.nodes[node]["script"]
 
 
 def _clone(
@@ -220,6 +228,55 @@ def test_a_refused_commit_with_budget_left_reenters_with_the_hooks_own_verdict(
     assert not _git_file(repo=repo, name=_RECORD_GIT_PATH).exists()
     assert not _git_file(repo=repo, name=_STAGE_CAUSE_GIT_PATH).exists()
     assert not (repo / "suite-ran").exists(), "a refused commit outranks the check suite"
+
+
+def test_an_explicit_failed_incomplete_turn_with_a_refused_commit_reaches_reentry(
+    tmp_path: Path,
+) -> None:
+    """Scenario 204's formerly bypassed failed edge reaches the hook-refusal retry.
+
+    This drives the exact reported ending shape: `implement` has the adapter's
+    `outcome=failed`, its completion record says the Definition of Done is
+    incomplete, and the staged tree's commit hook refuses it.  The amendment
+    classifier is the only conditional stop on that edge; without its marker it
+    falls through to the completion gate, whose failed edge reaches the hook
+    route and re-enters implement while its budget remains.
+    """
+    repo = _clone(
+        tmp_path=tmp_path,
+        hook=_REFUSING_HOOK,
+        staged=True,
+        completion='{"outcome":"failed","definition_of_done_complete":false}\n',
+    )
+
+    assert (_AMENDMENT_ROUTE, "outcome=failed") in _targets(source=_IMPLEMENT)
+    classifier = subprocess.run(
+        ["sh", "-c", _node_script(node=_AMENDMENT_ROUTE)],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert classifier.returncode == 0, classifier.stderr
+    assert (_GATE, "") in _targets(source=_AMENDMENT_ROUTE)
+
+    completion = subprocess.run(
+        ["sh", "-c", _node_script(node=_GATE)],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completion.returncode != 0, completion.stderr
+    assert (_ROUTE, "outcome=failed") in _targets(source=_GATE)
+
+    result = _routed(repo=repo)
+
+    assert result.returncode == 0, result.stderr
+    assert _REENTER in result.stderr
+    brief = _git_file(repo=repo, name=_REFUSAL_GIT_PATH).read_text(encoding="utf-8")
+    assert f"failed targets: {_FAILED_TARGET}\n" in brief
+    assert _ERROR_LINE in brief
 
 
 def test_a_refused_commit_with_the_budget_exhausted_fails_naming_the_failed_targets(
