@@ -1364,6 +1364,15 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   otherwise equally consistent with a reader that anchors on any budget row —
   including a rework round whose head would not carry the rework.
 
+- `test_record_file_refresh_merge_scenario200.py` — binds Scenario 200's
+  declaration of the four shared record files. Its stage-level cases live in
+  `test_scripted_refresh_execution.py` and
+  `test_workflow_publish_draft_refresh.py`, where the shipped `pr_refresh` and
+  `publish_draft` scripts are exercised against real Git remotes: independent
+  JSON records and Markdown insertions merge in default-then-run order, while
+  foreign paths, divergent keyed records, and a rejected merged head still take
+  refresh repair.
+
 - `test_implement_completion_field_scenario204.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 204 and the v165 clause "An implement
   turn that ends incomplete does not succeed": the implement stage's outcome is

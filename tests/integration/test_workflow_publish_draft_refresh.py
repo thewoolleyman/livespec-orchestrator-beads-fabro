@@ -16,6 +16,18 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_merge import (
+    RECORD_FILE_MERGE_PROGRAM_FILENAME,
+    record_file_merge_program_source,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
+    SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
+)
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW = (
     _REPO_ROOT
@@ -144,6 +156,14 @@ def _publish(*, tmp_path: Path, run: Path) -> _Published:
     calls = tmp_path / "gh-calls"
     created = tmp_path / "draft-created"
     bin_dir = _forge_double(tmp_path=tmp_path)
+    plugins = tmp_path / "plugins"
+    plugins.mkdir()
+    _ = (plugins / RECORD_FILE_MERGE_PROGRAM_FILENAME).write_text(
+        record_file_merge_program_source(), encoding="utf-8"
+    )
+    _ = (plugins / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
     env = {
         key: value
         for key, value in os.environ.items()
@@ -155,6 +175,7 @@ def _publish(*, tmp_path: Path, run: Path) -> _Published:
             "GH_CALLS": str(calls),
             "GH_DRAFT_CREATED": str(created),
             "LIVESPEC_PUBLISH_BRANCH": _PUBLISH_BRANCH,
+            SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins),
         }
     )
     result = subprocess.run(
@@ -166,6 +187,64 @@ def _publish(*, tmp_path: Path, run: Path) -> _Published:
         check=False,
     )
     return _Published(result=result, calls=_calls(path=calls), draft_created=created.is_file())
+
+
+def _record_conflicted_run(*, tmp_path: Path) -> Path:
+    """A draft whose JSON record additions conflict only by concurrent insertions."""
+    origin = tmp_path / "record-origin.git"
+    _git(tmp_path, "init", "--bare", "-b", "master", str(origin))
+
+    seed = tmp_path / "record-seed"
+    seed.mkdir()
+    _git(seed, "init", "-b", "master")
+    _configure(repo=seed)
+    _commit(
+        repo=seed,
+        path=".livespec.jsonc",
+        content=(
+            "{\n"
+            '  "livespec-orchestrator-beads-fabro": {\n'
+            '    "dispatcher": {\n'
+            '      "record_files": [\n'
+            '        {"path": "record.json", "format": "json-array", "key": ["id"]}\n'
+            "      ]\n"
+            "    }\n"
+            "  }\n"
+            "}\n"
+        ),
+        message="declare record",
+    )
+    _commit(
+        repo=seed,
+        path="record.json",
+        content='[{"id": "seed"}]\n',
+        message="seed record",
+    )
+    _git(seed, "remote", "add", "origin", str(origin))
+    _git(seed, "push", "-u", "origin", "master")
+
+    run = tmp_path / "record-run"
+    _git(tmp_path, "clone", str(origin), str(run))
+    _configure(repo=run)
+    _git(run, "switch", "-c", "fabro/run/record")
+    _commit(
+        repo=run,
+        path="record.json",
+        content='[{"id": "seed"}, {"id": "run"}]\n',
+        message="run record",
+    )
+
+    default = tmp_path / "record-default"
+    _git(tmp_path, "clone", str(origin), str(default))
+    _configure(repo=default)
+    _commit(
+        repo=default,
+        path="record.json",
+        content='[{"id": "seed"}, {"id": "default"}]\n',
+        message="default record",
+    )
+    _git(default, "push", "origin", "master")
+    return run
 
 
 def test_stale_base_is_refreshed_before_a_workflow_clean_branch_is_published(
@@ -188,6 +267,32 @@ def test_stale_base_is_refreshed_before_a_workflow_clean_branch_is_published(
     assert "--draft" in create
     assert create[create.index("--base") + 1] == "master"
     assert create[create.index("--head") + 1] == _PUBLISH_BRANCH
+
+
+def test_declared_record_conflict_is_merged_before_draft_publication(tmp_path: Path) -> None:
+    """Scenario 200 keeps a draft out of refresh repair for independent records."""
+    run = _record_conflicted_run(tmp_path=tmp_path)
+
+    published = _publish(tmp_path=tmp_path, run=run)
+
+    assert published.result.returncode == 0, published.result.stderr
+    assert (
+        "LIVESPEC_RECORD_FILE_MERGED: path=record.json format=json-array" in published.result.stderr
+    )
+    assert (run / "record.json").read_text(encoding="utf-8") == (
+        "[\n"
+        "  {\n"
+        '    "id": "seed"\n'
+        "  },\n"
+        "  {\n"
+        '    "id": "default"\n'
+        "  },\n"
+        "  {\n"
+        '    "id": "run"\n'
+        "  }\n"
+        "]\n"
+    )
+    assert published.draft_created is True
 
 
 def test_reentry_after_master_advances_preserves_the_published_tip(

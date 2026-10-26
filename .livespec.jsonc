@@ -277,6 +277,29 @@
       "auto_approve_ready": true,
       "wip_cap": 10,
       "acceptance_mode": "ai-only",
+      // The shared append-only records a refresh may merge entry by entry
+      // instead of spending a repair round. Entries must remain independent:
+      // default-branch records stay first and this run's additions follow.
+      "record_files": [
+        {
+          "path": "tests/heading-coverage.json",
+          "format": "json-array",
+          "key": ["spec_root", "spec_file", "heading"]
+        },
+        {
+          "path": "tests/heading-coverage-debt.json",
+          "format": "json-array",
+          "key": ["spec_root", "spec_file", "heading"]
+        },
+        {
+          "path": "tests/integration/CLAUDE.md",
+          "format": "markdown-insertions"
+        },
+        {
+          "path": "tests/prompts/CLAUDE.md",
+          "format": "markdown-insertions"
+        }
+      ],
       // The REGISTRY-BACKED name of the hp-xubuntu :32276 instance running the
       // pinned 0.254 engine — the same instance the entry called `hp` addressed
       // before this table named factories instead of machines, so this rename
