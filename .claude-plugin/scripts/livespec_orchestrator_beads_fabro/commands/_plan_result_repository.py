@@ -58,10 +58,13 @@ missing clone it is.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper import (
+    read_dispatch_target_credential_wrapper,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._session_wait_gate import (
@@ -175,7 +178,10 @@ def result_store_config(*, repository: ResultRepository) -> StoreConfig | None:
     )
     if isinstance(resolved, AttemptFailure):
         return None
-    return resolved
+    return replace(
+        resolved,
+        credential_wrapper=read_dispatch_target_credential_wrapper(repo=repository.clone),
+    )
 
 
 def _is_self_repository_path(*, name: str, project_root: Path, primary: Path) -> bool:
