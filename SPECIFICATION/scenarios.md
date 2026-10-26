@@ -10005,3 +10005,29 @@ Feature: A push of a tree the aggregate just passed does not run the aggregate a
     When a push sets an environment variable or passes a flag
     Then the pre-push gate runs the full pre-push gate
 ```
+
+## Scenario 254 — The check aggregate runs its independent targets beside the pytest lane and still reports and fails as the serial loop did
+
+```gherkin
+Feature: The check aggregate does not wait for the pytest lane to run its independent targets
+  As the operator of a factory
+  I want lint, types and static checks to run beside the pytest lane
+  So that a check pass costs about as long as its longest lane rather than the sum of every target
+
+  Scenario: Independent targets run beside a single pytest lane
+    Given LIVESPEC_TEST_PARALLELISM is 4
+    When the just check aggregate runs
+    Then the pytest lane runs once with four workers, with check-coverage after check-per-file-coverage and no overlapping test-suite runs
+    And the lint, type and static targets run while the pytest lane is running
+
+  Scenario: A failing target still fails the concurrent aggregate
+    Given one non-pytest target fails while the pytest lane passes
+    When the just check aggregate runs
+    Then it reports every target's verdict with each target's output kept together
+    And it exits non-zero naming the failed target, exactly as the serial loop does
+
+  Scenario: The concurrent aggregate stays within the sandbox memory limit
+    Given a factory sandbox with a 7630 MiB memory limit and LIVESPEC_TEST_PARALLELISM of 4
+    When the just check aggregate runs
+    Then the sandbox's peak memory stays under its memory limit
+```
