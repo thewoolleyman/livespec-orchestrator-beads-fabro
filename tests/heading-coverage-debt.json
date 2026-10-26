@@ -985,5 +985,12 @@
     "heading": "## Scenario 248 \u2014 A pull request merged before its refresh ends the run as a finished publication",
     "work_item": "bd-ib-ku7phe",
     "first_seen": "2026-10-26"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 249 \u2014 Implement and review_fix turns run their touched tests green, stage one test per Red, and update pinning tests with prompt edits",
+    "work_item": "bd-ib-v5f7fd",
+    "first_seen": "2026-10-26"
   }
 ]
