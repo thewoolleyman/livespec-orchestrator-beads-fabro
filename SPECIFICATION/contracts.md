@@ -3877,7 +3877,7 @@ inputs that paragraph names in place of per-assertion reproduction steps, and a
 carries would, at the new head it names. A `reproof_required` record is not
 proof: it MUST NOT anchor a resume, and the acceptance pass and every reader of
 the latest proof record MUST skip it. The run identifier a factory record
-carries MUST be one the Dispatcher can attribute to the merging dispatch: the
+carries MUST be one the Dispatcher can attribute to the dispatch of the item that produced the record: the
 Fabro run id, or the dispatch id the Dispatcher declared to the sandbox, or,
 for a resumed dispatch, an identifier the journal's `resume` record links to
 it, transitively (§"Dispatcher loop invocation surface" → "Resume from a
@@ -3904,6 +3904,41 @@ assertions under a heading stating they are pending the host leg. The
 human-attested record MUST be posted by the attesting human on the same pull
 request in the same structure; images MAY be attached through the forge's own
 upload.
+
+**The binding.** Every record the implementation posts, each factory record
+and each host record, MUST carry its own binding to the subject it proves. The
+binding is written by the implementation's posting primitive, the one §"The
+host leg" below names, which every stage and every host leg MUST use to
+publish a record, so that no stage or session hand-formats a binding. The
+binding is exactly one line, placed immediately after the record's first line
+and outside any fenced block, of the form `Binds: <work-item-id> — pull
+request #<number> — head <full commit sha>`. It names the work item the record
+proves, the pull request the record is posted on, and the full commit sha of
+the pull request head the record proves: for a factory record, the
+publish-branch head the record names; for a host record, the head commit of
+that pull request at its merge, which is not the default-branch commit the
+merge produced. The primitive's resolution of which pull request a record is
+posted on, and any refusal it makes for an item that has no merged pull
+request of its own, govern host records only: a factory record is posted,
+before merge, on the pull request of the run that produced it, and its binding
+names that pull request. A correcting record that supersedes a factory record
+MAY be posted through the primitive after merge, on the same pull request; it
+carries the superseded record's run identifier on its first line and binds the
+head the superseded record proves. A record that carries no binding line is a
+legacy record. A human-attested record is posted by a human and is outside
+this rule; the human-attested leg of the acceptance pass governs it. A
+correction is a new record: a record the primitive posts MAY carry, on the
+line after its binding, `Supersedes: <comment link>` naming one earlier record
+on the same pull request, and only a record that itself carries a well-formed
+binding to that pull request resolves the fault of the record it names. The
+acceptance pass selects records by binding (§"Dispatcher admission, WIP cap,
+and post-merge acceptance" → "The proof evidence leg"). Measured 2026-10-26:
+the acceptance pass on bd-ib-tixpma, pull request 3164, resolved four run ids
+as the merging runs, did not include run 0498841858ff4cb185b42d12ff26e8b4, and
+reported its proof of done record NOT OBSERVED, although that run's `verified`
+record had been on the pull request since 2026-10-17 and the pass of
+2026-10-18 had graded it. Scenario 252 in `scenarios.md` exercises this
+paragraph and the selection it governs.
 
 **The host leg.** For an item with `host_captured` assertions, an agent
 session on an operator host MUST publish a `host_recorded` record after
@@ -3933,7 +3968,7 @@ posted, is not evidence.
 **The pointer.** After merge, the Dispatcher MUST write a `## Proof of Done`
 section into the item's description, after the Definition of Done section and
 preserving it byte-for-byte, containing only: the pull request number, the
-comment link of the latest `verified` record, its run id and timestamp, its
+comment link of the latest `verified` record counting for the item, its run id and timestamp, its
 verdict, — when the merged head was reached through a carry-forward — the
 comment link of the `carried_forward` record naming that head, — when the item
 was resumed (§"Dispatcher loop invocation surface" → "Resume from a published
@@ -3941,15 +3976,19 @@ pull request") — the resumed run's identifier, — when the item has
 `host_captured` assertions — the comment link of the latest `host_verified`
 record once it exists, and — when the item has `human_attested` assertions —
 the comment link of the human-attested record once it exists. The section MUST
-NOT copy proof content. The pointer MUST be written whenever a `verified`
-record exists for the merging run, independently of the acceptance verdict: a
+NOT copy proof content. Every record the pointer names, and every record a
+staleness check compares it with, MUST be one that counts for the item under
+the proof evidence leg's bind verdicts (a factory, host or human-attested
+record, as that leg defines counting). The pointer MUST be written whenever a
+`verified` record counting for the item exists, independently of the
+acceptance verdict: a
 pass that parks the item still writes it. A pointer whose run id or comment id
 does not match the latest record OF THE SAME KIND (`verified`,
-`carried_forward`, `host_verified`, `human_attested`) on the pull request is
-stale and MUST be surfaced by `needs-attention` as a hygiene fact naming the
+`carried_forward`, `host_verified`, `human_attested`) on the pull request that
+counts for the item under the proof evidence leg's bind verdicts is stale and MUST be surfaced by `needs-attention` as a hygiene fact naming the
 item and the pull request; a later record of another kind does not make a
-pointer stale. An item in `acceptance` whose merging run has a `verified`
-record and whose description has no pointer MUST likewise be surfaced by
+pointer stale. An item in `acceptance` that has a `verified` record counting for
+it and whose description has no pointer MUST likewise be surfaced by
 `needs-attention` as a hygiene fact naming the item and the pull request, and
 `reconcile-merged` driven for that item MUST write the missing pointer.
 
@@ -4623,8 +4662,8 @@ dispatch, as that routing specifies.
 
 **What it resumes.** The *earlier run* is the dispatch whose identifier
 the latest proof record on the item's open pull request carries, resolved
-through the dispatch journal exactly as the acceptance pass attributes a
-record (§"Post-merge acceptance (`acceptance → done`)" → "The proof
+through the dispatch journal by the run identifier on its first line, accepting
+for each journaled dispatch the identifiers the legacy match accepts (§"Post-merge acceptance (`acceptance → done`)" → "The proof
 evidence leg"); a record published before this clause was ratified names
 no head and cannot anchor a resume. The *published head* is the full
 commit sha that record names (§"Proof of Done record" → "The record").
@@ -6695,25 +6734,79 @@ verifies *fit + real behavior* against the **shipped** artifact:
   criteria and the empty-diff refusal"), for which an empty merged diff
   routes to the item's normal grading path rather than to this refusal.
 
-  **The proof evidence leg.** For every effective assertion whose proof
-  mode is `factory_captured` (§"Effective acceptance criteria" →
-  "Per-assertion proof mode"), the acceptance pass MUST take as its
-  criteria-leg evidence the `proof_verify` record of the run whose pull
-  request merged, observed from the pull request (§"Proof of Done
-  record"): the assertion is judged passing when that record's verdict is
-  `verified` and the assertion is listed as reproduced, failing when the
-  record lists it as not reproduced, and UNOBSERVED — yielding
-  NEEDS_ATTENTION per the evidence rule — when no `verified` record exists
-  for the merging run. A record identifies the merging run by the run
-  identifier on its first line, and the pass MUST accept either
-  identifier the Dispatcher can attribute to the merging dispatch — the
-  Fabro run id, or the dispatch id the Dispatcher declared to the
-  sandbox — so a `verified` record stamped with the dispatch id is
-  attributed to the merging run exactly as one stamped with the Fabro
-  run id is; for a resumed dispatch the pass MUST also accept any
-  identifier the journal's `resume` records link to it, transitively
-  (§"Dispatcher loop invocation surface" → "Resume from a published
-  pull request"). The pass MUST NOT apply merged-diff vocabulary
+  **The proof evidence leg.** For every effective assertion whose proof mode
+  is `factory_captured` (§"Effective acceptance criteria" → "Per-assertion
+  proof mode"), the acceptance pass MUST take its criteria-leg evidence from
+  the Proof of Done records on the pull request whose merge it grades,
+  selected by each record's binding (§"Proof of Done record" → "The binding").
+  It MUST NOT select a record by inferring which runs merged that pull
+  request. The pass MUST read every Proof of Done record on that pull request
+  and give each one exactly one bind verdict, taking the first rule below that
+  applies:
+
+  - `human-attested`: it is a human-attested record, which the human-attested
+    leg below governs.
+  - `superseded`: a later record on the pull request carries a well-formed
+    binding to this pull request and a `Supersedes:` line naming it. It is not
+    evidence, and it is never a refusal.
+  - `bound`: its binding is well-formed and names this work item and this pull
+    request.
+  - `bound-elsewhere`: its binding is well-formed and names another work item
+    or another pull request. It is not evidence for this item.
+  - `legacy-host`: it is a host record that carries no binding. The
+    host-captured leg judges it by the host-leg rules of §"Proof of Done record"
+    → "The host leg", unchanged.
+  - `legacy-matched`: it is a factory record that carries no binding, and its
+    run identifier is one the Dispatcher attributes to a dispatch of this item.
+    The pass MUST match it against EVERY dispatch of the item that the item's
+    dispatch records name, never against a subset resolved as the merging run.
+    For each dispatch it MUST accept the Fabro run id, the dispatch id the
+    Dispatcher declared to that dispatch's sandbox, and every identifier the
+    journal's `resume` records link to that dispatch, transitively (§"Dispatcher
+    loop invocation surface" → "Resume from a published pull request").
+  - `unbindable`: any other record, that is, one whose binding line is
+    malformed or incomplete, one that carries more than one binding line, or a
+    factory record without a binding whose run identifier matches no dispatch of
+    this item.
+
+  A record COUNTS for this item when it is a factory record whose verdict is
+  `bound` or `legacy-matched`, a host record whose verdict is `bound` or
+  `legacy-host`, or a human-attested record; a `reproof_required` record that
+  counts is still never evidence, as §"Proof of Done record" → "The record"
+  requires. A counted record proves the head its binding names, or, for a
+  legacy record, the head the record names. A counted `proof_verify` record
+  (verdict `verified` or `not_reproduced`) APPLIES to the merge when the head
+  it proves is the pull request's head commit at merge, or when a counted
+  `carried_forward` record names that merged head and links that
+  `proof_verify` record. A legacy record that names no head applies as it did
+  before this paragraph was ratified. A counted `proof_verify` record that
+  does not apply is reported as stale-head and is not evidence. Each assertion
+  is judged on its own section of the newest applicable counted `proof_verify`
+  record, whatever that record's record-wide verdict: passing when the section
+  carries `Reproduced: yes`, and failing when it carries `Reproduced: no`.
+  When that record has no section for the assertion, or its section carries no
+  `Reproduced:` line, the assertion is NEEDS_ATTENTION naming that record and
+  the missing evidence, and the pass MUST NOT fall back to an older record.
+  When no applicable counted `proof_verify` record exists, the record is
+  ABSENT, and the assertion is UNOBSERVED, yielding NEEDS_ATTENTION per the
+  evidence rule. The host-captured leg MUST take as evidence only host records
+  whose verdict is `bound` or `legacy-host`, and keeps the host-leg rules on
+  which pull request, build identity and session identity count. When any
+  record on the pull request is `unbindable`, the pass MUST NOT grade any of
+  the item's `factory_captured` or `host_captured` assertions and MUST NOT
+  report any of them UNOBSERVED. Its verdict is NEEDS_ATTENTION for the reason
+  that a proof record is unbindable, which is a reported state distinct from
+  an ABSENT record; the rework counter is unchanged. The parking record MUST
+  name each `unbindable` record by its comment link, state its fault, and name
+  the action that clears it: posting, through the posting primitive, a
+  correcting record that supersedes it. `needs-attention` MUST surface the
+  refusal as an attention fact naming the item, the pull request and each such
+  record. The parking record of every pass that parks the item, and the pass's
+  journal record, MUST list every Proof of Done record found on the pull
+  request with its kind, its run or session identifier, its comment link, its
+  bind verdict, the fault of each `unbindable` record and each stale-head
+  report, so that a reader sees why each record did or did not count. The pass
+  MUST NOT apply merged-diff vocabulary
   matching to an assertion that carries a proof mode; vocabulary matching
   remains only for items resolved from a legacy criteria source, which
   after v114 are only items already in flight; the implementing slice
@@ -6768,8 +6861,11 @@ verifies *fit + real behavior* against the **shipped** artifact:
   MUST record on the item, as a ledger comment, the verdict, each
   evidence leg with what was observed or what could not be observed,
   each pending leg, and the action that would move the item. It MUST
-  record one comment per DISTINCT (verdict, pending-leg set): a re-run
-  whose verdict and pending-leg set are unchanged appends nothing. The
+  record one comment per DISTINCT (verdict, pending-leg set, proof-record
+  inventory), where the inventory is the list of Proof of Done records with
+  their bind verdicts, faults and stale-head reports that the proof evidence
+  leg requires: a re-run whose verdict, pending-leg set and inventory are
+  unchanged appends nothing. The
   dispatch result for such an item MUST report `stage: acceptance` and
   `verdict: <verdict>`, with `status: green` for a PASS that parked or
   has a pending leg and `status: needs-attention` for NEEDS_ATTENTION;
