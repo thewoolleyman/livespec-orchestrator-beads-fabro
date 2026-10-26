@@ -9974,3 +9974,34 @@ Feature: A Proof of Done record is mechanically linked to the item it proves
     Then the record is reported stale-head and is not evidence
     And each factory_captured assertion is UNOBSERVED
 ```
+
+## Scenario 253 — A green aggregate on a tree carries to a push of the same tree, and a push of any other tree runs the gate
+
+```gherkin
+Feature: A push of a tree the aggregate just passed does not run the aggregate again
+  As the operator of a factory
+  I want publish_draft to reuse the janitor's green verdict on the same tree
+  So that a run does not pay a second full check aggregate for bytes already checked
+
+  Scenario: A janitor pass that skipped targets carries to a push of the same tree
+    Given the just check aggregate passed on a tree while skipping a declared target
+    When publish_draft pushes a commit whose tree is byte-identical to that tree with a clean worktree
+    Then the pre-push gate honours the recorded green verdict and does not run the tree-pure members again
+    And it prints one line naming the honoured verdict and the skipped target
+
+  Scenario: A member that reads outside the tree still runs on a byte-identical push
+    Given the just check aggregate passed on a tree and recorded a green verdict
+    And state outside the tree that a pre-push member reads has since changed so that member now fails
+    When a commit whose tree is byte-identical to that tree is pushed with a clean worktree
+    Then the pre-push gate runs that member and refuses the push
+
+  Scenario: A push of a different tree runs the full gate
+    Given the just check aggregate passed on a tree
+    When publish_draft refreshes onto a moved default branch and pushes a commit whose tree differs
+    Then the pre-push gate runs the full pre-push gate
+
+  Scenario: No flag or variable reaches the verdict skip
+    Given no recorded green verdict for the tree being pushed
+    When a push sets an environment variable or passes a flag
+    Then the pre-push gate runs the full pre-push gate
+```

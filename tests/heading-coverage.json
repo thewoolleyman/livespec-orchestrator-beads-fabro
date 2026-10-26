@@ -2335,5 +2335,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal proof-record-binding (v230), and the owning work-item bd-ib-poh6jg writes the binding line through the posting primitive, selects records by binding with the legacy every-dispatch match, adds the unbindable refusal and the per-record bind verdicts, together with the test that binds this entry.",
     "work_item": "bd-ib-poh6jg"
+  },
+  {
+    "heading": "## Scenario 253 \u2014 A green aggregate on a tree carries to a push of the same tree, and a push of any other tree runs the gate",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal green-verdict-carries-to-the-push, and the owning work-item bd-ib-n4twqd records the green verdict on a skipping aggregate and honours it at publish_draft's pre-push, together with the test that binds this entry.",
+    "work_item": "bd-ib-n4twqd"
   }
 ]
