@@ -101,8 +101,6 @@ def _resume_args(*, repo: Path, journal: JournalFile) -> argparse.Namespace:
 
 
 def _journal_rows(*, journal: JournalFile) -> list[dict[str, object]]:
-    if not journal.path.exists():
-        return []
     return [json.loads(line) for line in journal.path.read_text(encoding="utf-8").splitlines()]
 
 
