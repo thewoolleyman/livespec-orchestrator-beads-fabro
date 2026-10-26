@@ -68,3 +68,25 @@ def test_wait_records_a_hook_refusal_after_an_earlier_wait_returns_running() -> 
     assert terminal.state == "failed"
     assert terminal.exit_code == 1
     assert terminal.failed_targets == ("check-types", "check-tests")
+
+
+def test_wait_returns_the_recorded_terminal_verdict_without_polling_again() -> None:
+    """A terminal verdict stays authoritative for every later bounded wait."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner"
+    )
+    clock = _FakeClock()
+    launcher = _FakeLauncher(
+        process=_FakeProcess(
+            completes_at=0.0,
+            exit_code=0,
+            output="",
+        ),
+        commands=[],
+    )
+    runner = module.DetachedCommitRunner(launcher=launcher, clock=clock)
+
+    run_id = runner.start(command=("git", "commit", "-m", "test"))
+    terminal = runner.wait(run_id=run_id, timeout_seconds=0.0)
+
+    assert runner.wait(run_id=run_id, timeout_seconds=0.0) is terminal

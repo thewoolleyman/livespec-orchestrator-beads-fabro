@@ -93,6 +93,8 @@ class DetachedCommitRunner:
 
     def _record_terminal_verdict(self, *, run: _CommitRun) -> CommitRunResult | None:
         """Store the process's verdict once, retaining it for all later waits."""
+        if run.result is not None:
+            return run.result
         exit_code = run.process.poll(now=self._clock.now)
         if exit_code is None:
             return None
