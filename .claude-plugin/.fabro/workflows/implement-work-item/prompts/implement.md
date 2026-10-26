@@ -335,7 +335,13 @@ human's.
 End the run through the structured needs-human ending below, carrying
 the proposed amendment as the failure reason — the assertion as
 dispatched, what is wrong with it, and the exact replacement text you
-propose:
+propose. Before that reply, write that exact failure-reason text (without
+the JSON wrapper) where the amendment route can distinguish this human
+decision from incomplete implementation work:
+
+    printf '%s\n' 'Definition of Done amendment for <work-item id>: <the assertion as dispatched> — <what is wrong with it> — proposed replacement: <the text that should stand>' > "$(git rev-parse --git-path livespec-implement-dod-amendment)"
+
+Then end the reply with:
 
     {"outcome": "failed", "failure_reason": "Definition of Done amendment for <work-item id>: <the assertion as dispatched> — <what is wrong with it> — proposed replacement: <the text that should stand>"}
 

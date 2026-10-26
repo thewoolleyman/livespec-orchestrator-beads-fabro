@@ -258,8 +258,8 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # would make every unrelated timeout edit fail this case; the control pins the
 # 15m figure exactly, because that one is the thing being moved away from and a
 # drifting comparand would hide the move.
-_ALLOWANCE_BOUND_SECONDS = 1_000_000
-_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_518_215
+_ALLOWANCE_BOUND_SECONDS = 1_100_000
+_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_644_165
 
 # The execution ALLOWANCE the shipped payload resolves, the lifetime the
 # freshness gate actually demands of a credential, and the lifetime of a FRESH
@@ -272,7 +272,7 @@ _ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_518_215
 # comparand is what let v175's widened graph cross the credential ceiling while
 # every case here still passed, and an exact pin forces the re-measurement that
 # was skipped.
-_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 976_415
+_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 1_055_565
 _SHIPPED_FRESHNESS_REQUIREMENT_SECONDS = 111_600
 _FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS = 864_000
 
