@@ -9705,3 +9705,25 @@ Feature: A release does not send in-flight runs back to re-prove
     Then the pull request carries one reproof_required record naming pyproject.toml as an incoming path outside the inert classes
     And the run enters proof_capture for head N
 ```
+
+## Scenario 247 — Every Dispatcher fabro dump shares one bound sized from the slowest factory
+
+```gherkin
+Feature: The Dispatcher waits for a slow factory's dump before giving up on it
+  Scenario: An export slower than ten minutes still yields a digested pointer
+    Given a run whose export holds a diff artifact
+    And the factory takes 700 seconds to complete the run's fabro dump, which exits zero
+    When the Dispatcher writes the run's preserve-by-reference pointer
+    Then the export succeeds within the bound
+    And the pointer carries the run's diff digest
+  Scenario: A dump past the bound is a failed dump
+    Given a run whose fabro dump has not completed after 900 seconds
+    When the Dispatcher writes the run's preserve-by-reference pointer
+    Then the dump is stopped at the bound as a failed dump
+    And the pointer records the failed dump and its exit code
+    And the pointer claims no digest
+  Scenario: Every call site uses the same bound
+    Given the preserve-by-reference export, its read-back check and the worker-exit log read
+    When each runs a fabro dump
+    Then each dump is bounded by the same 900-second timeout
+```

@@ -971,5 +971,12 @@
     "heading": "## Scenario 243 \u2014 Admission skips a Codex candidate whose usage window is short of headroom",
     "work_item": "bd-ib-4jdgcw",
     "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 247 \u2014 Every Dispatcher fabro dump shares one bound sized from the slowest factory",
+    "work_item": "bd-ib-exyiqr",
+    "first_seen": "2026-10-26"
   }
 ]
