@@ -68,3 +68,33 @@ def test_wait_records_a_hook_refusal_after_an_earlier_wait_returns_running() -> 
     assert terminal.state == "failed"
     assert terminal.exit_code == 1
     assert terminal.failed_targets == ("check-types", "check-tests")
+
+
+def test_materialized_runner_installs_a_detached_commit_entrypoint() -> None:
+    """The sandbox receives the same runner the committing prompts name."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner"
+    )
+
+    block = module.commit_runner_prepare_steps_block()
+    source = module.commit_runner_program_source()
+
+    assert module.COMMIT_RUNNER_PROGRAM_FILENAME == "livespec-commit-runner"
+    assert module.commit_runner_program_path_expansion() in block
+    assert "chmod 700" in block
+    assert "def worker(" in source
+    assert "start_new_session=True" in source
+    assert "subprocess.run" in source
+
+
+def test_committing_prompts_direct_commits_through_the_materialized_runner() -> None:
+    """An ACP turn can use bounded waits instead of ending with a live hook."""
+    for prompt_name in ("implement.md", "fix.md", "review-fix.md"):
+        prompt = (
+            _REPOSITORY_ROOT
+            / ".claude-plugin/.fabro/workflows/implement-work-item/prompts"
+            / prompt_name
+        ).read_text(encoding="utf-8")
+
+        assert "livespec-commit-runner start -- git commit" in prompt
+        assert "livespec-commit-runner wait" in prompt
