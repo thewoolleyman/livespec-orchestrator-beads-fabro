@@ -36,8 +36,8 @@ run itself recorded rather than from that turn's reply, in this order:
 
 - When the turn left changes staged that the repository's commit hook
   refused, the hook's failed targets and its own error lines.
-- Otherwise, when the repository's check suite, run by the run over the
-  tree that turn left, failed, its failed targets and its error lines.
+- Otherwise, when the previous turn's recorded repository check-suite run
+  failed, its failed targets and error lines.
 - Otherwise, a statement that the previous turn
   ended incomplete with no recorded failing gate, beside the completion
   field it recorded.
@@ -49,6 +49,13 @@ second incomplete turn ends the stage at `needs_human`, naming the
 hook's failed targets when it refused a commit and partial progress
 otherwise. If the file does not exist, this is the run's first implement
 turn; carry on below.
+
+## Record declared check-suite failures
+
+When you run the declared repository check suite in this implement turn, invoke
+`"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-implement-check-suite"`
+instead. It runs the same declared suite and preserves the latest non-zero
+output for the one permitted incomplete-turn re-entry brief.
 
 ## Where you are
 
@@ -99,7 +106,7 @@ runner unless this stage prompt itself names a commit runner.
 - ACCEPTANCE-CRITERIA SCOPE — downstream review is NOT yours to run.
   Satisfy only the acceptance conditions you can verify YOURSELF in this
   sandbox: the code/behavior change, its tests, and a green run of the
-  repository's check suite (`{{ inputs.sandbox_check_suite }}`). An acceptance line that names a DOWNSTREAM gate — an
+  repository's check suite (through `livespec-implement-check-suite`). An acceptance line that names a DOWNSTREAM gate — an
   "independent"/"external"/"adversarial" reviewer, a separate NO-BLOCKERS
   review "before acceptance", a human sign-off, a ratification step — is
   handled AFTER this stage by a later `review` node and by the external
@@ -265,7 +272,8 @@ reports. Run it BEFORE the commit, never after a hook has refused one.
   spent discovering gaps one up-front run would have named.
 - Invoke the check the way THIS repository exposes it: its own per-file
   coverage target if it declares one, otherwise the declared check
-  suite `{{ inputs.sandbox_check_suite }}`, which contains that gate.
+  suite through `livespec-implement-check-suite`, which runs
+  `{{ inputs.sandbox_check_suite }}` and contains that gate.
   Read the repository's binding rules and its task-runner targets to
   find the name; never carry a target name or a path over from another
   repository.
@@ -412,7 +420,7 @@ question, which is the cheap ending.
 
 After every acceptance assertion has completed its own loop:
 
-1. Run the repo's check suite yourself (`{{ inputs.sandbox_check_suite }}`) and
+1. Run the repo's check suite yourself through `livespec-implement-check-suite` and
    fix what it surfaces — a later janitor stage re-runs it as a hard
    gate, so hand it a green tree. Green must be earned honestly — see
    the HONEST checks rule above; a check-vs-legitimate-pattern conflict
