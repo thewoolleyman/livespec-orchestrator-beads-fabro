@@ -534,7 +534,7 @@ def test_the_merge_program_writes_the_ceilings_into_a_sandbox_carrying_no_file(
         "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
         "BASH_DEFAULT_TIMEOUT_MS": "600000",
         "BASH_MAX_TIMEOUT_MS": "3600000",
-        "LIVESPEC_TEST_PARALLELISM": "2",
+        "LIVESPEC_TEST_PARALLELISM": "4",
     }
 
 
@@ -571,7 +571,7 @@ def test_the_merge_program_keeps_every_other_key_a_sandbox_file_already_held(
         "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
         "BASH_DEFAULT_TIMEOUT_MS": "600000",
         "BASH_MAX_TIMEOUT_MS": "3600000",
-        "LIVESPEC_TEST_PARALLELISM": "2",
+        "LIVESPEC_TEST_PARALLELISM": "4",
     }
 
 
@@ -599,7 +599,7 @@ def test_the_merge_program_reports_a_file_it_could_not_merge_into(
         "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
         "BASH_DEFAULT_TIMEOUT_MS": "600000",
         "BASH_MAX_TIMEOUT_MS": "3600000",
-        "LIVESPEC_TEST_PARALLELISM": "2",
+        "LIVESPEC_TEST_PARALLELISM": "4",
     }
     captured = capsys.readouterr()
     assert f"{HARNESS_SETTINGS_MARKER}: {target} held no JSON object" in captured.err
