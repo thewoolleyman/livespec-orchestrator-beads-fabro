@@ -94,7 +94,7 @@ PY
 # (bd-ib-tka3wb). The verdict and any check 6 findings go to a side file, because
 # stdout here is the prompt.
 judgement_input=$(mktemp)
-trap 'rm -f "$judgement_input" "$judgement_input.last" "$judgement_input.governing" "$judgement_input.findings"' EXIT
+trap 'rm -f "$judgement_input" "$judgement_input.last" "$judgement_input.judge" "$judgement_input.stderr" "$judgement_input.governing" "$judgement_input.findings"' EXIT
 python3 - "$install_root" "$repo_root" "$item" "$override" "$judgement_input" > "$judgement_input" <<'PROMPT_PY'
 import sys
 from dataclasses import replace
@@ -206,14 +206,46 @@ print(choice.env_name)
 PY
 ) || exit 2
 
+judge_failure_cause() {
+  python3 - "$install_root" "$1" <<'FAILURE_PY'
+import sys
+from pathlib import Path
+
+sys.path.insert(0, f"{sys.argv[1]}/scripts")
+sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
+
+from livespec_orchestrator_beads_fabro.commands._fabro_port_permanent_failure import (
+    fabro_usage_limit_provider,
+)
+
+output = Path(sys.argv[2]).read_text(encoding="utf-8", errors="replace")
+print(
+    "provider-limit"
+    if fabro_usage_limit_provider(causes=(output,)) is not None
+    else "judge-command-failed"
+)
+FAILURE_PY
+}
+
 status=0
 while read -r agent model effort; do
   echo "=== dod-preflight candidate: $agent $model $effort"
+  rm -f "$judgement_input.judge" "$judgement_input.stderr" "$judgement_input.last"
   if [ "$agent" = claude-acp ]; then
     echo "dod-preflight: claude leg credential: $claude_credential_env"
     [ -n "${!claude_credential_env:-}" ] || { echo "dod-preflight: $claude_credential_env is not set" >&2; exit 2; }
-    verdict=$(CLAUDE_CODE_OAUTH_TOKEN="${!claude_credential_env}" \
-      claude -p --model "$model" --effort "$effort" --allowedTools "Read,Grep,Glob" < "$judgement_input") || exit 2
+    if CLAUDE_CODE_OAUTH_TOKEN="${!claude_credential_env}" \
+      claude -p --model "$model" --effort "$effort" --allowedTools "Read,Grep,Glob" \
+      < "$judgement_input" > "$judgement_input.judge" 2> "$judgement_input.stderr"; then
+      verdict=$(cat "$judgement_input.judge")
+    else
+      cat "$judgement_input.stderr" >> "$judgement_input.judge"
+      verdict=$(cat "$judgement_input.judge")
+      cause=$(judge_failure_cause "$judgement_input.judge") || cause=judge-command-failed
+      printf '%s\n' "$verdict"
+      echo "DID-NOT-RUN $cause $agent $model"
+      exit 2
+    fi
   else
     # Session hooks are disabled because this is a one-shot judgement, not a
     # supervised session, and a Stop hook that blocks makes the model keep going
@@ -222,10 +254,18 @@ while read -r agent model effort; do
     # livespec-driver-codex's supervisor completion gate blocked the stop on that
     # repository's legacy non-JSON tmp/overseer markers, and the last message was
     # a question, so the leg reported "no verdict" (coordinator R342 follow-up).
-    codex exec -m "$model" -c "model_reasoning_effort=$effort" -s read-only --skip-git-repo-check \
+    if codex exec -m "$model" -c "model_reasoning_effort=$effort" -s read-only --skip-git-repo-check \
       --disable hooks \
-      -o "$judgement_input.last" < "$judgement_input" > /dev/null 2>&1 || exit 2
-    verdict=$(cat "$judgement_input.last")
+      -o "$judgement_input.last" < "$judgement_input" > "$judgement_input.judge" 2>&1; then
+      verdict=$(cat "$judgement_input.last")
+    else
+      cat "$judgement_input.last" >> "$judgement_input.judge" 2>/dev/null || true
+      verdict=$(cat "$judgement_input.judge")
+      cause=$(judge_failure_cause "$judgement_input.judge") || cause=judge-command-failed
+      printf '%s\n' "$verdict"
+      echo "DID-NOT-RUN $cause $agent $model"
+      exit 2
+    fi
   fi
   printf '%s\n' "$verdict"
   # The verdict line is the last non-empty line that is not a Markdown code
