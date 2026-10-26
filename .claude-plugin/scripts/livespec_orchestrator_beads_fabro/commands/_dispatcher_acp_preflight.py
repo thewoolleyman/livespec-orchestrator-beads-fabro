@@ -80,7 +80,7 @@ could not be proven to agree with the first.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
@@ -114,6 +114,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import (
 )
 from livespec_orchestrator_beads_fabro.commands._acp_hold_retirement import retained_holds
 from livespec_orchestrator_beads_fabro.commands._acp_node_repository import repository_acp_chains
+from livespec_orchestrator_beads_fabro.commands._acp_preflight_skips import ConfirmationTurn
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import (
     AcpPreflightVerdict,
     build_acp_preflight_verdict,
@@ -183,7 +184,7 @@ def resolve_acp_preflight(
     repo: Path,
     journal_path: Path | None,
     now_iso: str,
-    probe: Callable[[str], str] | None = None,
+    confirm: ConfirmationTurn | None = None,
     headroom: SessionHeadroomPolicy | None = None,
     factory_runs: FactoryRunReader | None = None,
 ) -> AcpPreflightVerdict:
@@ -215,6 +216,7 @@ def resolve_acp_preflight(
     if not is_successful(timeout):
         failure = unsafe_perform_io(timeout.failure())
         return AcpPreflightVerdict(fallback_enabled=True, refusal=failure.detail)
+    timeout_seconds = unsafe_perform_io(timeout.unwrap())
     block = workflow_scoped_dispatcher_block(repo=repo)
     catalogs = resolve_acp_catalogs(block=block)
     if isinstance(catalogs, str):
@@ -246,7 +248,9 @@ def resolve_acp_preflight(
             expired_holds=ledger.expired_holds,
             legacy_providers=_legacy_providers(journal_path=journal_path, now_iso=now_iso),
             builtin_pairs=builtin_pairs,
-            probe=probe,
+            probe=None,
+            confirmation_turn=confirm,
+            confirmation_timeout_seconds=timeout_seconds,
             headroom=headroom,
             unconfirmed_keys=ledger.unconfirmed_keys,
             confirmations=host_wide.confirmations,

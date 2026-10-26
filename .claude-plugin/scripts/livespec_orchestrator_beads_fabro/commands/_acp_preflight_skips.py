@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Protocol
 
 from livespec_orchestrator_beads_fabro.commands._acp_availability_confirmation import (
     AcpAvailabilityConfirmation,
@@ -47,6 +48,7 @@ __all__: list[str] = [
     "PROVIDER_LIMIT_CONDITIONS",
     "TYPED_HOLD_SKIP",
     "UNAVAILABLE_EVIDENCE_SKIP",
+    "ConfirmationTurn",
     "HeadroomShortfall",
     "NodePreflight",
     "PreflightInputs",
@@ -63,6 +65,23 @@ TYPED_HOLD_SKIP = "typed-availability-hold"
 OUTSTANDING_CONFIRMATION_SKIP = "outstanding-availability-confirmation"
 LEGACY_HOLD_SKIP = "legacy-provider-hold"
 PROBE_SKIP = "credential-probe-refusal"
+
+
+class ConfirmationTurn(Protocol):
+    """Run one credential-scoped availability turn with its exact evidence."""
+
+    def __call__(
+        self,
+        *,
+        candidate: AcpCandidate,
+        builtin: bool,
+        observation_ids: tuple[str, ...],
+        timeout_seconds: int,
+    ) -> str:
+        """Return the turn's classified ending."""
+        ...
+
+
 HEADROOM_SKIP = "session-headroom-shortfall"
 
 # The ONE token that is also a governing condition the contract spells, which
@@ -196,6 +215,8 @@ class PreflightInputs:
     # the turn did, because a terminated probe and a measured refusal take
     # different routes and a boolean cannot tell a reader which happened.
     confirm: Callable[[AcpCandidate], str] | None = None
+    confirmation_turn: ConfirmationTurn | None = None
+    confirmation_timeout_seconds: int = 0
     headroom: SessionHeadroomPolicy | None = None
     # The domain hold keys an UNREAD evidence source leaves unconfirmed. It is
     # a key set rather than the unobservable entries themselves because the

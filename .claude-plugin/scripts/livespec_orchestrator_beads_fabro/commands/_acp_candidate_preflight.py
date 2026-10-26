@@ -228,7 +228,12 @@ def _skip_for(
         candidate=candidate,
     )
     if outstanding:
-        ending = _confirmation_turn(candidate=candidate, inputs=inputs, confirmed=confirmed)
+        ending = _confirmation_turn(
+            candidate=candidate,
+            inputs=inputs,
+            confirmed=confirmed,
+            holds=outstanding,
+        )
         if ending is None or not probe_confirms(ending=ending):
             return confirmation_skip(candidate=candidate, holds=outstanding, condition=ending)
     legacy = _legacy_provider(candidate=candidate, inputs=inputs)
@@ -248,7 +253,11 @@ def _skip_for(
 
 
 def _confirmation_turn(
-    *, candidate: AcpCandidate, inputs: PreflightInputs, confirmed: dict[str, str]
+    *,
+    candidate: AcpCandidate,
+    inputs: PreflightInputs,
+    confirmed: dict[str, str],
+    holds: tuple[AcpAvailabilityHold, ...],
 ) -> str | None:
     """The ending one confirmation turn reached for this candidate, or `None`.
 
@@ -266,11 +275,21 @@ def _confirmation_turn(
     confirm a model nobody ran.
     """
     identity = candidate.identity
-    if inputs.confirm is None or identity is None:
+    if identity is None:
         return None
     key = f"{identity.availability_key}\x00{identity.candidate_key}"
     if key not in confirmed:
-        confirmed[key] = inputs.confirm(candidate)
+        if inputs.confirmation_turn is not None:
+            confirmed[key] = inputs.confirmation_turn(
+                candidate=candidate,
+                builtin=identity.pair in inputs.builtin_pairs,
+                observation_ids=tuple(hold.observation_id for hold in holds),
+                timeout_seconds=inputs.confirmation_timeout_seconds,
+            )
+        elif inputs.confirm is not None:
+            confirmed[key] = inputs.confirm(candidate)
+        else:
+            return None
     return confirmed[key]
 
 
@@ -368,7 +387,12 @@ def _headroom_skip(
         )
     expired = _credential_holds(holds=inputs.expired_holds, reading=reading)
     if expired:
-        ending = _confirmation_turn(candidate=candidate, inputs=inputs, confirmed=confirmed)
+        ending = _confirmation_turn(
+            candidate=candidate,
+            inputs=inputs,
+            confirmed=confirmed,
+            holds=expired,
+        )
         if ending is None or not probe_confirms(ending=ending):
             return confirmation_skip(candidate=candidate, holds=expired, condition=ending)
     kind = headroom_skip_kind(reading=reading, floor_percent=policy.floor_percent)

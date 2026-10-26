@@ -27,12 +27,17 @@ could disagree.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
+from livespec_orchestrator_beads_fabro.commands._acp_availability_probe_run import (
+    run_availability_probe,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
 from livespec_orchestrator_beads_fabro.commands._acp_factory_run_reader import (
     FactoryRunReader,
 )
@@ -310,10 +315,9 @@ def _eligible_legs(
 
     The verdict is resolved here rather than per leg, which is what the
     contract's "Each credential is assessed at most once per admission
-    evaluation" requires operationally. No credential probe is supplied: no
-    per-candidate credential channel is ratified yet, so the admission-time
-    assessment seam stays unwired for the same reason `resolve_acp_preflight`
-    leaves it absent by default.
+    evaluation" requires operationally. The ordered rework leg names the
+    confirmation turn's work-item owner; only admission supplies that impure
+    seam, so snapshots remain unable to spend a provider request.
 
     The session-headroom policy IS supplied, and this is the only place that
     does it: a policy built here is built once per admission evaluation, which
@@ -329,26 +333,40 @@ def _eligible_legs(
     """
     now_iso = utc_now_iso()
     journal_path = getattr(journal, "path", None)
+    rework_candidates = list(
+        rework_pending_candidates(
+            items=items,
+            accounting=accounting,
+            rework=rework,
+            # The same aging inputs the ready queue this pass drains was
+            # ordered by, resolved off the same repository root.
+            ready_aging=ready_aging_order(project_root=repo),
+        )
+    )
+    confirmation_owner = next(iter(rework_candidates), None)
+    if confirmation_owner is None:
+        confirmation_owner = next(iter(candidates), None)
     verdict = resolve_acp_preflight(
         repo=repo,
         journal_path=journal_path,
         now_iso=now_iso,
+        confirm=(
+            None
+            if confirmation_owner is None
+            else _availability_confirmation(
+                repo=repo,
+                journal=journal,
+                work_item_id=confirmation_owner.id,
+                now_iso=now_iso,
+            )
+        ),
         headroom=session_headroom_policy(repo=repo, now_iso=now_iso, journal_path=journal_path),
         factory_runs=FactoryRunReader(repo=repo),
     )
     rework_admittable, refused = filter_eligible_candidates(
         repo=repo,
         preflight=verdict,
-        candidates=list(
-            rework_pending_candidates(
-                items=items,
-                accounting=accounting,
-                rework=rework,
-                # The same aging inputs the ready queue this pass drains was
-                # ordered by, resolved off the same repository root.
-                ready_aging=ready_aging_order(project_root=repo),
-            )
-        ),
+        candidates=rework_candidates,
         journal=journal,
     )
     admittable, ready_refused = filter_eligible_candidates(
@@ -359,6 +377,45 @@ def _eligible_legs(
     )
     refused.extend(ready_refused)
     return verdict, rework_admittable, admittable, refused
+
+
+def _availability_confirmation(
+    *, repo: Path, journal: JournalFile, work_item_id: str, now_iso: str
+) -> Callable[..., str]:
+    """Run and journal one post-expiry confirmation against this pass's owner.
+
+    The candidate filter memoizes this callback per credential/model pair, so
+    the owner is charged at most once per admission evaluation even when that
+    candidate appears on multiple nodes. Each returned record is appended here,
+    beside the same journal the preflight just read, before selection can use a
+    successful ending.
+    """
+
+    def _confirm(
+        *,
+        candidate: AcpCandidate,
+        builtin: bool,
+        observation_ids: tuple[str, ...],
+        timeout_seconds: int,
+    ) -> str:
+        result = run_availability_probe(
+            repo=repo,
+            candidate=candidate,
+            builtin=builtin,
+            work_item_id=work_item_id,
+            observation_ids=observation_ids,
+            now_iso=now_iso,
+            timeout_seconds=timeout_seconds,
+        )
+        if isinstance(result, str):
+            return result
+        if result.hold_record is not None:
+            journal.append(record=result.hold_record)
+        journal.append(record=result.journal_record)
+        journal.append(record=result.attempt_cost_record)
+        return result.ending
+
+    return _confirm
 
 
 def _budget_left(*, rework: ReworkPass, taken: int) -> int | None:
