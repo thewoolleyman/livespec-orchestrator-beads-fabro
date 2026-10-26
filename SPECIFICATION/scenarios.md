@@ -4199,7 +4199,7 @@ Feature: Proof of Done is captured and independently reproduced before publicati
     Then the description carries a Proof of Done section holding only the pointer to that record after an unchanged Definition of Done section
     And the acceptance pass grades each factory-captured assertion from that record and not from diff vocabulary
   Scenario: A stale pointer is a hygiene fact
-    Given an item whose Proof of Done pointer names a run id that is not the latest verified record on its pull request
+    Given an item whose Proof of Done pointer names a run id that is not the latest verified record counting for the item on its pull request
     When needs-attention composes hygiene facts
     Then exactly one fact names the item and the pull request as carrying a stale proof pointer
   Scenario: Slow hooks after a post-draft rebase are command work
@@ -4267,7 +4267,7 @@ Feature: Human-attested assertions require a human record before done
     When the accept valve is driven
     Then the item closes to done and its pointer carries both record links
   Scenario: An unevidenced assertion parks without consuming the rework cap
-    Given a merged item whose factory_captured assertion has no verified record for the merging run
+    Given a merged item whose factory_captured assertion has no applicable proof_verify record counting for the item
     When the acceptance pass runs
     Then the verdict is NEEDS_ATTENTION naming that assertion and the rework counter is unchanged
   Scenario: The deliverable policy refuses a lazy opt-out
@@ -4652,8 +4652,8 @@ Feature: The proof chain does not lose what it found
     And the dispatch result reports stage acceptance, verdict NEEDS_ATTENTION and status needs-attention
     And the dispatcher exits with code 1
   Scenario: An unchanged re-run appends nothing
-    Given an item parked in acceptance whose ledger carries the parking comment for its verdict and pending-leg set
-    When the acceptance pass is re-run and returns the same verdict and pending-leg set
+    Given an item parked in acceptance whose ledger carries the parking comment for its verdict, pending-leg set and proof-record inventory
+    When the acceptance pass is re-run and returns the same verdict, pending-leg set and proof-record inventory
     Then no further ledger comment is appended
   Scenario: A changed pending-leg set is recorded once
     Given an item parked on a PASS with a pending host leg and a pending human leg
@@ -4678,10 +4678,10 @@ Feature: The proof chain does not lose what it found
     When needs-attention runs and reconcile-merged is then driven for the item
     Then needs-attention reports the missing pointer as a hygiene fact naming the item and the pull request
     And reconcile-merged writes the pointer
-  Scenario: A record stamped with the dispatch id is attributed to the merging run
-    Given a merged item whose verified record's first line carries the dispatch id the Dispatcher declared to the sandbox
-    When the acceptance pass looks for the merging run's verified record
-    Then the record is attributed to the merging run and each factory-captured assertion is graded from it
+  Scenario: A legacy record stamped with the dispatch id is matched to the item's dispatch
+    Given a merged item whose verified record carries no binding and whose first line carries the dispatch id the Dispatcher declared to the sandbox
+    When the acceptance pass gives the record its bind verdict
+    Then the record is legacy-matched to that dispatch and each factory-captured assertion is graded from it
     And the pointer is written naming that record
   Scenario: The fix stage receives the record proof_verify graded, not a superseded capture
     Given a run in which proof_capture published a capture and a later proof_capture visit superseded it
@@ -9846,4 +9846,56 @@ Feature: The out-of-band reflector spends only what the repository's candidate c
     When the reflector judges a merged item's telemetry
     Then the pass records that its judgement did not run and why
     And the pass files no work item and proposes no lesson
+```
+
+## Scenario 252 — The acceptance pass selects each Proof of Done record by the binding the record carries
+
+```gherkin
+Feature: A Proof of Done record is mechanically linked to the item it proves
+  As the maintainer of a factory
+  I want the acceptance pass to select proof records by the binding each record carries
+  So that a verified record is never reported missing because a run resolution left out the run that produced it
+
+  Scenario: A bound verified record counts whichever run produced it
+    Given a merged pull request whose verified record lists a factory_captured assertion as reproduced
+    And the record's binding names that work item and that pull request
+    And no merging-run resolution would select the run that produced the record
+    When the acceptance pass grades the item
+    Then the assertion is judged passing on that record
+    And the pass's journal record lists that record with the bind verdict bound
+
+  Scenario: A legacy record is matched against every dispatch of the item
+    Given a verified record with no binding line whose run identifier is the Fabro run id of the item's first dispatch
+    And the item has been dispatched three more times since that dispatch
+    When the acceptance pass grades the item
+    Then the record's bind verdict is legacy-matched
+    And the assertion is judged on that record
+
+  Scenario: An unbindable record is a loud refusal and not an absence
+    Given a merged pull request carrying a verified record whose binding line names no head commit sha
+    When the acceptance pass grades the item
+    Then the pass grades none of the item's factory_captured assertions
+    And no assertion is reported UNOBSERVED
+    And the item parks with a refusal naming that record's comment link and its fault
+    And needs-attention surfaces the refusal naming the item, the pull request and the record
+
+  Scenario: An absent record stays distinct from an unbindable one
+    Given a merged pull request whose only Proof of Done record is bound to another work item
+    When the acceptance pass grades the item
+    Then each factory_captured assertion is UNOBSERVED and the item parks with NEEDS_ATTENTION
+    And the parking record lists that record with the bind verdict bound-elsewhere
+
+  Scenario: A correcting record clears an unbindable one
+    Given a merged pull request carrying an unbindable verified record
+    And a later record posted through the posting primitive whose binding names the item and the pull request and whose Supersedes line names the unbindable record
+    When the acceptance pass grades the item
+    Then the earlier record's bind verdict is superseded
+    And the item's factory_captured assertions are graded from the correcting record
+
+  Scenario: A verified record for an earlier head does not prove the merged head
+    Given a bound verified record proving head H1
+    And the pull request merged at head H2 with no counted carried_forward record naming H2
+    When the acceptance pass grades the item
+    Then the record is reported stale-head and is not evidence
+    And each factory_captured assertion is UNOBSERVED
 ```
