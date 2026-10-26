@@ -5,7 +5,7 @@ read-only.  A normal Git hook is too late to express that rule: the repository's
 own commit and push hooks can consume the entire turn before a prompt-only
 instruction is obeyed.  This test puts markers in those repository hooks, then
 uses the adapter environment a materialized proof-capture node receives.  The
-absence of markers is therefore evidence that the stage-specific hooks path won
+absence of markers is therefore evidence that the stage-specific launcher won
 before either repository hook began.
 """
 
@@ -55,6 +55,7 @@ def test_proof_capture_git_writes_refuse_before_repository_hooks_but_implement_a
         )
     )
     proof_environment = _adapter_environment(command=commands[_PROOF_CAPTURE_ADAPTER])
+    proof_environment["LIVESPEC_CREDENTIAL_USE_UNPROTECTED"] = "1"
     _assert_proof_capture_configuration(environment=proof_environment)
     _assert_empty_proof_capture_adapter_is_guarded()
     _assert_empty_command_has_no_adapter_environment()
@@ -85,13 +86,14 @@ def test_proof_capture_git_writes_refuse_before_repository_hooks_but_implement_a
 
 
 def _assert_proof_capture_configuration(*, environment: Mapping[str, str]) -> None:
-    """The protected adapter selects its private hooks path through Git config."""
+    """The protected adapter selects its private hook and launcher boundaries."""
     assert environment["GIT_CONFIG_COUNT"] == "1"
     assert environment["GIT_CONFIG_KEY_0"] == "core.hooksPath"
     assert (
         environment["GIT_CONFIG_VALUE_0"]
         == ".claude-plugin/.fabro/workflows/implement-work-item/proof-capture-hooks"
     )
+    assert environment["LIVESPEC_PROOF_CAPTURE_GIT_READ_ONLY"] == "1"
 
 
 def _assert_empty_proof_capture_adapter_is_guarded() -> None:
