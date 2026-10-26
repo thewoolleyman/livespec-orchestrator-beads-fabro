@@ -100,13 +100,6 @@ from pathlib import Path
 from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
-from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria import (
-    CriterionCheck,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
-    PROOF_MODE_HOST_CAPTURED,
-    PROOF_MODE_HUMAN_ATTESTED,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
     EffectiveCriteria,
 )
@@ -122,24 +115,26 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_containment imp
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import (
     PENDING_HOST_LEG_REASON,
-    HostAssertionGrade,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_assertion_evidence import (
+    assertion_evidence,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attachment_verify import (
     AttachmentDigestReader,
     attachment_digest_reader,
-    attachment_is_evidence,
     unverified_attachment,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attribution import (
     MergingDispatch,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_binding import (
+    proof_record_inventory,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_leg import (
     PROOF_RECORD_EVIDENCE_LEG,
-    AssertionEvidence,
     ProofLeg,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
-    PROOF_RECORD_TITLE,
     VERDICT_VERIFIED,
     ProofRecord,
     latest_proof_record,
@@ -155,6 +150,7 @@ __all__: list[str] = [
     "HUMAN_ATTESTED_EVIDENCE_LEG",
     "PENDING_HOST_LEG_REASON",
     "PENDING_HUMAN_ATTESTATION_REASON",
+    "PROOF_RECORD_EVIDENCE_LEG",
     "proof_leg",
     "read_proof_leg",
     "read_pull_request_records",
@@ -214,7 +210,10 @@ def read_proof_leg(
     pr_number = outcome.pr_number
     if pr_number is None:
         return proof_leg(
-            criteria=criteria, records=(), run_ids=(), reason="pull request number unavailable"
+            criteria=criteria,
+            records=(),
+            run_ids=(),
+            reason="pull request number unavailable",
         )
     records = read_pull_request_records(repo=repo, pr_number=pr_number, runner=runner)
     if records is None:
@@ -223,6 +222,9 @@ def read_proof_leg(
             records=(),
             run_ids=(),
             reason=f"pull request #{pr_number} comments unreadable",
+            work_item_id=outcome.work_item_id,
+            pr_number=pr_number,
+            merged_head=outcome.merge_sha,
         )
     run_ids = dispatch.run_ids
     # Resolved BEFORE the identifier arm splits, because the HOST leg does not
@@ -254,6 +256,9 @@ def read_proof_leg(
             reason="merging run id unavailable",
             contains_merge=contains_merge,
             attachment_digest=attachment_digest,
+            work_item_id=outcome.work_item_id,
+            pr_number=pr_number,
+            merged_head=outcome.merge_sha,
         )
     return proof_leg(
         criteria=criteria,
@@ -266,6 +271,9 @@ def read_proof_leg(
         reason=f"pull request #{pr_number} records read for run {' or '.join(run_ids)}",
         contains_merge=contains_merge,
         attachment_digest=attachment_digest,
+        work_item_id=outcome.work_item_id,
+        pr_number=pr_number,
+        merged_head=outcome.merge_sha,
     )
 
 
@@ -275,8 +283,8 @@ def proof_leg(
     records: tuple[ProofRecord, ...],
     run_ids: tuple[str, ...],
     reason: str,
-    contains_merge: ContainmentReader = unchecked_containment,
-    attachment_digest: AttachmentDigestReader = unverified_attachment,
+    work_item_id: str | None = None,
+    **options: object,
 ) -> ProofLeg:
     """Grade one item's assertions against the records published for its dispatch.
 
@@ -298,21 +306,53 @@ def proof_leg(
     `contains_merge` does: a caller that forgot to supply one parks an
     attachment-bearing assertion rather than closing it on a digest nobody compared.
     """
-    record = latest_proof_record(records=records, verdict=VERDICT_VERIFIED, run_ids=run_ids)
+    pr_number = _optional_int(options=options, name="pr_number")
+    merged_head = _optional_text(options=options, name="merged_head")
+    contains_merge = _reader(
+        options=options,
+        name="contains_merge",
+        fallback=unchecked_containment,
+    )
+    attachment_digest = _reader(
+        options=options,
+        name="attachment_digest",
+        fallback=unverified_attachment,
+    )
+    inventory = (
+        proof_record_inventory(
+            records=records,
+            work_item_id=work_item_id,
+            pull_request=pr_number,
+            merged_head=merged_head,
+            dispatch_ids=run_ids,
+        )
+        if work_item_id is not None and pr_number is not None
+        else None
+    )
+    factory_records = (
+        records if inventory is None else tuple(one.record for one in inventory.factory_records)
+    )
+    record = latest_proof_record(
+        records=factory_records,
+        verdict=VERDICT_VERIFIED,
+        run_ids=run_ids if inventory is None else None,
+    )
     host = host_leg_for_records(
         assertions=criteria.host_captured_assertions,
-        records=records,
-        contains_merge=contains_merge,
+        records=(
+            records if inventory is None else tuple(one.record for one in inventory.host_records)
+        ),
+        contains_merge=cast(ContainmentReader, contains_merge),
     )
     grades = {one.text: one for one in host.grades}
     return ProofLeg(
         assertions=tuple(
-            _assertion_evidence(
+            assertion_evidence(
                 text=text,
                 proof_mode=mode,
                 record=record,
                 host=grades.get(text),
-                attachment_digest=attachment_digest,
+                attachment_digest=cast(AttachmentDigestReader, attachment_digest),
             )
             for text, mode in zip(criteria.assertions, criteria.proof_modes, strict=True)
         ),
@@ -323,93 +363,21 @@ def proof_leg(
     )
 
 
-def _assertion_evidence(
-    *,
-    text: str,
-    proof_mode: str,
-    record: ProofRecord | None,
-    host: HostAssertionGrade | None,
-    attachment_digest: AttachmentDigestReader,
-) -> AssertionEvidence:
-    if proof_mode == PROOF_MODE_HOST_CAPTURED and host is not None:
-        return AssertionEvidence(
-            text=text,
-            proof_mode=proof_mode,
-            leg=HOST_CAPTURED_EVIDENCE_LEG,
-            record_comment=host.record_comment,
-            # A PENDING grade rides as a PASSING check carrying the pending reason,
-            # exactly as the human leg does: the clause requires PASS for a mixed item
-            # to list the host assertion as pending rather than to fail on it. A
-            # DECIDED grade carries its own verdict, so a `host_not_reproduced` record
-            # reaches the ordinary FAIL route.
-            check=CriterionCheck(
-                text=text,
-                passed=True if host.passed is None else host.passed,
-                reason=host.reason,
-            ),
-        )
-    if proof_mode == PROOF_MODE_HUMAN_ATTESTED:
-        return AssertionEvidence(
-            text=text,
-            proof_mode=proof_mode,
-            leg=HUMAN_ATTESTED_EVIDENCE_LEG,
-            record_comment=None,
-            check=CriterionCheck(text=text, passed=True, reason=PENDING_HUMAN_ATTESTATION_REASON),
-        )
-    if record is None:
-        return AssertionEvidence(
-            text=text,
-            proof_mode=proof_mode,
-            leg=PROOF_RECORD_EVIDENCE_LEG,
-            record_comment=None,
-            check=None,
-        )
-    reproduced = record.reproduced(assertion=text)
-    if reproduced is None:
-        return AssertionEvidence(
-            text=text,
-            proof_mode=proof_mode,
-            leg=PROOF_RECORD_EVIDENCE_LEG,
-            record_comment=record.url,
-            check=None,
-        )
-    # An assertion whose proof travels as an ASSET is graded on the asset, not on
-    # the record's account of it: the record holds a pointer rather than the
-    # evidence, so a verdict read from the record alone would rest on the
-    # publisher's say-so. A missing or mismatched asset is ABSENT evidence — the
-    # same unevidenced shape as an unreadable verdict — and never a FAIL, because
-    # an unfetchable proof says nothing about whether the behaviour holds and a
-    # FAIL would consume a rework attempt the clause forbids spending.
-    attachment = record.attachment(assertion=text)
-    if attachment is not None and not attachment_is_evidence(
-        attachment=attachment, fetched=attachment_digest(name=attachment.name)
-    ):
-        return AssertionEvidence(
-            text=text,
-            proof_mode=proof_mode,
-            leg=PROOF_RECORD_EVIDENCE_LEG,
-            record_comment=record.url,
-            check=None,
-        )
-    return AssertionEvidence(
-        text=text,
-        proof_mode=proof_mode,
-        leg=PROOF_RECORD_EVIDENCE_LEG,
-        record_comment=record.url,
-        check=CriterionCheck(
-            text=text,
-            passed=reproduced,
-            reason=_graded_reason(record=record, reproduced=reproduced),
-        ),
-    )
+def _optional_int(*, options: dict[str, object], name: str) -> int | None:
+    """Remove one optional integer option, rejecting a wrong-shaped value."""
+    value = options.pop(name, None)
+    return value if isinstance(value, int) else None
 
 
-def _graded_reason(*, record: ProofRecord, reproduced: bool) -> str:
-    listing = "reproduced" if reproduced else "not reproduced"
-    return (
-        f"{PROOF_RECORD_TITLE} {record.verdict} record {record.url}"
-        f" lists the assertion as {listing}"
-    )
+def _optional_text(*, options: dict[str, object], name: str) -> str | None:
+    """Remove one optional text option, rejecting a wrong-shaped value."""
+    value = options.pop(name, None)
+    return value if isinstance(value, str) else None
+
+
+def _reader(*, options: dict[str, object], name: str, fallback: object) -> object:
+    """Remove one injectable reader while preserving its default at the boundary."""
+    return options.pop(name, fallback)
 
 
 def _comments(*, stdout: str) -> tuple[Mapping[str, object], ...] | None:
