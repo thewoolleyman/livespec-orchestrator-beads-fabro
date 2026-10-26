@@ -108,6 +108,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_coverage import (
     hold_covers_candidate,
     legacy_record_covers_candidate,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_hold_records import AcpAvailabilityHold
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_skips import (
     HEADROOM_SKIP,
     LEGACY_HOLD_SKIP,
@@ -349,6 +350,16 @@ def _headroom_skip(
     reading = policy.read()
     if reading not in assessments:
         assessments.append(reading)
+    held = _credential_holds(holds=inputs.holds, reading=reading)
+    if held:
+        hold = held[0]
+        return record_skip(
+            candidate=candidate,
+            reason=TYPED_HOLD_SKIP,
+            cause=hold.cause,
+            scope=hold.scope,
+            hold_key=hold.hold_key,
+        )
     kind = headroom_skip_kind(reading=reading, floor_percent=policy.floor_percent)
     if kind is None:
         return None
@@ -361,4 +372,15 @@ def _headroom_skip(
             horizon_minutes=policy.horizon_minutes,
             kind=kind,
         ),
+    )
+
+
+def _credential_holds(
+    *, holds: tuple[AcpAvailabilityHold, ...], reading: SessionHeadroomReading
+) -> tuple[AcpAvailabilityHold, ...]:
+    """The quota observations that cover this evaluation's projected account."""
+    return tuple(
+        hold
+        for hold in holds
+        if hold.cause == "quota" and hold.hold_key == reading.credential_identity
     )

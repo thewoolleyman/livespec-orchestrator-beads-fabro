@@ -220,6 +220,38 @@ def _hold_record(*, hold_key: str) -> dict[str, object]:
     }
 
 
+def test_a_quota_hold_on_the_projected_credential_skips_only_that_account() -> None:
+    """A credential-scoped quota observation cannot poison a rotated account."""
+    held = _hold(hold_key="cred-1")
+    exhausted = preflight.filter_node_candidates(
+        chain=_chain(candidates=(_covered_builtin(),)),
+        inputs=preflight.PreflightInputs(
+            holds=(held,), builtin_pairs=_BUILTIN_PAIRS, headroom=_policy(utilization=10)
+        ),
+        assessed={},
+    )
+    fresh_reading = headroom.session_headroom_reading(
+        credential_identity="cred-fresh", observed_at=_NOW, utilization=10
+    )
+    fresh = preflight.filter_node_candidates(
+        chain=_chain(candidates=(_covered_builtin(),)),
+        inputs=preflight.PreflightInputs(
+            holds=(held,),
+            builtin_pairs=_BUILTIN_PAIRS,
+            headroom=headroom.SessionHeadroomPolicy(
+                floor_percent=_FLOOR,
+                horizon_minutes=headroom.DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES,
+                read=lambda: fresh_reading,
+            ),
+        ),
+        assessed={},
+    )
+
+    assert exhausted.candidates == ()
+    assert exhausted.skipped[0].hold_key == "cred-1"
+    assert _keys(node=fresh) == [_CLAUDE_PAIR[1]]
+
+
 def _item(**overrides: object) -> WorkItem:
     fields: dict[str, object] = {
         "id": "bd-ib-item",
