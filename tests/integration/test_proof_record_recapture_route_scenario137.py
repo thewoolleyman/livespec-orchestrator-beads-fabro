@@ -57,8 +57,10 @@ _PROMPTS = _PAYLOAD / "prompts"
 _REVIEW = "review"
 _ROUTE = "recapture_route"
 _CAPTURE = "proof_capture"
+_VERIFY = "proof_verify"
 _DISPOSITION = "disposition"
 _REVIEW_FIX = "review_fix"
+_JANITOR = "janitor"
 _NON_CONVERGED = "non_converged"
 
 # The label `review` emits and the edge condition that selects the route. Spelled
@@ -178,6 +180,73 @@ def test_the_review_prompt_emits_recapture_for_a_wholly_proof_record_verdict() -
     assert "an unmarked blocking line is an unreviewable verdict" in prompt
     # And what the label buys: no disposition visit, no review_fix visit, no round.
     assert "no disposition visit, no review_fix visit and no review-fix round" in prompt
+
+
+def test_disposition_recaptures_an_accepted_proof_record_finding() -> None:
+    """Assertion 1: accepting a proof-only finding preserves its recapture route.
+
+    Review normally sends a wholly proof-record verdict straight to recapture, but
+    disposition must retain that meaning when review instead reached its ordinary
+    `fix` arm. Otherwise accepting the finding routes it into `review_fix`, whose
+    immutable-record boundary makes the run end at needs-human.
+    """
+    edges = _edges()
+
+    assert (_DISPOSITION, _ROUTE, _RECAPTURE_CONDITION) in edges, edges
+    assert [
+        destination
+        for source, destination, condition in edges
+        if source == _DISPOSITION and condition == _RECAPTURE_CONDITION
+    ] == [_ROUTE]
+
+    prompt = _prompt(name="disposition.md")
+    assert "Every ACCEPTED finding is tagged `(proof-record)`" in prompt
+    assert f'{{"preferred_next_label": "{_RECAPTURE_LABEL}"' in prompt
+    assert "Any ACCEPTED finding is tagged `(tree)`" in prompt
+
+
+def test_review_fix_recaptures_a_proof_record_finding_that_reaches_it() -> None:
+    """Assertion 2: `review_fix` returns a record-only fallback to recapture.
+
+    The graph must retain its ordinary janitor fallthrough for actual tree fixes,
+    while a proof-record finding that reached this node by an old or malformed
+    route must not be converted into a needs-human outcome merely because the
+    node cannot edit a published comment.
+    """
+    edges = _edges()
+
+    assert (_REVIEW_FIX, _ROUTE, _RECAPTURE_CONDITION) in edges, edges
+    assert (_REVIEW_FIX, _JANITOR, "") in edges, edges
+    assert [
+        destination
+        for source, destination, condition in edges
+        if source == _REVIEW_FIX and condition == _RECAPTURE_CONDITION
+    ] == [_ROUTE]
+
+    prompt = _prompt(name="review-fix.md")
+    assert "every ACCEPTED finding concerns the published Proof of Done record" in prompt
+    assert "do not end with the needs-human protocol" in prompt.casefold()
+    assert f'{{"preferred_next_label": "{_RECAPTURE_LABEL}"' in prompt
+
+
+def test_a_recaptured_record_can_continue_to_proof_verify_while_budget_remains() -> None:
+    """Assertion 3: the corrected record is new, then returns to replay.
+
+    The first two entries to `recapture_route` reach `proof_capture`; capture
+    posts a new immutable record, returns to review, and an approval reaches
+    `proof_verify`. Together these edges prove the corrected proof is replayed
+    instead of treating re-capture as a terminal repair.
+    """
+    edges = _edges()
+
+    assert (_DISPOSITION, _ROUTE, _RECAPTURE_CONDITION) in edges, edges
+    assert (_ROUTE, _CAPTURE, "") in edges, edges
+    assert (_CAPTURE, _REVIEW, "") in edges, edges
+    assert (_REVIEW, _VERIFY, "preferred_label=approve") in edges, edges
+
+    capture_prompt = _prompt(name="proof-capture.md")
+    assert "posting ONE new Proof of Done record comment" in capture_prompt
+    assert "post a new record rather than editing the old one" in capture_prompt
 
 
 def test_the_recapture_findings_reach_proof_capture_by_both_channels() -> None:
