@@ -9290,6 +9290,31 @@ Feature: A Definition of Done passed before dispatch is graded in-run by the sam
     Then the claude-acp fallback is run and its verdict decides the judgement
     When every candidate fails to return a verdict
     Then the pre-dispatch taking follows its did-not-run route
+
+  Scenario: A host judgement candidate that reaches its input bound falls back
+    Given a governed repository whose resolved dod_gate chain has two candidates
+    When the pre-dispatch Definition-of-Done judgement is taken and the first candidate's requests together report 100,000 input tokens or more, counting each request once
+    Then the first candidate's turn is cancelled, its processes end, and any verdict it returned is discarded
+    And the second candidate is run and its verdict decides the judgement
+    And the judgement record names the total input tokens the second candidate's requests reported, marked complete, partial or unreported
+
+  Scenario: A bound reached on the final usage report still discards the verdict
+    Given a candidate whose usage is reported only alongside its verdict
+    When the pre-admission Definition-of-Done judgement is taken and that final report brings its requests' input to 100,000 tokens or more
+    Then its verdict is discarded and the judgement passes to the next candidate
+
+  Scenario: An aggregate usage report is counted against the bound
+    Given a candidate whose output reports its input usage only as an aggregate for its turn
+    When the pre-dispatch Definition-of-Done judgement is taken and the aggregate reports 100,000 input tokens
+    Then its verdict is discarded and the judgement passes to the next candidate
+    When the aggregate instead reports 99,999 input tokens
+    Then its verdict decides the judgement and the record names 99,999 input tokens, marked complete
+
+  Scenario: A chain that exhausts records no deciding candidate
+    Given a resolved dod_gate chain whose every candidate is ended by the bound
+    When the pre-dispatch Definition-of-Done judgement is taken
+    Then the taking follows its did-not-run route
+    And its record names no deciding candidate and lists each candidate the bound ended
 ```
 
 ## Scenario 240 — A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled
