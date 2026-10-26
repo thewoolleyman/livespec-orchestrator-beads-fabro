@@ -53,7 +53,12 @@ _NO_AUTO_BACKGROUND_ENV_LINE = 'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "1"\n'
 _BASH_DEFAULT_TIMEOUT_ENV_LINE = 'BASH_DEFAULT_TIMEOUT_MS = "600000"\n'
 _BASH_MAX_TIMEOUT_ENV_LINE = 'BASH_MAX_TIMEOUT_MS = "3600000"\n'
 _RAISED_TIMEOUT_ENV_LINES = (_BASH_DEFAULT_TIMEOUT_ENV_LINE, _BASH_MAX_TIMEOUT_ENV_LINE)
-_HARNESS_SHELL_ENV_LINES = (_NO_AUTO_BACKGROUND_ENV_LINE, *_RAISED_TIMEOUT_ENV_LINES)
+_TEST_PARALLELISM_ENV_LINE = 'LIVESPEC_TEST_PARALLELISM = "2"\n'
+_HARNESS_SHELL_ENV_LINES = (
+    _NO_AUTO_BACKGROUND_ENV_LINE,
+    *_RAISED_TIMEOUT_ENV_LINES,
+    _TEST_PARALLELISM_ENV_LINE,
+)
 
 _RESUME_BRANCH = "feat/bd-ib-k627ja"
 _RESUME_HEAD = "a" * 40
@@ -147,6 +152,13 @@ def test_the_harness_shell_env_helper_renders_the_raised_shell_timeouts() -> Non
     rendered: str = module.harness_shell_env_lines()
     for line in _RAISED_TIMEOUT_ENV_LINES:
         assert rendered.count(line) == 1
+
+
+def test_the_harness_shell_env_helper_limits_sandbox_test_parallelism() -> None:
+    """The projected worker cap fits within the factory sandbox's four CPUs."""
+    module = importlib.import_module(_OVERLAY_MODULE)
+    rendered: str = module.harness_shell_env_lines()
+    assert rendered.count(_TEST_PARALLELISM_ENV_LINE) == 1
 
 
 def test_an_ordinary_dispatch_overlay_raises_the_harness_shell_timeouts(
