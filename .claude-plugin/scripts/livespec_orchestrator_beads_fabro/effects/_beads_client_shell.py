@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import os
+import shlex
 import subprocess
 import time
 from pathlib import Path
@@ -150,7 +151,12 @@ def invoke(*, config: StoreConfig, argv: list[str]) -> subprocess.CompletedProce
             cwd=repo_root,
         )
     except FileNotFoundError as exc:  # pragma: no cover
-        raise BeadsConnectionError(detail=f"bd binary not found at {config.bd_path}") from exc
+        detail = (
+            "credential wrapper not found: " + shlex.join(config.credential_wrapper)
+            if config.credential_wrapper
+            else f"bd binary not found at {config.bd_path}"
+        )
+        raise BeadsConnectionError(detail=detail) from exc
     raise_for_status(completed=completed, argv=argv, tenant=config.database)  # pragma: no cover
     return completed  # pragma: no cover
 
@@ -214,7 +220,12 @@ def read_bd_config_value(*, config: StoreConfig, repo_root: Path, key: str) -> s
             cwd=repo_root,
         )
     except FileNotFoundError as exc:  # pragma: no cover
-        raise BeadsConnectionError(detail=f"bd binary not found at {config.bd_path}") from exc
+        detail = (
+            "credential wrapper not found: " + shlex.join(config.credential_wrapper)
+            if config.credential_wrapper
+            else f"bd binary not found at {config.bd_path}"
+        )
+        raise BeadsConnectionError(detail=detail) from exc
     raise_for_status(completed=completed, argv=argv, tenant=config.database)  # pragma: no cover
     return completed.stdout.strip()
 
