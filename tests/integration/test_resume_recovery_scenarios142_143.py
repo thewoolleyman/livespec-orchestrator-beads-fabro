@@ -57,7 +57,49 @@ class _RecoveryRunner:
     state: str = "OPEN"
     head: str = _HEAD
     run_status: str = "completed"
+    forge_observed: bool = True
+    factory_observed: bool = True
+    has_pull_request: bool = True
+    pull_request_head_observed: bool = True
+    records_observed: bool = True
+    has_anchor: bool = True
     calls: list[list[str]] = field(default_factory=list)
+
+    def pull_request_snapshot(self) -> tuple[object, ...]:
+        """The complete forge state a refusal is required to leave untouched."""
+        return (
+            self.state,
+            self.head,
+            self.has_pull_request,
+            self.pull_request_head_observed,
+            self.records_observed,
+            self.has_anchor,
+        )
+
+    def _published_pull_request(self) -> CommandResult:
+        """The branch's forge listing, including the unobservable and absent arms."""
+        if not self.forge_observed:
+            return _result(exit_code=1)
+        if not self.has_pull_request:
+            return _result(stdout="[]")
+        row: dict[str, object] = {"number": _PULL_REQUEST, "state": self.state}
+        if self.pull_request_head_observed:
+            row["headRefOid"] = self.head
+        return _result(stdout=json.dumps([row]))
+
+    def _proof_records(self) -> CommandResult:
+        """The published proof records, including unreadable and headless arms."""
+        if not self.records_observed:
+            return _result(exit_code=1)
+        comments = [{"body": _proof_body()}] if self.has_anchor else []
+        return _result(stdout=json.dumps({"comments": comments}))
+
+    def _factory_runs(self) -> CommandResult:
+        """The factory run listing, including the unobservable arm."""
+        if not self.factory_observed:
+            return _result(exit_code=1)
+        run = {"run_id": _RUN_ID, "status": {"kind": self.run_status}}
+        return _result(stdout=json.dumps([run]))
 
     def run(
         self, *, argv: list[str], cwd: Path, timeout_seconds: float, **_kwargs: object
@@ -65,13 +107,11 @@ class _RecoveryRunner:
         del cwd, timeout_seconds
         self.calls.append(argv)
         if argv[:3] == ["gh", "pr", "list"]:
-            row = {"number": _PULL_REQUEST, "state": self.state, "headRefOid": self.head}
-            return _result(stdout=json.dumps([row]))
+            return self._published_pull_request()
         if argv[:3] == ["gh", "pr", "view"]:
-            return _result(stdout=json.dumps({"comments": [{"body": _proof_body()}]}))
+            return self._proof_records()
         if "ps" in argv:
-            run = {"run_id": _RUN_ID, "status": {"kind": self.run_status}}
-            return _result(stdout=json.dumps([run]))
+            return self._factory_runs()
         if "inspect" in argv:
             record = {"checkpoints": [{"checkpoint": {"next_node_id": "implement"}}]}
             return _result(stdout=json.dumps([record]))
@@ -350,7 +390,12 @@ def test_scenario143_every_resume_refusal_exits_before_a_run_and_leaves_branch_a
         journal=journal,
         runner=runner,
     )
-    before_pull_request = (runner.state, runner.head)
+    before_pull_request = runner.pull_request_snapshot()
+    before_resume_records = [
+        record
+        for record in read_journal_records(journal_path=journal.path)
+        if record["stage"] == RESUME_STAGE
+    ]
 
     assert resume.run_resume_command(args=_args(repo=repo)) == 3
 
@@ -359,12 +404,12 @@ def test_scenario143_every_resume_refusal_exits_before_a_run_and_leaves_branch_a
         _git("--git-dir", str(origin), "rev-parse", f"refs/heads/{_BRANCH}", cwd=repo)
         == before_branch
     )
-    assert (runner.state, runner.head) == before_pull_request, case
-    assert not [
+    assert runner.pull_request_snapshot() == before_pull_request, case
+    assert [
         record
         for record in read_journal_records(journal_path=journal.path)
         if record["stage"] == RESUME_STAGE
-    ]
+    ] == before_resume_records
     assert "ERROR: resume refused" in capsys.readouterr().err
 
 
