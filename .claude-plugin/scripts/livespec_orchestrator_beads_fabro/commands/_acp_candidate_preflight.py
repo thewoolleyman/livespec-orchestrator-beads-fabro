@@ -108,6 +108,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_coverage import (
     hold_covers_candidate,
     legacy_record_covers_candidate,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_hold_records import AcpAvailabilityHold
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_skips import (
     HEADROOM_SKIP,
     LEGACY_HOLD_SKIP,
@@ -238,7 +239,12 @@ def _skip_for(
     probed = _probe_skip(candidate=candidate, probe=inputs.probe, assessed=assessed)
     if probed is not None:
         return probed
-    return _headroom_skip(candidate=candidate, inputs=inputs, assessments=assessments)
+    return _headroom_skip(
+        candidate=candidate,
+        inputs=inputs,
+        assessments=assessments,
+        confirmed=confirmed,
+    )
 
 
 def _confirmation_turn(
@@ -321,6 +327,7 @@ def _headroom_skip(
     candidate: AcpCandidate,
     inputs: PreflightInputs,
     assessments: list[SessionHeadroomReading],
+    confirmed: dict[str, str],
 ) -> SkippedCandidate | None:
     """Assess a COVERED candidate's projected credential, and skip only a shortfall.
 
@@ -349,6 +356,21 @@ def _headroom_skip(
     reading = policy.read()
     if reading not in assessments:
         assessments.append(reading)
+    held = _credential_holds(holds=inputs.holds, reading=reading)
+    if held:
+        hold = held[0]
+        return record_skip(
+            candidate=candidate,
+            reason=TYPED_HOLD_SKIP,
+            cause=hold.cause,
+            scope=hold.scope,
+            hold_key=hold.hold_key,
+        )
+    expired = _credential_holds(holds=inputs.expired_holds, reading=reading)
+    if expired:
+        ending = _confirmation_turn(candidate=candidate, inputs=inputs, confirmed=confirmed)
+        if ending is None or not probe_confirms(ending=ending):
+            return confirmation_skip(candidate=candidate, holds=expired, condition=ending)
     kind = headroom_skip_kind(reading=reading, floor_percent=policy.floor_percent)
     if kind is None:
         return None
@@ -361,4 +383,15 @@ def _headroom_skip(
             horizon_minutes=policy.horizon_minutes,
             kind=kind,
         ),
+    )
+
+
+def _credential_holds(
+    *, holds: tuple[AcpAvailabilityHold, ...], reading: SessionHeadroomReading
+) -> tuple[AcpAvailabilityHold, ...]:
+    """The quota observations that cover this evaluation's projected account."""
+    return tuple(
+        hold
+        for hold in holds
+        if hold.cause == "quota" and hold.hold_key == reading.credential_identity
     )
