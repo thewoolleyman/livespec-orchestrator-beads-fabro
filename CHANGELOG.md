@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.4...v0.243.5) (2026-10-26)
+
+
+### Bug Fixes
+
+* type preflight judge failures ([5a9253e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5a9253eb06bccd89f72d02179a6f4d7b53c56bda))
+
 ## [0.243.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.3...v0.243.4) (2026-10-25)
 
 
