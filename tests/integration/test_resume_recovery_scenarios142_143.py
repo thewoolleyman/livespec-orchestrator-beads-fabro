@@ -11,11 +11,13 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_resume_command as resume
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_resume_observation as observation
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
@@ -95,12 +97,16 @@ def _proof_body() -> str:
 
 
 def _item() -> WorkItem:
+    return _item_with()
+
+
+def _item_with(*, status: str = "ready", criterion: str = _CRITERION) -> WorkItem:
     return WorkItem(
         id=_ITEM_ID,
         type="task",
-        status="ready",
+        status=status,
         title="Resumable published run",
-        description=f"## Definition of Done\n\n- {_CRITERION}\n",
+        description=f"## Definition of Done\n\n- {criterion}\n",
         origin="freeform",
         gap_id=None,
         rank="a0",
@@ -226,31 +232,125 @@ def test_scenario142_resumes_a_journaled_dead_run_from_its_published_draft_pr_at
 
 
 @pytest.mark.parametrize(
-    ("state", "head", "run_status"),
+    ("case", "state", "head", "run_status", "item_status", "criterion", "runner_updates"),
     [
-        ("OPEN", _MOVED_HEAD, "completed"),
-        ("OPEN", _HEAD, "running"),
-        (PR_STATE_CLOSED, _HEAD, "completed"),
-        (PR_STATE_MERGED, _HEAD, "completed"),
+        ("not-ready", "OPEN", _HEAD, "completed", "backlog", _CRITERION, {}),
+        ("moved-head", "OPEN", _MOVED_HEAD, "completed", "ready", _CRITERION, {}),
+        (
+            "changed-definition-of-done",
+            "OPEN",
+            _HEAD,
+            "completed",
+            "ready",
+            "A newly groomed assertion.",
+            {},
+        ),
+        ("live-run", "OPEN", _HEAD, "running", "ready", _CRITERION, {}),
+        ("live-lock", "OPEN", _HEAD, "completed", "ready", _CRITERION, {"live_lock": True}),
+        ("closed-pr", PR_STATE_CLOSED, _HEAD, "completed", "ready", _CRITERION, {}),
+        ("merged-pr", PR_STATE_MERGED, _HEAD, "completed", "ready", _CRITERION, {}),
+        (
+            "nothing-to-resume",
+            "OPEN",
+            _HEAD,
+            "completed",
+            "ready",
+            _CRITERION,
+            {"has_pull_request": False},
+        ),
+        ("third-resume", "OPEN", _HEAD, "completed", "ready", _CRITERION, {"earlier_resumes": 2}),
+        (
+            "unobservable-forge",
+            "OPEN",
+            _HEAD,
+            "completed",
+            "ready",
+            _CRITERION,
+            {"forge_observed": False},
+        ),
+        (
+            "unobservable-factory",
+            "OPEN",
+            _HEAD,
+            "completed",
+            "ready",
+            _CRITERION,
+            {"factory_observed": False},
+        ),
+        (
+            "unobservable-pull-request-head",
+            "OPEN",
+            _HEAD,
+            "completed",
+            "ready",
+            _CRITERION,
+            {"pull_request_head_observed": False},
+        ),
+        (
+            "unreadable-proof-records",
+            "OPEN",
+            _HEAD,
+            "completed",
+            "ready",
+            _CRITERION,
+            {"records_observed": False},
+        ),
+        (
+            "headless-proof-record",
+            "OPEN",
+            _HEAD,
+            "completed",
+            "ready",
+            _CRITERION,
+            {"has_anchor": False},
+        ),
     ],
-    ids=("moved-head", "live-run", "closed-pr", "merged-pr"),
 )
 def test_scenario143_every_resume_refusal_exits_before_a_run_and_leaves_branch_and_pr_unchanged(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    case: str,
     state: str,
     head: str,
     run_status: str,
+    item_status: str,
+    criterion: str,
+    runner_updates: dict[str, object],
 ) -> None:
     """Scenario 143: each recovery mismatch declines before launch or ref mutation."""
     origin, repo = _published_repo(tmp_path=tmp_path)
     before_branch = _git("--git-dir", str(origin), "rev-parse", f"refs/heads/{_BRANCH}", cwd=repo)
     journal = _journal(repo=repo)
     runner = _RecoveryRunner(state=state, head=head, run_status=run_status)
+    for attribute, value in runner_updates.items():
+        setattr(runner, attribute, value)
+    if runner_updates.get("earlier_resumes"):
+        for index in range(int(runner_updates["earlier_resumes"])):
+            journal.append(
+                record={
+                    "stage": RESUME_STAGE,
+                    "work_item_id": _ITEM_ID,
+                    "earlier_run_ids": [f"earlier-{index}"],
+                    "pull_request": _PULL_REQUEST,
+                }
+            )
+            journal.append(
+                record={"stage": "fabro-run", "work_item_id": _ITEM_ID, "run_id": f"run-{index}"}
+            )
+    if runner_updates.get("live_lock"):
+        monkeypatch.setattr(
+            observation,
+            "live_dispatch_lock",
+            lambda **_kwargs: type("Lock", (), {"started_at_epoch": time.time() - 10})(),
+        )
     dispatched = _wire_command(
-        monkeypatch=monkeypatch, item=_item(), journal=journal, runner=runner
+        monkeypatch=monkeypatch,
+        item=_item_with(status=item_status, criterion=criterion),
+        journal=journal,
+        runner=runner,
     )
+    before_pull_request = (runner.state, runner.head)
 
     assert resume.run_resume_command(args=_args(repo=repo)) == 3
 
@@ -259,22 +359,7 @@ def test_scenario143_every_resume_refusal_exits_before_a_run_and_leaves_branch_a
         _git("--git-dir", str(origin), "rev-parse", f"refs/heads/{_BRANCH}", cwd=repo)
         == before_branch
     )
-    assert runner.calls[:2] == [
-        [
-            "gh",
-            "pr",
-            "list",
-            "--head",
-            _BRANCH,
-            "--state",
-            "all",
-            "--json",
-            "number,state,headRefOid",
-            "--limit",
-            "20",
-        ],
-        ["gh", "pr", "view", str(_PULL_REQUEST), "--json", "comments"],
-    ]
+    assert (runner.state, runner.head) == before_pull_request, case
     assert not [
         record
         for record in read_journal_records(journal_path=journal.path)
