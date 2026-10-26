@@ -41,6 +41,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
 from livespec_orchestrator_beads_fabro._store_dispatch_factory import read_dispatch_factories
 from livespec_orchestrator_beads_fabro.commands._config import (
     resolve_fabro_bin,
@@ -59,6 +60,9 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroRu
 from livespec_orchestrator_beads_fabro.commands._fabro_transport_fault import (
     transport_fault_clause,
     transport_fault_from_cause,
+)
+from livespec_orchestrator_beads_fabro.commands._needs_attention_needs_human_ledger import (
+    needs_human_question_from_ledger_comments,
 )
 from livespec_orchestrator_beads_fabro.commands._run_attribution import RunAttribution
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -213,6 +217,13 @@ def _question(
     handle = _run_handle(project_root=project_root, item_id=item_id)
     if handle is None:
         return None
+    recorded = _question_from_ledger_comment(
+        project_root=project_root,
+        item_id=item_id,
+        run_id=handle.run_id,
+    )
+    if recorded is not None:
+        return (handle, recorded)
     port = FabroPort(
         fabro_bin=resolve_fabro_bin(cwd=project_root),
         target=FabroTarget(server_url=handle.factory_server_url),
@@ -224,6 +235,21 @@ def _question(
     if question is None:
         return None
     return (handle, question)
+
+
+def _question_from_ledger_comment(
+    *, project_root: Path, item_id: str, run_id: str
+) -> NeedsHumanQuestion | None:
+    """The terminal account stored at termination, before reopening its factory."""
+    read = attempt(
+        action=lambda: read_work_item_comments(
+            path=store_config(repo=project_root), work_item_id=item_id
+        ),
+        exceptions=_RECOVERABLE,
+    )
+    if isinstance(read, AttemptFailure):
+        return None
+    return needs_human_question_from_ledger_comments(comments=read, run_id=run_id)
 
 
 def _run_handle(*, project_root: Path, item_id: str) -> NeedsHumanRunHandle | None:
