@@ -9765,3 +9765,53 @@ Feature: pr_refresh tells a merged publication from a missing remote
     Then pr_refresh fails closed as an unobservable remote with a named cause and recovery artifact pointer
     And the run does not take the merged-reconcile ending
 ```
+
+## Scenario 249 — Implement and review_fix turns run their touched tests green, stage one test per Red, and update pinning tests with prompt edits
+
+```gherkin
+Feature: An implement or review_fix turn does not hand the commit hook a test it never ran
+  As the maintainer of a repository dispatched to the factory
+  I want implement and review_fix turns to run their own touched tests before committing
+  So that a slow hook run is not spent discovering a failing test a targeted run would have shown
+
+  Scenario: The stage prompts state the three test-discipline rules
+    Given the implement and review_fix prompts of the released implement-work-item workflow
+    When each prompt is read
+    Then each states that every test file the change adds or modifies is run and passes before any commit other than a Red commit and before the Green amend
+    And each states that a Red commit stages exactly one test file and no product file
+    And each states that a change to a stage prompt file or to the code rendering the Dispatcher's launch overlay updates, in the same commit, the tests that pin it
+
+  Scenario: A Red commit's failing test is not run green first
+    Given a review_fix turn that has written one new failing test and no product change
+    When the turn makes its Red commit
+    Then the commit stages that one test file alone
+    And the turn is not required to see that test pass before the Red commit
+
+  Scenario: A prompt edit carries its pinning test
+    Given an implement turn whose change edits the review_fix stage prompt
+    And a test pins that prompt's text
+    When the turn makes the commit carrying the prompt edit
+    Then the same commit updates the pinning test
+    And the turn ran that test and saw it pass before committing
+```
+
+## Scenario 250 — A work item whose id contains a dot dispatches from a dot-free workflow directory distinct to its id
+
+```gherkin
+Feature: A work-item id never decides whether the engine can find its workflow
+  As the maintainer of a repository whose plan children carry dotted ids
+  I want every work item to dispatch whatever characters its id contains
+  So that a dotted plan child is not stranded at fabro-run before any run exists
+
+  Scenario: A dotted work-item id dispatches
+    Given a ready work item whose id is "bd-ib-abc123.2"
+    When the Dispatcher materializes the workflow for its dispatch
+    Then the materialized directory name contains no "." character
+    And the engine resolves that directory as a local workflow under fabro validate and fabro run
+    And the journal's workflow_toml names the resolved committed path
+
+  Scenario: Ids that differ only by a dot get distinct directories
+    Given two work items whose ids are "bd-ib-abc123.2" and "bd-ib-abc123-2"
+    When the Dispatcher materializes the workflow for each dispatch
+    Then the two materialized directory names differ
+```

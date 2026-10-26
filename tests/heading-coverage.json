@@ -2303,5 +2303,21 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal pr-refresh-merged-publication (v226). Owned by plan epic bd-ib-ku7phe until its implementing child, filed after ratification, teaches pr_refresh the merged-reconcile ending together with the test that binds this entry.",
     "work_item": "bd-ib-ku7phe"
+  },
+  {
+    "heading": "## Scenario 249 \u2014 Implement and review_fix turns run their touched tests green, stage one test per Red, and update pinning tests with prompt edits",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A prompt-tier test is owed for this heading: ratified with proposal agent-stage-test-discipline (v227), and the owning work-item bd-ib-v5f7fd adds the three test-discipline rules to the implement and review_fix prompts, together with the test that binds this entry.",
+    "work_item": "bd-ib-v5f7fd"
+  },
+  {
+    "heading": "## Scenario 250 \u2014 A work item whose id contains a dot dispatches from a dot-free workflow directory distinct to its id",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal materialized-workflow-dir-name (v228), and the owning work-item bd-ib-5y25l2 makes the materialized workflow directory name dot-free and injective in the work-item id, together with the test that binds this entry.",
+    "work_item": "bd-ib-5y25l2"
   }
 ]
