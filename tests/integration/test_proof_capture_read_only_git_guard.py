@@ -109,13 +109,25 @@ def _assert_proof_capture_refusals(
     _ = (repo / "proof.txt").write_text("proof\n", encoding="utf-8")
     _ = _git("add", "proof.txt", repo=repo, environment=environment)
     _assert_git_write_is_refused(
-        argv=("commit", "-m", "proof capture must stay read-only"),
+        argv=(
+            "-c",
+            "core.hooksPath=/dev/null",
+            "commit",
+            "-m",
+            "proof capture must stay read-only",
+        ),
         repo=repo,
         marker=marker,
         environment=environment,
     )
     _assert_git_write_is_refused(
-        argv=("push", "origin", "HEAD:refs/heads/proof-capture"),
+        argv=(
+            "-c",
+            "core.hooksPath=/dev/null",
+            "push",
+            "origin",
+            "HEAD:refs/heads/proof-capture",
+        ),
         repo=repo,
         marker=marker,
         environment=environment,
