@@ -2351,5 +2351,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal check-aggregate-runs-targets-concurrently, and the owning work-item bd-ib-6zy3zd makes dev-tooling/just-check.sh run its independent targets concurrently, together with the test that binds this entry.",
     "work_item": "bd-ib-6zy3zd"
+  },
+  {
+    "heading": "## Scenario 255 \u2014 A commit inside an implement or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal in-turn-commits-run-the-affected-tests-gate, and the owning work-item bd-ib-72hvx5 makes the commit hook of implement and review_fix turns run the affected-tests gate with a full-aggregate fallback, together with the test that binds this entry.",
+    "work_item": "bd-ib-72hvx5"
   }
 ]

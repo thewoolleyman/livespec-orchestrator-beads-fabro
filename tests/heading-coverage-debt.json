@@ -999,5 +999,12 @@
     "heading": "## Scenario 254 \u2014 The check aggregate runs its independent targets beside the pytest lane and still reports and fails as the serial loop did",
     "work_item": "bd-ib-6zy3zd",
     "first_seen": "2026-10-26"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 255 \u2014 A commit inside an implement or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once",
+    "work_item": "bd-ib-72hvx5",
+    "first_seen": "2026-10-26"
   }
 ]

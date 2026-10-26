@@ -10031,3 +10031,34 @@ Feature: The check aggregate does not wait for the pytest lane to run its indepe
     When the just check aggregate runs
     Then the sandbox's peak memory stays under its memory limit
 ```
+
+## Scenario 255 — A commit inside an implement or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once
+
+```gherkin
+Feature: In-turn commits pay the scoped gate, and the full aggregate runs once per run
+  As the operator of a factory
+  I want implement and review_fix commits to run only the tests their change affects
+  So that a run does not repeat the full check aggregate at every commit before the janitor runs it
+
+  Scenario: An implement turn's commit runs the affected-tests gate
+    Given an implement turn committing a change to product modules and their tests
+    When its commit hook runs
+    Then it runs just check-changed on the change and not the full check aggregate
+
+  Scenario: A change the affected-tests gate cannot scope falls back to the full aggregate
+    Given a review_fix turn committing a change to a shared configuration file
+    When its commit hook runs
+    Then it runs the full check aggregate
+
+  Scenario: The janitor still runs the full aggregate once
+    Given a run whose implement turn committed through the affected-tests gate
+    When the run reaches the janitor stage
+    Then the janitor runs the full check aggregate once on the run's tree before publication
+
+  Scenario: A Red commit and its Green amend go through the affected-tests gate
+    Given an implement turn staging one failing test alone for its Red commit
+    When its commit hook runs
+    Then the gate accepts the commit because the staged test fails, without demanding passing tests or coverage
+    When the turn stages the implementation and amends to Green
+    Then the commit hook runs the affected-tests gate and requires the scoped tests and their coverage to pass
+```
