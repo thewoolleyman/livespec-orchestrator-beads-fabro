@@ -90,3 +90,14 @@ def test_wait_returns_the_recorded_terminal_verdict_without_polling_again() -> N
     terminal = runner.wait(run_id=run_id, timeout_seconds=0.0)
 
     assert runner.wait(run_id=run_id, timeout_seconds=0.0) is terminal
+
+
+def test_materialized_runner_executes_the_tracked_cli() -> None:
+    """The sandbox executable delegates to the state machine's real-process adapter."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner"
+    )
+
+    source = module.commit_runner_program_source()
+
+    assert "livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner_cli" in source
