@@ -51,6 +51,7 @@ received rather than what the attribute carried.
 from __future__ import annotations
 
 import re
+import shlex
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
@@ -98,6 +99,16 @@ _OPENER_RE = re.compile(r"\{[{%#]")
 _UNESCAPABLE_RE = re.compile(r"[\r\n]")
 
 _GRAPH_BLOCK_NAME = "graph"
+_ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_PROOF_CAPTURE_ADAPTER_INPUT = "proof_capture_adapter"
+_PROOF_CAPTURE_HOOKS_PATH = (
+    ".claude-plugin/.fabro/workflows/implement-work-item/proof-capture-hooks"
+)
+_PROOF_CAPTURE_GIT_CONFIG = {
+    "GIT_CONFIG_COUNT": "1",
+    "GIT_CONFIG_KEY_0": "core.hooksPath",
+    "GIT_CONFIG_VALUE_0": _PROOF_CAPTURE_HOOKS_PATH,
+}
 
 
 def _dot_escaped(*, value: str) -> str:
@@ -142,8 +153,37 @@ def guarded_adapter_commands(*, run_inputs: Sequence[str]) -> Mapping[str, str]:
     commands: dict[str, str] = {}
     for pair in run_inputs:
         name, _, rendered = pair.partition("=")
-        commands[name] = guarded_adapter_string(rendered=rendered)
+        protected = (
+            _proof_capture_read_only_adapter(rendered=rendered)
+            if name == _PROOF_CAPTURE_ADAPTER_INPUT
+            else rendered
+        )
+        commands[name] = guarded_adapter_string(rendered=protected)
     return commands
+
+
+def _proof_capture_read_only_adapter(*, rendered: str) -> str:
+    """Add the proof-capture-only Git hooks path without changing agent argv.
+
+    `GIT_CONFIG_COUNT` is the command-line configuration channel Git evaluates
+    after repository config, so a sandbox checkout cannot bypass this node's
+    read-only hooks path with its own `core.hooksPath`.  Re-tokenizing then
+    re-quoting preserves every agent argument while letting these three keys
+    replace any ambient Git configuration channel the adapter declared.
+    """
+    tokens = shlex.split(rendered)
+    environment: dict[str, str] = {}
+    index = 0
+    for token in tokens:
+        if _ENV_ASSIGNMENT_RE.match(token) is None:
+            break
+        key, _, value = token.partition("=")
+        environment[key] = value
+        index += 1
+    environment.update(_PROOF_CAPTURE_GIT_CONFIG)
+    assignments = [f"{key}={shlex.quote(value)}" for key, value in sorted(environment.items())]
+    command = [shlex.quote(token) for token in tokens[index:]]
+    return " ".join([*assignments, *command])
 
 
 def render_acp_commands(
