@@ -8083,6 +8083,26 @@ Feature: New behaviour gets new spec before it is built
     Given a ready item whose References line names a heading that does not govern its assertions
     When the pre-admission judgement runs
     Then the item is held with the governing heading the spec-stated judgement returned as the remedy
+
+  Scenario: A spec revision that leaves the selected clauses unchanged reuses the governing-heading verdict
+    Given an assertion whose governing-heading verdict is recorded with the selected clauses and every clause it names, each with its heading and body
+    And the item is not a held spec-change-tier item awaiting release
+    And neither the assertion, the item's Definition of Done nor the item's comments have changed since the verdict was taken
+    And a new spec revision changes only clauses that the verdict neither selected nor names, and the selection against the new revision returns the same clauses
+    When the governing-heading verdict is needed again
+    Then the recorded verdict is reused and no model is run
+
+  Scenario: A spec revision that changes a selected clause takes the governing-heading verdict again
+    Given an assertion whose governing-heading verdict was taken against a set of selected clauses
+    And a new spec revision changes the body of one of those clauses, or the selection against it returns a different set
+    When the governing-heading verdict is needed again
+    Then the verdict is taken again against the new revision
+
+  Scenario: The release of a held spec-change-tier item never reuses a verdict across a revision
+    Given a held spec-change-tier item whose linked proposal is ratified in a new revision
+    And the selection against the new revision returns the same clauses as before
+    When the next drain pass decides whether to release the item
+    Then the governing-heading verdict is taken again against the new revision
 ```
 
 ## Scenario 207 — The drift run processes each merge behind a contiguous frontier and files proposals it never accepts
