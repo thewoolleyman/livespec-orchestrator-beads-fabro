@@ -580,6 +580,11 @@ script = "set -- {{ inputs.prepare_toolchain_python_sync }}; test $# -eq 0 || \"
 script = "set -- {{ inputs.prepare_toolchain_lefthook }}; test $# -eq 0 || \"$@\""
 
 [[run.prepare.steps]]
+# Scenario 204 records the implement turn's own failing declared-suite output.
+# The prompt invokes this runner; the incomplete-turn route only reads its file.
+script = "set -eu; root=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}\"; mkdir -p \"$root\"; runner=\"$root/livespec-implement-check-suite\"; printf '%s\\n' '#!/bin/sh' 'set -u' 'verdict=$(git rev-parse --git-path livespec-implement-check-suite-verdict)' 'temporary=${verdict}.tmp.$$' 'set +e' 'set -- {{ inputs.sandbox_check_suite }}' 'if test \"$#\" -eq 1; then eval \"set -- $1\"; fi' '\"$@\" > \"$temporary\" 2>&1' 'status=$?' 'set -e' 'cat \"$temporary\"' 'if test \"$status\" -ne 0; then mv \"$temporary\" \"$verdict\"; else rm -f \"$temporary\"; fi' 'exit \"$status\"' > \"$runner\"; chmod 755 \"$runner\""
+
+[[run.prepare.steps]]
 # Dispatch-time baseline conformance gate — the MECHANISM (Conformance
 # Pattern concern #1 Worktree-discipline): install the canonical STRUCTURAL
 # commit-refuse hook at pre-commit, pre-push AND commit-msg. Field

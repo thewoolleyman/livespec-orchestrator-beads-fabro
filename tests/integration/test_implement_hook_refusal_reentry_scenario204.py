@@ -19,17 +19,16 @@ failed names only in the closing `Failed targets (N):` / `  - <name>` block. The
 exit code is the whole of the engine's decision, because a command node has
 exactly two outcomes.
 
-v214 (work-item bd-ib-r4fl2h) widens the route: EVERY incomplete turn re-enters
+v214 (work-item bd-ib-r4fl2h) widened the route: EVERY incomplete turn re-enters
 once while the budget lasts, not only a hook-refused one. bd-ib-idpr32 run
 01M5QVBJ2573 quit with only check-per-file-coverage and check-coverage failing in
 its own check-suite run and nothing refused, and bd-ib-3kqdln run 01M5QW46JGG0
 stated no completion field; both rested for a human with most of the allowance
 unspent. The brief is the latest failing gate: the hook verdict, otherwise a
 failing run of the declared check suite, otherwise a statement that none was
-recorded. A command node cannot read the adapter's tool output, so the route runs
-`inputs.sandbox_check_suite` itself over the tree the turn left and records that
-output; the sub-scenarios render the suite as a stub printing the coverage
-targets bd-ib-idpr32's own suite run failed on.
+recorded. The implement prompt runs the prepared recorder whenever it runs the
+declared suite, so the route reads the prior failed tool output and never runs a
+fresh suite over the tree the turn left.
 """
 
 from __future__ import annotations
@@ -59,6 +58,7 @@ _REFUSAL_GIT_PATH = "livespec-implement-hook-refusal"
 _REENTRIES_GIT_PATH = "livespec-implement-hook-reentries"
 _RECORD_GIT_PATH = "livespec-implement-completion"
 _STAGE_CAUSE_GIT_PATH = "livespec-stage-cause"
+_SUITE_VERDICT_GIT_PATH = "livespec-implement-check-suite-verdict"
 
 _PARTIAL_PROGRESS = "LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS"
 _REENTER = "LIVESPEC_IMPLEMENT_HOOK_REFUSED_REENTER"
@@ -67,8 +67,6 @@ _SUITE_REENTER = "LIVESPEC_IMPLEMENT_CHECK_SUITE_FAILED_REENTER"
 _INCOMPLETE_REENTER = "LIVESPEC_IMPLEMENT_INCOMPLETE_REENTER"
 _REENTRY_EXHAUSTED = "LIVESPEC_IMPLEMENT_REENTRY_BUDGET_EXHAUSTED"
 _NO_RECORDED_GATE = "ended incomplete with no recorded failing gate"
-_SUITE_TOKEN = "{{ inputs.sandbox_check_suite }}"
-_PLUGIN_GATE = "livespec-run-plugin-gate.py"
 
 # The incident's own refusal, in the check aggregate's own output shape.
 _FAILED_TARGET = "check-types"
@@ -88,19 +86,11 @@ exit 1
 # bd-ib-idpr32's own check-suite run: only the two coverage targets failed.
 _SUITE_TARGETS = "check-per-file-coverage check-coverage"
 _SUITE_ERROR_LINE = "commands/_dispatcher_provider_limit_outcome.py: 97% < 100% line coverage"
-_FAILING_SUITE = f"""#!/bin/sh
-touch suite-ran
-printf '::: just check-per-file-coverage\\r\\n'
-printf '%s\\r\\n' '{_SUITE_ERROR_LINE}'
-printf 'Failed targets (2):\\r\\n'
-printf '  - check-per-file-coverage\\r\\n'
-printf '  - check-coverage\\r\\n'
-exit 1
-"""
-_PASSING_SUITE = """#!/bin/sh
-touch suite-ran
-echo 'All 85 targets passed.'
-exit 0
+_FAILING_SUITE_OUTPUT = f"""::: just check-per-file-coverage\r
+{_SUITE_ERROR_LINE}\r
+Failed targets (2):\r
+  - check-per-file-coverage\r
+  - check-coverage\r
 """
 _ACCEPTING_HOOK = """#!/bin/sh
 echo 'All 85 targets passed.'
@@ -136,14 +126,9 @@ def _clone(
     tmp_path: Path,
     hook: str | None,
     staged: bool,
-    suite: str = _PASSING_SUITE,
     completion: str | None = '{"definition_of_done_complete": false}\n',
 ) -> Path:
-    """A throwaway clone with a stub hook, a stub check suite, and an optional staged change.
-
-    The suite stub lives outside the clone and the passing plugin-gate stub under a
-    plugins root the route reads from the environment, so neither shows as a change.
-    """
+    """A throwaway clone with a stub hook and an optional staged change."""
     repo = tmp_path / "clone"
     repo.mkdir(parents=True)
     _ = subprocess.run(["git", "init", "--quiet"], cwd=repo, check=True)
@@ -157,28 +142,24 @@ def _clone(
     _ = (repo / ".git" / _STAGE_CAUSE_GIT_PATH).write_text(_PARTIAL_CAUSE, encoding="utf-8")
     if completion is not None:
         _ = (repo / ".git" / _RECORD_GIT_PATH).write_text(completion, encoding="utf-8")
-    suite_path = tmp_path / "suite.sh"
-    _ = suite_path.write_text(suite, encoding="utf-8")
-    suite_path.chmod(0o755)
-    plugins = tmp_path / "plugins"
-    plugins.mkdir()
-    _ = (plugins / _PLUGIN_GATE).write_text("raise SystemExit(0)\n", encoding="utf-8")
     return repo
 
 
 def _routed(*, repo: Path) -> subprocess.CompletedProcess[str]:
-    """Run the committed route bytes with the suite token rendered as the stub suite."""
+    """Run the committed route bytes after the implement turn has ended."""
     script = _route_attributes().get("script", "exit 2")
-    assert _SUITE_TOKEN in script, "the route must run the declared check suite"
-    rendered = script.replace(_SUITE_TOKEN, str(repo.parent / "suite.sh"))
-    env = {**os.environ, "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(repo.parent / "plugins")}
     return subprocess.run(
-        ["sh", "-c", rendered], cwd=repo, check=False, capture_output=True, text=True, env=env
+        ["sh", "-c", script], cwd=repo, check=False, capture_output=True, text=True, env=os.environ
     )
 
 
 def _git_file(*, repo: Path, name: str) -> Path:
     return repo / ".git" / name
+
+
+def _recorded_suite(*, repo: Path, output: str) -> None:
+    """Materialize the failed suite output the previous turn's recorder retained."""
+    _ = _git_file(repo=repo, name=_SUITE_VERDICT_GIT_PATH).write_text(output, encoding="utf-8")
 
 
 def test_an_incomplete_turn_reaches_the_hook_route_and_the_route_can_reenter_implement() -> None:
@@ -253,7 +234,8 @@ def test_an_incomplete_turn_whose_check_suite_fails_reenters_with_that_runs_targ
     hook here would refuse, which is the control: nothing is staged, so the route
     must not read it as a refused commit attempt.
     """
-    repo = _clone(tmp_path=tmp_path, hook=_REFUSING_HOOK, staged=False, suite=_FAILING_SUITE)
+    repo = _clone(tmp_path=tmp_path, hook=_REFUSING_HOOK, staged=False)
+    _recorded_suite(repo=repo, output=_FAILING_SUITE_OUTPUT)
 
     result = _routed(repo=repo)
 
@@ -268,14 +250,13 @@ def test_an_incomplete_turn_whose_check_suite_fails_reenters_with_that_runs_targ
 
 
 def test_an_incomplete_turn_with_no_failing_gate_reenters_saying_so(tmp_path: Path) -> None:
-    """Sub-scenario: nothing staged, the suite passes -> re-enter with the no-gate statement."""
+    """Sub-scenario: nothing staged and no retained failed suite -> the fixed no-gate brief."""
     repo = _clone(tmp_path=tmp_path, hook=_REFUSING_HOOK, staged=False)
 
     result = _routed(repo=repo)
 
     assert result.returncode == 0, result.stderr
     assert _INCOMPLETE_REENTER in result.stderr
-    assert (repo / "suite-ran").exists()
     brief = _git_file(repo=repo, name=_REFUSAL_GIT_PATH).read_text(encoding="utf-8")
     assert _NO_RECORDED_GATE in brief
     assert not _git_file(repo=repo, name=_RECORD_GIT_PATH).exists()
@@ -298,7 +279,8 @@ def test_a_repository_with_no_commit_hook_reenters_implement(tmp_path: Path) -> 
     `git hook run --ignore-missing` exits zero when the repository installs no
     pre-commit hook, so an adopter without hooks takes the check-suite arm.
     """
-    repo = _clone(tmp_path=tmp_path, hook=None, staged=True, suite=_FAILING_SUITE)
+    repo = _clone(tmp_path=tmp_path, hook=None, staged=True)
+    _recorded_suite(repo=repo, output=_FAILING_SUITE_OUTPUT)
 
     result = _routed(repo=repo)
 
@@ -325,7 +307,7 @@ def test_an_unrefused_incomplete_turn_with_the_budget_exhausted_fails_as_partial
     Dispatcher puts on the dispatch outcome detail. The suite is not run, since
     no brief can follow.
     """
-    repo = _clone(tmp_path=tmp_path, hook=_ACCEPTING_HOOK, staged=True, suite=_FAILING_SUITE)
+    repo = _clone(tmp_path=tmp_path, hook=_ACCEPTING_HOOK, staged=True)
     _ = _git_file(repo=repo, name=_REENTRIES_GIT_PATH).write_text("1\n", encoding="utf-8")
 
     result = _routed(repo=repo)
@@ -337,7 +319,6 @@ def test_an_unrefused_incomplete_turn_with_the_budget_exhausted_fails_as_partial
         _PARTIAL_CAUSE
     )
     assert not _git_file(repo=repo, name=_REFUSAL_GIT_PATH).exists()
-    assert not (repo / "suite-ran").exists()
 
 
 def test_the_implement_prompt_directs_a_reentered_turn_to_the_hooks_verdict() -> None:
@@ -347,6 +328,15 @@ def test_the_implement_prompt_directs_a_reentered_turn_to_the_hooks_verdict() ->
     assert f"git rev-parse --git-path {_REFUSAL_GIT_PATH}" in prompt
     assert "check suite" in prompt
     assert _NO_RECORDED_GATE in prompt
+    assert "livespec-implement-check-suite" in prompt
+
+
+def test_the_route_never_reruns_the_declared_suite() -> None:
+    """The brief consumes the prior recorder output, never a new check-suite result."""
+    script = _route_attributes().get("script", "")
+
+    assert "{{ inputs.sandbox_check_suite }}" not in script
+    assert "livespec-run-plugin-gate.py" not in script
 
 
 def test_the_route_and_the_reentered_turn_are_billed_into_the_subprocess_ceiling() -> None:
