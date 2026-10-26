@@ -9727,3 +9727,41 @@ Feature: The Dispatcher waits for a slow factory's dump before giving up on it
     When each runs a fabro dump
     Then each dump is bounded by the same 900-second timeout
 ```
+
+## Scenario 248 — A pull request merged before its refresh ends the run as a finished publication
+
+```gherkin
+Feature: pr_refresh tells a merged publication from a missing remote
+  Scenario: A pull request merged mid-run with its branch deleted takes the merged-reconcile ending
+    Given a run whose latest verified record names head V
+    And an earlier arming merged the run's pull request at head V with merge commit M
+    And the forge deleted the run's publish branch
+    When pr_refresh queries the publish branch on origin
+    Then pr_refresh reads the pull request as MERGED with merge commit M
+    And the run takes the merged-reconcile ending without entering pr
+    And the ending records the pull request, merge commit M, merged head V, the verified head V and that the two heads are equal
+    And the Dispatcher runs the post-merge janitor and enters acceptance
+  Scenario: A merged head the run never proved is recorded as unproven
+    Given a run whose latest verified record names head V
+    And an arming merged the run's pull request at head U before any record named U
+    And the forge deleted the run's publish branch
+    When pr_refresh queries the publish branch on origin
+    Then the run takes the merged-reconcile ending
+    And the ending records merged head U, the verified head V and that the two heads differ
+    And the ending writes no verified or carried_forward record for head U
+    And the acceptance pass judges every factory_captured assertion UNOBSERVED rather than passing it on V's verified record
+    And the acceptance verdict is NEEDS_ATTENTION
+  Scenario: A branch found absent after a rejected push is not a merged publication
+    Given a run whose pr_refresh found its publish branch present and pushed a refreshed head
+    And the forge rejected that push
+    And the run's pull request then merged and the forge deleted the branch before pr_refresh re-read it
+    When pr_refresh re-reads the publish branch on origin
+    Then the run does not take the merged-reconcile ending
+    And pr_refresh fails closed with the cause this section names for a rejected push
+  Scenario: A missing branch whose pull request is not merged still fails closed
+    Given a run whose publish branch is absent on origin
+    And the forge reports the run's pull request OPEN
+    When pr_refresh queries the publish branch on origin
+    Then pr_refresh fails closed as an unobservable remote with a named cause and recovery artifact pointer
+    And the run does not take the merged-reconcile ending
+```
