@@ -55,6 +55,7 @@ def test_proof_capture_git_writes_refuse_before_repository_hooks_but_implement_a
         )
     )
     proof_environment = _adapter_environment(command=commands[_PROOF_CAPTURE_ADAPTER])
+    proof_environment.pop("LIVESPEC_CREDENTIAL_USE_DEADLINE_EPOCH", None)
     proof_environment["LIVESPEC_CREDENTIAL_USE_UNPROTECTED"] = "1"
     _assert_proof_capture_configuration(environment=proof_environment)
     _assert_empty_proof_capture_adapter_is_guarded()

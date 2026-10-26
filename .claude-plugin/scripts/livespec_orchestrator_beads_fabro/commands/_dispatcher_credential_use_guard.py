@@ -100,6 +100,7 @@ __all__: list[str] = [
     "GUARD_REFUSAL_EXIT_CODE",
     "GUARD_SCRIPT_PATH",
     "GUARD_TERM_GRACE_SECONDS",
+    "PROOF_CAPTURE_GIT_READ_ONLY_ENV_VAR",
     "credential_use_deadline_epoch_capped",
     "guard_script_text",
     "guarded_acp_command",
@@ -140,6 +141,12 @@ CREDENTIAL_USE_UNPROTECTED_ENV_VAR = "LIVESPEC_CREDENTIAL_USE_UNPROTECTED"
 # hand-edited env table is not a statement, and treating one as a statement is
 # the same fail-open the absence arm exists to prevent.
 CREDENTIAL_USE_UNPROTECTED_VALUE = "1"
+
+# A proof-capture adapter selects the Git launcher that refuses tree writes.  The
+# marker travels through the adapter's leading environment assignments, while
+# this guard owns the PATH change so an ACP command cannot replace it with a
+# later Git configuration flag.
+PROOF_CAPTURE_GIT_READ_ONLY_ENV_VAR = "LIVESPEC_PROOF_CAPTURE_GIT_READ_ONLY"
 
 # Where the prepare step writes the guard inside the sandbox.
 GUARD_SCRIPT_PATH = "/workspace/.livespec/credential-use-guard.sh"
@@ -280,6 +287,7 @@ set -u
 
 deadline="${{{CREDENTIAL_USE_DEADLINE_ENV_VAR}:-}}"
 unprotected="${{{CREDENTIAL_USE_UNPROTECTED_ENV_VAR}:-}}"
+proof_capture_git_read_only="${{{PROOF_CAPTURE_GIT_READ_ONLY_ENV_VAR}:-}}"
 
 mode="run"
 if [ "${{1:-}}" = "--check-start" ]; then
@@ -287,6 +295,37 @@ if [ "${{1:-}}" = "--check-start" ]; then
     shift
 elif [ "${{1:-}}" = "--" ]; then
     shift
+fi
+
+# A proof-capture turn is read-only.  Git evaluates `-c core.hooksPath=...`
+# after the environment-backed configuration channel, so a hook path alone is
+# replaceable by the command it is meant to govern.  The stage instead prepends
+# its launcher HERE, before the guarded command starts; the launcher sees the
+# subcommand before Git processes any command-line configuration.
+if [ -n "$proof_capture_git_read_only" ]; then
+    if [ "$proof_capture_git_read_only" != "1" ]; then
+        echo "LIVESPEC_PROOF_CAPTURE_GIT_LAUNCHER_REFUSED: " \\
+             "{PROOF_CAPTURE_GIT_READ_ONLY_ENV_VAR} is '$proof_capture_git_read_only'," \\
+             "not the one read-only marker this launcher accepts." >&2
+        exit {GUARD_REFUSAL_EXIT_CODE}
+    fi
+    if [ "$mode" != "check" ]; then
+        repository_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {{
+            echo "LIVESPEC_PROOF_CAPTURE_GIT_LAUNCHER_ABSENT: proof_capture is" \\
+                 "read-only, but its repository root could not be resolved before" \\
+                 "starting the guarded adapter." >&2
+            exit {GUARD_REFUSAL_EXIT_CODE}
+        }}
+        proof_capture_git_bin="$repository_root/.claude-plugin/.fabro/workflows/implement-work-item/proof-capture-bin"
+        if [ ! -x "$proof_capture_git_bin/git" ]; then
+            echo "LIVESPEC_PROOF_CAPTURE_GIT_LAUNCHER_ABSENT: proof_capture is" \\
+                 "read-only, but its stage-scoped git launcher is not executable" \\
+                 "at $proof_capture_git_bin/git." >&2
+            exit {GUARD_REFUSAL_EXIT_CODE}
+        fi
+        PATH="$proof_capture_git_bin:$PATH"
+        export PATH
+    fi
 fi
 
 # THE UNPROTECTED ARM. The host declares here that this dispatch projects no
