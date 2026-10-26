@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.8...v0.243.9) (2026-10-26)
+
+
+### Bug Fixes
+
+* hold wall budget on failed dump ([7e12747](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7e12747c4d16c7782bd0dfc2a6e302c81d177fbc))
+
 ## [0.243.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.7...v0.243.8) (2026-10-26)
 
 
