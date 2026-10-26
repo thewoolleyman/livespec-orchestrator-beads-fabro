@@ -137,7 +137,7 @@ def invoke(*, config: StoreConfig, argv: list[str]) -> subprocess.CompletedProce
     """
     repo_root = config.repo_root
     embedded = repo_root is not None and _is_embedded_ledger(repo_root=repo_root)
-    if not embedded and not os.environ.get("BEADS_DOLT_PASSWORD"):
+    if not embedded and not config.credential_wrapper and not os.environ.get("BEADS_DOLT_PASSWORD"):
         raise BeadsCredentialMissingError(variable="BEADS_DOLT_PASSWORD")
     if repo_root is not None and not embedded:
         assert_repo_root_matches_config(config=config, repo_root=repo_root)
@@ -204,7 +204,7 @@ def assert_repo_root_matches_config(*, config: StoreConfig, repo_root: Path) -> 
 
 def read_bd_config_value(*, config: StoreConfig, repo_root: Path, key: str) -> str:
     """Read one `bd config get` value from the target repo root."""
-    argv = [config.bd_path, "config", "get", key]
+    argv = [*config.credential_wrapper, config.bd_path, "config", "get", key]
     try:
         completed = subprocess.run(  # noqa: S603  # pragma: no cover
             argv,
