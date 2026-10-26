@@ -1,0 +1,44 @@
+#!/bin/sh
+# The proof_capture Git boundary. Git configuration cannot replace this
+# launcher: it receives the full command before Git starts parsing `-c` flags.
+set -u
+
+subcommand=""
+options=1
+expects_value=0
+
+for argument in "$@"; do
+    if [ "$options" -eq 0 ]; then
+        subcommand="$argument"
+        break
+    fi
+    if [ "$expects_value" -eq 1 ]; then
+        expects_value=0
+        continue
+    fi
+    case "$argument" in
+        --)
+            options=0
+            ;;
+        -c|-C|--config-env|--git-dir|--work-tree|--namespace|--super-prefix|--exec-path)
+            expects_value=1
+            ;;
+        --config-env=*|--git-dir=*|--work-tree=*|--namespace=*|--super-prefix=*|--exec-path=*)
+            ;;
+        -*)
+            ;;
+        *)
+            subcommand="$argument"
+            break
+            ;;
+    esac
+done
+
+case "$subcommand" in
+    commit|push)
+        echo "LIVESPEC_PROOF_CAPTURE_READ_ONLY: proof_capture is read-only on the repository tree; git commit and git push are refused before repository hooks run. End this turn with preferred_label=fix when a code change is needed." >&2
+        exit 1
+        ;;
+esac
+
+exec /usr/bin/git "$@"
