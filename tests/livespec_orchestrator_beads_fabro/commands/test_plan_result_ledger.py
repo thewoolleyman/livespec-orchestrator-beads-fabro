@@ -31,6 +31,7 @@ import pytest
 from livespec_orchestrator_beads_fabro._beads_client import (
     BeadsRecord,
     IssueDraft,
+    ShellBeadsClient,
     make_beads_client,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -66,6 +67,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
     PLAN_SCOPE_PREFIX,
     plan_comment_body,
 )
+from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _ITEM_ID = "bd-ib-ledger"
 _NOW = "2026-10-08T12:00:00Z"
@@ -291,6 +293,42 @@ def test_an_unreadable_connection_makes_the_status_read_unobservable(
     assert observation.source == SOURCE_LEDGER
     assert observation.detail == UNRESOLVED_CONNECTION
     assert observation.evidence == ""
+
+
+def test_an_unexecutable_target_wrapper_makes_the_status_read_unobservable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = _repo(tmp_path=tmp_path)
+    wrapper = repository.clone / "with-target-tenant-env.sh"
+    config_path = repository.clone / ".beads" / "config.yaml"
+    config_path.parent.mkdir()
+    _ = config_path.write_text("dolt.mode: server\n", encoding="utf-8")
+    config = StoreConfig(
+        tenant="target",
+        prefix="target",
+        server_user="target",
+        database="target",
+        bd_path="/usr/local/bin/bd",
+        repo_root=repository.clone,
+        credential_wrapper=(str(wrapper), "--"),
+    )
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._plan_result_ledger.result_store_config",
+        lambda **_kwargs: config,
+    )
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._plan_result_ledger.make_beads_client",
+        lambda **_kwargs: ShellBeadsClient(config=config),
+    )
+
+    observation = observe_item_status(
+        repository=repository,
+        target=ItemStatusTarget(item_id=_ITEM_ID, status="ready"),
+        now=_NOW,
+    )
+
+    assert observation.status == OBSERVATION_UNOBSERVABLE
+    assert str(wrapper) in observation.detail
 
 
 def test_an_item_absent_from_the_tenant_makes_the_status_read_unobservable(
