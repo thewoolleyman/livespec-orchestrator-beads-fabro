@@ -274,7 +274,11 @@
     // every comment here while reporting green — tracked as bd-ib-lmi5.
     "dispatcher": {
       "auto_approve_ready": true,
-      "wip_cap": 10,
+      // wip_cap: 12 matches the factory's 12-pod cap (coordinator R50/R51).
+      // Raised from 10 on 2026-10-26 under the maintainer's direction to max
+      // out factory capacity (R77); at 10 the orchestrator's own active items
+      // filled the cap and every further ticket was capacity-deferred.
+      "wip_cap": 12,
       "acceptance_mode": "ai-only",
       // The REGISTRY-BACKED name of the hp-xubuntu :32276 instance running the
       // pinned 0.254 engine — the same instance the entry called `hp` addressed
