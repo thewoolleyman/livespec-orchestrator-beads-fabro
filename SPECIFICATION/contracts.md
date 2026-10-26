@@ -3335,13 +3335,49 @@ MUST be command stages with their own resolved timeouts, not agent turns.
 `pr_refresh` MUST fetch the authoritative default branch and query the publish
 branch on origin. It MUST establish the run's previously published head from
 its recorded publication or validated resume provenance, never from a stale
-local tracking ref. A missing or unobservable remote, or a foreign or
+local tracking ref. Except as the next paragraph provides for a pull request
+that has already merged, a missing or unobservable remote, or a foreign or
 unexpectedly changed publish head, MUST fail closed with a named cause and
 recovery artifact pointer. A conflicted rebase or merge, and a refreshed head
 that the repository-declared gate rejects, MUST take the refresh-repair route of
 "Refresh repair" below while its budget lasts, and MUST fail closed with a named
 cause and recovery artifact pointer once that budget is spent. A previously completed refresh may be
 recognized idempotently from durable run provenance and matching remote state.
+
+**A pull request merged before its refresh.** When `pr_refresh`'s first query
+of the run's own publish branch on origin, made before it rebases, pushes or
+disarms anything, finds that branch absent, it MUST read the run's pull request
+before it decides the remote is missing. A branch found absent after this visit
+pushed, including the re-read after a rejected push, is outside this paragraph
+and keeps the cause the rest of this section names for it. When the forge reports that pull request
+MERGED with a non-null merge commit, the publication is finished, and
+`pr_refresh` MUST take the merged-reconcile ending instead of failing closed.
+On that ending `pr_refresh` MUST NOT fetch-and-rebase, push, disarm, re-prove or
+re-arm, and the run MUST end successfully without entering `pr`, so the
+Dispatcher observes the merge, runs the post-merge janitor and enters acceptance
+exactly as it does for a merge its merge wait observed. The ending MUST record,
+in the run's publication state and in the dispatch outcome detail, the pull
+request number, the merge commit, the pull request's merged head, the head named
+by the latest `verified` or `carried_forward` record of this run or that no such
+record exists, and whether those two heads are equal. The ending MUST NOT write
+a `verified` or `carried_forward` record for the merged head. When the merged
+head is not the head the latest `verified` or `carried_forward` record of this
+run names, or no such record exists, the acceptance pass's proof evidence leg
+MUST judge every `factory_captured` assertion UNOBSERVED, yielding
+NEEDS_ATTENTION, unless a `verified` record taken on the merged head, or a
+`carried_forward` record naming the merged head, lists the assertion as
+reproduced; a `verified` record taken on any other head MUST NOT pass a
+`factory_captured` assertion for the merged head. The human-attested and
+host-captured legs keep their existing rules. When the publish branch
+is absent and the pull request is not MERGED, the forge reports a null merge
+commit, or the pull request's state cannot be read, `pr_refresh` MUST fail closed
+as an unobservable remote with a named cause and recovery artifact pointer. A
+foreign or unexpectedly changed publish head MUST fail closed whatever the pull
+request's state. Measured on run 01M51D4RYHCB, and again on run 01M5W2YHVAMB on
+2026-10-26 after pull request 2633 auto-merged at 15:51:25Z and the forge
+deleted its branch, `pr_refresh` failed closed on the deleted branch, and both
+runs ended at `needs_human` for work that had landed. Scenario 248 in
+`scenarios.md` exercises this paragraph.
 
 When the default branch has advanced beyond the current base, `pr_refresh` MUST
 rebase, run the existing repository-declared `sandbox_check_suite` as a
